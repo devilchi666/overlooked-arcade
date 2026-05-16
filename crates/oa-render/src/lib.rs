@@ -301,6 +301,17 @@ impl Renderer {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &fb_tex.bind_group, &[]);
+            // Aspect-correct fit: largest rectangle inside the surface that
+            // preserves the core's reported display aspect. The clear color
+            // (black) fills the remaining surface, giving us free letterboxing.
+            let (vp_x, vp_y, vp_w, vp_h) = fit_viewport(
+                self.config.width,
+                self.config.height,
+                fb.width,
+                fb.height,
+                fb.display_aspect,
+            );
+            pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             pass.draw(0..3, 0..1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -346,5 +357,87 @@ impl Renderer {
         });
         log::info!("oa-render: allocated fb texture {}x{} (RGBA8)", width, height);
         FbTexture { width, height, texture, bind_group }
+    }
+}
+
+/// Aspect-correct fit: returns the (x, y, w, h) rect inside a `surface_w × surface_h`
+/// drawing area that preserves the requested display aspect. `display_aspect <= 0.0`
+/// falls back to `fb_w as f32 / fb_h as f32` (square-pixel cores).
+///
+/// The renderer relies on the surrounding render-pass clear (black) to draw the
+/// letterbox / pillarbox bars in whatever the viewport doesn't cover.
+fn fit_viewport(surface_w: u32, surface_h: u32, fb_w: u32, fb_h: u32, display_aspect: f32) -> (f32, f32, f32, f32) {
+    let target_aspect = if display_aspect > 0.0 {
+        display_aspect
+    } else if fb_h > 0 {
+        fb_w as f32 / fb_h as f32
+    } else {
+        1.0
+    };
+    let sw = surface_w.max(1) as f32;
+    let sh = surface_h.max(1) as f32;
+    let surface_aspect = sw / sh;
+
+    if surface_aspect > target_aspect {
+        // Surface is wider than the core wants — pillarbox left/right.
+        let vp_h = sh;
+        let vp_w = (sh * target_aspect).min(sw);
+        let vp_x = ((sw - vp_w) * 0.5).max(0.0);
+        (vp_x, 0.0, vp_w, vp_h)
+    } else {
+        // Surface is taller than the core wants — letterbox top/bottom.
+        let vp_w = sw;
+        let vp_h = (sw / target_aspect).min(sh);
+        let vp_y = ((sh - vp_h) * 0.5).max(0.0);
+        (0.0, vp_y, vp_w, vp_h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit_viewport;
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 0.001
+    }
+
+    #[test]
+    fn wider_surface_pillarboxes() {
+        // 16:9 surface (1920x1080), core wants 4:3.
+        let (x, y, w, h) = fit_viewport(1920, 1080, 320, 240, 4.0 / 3.0);
+        assert!(approx(y, 0.0));
+        assert!(approx(h, 1080.0));
+        assert!(approx(w, 1440.0));         // 1080 * 4/3
+        assert!(approx(x, 240.0));          // (1920 - 1440) / 2
+    }
+
+    #[test]
+    fn taller_surface_letterboxes() {
+        // Portrait 9:16 surface, core wants 4:3.
+        let (x, y, w, h) = fit_viewport(1080, 1920, 320, 240, 4.0 / 3.0);
+        assert!(approx(x, 0.0));
+        assert!(approx(w, 1080.0));
+        assert!(approx(h, 810.0));          // 1080 / (4/3)
+        assert!(approx(y, 555.0));          // (1920 - 810) / 2
+    }
+
+    #[test]
+    fn matching_aspect_fills() {
+        // Surface and core both 4:3.
+        let (x, y, w, h) = fit_viewport(800, 600, 320, 240, 4.0 / 3.0);
+        assert!(approx(x, 0.0));
+        assert!(approx(y, 0.0));
+        assert!(approx(w, 800.0));
+        assert!(approx(h, 600.0));
+    }
+
+    #[test]
+    fn zero_aspect_falls_back_to_fb_dims() {
+        // PCE-style 256x239 framebuffer, no core-reported aspect; renderer
+        // should treat it as 256:239 (~1.07).
+        let (_x, _y, w, h) = fit_viewport(1920, 1080, 256, 239, 0.0);
+        // Surface aspect (1.78) > target (1.07) → pillarbox.
+        assert!(approx(h, 1080.0));
+        assert!(approx(w, 1080.0 * 256.0 / 239.0));
     }
 }

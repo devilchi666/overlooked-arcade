@@ -181,6 +181,7 @@ impl Core for PceCore {
             width: f.width,
             height: f.height,
             pixels,
+            display_aspect: f.display_aspect,
         }
     }
 
@@ -208,16 +209,56 @@ impl Core for PceCore {
         unsafe { oa_pce_sys::oa_pce_set_input(self.handle.as_ptr(), port_idx, bits) };
     }
 
-    fn save_state(&self, _writer: &mut dyn std::io::Write) -> Result<(), CoreError> {
-        Err(CoreError::Internal(
-            "save_state not yet wired through libretro retro_serialize".into(),
-        ))
+    fn save_state(&self, writer: &mut dyn std::io::Write) -> Result<(), CoreError> {
+        if !self.rom_loaded {
+            return Err(CoreError::Internal("save_state called before load_rom".into()));
+        }
+        let size = unsafe { oa_pce_sys::oa_pce_serialize_size(self.handle.as_ptr()) };
+        if size == 0 {
+            return Err(CoreError::Internal(
+                "core reported zero serialize size (save states unsupported in current state)".into(),
+            ));
+        }
+        let mut buf = vec![0u8; size];
+        let status = unsafe {
+            oa_pce_sys::oa_pce_serialize(
+                self.handle.as_ptr(),
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+            )
+        };
+        if status != 0 {
+            return Err(CoreError::Internal(format!(
+                "oa_pce_serialize failed (status {status}, {size} bytes requested)"
+            )));
+        }
+        writer.write_all(&buf)?;
+        Ok(())
     }
 
-    fn load_state(&mut self, _reader: &mut dyn std::io::Read) -> Result<(), CoreError> {
-        Err(CoreError::Internal(
-            "load_state not yet wired through libretro retro_unserialize".into(),
-        ))
+    fn load_state(&mut self, reader: &mut dyn std::io::Read) -> Result<(), CoreError> {
+        if !self.rom_loaded {
+            return Err(CoreError::Internal("load_state called before load_rom".into()));
+        }
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        if buf.is_empty() {
+            return Err(CoreError::SaveStateMalformed);
+        }
+        let status = unsafe {
+            oa_pce_sys::oa_pce_unserialize(
+                self.handle.as_ptr(),
+                buf.as_ptr().cast(),
+                buf.len(),
+            )
+        };
+        if status != 0 {
+            return Err(CoreError::Internal(format!(
+                "oa_pce_unserialize failed (status {status}, {} bytes)",
+                buf.len()
+            )));
+        }
+        Ok(())
     }
 }
 

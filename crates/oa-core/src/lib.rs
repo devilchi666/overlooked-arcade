@@ -75,6 +75,11 @@ pub struct Framebuffer<'a> {
     pub height: u32,
     /// Pixel bytes (RGBA8 packed).
     pub pixels: &'a [u8],
+    /// Display aspect ratio (final image W:H — *not* pixel W:H). 0.0 tells the
+    /// renderer to fall back to `width as f32 / height as f32`. Cores with
+    /// non-square pixels (PCE: 256/352/512-wide modes, Lynx, etc.) report this
+    /// per-frame so the shell can letterbox/pillarbox correctly.
+    pub display_aspect: f32,
 }
 
 /// Which controller port input applies to.

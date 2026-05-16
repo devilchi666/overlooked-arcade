@@ -23,6 +23,8 @@ pub struct OaPceFrame {
     pub width: u32,
     pub height: u32,
     pub pixels: *const u8,
+    /// Display aspect ratio (final image W:H). 0.0 means "use width:height".
+    pub display_aspect: f32,
 }
 
 /// Static metadata about the vendored core.
@@ -45,6 +47,11 @@ extern "C" {
     pub fn oa_pce_audio_samples(core: *const OaPceCore, out: *mut i16, out_cap: usize) -> usize;
     pub fn oa_pce_set_input(core: *mut OaPceCore, port: u32, bits: u16);
     pub fn oa_pce_info() -> OaPceCoreInfo;
+
+    // ---- save state ----
+    pub fn oa_pce_serialize_size(core: *const OaPceCore) -> usize;
+    pub fn oa_pce_serialize(core: *const OaPceCore, dst: *mut c_void, cap: usize) -> i32;
+    pub fn oa_pce_unserialize(core: *mut OaPceCore, src: *const c_void, len: usize) -> i32;
 
     // ---- Mednafen-derived endian helpers (kept for backward compat with our spike tests) ----
     pub fn FlipByteOrder(src: *mut u8, count: u32);

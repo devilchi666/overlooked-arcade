@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use oa_core::{Core, PortIndex};
+use oa_input::Keycode;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 fn main() {
@@ -152,7 +153,7 @@ fn run_emu_render(
         oa_input::InputPoller::with_mappings(kb, pad)
     };
     log::info!(
-        "oa-shell: emu+render thread up; keyboard: \u{2191}\u{2193}\u{2190}\u{2192} = d-pad, Z = I, X = II, Enter = RUN, RShift = SELECT; gamepad: dpad + east=I / south=II / start=RUN / select=SELECT"
+        "oa-shell: emu+render thread up; keyboard: \u{2191}\u{2193}\u{2190}\u{2192} = d-pad, Z = I, X = II, Enter = RUN, RShift = SELECT; gamepad: dpad + east=I / south=II / start=RUN / select=SELECT; hotkeys: F5 = save state, F8 = restore"
     );
 
     let mut core = PceCore::new();
@@ -188,6 +189,12 @@ fn run_emu_render(
         }
     }
 
+    // F5 = save state to in-memory slot, F8 = restore. Edge-detected so a
+    // held key only fires once. Persistence + UI come in Phase 2.
+    let mut prev_f5 = false;
+    let mut prev_f8 = false;
+    let mut state_slot: Option<Vec<u8>> = None;
+
     let frame_period = Duration::from_secs_f64(1.0 / timing.fps);
     let started = Instant::now();
     let mut next_frame = Instant::now();
@@ -208,6 +215,33 @@ fn run_emu_render(
         // input gating yet. Leave polling unconditionally on; tighten once we
         // route keyboard events through Tauri's event loop in Phase 2.
         input.set_enabled(true);
+
+        // F5 = save, F8 = restore (rising-edge only).
+        let f5 = input.is_pressed(Keycode::F5);
+        let f8 = input.is_pressed(Keycode::F8);
+        if f5 && !prev_f5 && core.has_rom() {
+            let mut buf = Vec::new();
+            match core.save_state(&mut buf) {
+                Ok(()) => {
+                    log::info!("oa-shell: F5 — saved state ({} bytes)", buf.len());
+                    state_slot = Some(buf);
+                }
+                Err(e) => log::warn!("oa-shell: F5 — save failed: {e:?}"),
+            }
+        }
+        if f8 && !prev_f8 {
+            if let Some(buf) = state_slot.as_deref() {
+                match core.load_state(&mut &buf[..]) {
+                    Ok(()) => log::info!("oa-shell: F8 — restored state ({} bytes)", buf.len()),
+                    Err(e) => log::warn!("oa-shell: F8 — restore failed: {e:?}"),
+                }
+            } else {
+                log::info!("oa-shell: F8 — no saved state to restore");
+            }
+        }
+        prev_f5 = f5;
+        prev_f8 = f8;
+
         core.set_input(PortIndex::Port0, input.poll(PortIndex::Port0));
         core.run_frame();
         renderer.present(core.framebuffer());

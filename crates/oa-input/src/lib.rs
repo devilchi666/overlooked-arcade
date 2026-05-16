@@ -149,6 +149,13 @@ impl InputPoller {
         self.enabled = on;
     }
 
+    /// Immediate-mode keyboard check, bypassing the enabled gate. The shell
+    /// uses this for hotkeys (save state, pause, etc.) that should fire even
+    /// when game-input is gated off (e.g. menu visible).
+    pub fn is_pressed(&self, key: Keycode) -> bool {
+        self.device_state.get_keys().contains(&key)
+    }
+
     /// Read the current input state for a given port.
     pub fn poll(&mut self, port: PortIndex) -> InputState {
         // Always pump gilrs so connect/disconnect tracking stays live even

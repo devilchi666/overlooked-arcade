@@ -46,6 +46,12 @@ namespace {
 
     enum retro_pixel_format g_pix_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
 
+    // Display aspect ratio (final image W:H, not pixel W:H). 0.0 = renderer falls
+    // back to fb_width:fb_height. Updated from retro_get_system_av_info() after
+    // load and from RETRO_ENVIRONMENT_SET_GEOMETRY / SET_SYSTEM_AV_INFO when the
+    // core switches PCE display mode (256/352/512 px wide; different aspects).
+    float g_display_aspect = 0.0f;
+
     bool g_initialised = false;
     bool g_game_loaded = false;
 
@@ -202,6 +208,18 @@ static bool cb_environment(unsigned cmd, void* data) {
         case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
             // Core is announcing its controller layout; nothing for us to do.
             return true;
+        case RETRO_ENVIRONMENT_SET_GEOMETRY: {
+            if (!data) return false;
+            auto* geom = static_cast<const struct retro_game_geometry*>(data);
+            g_display_aspect = geom->aspect_ratio;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
+            if (!data) return false;
+            auto* av = static_cast<const struct retro_system_av_info*>(data);
+            g_display_aspect = av->geometry.aspect_ratio;
+            return true;
+        }
         case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
         case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: {
             // Tell the core "current directory" — HuCard games don't need BIOS,
@@ -256,6 +274,7 @@ struct OaPceFrame {
     uint32_t width;
     uint32_t height;
     const uint8_t* pixels;
+    float display_aspect; // 0.0 = caller uses width:height
 };
 
 struct OaPceCoreInfo {
@@ -330,6 +349,13 @@ int32_t oa_pce_load_rom(OaPceCore* core, const uint8_t* data, size_t len) {
         // points data_ptr[0] at our input_buf[0]. Pre-load calls are clobbered by
         // MDFNI_LoadGame's init pass.
         retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+
+        // Snapshot initial geometry — gives us the right aspect before the core
+        // emits any SET_GEOMETRY/SET_SYSTEM_AV_INFO updates.
+        struct retro_system_av_info av;
+        std::memset(&av, 0, sizeof(av));
+        retro_get_system_av_info(&av);
+        g_display_aspect = av.geometry.aspect_ratio;
     }
     return ok ? 0 : 2;
 }
@@ -347,9 +373,10 @@ void oa_pce_run_frame(OaPceCore* core) {
 
 OaPceFrame oa_pce_framebuffer(const OaPceCore* /*core*/) {
     OaPceFrame f;
-    f.width  = g_fb_width;
-    f.height = g_fb_height;
-    f.pixels = g_fb_rgba;
+    f.width          = g_fb_width;
+    f.height         = g_fb_height;
+    f.pixels         = g_fb_rgba;
+    f.display_aspect = g_display_aspect;
     return f;
 }
 
@@ -371,6 +398,25 @@ OaPceCoreInfo oa_pce_info(void) {
     i.version_major = 0;
     i.version_minor = 9;
     return i;
+}
+
+// ---------- save state surface (libretro retro_serialize / retro_unserialize) ----------
+
+size_t oa_pce_serialize_size(const OaPceCore* /*core*/) {
+    if (!g_initialised || !g_game_loaded) return 0;
+    return retro_serialize_size();
+}
+
+int32_t oa_pce_serialize(const OaPceCore* /*core*/, void* dst, size_t cap) {
+    if (!g_initialised || !g_game_loaded) return 1;
+    if (!dst || cap == 0)                  return 1;
+    return retro_serialize(dst, cap) ? 0 : 2;
+}
+
+int32_t oa_pce_unserialize(OaPceCore* /*core*/, const void* src, size_t len) {
+    if (!g_initialised || !g_game_loaded) return 1;
+    if (!src || len == 0)                  return 1;
+    return retro_unserialize(src, len) ? 0 : 2;
 }
 
 } // extern "C"

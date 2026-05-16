@@ -18,18 +18,18 @@ All three decisions recorded in `docs/DECISIONS.md`.
 
 ---
 
-## 🟨 Phase 1 — Skeleton + first PCE ROM running (3-4 weeks)
+## ✅ Phase 1 — Skeleton + first PCE ROM running (completed 2026-05-16)
 
 - ✅ Cargo workspace scaffolded. 10 crates + `apps/oa-shell` binary; `cargo build` clean in 78s.
 - ✅ `oa-core` trait defined. Core, Framebuffer, Timing, InputState, PortIndex, SystemId, CoreError.
 - ✅ `oa-pce-sys` + `oa-pce` integrated. Full Beetle PCE Fast build (93 object files, 13 MB native libs). C++ shim layer (`shim.cpp`) implements libretro frontend callbacks + pixel format conversion + the `oa_pce_*` surface from Spike 3. `oa-pce::PceCore` wraps the C handle in `NonNull`, runs Drop cleanup, and translates between our PCE button bitfield and libretro's joypad numbering. **Bonk's Adventure (USA) HuCard runs at 60.05 fps with Beetle reporting `Samples/Frame: 734.3`.**
 - ✅ `oa-render` minimal output pipeline. wgpu Surface + RGBA8 texture cache + fullscreen-triangle blit pipeline with nearest-neighbour sampler. Picks first sRGB surface format, locks to Vsync (FIFO). Tested end-to-end with the PceCore stub at 59.8 fps for 3360+ frames.
 - ✅ `oa-audio` cpal sink with ring buffer + linear-interp resampler. Opens device default rate (Windows 48 kHz typical), resamples from 44.1 kHz PCE rate, zero overflow drops over multi-minute runs.
-- 🟨 `oa-input` keyboard + gilrs. **Keyboard live** via `device_query` global polling + generic `KeyboardMapping` table; default PCE map (arrows, Z, X, Enter, RShift). Gamepad via gilrs is dep-wired but not yet implemented.
+- ✅ `oa-input` keyboard + gilrs. Keyboard via `device_query` global polling + `KeyboardMapping` table (arrows, Z, X, Enter, RShift). Gamepad via `gilrs` with `GamepadMapping` table; pads bind to ports in connection order; default PCE map (dpad / east=I / south=II / start=RUN / select=SELECT).
 - ✅ `oa-shell` two-window flow. WebView library window + native game window with wgpu surface; combined emu+render thread ticks `PceCore` at 59.826 Hz native and presents each frame. ROM path via `OA_ROM` env var.
-- ⬜ CI matrix (Windows/macOS/Linux) green.
+- ✅ CI matrix green on Windows + macOS + Ubuntu (`cargo build` + `cargo test`). Non-Windows runners exclude the Tauri shell crate (`--exclude oa-shell`) — that's a deliberate scope call (see project `DECISIONS.md`); the emulation crates get full cross-platform coverage.
 
-**Acceptance gate:** Bonk's Adventure (HuCard) runs at 60 fps with audio, gamepad-controlled. **Status: pixels at 60 fps ✅, audio at correct pitch ✅, keyboard playable ✅, gamepad ⬜.** (Effectively met for the core flow; gamepad is a nice-to-have on the same poller.)
+**Acceptance gate:** Bonk's Adventure (HuCard) runs at 60 fps with audio, gamepad-controlled. **Status: ✅ all four — pixels, audio, keyboard, gamepad — plus green CI on the matrix.**
 
 ---
 
