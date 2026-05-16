@@ -9,8 +9,8 @@ on:
 permissions:
   contents: read
 
-# When new commits land on a branch, cancel the still-running CI for older
-# commits on the same branch — saves runner minutes and gets fresh signal faster.
+# When new commits land on a branch, cancel still-running CI for older commits
+# on the same branch — saves runner minutes and gets fresh signal faster.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,14 +22,27 @@ jobs:
       # If macOS breaks, we still want to see whether Windows and Linux passed.
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          # Windows is the dev platform — exercise the full workspace including
+          # the Tauri shell.
+          - os: windows-latest
+            cargo-args: "--workspace --locked"
+          # macOS and Linux skip the Tauri shell crate. Tauri's Linux deps
+          # (webkit2gtk, gtk, glib) are heavy, and we can't run/validate the
+          # shell binary on those platforms today anyway. CI here exists to
+          # catch cross-platform drift in the emulation crates (oa-pce-sys,
+          # oa-render, oa-audio, oa-input, etc.) — that's where the C/C++
+          # FFI risk lives.
+          - os: macos-latest
+            cargo-args: "--workspace --exclude oa-shell --locked"
+          - os: ubuntu-latest
+            cargo-args: "--workspace --exclude oa-shell --locked"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
-        # Reads channel + components from rust-toolchain.toml.
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95.0"
@@ -46,8 +59,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
-      - name: cargo build (workspace)
-        run: cargo build --workspace --locked
+      - name: cargo build
+        run: cargo build ${{ matrix.cargo-args }}
 
-      - name: cargo test (workspace)
-        run: cargo test --workspace --locked
+      - name: cargo test
+        run: cargo test ${{ matrix.cargo-args }}

@@ -1,0 +1,37 @@
+From: Overlooked Arcade
+Date: 2026-05-16
+Subject: zutil.h — skip "fdopen=NULL" redefinition on modern macOS / __APPLE__
+
+Upstream zlib 1.2.11 (Jan 2017) carries a TARGET_OS_MAC branch that defines
+`fdopen(fd,mode)` to `NULL` on Mac unless built with CodeWarrior (`__MWERKS__`).
+This dates from the old Mac OS Classic / pre-OSX toolchain where fdopen wasn't
+always available.
+
+On modern Apple platforms (macOS 10+, iOS, etc.), `<TargetConditionals.h>`
+defines `TARGET_OS_MAC=1` AND `__APPLE__=1`. The redefinition kicks in, and
+when zlib's other .c files later `#include <stdio.h>`, the system header's
+declaration:
+
+    FILE *fdopen(int, const char *) __DARWIN_ALIAS_STARTING(...);
+
+gets macro-expanded into
+
+    FILE *NULL(int, const char *) __DARWIN_ALIAS_STARTING(...);
+
+which clang rejects with "expected identifier or '('".
+
+This patch adds `!defined(__APPLE__)` to the inner guard so modern Apple
+platforms skip the redefinition. The MWERKS branch (real Mac OS Classic builds)
+is unchanged.
+
+--- a/deps/zlib-1.2.11/zutil.h
++++ b/deps/zlib-1.2.11/zutil.h
+@@ -133,7 +133,7 @@
+ #  ifndef Z_SOLO
+ #    if defined(__MWERKS__) && __dest_os != __be_os && __dest_os != __win32_os
+ #      include <unix.h> /* for fdopen */
+-#    else
++#    elif !defined(__APPLE__) /* OA patch: modern macOS provides fdopen via <stdio.h>; skip the NULL redefinition that breaks system header parsing on Xcode 15+. See PATCHES/0001-*.patch */
+ #      ifndef fdopen
+ #        define fdopen(fd,mode) NULL /* No fdopen() */
+ #      endif
