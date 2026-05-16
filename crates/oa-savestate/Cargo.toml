@@ -1,0 +1,11 @@
+[package]
+name = "oa-savestate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+oa-core = { workspace = true }
+zstd    = { workspace = true }
+log     = { workspace = true }

@@ -1,0 +1,49 @@
+# Rust
+/target
+**/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / pnpm
+/frontend/node_modules
+/frontend/dist
+/frontend/.vite
+**/.pnpm-store
+
+# Tauri build output
+/apps/oa-shell/target
+/apps/oa-shell/gen
+/apps/oa-shell/release
+
+# Bindgen / cc-rs intermediate
+**/*.o
+**/*.obj
+**/*.pdb
+**/*.exp
+**/*.lib
+**/*.dll
+**/*.so
+**/*.dylib
+
+# User-provided content (never commit)
+/assets/test-roms
+/assets/system-bios
+
+# IDE / OS
+.vscode
+.idea
+.claude/settings.local.json
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Scratch / spikes
+/scripts/spikes
+/tmp
+
+# OS / editor specifics
+*.log
+.env
+.env.local

@@ -1,0 +1,12 @@
+[package]
+name = "oa-pce-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+links = "oa_pce_native"   # advertises that this crate links a native lib named oa_pce_native; lets cargo guard against duplicate-link conflicts.
+
+[build-dependencies]
+cc = { workspace = true }
+
+[dependencies]

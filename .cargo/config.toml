@@ -1,0 +1,13 @@
+# Workspace-wide Cargo config. Keep this minimal — we want the project to
+# build with `cargo build` and no special environment.
+
+[build]
+# Use the modern rustc per-target linker tweaks via the [target.*] tables below.
+
+[target.x86_64-pc-windows-msvc]
+# rust-lld is fast and well-tested as the default linker on Windows.
+# linker = "rust-lld"
+rustflags = []
+
+[net]
+git-fetch-with-cli = true

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token; this workflow doesn't write to the repo.
+permissions:
+  contents: read
+
+# When new commits land on a branch, cancel the still-running CI for older
+# commits on the same branch — saves runner minutes and gets fresh signal faster.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      # If macOS breaks, we still want to see whether Windows and Linux passed.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # Reads channel + components from rust-toolchain.toml.
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95.0"
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      # Linux runners are minimal: cpal needs ALSA headers, gilrs needs udev.
+      # Windows + macOS have the equivalents preinstalled.
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
+      - name: cargo build (workspace)
+        run: cargo build --workspace --locked
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --locked

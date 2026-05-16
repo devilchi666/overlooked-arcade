@@ -1,0 +1,27 @@
+[package]
+name = "oa-shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+# Workspace crates — every Phase-1 crate is referenced so the dep graph is wired.
+oa-core      = { workspace = true }
+oa-render    = { workspace = true }
+oa-audio     = { workspace = true }
+oa-input     = { workspace = true }
+oa-platform  = { workspace = true }
+oa-content   = { workspace = true }
+oa-savestate = { workspace = true }
+oa-cdrom     = { workspace = true }
+oa-pce       = { workspace = true }
+
+# External
+tauri             = { workspace = true }
+raw-window-handle = { workspace = true }
+log               = { workspace = true }
+env_logger        = { workspace = true }

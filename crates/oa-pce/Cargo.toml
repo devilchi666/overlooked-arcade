@@ -1,0 +1,11 @@
+[package]
+name = "oa-pce"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+oa-core    = { workspace = true }
+oa-pce-sys = { workspace = true }
+log        = { workspace = true }

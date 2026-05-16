@@ -1,0 +1,13 @@
+[package]
+name = "oa-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+oa-core   = { workspace = true }
+cpal      = { workspace = true }
+ringbuf   = { workspace = true }
+log       = { workspace = true }
+thiserror = { workspace = true }
