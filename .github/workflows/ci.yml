@@ -51,13 +51,22 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
-      # Linux runners are minimal: cpal needs ALSA headers, gilrs needs udev.
+      # Linux runners are minimal. Our deps on Linux:
+      #   - cpal (oa-audio)        → ALSA headers (libasound2-dev)
+      #   - gilrs (oa-input)       → udev          (libudev-dev)
+      #   - device_query (oa-input) → X11 + XInput + XTest dev headers
       # Windows + macOS have the equivalents preinstalled.
       - name: Install Linux system deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+          sudo apt-get install -y \
+            libasound2-dev \
+            libudev-dev \
+            libx11-dev \
+            libxi-dev \
+            libxtst-dev \
+            pkg-config
 
       - name: cargo build
         run: cargo build ${{ matrix.cargo-args }}
