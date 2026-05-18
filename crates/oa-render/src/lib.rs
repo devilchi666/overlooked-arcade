@@ -212,6 +212,11 @@ struct EffectPass {
 struct IntermediateTexture {
     width: u32,
     height: u32,
+    /// Held alongside `view` to keep the underlying GPU resource alive +
+    /// available for future RenderDoc labels / readback paths. Currently
+    /// only `view` is bound into pipelines; the texture handle is just a
+    /// retainer. Same shape as `BezelTexture`.
+    #[allow(dead_code)]
     texture: wgpu::Texture,
     view: wgpu::TextureView,
 }

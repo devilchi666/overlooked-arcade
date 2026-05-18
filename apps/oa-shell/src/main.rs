@@ -225,6 +225,10 @@ enum EmuCommand {
     /// each predicate on every frame; on rising-edge it stamps the
     /// trigger time via `mark_milestone_triggered` on the same
     /// shared LibraryDb handle.
+    /// LoadMilestones doubles as the clear-runtime command — send an
+    /// empty Vec to drop every armed milestone. (Used to have a separate
+    /// `ClearMilestones` variant; removed 2026-05-18 after the empty-Vec
+    /// path superseded it.)
     LoadMilestones(Vec<library_db::Milestone>),
     /// RetroArch parity slice 5 — load the per-game cheat set into the
     /// runtime evaluator. Replaces whatever was previously armed. Sent
@@ -233,10 +237,6 @@ enum EmuCommand {
     /// write `value` (`width` bytes, little-endian) into memory at
     /// `(region, offset)`.
     LoadCheats(Vec<library_db::Cheat>),
-    /// Phase 4 slice F — clear the runtime evaluator. Sent on
-    /// UnloadRom; also clears any "already-triggered this session"
-    /// state so re-launching the same game re-evaluates fresh.
-    ClearMilestones,
 }
 
 /// Phase 4 slice E — snapshot of the four libretro memory regions,
@@ -1015,6 +1015,9 @@ fn main() {
             set_audio_device_pref,
             set_ui_intercepting,
             list_cores,
+            probe_core_file,
+            install_core_from_path,
+            remove_installed_core,
             get_core_pref,
             set_core_pref,
             quit_app,
@@ -2437,10 +2440,6 @@ fn run_emu_render(
                         "oa-shell: milestones loaded — {} active out of {} configured",
                         milestone_runtime.len(), list.len()
                     );
-                }
-                Ok(EmuCommand::ClearMilestones) => {
-                    milestone_runtime.clear();
-                    milestone_prev_true.clear();
                 }
                 Ok(EmuCommand::LoadCheats(list)) => {
                     cheat_runtime = list;
@@ -4950,36 +4949,176 @@ struct CoreEntry {
     library_name: String,
     library_version: String,
     valid_extensions: String,
+    /// Bytes on disk. `0` if the file metadata was unreadable.
+    size_bytes: u64,
+    /// Last-modified unix ms. `0` if unreadable.
+    modified_unix_ms: i64,
+    /// Set to the `retro_system_info.need_fullpath` flag — for the cores-page
+    /// table chip ("path-only" cores can't load archived ROMs in memory).
+    need_fullpath: bool,
+    /// `retro_system_info.block_extract` — cores that handle their own
+    /// archive contents (mostly MAME-derived).
+    block_extract: bool,
+    /// Probe error message, if any. When set, the other library_* fields
+    /// will be empty; the row still renders so the user can fix the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+fn core_extension_for_host() -> &'static str {
+    if cfg!(windows)          { "dll"   }
+    else if cfg!(target_os = "macos") { "dylib" }
+    else                              { "so"    }
 }
 
 /// Scan `<exe_dir>/cores/` for libretro cores. For each `.dll`/`.so`/`.dylib`,
 /// open it briefly via libloading + call `retro_get_system_info` to read
-/// display info (library name, version, valid extensions). Bad files are
-/// silently skipped — they just don't appear in the list.
+/// display info. Broken files surface with `error` set so the user can see
+/// + remove them; valid cores appear with full metadata.
 #[tauri::command]
 fn list_cores() -> Vec<CoreEntry> {
     let dir = resolve_cores_dir();
     let Ok(rd) = std::fs::read_dir(&dir) else { return Vec::new(); };
-    let valid_ext = if cfg!(windows) { "dll" }
-                    else if cfg!(target_os = "macos") { "dylib" }
-                    else { "so" };
+    let valid_ext = core_extension_for_host();
     let mut out = Vec::new();
     for entry in rd.flatten() {
         let p = entry.path();
         if !p.is_file() { continue; }
         if p.extension().and_then(|s| s.to_str()) != Some(valid_ext) { continue; }
+        let file_name = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let (size_bytes, modified_unix_ms) = match std::fs::metadata(&p) {
+            Ok(m) => {
+                let size = m.len();
+                let modified = m.modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                (size, modified)
+            }
+            Err(_) => (0, 0),
+        };
         match oa_libretro::probe(&p) {
             Ok(info) => out.push(CoreEntry {
                 file_name: info.file_name,
                 library_name: info.library_name,
                 library_version: info.library_version,
                 valid_extensions: info.valid_extensions,
+                size_bytes,
+                modified_unix_ms,
+                need_fullpath: info.need_fullpath,
+                block_extract: info.block_extract,
+                error: None,
             }),
-            Err(e) => log::warn!("oa-shell: probe {} failed: {e:?}", p.display()),
+            Err(e) => {
+                log::warn!("oa-shell: probe {} failed: {e:?}", p.display());
+                out.push(CoreEntry {
+                    file_name,
+                    library_name: String::new(),
+                    library_version: String::new(),
+                    valid_extensions: String::new(),
+                    size_bytes,
+                    modified_unix_ms,
+                    need_fullpath: false,
+                    block_extract: false,
+                    error: Some(format!("{e}")),
+                });
+            }
         }
     }
-    out.sort_by(|a, b| a.library_name.to_lowercase().cmp(&b.library_name.to_lowercase()));
+    out.sort_by(|a, b| {
+        let an = if a.library_name.is_empty() { &a.file_name } else { &a.library_name };
+        let bn = if b.library_name.is_empty() { &b.file_name } else { &b.library_name };
+        an.to_lowercase().cmp(&bn.to_lowercase())
+    });
     out
+}
+
+/// Validate a candidate libretro .dll/.so/.dylib (e.g. from a file picker)
+/// without copying it anywhere. Returns the probed metadata on success.
+#[tauri::command]
+fn probe_core_file(path: String) -> Result<CoreEntry, String> {
+    let p = std::path::Path::new(&path);
+    let valid_ext = core_extension_for_host();
+    if p.extension().and_then(|s| s.to_str()) != Some(valid_ext) {
+        return Err(format!("not a {valid_ext} file: {}", p.display()));
+    }
+    let (size_bytes, modified_unix_ms) = match std::fs::metadata(p) {
+        Ok(m) => (
+            m.len(),
+            m.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0),
+        ),
+        Err(e) => return Err(format!("stat {}: {e}", p.display())),
+    };
+    match oa_libretro::probe(p) {
+        Ok(info) => Ok(CoreEntry {
+            file_name: info.file_name,
+            library_name: info.library_name,
+            library_version: info.library_version,
+            valid_extensions: info.valid_extensions,
+            size_bytes,
+            modified_unix_ms,
+            need_fullpath: info.need_fullpath,
+            block_extract: info.block_extract,
+            error: None,
+        }),
+        Err(e) => Err(format!("probe failed: {e}")),
+    }
+}
+
+/// Copy a picked .dll/.so/.dylib into `<exe_dir>/cores/`. Validates via
+/// `oa_libretro::probe` before writing — broken or non-libretro files are
+/// rejected up front. Returns the destination path so the UI can confirm.
+/// Refuses to clobber an existing file with the same name; the user must
+/// remove the old one first.
+#[tauri::command]
+fn install_core_from_path(path: String) -> Result<String, String> {
+    let src = std::path::PathBuf::from(&path);
+    let valid_ext = core_extension_for_host();
+    if src.extension().and_then(|s| s.to_str()) != Some(valid_ext) {
+        return Err(format!("not a {valid_ext} file"));
+    }
+    let file_name = src.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or_else(|| "no filename in path".to_string())?;
+    oa_libretro::probe(&src).map_err(|e| format!("probe failed: {e}"))?;
+
+    let cores_dir = resolve_cores_dir();
+    if let Err(e) = std::fs::create_dir_all(&cores_dir) {
+        return Err(format!("create cores dir: {e}"));
+    }
+    let dest = cores_dir.join(&file_name);
+    if dest.exists() {
+        return Err(format!("{file_name} already exists; remove the existing core first"));
+    }
+    std::fs::copy(&src, &dest).map_err(|e| format!("copy {} -> {}: {e}", src.display(), dest.display()))?;
+    log::info!("oa-shell: installed core {} -> {}", src.display(), dest.display());
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Delete a libretro core .dll/.so/.dylib from `<exe_dir>/cores/`. Refuses
+/// if a Path-traversal attempt slips through. Caller is responsible for
+/// confirming the destructive action in the UI.
+///
+/// On Windows the file is held with a shared lock if some other process
+/// (including a prior crashed instance) is still loaded. We let the OS
+/// error bubble back through so the UI surfaces "in use" cleanly.
+#[tauri::command]
+fn remove_installed_core(file_name: String) -> Result<(), String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name == ".." || file_name.is_empty() {
+        return Err("invalid file_name".into());
+    }
+    let path = resolve_cores_dir().join(&file_name);
+    if !path.exists() {
+        return Err(format!("{file_name} not found in cores dir"));
+    }
+    std::fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+    log::info!("oa-shell: removed core {}", path.display());
+    Ok(())
 }
 
 /// Read the per-system core preference: which `.dll` filename to load for

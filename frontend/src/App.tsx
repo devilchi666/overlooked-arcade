@@ -7,6 +7,7 @@ import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
 import PerGameSettingsDrawer from "./components/PerGameSettingsDrawer";
+import CoresPage from "./components/CoresPage";
 import PerSystemSettingsPage from "./components/PerSystemSettingsPage";
 import QuickSettings from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
@@ -1012,6 +1013,11 @@ const App: Component = () => {
                   onAddLibraryFolder={handleAddLibraryFolder}
                   onRescanLibraryFolders={handleRescanLibraryFolders}
                 />
+              </div>
+            </Match>
+            <Match when={currentView().kind === "cores"}>
+              <div class="h-full overflow-y-auto">
+                <CoresPage onBack={() => setCurrentView({ kind: "all" })} />
               </div>
             </Match>
             <Match when={systemSettingsPage()} keyed>

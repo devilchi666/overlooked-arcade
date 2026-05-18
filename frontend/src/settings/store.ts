@@ -40,6 +40,18 @@ export type CoreEntry = {
   libraryName: string;
   libraryVersion: string;
   validExtensions: string;
+  /// Bytes on disk; 0 when stat failed.
+  sizeBytes: number;
+  /// Last-modified epoch ms; 0 when stat failed.
+  modifiedUnixMs: number;
+  /// True for cores like Mednafen Saturn that need a real file path
+  /// (multi-file CD images).
+  needFullpath: boolean;
+  /// True for cores that handle their own archive extraction internally.
+  blockExtract: boolean;
+  /// Set when probe failed — the library_* fields will be empty. Row still
+  /// renders so the user can see + remove the broken file.
+  error?: string;
 };
 
 const STORAGE_KEY = "oa.settings.v1";

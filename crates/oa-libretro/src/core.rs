@@ -40,6 +40,12 @@ pub struct CoreInfo {
     pub library_version: String,
     /// `|`-separated list of file extensions the core handles (e.g. "pce|cue|chd|toc|m3u").
     pub valid_extensions: String,
+    /// Core requires a real filesystem path (multi-file CD images etc.); the
+    /// `RomSource::Bytes` path will refuse to load ROMs into this core.
+    pub need_fullpath: bool,
+    /// Core handles its own archive extraction internally; the frontend
+    /// should leave archive contents intact when handing the file off.
+    pub block_extract: bool,
 }
 
 /// Open a libretro .dll, read `retro_get_system_info`, drop the library.
@@ -61,11 +67,20 @@ pub fn probe(path: &Path) -> Result<CoreInfo, LibretroError> {
     let library_name = unsafe { c_str_to_owned(sys.library_name) };
     let library_version = unsafe { c_str_to_owned(sys.library_version) };
     let valid_extensions = unsafe { c_str_to_owned(sys.valid_extensions) };
+    let need_fullpath = sys.need_fullpath;
+    let block_extract = sys.block_extract;
     let file_name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(CoreInfo { file_name, library_name, library_version, valid_extensions })
+    Ok(CoreInfo {
+        file_name,
+        library_name,
+        library_version,
+        valid_extensions,
+        need_fullpath,
+        block_extract,
+    })
 }
 
 unsafe fn c_str_to_owned(p: *const c_char) -> String {

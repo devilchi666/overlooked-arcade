@@ -63,11 +63,12 @@ const LibraryView: Component<Props> = (props) => {
       case "favorites": return "Favorites";
       case "recent": return "Recent";
       case "continue": return "Continue";
-      // LibraryView never mounts in settings or system-settings mode
-      // (App.tsx Switch routes them to dedicated pages), but TypeScript
-      // wants the discriminant exhaustive.
+      // LibraryView never mounts in settings / system-settings / cores
+      // mode (App.tsx Switch routes them to dedicated pages), but
+      // TypeScript wants the discriminant exhaustive.
       case "settings": return "Settings";
       case "system-settings": return "System settings";
+      case "cores": return "Cores";
     }
   };
 

@@ -17,7 +17,8 @@ export type SidebarView =
   | { kind: "continue" }
   | { kind: "system"; id: SystemId }
   | { kind: "system-settings"; id: SystemId; initialTab?: SystemSettingsTab }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  | { kind: "cores" };
 
 type Props = {
   layout: LayoutStore;
@@ -250,11 +251,29 @@ const LeftSidebar: Component<Props> = (props) => {
         </Show>
       </nav>
 
-      {/* Shell-level actions pinned to bottom — Settings + collapse toggle.
-          Sits below the navigation regions because these are app-wide actions
-          (not library destinations) and the BigBox / Steam family convention
-          puts settings at the bottom of the primary nav surface. */}
+      {/* Shell-level actions pinned to bottom — Cores + Settings + collapse
+          toggle. Sits below the navigation regions because these are app-wide
+          actions (not library destinations) and the BigBox / Steam family
+          convention puts settings at the bottom of the primary nav surface. */}
       <div class="space-y-1 border-t border-white/5 p-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            props.onNavigate({ kind: "cores" });
+          }}
+          class="flex w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
+          classList={{
+            "bg-white/[0.07] text-(--color-oa-ink)": isActive({ kind: "cores" }),
+          }}
+          aria-pressed={isActive({ kind: "cores" })}
+          title="Cores"
+        >
+          <span aria-hidden="true">▥</span>
+          <Show when={!isCollapsed()}>
+            <span>Cores</span>
+          </Show>
+        </button>
         <button
           type="button"
           onClick={(e) => {

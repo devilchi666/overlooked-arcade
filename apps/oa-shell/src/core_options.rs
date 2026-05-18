@@ -83,6 +83,13 @@ pub fn refresh_schema(
 /// Resolve the effective value for an option using the inheritance
 /// chain: per-game override → per-system override → schema default.
 /// Returns None if the key isn't in the schema at all.
+///
+/// Today's production launch path uses [`build_effective_values`] (the
+/// bulk form). This single-key resolver is kept around because the
+/// inheritance-semantics test exercises it directly and a future
+/// "explain why this option is its current value" diagnostic surface
+/// would call through here.
+#[allow(dead_code)]
 pub fn resolve_value(
     schema: &[CoreOption],
     system_values: &HashMap<String, String>,
