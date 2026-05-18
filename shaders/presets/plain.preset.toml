@@ -1,0 +1,14 @@
+# Plain — no post-processing. The framebuffer is blitted to the surface
+# with nearest-neighbour sampling and viewport-aware aspect math, nothing
+# else. This is the baseline preset used when the user wants a crisp,
+# unfiltered look.
+
+display_name = "Plain"
+description = "Nearest-neighbour blit, no post-processing."
+
+# `base` names the built-in renderer preset whose shader branch handles
+# this preset. Slice C TOML presets ALL pick a base from the renderer's
+# enum (plain / scanlines / crt-lite / phosphor) — the TOML layer adds
+# parameter overrides on top, not new rendering passes. New rendering
+# passes ship as new renderer-side variants in future slices.
+base = "plain"

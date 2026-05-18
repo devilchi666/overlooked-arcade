@@ -1,0 +1,10 @@
+# CRT-Lite — scanlines + radial vignette + saturation lift. Stylized, not
+# physically accurate. The vignette + saturation compensate for the
+# perceived dimming from the heavier scanline darken (0.75 vs Scanlines'
+# 0.85), pulling the overall look closer to a real CRT without paying for
+# barrel distortion or RGB mask emulation.
+
+display_name = "CRT-Lite"
+description = "Scanlines + radial vignette + saturation lift."
+
+base = "crt-lite"

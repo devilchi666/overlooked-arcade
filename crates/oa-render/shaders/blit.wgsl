@@ -1,10 +1,31 @@
 // oa-render — blit.wgsl
 //
-// The minimal output shader: stretch a 2D RGBA texture across the swapchain
-// using the standard fullscreen-triangle vertex trick (no vertex buffer).
+// Phase 1: minimal output shader — stretch a 2D RGBA texture across the
+// swapchain using the standard fullscreen-triangle vertex trick (no vertex
+// buffer).
 //
-// Later phases layer scanline / CRT / phosphor / bezel passes on top; this stage
-// is always the final write into the surface.
+// Phase 3 slice A: the fragment shader branches on a `preset_id` from a
+// small uniform buffer. Slice B added a multi-pass chain (intermediate
+// render targets) for effects that need a separable / multi-tap kernel.
+// Slice B-2 added a second texture binding so the final blit can sample
+// BOTH the source framebuffer AND a chain output — that's what the
+// Phosphor composite needs (`mix(source, blur, bloom_amount)`).
+//
+// Presets:
+//   0 = Plain      — pass-through (Phase 1 baseline). Samples slot 0 only.
+//   1 = Scanlines  — alternate-row darken at the source-pixel rate. The
+//                    scanline period locks to fb_height so it stays crisp at
+//                    any output resolution (the rasterizer's UV interp gives
+//                    us a continuous coordinate we round to source rows).
+//   2 = CrtLite    — Scanlines + radial vignette + a small saturation lift
+//                    to recover the perceived dimming. Not physically
+//                    accurate — just visually distinct from Plain.
+//   3 = Phosphor   — Slice B-2 composite. Slot 0 is the source framebuffer,
+//                    slot 3 is the blurred chain output (H-blur then V-blur
+//                    from blur.wgsl). Returns `mix(src, blur, bloom_amount)`.
+//                    For other presets slot 3 is bound to the same source
+//                    framebuffer as slot 0 so the binding is always valid
+//                    even when unused.
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -33,10 +54,72 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
     return out;
 }
 
+struct Uniforms {
+    /// 0 = Plain · 1 = Scanlines · 2 = CrtLite · 3 = Phosphor composite.
+    /// Anything else falls through to Plain so an unrecognized preset id
+    /// can't crash a draw.
+    preset_id: u32,
+    /// Source framebuffer height in pixels. Used to lock the scanline period
+    /// to the source row rate regardless of output resolution.
+    fb_height: u32,
+    /// Slice B-2 — Phosphor composite weight in [0, 1]. `0` = pure source
+    /// (no bloom), `1` = pure blur. Default 0.6 ships; slice C surfaces a
+    /// slider via the TOML preset format. Ignored by every preset that
+    /// isn't preset_id == 3.
+    bloom_amount: f32,
+    /// Reserved — keeps the struct 16-byte aligned for uniform buffers.
+    _pad: u32,
+};
+
 @group(0) @binding(0) var framebuffer: texture_2d<f32>;
 @group(0) @binding(1) var framebuffer_sampler: sampler;
+@group(0) @binding(2) var<uniform> u: Uniforms;
+// Slice B-2 — secondary input for composite presets. For Phosphor this
+// is the V-blur chain output; for everything else it's a duplicate of
+// the framebuffer binding so the slot is valid but unused.
+@group(0) @binding(3) var secondary: texture_2d<f32>;
+@group(0) @binding(4) var secondary_sampler: sampler;
+
+fn apply_scanlines(base: vec4<f32>, uv: vec2<f32>, fb_h: f32, intensity: f32) -> vec4<f32> {
+    // Round to source row and toggle. `intensity` is the darken factor for
+    // the "off" rows (e.g. 0.85 = 15% darker).
+    let row = u32(uv.y * fb_h);
+    let darken = select(intensity, 1.0, (row % 2u) == 0u);
+    return vec4<f32>(base.rgb * darken, base.a);
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(framebuffer, framebuffer_sampler, in.uv);
+    let base = textureSample(framebuffer, framebuffer_sampler, in.uv);
+    let fb_h = max(f32(u.fb_height), 1.0);
+
+    if (u.preset_id == 1u) {
+        return apply_scanlines(base, in.uv, fb_h, 0.85);
+    }
+    if (u.preset_id == 2u) {
+        // CrtLite — heavier scanlines + radial vignette + saturation lift.
+        let scanned = apply_scanlines(base, in.uv, fb_h, 0.75);
+        // Radial vignette around the visible UV center (0.5, 0.5). Soft
+        // falloff that doesn't crush the corners.
+        let cx = in.uv.x - 0.5;
+        let cy = in.uv.y - 0.5;
+        let r = sqrt(cx * cx + cy * cy);
+        let vignette = 1.0 - clamp(r * 0.55, 0.0, 0.35);
+        // Light saturation lift to compensate for the dimming. Pull rgb
+        // toward its luminance only if vignette pushed below 1.
+        let lum = dot(scanned.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let saturated = mix(vec3<f32>(lum), scanned.rgb, 1.1);
+        return vec4<f32>(saturated * vignette, scanned.a);
+    }
+    if (u.preset_id == 3u) {
+        // Phosphor composite (slice B-2). `base` is the source framebuffer;
+        // `bloom` is the blurred chain output. The composite preserves
+        // high-frequency detail from the source and adds a soft halo from
+        // the blur — closer to a real phosphor's behavior than a pure-blur
+        // pass would be.
+        let bloom = textureSample(secondary, secondary_sampler, in.uv);
+        let amt = clamp(u.bloom_amount, 0.0, 1.0);
+        return vec4<f32>(mix(base.rgb, bloom.rgb, amt), base.a);
+    }
+    return base;
 }

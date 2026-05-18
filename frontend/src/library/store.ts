@@ -1,0 +1,202 @@
+// Frontend library store.
+//
+// Source of truth lives in Rust at appDataDir/library/games.sqlite. This
+// store is the in-memory mirror — hydrates once at mount via `list_games`,
+// then keeps itself in sync with mutation commands. The Solid store proxy
+// is what the WebView reactive system reads from; Rust never pushes via
+// events for library mutations (that's MediaContext's pattern).
+//
+// One-shot migration: on first launch after the SQLite upgrade, the
+// previous localStorage[oa.library.v1] entries are sent to Rust via
+// `migrate_library_from_local_storage`, then the localStorage key is
+// cleared. Idempotent on Rust side (INSERT OR IGNORE) so a partial
+// migration that didn't clear localStorage is harmless.
+
+import { createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
+import { invoke } from "@tauri-apps/api/core";
+import type { LibraryState, RomEntry, RomId } from "./types";
+import type { SystemId } from "../themes/registry";
+
+const LEGACY_STORAGE_KEY = "oa.library.v1";
+
+// Same six placeholders as before — inserted on truly-fresh installs so the
+// empty state has visual interest. Stored Rust-side now (seed=true), cleared
+// on first real ingest by add_games dropping seeds.
+const SEED_ENTRIES: RomEntry[] = [
+  { id: "tg16-bonks-adventure",  title: "Bonk's Adventure",   systemId: "tg16", filePath: "<seed:bonks-adventure>",  addedAt: 0, seed: true },
+  { id: "tg16-blazing-lazers",   title: "Blazing Lazers",     systemId: "tg16", filePath: "<seed:blazing-lazers>",   addedAt: 0, seed: true },
+  { id: "tg16-r-type",           title: "R-Type",             systemId: "tg16", filePath: "<seed:r-type>",           addedAt: 0, seed: true },
+  { id: "tg16-ys-book-i-ii",     title: "Ys Book I & II",     systemId: "tg16", filePath: "<seed:ys-book-i-ii>",     addedAt: 0, seed: true },
+  { id: "tg16-splatterhouse",    title: "Splatterhouse",      systemId: "tg16", filePath: "<seed:splatterhouse>",    addedAt: 0, seed: true },
+  { id: "tg16-military-madness", title: "Military Madness",   systemId: "tg16", filePath: "<seed:military-madness>", addedAt: 0, seed: true },
+];
+
+function readLegacyLocalStorage(): RomEntry[] | null {
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "entries" in parsed &&
+      Array.isArray((parsed as LibraryState).entries)
+    ) {
+      const entries = (parsed as LibraryState).entries.filter(
+        (e): e is RomEntry =>
+          typeof e === "object" &&
+          e !== null &&
+          typeof (e as RomEntry).id === "string" &&
+          typeof (e as RomEntry).title === "string" &&
+          typeof (e as RomEntry).systemId === "string" &&
+          typeof (e as RomEntry).filePath === "string",
+      );
+      return entries;
+    }
+  } catch {
+    // localStorage disabled or malformed JSON — fall through.
+  }
+  return null;
+}
+
+function clearLegacyLocalStorage(): void {
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function createLibraryStore() {
+  // Start empty; hydrate inside the async bootstrap below. The store proxy
+  // is alive immediately so consumers can subscribe before hydration lands.
+  const [state, setState] = createStore<LibraryState>({ entries: [] });
+  const [hydrated, setHydrated] = createSignal(false);
+  // Suppress consumer access to the store until hydrate finishes. Components
+  // can check `hydrated()` if they want to defer first render; LibraryView's
+  // empty-state fallback handles the brief in-between state.
+
+  void bootstrap();
+
+  async function bootstrap() {
+    // Step 1: try the one-shot migration if legacy localStorage has data.
+    const legacy = readLegacyLocalStorage();
+    if (legacy && legacy.length > 0) {
+      const realOnly = legacy.filter((e) => !e.seed && !e.filePath.startsWith("<seed"));
+      if (realOnly.length > 0) {
+        try {
+          const added = await invoke<number>("migrate_library_from_local_storage", {
+            entries: realOnly,
+          });
+          console.log(`[oa-library] migrated ${added} entries from localStorage`);
+        } catch (e) {
+          console.warn("[oa-library] migration failed:", e);
+        }
+      }
+      // Clear regardless — re-running migration is safe (idempotent on Rust
+      // side) but consuming the localStorage key signals "we've moved past v1."
+      clearLegacyLocalStorage();
+    }
+
+    // Step 2: hydrate from Rust.
+    let games: RomEntry[] = [];
+    try {
+      games = await invoke<RomEntry[]>("list_games");
+    } catch (e) {
+      console.warn("[oa-library] list_games failed:", e);
+    }
+
+    // Step 3: if the DB is truly empty (fresh install, no legacy), seed it
+    // so the empty state has visual interest. Seeds get dropped on first
+    // real add via add_games → drop_seed_games.
+    if (games.length === 0) {
+      try {
+        await invoke<number>("add_games", { entries: SEED_ENTRIES });
+        games = await invoke<RomEntry[]>("list_games");
+      } catch (e) {
+        console.warn("[oa-library] seed insert failed:", e);
+      }
+    }
+
+    setState("entries", games);
+    setHydrated(true);
+  }
+
+  return {
+    state,
+    hydrated,
+    /// Add scanned ROMs. Writes through to Rust, then refreshes local cache
+    /// from the source of truth. Returns the number of newly-added entries
+    /// (Rust dedups by file_path).
+    async addScannedRoms(entries: RomEntry[]): Promise<number> {
+      let added = 0;
+      try {
+        added = await invoke<number>("add_games", { entries });
+      } catch (e) {
+        console.warn("[oa-library] add_games failed:", e);
+        return 0;
+      }
+      // If this is the first real ingest, kick out seed rows.
+      if (added > 0) {
+        const hadSeed = state.entries.some((e) => e.seed);
+        if (hadSeed) {
+          try {
+            await invoke<number>("drop_seed_games");
+          } catch (e) {
+            console.warn("[oa-library] drop_seed_games failed:", e);
+          }
+        }
+      }
+      // Refresh from authoritative source.
+      try {
+        const fresh = await invoke<RomEntry[]>("list_games");
+        setState("entries", fresh);
+      } catch (e) {
+        console.warn("[oa-library] refresh after add failed:", e);
+      }
+      return added;
+    },
+    async remove(id: RomId): Promise<void> {
+      try {
+        await invoke("delete_game", { id });
+        setState("entries", (prev) => prev.filter((e) => e.id !== id));
+      } catch (e) {
+        console.warn("[oa-library] delete_game failed:", e);
+      }
+    },
+    /// Set or clear the per-game core override. `value` is the .dll filename
+    /// or null/empty to revert.
+    async setCoreOverride(id: RomId, value: string | null): Promise<void> {
+      const normalized = value && value.length > 0 ? value : null;
+      try {
+        await invoke("update_game_core_override", { id, value: normalized });
+        setState("entries", (prev) =>
+          prev.map((e) => (e.id === id ? { ...e, coreOverride: normalized ?? undefined } : e)),
+        );
+      } catch (e) {
+        console.warn("[oa-library] update_game_core_override failed:", e);
+      }
+    },
+    async clear(): Promise<void> {
+      // Bulk delete via per-row delete commands. Fine for the explicit
+      // "clear library" admin action; not a hot path.
+      const ids = state.entries.map((e) => e.id);
+      for (const id of ids) {
+        try {
+          await invoke("delete_game", { id });
+        } catch (e) {
+          console.warn(`[oa-library] delete_game(${id}) failed:`, e);
+        }
+      }
+      setState("entries", []);
+    },
+  };
+}
+
+export type LibraryStore = ReturnType<typeof createLibraryStore>;
+
+// Compatibility shim — some callers (older ingest.ts paths) used the
+// synchronous signature. The store still exposes `state` synchronously; any
+// mutation path needs to await the returned promise.
+export type { SystemId };

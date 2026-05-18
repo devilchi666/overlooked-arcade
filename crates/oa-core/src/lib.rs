@@ -43,6 +43,10 @@ pub enum SystemId {
     VirtualBoy,
     /// Bandai WonderSwan (and WonderSwan Color).
     WonderSwan,
+    /// Nintendo Entertainment System / Famicom.
+    Nes,
+    /// Super Nintendo Entertainment System / Super Famicom.
+    Snes,
 }
 
 /// Native output dimensions and timing.
@@ -80,6 +84,54 @@ pub struct Framebuffer<'a> {
     /// non-square pixels (PCE: 256/352/512-wide modes, Lynx, etc.) report this
     /// per-frame so the shell can letterbox/pillarbox correctly.
     pub display_aspect: f32,
+}
+
+/// One of the four memory regions libretro cores expose via
+/// `retro_get_memory_data` / `retro_get_memory_size`. Non-libretro
+/// cores can map these to their nearest equivalents.
+///
+/// Region IDs match the libretro constants so the libretro impl is a
+/// straight passthrough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MemoryRegionId {
+    /// Battery-backed save RAM (cart SRAM, SNES SRAM, etc.). Persists
+    /// across power cycles.
+    SaveRam = 0,
+    /// Real-time clock (Pokémon Crystal etc.).
+    Rtc = 1,
+    /// Main system RAM. The interesting region for memory inspectors +
+    /// achievement-style milestone tracking — variables and game state
+    /// almost always live here.
+    SystemRam = 2,
+    /// Video RAM. Less commonly inspected; sometimes useful for
+    /// "is the player in a specific scene" heuristics.
+    VideoRam = 3,
+}
+
+impl MemoryRegionId {
+    /// String tag used for serde + Tauri command payloads. Stable
+    /// across versions so saved milestone configs keep parsing.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SaveRam => "save_ram",
+            Self::Rtc => "rtc",
+            Self::SystemRam => "system_ram",
+            Self::VideoRam => "video_ram",
+        }
+    }
+
+    /// Inverse of [`as_str`]. Returns `None` for unrecognized tags so
+    /// the caller can decide whether to default or reject.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "save_ram" => Some(Self::SaveRam),
+            "rtc" => Some(Self::Rtc),
+            "system_ram" => Some(Self::SystemRam),
+            "video_ram" => Some(Self::VideoRam),
+            _ => None,
+        }
+    }
 }
 
 /// Which controller port input applies to.
@@ -185,4 +237,21 @@ pub trait Core: Send {
 
     /// Restore emulator state from `reader`.
     fn load_state(&mut self, reader: &mut dyn Read) -> Result<(), CoreError>;
+
+    /// Borrow a memory region exposed by the core. Returns None if the
+    /// region is empty (size = 0) or unsupported by this core.
+    ///
+    /// Like [`Core::framebuffer`], the slice aliases through the core's
+    /// internal state — calling [`Core::run_frame`] (or any other
+    /// `&mut self` method) invalidates the borrow. The shell is
+    /// expected to copy out the bytes it needs and drop the borrow
+    /// before resuming emulation.
+    ///
+    /// Used by Phase 4 slice E (memory inspector) + slice F (per-game
+    /// milestones) to read game state for inspection and predicate
+    /// evaluation. No-op default impl returns None so cores without a
+    /// memory surface (test stubs etc.) don't have to implement it.
+    fn memory_region(&self, _id: MemoryRegionId) -> Option<&[u8]> {
+        None
+    }
 }

@@ -1,0 +1,48 @@
+[data-system="tg16"] {
+  --color-system-accent: oklch(0.74 0.18 55);
+  --color-system-accent-soft: oklch(0.94 0.04 80);
+  --color-system-glow: oklch(0.74 0.18 55 / 0.35);
+}
+
+/* TurboGrafx-CD / PC Engine CD-ROM² — cyan-blue evoking the silver/blue Duo
+   hardware and Super CD-ROM² system-card art. Deliberately distinct from
+   TG-16 orange (55°) so a mixed library reads at a glance: orange = HuCard,
+   cyan = CD. Sits at 220° so it doesn't collide with SNES violet (270°)
+   or Lynx purple (290°). */
+[data-system="pce-cd"] {
+  --color-system-accent: oklch(0.72 0.14 220);
+  --color-system-accent-soft: oklch(0.93 0.04 220);
+  --color-system-glow: oklch(0.72 0.14 220 / 0.35);
+}
+
+/* Atari Lynx — purple accent pulled from the original Lynx box art family
+   (Epyx '89 era used a saturated violet with cyan secondary). The accent
+   reads cleanly against the OA dark surface; the soft variant lifts to a
+   pale lilac for text-on-color, and the glow is the same accent at 35%
+   alpha for hover halos. */
+[data-system="lynx"] {
+  --color-system-accent: oklch(0.65 0.22 290);
+  --color-system-accent-soft: oklch(0.93 0.05 290);
+  --color-system-glow: oklch(0.65 0.22 290 / 0.35);
+}
+
+/* Nintendo Entertainment System — the classic NES red-with-grey palette.
+   The Big Box era used a saturated crimson on grey/black; we lean into the
+   red as the accent and let the OA dark surface play the grey role. Soft
+   variant is a desaturated pink for text-on-color contrast. */
+[data-system="nes"] {
+  --color-system-accent: oklch(0.62 0.22 28);
+  --color-system-accent-soft: oklch(0.92 0.05 28);
+  --color-system-glow: oklch(0.62 0.22 28 / 0.35);
+}
+
+/* Super Nintendo — the SNES launch palette ran a purple-cyan duo on the
+   console face buttons (B/Y violet, A/X cyan) and Nintendo's marketing
+   leaned into the same gradient. We pick the violet (between blue and
+   purple) as the accent since it reads as distinctly SNES without
+   colliding with Lynx's purer purple at 290°. */
+[data-system="snes"] {
+  --color-system-accent: oklch(0.62 0.18 270);
+  --color-system-accent-soft: oklch(0.93 0.05 270);
+  --color-system-glow: oklch(0.62 0.18 270 / 0.35);
+}

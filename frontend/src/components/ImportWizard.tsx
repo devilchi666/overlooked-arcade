@@ -1,0 +1,988 @@
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
+import {
+  romIdFromPath,
+  titleFromFileName,
+  type ScanProgress,
+} from "../library/ingest";
+import type { LibraryStore } from "../library/store";
+import type { RomEntry } from "../library/types";
+import type { SettingsStore } from "../settings/store";
+import {
+  allSupportedExtensions,
+  systemForExtension,
+  systemThemes,
+  type SystemId,
+} from "../themes/registry";
+
+// Phase 2.7 slice C — Import wizard.
+//
+// 4-step modal driving folder import end-to-end. Sits alongside (not above)
+// the existing dialog flow in App.tsx — the wizard is opened explicitly from
+// the toolbar ⋯ → Import folder…. The dialog-then-progress fallback that
+// shipped in slice B stays as a quick path for users who don't need the
+// per-folder rules editor.
+//
+// Step 1: pick a folder + scan toggles + watch toggle.
+// Step 2: extension → system mapping editor. Pre-populated from the registry,
+//         user can override per extension, persisted via set_folder_rules.
+// Step 3: live preview — runs the background scan, shows progress + per-
+//         system tally, cancellable.
+// Step 4: confirm + optional post-import auto-sync of media + metadata.
+//
+// Commit writes to: SQLite folders + folder_rules (new in this slice) AND
+// settings.libraryFolders (so the existing watcher + Rescan-all flows keep
+// working unchanged).
+
+type ScannedRom = {
+  path: string;
+  fileName: string;
+  extension: string;
+  archiveInnerPath?: string;
+};
+
+type Folder = {
+  id: string;
+  path: string;
+  scanSubfolders: boolean;
+  subfoldersAreSystems: boolean;
+  watchEnabled: boolean;
+  lastScannedAt?: number;
+  rules?: FolderRule[];
+};
+
+type FolderRule = {
+  id?: number;
+  folderId: string;
+  matchPattern: string;
+  systemId: string;
+};
+
+type RuleDraft = {
+  /// Frontend-only id so SolidJS keyed rendering doesn't recycle DOM nodes
+  /// when patterns/systems change. Not persisted.
+  uiKey: string;
+  pattern: string;
+  systemId: SystemId;
+};
+
+type Step = 1 | 2 | 3 | 4;
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  library: LibraryStore;
+  settings: SettingsStore;
+  /// Bridges to the existing scan-progress status bar in App.tsx so the
+  /// toolbar still surfaces live updates while the wizard is on Step 3.
+  onStatus?: (status: string) => void;
+};
+
+const BTN =
+  "rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_PRIMARY =
+  "rounded-md bg-(--color-system-accent) px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-black/90 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+const INPUT =
+  "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim) focus-visible:border-(--color-system-accent) focus-visible:outline-none disabled:opacity-50";
+const SELECT =
+  "rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) focus-visible:border-(--color-system-accent) focus-visible:outline-none disabled:opacity-50";
+
+const STEP_LABELS: Record<Step, string> = {
+  1: "Folder",
+  2: "Mapping",
+  3: "Preview",
+  4: "Confirm",
+};
+
+function nextUiKey(): string {
+  return `rule-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function patternToExtension(pattern: string): string | null {
+  const trimmed = pattern.trim().toLowerCase();
+  // Accept "*.pce", "*.PCE", ".pce", "pce" — normalize to bare ext.
+  const m = trimmed.match(/^\*?\.?([a-z0-9]+)$/);
+  return m ? m[1] : null;
+}
+
+function defaultRulesFromRegistry(): RuleDraft[] {
+  // One row per extension in the registry. Order: by system, then by ext.
+  const out: RuleDraft[] = [];
+  const sysIds = Object.keys(systemThemes) as SystemId[];
+  for (const sysId of sysIds) {
+    for (const ext of systemThemes[sysId].extensions) {
+      out.push({ uiKey: nextUiKey(), pattern: `*.${ext}`, systemId: sysId });
+    }
+  }
+  return out;
+}
+
+function rulesFromPersisted(persisted: FolderRule[]): RuleDraft[] {
+  return persisted
+    .map((r) => ({
+      uiKey: nextUiKey(),
+      pattern: r.matchPattern,
+      systemId: r.systemId as SystemId,
+    }))
+    .filter((r) => systemThemes[r.systemId] !== undefined);
+}
+
+const ImportWizard: Component<Props> = (props) => {
+  const [step, setStep] = createSignal<Step>(1);
+  const [folder, setFolder] = createSignal<string | null>(null);
+  const [scanSubfolders, setScanSubfolders] = createSignal(true);
+  const [subfoldersAreSystems, setSubfoldersAreSystems] = createSignal(false);
+  const [watchEnabled, setWatchEnabled] = createSignal(true);
+  const [rules, setRules] = createSignal<RuleDraft[]>(defaultRulesFromRegistry());
+
+  // Cached list of currently-tracked folders so we can pre-populate the rules
+  // editor when the user picks a folder that's already been imported.
+  const [trackedFolders, setTrackedFolders] = createSignal<Folder[]>([]);
+  // The Folder row for the currently-selected path — null when this is a
+  // fresh add. Determines commit-time UPDATE vs INSERT.
+  const [existingFolder, setExistingFolder] = createSignal<Folder | null>(null);
+
+  // Step 3 scan state.
+  const [scanRows, setScanRows] = createSignal<ScannedRom[]>([]);
+  const [scanProgress, setScanProgress] = createSignal<ScanProgress | null>(null);
+  const [scanRunning, setScanRunning] = createSignal(false);
+  const [scanJobId, setScanJobId] = createSignal<number | null>(null);
+  const [scanError, setScanError] = createSignal<string | null>(null);
+  const [scanCancelled, setScanCancelled] = createSignal(false);
+
+  // Step 4 sync options.
+  const [syncCovers, setSyncCovers] = createSignal(true);
+  const [syncSnaps, setSyncSnaps] = createSignal(true);
+  const [syncTitles, setSyncTitles] = createSignal(true);
+  const [syncMetadata, setSyncMetadata] = createSignal(true);
+  const [committing, setCommitting] = createSignal(false);
+  const [commitError, setCommitError] = createSignal<string | null>(null);
+
+  // Listener lifecycle for Step 3 — kept here (not inside startScan) so
+  // onCleanup can tear them down if the modal closes mid-scan.
+  let progressUnlisten: UnlistenFn | undefined;
+  let completeUnlisten: UnlistenFn | undefined;
+  let progressUnlistenDone = false;
+  let completeUnlistenDone = false;
+
+  function teardownListeners() {
+    if (progressUnlisten && !progressUnlistenDone) {
+      progressUnlisten();
+      progressUnlistenDone = true;
+    }
+    if (completeUnlisten && !completeUnlistenDone) {
+      completeUnlisten();
+      completeUnlistenDone = true;
+    }
+  }
+
+  // Refresh tracked-folders cache when the modal opens. List with rules so
+  // we can pre-populate the editor without a second round-trip.
+  createEffect(() => {
+    if (!props.open) return;
+    void (async () => {
+      try {
+        const folders = await invoke<Folder[]>("list_folders", { includeRules: true });
+        setTrackedFolders(folders);
+      } catch (e) {
+        console.warn("[oa-wizard] list_folders failed:", e);
+      }
+    })();
+  });
+
+  // Each time `folder` changes, check if it's already tracked and pre-load
+  // its rules — otherwise reset to registry defaults.
+  createEffect(() => {
+    const f = folder();
+    if (!f) {
+      setExistingFolder(null);
+      return;
+    }
+    const tracked = trackedFolders().find((t) => t.path === f);
+    if (tracked) {
+      setExistingFolder(tracked);
+      setScanSubfolders(tracked.scanSubfolders);
+      setSubfoldersAreSystems(tracked.subfoldersAreSystems);
+      setWatchEnabled(tracked.watchEnabled);
+      const persisted = tracked.rules ?? [];
+      setRules(persisted.length > 0 ? rulesFromPersisted(persisted) : defaultRulesFromRegistry());
+    } else {
+      setExistingFolder(null);
+      setRules(defaultRulesFromRegistry());
+    }
+  });
+
+  // Reset all transient state when the modal closes.
+  createEffect(() => {
+    if (props.open) return;
+    setStep(1);
+    setFolder(null);
+    setScanSubfolders(true);
+    setSubfoldersAreSystems(false);
+    setWatchEnabled(true);
+    setRules(defaultRulesFromRegistry());
+    setExistingFolder(null);
+    setScanRows([]);
+    setScanProgress(null);
+    setScanRunning(false);
+    setScanJobId(null);
+    setScanError(null);
+    setScanCancelled(false);
+    setCommitError(null);
+    setCommitting(false);
+    teardownListeners();
+  });
+
+  // ESC closes the modal (when not actively scanning — there a confirm would
+  // prevent accidentally cancelling a long walk; keeping that simple here).
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!props.open) return;
+      if (e.key === "Escape" && !scanRunning() && !committing()) {
+        e.preventDefault();
+        props.onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+  });
+
+  onCleanup(() => teardownListeners());
+
+  async function handleBrowse() {
+    const picked = await pickDirectory({ directory: true, multiple: false }).catch(() => null);
+    if (!picked || Array.isArray(picked)) return;
+    setFolder(picked);
+  }
+
+  function pickRecent(path: string) {
+    setFolder(path);
+  }
+
+  function addRule() {
+    setRules((prev) => [
+      ...prev,
+      { uiKey: nextUiKey(), pattern: "*.", systemId: (Object.keys(systemThemes)[0] ?? "tg16") as SystemId },
+    ]);
+  }
+
+  function updateRule(uiKey: string, patch: Partial<RuleDraft>) {
+    setRules((prev) => prev.map((r) => (r.uiKey === uiKey ? { ...r, ...patch } : r)));
+  }
+
+  function removeRule(uiKey: string) {
+    setRules((prev) => prev.filter((r) => r.uiKey !== uiKey));
+  }
+
+  function resetRulesToDefaults() {
+    setRules(defaultRulesFromRegistry());
+  }
+
+  /// Build an extension → SystemId map from the current rules. Later rules
+  /// for the same ext override earlier ones (last-write-wins).
+  function ruleMap(): Map<string, SystemId> {
+    const m = new Map<string, SystemId>();
+    for (const r of rules()) {
+      const ext = patternToExtension(r.pattern);
+      if (!ext) continue;
+      if (!systemThemes[r.systemId]) continue;
+      m.set(ext, r.systemId);
+    }
+    return m;
+  }
+
+  /// Bucket scanned rows by system using rules + registry fallback. Returns
+  /// matched RomEntries + a Map<extension, count> of unmatched.
+  function bucketScanned() {
+    const m = ruleMap();
+    const now = Date.now();
+    const entries: RomEntry[] = [];
+    const unmatched = new Map<string, number>();
+    for (const r of scanRows()) {
+      const sysId = m.get(r.extension) ?? systemForExtension(r.extension);
+      if (!sysId) {
+        unmatched.set(r.extension, (unmatched.get(r.extension) ?? 0) + 1);
+        continue;
+      }
+      entries.push({
+        id: romIdFromPath(r.path),
+        title: titleFromFileName(r.fileName),
+        systemId: sysId,
+        filePath: r.path,
+        addedAt: now,
+        ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
+      });
+    }
+    return { entries, unmatched };
+  }
+
+  /// Per-system tally for the Step 3 found-so-far box.
+  function bucketTally(): { systemId: SystemId; count: number; archived: number }[] {
+    const m = ruleMap();
+    const tally = new Map<SystemId, { count: number; archived: number }>();
+    for (const r of scanRows()) {
+      const sysId = (m.get(r.extension) ?? systemForExtension(r.extension)) as SystemId | null;
+      if (!sysId) continue;
+      const cur = tally.get(sysId) ?? { count: 0, archived: 0 };
+      cur.count++;
+      if (r.archiveInnerPath) cur.archived++;
+      tally.set(sysId, cur);
+    }
+    return [...tally.entries()]
+      .map(([systemId, v]) => ({ systemId, count: v.count, archived: v.archived }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  function unmatchedTally(): { extension: string; count: number }[] {
+    const { unmatched } = bucketScanned();
+    return [...unmatched.entries()]
+      .map(([extension, count]) => ({ extension, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /// Union of registry exts + cores' valid_extensions. Same shape as
+  /// resolveScannableExtensions in ingest.ts — but the wizard scopes more
+  /// tightly to the active rule set, so we expand to "everything the user
+  /// might want to scan" via the registry + the user-defined patterns.
+  async function buildScanExtensionList(): Promise<string[]> {
+    const exts = new Set<string>(allSupportedExtensions());
+    for (const r of rules()) {
+      const ext = patternToExtension(r.pattern);
+      if (ext) exts.add(ext);
+    }
+    // Pull core valid_extensions too so a newly-dropped libretro .dll
+    // expands the scan without anyone editing the registry. Failures are
+    // soft — we just fall back to the registry+rule union.
+    try {
+      type CoreEntry = { validExtensions: string };
+      const cores = await invoke<CoreEntry[]>("list_cores");
+      for (const c of cores) {
+        for (const e of (c.validExtensions ?? "").split("|")) {
+          const norm = e.trim().toLowerCase().replace(/^\./, "");
+          if (norm) exts.add(norm);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [...exts];
+  }
+
+  async function startScan() {
+    const f = folder();
+    if (!f) return;
+    setScanRunning(true);
+    setScanError(null);
+    setScanRows([]);
+    setScanProgress(null);
+    setScanCancelled(false);
+
+    const extensions = await buildScanExtensionList();
+    let myJobId = -1;
+
+    // Inline the listener+invoke flow (instead of using runBackgroundScan)
+    // because we need the jobId exposed for the Cancel button.
+    try {
+      progressUnlistenDone = false;
+      completeUnlistenDone = false;
+      progressUnlisten = await listen<ScanProgress>(
+        "oa://library-scan-progress",
+        (event) => {
+          if (event.payload.jobId !== myJobId) return;
+          setScanProgress(event.payload);
+          props.onStatus?.(
+            `Scanning ${event.payload.folder}: ${event.payload.matches} matched (${event.payload.archived} archived)`,
+          );
+        },
+      );
+      completeUnlisten = await listen<{
+        jobId: number;
+        folder: string;
+        matches: number;
+        archived: number;
+        cancelled: boolean;
+        errorMessage?: string;
+        rows: ScannedRom[];
+      }>("oa://library-scan-complete", (event) => {
+        if (event.payload.jobId !== myJobId) return;
+        if (event.payload.errorMessage) {
+          setScanError(event.payload.errorMessage);
+        } else if (event.payload.cancelled) {
+          setScanCancelled(true);
+        } else {
+          setScanRows(event.payload.rows);
+        }
+        setScanRunning(false);
+        setScanJobId(null);
+        teardownListeners();
+      });
+      myJobId = await invoke<number>("start_background_scan", { folder: f, extensions });
+      setScanJobId(myJobId);
+    } catch (e) {
+      setScanError(String(e));
+      setScanRunning(false);
+      teardownListeners();
+    }
+  }
+
+  async function cancelScan() {
+    const jid = scanJobId();
+    if (jid === null) return;
+    try {
+      await invoke("cancel_background_scan", { jobId: jid });
+    } catch (e) {
+      console.warn("[oa-wizard] cancel_background_scan failed:", e);
+    }
+  }
+
+  // When entering Step 3, auto-start the scan once (unless one's already
+  // landed). Re-running the scan is via the manual Restart button.
+  createEffect(() => {
+    if (step() === 3 && !scanRunning() && scanRows().length === 0 && !scanError() && !scanCancelled()) {
+      void startScan();
+    }
+  });
+
+  async function commit(withSync: boolean) {
+    const f = folder();
+    if (!f) return;
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      // 1) Upsert the folder + replace its rules.
+      let folderRow = existingFolder();
+      if (folderRow) {
+        await invoke("update_folder", {
+          id: folderRow.id,
+          fields: {
+            scanSubfolders: scanSubfolders(),
+            subfoldersAreSystems: subfoldersAreSystems(),
+            watchEnabled: watchEnabled(),
+            lastScannedAt: Date.now(),
+          },
+        });
+      } else {
+        folderRow = await invoke<Folder>("add_folder", {
+          path: f,
+          scanSubfolders: scanSubfolders(),
+          subfoldersAreSystems: subfoldersAreSystems(),
+          watchEnabled: watchEnabled(),
+        });
+        await invoke("update_folder", {
+          id: folderRow.id,
+          fields: { lastScannedAt: Date.now() },
+        });
+      }
+      // Replace rules — empty array clears any prior rules so users can
+      // remove everything in the editor and get a clean slate.
+      const rulesPayload: FolderRule[] = rules()
+        .filter((r) => patternToExtension(r.pattern) !== null && systemThemes[r.systemId] !== undefined)
+        .map((r) => ({
+          folderId: folderRow!.id,
+          matchPattern: r.pattern,
+          systemId: r.systemId,
+        }));
+      await invoke("set_folder_rules", {
+        folderId: folderRow.id,
+        rules: rulesPayload,
+      });
+
+      // 2) Add games. Reuse the existing library store path so the seed-row
+      // drop + cache-refresh side effects fire correctly.
+      const { entries } = bucketScanned();
+      const added = entries.length > 0 ? await props.library.addScannedRoms(entries) : 0;
+
+      // 3) Mirror to settings.libraryFolders so the existing watcher +
+      // Rescan-all flows keep working. Slice C leaves both stores live; a
+      // future slice can migrate the watcher to read from SQLite.
+      const tracked = props.settings.libraryFolders();
+      if (!tracked.includes(f)) {
+        props.settings.setLibraryFolders([...tracked, f]);
+      }
+
+      // 4) Post-import media + metadata sync. Best-effort — failures here
+      // don't block the wizard from completing. Each system that got at
+      // least one entry triggers its own sync.
+      if (withSync && entries.length > 0) {
+        const systemEntries = new Map<SystemId, RomEntry[]>();
+        for (const e of entries) {
+          const arr = systemEntries.get(e.systemId) ?? [];
+          arr.push(e);
+          systemEntries.set(e.systemId, arr);
+        }
+        // Fire-and-forget — the actual sync emits its own progress events
+        // and we don't want the wizard to block on a long network walk.
+        for (const [systemId, sysEntries] of systemEntries) {
+          if (syncCovers() || syncSnaps() || syncTitles()) {
+            invoke("sync_media_for_system", {
+              systemId,
+              entries: sysEntries.map((e) => ({
+                id: e.id,
+                title: e.title,
+                filePath: e.filePath,
+                systemId: e.systemId,
+              })),
+            }).catch((err) =>
+              console.warn(`[oa-wizard] sync_media_for_system(${systemId}) failed:`, err),
+            );
+          }
+          if (syncMetadata()) {
+            invoke("sync_metadata_for_system", {
+              systemId,
+              entries: sysEntries.map((e) => ({
+                id: e.id,
+                title: e.title,
+                filePath: e.filePath,
+                systemId: e.systemId,
+              })),
+            }).catch((err) =>
+              console.warn(`[oa-wizard] sync_metadata_for_system(${systemId}) failed:`, err),
+            );
+          }
+        }
+      }
+
+      props.onStatus?.(`Added ${added} of ${entries.length} from ${f}.`);
+      setCommitting(false);
+      props.onClose();
+    } catch (e) {
+      setCommitError(String(e));
+      setCommitting(false);
+    }
+  }
+
+  // --- Per-step UI ----------------------------------------------------
+
+  const Step1 = () => (
+    <div class="flex flex-col gap-5">
+      <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+        Pick a folder to scan.
+      </p>
+      <div class="flex gap-2">
+        <input
+          type="text"
+          readOnly
+          value={folder() ?? ""}
+          placeholder="No folder selected"
+          class={INPUT}
+        />
+        <button type="button" class={BTN} onClick={handleBrowse}>
+          Browse…
+        </button>
+      </div>
+      <Show when={props.settings.libraryFolders().length > 0}>
+        <div class="flex flex-col gap-1.5">
+          <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            Recently tracked
+          </p>
+          <select
+            class={INPUT}
+            value={folder() ?? ""}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              if (v) pickRecent(v);
+            }}
+          >
+            <option value="">— pick a tracked folder —</option>
+            <For each={props.settings.libraryFolders()}>
+              {(p) => <option value={p}>{p}</option>}
+            </For>
+          </select>
+        </div>
+      </Show>
+      <Show when={existingFolder() !== null}>
+        <div class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+          This folder is already tracked. Its existing rules will be loaded; the
+          wizard will rescan and update the library.
+        </div>
+      </Show>
+      <div class="flex flex-col gap-2 rounded-md border border-white/5 bg-black/20 px-3 py-2.5">
+        <Toggle
+          label="Scan subfolders"
+          checked={scanSubfolders()}
+          onChange={setScanSubfolders}
+        />
+        <Toggle
+          label="Treat each subfolder as a system (folder name → system)"
+          checked={subfoldersAreSystems()}
+          onChange={setSubfoldersAreSystems}
+          disabled={!scanSubfolders()}
+          hint="Persisted with the folder; informs mapping in the next step."
+        />
+        <Toggle
+          label="Watch for new ROMs in this folder"
+          checked={watchEnabled()}
+          onChange={setWatchEnabled}
+          hint="Newly-dropped files auto-add to the library."
+        />
+      </div>
+    </div>
+  );
+
+  const Step2 = () => (
+    <div class="flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+          For this folder, ROMs of type:
+        </p>
+        <div class="flex gap-2">
+          <button type="button" class={BTN} onClick={resetRulesToDefaults}>
+            Reset
+          </button>
+          <button type="button" class={BTN} onClick={addRule}>
+            + Add rule
+          </button>
+        </div>
+      </div>
+      <div class="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto pr-1">
+        <For
+          each={rules()}
+          fallback={
+            <p class="rounded-md border border-dashed border-white/10 px-3 py-4 text-center text-xs text-(--color-oa-ink-dim)">
+              No rules. The scanner will fall back to the system registry's defaults.
+            </p>
+          }
+        >
+          {(r) => (
+            <div class="flex items-center gap-2 rounded-md border border-white/5 bg-black/20 px-2 py-1.5">
+              <input
+                type="text"
+                value={r.pattern}
+                onInput={(e) => updateRule(r.uiKey, { pattern: e.currentTarget.value })}
+                class={INPUT}
+                placeholder="*.pce"
+              />
+              <span class="shrink-0 text-(--color-oa-ink-dim)">→</span>
+              <select
+                value={r.systemId}
+                onChange={(e) =>
+                  updateRule(r.uiKey, { systemId: e.currentTarget.value as SystemId })
+                }
+                class={SELECT}
+              >
+                <For each={Object.keys(systemThemes) as SystemId[]}>
+                  {(sysId) => (
+                    <option value={sysId}>{systemThemes[sysId].displayName}</option>
+                  )}
+                </For>
+              </select>
+              <button
+                type="button"
+                class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                onClick={() => removeRule(r.uiKey)}
+                title="Remove rule"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </For>
+      </div>
+      <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        Archives (.zip / .7z) are auto-detected and unpacked at scan time — no rule needed.
+      </p>
+    </div>
+  );
+
+  const Step3 = () => {
+    const tally = () => bucketTally();
+    const unmatched = () => unmatchedTally();
+    const total = () => scanRows().length;
+    return (
+      <div class="flex flex-col gap-4">
+        <Show
+          when={!scanError()}
+          fallback={
+            <div class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-3 text-xs text-(--color-oa-ink)">
+              Scan failed: {scanError()}
+            </div>
+          }
+        >
+          <Show when={scanRunning() || scanProgress()}>
+            <div class="rounded-md border border-white/5 bg-black/30 px-3 py-3">
+              <div class="flex items-baseline justify-between text-xs">
+                <p class="text-(--color-oa-ink)">
+                  {scanRunning() ? "Scanning…" : "Scan complete"}
+                </p>
+                <p class="text-(--color-oa-ink-dim)">
+                  {scanProgress()?.filesSeen ?? 0} files scanned
+                </p>
+              </div>
+              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+                <div
+                  class="h-full bg-(--color-system-accent) transition-all"
+                  style={{
+                    width: scanRunning()
+                      ? `${Math.min(95, 10 + ((scanProgress()?.filesSeen ?? 0) % 100))}%`
+                      : "100%",
+                  }}
+                />
+              </div>
+              <Show when={scanRunning() && scanProgress()?.currentFile}>
+                <p class="mt-2 truncate font-mono text-[0.65rem] text-(--color-oa-ink-dim)">
+                  {scanProgress()!.currentFile}
+                </p>
+              </Show>
+            </div>
+          </Show>
+          <Show when={scanCancelled()}>
+            <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
+              Scan cancelled.
+            </p>
+          </Show>
+          <Show when={!scanRunning() && total() > 0}>
+            <div class="flex flex-col gap-2">
+              <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+                Found {total()} games
+              </p>
+              <div class="flex flex-col gap-1">
+                <For each={tally()}>
+                  {(t) => (
+                    <div class="flex items-center justify-between rounded-md border border-white/5 bg-black/20 px-3 py-1.5 text-xs">
+                      <span class="text-(--color-oa-ink)">
+                        {systemThemes[t.systemId]?.displayName ?? t.systemId}
+                      </span>
+                      <span class="text-(--color-oa-ink-dim)">
+                        {t.count} {t.count === 1 ? "game" : "games"}
+                        {t.archived > 0 && ` · ${t.archived} in archives`}
+                      </span>
+                    </div>
+                  )}
+                </For>
+                <Show when={unmatched().length > 0}>
+                  <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+                    <p class="font-semibold">
+                      {unmatched().reduce((s, u) => s + u.count, 0)} unmatched files
+                    </p>
+                    <p class="mt-0.5 text-(--color-oa-ink-dim)">
+                      {unmatched().map((u) => `${u.extension} (${u.count})`).join(", ")} —
+                      add a rule on the Mapping step to assign.
+                    </p>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </Show>
+          <Show when={!scanRunning() && total() === 0 && !scanError() && !scanCancelled() && scanProgress()}>
+            <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
+              No supported ROMs found in this folder.
+            </p>
+          </Show>
+        </Show>
+      </div>
+    );
+  };
+
+  const Step4 = () => {
+    const total = () => bucketScanned().entries.length;
+    return (
+      <div class="flex flex-col gap-4">
+        <p class="text-sm text-(--color-oa-ink)">
+          Add <span class="font-semibold text-(--color-system-accent)">{total()}</span>{" "}
+          {total() === 1 ? "game" : "games"} to your library?
+        </p>
+        <div class="flex flex-col gap-2 rounded-md border border-white/5 bg-black/20 px-3 py-2.5">
+          <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            Run media + metadata sync after import?
+          </p>
+          <Toggle label="Cover art" checked={syncCovers()} onChange={setSyncCovers} />
+          <Toggle label="Snapshots" checked={syncSnaps()} onChange={setSyncSnaps} />
+          <Toggle label="Title screens" checked={syncTitles()} onChange={setSyncTitles} />
+          <Toggle
+            label="Year / genre / developer / publisher / players"
+            checked={syncMetadata()}
+            onChange={setSyncMetadata}
+          />
+        </div>
+        <Show when={commitError()}>
+          <div class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+            Commit failed: {commitError()}
+          </div>
+        </Show>
+      </div>
+    );
+  };
+
+  return (
+    <Show when={props.open}>
+      <div
+        class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
+        onClick={(e) => {
+          if (e.currentTarget === e.target && !scanRunning() && !committing()) {
+            props.onClose();
+          }
+        }}
+      >
+        <div
+          class="flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
+          style={{ height: "min(640px, 85vh)" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-wizard-title"
+        >
+          <header class="flex items-center justify-between border-b border-white/5 px-6 py-4">
+            <div>
+              <h2
+                id="import-wizard-title"
+                class="text-sm font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink)"
+              >
+                Import games
+              </h2>
+              <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                Step {step()} of 4 · {STEP_LABELS[step()]}
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <ol class="flex items-center gap-1.5 text-[0.6rem] uppercase tracking-widest">
+                <For each={[1, 2, 3, 4] as Step[]}>
+                  {(n) => (
+                    <li
+                      class="rounded-full px-2 py-0.5"
+                      classList={{
+                        "bg-(--color-system-accent) text-black/90": step() === n,
+                        "bg-white/[0.06] text-(--color-oa-ink-dim)": step() !== n,
+                      }}
+                    >
+                      {n}
+                    </li>
+                  )}
+                </For>
+              </ol>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  if (!scanRunning() && !committing()) props.onClose();
+                }}
+                class={BTN}
+                disabled={scanRunning() || committing()}
+              >
+                Close
+              </button>
+            </div>
+          </header>
+
+          <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+            <Show when={step() === 1}>{Step1()}</Show>
+            <Show when={step() === 2}>{Step2()}</Show>
+            <Show when={step() === 3}>{Step3()}</Show>
+            <Show when={step() === 4}>{Step4()}</Show>
+          </div>
+
+          <footer class="flex items-center justify-between border-t border-white/5 px-6 py-3">
+            <div class="flex gap-2">
+              <Show when={step() > 1}>
+                <button
+                  type="button"
+                  class={BTN}
+                  disabled={scanRunning() || committing()}
+                  onClick={() => setStep((s) => (s - 1) as Step)}
+                >
+                  ‹ Back
+                </button>
+              </Show>
+            </div>
+            <div class="flex gap-2">
+              <Show when={step() === 1}>
+                <button
+                  type="button"
+                  class={BTN_PRIMARY}
+                  disabled={folder() === null}
+                  onClick={() => setStep(2)}
+                >
+                  Next ›
+                </button>
+              </Show>
+              <Show when={step() === 2}>
+                <button type="button" class={BTN_PRIMARY} onClick={() => setStep(3)}>
+                  Next ›
+                </button>
+              </Show>
+              <Show when={step() === 3}>
+                <Show when={scanRunning()}>
+                  <button type="button" class={BTN} onClick={cancelScan}>
+                    Cancel scan
+                  </button>
+                </Show>
+                <Show when={!scanRunning()}>
+                  <button
+                    type="button"
+                    class={BTN}
+                    onClick={() => {
+                      setScanRows([]);
+                      setScanProgress(null);
+                      setScanError(null);
+                      setScanCancelled(false);
+                      void startScan();
+                    }}
+                  >
+                    Rescan
+                  </button>
+                  <button
+                    type="button"
+                    class={BTN_PRIMARY}
+                    disabled={scanError() !== null}
+                    onClick={() => setStep(4)}
+                  >
+                    Next ›
+                  </button>
+                </Show>
+              </Show>
+              <Show when={step() === 4}>
+                <button
+                  type="button"
+                  class={BTN}
+                  disabled={committing()}
+                  onClick={() => void commit(false)}
+                >
+                  Skip sync
+                </button>
+                <button
+                  type="button"
+                  class={BTN_PRIMARY}
+                  disabled={committing()}
+                  onClick={() => void commit(true)}
+                >
+                  {committing() ? "Importing…" : "Import + sync"}
+                </button>
+              </Show>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </Show>
+  );
+};
+
+const Toggle: Component<{
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  hint?: string;
+}> = (props) => (
+  <label
+    class="flex cursor-pointer items-start gap-2 text-xs text-(--color-oa-ink)"
+    classList={{ "opacity-50 cursor-not-allowed": props.disabled === true }}
+  >
+    <input
+      type="checkbox"
+      class="mt-0.5 accent-(--color-system-accent)"
+      checked={props.checked}
+      disabled={props.disabled === true}
+      onChange={(e) => props.onChange(e.currentTarget.checked)}
+    />
+    <span class="flex flex-col gap-0.5">
+      <span>{props.label}</span>
+      <Show when={props.hint}>
+        <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+          {props.hint}
+        </span>
+      </Show>
+    </span>
+  </label>
+);
+
+export default ImportWizard;

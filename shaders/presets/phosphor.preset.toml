@@ -1,0 +1,17 @@
+# Phosphor (soft bloom) — 5-tap separable Gaussian blur composited over
+# the source with `mix(source, blur, bloom_amount)`. Approximates the way
+# real CRT phosphors leak light to neighbouring cells without paying for
+# a full 2D kernel per fragment. The default 0.6 reads as a visible halo
+# on most PCE / NES / SNES titles without washing detail; users wanting a
+# cleaner image drop it toward 0.3.
+
+display_name = "Phosphor (soft bloom)"
+description = "Separable Gaussian blur composited with the source."
+
+base = "phosphor"
+
+[params]
+# Composite weight in [0, 1]. 0 = pure source (chain still runs but its
+# output is invisible — equivalent to `plain`), 1 = pure blur (no source
+# contribution — equivalent to the pre-slice-B-2 Phosphor preset).
+bloom_amount = 0.6

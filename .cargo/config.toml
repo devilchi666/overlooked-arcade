@@ -5,8 +5,10 @@
 # Use the modern rustc per-target linker tweaks via the [target.*] tables below.
 
 [target.x86_64-pc-windows-msvc]
-# rust-lld is fast and well-tested as the default linker on Windows.
-# linker = "rust-lld"
+# rust-lld ships with rustup and is unambiguous — avoids the classic PATH
+# collision where Git's /usr/bin/link.exe (a hard-link utility) gets picked
+# up instead of MSVC link.exe when linking fresh build-script binaries.
+linker = "rust-lld"
 rustflags = []
 
 [net]

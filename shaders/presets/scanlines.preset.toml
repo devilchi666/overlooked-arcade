@@ -1,0 +1,9 @@
+# Scanlines — alternate-row darken locked to the source-pixel rate. Crisp
+# at any output resolution since the row period derives from fb_height,
+# not from output pixels. Good first taste of "CRT-ish" without paying
+# for the full CRT-Lite vignette/saturation chain.
+
+display_name = "Scanlines"
+description = "Alternate-row darken at the source-pixel rate."
+
+base = "scanlines"

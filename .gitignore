@@ -29,6 +29,43 @@ Cargo.lock.bak
 /assets/test-roms
 /assets/system-bios
 
+# Copyrighted runtime content (BIOSes + libretro cores + game ROMs).
+# `target/` already catches the dev drop dirs (target/debug/cores,
+# target/debug/system) but these belt-and-suspenders patterns ensure
+# a misplaced file outside target/ can't be committed by accident.
+# DLLs are already covered above; this section adds BIOS + ROM
+# extensions across every recognized system.
+**/cores/*.dll
+**/cores/*.so
+**/cores/*.dylib
+**/system/*.pce
+**/system/*.img
+**/system/*.rom
+syscard?.pce
+syscard?j.pce
+gexpress.pce
+lynxboot.img
+disksys.rom
+# ROM dumps — every container we recognize in `is_cd_extension` /
+# `systemForExtension`. The few legitimate `.cue` / `.bin` companion
+# files we'd ever ship (none today) would need a force-add.
+**/*.pce
+**/*.nes
+**/*.sfc
+**/*.smc
+**/*.fig
+**/*.swc
+**/*.lnx
+**/*.lyx
+**/*.fds
+**/*.unf
+**/*.unif
+**/*.chd
+**/*.cue
+**/*.toc
+**/*.ccd
+**/*.m3u
+
 # IDE / OS
 .vscode
 .idea

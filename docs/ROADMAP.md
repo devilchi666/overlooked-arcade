@@ -33,75 +33,146 @@ All three decisions recorded in `docs/DECISIONS.md`.
 
 ---
 
-## ⬜ Phase 2 — Premium UI shell (4-6 weeks)
+## 🟨 Phase 2 — Premium UI shell (4-6 weeks)
 
-- ⬜ Solid + Tailwind scaffold.
-- ⬜ Per-system theming via Tailwind config + CSS variables. TG-16 theme first.
-- ⬜ Library grid + cover-art ingestion.
-- ⬜ Game launch UX (smooth transition library → game).
-- ⬜ Save state UI: timeline of thumbnails.
-- ⬜ Settings panel — input mapping, audio device, plus the window + scaling modes below.
-- ⬜ **Window modes** (game window — `oa-render` + `oa-shell`):
-  - Windowed (resizable, current default)
-  - Windowed fullscreen (borderless, fills the monitor, alt-tab friendly)
-  - Exclusive fullscreen (proper FS, lowest input/present latency)
-  - Monitor selection when multiple displays are attached
-- ⬜ **Video / scaling modes** (renderer-side, viewport math in `oa-render`):
-  - **Pixel Perfect** — largest integer scale that fits, native aspect, letterbox the rest
-  - **Aspect-correct fit** — scale to fit window while preserving the system's native aspect ratio (PCE non-square pixels handled per-system)
-  - **Stretched** — fill window, ignore aspect
-  - **Original 1:1** — native resolution centered in window, no scaling
-  - **Explicit integer multiple** — 2× / 3× / 4× / etc.
-  - Per-game default mode (saved in settings)
-- ⬜ Single-window-mode spike (1 week within Phase 2).
+- ✅ Solid + Tailwind scaffold (2026-05-16; Solid 1.9 + TypeScript 5.7 + Tailwind v4 + Vite 6 at `frontend/`, wired into Tauri via `beforeDevCommand` / `beforeBuildCommand` / `devUrl: 127.0.0.1:5173`; build: 936ms cold, 7.3 kB JS + 6.2 kB CSS).
+- ✅ Per-system theming via Tailwind config + CSS variables (2026-05-16; `frontend/src/themes/registry.ts` + `themes/systems.css` — `--color-system-{accent,accent-soft,glow}` tokens with `[data-system="<id>"]` cascade overrides. TG-16 palette extracted from inline tokens; base `@theme` carries a neutral OA accent for system-agnostic pages. Adding a system = three additions: SystemId union + systemThemes entry + CSS block).
+- ✅ Library grid + cover-art ingestion (2026-05-16; visual foundation + real folder-scan ingestion. Visual: `RomEntry`/`LibraryStore` types, Solid `createStore` seeded with 6 placeholder TG-16 titles, `LibraryTile` with per-tile `data-system` cascade, `LibraryGrid` 2/3/4/5/6-column responsive layout. Ingestion: `tauri-plugin-dialog` for native folder picker, Rust `#[tauri::command] scan_rom_folder(path, extensions)` for single-level directory walk with case-insensitive extension allowlist + hidden-file/dir filtering, frontend `pickFolderAndIngest()` derives `systemId` from extension via the systems registry, dedupes by `filePath`, drops seed entries on first real add. Library state persists to `localStorage` (`oa.library.v1`) via a Solid effect; survives WebView reloads. Cover art beyond the gradient placeholder is deferred to a per-game-asset pass).
+- ✅ Game launch UX (2026-05-16; tile click → Tauri `launch_rom` command reads bytes, forwards `EmuCommand::LoadRom { path, bytes }` via an `mpsc::channel` to the emu thread, which drains the channel non-blockingly at the top of each frame and calls `core.load_rom()` for the swap. PCE shim's `oa_pce_load_rom` already does `retro_unload_game()` first so back-to-back swaps are safe. Save-state slot is cleared on swap. `OA_ROM` env var stays as a startup fallback. Game window gets `.show()` + `.unminimize()` + `.set_focus()` on each launch. Seed tiles get a "Preview" badge and refuse to launch with a status hint. LibraryTile is now a `<button>` for native keyboard/focus accessibility; focus-visible outlines use `--color-system-accent`. Smooth animated library→game transition is deferred to a polish pass).
+- ✅ Save state UI (2026-05-16). Disk persistence + multi-slot via F5/F8 + number keys 0-9. PNG thumbnails written alongside `.bin` via `png` crate. Slot-grid UI: per-tile hover-revealed `Saves` button opens `SaveSlotsModal` showing 10-cell grid with thumbnails + size + modified time + Delete. `list_save_slots(romPath)` + `delete_save_slot(romPath, slot)` Tauri commands. Thumbnails embedded as base64 data URLs in the command response (no Tauri asset-protocol config needed). Loading a slot into a running game still happens via F8 keyboard — modal is informational + delete-only; "Load from modal" rides with the input-poller refactor.
+- 🟨 Settings panel — modal + Display section (scaling + window mode + monitor select + shell mode) + Library folders section (list + Add + Remove + Rescan all, tracked under `oa.settings.v1.libraryFolders`). Shell-mode toggle persists to `appDataDir/shell.json`; Rust startup precedence is `OA_SHELL_MODE` env (dev override) > shell.json > two-window default; UI shows env-override warning when active ≠ pref. Per the three-tier split ([[feedback_settings_three_tier_split]]), this modal stays OA-wide only. Remaining OA-wide section: audio output device (needs live device-swap support in `oa-audio`, which is its own refactor).
+- ✅ **Window modes** (game window — `oa-render` + `oa-shell`, 2026-05-16):
+  - ✅ Windowed (resizable, default)
+  - ✅ Borderless fullscreen (`set_decorations(false)` + size+position to chosen monitor)
+  - ✅ Exclusive fullscreen (`set_fullscreen(true)`)
+  - ✅ Monitor selection (`list_monitors` command + monitor-index dropdown in OA SettingsModal; Borderless uses selected monitor or current if "Current monitor" picked)
+- ✅ **Video / scaling modes** (2026-05-16; renderer-side, viewport math in `oa-render`):
+  - ✅ **Pixel Perfect** — largest integer N where `N*fb_h ≤ surface_h` AND `N*fb_h*display_aspect ≤ surface_w`; crisp scanlines + correct display aspect
+  - ✅ **Aspect-correct fit** — Phase 1.5 default
+  - ✅ **Stretched** — fill window, ignore aspect
+  - ✅ **Original 1:1** — native `fb_w × fb_h` centered, no scaling
+  - ✅ **Explicit integer multiple** — 2× / 3× / 4× (UI exposes 2x/3x/4x in the dropdown; renderer supports arbitrary `IntegerMultiple(u32)`)
+  - ⬜ Per-game default mode override (global default ships via `localStorage[oa.settings.v1]`; per-game override defers to the per-game-settings UI work alongside per-game shader presets in Phase 3).
+- ✅ Single-window-mode spike — **PASS** (2026-05-16). Transparent `WebviewWindow` + wgpu surface against its HWND composites cleanly on Windows + DWM. Spike binary at `scripts/spikes/04-single-window/`; decision recorded in `docs/DECISIONS.md`.
+- ✅ Single-window-mode integration (2026-05-16). `OA_SHELL_MODE=single-window` env var at startup branches `oa-shell::setup` between the existing two-window layout and a single transparent `WebviewWindow` whose HWND hosts the wgpu game surface. `ShellWindow` enum abstracts launch/focus/fullscreen across both modes. New `#[tauri::command] get_shell_mode` lets the frontend query the chosen mode on mount and apply `body[data-shell="single-window"]` for a transparent body background. Two-window remains the default; layout iteration (side-panel / fade-out / chrome-only views in single-window) is a follow-up polish pass.
 
 **Acceptance gate:** Library → pick ROM → game runs full-screen → ESC → save-state timeline → restore. UI looks like 2026.
 
 ---
 
-## ⬜ Phase 3 — Shader pipeline (3-4 weeks)
+## ✅ Phase 2.5 — Layout shell + SQLite library (2026-05-17)
 
-- ⬜ WGSL passes: scanline, CRT curve, phosphor decay, bezel overlay.
-- ⬜ Per-game shader preset format (TOML schema).
-- ⬜ Live shader hot-reload in dev.
-- ⬜ HDR tone mapping (behind setting, where display supports it).
+First slice of the main-window plan (`docs/PLANS/main-window.md`). User-confirmed locked decisions: three presentation modes (Desktop / Theater / Cabinet); Settings → route (Phase 2.8); nested-drag system tree; SQLite folded in now.
+
+- ✅ Region primitives (Shell / TopToolbar / LeftSidebar / RightSidebar) under `frontend/src/layout/`.
+- ✅ CSS geometry tokens (`--layout-*`) with `body[data-presentation]` overrides for Desktop / Theater / Cabinet.
+- ✅ Three default right-sidebar widgets — Hero / Title / Metadata — bound to focused (or pinned) tile.
+- ✅ Top toolbar: three-zone breadcrumb / center status / actions + `…` overflow.
+- ✅ Left sidebar: quick destinations, system list with counts, Playlists + Smart Views placeholder sections, collapse-to-icons (Ctrl+B), drag resizer.
+- ✅ Presentation tab in Settings; 3-card mode picker + sidebar toggles.
+- ✅ Rust IO: `apps/oa-shell/src/layout.rs` (3 unit tests) + `layout.json` / `presentation.json` files; 4 new Tauri commands.
+- ✅ SQLite library: `apps/oa-shell/src/library_db.rs` (7 unit tests) with games + folders schema + FTS5 search index + triggers; 7 new Tauri commands.
+- ✅ One-shot `localStorage[oa.library.v1]` → SQLite migration with idempotent INSERT OR IGNORE.
+- ✅ Frontend `createLibraryStore` rewritten to talk to Rust; mutations write-through.
+- ✅ Cabinet mode ships as layout stub only (full attract loop + marquee + PIN-locked admin lands in Phase 4 per L-6).
+
+**Acceptance gate:** App opens into new layout; resizing sidebars persists across restarts; presentation toggle flips chrome scale; existing library migrates from localStorage to SQLite with zero data loss; cargo test --workspace 49/49 green; frontend build clean.
+
+---
+
+## ✅ Phase 2.6 — Library polish (2026-05-17)
+
+- ✅ TanStack Solid Virtual on the library grid (2D row-grouping; `ResizeObserver`-driven `columnCount`; `content-visibility: auto` defense in depth on tiles).
+- ✅ View mode picker — Capsule grid + Detail list (Hero / Wall / Coverflow are Phase 4 polish).
+- ✅ Sort / group bar above the grid (sort: title / addedAt / year; group: none / letter / system; persisted in layout.json).
+- ✅ Search-as-you-type input in the toolbar center zone.
+- ✅ Drag-to-reorder systems in the left sidebar (flat reorder; nesting deferred to a follow-up alongside the "PC Engine family" tree).
+- ✅ Empty-state CTA + window-level drag-drop folder target via Tauri 2 `onDragDropEvent`.
+- ✅ `LibraryPrefs` extended (`viewMode`, `sortKey`, `groupBy`, `systemOrder`); old layout.json files still parse via `#[serde(default = fn)]`.
+- ✅ `LibraryGrid.tsx` retired; superseded by `VirtualLibraryGrid` + `LibraryView`.
+
+**Acceptance gate:** Library scrolls smoothly with TanStack Virtual; sort/group/view persist across restart; drag-reorder in sidebar persists; drop a folder onto the window → it ingests.
+
+---
+
+## ✅ Phase 2.7 — Import wizard + background scanner (2026-05-18)
+
+- ✅ **Archive support (zip + 7z)** end-to-end (slice A) — schema v2 + `archive.rs` module + scanner peeks + launch path (cart formats → in-memory bytes, CD sets → extract-to-temp) + cleanup-on-unload + startup sweep. 11 unit tests across schema + archive.
+- ✅ **Background scan service** (slice B) — `scan_service.rs` runs the walk on a tokio blocking task, emits `oa://library-scan-progress` events throttled to ~12 Hz, returns rows via `oa://library-scan-complete` with the row list attached. Cancellable. Frontend's `ingestFolderPath` + `rescanFolders` route through it with optional progress callback wired to the toolbar status bar.
+- ✅ **Filesystem watcher** (slice B) — `watcher.rs` uses `notify::RecommendedWatcher` per tracked folder, emits `oa://library-watch-found` (one event per ROM, including inner ROMs from newly-dropped archives) + `oa://library-watch-removed`. Frontend subscribes; new ROMs auto-add to the library.
+- ✅ **Three serious bugs fixed** (slice B): `rescanFolders` dropping `archiveInnerPath` (root cause for "archived games can't launch"); overflow menu opening-then-closing on the same click; menu clicks falling through to the right sidebar due to stacking-context order between grid cells.
+- ✅ **Per-folder rules CRUD** (slice C) — `library_db.rs` gains `Folder` / `FolderRule` / `FolderUpdate` types + seven methods (`list_folders` with optional eager rules, `get_folder_by_path`, `add_folder`, `update_folder` partial, `remove_folder`, `list_folder_rules`, `set_folder_rules` transactional). Six Tauri commands wired. Two new unit tests cover CRUD roundtrip + transactional rule replace + FK cascade.
+- ✅ **Import wizard** (slice C) — `components/ImportWizard.tsx` 4-step modal (folder → mapping → preview → confirm). Wired from toolbar `⋯ → Import folder…`. Step 3 inlines its own scan listeners so it can expose jobId for cancel. Commit writes to SQLite folders + folder_rules + games, mirrors to `settings.libraryFolders` for the existing watcher + Rescan-all flows. Optional post-import media + metadata sync per affected system.
+- ⬜ **Drag-drop on transparent single-window mode** — Tauri's OS drop handler doesn't register reliably on transparent WebView windows. Known limitation kept on the backlog. Workarounds: toolbar `⋯ → Import folder…` (the new wizard), `Settings → Library → Add`, or the two-window shell mode (opaque library window has working drag-drop). Proper fix needs Tauri-side investigation.
+
+**Acceptance gate:** ✅ Import wizard handles mixed-system folders with archives; per-folder rules editor functional; new ROMs dropped into watched folders auto-appear within 5s.
+
+---
+
+## ✅ Phase 2.8 — Settings as a route (2026-05-18)
+
+- ✅ **Slice A (2026-05-18) — SettingsModal → SettingsPage route.** Page renders inside the Shell's main region as a routed view (new `SidebarView` variant `{ kind: "settings" }`), not a modal overlay. Reaches via toolbar ⚙, new left-sidebar Settings entry (pinned bottom), and overflow `Mode: …` item. Same 6 tabs + body content. Back button + Esc both return to `{ kind: "all" }`. File renamed `SettingsModal.tsx` → `SettingsPage.tsx`; `props.onClose` → `props.onBack`; all `() => props.open` resource sources simplified to fire-once-on-mount.
+- ✅ **Slice B (2026-05-18) — Quick Settings overlay.** `components/QuickSettings.tsx` — center card on Esc during single-window gameplay. Resume / Save&Load states / Game info / Scaling (status row → All Settings) / Shader (Phase 3 placeholder) / All settings / Exit to library. Capture-phase Esc + RAF-after-open auto-focus + `set_ui_intercepting` gating during overlay lifetime. App.tsx's slice-A Esc → library-toggle behavior replaced with Esc → overlay (Exit-to-library is now the way out). `SUPPRESS_DEFAULT` gate extended to bypass `BUTTON` + `SELECT` so Enter on focused buttons activates.
+- ✅ **Slice C (2026-05-18) — Per-system settings page + SettingRow inheritance primitive.** Reached from system page header `⚙` button. Same left-rail layout as slice A but scoped to one system: Display / Audio / Input / Cores / Shaders / Theme. New `<SettingRow>` primitive shows OA-wide inherited value as a greyed chip next to the override input — load-bearing for slice D too. Display + Cores tabs are wired (overrides persist + Cores bridges existing `cores.json` store); other tabs scaffold-only with amber "scaffold" banners. New Rust `system_settings.rs` + `get_system_settings` / `set_system_settings` commands; one JSON file per system at `appDataDir/systems/<id>.json`. **Display overrides persist but don't yet take effect at runtime** — wiring lands alongside per-game shader work in Phase 3.
+- ✅ **Slice D (2026-05-18) — Per-game settings drawer.** Slide-in-from-right drawer reached from tile context menu's new "Game properties…" item. 7 tabs along the top (Overview / Core / Display / Audio / Input / Shaders / Region). Display + Core + Region tabs are wired with SettingRow's full two-level inheritance chain (per-game → per-system → OA-wide). New Rust schema v3 + `games.overrides_json` column + `get_game_overrides` / `set_game_overrides` commands. Per-game core override stays in its existing `core_override` column (launch path reads it directly).
+
+**Acceptance gate:** ✅ Three-tier (OA / per-system / per-game) inheritance UI works with line-through-on-overridden chips and "Per-system" / "OA default" inheritance labels. `<SettingRow>` is the load-bearing primitive shared by slice C + D.
+
+---
+
+## 🟨 Phase 3 — Shader pipeline (3-4 weeks)
+
+- 🟨 WGSL passes: scanline, CRT curve, phosphor decay, bezel overlay.
+  - ✅ **Slice A (2026-05-18) — Shader chain foundation.** Three runtime presets (Plain / Scanlines / CrtLite) in a single branched fragment shader with a small uniform buffer (`{ preset_id, fb_height, _pad, _pad }`). New `ShaderPreset` enum + `set_shader_preset` Tauri command + `EmuCommand::SetShaderPreset`. `SystemSettings` + `GameOverrides` gained `shader_preset: Option<String>`. Frontend handles full per-game → per-system → OA-wide resolution in `handleLaunch` and pushes via `set_shader_preset` before each launch. PerSystemSettingsPage + PerGameSettingsDrawer Shaders tabs now live (no longer scaffold). 2 new oa-render unit tests.
+  - ✅ **Slice B (2026-05-18) — Multi-pass chain + Phosphor preset + Display runtime wiring.** `EffectPass` struct + ping-pong intermediate textures (`IntermediateTexture`, Rgba8Unorm linear) + `effect_chain: Vec<EffectPass>` on Renderer. `build_effect_chain(preset)` returns `[H-blur, V-blur]` for Phosphor, empty for single-pass presets. `present()` runs the chain into intermediates before the final blit; `run_effect_chain()` ping-pongs and returns which intermediate was last written. New `blur.wgsl` (5-tap separable Gaussian, axis from uniform). `ShaderPreset::Phosphor` variant + `is_multipass()` method. Frontend `SHADER_PRESET_OPTIONS` gains `"phosphor"` ("Phosphor (soft bloom)"). **Display runtime wiring** — `handleLaunch` resolves scaling + windowMode + monitorIndex from per-game → per-system → OA-wide and pushes via `set_scaling_mode` + `set_window_mode` in parallel with `set_shader_preset` before each launch. `handleUnload` reverts all three to OA-wide so stale per-game state doesn't leak to the next launch. Closes the "Display + Region overrides persist but don't yet take effect at runtime" item carrying through since slice 2.8.C. 2 new oa-render unit tests.
+  - 🟨 **Slice B-2 — Bezel overlay + Phosphor composite (2026-05-18).** Phosphor composite shipped: `blit.wgsl` gained bindings 3 + 4 for a secondary texture; the Phosphor branch (now preset_id 3, was 0) samples slot 0 (source) and slot 3 (chain output) and returns `mix(source, blur, bloom_amount)`. Default `bloom_amount = 0.6`. New `final_blit_bgl` (5-entry layout) hosts the final blit + `fb_texture.bind_group`; chain passes keep the original 3-entry `bind_group_layout`. New `Renderer::set_bloom_amount` / `bloom_amount` accessors. Bezel overlay rendering shipped: new `bezel.wgsl` + 2-entry `bezel_bgl` + dedicated alpha-blend pipeline; `Renderer::set_bezel_image(rgba, w, h)` uploads sRGB RGBA8; `clear_bezel_image` / `has_bezel` / `bezel_dimensions` accessors; an extra render pass with `LoadOp::Load` + standard alpha blending runs after the main blit when a bezel is loaded. **Shell-side wiring + per-system/per-game bezel asset path + bloom slider deferred to slice C TOML** — the renderer side is complete; nothing in the UI loads a bezel today. Renderer tests 15/15 green.
+- ✅ **Slice C — TOML preset format (2026-05-18).** Replaces the slice-A hardcoded preset string list with a data-driven registry. Built-in presets ship as `shaders/presets/{plain,scanlines,crt-lite,phosphor}.preset.toml` at the workspace root, compiled into the binary via `include_str!` so the app always has them. User files at `<exe_dir>/shaders/presets/<name>.preset.toml` overlay by name (drop a `phosphor.preset.toml` there to replace the built-in). Schema fields: `display_name` / `description` / `base` (which renderer pipeline backs this preset) / `[params]` (e.g. `bloom_amount`) / `[bezel]` (image path; relative resolves to `<exe_dir>/shaders/`). New Rust `apps/oa-shell/src/shader_presets.rs` module owns parsing + the registry + PNG decoding (via the existing `image` workspace dep). New `EmuCommand::ApplyShaderPreset(ResolvedPreset)` carries `(base, bloom_amount?, bezel?)` to the emu thread — replaces slice-A's `SetShaderPreset(enum)`. New `list_shader_presets()` Tauri command surfaces the registry to the frontend. Frontend `ShaderPreset` type broadened from a 4-string union to `string`; new `frontend/src/settings/shader_presets.ts` exposes a Solid signal that loads the registry on app mount (with the 4 built-ins as the hardcoded fallback until the Tauri call returns). PerSystemSettingsPage + PerGameSettingsDrawer dropdowns iterate the live list — drop a `.preset.toml` file and it appears in the dropdown on next launch. 5 new oa-shell unit tests cover the builtin parse + user-overlay precedence + malformed-file safety.
+- ✅ **Slice D — Live shader hot-reload (2026-05-18).** `apps/oa-shell/src/shader_presets_watcher.rs` runs a `notify::RecommendedWatcher` on `<exe_dir>/shaders/presets/`. On any `*.preset.toml` create/modify/remove the watcher reloads the registry, emits `oa://shader-presets-changed` with the fresh summary list so the frontend's `shaderPresets()` signal refreshes any open dropdowns, AND re-applies the currently-active preset (`AppState::active_shader_preset` is tracked by `set_shader_preset` — the same name resolves through `shader_presets::apply` again so TOML edits to `bloom_amount` / bezel paths take effect on the next frame). No frontend action needed for hot-reload to work; the listener is purely cosmetic (keeps dropdowns up to date). Per-system / per-game **bloom_amount slider** also lands (closes the slice-C polish item): `SystemSettings.bloom_amount` + `GameOverrides.bloom_amount` (Option<f32>), new `EmuCommand::SetBloomAmount(f32)` + `set_bloom_amount(amount)` Tauri command, slider UI in both per-system and per-game settings Shaders tabs with the standard SettingRow inheritance chips. App.tsx's launch path resolves bloomAmount per-game → per-system → null and sends it AFTER `set_shader_preset` so the override always wins over the TOML default. 4 new tests in `shader_presets_watcher::tests` cover the event-relevance filter (`.preset.toml` only; `.wgsl` and plain `.toml` ignored).
+- ⬜ HDR tone mapping (behind setting, where display supports it). Needs an HDR-aware swapchain format (R16G16B16A16Float) where the display reports HDR capabilities.
 
 **Acceptance gate:** Per-system default presets ship. Per-game override works. Preset survives restart.
 
 ---
 
-## ⬜ Phase 4 — Differentiator features (4-6 weeks)
+## 🟨 Phase 4 — Differentiator features (4-6 weeks)
 
-- ⬜ Rewind-scrubbing UI.
-- ⬜ TAS recording + deterministic replay.
-- ⬜ Frame-by-frame WebM export.
-- ⬜ Memory inspector (dev/power-user mode).
-- ⬜ Per-game milestone tracking.
-
----
-
-## ⬜ Phase 5 — PCE-CD bringup (2-3 weeks)
-
-- ⬜ Vendor Mednafen PCE (full, with CD) — Beetle PCE Fast doesn't ship CD.
-- ⬜ `oa-cdrom` CHD/CUE/BIN loader.
-
-**Acceptance gate:** Rondo of Blood boots from CHD, CDDA plays, gameplay starts.
+- 🟨 Rewind-scrubbing.
+  - ✅ **Slice A (2026-05-18) — Rewind engine.** `oa-savestate` rebuilt around `RewindRing`: byte-bounded `VecDeque<Vec<u8>>` with LIFO pop_back + greedy eviction from the front (always retains ≥1 snapshot so a momentary cap squeeze can't empty the ring). `RewindConfig { enabled, capture_interval_frames, max_bytes }` is the runtime shape; defaults are off, 6-frame interval (~100 ms at 60 fps), 64 MiB cap. Emu thread holds the ring + config and: (a) captures `core.save_state` into the ring every `capture_interval_frames` after `run_frame`, (b) when Backspace is held during gameplay, pops the newest snapshot and `load_state`s it (plus one run_frame to refresh the framebuffer; input is intentionally NOT dispatched). Ring clears on every `LoadRom` / `UnloadRom`. New `set_rewind_config(enabled, captureIntervalFrames, maxMegabytes)` Tauri command. Three-tier inheritance: OA-wide signals in `settings/store.ts` + `appDataDir/systems/<id>.json::rewind*` per-system + `games.overrides_json::rewind*` per-game; `App.handleLaunch` resolves the chain and pushes config before `launchRom`, `handleUnload` reverts to OA-wide. New "Gameplay" tab on the OA Settings page; new "Rewind" tab on per-system + per-game pages with full SettingRow inheritance UI. 7 new oa-savestate unit tests (push/pop/cap/eviction/seconds_held/default).
+  - ✅ **Slice B (2026-05-18) — Rewind scrubbing UI.** `RewindRing` gains `peek_at(steps_back)` + `truncate_above(steps_back)` (non-destructive peek for preview; destructive commit on user choice). Emu thread gains a scrub-mode state machine: `scrubbing: bool` + `scrub_position: u32` + `scrub_dirty: bool`; during scrub, normal forward play + capture freeze and each dirty frame peeks the snapshot at `scrub_position` + load_state + one run_frame. `SharedRewindState` (`{enabled, snapshotCount, byteSize, captureIntervalFrames, fps, scrubbing, scrubPosition}`) lives in `Arc<Mutex<>>` on AppState, written by the emu thread after every capture/pop/scrub op, read by Tauri commands. Four new Tauri commands: `get_rewind_state` / `start_rewind_scrub` / `set_rewind_scrub_position(stepsBack)` / `end_rewind_scrub(commit)`. QuickSettings overlay gains a two-mode card (`view: "actions" | "rewind"`): the existing action list now includes a Rewind action (hint shows "Xs · N snaps" or "off" / "no history"); clicking it enters scrub mode, swapping the card for a `RewindScrubber` component with a draggable timeline strip (left=oldest, right=live), keyboard navigation (←/→/Shift+arrow/Home/End), Cancel (restores live edge) + "Resume from here" (commits, truncates ring). Closing the overlay while scrubbing auto-cancels. 2 new oa-savestate unit tests.
+  - **Future polish:** thumbnail strip (currently the timeline is a smooth gradient — visible-position indicator only; per-snapshot RGBA thumbnails on the strip would need either inline capture or on-demand rendering). Real-time stats display while playing (the OA-wide / per-system Rewind settings pages don't yet show live ring stats).
+- ✅ **Slice C (2026-05-18) — TAS recording + deterministic replay.** New `oa-savestate::tas` module: hand-rolled binary `.tas` file format (magic `OATAS` + version + zstd-compressed payload of header + initial save-state blob + per-frame `[u32; 4]` input bits) with `TasRecording::{new, write_to, read_from, read_header_only}`. Replay-safety stamping: header records `system_id`, `core_file_name`, `rom_sha1_hex` (SHA-1 of ROM bytes — computed at LoadRom time for Bytes-source carts; empty string for Path-source CDs), `fps`, timestamp, display name. Emu thread gains four new EmuCommand variants (`StartTasRecording { display_name }`, `StopTasRecording { discard }`, `StartTasReplay(Box<TasRecording>)`, `StopTasReplay`) plus state machine slots (`tas_recording: Option<TasRecording>`, `tas_replay: Option<TasRecording>`, `tas_replay_current_frame`). Frame body branches FOUR ways now: SCRUB, REPLAY (dispatch recorded inputs, no user input, no capture; auto-stops at EOF), HOLD-BACKSPACE rewind (now gated off during record/replay for clean v1 semantics), NORMAL (records dispatched libretro-shape bits when recording). `SharedTasState { mode, frame, totalFrames, displayName }` published via the same `Arc<Mutex<>>` pattern as `SharedRewindState`. New Tauri commands: `get_tas_state` / `start_tas_recording` / `stop_tas_recording` / `start_tas_replay` / `stop_tas_replay` / `list_tas_recordings(romPath)` / `delete_tas_recording`. Recording files saved to `appDataDir/tas/<sanitized-rom-stem>/<timestamp>[-name].tas`. QuickSettings overlay gains a third view ("tas") with: new "Record new" panel (optional label input + Start button), per-game recordings list (each row: title / duration / frame count / timestamp / Replay button / Delete), in-flight Recording state (Discard / Stop & save), in-flight Replaying state (progress bar + Stop button). All input record + replay happens in libretro joypad bit space so recordings replay correctly across cores with different per-system bindings. 5 new oa-savestate tests (round-trip + header-only + bad-magic + bad-version + empty-frames).
+- 🟨 Frame-by-frame video export.
+  - ✅ **Slice D (2026-05-18) — PNG frame sequence + manifest (ships now).** New `apps/oa-shell/src/video_capture.rs` module: bounded-channel `mpsc::sync_channel<VideoFrame>(30)` + per-recording worker thread that pulls frames and writes each as `frame_NNNNNN.png` (uses `png` crate directly, already a workspace dep). Emu thread copies `core.framebuffer().pixels` after `run_frame` in both the NORMAL forward-play branch and the TAS REPLAY branch; submits via `try_submit` (drops the frame + bumps `dropped_frame_count` if the encoder can't keep up, never blocks gameplay). `Stop & save` writes `manifest.json` with system_id / rom_stem / fps / frame_count / dropped_frame_count / dimensions / timestamps / frame_pattern. `SharedVideoState` published via `Arc<Mutex<>>` (same pattern as rewind / TAS). 6 new Tauri commands: `get_video_state` / `start_video_capture` / `stop_video_capture` / `list_video_clips` / `delete_video_clip` / `open_video_clip_folder` (cross-platform Explorer/Finder/xdg-open). QuickSettings overlay gains a fourth view ("video") with VideoPanel rendering idle (label + Start + scrollable clip list with open-folder/delete buttons) vs capturing (Discard + Stop & save). 3 new oa-shell video_capture tests (round-trip / discard / channel-overflow).
+  - ✅ **Slice D-2 — WebM conversion via ffmpeg (2026-05-18).** New `convert_video_clip_to_webm(clipDir)` Tauri command shells out to `ffmpeg -y -framerate <fps> -i frame_%06d.png -c:v libvpx-vp9 -b:v 2M clip.webm` inside the clip's directory; reads fps + frame_pattern from the existing `manifest.json`. Detects ffmpeg-not-on-PATH and returns a clear error string pointing at https://ffmpeg.org/download.html. QuickSettings VideoPanel gains a "WebM" button per clip with three states: `WebM` (idle) / `…WebM` (in-flight, disabled across all clip rows so only one ffmpeg fires at a time) / `✓ WebM` / `⚠ WebM` (last result; hover for full message). Output path returned on success and surfaced via the button tooltip.
+- ✅ **Slice E (2026-05-18) — Memory inspector.** `oa-core::MemoryRegionId` enum (SaveRam / Rtc / SystemRam / VideoRam) + `Core::memory_region(id) -> Option<&[u8]>` trait method with default-None impl. `oa-libretro` resolves `retro_get_memory_data` + `retro_get_memory_size` symbols and `LibretroCore::memory_region` returns a slice aliasing through the live core memory (same `&self`-tied lifetime pattern as `framebuffer`). Emu thread refreshes a `Arc<Mutex<MemorySnapshot>>` each frame (gated on subscribers — empty snapshot + no milestones = no copy); Tauri command `read_memory_region(region, offset, length)` reads from it. QuickSettings 5th view ("memory"): region picker, hex offset input (accepts 0x prefix or decimal), 8-byte-per-row hex view with offset column, Prev/Next page buttons, polled at 4 Hz.
+- ✅ **Slice F (2026-05-18) — Per-game milestone tracking.** SQLite schema v4 adds `milestones` table (game_id FK + name / description / region / offset / width / op / target / edge_only / triggered_at_unix_ms). `library_db::Milestone` type + full CRUD (`list_milestones`, `add_milestone`, `update_milestone`, `delete_milestone`, `mark_milestone_triggered`, `reset_milestone_progress`). Emu thread's `LoadMilestones` / `ClearMilestones` commands stage runtime evaluators (parsed `MilestoneRuntime` structs with op + region + target). Frame body evaluates each predicate (`read_memory_le` reads 1/2/4-byte LE values) against live core memory; rising-edge fires a toast + emits `oa://milestone-triggered` event + stamps `triggered_at_unix_ms` in SQLite via the shared LibraryDb handle. `App.handleLaunch` calls `arm_milestones(gameId)` on every successful launch to push the current game's list into the runtime. PerGameSettingsDrawer gains a "Milestones" tab with list (showing triggered chip), edit/delete/reset row actions, and an add/edit form (name + description + region + offset (hex-friendly) + width + op + target + edge-trigger toggle). 1 new oa-shell milestone CRUD roundtrip test.
 
 ---
 
-## ⬜ Phase 6+ — Next systems (first-wave, then ongoing)
+## ✅ Phase 5 — PCE-CD bringup (closed 2026-05-18)
 
-First-wave order: Lynx → 7800 → SMS/GG → MSX/MSX2 → ColecoVision → Vectrex → Virtual Boy → WonderSwan. After the first wave, additions are continuous — the project's long-term ambition is to host almost all of retro gaming (see `docs/VISION.md` for the broader picture, including the bigger list of likely future systems beyond the first wave).
+Re-scoped 2026-05-18 after the libretro pivot put most of the originally-planned work in place; the remaining four ⬜ items closed in a single afternoon.
 
-Per-system steady-state recipe (the 8-step pattern documented in memory `feedback_multi_core_architecture_ready.md`):
+- ✅ **Picked the .dll.** Beetle PCE Fast (`mednafen_pce_fast_libretro.dll`) — already shipped for TG-16 HuCards — handles CD too. Phase 0 Spike 2's hint about `pcecd.cpp` in `vendor/mednafen/pce_fast/` proved out. Full Beetle PCE Mednafen kept available as a per-game fallback. Decision recorded in `docs/cores/tg16/DECISIONS.md` + `docs/cores/pce-cd/DECISIONS.md`.
+- ✅ **Rondo of Blood end-to-end** validated by operator against the existing infrastructure — BIOS SHA-1 check (`syscard3.pce`), `.chd` load via `RomSource::Path`, title-screen video, CDDA music, in-game audio, gameplay all working.
+- ⬜ **`oa-cdrom` build-out** — deferred to Phase 5.5 hardening pending real-gap discovery. Plausible API surface if needed: CHD/CUE metadata parser for track / disc counts (library tile metadata); audio-track-name surface for the right sidebar. Don't pre-build — let real validation drive the API. Tracked in `docs/cores/pce-cd/ROADMAP.md`.
+- ✅ **PCE-CD's place in the system registry** — option (b) shipped: dedicated `pce-cd` SystemId in the frontend registry with its own sidebar entry, theme (cyan-blue at 220°), and per-system settings file. Cart games (`.pce`) stay under `tg16`; CD images (`.cue` / `.chd` / `.ccd` / `.toc` / `.m3u` / `.iso`) live under `pce-cd`. Shared core .dll + shared input pipeline (`bindings.rs` dispatches both to PCE_BUTTONS / pce_to_libretro_bits / default_pce_bindings). Library DB v4→v5 migration retags existing rows; one new oa-shell test covers the case matrix.
 
-1. Vendor upstream into `crates/oa-<sys>-sys/vendor/` + ORIGIN.md + PATCHES/
-2. `build.rs` with cc-rs file list + integration `#define` shims
-3. `shim.cpp` exposing the `oa_<sys>_*` C surface (same 9-function shape as PCE)
-4. `crates/oa-<sys>/src/lib.rs` — `Core` impl + button-bit remap
-5. Add to workspace members
-6. Register in `oa-shell::core_registry`
-7. Theme the system page (Solid UI, Phase 2+)
-8. Per-core docs at `docs/cores/<sys>/`
+**Acceptance gate:** ✅ Rondo of Blood boots from CHD, CDDA plays, gameplay starts. Save-state round-trip mid-disc + multi-disc `.m3u` are queued in `docs/cores/pce-cd/ROADMAP.md` Phase 5.5 hardening but not gating items.
 
-Goal: 4-8 weeks per new system. The trait, renderer, audio, and input crates need zero changes per system — the multi-core architecture was wired in day one (see Phase 1 retrospective in `docs/SESSION_LOG.md`).
+---
+
+## 🟨 Phase 6+ — Next systems (first-wave, then ongoing)
+
+First-wave order (revised 2026-05-18): **Lynx (Phase 0 ✅ + operator-validated) → NES (Phase 0 ✅ 2026-05-18) → SNES (Phase 0 ✅ 2026-05-18) → 7800 → SMS/GG → MSX/MSX2 → ColecoVision → Vectrex → Virtual Boy → WonderSwan**. NES + SNES jumped the first-wave order on operator request — they're popular systems the user wanted to host alongside the niche-focused original first-wave list. After the first wave, additions are continuous — the project's long-term ambition is to host almost all of retro gaming (see `docs/VISION.md` for the broader picture, including the bigger list of likely future systems beyond the first wave).
+
+**Modern per-system recipe** (since the 2026-05-16 libretro pivot — the 8-step static-crate pattern in `feedback_multi_core_architecture_ready.md` is retired):
+
+1. Extend `SystemId` union + add to `systemThemes` registry (`frontend/src/themes/registry.ts`)
+2. Add `[data-system="<id>"]` block to `frontend/src/themes/systems.css`
+3. Per-system button bits + `default_<sys>_bindings()` + `<sys>_to_libretro_bits` + `defaults_for(id)` arm + `bit_for` / `buttons_for` dispatch arms in `apps/oa-shell/src/bindings.rs`
+4. `default_core_dll_for_system(id)` arm in `apps/oa-shell/src/main.rs` (the .dll filename the operator drops into `<exe_dir>/cores/`)
+5. `parse_system_id(s)` arm mapping the registry string to `oa_core::SystemId`
+6. Per-core docs at `docs/cores/<sys>/` (README + ROADMAP + SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS)
+
+Goal: 1 session for the onboarding chunk (Phase 0) → operator validates Phase 1 (real ROMs running) → Phase 2 polish picks up per-system tweaks. The trait, renderer, audio, scanner, archive, library DB, settings drawers, and all UI components need zero changes per system — the registry-driven shape was validated by Lynx onboarding (system #2) in ~600 LOC.

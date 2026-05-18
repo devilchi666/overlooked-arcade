@@ -16,14 +16,15 @@ The human is the **project owner** and operator at the keyboard. Claude (me) is 
 
 ## Locked design pillars (do not relitigate)
 
-- **Stack:** Rust + Tauri 2 + wgpu (WGSL) + forked C cores via FFI.
+- **Stack:** Rust + Tauri 2 + wgpu (WGSL) + libretro cores loaded dynamically via `libloading` (the `oa-libretro` crate). See the 2026-05-16 "Architecture pivot: libretro frontend" entry in `docs/DECISIONS.md` for why.
 - **UI:** Solid + TypeScript + Tailwind + Vite. Heroic Games Launcher visual ceiling. Per-system theming.
-- **License:** GPLv2 binary-wide. Repo public from Day 1; binaries link to source.
-- **Cores vendored in-tree.** `crates/oa-<sys>-sys/vendor/` with a maintained patch series (`vendor/PATCHES/`). Not git submodules.
-- **TG-16/PCE first.** HuCard cart → PCE-CD. CPU/PSG/VDC familiarity established before Lynx, 7800.
-- **Two-window Phase 1, single-window spike in Phase 2.** Library = Tauri WebView; game = dedicated native window with wgpu surface. Single-window (transparent WebView over wgpu) re-evaluated when UI shell is mature.
-- **Playable, not cycle-accurate.** Top ~80% of each system's library running well. Forked cores already encode the chip-level correctness — we don't second-guess upstream.
-- **No per-core ARCHITECTURE.md.** Chip behavior lives in the vendored C source's own comments and upstream docs. Per-core docs we DO keep: README (upstream info + our patches summary), ROADMAP, SESSION_LOG, KNOWN_GAME_BUGS, DECISIONS (our integration choices).
+- **License:** Shell is GPL-2.0 in the workspace metadata today; the dynamic-loading pivot severs binary-wide GPL propagation, so this can move to a permissive license once the install ships with our own .dll builds. GPL cores stay GPL in their .dll. Repo public from Day 1.
+- **Cores live next to the .exe** in `<exe_dir>/cores/` as libretro `.dll` / `.so` / `.dylib` files. Users can use community-built nightlies (https://buildbot.libretro.com/) or .dlls we build ourselves from forked source. BIOS files (PCE-CD `syscard3.pce` etc.) live in `<exe_dir>/system/`. User prefs (saves, bindings, audio.json) stay in `appDataDir` because they're per-user, not per-install.
+- **Forked-core philosophy preserved via our own .dll builds.** When we want to modify a core, we maintain a separate libretro-frontend build of the patched source (e.g. our Beetle PCE Fast fork) that produces a .dll we ship in the installer's `cores/` folder. Vendored static crates (`oa-pce-sys`, `oa-pce`) are retired (kept in-tree as historical reference, excluded from the workspace build).
+- **TG-16/PCE first.** HuCard cart → PCE-CD. Now translates to: "ship + validate Beetle PCE Fast .dll first" rather than vendoring source.
+- **Two-window Phase 1, single-window shipped in Phase 2.** Both modes are now production; selectable via Settings → Display → Shell mode.
+- **Playable, not cycle-accurate.** Top ~80% of each system's library running well. Cores already encode chip-level correctness — we don't second-guess upstream.
+- **No per-core ARCHITECTURE.md.** Chip behavior lives in upstream documentation. Per-core docs we DO keep: README (upstream info + our patches summary), ROADMAP, SESSION_LOG, KNOWN_GAME_BUGS, DECISIONS (integration choices).
 - **One core at a time.** `docs/ACTIVE_CORE.md` is the source of truth. Don't start Lynx work while TG-16 is mid-phase. Scope creep goes in `docs/PARKING_LOT.md`.
 
 ## How to start a session
@@ -52,9 +53,9 @@ Edit `docs/ACTIVE_CORE.md` to the target core's id (e.g. `lynx`, `atari7800`). A
 
 ## Architectural rules (apply once Rust code exists)
 
-- Every core implements the `oa_core::Core` trait: `reset()`, `run_frame()`, `framebuffer()`, `audio_samples()`, `set_input()`, `save_state()`, `load_state()`. The shell is system-agnostic.
+- Every core implements the `oa_core::Core` trait: `reset()`, `run_frame()`, `framebuffer()`, `drain_audio()`, `set_input()`, `save_state()`, `load_state()`. The shell is system-agnostic. The shipped impl is `oa_libretro::LibretroCore` (wraps a loaded libretro .dll).
 - Hot paths run on dedicated threads. The emulator core runs on its own thread; renderer pulls the latest framebuffer; audio is event-driven via cpal callback. Don't block the UI thread.
-- FFI boundaries are thin and explicit. `oa-<sys>-sys` is the raw unsafe bindings; `oa-<sys>` is the safe wrapper that impls `Core`.
+- libretro is the only FFI boundary. `oa-libretro::ffi` declares the ABI typedefs; `oa-libretro::loader` resolves symbols via `libloading`; `oa-libretro::state` owns the singleton callback state. New cores arrive as `.dll` files, not as new Rust crates.
 - Shaders are WGSL only. wgpu translates to DX12/Vulkan/Metal/GL. Avoid features that don't translate cleanly to GL fallback unless behind a backend cap check.
 - No network calls from emulator code. The emulator runs fully offline.
 - Tests live next to the code they test. Test ROMs go under `assets/test-roms/` (gitignored).
@@ -67,8 +68,9 @@ See `docs/PARKING_LOT.md`. If something comes up that isn't current-phase work f
 
 - Workspace prefix: `oa-` (Overlooked Arcade).
 - One binary: `apps/oa-shell/` (Tauri app).
-- Per-core: `crates/oa-<sys>-sys/` (raw FFI) + `crates/oa-<sys>/` (idiomatic wrapper). Examples: `oa-pce-sys`/`oa-pce`, `oa-lynx-sys`/`oa-lynx`.
+- Single Rust libretro frontend: `crates/oa-libretro/`. Per-system Rust crates are no longer added — new systems arrive as `.dll`s in `<exe_dir>/cores/`.
 - Shared: `crates/oa-core/`, `oa-render/`, `oa-audio/`, `oa-input/`, `oa-platform/`, `oa-content/`, `oa-savestate/`, `oa-cdrom/`.
+- Retired static-core crates (`crates/oa-pce-sys/`, `crates/oa-pce/`) stay on disk as historical reference but are excluded from the workspace build.
 - Frontend is NOT a Cargo crate. Lives at `frontend/` with `package.json`, built by Vite.
 - Shaders in `crates/oa-render/shaders/*.wgsl` (engine-level) and `shaders/presets/*.preset.toml` (shipped presets).
 

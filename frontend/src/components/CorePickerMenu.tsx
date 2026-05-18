@@ -1,0 +1,158 @@
+import { createMemo, createResource, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
+import type { LibraryStore } from "../library/store";
+import type { RomEntry } from "../library/types";
+
+type CoreEntry = {
+  fileName: string;
+  libraryName: string;
+  libraryVersion: string;
+  validExtensions: string;
+};
+
+type Props = {
+  /// The rom this picker is for. Null = menu hidden.
+  entry: RomEntry | null;
+  /// Position to anchor the menu (right-click event coordinates).
+  position: { x: number; y: number } | null;
+  library: LibraryStore;
+  onClose: () => void;
+};
+
+/// Right-click context menu for setting a per-game core override. Lists every
+/// detected core whose `valid_extensions` includes the rom's extension; plus a
+/// "(default)" entry that clears the override and falls back to the per-system
+/// pref. Closes on Escape, click-outside, or after a selection.
+const CorePickerMenu: Component<Props> = (props) => {
+  const [cores] = createResource(
+    () => (props.entry ? props.entry.id : null),
+    async () => {
+      try {
+        return await invoke<CoreEntry[]>("list_cores");
+      } catch {
+        return [];
+      }
+    },
+  );
+
+  const romExt = createMemo(() => {
+    const e = props.entry;
+    if (!e) return "";
+    const dot = e.filePath.lastIndexOf(".");
+    return dot >= 0 ? e.filePath.slice(dot + 1).toLowerCase() : "";
+  });
+
+  // A core advertises support via `validExtensions` like "pce|cue|chd|sgx".
+  // We only show cores that include the rom's extension — picking a core that
+  // doesn't handle the file would just fail load_game and the user wouldn't
+  // know why. Always shows ALL cores if the rom has no extension (fallback).
+  const compatibleCores = createMemo(() => {
+    const list = cores() ?? [];
+    const ext = romExt();
+    if (!ext) return list;
+    return list.filter((c) =>
+      c.validExtensions
+        .split("|")
+        .map((x) => x.trim().toLowerCase())
+        .includes(ext),
+    );
+  });
+
+  function pick(fileName: string | null) {
+    if (!props.entry) return;
+    void props.library.setCoreOverride(props.entry.id, fileName);
+    props.onClose();
+  }
+
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === "Escape") props.onClose();
+  }
+  function onWindowClick(e: MouseEvent) {
+    // Click anywhere outside the menu closes it. The menu stops propagation
+    // on its own clicks (see the root container below).
+    const target = e.target as HTMLElement | null;
+    if (!target || !target.closest("[data-core-picker-root]")) {
+      props.onClose();
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", onWindowKey, true);
+    window.addEventListener("mousedown", onWindowClick, true);
+  });
+  onCleanup(() => {
+    window.removeEventListener("keydown", onWindowKey, true);
+    window.removeEventListener("mousedown", onWindowClick, true);
+  });
+
+  return (
+    <Show when={props.entry && props.position} keyed>
+      {(_) => {
+        const pos = props.position!;
+        return (
+          <div
+            data-core-picker-root
+            class="fixed z-50 min-w-[18rem] overflow-hidden rounded-md border border-white/10 bg-(--color-oa-bg-deep)/95 text-sm shadow-2xl shadow-black/60 backdrop-blur"
+            style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div class="border-b border-white/5 px-3 py-2">
+              <p class="truncate text-xs font-medium text-(--color-oa-ink)">{props.entry!.title}</p>
+              <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">Run with core</p>
+            </div>
+            <ul class="max-h-72 overflow-y-auto py-1">
+              <li>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-white/[0.06]"
+                  onClick={() => pick(null)}
+                >
+                  <span class="text-(--color-oa-ink)">(Default — auto-detect)</span>
+                  <Show when={!props.entry!.coreOverride}>
+                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">active</span>
+                  </Show>
+                </button>
+              </li>
+              <Show when={cores.loading}>
+                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Scanning cores…
+                </li>
+              </Show>
+              <Show when={!cores.loading && compatibleCores().length === 0}>
+                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  No compatible cores for .{romExt() || "(no ext)"}
+                </li>
+              </Show>
+              <For each={compatibleCores()}>
+                {(c) => {
+                  const active = () => props.entry!.coreOverride === c.fileName;
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        class="flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left hover:bg-white/[0.06]"
+                        onClick={() => pick(c.fileName)}
+                      >
+                        <span class="flex w-full items-center justify-between">
+                          <span class="truncate text-(--color-oa-ink)">{c.libraryName}</span>
+                          <Show when={active()}>
+                            <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">active</span>
+                          </Show>
+                        </span>
+                        <span class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          {c.libraryVersion} · {c.fileName}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </div>
+        );
+      }}
+    </Show>
+  );
+};
+
+export default CorePickerMenu;

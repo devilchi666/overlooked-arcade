@@ -43,6 +43,11 @@ impl KeyboardMapping {
     /// `button_mask` is a single-bit value (e.g. `oa_pce::buttons::I`); only
     /// the lowest set bit is honoured.
     pub fn bind(&mut self, port: PortIndex, button_mask: u32, key: Keycode) {
+        self.set(port, button_mask, Some(key));
+    }
+
+    /// Set or clear a binding for a specific button bit. `None` unbinds the slot.
+    pub fn set(&mut self, port: PortIndex, button_mask: u32, key: Option<Keycode>) {
         if button_mask == 0 {
             return;
         }
@@ -50,7 +55,7 @@ impl KeyboardMapping {
         if bit >= 32 {
             return;
         }
-        self.map[port as usize][bit] = Some(key);
+        self.map[port as usize][bit] = key;
     }
 }
 
@@ -75,6 +80,11 @@ impl GamepadMapping {
 
     /// Bind a pad button to a specific button bit on a specific port.
     pub fn bind(&mut self, port: PortIndex, button_mask: u32, button: GamepadButton) {
+        self.set(port, button_mask, Some(button));
+    }
+
+    /// Set or clear a binding for a specific button bit. `None` unbinds the slot.
+    pub fn set(&mut self, port: PortIndex, button_mask: u32, button: Option<GamepadButton>) {
         if button_mask == 0 {
             return;
         }
@@ -82,7 +92,7 @@ impl GamepadMapping {
         if bit >= 32 {
             return;
         }
-        self.map[port as usize][bit] = Some(button);
+        self.map[port as usize][bit] = button;
     }
 }
 
@@ -147,6 +157,35 @@ impl InputPoller {
     /// loses focus to keep keystrokes/pad presses from leaking through.
     pub fn set_enabled(&mut self, on: bool) {
         self.enabled = on;
+    }
+
+    /// Set or clear a keyboard binding live, without rebuilding the poller.
+    /// `None` unbinds. Use this for runtime rebinding from a settings UI.
+    pub fn set_keyboard_binding(&mut self, port: PortIndex, button_mask: u32, key: Option<Keycode>) {
+        self.keyboard.set(port, button_mask, key);
+    }
+
+    /// Set or clear a gamepad binding live, without rebuilding the poller.
+    /// `None` unbinds. Use this for runtime rebinding from a settings UI.
+    pub fn set_gamepad_binding(&mut self, port: PortIndex, button_mask: u32, button: Option<GamepadButton>) {
+        self.gamepad.set(port, button_mask, button);
+    }
+
+    /// Clear every keyboard + gamepad binding for a port. Called by the
+    /// shell on every system swap before applying the new system's
+    /// bindings — otherwise stale bit slots from the previous system can
+    /// leak through. PCE uses a clockwise d-pad layout (UP=4, RIGHT=5,
+    /// DOWN=6, LEFT=7); NES/SNES/Lynx use libretro's straight order
+    /// (UP=4, DOWN=5, LEFT=6, RIGHT=7). Without clearing, switching from
+    /// PCE to NES leaves the arrow keys bound at PCE's positions, which
+    /// the NES identity remap then reads as the wrong directions.
+    pub fn clear_port_bindings(&mut self, port: PortIndex) {
+        let idx = port as usize;
+        if idx >= 5 {
+            return;
+        }
+        self.keyboard.map[idx] = [None; 32];
+        self.gamepad.map[idx] = [None; 32];
     }
 
     /// Immediate-mode keyboard check, bypassing the enabled gate. The shell

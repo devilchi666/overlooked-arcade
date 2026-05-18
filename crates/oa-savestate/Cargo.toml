@@ -9,3 +9,4 @@ publish = false
 oa-core = { workspace = true }
 zstd    = { workspace = true }
 log     = { workspace = true }
+serde   = { workspace = true }

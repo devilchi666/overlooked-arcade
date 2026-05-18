@@ -1,0 +1,122 @@
+import { onCleanup, onMount, Show, type Component } from "solid-js";
+import type { LibraryStore } from "../library/store";
+import { systemThemes, type SystemId } from "../themes/registry";
+import type { SystemSettingsTab } from "../layout/LeftSidebar";
+
+type Props = {
+  systemId: SystemId | null;
+  position: { x: number; y: number } | null;
+  library: LibraryStore;
+  onClose: () => void;
+  /// Navigate to the system-filtered library (same as left-click on the
+  /// sidebar entry — duplicated here for discoverability).
+  onShowLibrary: (id: SystemId) => void;
+  /// Navigate to the per-system settings page (PerSystemSettingsPage).
+  /// Optional `tab` lands directly on a specific tab — the "Edit
+  /// bindings…" item passes `"input"`, "System settings…" passes
+  /// undefined (which respects the user's last-viewed tab).
+  onOpenSystemSettings: (id: SystemId, tab?: SystemSettingsTab) => void;
+};
+
+const ITEM_CLASS =
+  "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06]";
+
+/// Right-click context menu for a system entry in the left sidebar. Anchored
+/// at the click coordinates (passed as `position`). Mirrors the
+/// `TileContextMenu` UX — Esc closes, click-outside closes.
+const SystemContextMenu: Component<Props> = (props) => {
+  const theme = () => (props.systemId ? systemThemes[props.systemId] : null);
+  const gameCount = () => {
+    const id = props.systemId;
+    if (!id) return 0;
+    return props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
+  };
+
+  function closeAfter<T>(fn: () => T): T {
+    const r = fn();
+    props.onClose();
+    return r;
+  }
+
+  function showLibrary() {
+    if (!props.systemId) return;
+    closeAfter(() => props.onShowLibrary(props.systemId!));
+  }
+
+  function openSettings(tab?: SystemSettingsTab) {
+    if (!props.systemId) return;
+    closeAfter(() => props.onOpenSystemSettings(props.systemId!, tab));
+  }
+
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === "Escape") props.onClose();
+  }
+  function onWindowClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (!target || !target.closest("[data-system-context-root]")) {
+      props.onClose();
+    }
+  }
+  onMount(() => {
+    window.addEventListener("keydown", onWindowKey, true);
+    window.addEventListener("mousedown", onWindowClick, true);
+  });
+  onCleanup(() => {
+    window.removeEventListener("keydown", onWindowKey, true);
+    window.removeEventListener("mousedown", onWindowClick, true);
+  });
+
+  return (
+    <Show when={props.systemId && props.position} keyed>
+      {(_) => {
+        const pos = props.position!;
+        return (
+          <div
+            data-system-context-root
+            class="fixed z-50 min-w-[14rem] overflow-hidden rounded-md border border-white/10 bg-(--color-oa-bg-deep)/95 text-sm shadow-2xl shadow-black/60 backdrop-blur"
+            style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+            onClick={(e) => e.stopPropagation()}
+            data-system={props.systemId!}
+          >
+            <div class="border-b border-white/5 px-3 py-2">
+              <p class="truncate text-xs font-medium text-(--color-oa-ink)">
+                {theme()?.displayName ?? props.systemId}
+              </p>
+              <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                {gameCount()} {gameCount() === 1 ? "game" : "games"}
+              </p>
+            </div>
+            <ul class="py-1">
+              <li>
+                <button type="button" class={ITEM_CLASS} onClick={showLibrary}>
+                  <span>Show library</span>
+                  <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    Click
+                  </span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class={ITEM_CLASS} onClick={() => openSettings("input")}>
+                  <span>Edit bindings…</span>
+                  <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    ⌨
+                  </span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class={ITEM_CLASS} onClick={() => openSettings()}>
+                  <span>System settings…</span>
+                  <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
+                    ⚙
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        );
+      }}
+    </Show>
+  );
+};
+
+export default SystemContextMenu;

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "WebView capabilities — core APIs + native folder picker for ROM ingestion. Both window labels are listed because the library lives in `library` in two-window mode and `main` in single-window mode (which one exists depends on the shellMode chosen at startup).",
+  "windows": ["library", "main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
+}

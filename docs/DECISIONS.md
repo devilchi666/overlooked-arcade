@@ -129,6 +129,49 @@ This file is **project-wide**. Per-core decisions live in `docs/cores/<core>/DEC
 
 ---
 
+## 2026-05-16 — CI scope: workspace minus `oa-shell` on non-Windows
+
+**Decision:** GitHub Actions matrix runs `cargo build --workspace --locked` + `cargo test --workspace --locked` on Windows, and `cargo build/test --workspace --exclude oa-shell --locked` on macOS + Ubuntu. Linux runners install ALSA + udev + X11 dev headers (`libasound2-dev`, `libudev-dev`, `libx11-dev`, `libxi-dev`, `libxtst-dev`, `pkg-config`) for cpal/gilrs/device_query.
+
+**Why:** Including the Tauri shell crate on non-Windows runners drags in webkit2gtk, glib, gio, librsvg, libxdo, libssl, ayatana-appindicator, etc. — 9+ apt packages on Linux, plus the macOS Tauri build path. The user can't validate or ship Tauri builds on macOS/Linux today (Windows is the primary platform until Phase 6+ distribution work), so the value of testing the shell binary on those runners is low and the maintenance cost of the system-dep list is real. The emulation crates (`oa-pce-sys`, `oa-render`, `oa-audio`, `oa-input`, `oa-core`, `oa-pce`, `oa-savestate`, `oa-cdrom`) DO get full cross-platform coverage — that's where the vendored-C-core breakage risk lives, and macOS's zlib 1.2.11 issue already proved the value of that coverage (first-pass CI caught it).
+
+**Considered and rejected:**
+- **Install the full Tauri Linux/macOS dep set.** Catches Tauri drift cross-platform, but the user can't run the result, so the value is mostly noise until Phase 6+.
+- **Skip non-Windows CI entirely.** Loses cross-platform validation of the emulation crates — exactly where vendored-C-core breakage is most likely.
+- **Maintain a separate workflow file for Tauri builds.** Premature; add when Phase 6 distribution work begins.
+
+**When to revisit:** Phase 6+ when cross-platform distribution becomes a real goal. Drop the `--exclude` and add the full system dep matrix.
+
+---
+
+## 2026-05-16 — Default renderer scaling mode: aspect-correct fit
+
+**Decision:** The renderer's default presentation is **aspect-correct fit** — the largest rectangle inside the surface that preserves the core's reported display aspect ratio, with the remaining surface area letterboxed/pillarboxed in the render-pass clear color (black). Cores report aspect via the new `oa_core::Framebuffer.display_aspect: f32` field; `0.0` falls back to `width:height`. Implementation is `wgpu::RenderPass::set_viewport()` — no shader uniform, no extra draw, no per-frame allocation.
+
+**Why:** Phase 2 ROADMAP plans five scaling modes (pixel perfect / aspect-correct fit / stretched / 1:1 / explicit integer multiples) with per-game default. Before that UI exists, the renderer needs a sensible default for "what happens when the user resizes the window". Aspect-correct fit is what polished emulators do — it preserves the look the developer designed without exposing pixel-aspect quirks. The Phase 2 settings UI will add the toggles; this commit lays the foundation by plumbing display aspect end-to-end (shim → `OaPceFrame` → `Framebuffer` → `Renderer`).
+
+**Considered and rejected:**
+- **Stretched (pre-patch behavior).** Easy, looks awful on non-matching window aspects, hides bugs in core aspect reporting.
+- **Pixel-perfect integer-scale only.** Best image quality but surprisingly small image at non-matching window sizes; bad first impression vs gentle letterboxing.
+- **Defer aspect mode until Phase 2 UI exists.** Means shipping Phase 1 with the stretched look as the de facto default — bad screenshot material and a regression target for Phase 2.
+
+---
+
+## 2026-05-16 — Tailwind v4 (CSS-first via `@tailwindcss/vite`), no PostCSS
+
+**Decision:** Use Tailwind CSS v4 (`tailwindcss` + `@tailwindcss/vite`, both ^4.1) for the `frontend/` shell. Theme tokens — TG-16 orange/cream, OA dark surface palette, font stack — live inline in `frontend/src/index.css` under the v4 `@theme` directive. No `tailwind.config.js`, no `postcss.config.js`.
+
+**Why:** v4 is a ground-up rewrite that ships as a Vite plugin and reads theme tokens from CSS via `@theme { --color-… }`. For per-system theming (Phase 2's anchor feature), CSS-native tokens compose with our per-system palettes more naturally than a JS config object that the build pipeline needs to read and serialize. The plugin-only setup keeps the dep tree small (89 npm packages total, zero vulnerabilities), eliminates the PostCSS hop, and ships a 6.2 kB CSS bundle for the splash. Solid 1.9 + Vite 6 are both standard choices given the project-wide UI-framework decision; no surprises there worth their own entries.
+
+**Considered and rejected:**
+- **Tailwind v3 + `tailwind.config.ts`.** Familiar, but theme-in-JS means per-system palettes have to live in a JS object that round-trips through the build instead of being plain CSS tokens we can override per-system page via the cascade. v4 was designed for exactly this.
+- **No Tailwind, hand-rolled CSS only.** Loses utility-class velocity for layout/spacing/typography — Heroic-tier polish takes too long without it.
+- **Vanilla-extract / Panda / Stylex.** All capable, none widely-used in the Solid ecosystem; choosing a heavier tool here trades future-contributor familiarity for marginal type safety we don't need yet.
+
+**One implementation note worth keeping (corrected 2026-05-16):** Tauri 2's `tauri-cli` runs `beforeDevCommand` / `beforeBuildCommand` from the **frontend project root** (the directory containing `package.json` referenced by the build), NOT from the directory containing `tauri.conf.json` as we originally assumed. So our commands are plain `npm run dev` / `npm run build` — already in the right cwd. Tauri's standalone `cargo build -p oa-shell` doesn't touch the frontend at all (no beforeBuildCommand step), so the discrepancy only surfaced when we actually invoked `cargo tauri dev` for the first time. The earlier `npm --prefix ../../frontend …` form was based on a wrong cwd assumption and was silently broken until cargo-tauri got installed.
+
+---
+
 ## 2026-05-15 — Spike 3 outcome: hand-written FFI surface (not bindgen) for `oa-<sys>-sys` crates
 
 **Decision:** Production `oa-<sys>-sys` crates declare FFI surfaces by hand (`extern "C"` blocks + `#[repr(C)]` structs). Do not add `bindgen` to the build pipeline.
@@ -161,3 +204,126 @@ This file is **project-wide**. Per-core decisions live in `docs/cores/<core>/DEC
 - Wrapping a vendor SDK we don't control and that ships hundreds of functions.
 
 Neither applies today. Re-evaluate per-system if it does.
+
+---
+
+## 2026-05-16 — Spike 4 outcome: single-window WebView2-over-wgpu — **PASS**
+
+**Scratch:** `scripts/spikes/04-single-window/` — standalone Cargo project (own `[workspace]` table to escape the repo workspace), Tauri 2.11 + wgpu 23. Single `WebviewWindow` built with `.transparent(true)`; wgpu surface attached to its underlying HWND; clear-color HSV gradient on a dedicated render thread. `dist/index.html` sets `html, body { background: transparent; }` and frames the wgpu area with semi-transparent top + bottom chrome strips + a side callout (`rgba(8, 6, 18, 0.55)` with `backdrop-filter: blur(12px)`).
+
+**Result:** Operator ran `cargo run` on 2026-05-16 — animated rainbow gradient is visible in the middle region of the WebviewWindow, between the top and bottom HTML chrome strips. WebView2's transparent CSS regions composite over the wgpu surface drawn into the parent HWND on Windows + DWM. The chrome strips and the callout overlay correctly on top of the gradient with their semi-transparent backdrops.
+
+**What this confirms (non-obvious before the spike):** Tauri 2 with `.transparent(true)` on a `WebviewWindow` does *not* result in WebView2's child HWND painting opaque over wgpu pixels in the same parent HWND. The combination — `WebviewWindow::transparent(true)` plus `html, body { background: transparent; }` in the loaded document — lets DWM composite the parent HWND's client area (where wgpu draws) underneath the WebView2 child's transparent regions. wgpu doesn't fight WebView2 for the HWND.
+
+**Decision:** Add a "single-window" mode toggle to `oa-shell`. **Two-window stays the default** — multi-monitor users prefer game on one display + library on another, and two-window is already validated for the full emulator path including audio, input, save-states, scaling modes. Single-window becomes an opt-in for users on a single screen or who want the more polished "game-with-overlay-UI" feel. Both modes share `oa-render` and the emu thread; the difference is in `oa-shell::setup` (one `WebviewWindow` with wgpu attached to its HWND vs separate `WebviewWindow` + `Window`).
+
+**This supersedes** the "Phase 2 spike" line in the 2026-05-15 Tauri+wgpu integration decision: single-window mode is shippable, not just an experimental spike target.
+
+**Implementation notes for the integration pass:**
+- Mode chosen at app start (settings file read before Tauri Builder). Toggling at runtime is possible but would require recreating windows; treat it as a restart-required setting for the first cut.
+- The library UI in single-window mode is the same Solid app, but a separate route / view-mode that lays out chrome (top bar, optional side panel) over the transparent center where wgpu draws. Reuse the existing components.
+- `dist/index.html`'s body MUST stay `background: transparent` in single-window mode and CAN keep `background: var(--color-oa-bg-deep)` in two-window mode — the two-window library WebView is opaque on purpose. Probably cleanest as a body class set by the shell, or two separate index entry points.
+- Spike binary stays around as the minimal reference for the compositing approach. Don't delete `scripts/spikes/04-single-window/`.
+
+---
+
+## 2026-05-16 — Per-system theming: cascade-override with neutral-OA default
+
+**Decision:** The Solid frontend declares system-aware design tokens (`--color-system-accent`, `--color-system-accent-soft`, `--color-system-glow`) once in `index.css`'s `@theme` block, defaulted to a neutral OA palette (warm desaturated accent, OA cream, faint glow). Per-system palettes live in `frontend/src/themes/systems.css` as `[data-system="<id>"]` blocks that override the tokens via CSS cascade when `document.documentElement.dataset.system` is set. The active system is flipped from TS via `applySystemTheme(id)` in `frontend/src/themes/registry.ts`, which also exports the typed `SystemId` union + `systemThemes` registry. App code references only the system tokens (`text-(--color-system-accent)`, etc.), never a system-specific token like `--color-tg16-orange`.
+
+**Why:**
+1. **System-agnostic pages need their own brand identity.** The all-systems library grid, settings panel, and About screen don't belong to any one system — defaulting them to TG-16's orange would visually claim TG-16 is "the OA palette," which is wrong and would force a refactor the moment Lynx ships. A neutral OA default keeps system identity scoped to the system page.
+2. **Tailwind v4-native.** `@theme` declares the token + generates the utility class (`text-system-accent`, `bg-system-accent`, etc.) in one place. `[data-system="..."]` overrides are plain CSS — Tailwind doesn't need to know about per-system palettes, so we stay clear of v4's regenerate-on-config-change semantics.
+3. **Adding a system is a 3-line recipe.** Extend `SystemId`, add a `systemThemes` entry, add a `[data-system="<id>"]` block to `systems.css`. The recipe is the same shape as the 8-step per-core recipe in `feedback_multi_core_architecture_ready` — the theming layer is core-agnostic by design.
+4. **No JS-driven CSS-var writes per frame.** Active system changes hit the cascade once via the `dataset.system` attribute write; no Solid effect rewriting CSS variables on the root element, no inline `style=""` props.
+
+**Considered and rejected:**
+- **TG-16 as the unbranded default.** Tempting because TG-16 is the only core today, but bakes a system assumption into the OA brand and forces a cleanup pass when the second system ships.
+- **JS-driven CSS-var injection** (Solid effect writes `--color-system-accent` etc. onto `document.documentElement.style` when the active system changes). More flexible (dynamic palette tweaking, palette previews), but heavier and pulls the source-of-truth out of CSS — diagnosing "why is the accent wrong?" becomes a JS+CSS trace instead of just `data-system` + DevTools inspect.
+- **One CSS file per system, dynamically imported.** Defers theme code-splitting but adds a network/IO step on system switch (jarring), and palettes are small (~120 bytes per system gzipped) — not worth the complexity.
+
+**When to revisit:** If theming grows beyond palette (per-system fonts, custom decorative SVGs, animated backgrounds), revisit whether the registry should carry asset references too. Today: tokens only.
+
+---
+
+## 2026-05-16 — Architecture pivot: libretro frontend (dynamic .dll loading)
+
+**Decision:** Overlooked Arcade becomes a libretro frontend. Cores are loaded at runtime from `.dll`/`.so`/`.dylib` files in `appDataDir/cores/` via `libloading`, wrapped as `oa_core::Core` impls by the new `crates/oa-libretro` crate. Users can use community-built libretro core nightlies (https://buildbot.libretro.com/nightly/) or .dlls we build ourselves from forked source. Per-game and per-system core selection (UI shipping in the next sessions).
+
+**This supersedes** parts of the 2026-05-15 "Engine stack" decision — specifically, the "forked C cores wrapped via FFI" aspect. Cores are no longer statically linked into our binary; they live as separate files. The rest of that decision (Rust + Tauri 2 + wgpu + WGSL) stands.
+
+**Why:**
+1. **Multi-core per system**, which the user explicitly requested. The PC Engine alone has three credible cores (Beetle PCE Fast, Beetle PCE full Mednafen, Beetle SuperGrafx) covering different game subsets (HuCard, CD, SGX). Statically linking all three balloons the binary and means re-vendoring every upstream change. Dynamic loading lets users pick the right core per game with zero binary cost.
+2. **Catalog instantly expands** to every libretro core (~150 cores across every retro platform). Users wanting Genesis, SNES, PSX, N64, etc. drop the .dll in cores/. Aligns with the original "premium emulator frontend" vision but at much larger scope than the original 10-system lineup.
+3. **Community-built nightlies** mean updates are dragging in a new .dll, not re-vendoring source. The libretro project ships daily builds tested across platforms.
+4. **License flexibility.** Dynamic loading severs GPLv2 propagation. The shell can ship under whatever license; GPL cores stay GPL in their .dll. Our forked .dll builds remain GPL (their source is GPL). This unblocks future considerations we don't have today but might want.
+5. **No throw-away.** Our existing `shim.cpp` logic ported cleanly to Rust under `oa-libretro/src/state.rs` and `pixel.rs`. The same callback model, environment dispatcher, and pixel conversion that worked statically work dynamically; only the linkage method changed.
+
+**Trade-offs accepted:**
+- **Day-one install requires a cores/ folder.** We can't ship "double-click, play Bonk" without bundling at least one .dll in the installer. Acceptable: we'll ship a curated set of forked cores (built by us from modified source) in the installer's cores/ folder. Power users can add more.
+- **Editing core source = building a .dll**, not editing in-tree files. This is a real workflow change — adding a new build pipeline (or using libretro's own Makefile/CMake) — but each core is independent and stays close to upstream.
+- **Singleton constraint enforced in Rust.** libretro cores keep C globals, so only one `LibretroCore` exists per process. The `Mutex<Option<State>>` in `oa-libretro/src/state.rs` enforces this. To swap cores at runtime (when launching a different game), we drop the active core (which uninstalls the singleton) and load the next .dll.
+- **Variadic log callback omitted.** `extern "C" fn(level, fmt, ...)` requires unstable `c_variadic`. We `return false` for GET_LOG_INTERFACE; cores fall back to stderr. Revisit if a core hard-requires the log interface.
+
+**Considered and rejected:**
+- **Stay static, multi-crate** (vendor `oa-pce-sys`, `oa-sgx-sys`, `oa-pcecd-sys`, ...). Matches the original CLAUDE.md vision exactly but binary grows linearly with each system and we lose the libretro catalog. User explicitly chose dynamic over this option.
+- **Hybrid (static built-in cores + dynamic .dll for everything else).** Best UX (day-one install works) but largest engineering scope — we'd maintain two parallel core-integration paths forever. User chose pure dynamic; we'll ship curated .dlls in the installer instead to get the same day-one experience.
+
+**Migration plan (multi-session):**
+1. ✅ This session — `oa-libretro` crate exists, integrates into `oa-shell` with auto-detection of `appDataDir/cores/mednafen_pce_fast_libretro.dll`, falls back to static `oa-pce` if missing.
+2. Next — operator drops the .dll, validates Bonk plays via libretro. Per-system + per-game core picker UI. Cores-folder scanner UI in Settings.
+3. After — retire `oa-pce-sys` and `oa-pce` crates. Vendor source moved to a separate build pipeline that produces our forked Beetle PCE Fast .dll for distribution.
+4. CD + SGX work by dropping the respective libretro .dlls in cores/.
+
+**CLAUDE.md update pending.** The "Locked design pillars" section's "forked C cores via FFI" line needs to change to "libretro cores loaded dynamically via libloading; we ship our own .dll builds for cores we fork heavily." Not done in this session — left for user to confirm before editing the source-of-truth file.
+
+---
+
+## 2026-05-17 — Asset delivery: Tauri's built-in asset protocol, not custom URI schemes
+
+**Decision:** All on-disk media served to the WebView (cover art, save-state thumbnails, eventual snapshots / title screens / video) goes through Tauri's **built-in asset protocol** via `convertFileSrc(absolutePath)`, not a custom-registered URI scheme. `app.security.assetProtocol.enable = true` with `scope.allow = ["$APPDATA/**"]` in `tauri.conf.json`; the `tauri` crate gets the `protocol-asset` feature.
+
+**Why:** Custom URI schemes registered via `register_asynchronous_uri_scheme_protocol("foo", ...)` work in production (WebView loads from `tauri://localhost/`, same-origin with custom schemes) but **error with `net::ERR_UNKNOWN_URL_SCHEME` in `cargo tauri dev`** (WebView loads from Vite at `http://localhost:5173/`, which is cross-protocol to the custom scheme; Chromium blocks the fetch before the Rust handler even runs). The custom-scheme path was initially shipped in the cover-art slice (`oa-media://`); validation by the operator surfaced the dev-mode breakage. The asset protocol is the canonical Tauri 2 path for serving local files and is specifically configured cross-origin-friendly. See [[reference_tauri_custom_uri_schemes_blocked_in_dev]] for the full debugging story.
+
+**Trade-offs accepted:**
+- **Scope must be declared up-front in `tauri.conf.json`.** Adding a new media root requires a config change + app restart. We use the broad `$APPDATA/**` scope for v1 because all media lives under appData; tighter scopes (`$APPDATA/media/**`) are an option later if we want to lock down.
+- **`convertFileSrc` returns the host-formatted URL** (`https://asset.localhost/...` on Windows; `asset://localhost/...` elsewhere) — so the frontend has to call it; we can't construct URLs by string-formatting on the Rust side. Acceptable: one helper call per cover.
+- **Path resolution moves to the frontend.** The Rust MediaDb stores paths as `appData`-relative; the frontend resolves `appDataDir()` once at mount and joins them. Trade-off: frontend now has to know about appData layout. Mitigated by isolating in `MediaProvider`'s `joinAppData()` helper.
+
+**Considered and rejected:**
+- **Custom URI scheme (`oa-media://...`)** — what we shipped first. Cleanly scoped to media routing, includes our own region-priority resolution server-side, but fails in dev mode. Production-only would force every iteration to be `cargo tauri build`.
+- **`windows[].useHttpsScheme: true`** to load dev HTML from `https://tauri.localhost/` instead of HTTP. Sidesteps the cross-protocol issue but breaks Vite HMR and adds cert friction. Asset protocol is cleaner with no dev-iteration impact.
+- **Base64-embed in IPC payloads.** Works cross-origin trivially (data: URLs are always allowed) but explodes IPC size — 1000 covers × 80 KB = 80 MB JSON per refresh — and defeats the WebView's HTTP cache. Reserve `data:` URLs for tiny transient previews (save-state thumbnails, where we already use them because they're ≤32 KB and the modal closes after viewing).
+- **Sidecar HTTP server** (run a `localhost:NNNN` static file server inside the Tauri process). Architecturally heavier and re-implements what the asset protocol gives us for free.
+
+**Where this applies going forward:**
+- Cover art (this session). ✅
+- Save-state thumbnails currently use base64 data URLs (`list_save_slots` command). For 10 slots per game this is fine, but if we ever surface a "library of all save states" view it'd want to migrate to the asset protocol too.
+- Future per-game metadata media (screenshots, fanart, video clips) goes through the asset protocol by default.
+- Per-system theming assets that ship in the install bundle would use Tauri's `$RESOURCE` scope (a different prefix); same convention.
+
+---
+
+## 2026-05-18 — Rewind: byte-bounded ring of opaque save-state blobs, off by default
+
+**Decision:** Phase 4 slice A implements rewind as a `RewindRing` in `oa-savestate` that holds uncompressed `Core::save_state` blobs in memory, capped by total bytes (default 64 MiB), captured every N forward frames (default 6 = ~100 ms at 60 fps). Holding Backspace pops the newest snapshot, `load_state`s it, then runs exactly one forward frame to repaint the framebuffer. Rewind is off by default at every tier; users opt in via OA Settings → Gameplay → Rewind, with per-system + per-game overrides through the standard inheritance chain.
+
+**Why:**
+1. **Byte-bounded, not snapshot-count-bounded.** Per-snapshot size varies wildly across cores (PCE Fast ~50 KB, SNES9x ~300 KB, Mednafen Saturn ~3 MB if/when it lands). A count-based cap means "10 s of history on PCE, 1.7 s on Saturn" with no warning to the user. A byte cap lets the seconds-held display surface system-specific reality.
+2. **Always retain ≥1 snapshot during eviction.** If a single snapshot busts the cap (extreme: 100 MB Saturn save vs 64 MB cap), we keep it rather than emptying the ring. Losing all history to a momentary cap squeeze is worse than briefly exceeding the cap; the next push restores equilibrium.
+3. **Capture interval lives in frames, not milliseconds.** Different cores run at different rates (PCE 59.83 Hz, SNES 60.10 Hz, Lynx 75 Hz, future Saturn 50/60 Hz). A frame-based interval is deterministic across cores; the UI converts to ms for display only.
+4. **No compression on the capture path.** Compression would buy ~5× density but adds variable CPU cost on the emu thread, which has to fit inside the frame budget. We have plenty of RAM headroom; choose predictability over density. If memory pressure becomes real (Saturn-class state sizes), revisit with `zstd` level 1 (already a workspace dep, currently unused in `oa-savestate`).
+5. **Rewind suppresses input + advances one frame after load_state.** Libretro's `cb_video_refresh` only fires from `retro_run`, so the framebuffer needs at least one `run_frame` after `retro_unserialize` to repaint. We dispatch ZERO input to that run — the user's holding Backspace, not steering. Net motion per render frame at default settings: 5 game frames backwards (one `pop_back` undoes ~6 frames; one `run_frame` advances 1). Acceptable RetroArch-equivalent UX.
+6. **Off by default at every tier.** Rewind has non-zero RAM + CPU cost per frame. Many sessions don't want it, and quietly burning ~30 MB of RAM + a `save_state` every 100 ms surprises users who'd never explicitly enabled it. Three-tier inheritance + off default at the root means the cost is opt-in everywhere.
+
+**Considered and rejected:**
+- **Snapshot-count-bounded ring.** Simpler API but misleading across cores (see #1).
+- **Compress snapshots with `zstd` level 1 on capture, decompress on rewind.** Quiet density win on the wire — `oa-savestate` already depends on `zstd` from Phase 1's stub. Rejected for slice A on predictability grounds (#4); revisit when state sizes outgrow the byte budget on a real core. Code path is small enough that adding it later is a half-day refactor, not a redesign.
+- **Capture the framebuffer alongside the save state.** Lets us skip the extra `run_frame` after `load_state` and present the framebuffer that existed when the snapshot was taken. Cleaner semantically, but doubles the snapshot size (PCE: 50 KB save + 240 KB RGBA → 290 KB; 5.8× density loss). The framebuffer trailing by one frame during rewind is invisible at ~5× rewind speed.
+- **One ring per `Core` instance (owned by the core itself).** Tempting from a "core owns its own state" perspective. Rejected because the cap policy is system-agnostic UX (operator sets 64 MB; that 64 MB belongs to whatever's loaded), and shell-side ownership lets the ring survive a brief core swap (slice B might want this). The trait stays minimal; the shell owns the ring.
+- **Always-on rewind, controlled only by capture interval (0 = off).** Conflates two concerns (enable/disable + interval) into one knob. Worse: a fresh install without a real opt-in would burn RAM silently.
+
+**Where this applies going forward:**
+- Slice B (rewind scrubbing UI) consumes the same ring: it'll add a peek-by-index accessor for thumbnail strip rendering + a "set head to position N" that pops everything above and `load_state`s the target.
+- Slice C (TAS recording + deterministic replay) shares the snapshot format — TAS recording dumps the ring's contents as initial state + per-frame input deltas; replay rewinds via the same mechanism.
+- Per-game milestone tracking (slice F) can subscribe to memory regions per-snapshot; the ring becomes a value-history channel as well as a state-history channel.

@@ -32,6 +32,12 @@ pub enum AudioError {
     /// No default output device is available.
     #[error("no default audio output device")]
     NoDevice,
+    /// A named device was requested but no output device with that name exists.
+    #[error("audio device not found: {0}")]
+    DeviceNotFound(String),
+    /// Couldn't enumerate available output devices.
+    #[error("output_devices failed: {0}")]
+    EnumerateDevices(#[from] cpal::DevicesError),
     /// Couldn't enumerate the device's supported configs.
     #[error("supported_output_configs failed: {0}")]
     EnumerateConfigs(#[from] cpal::SupportedStreamConfigsError),
@@ -44,6 +50,38 @@ pub enum AudioError {
     /// No supported config has stereo + a sample format we know.
     #[error("no compatible audio config (need stereo, i16/f32/u16)")]
     NoCompatibleConfig,
+}
+
+/// Identity record for an enumerated output device. `name` is the persistent
+/// identifier — stable enough on Windows + macOS for use as a settings key.
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// Enumerate currently-attached output devices. Returns an empty list on
+/// enumeration failure (logged at warn level). The default device, if any, is
+/// flagged via `is_default`.
+pub fn list_devices() -> Vec<DeviceInfo> {
+    let host = cpal::default_host();
+    let default_name = host
+        .default_output_device()
+        .and_then(|d| d.name().ok());
+    let iter = match host.output_devices() {
+        Ok(it) => it,
+        Err(e) => {
+            log::warn!("oa-audio: output_devices() failed: {e:?}");
+            return Vec::new();
+        }
+    };
+    let mut out = Vec::new();
+    for d in iter {
+        let Ok(name) = d.name() else { continue };
+        let is_default = default_name.as_deref() == Some(name.as_str());
+        out.push(DeviceInfo { name, is_default });
+    }
+    out
 }
 
 type RbProd = ringbuf::CachingProd<std::sync::Arc<HeapRb<i16>>>;
@@ -119,58 +157,105 @@ pub struct AudioSink {
     resample_buf: Vec<i16>,
     pushed_total: u64,
     dropped_total: u64,
+    /// Display name of the active device. `None` indicates the system default
+    /// was selected at the time the stream was opened.
+    current_device: Option<String>,
     // Keep the stream alive — its callback owns the consumer half.
     _stream: cpal::Stream,
+}
+
+struct OpenedStream {
+    producer: RbProd,
+    output_rate: u32,
+    stream: cpal::Stream,
+    device_label: String,
+}
+
+/// Resolve + open a stream against either the default device (None) or a
+/// specifically-named one. Centralizes the device-pick / supported-config / build
+/// path so `new()` and `set_device()` share it.
+fn open_stream(source_rate: u32, device_name: Option<&str>) -> Result<OpenedStream, AudioError> {
+    let host = cpal::default_host();
+    let device = match device_name {
+        Some(name) => host
+            .output_devices()?
+            .find(|d| d.name().ok().as_deref() == Some(name))
+            .ok_or_else(|| AudioError::DeviceNotFound(name.to_string()))?,
+        None => host.default_output_device().ok_or(AudioError::NoDevice)?,
+    };
+    let device_label = device.name().unwrap_or_else(|_| "<?>".into());
+    log::info!("oa-audio: opening output = {}", device_label);
+
+    let supported: Vec<SupportedStreamConfigRange> =
+        device.supported_output_configs()?.collect();
+    let chosen =
+        pick_stereo_config(&supported, source_rate).ok_or(AudioError::NoCompatibleConfig)?;
+    let output_rate = chosen.sample_rate().0;
+    let format = chosen.sample_format();
+    let stream_config: StreamConfig = chosen.config();
+
+    if output_rate == source_rate {
+        log::info!(
+            "oa-audio: stream {} Hz, {:?}, {} channels — native rate, no resampling",
+            output_rate, format, stream_config.channels
+        );
+    } else {
+        log::info!(
+            "oa-audio: stream {} Hz, {:?}, {} channels — resampling from {} Hz (linear interp)",
+            output_rate, format, stream_config.channels, source_rate
+        );
+    }
+
+    // Ring buffer sized for ~100 ms of stereo at 48 kHz = 9600 samples. We pick
+    // power-of-2 16384 for ringbuf's preferred capacity.
+    let rb: HeapRb<i16> = HeapRb::new(16384);
+    let (producer, consumer) = rb.split();
+
+    let stream = build_stream(&device, &stream_config, format, consumer)?;
+    stream.play()?;
+
+    Ok(OpenedStream { producer, output_rate, stream, device_label })
 }
 
 impl AudioSink {
     /// Build a sink consuming `source_rate` samples; resamples to whatever
     /// the device opens at (typically 48 kHz on Windows).
     pub fn new(source_rate: u32) -> Result<Self, AudioError> {
-        let host = cpal::default_host();
-        let device = host.default_output_device().ok_or(AudioError::NoDevice)?;
-        log::info!(
-            "oa-audio: default output = {}",
-            device.name().unwrap_or_else(|_| "<?>".into())
-        );
+        Self::with_device(source_rate, None)
+    }
 
-        let supported: Vec<SupportedStreamConfigRange> =
-            device.supported_output_configs()?.collect();
-        let chosen = pick_stereo_config(&supported, source_rate).ok_or(AudioError::NoCompatibleConfig)?;
-        let output_rate = chosen.sample_rate().0;
-        let format = chosen.sample_format();
-        let stream_config: StreamConfig = chosen.config();
-
-        if output_rate == source_rate {
-            log::info!(
-                "oa-audio: stream {} Hz, {:?}, {} channels — native rate, no resampling",
-                output_rate, format, stream_config.channels
-            );
-        } else {
-            log::info!(
-                "oa-audio: stream {} Hz, {:?}, {} channels — resampling from {} Hz (linear interp)",
-                output_rate, format, stream_config.channels, source_rate
-            );
-        }
-
-        // Ring buffer sized for ~100 ms of stereo at 48 kHz = 9600 samples. We pick
-        // power-of-2 16384 for ringbuf's preferred capacity.
-        let rb: HeapRb<i16> = HeapRb::new(16384);
-        let (producer, consumer) = rb.split();
-
-        let stream = build_stream(&device, &stream_config, format, consumer)?;
-        stream.play()?;
-
+    /// Build a sink against a specifically-named output device, or the system
+    /// default if `device_name` is `None`. The shell uses this on startup to
+    /// honor the persisted device preference.
+    pub fn with_device(source_rate: u32, device_name: Option<&str>) -> Result<Self, AudioError> {
+        let opened = open_stream(source_rate, device_name)?;
         Ok(Self {
-            producer,
+            producer: opened.producer,
             source_rate,
-            output_rate,
-            resampler: Resampler::new(source_rate, output_rate),
+            output_rate: opened.output_rate,
+            resampler: Resampler::new(source_rate, opened.output_rate),
             resample_buf: Vec::with_capacity(4096),
             pushed_total: 0,
             dropped_total: 0,
-            _stream: stream,
+            current_device: device_name.map(|s| s.to_string()).or(Some(opened.device_label)),
+            _stream: opened.stream,
         })
+    }
+
+    /// Swap the active output device at runtime. Builds the new stream first;
+    /// only on success does the old stream get dropped (so a failed swap leaves
+    /// audio playing on the previous device). `None` selects the system default.
+    pub fn set_device(&mut self, device_name: Option<&str>) -> Result<(), AudioError> {
+        let opened = open_stream(self.source_rate, device_name)?;
+        self.producer = opened.producer;
+        self.output_rate = opened.output_rate;
+        self.resampler = Resampler::new(self.source_rate, self.output_rate);
+        self.resample_buf.clear();
+        self.current_device = device_name.map(|s| s.to_string()).or(Some(opened.device_label));
+        // Drop the previous stream LAST so the callback can't fire on a
+        // half-replaced ring during the swap.
+        self._stream = opened.stream;
+        Ok(())
     }
 
     /// Push interleaved stereo `i16` samples produced at `source_rate`.
@@ -206,6 +291,12 @@ impl AudioSink {
     /// Diagnostic counters: (output samples accepted, output samples dropped).
     pub fn stats(&self) -> (u64, u64) {
         (self.pushed_total, self.dropped_total)
+    }
+
+    /// Name of the currently-active output device. `None` if the sink was
+    /// constructed against the system default and we couldn't resolve a name.
+    pub fn current_device(&self) -> Option<&str> {
+        self.current_device.as_deref()
     }
 }
 

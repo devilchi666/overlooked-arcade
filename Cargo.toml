@@ -10,6 +10,13 @@ members = [
     "crates/oa-content",
     "crates/oa-savestate",
     "crates/oa-cdrom",
+    "crates/oa-libretro",
+]
+# Retired 2026-05-16 (pivoted to libretro dynamic loading). Source trees stay
+# in place under crates/oa-pce-sys/ + crates/oa-pce/ as a historical reference
+# and as the basis for future .dll builds we ship of our forked Beetle PCE Fast.
+# They no longer compile as part of `cargo build --workspace`.
+exclude = [
     "crates/oa-pce-sys",
     "crates/oa-pce",
 ]
@@ -32,12 +39,13 @@ oa-platform  = { path = "crates/oa-platform" }
 oa-content   = { path = "crates/oa-content" }
 oa-savestate = { path = "crates/oa-savestate" }
 oa-cdrom     = { path = "crates/oa-cdrom" }
-oa-pce-sys   = { path = "crates/oa-pce-sys" }
-oa-pce       = { path = "crates/oa-pce" }
+oa-libretro  = { path = "crates/oa-libretro" }
 
 # External
-tauri              = { version = "2", features = ["unstable"] }
+tauri              = { version = "2", features = ["unstable", "protocol-asset"] }
 tauri-build        = { version = "2", features = [] }
+tauri-plugin-dialog          = { version = "2" }
+tauri-plugin-global-shortcut = { version = "2" }
 wgpu               = "23"
 raw-window-handle  = "0.6"
 pollster           = "0.3"
@@ -55,6 +63,27 @@ serde_json         = "1"
 toml               = "0.8"
 zstd               = "0.13"
 directories        = "5"
+libloading         = "0.8"
+reqwest            = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+image              = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+strsim             = "0.11"
+urlencoding        = "2"
+futures            = "0.3"
+# bundled = ship SQLite source statically so users don't need a system SQLite.
+# Also enables FTS5 for the library search index.
+rusqlite           = { version = "0.32", features = ["bundled", "backup"] }
+# Archive support — zip is overwhelmingly common, 7z is the modern preservation
+# format. RAR is deliberately omitted: licensing footprint is awkward and
+# pure-Rust readers are limited; we route those to a "convert to zip" error.
+zip                = { version = "2", default-features = false, features = ["deflate", "bzip2", "zstd"] }
+sevenz-rust        = "0.6"
+# Filesystem watcher for folders flagged watch_enabled — picks up newly-
+# dropped ROMs without an explicit rescan.
+notify             = { version = "8", default-features = false, features = ["macos_kqueue"] }
+# Tokio runtime — we already pull it in transitively via reqwest, but call it
+# out explicitly so the background scan service's spawn_blocking has a clear
+# dependency on it. Same multi-thread runtime everything else shares.
+tokio              = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 
 [profile.dev]
 opt-level = 1                  # Light optimization keeps debug builds usable at 60fps.

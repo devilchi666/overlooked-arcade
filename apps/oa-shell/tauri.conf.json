@@ -4,12 +4,21 @@
   "version": "0.0.1",
   "identifier": "dev.overlookedarcade.shell",
   "build": {
-    "frontendDist": "dist"
+    "frontendDist": "../../frontend/dist",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$APPDATA/**"]
+        }
+      }
     }
   },
   "bundle": {
