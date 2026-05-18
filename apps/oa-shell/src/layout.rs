@@ -41,7 +41,22 @@ pub struct LayoutPrefs {
     /// Drag-to-reorder writes here.
     #[serde(default)]
     pub system_order: Vec<String>,
+    /// User-hidden system ids — these don't render in the left sidebar at
+    /// all even though they're still in the registry. Mirrors widgetHidden.
+    /// LaunchBox-equivalent surface: Settings → Library → Sidebar systems
+    /// checkbox list. Right-click → "Hide system" pushes into this list.
+    #[serde(default)]
+    pub hidden_systems: Vec<String>,
+    /// When true, the sidebar auto-hides any system with zero games in the
+    /// library (on top of `hidden_systems`). Matches LaunchBox's "Empty
+    /// Platforms" filter. Default true — fresh installs only show systems
+    /// the user actually has games for; flipping off shows the full
+    /// registry.
+    #[serde(default = "default_auto_hide_empty")]
+    pub auto_hide_empty_systems: bool,
 }
+
+fn default_auto_hide_empty() -> bool { true }
 
 fn default_view_mode() -> String { "capsule".to_string() }
 fn default_sort_key() -> String { "title".to_string() }
@@ -61,6 +76,8 @@ impl Default for LayoutPrefs {
             sort_key: default_sort_key(),
             group_by: default_group_by(),
             system_order: Vec::new(),
+            hidden_systems: Vec::new(),
+            auto_hide_empty_systems: default_auto_hide_empty(),
         }
     }
 }

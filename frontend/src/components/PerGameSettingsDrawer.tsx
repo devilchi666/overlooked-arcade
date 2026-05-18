@@ -21,6 +21,7 @@ import {
   type WindowMode,
 } from "../settings/store";
 import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
+import CoreOptionsPanel from "./CoreOptionsPanel";
 import { systemThemes } from "../themes/registry";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
@@ -55,6 +56,9 @@ type GameOverrides = {
   /// Phase 3 slice C polish — per-game Phosphor composite weight override.
   /// Wins over per-system value at launch.
   bloomAmount?: number | null;
+  /// RetroArch-parity slice — IPS/UPS/BPS patch applied to ROM bytes
+  /// before the core sees them. Absolute path. Null = no patching.
+  patchPath?: string | null;
   rewindEnabled?: boolean | null;
   rewindCaptureIntervalFrames?: number | null;
   rewindBufferMegabytes?: number | null;
@@ -71,18 +75,20 @@ type SystemSettings = {
   rewindBufferMegabytes?: number | null;
 };
 
-const TABS = ["overview", "core", "display", "audio", "input", "rewind", "shaders", "region", "milestones"] as const;
+const TABS = ["overview", "core", "core-options", "display", "audio", "input", "rewind", "shaders", "region", "milestones", "cheats"] as const;
 type TabId = typeof TABS[number];
 const TAB_LABELS: Record<TabId, string> = {
-  overview:   "Overview",
-  core:       "Core",
-  display:    "Display",
-  audio:      "Audio",
-  input:      "Input",
-  rewind:     "Rewind",
-  shaders:    "Shaders",
-  region:     "Region",
-  milestones: "Milestones",
+  overview:       "Overview",
+  core:           "Core",
+  "core-options": "Core options",
+  display:        "Display",
+  audio:          "Audio",
+  input:          "Input",
+  rewind:         "Rewind",
+  shaders:        "Shaders",
+  region:         "Region",
+  milestones:     "Milestones",
+  cheats:         "Cheats",
 };
 
 // Phase 4 slice F — milestone shape mirrors Rust `library_db::Milestone`.
@@ -522,6 +528,57 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                 <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
                   Takes effect on next launch. Right-click the tile → "Change core…" reaches the same setting.
                 </p>
+
+                {/* RetroArch parity slice — soft patch */}
+                <SettingRow
+                  label="ROM patch"
+                  hint="IPS / UPS / BPS patch applied to ROM bytes before the core sees them"
+                  inheritedValue="No patch"
+                  overridden={overrides().patchPath != null}
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="flex-1 truncate text-xs"
+                      classList={{
+                        "text-(--color-oa-ink)": overrides().patchPath != null,
+                        "text-(--color-oa-ink-dim)": overrides().patchPath == null,
+                      }}
+                      title={overrides().patchPath ?? "No patch"}
+                    >
+                      {overrides().patchPath
+                        ? overrides().patchPath!.split(/[\/\\]/).pop()
+                        : "No patch selected"}
+                    </span>
+                    <button
+                      type="button"
+                      class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08]"
+                      onClick={async (e) => {
+                        e.currentTarget.blur();
+                        try {
+                          const picked = await invoke<string | null>("pick_patch_file");
+                          if (picked) void patch({ patchPath: picked });
+                        } catch (err) {
+                          console.warn("[oa-properties] pick_patch_file failed:", err);
+                        }
+                      }}
+                    >
+                      Pick…
+                    </button>
+                    <Show when={overrides().patchPath != null}>
+                      <button
+                        type="button"
+                        class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink-dim) hover:bg-white/[0.08]"
+                        onClick={() => void patch({ patchPath: null })}
+                      >
+                        Clear
+                      </button>
+                    </Show>
+                  </div>
+                </SettingRow>
+                <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Takes effect on next launch. Byte-source ROMs only (HuCards, NES, SNES carts);
+                  CD images can't be patched in-place from this side.
+                </p>
               </div>
             </Show>
 
@@ -771,6 +828,14 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
               </div>
             </Show>
 
+            {/* --- Core options ---------------------------------------- */}
+            <Show when={activeTab() === "core-options"}>
+              <CoreOptionsPanel
+                systemId={props.entry?.systemId ?? ""}
+                gameId={props.entry?.id ?? null}
+              />
+            </Show>
+
             {/* --- Milestones -------------------------------------------- */}
             <Show when={activeTab() === "milestones"}>
               <MilestonesTab
@@ -784,6 +849,11 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                 onDelete={(id) => void deleteMilestone(id)}
                 onReset={(id) => void resetMilestone(id)}
               />
+            </Show>
+
+            {/* --- Cheats ------------------------------------------------ */}
+            <Show when={activeTab() === "cheats"}>
+              <CheatsTab gameId={props.entry?.id ?? ""} />
             </Show>
 
             {/* --- Region ------------------------------------------------- */}
@@ -1092,6 +1162,463 @@ const MilestoneEditor: Component<{
           {props.draft.id == null ? "Add" : "Save"}
         </button>
       </div>
+    </div>
+  );
+};
+
+// --- Cheats tab body --------------------------------------------------
+
+type Cheat = {
+  id?: number;
+  gameId: string;
+  name: string;
+  description: string;
+  region: string;
+  offset: number;
+  width: number;
+  value: number;
+  enabled: boolean;
+  /// "memory_poke" (default) — writes value to (region, offset, width) every
+  /// frame via memory_region_mut. "libretro_code" — passes `code` through
+  /// retro_cheat_set and lets the core decode Game Genie / GameShark /
+  /// Action Replay / etc. per its system's conventions.
+  kind: string;
+  /// Raw code string for libretro_code cheats. Ignored for memory_poke.
+  code?: string | null;
+};
+
+type CheatsTabProps = {
+  gameId: string;
+};
+
+const REGION_OPTIONS = ["system_ram", "save_ram", "video_ram", "rtc"] as const;
+
+type CheatSearchSummary = {
+  region: string;
+  width: number;
+  candidateCount: number;
+  top: Array<{ offset: number; currentValue: number; previousValue: number }>;
+};
+type CheatSearchFilter =
+  | { kind: "changed" }
+  | { kind: "unchanged" }
+  | { kind: "increased" }
+  | { kind: "decreased" }
+  | { kind: "equal_to_value"; value: number };
+
+const CheatsTab: Component<CheatsTabProps> = (props) => {
+  const [cheats, setCheats] = createSignal<Cheat[]>([]);
+  const [draft, setDraft] = createSignal<Cheat | null>(null);
+  // Cheat search state
+  const [searchActive, setSearchActive] = createSignal(false);
+  const [searchRegion, setSearchRegion] = createSignal("system_ram");
+  const [searchSummary, setSearchSummary] = createSignal<CheatSearchSummary | null>(null);
+  const [searchEqualValue, setSearchEqualValue] = createSignal(0);
+  const [searchPending, setSearchPending] = createSignal(false);
+
+  async function startSearch() {
+    setSearchPending(true);
+    try {
+      const summary = await invoke<CheatSearchSummary>("start_cheat_search", { region: searchRegion() });
+      setSearchSummary(summary);
+      setSearchActive(true);
+    } catch (e) {
+      console.warn("[cheat-search] start failed:", e);
+      window.alert(`Couldn't start search: ${typeof e === "string" ? e : (e as Error)?.message}`);
+    } finally {
+      setSearchPending(false);
+    }
+  }
+  async function runFilter(filter: CheatSearchFilter) {
+    setSearchPending(true);
+    try {
+      const summary = await invoke<CheatSearchSummary>("filter_cheat_search", { filter });
+      setSearchSummary(summary);
+    } catch (e) {
+      console.warn("[cheat-search] filter failed:", e);
+    } finally {
+      setSearchPending(false);
+    }
+  }
+  async function peek() {
+    try {
+      const summary = await invoke<CheatSearchSummary>("peek_cheat_search");
+      setSearchSummary(summary);
+    } catch (e) {
+      console.warn("[cheat-search] peek failed:", e);
+    }
+  }
+  async function endSearch() {
+    try {
+      await invoke("end_cheat_search");
+    } catch (e) {
+      console.warn("[cheat-search] end failed:", e);
+    }
+    setSearchActive(false);
+    setSearchSummary(null);
+  }
+  function makeCheatFrom(offset: number, currentValue: number) {
+    setDraft({
+      ...blank(),
+      name: `Search hit @ 0x${offset.toString(16).toUpperCase()}`,
+      region: searchRegion(),
+      offset,
+      width: 1,
+      value: currentValue,
+    });
+  }
+
+  async function refresh() {
+    if (!props.gameId) {
+      setCheats([]);
+      return;
+    }
+    try {
+      const list = await invoke<Cheat[]>("list_cheats", { gameId: props.gameId });
+      setCheats(list);
+    } catch (e) {
+      console.warn("[cheats] list failed:", e);
+    }
+  }
+
+  createEffect(() => {
+    if (props.gameId) void refresh();
+  });
+
+  async function rearm() {
+    try {
+      await invoke<number>("arm_cheats", { gameId: props.gameId });
+    } catch (e) {
+      console.warn("[cheats] arm failed:", e);
+    }
+  }
+
+  async function save(c: Cheat) {
+    try {
+      if (c.id) await invoke("update_cheat", { cheat: c });
+      else await invoke<number>("add_cheat", { cheat: c });
+      setDraft(null);
+      await refresh();
+      await rearm();
+    } catch (e) {
+      console.warn("[cheats] save failed:", e);
+    }
+  }
+
+  async function toggle(c: Cheat) {
+    const next = { ...c, enabled: !c.enabled };
+    try {
+      await invoke("update_cheat", { cheat: next });
+      await refresh();
+      await rearm();
+    } catch (e) {
+      console.warn("[cheats] toggle failed:", e);
+    }
+  }
+
+  async function remove(id: number) {
+    if (!window.confirm("Delete this cheat?")) return;
+    try {
+      await invoke("delete_cheat", { id });
+      await refresh();
+      await rearm();
+    } catch (e) {
+      console.warn("[cheats] delete failed:", e);
+    }
+  }
+
+  function blank(): Cheat {
+    return {
+      gameId: props.gameId,
+      name: "",
+      description: "",
+      region: "system_ram",
+      offset: 0,
+      width: 1,
+      value: 0,
+      enabled: true,
+      kind: "memory_poke",
+      code: null,
+    };
+  }
+
+  return (
+    <div class="flex flex-col gap-3">
+      <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        Memory-poke cheats. Each enabled row writes `value` (`width` bytes, little-endian)
+        to memory at `(region, offset)` every frame. Game Genie / Action Replay codes
+        need to be translated to raw address+value via online tables for now;
+        per-system code decoders are a follow-up.
+      </p>
+
+      {/* --- Cheat search --- */}
+      <div class="rounded-md border border-white/10 bg-white/[0.02] p-3">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            Cheat search {searchActive() && searchSummary() ? `· ${searchSummary()!.candidateCount} candidates` : ""}
+          </span>
+          <Show when={!searchActive()} fallback={
+            <button
+              type="button"
+              onClick={() => void endSearch()}
+              class="text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+            >
+              End
+            </button>
+          }>
+            <div class="flex items-center gap-2">
+              <select
+                value={searchRegion()}
+                onChange={(e) => setSearchRegion(e.currentTarget.value)}
+                class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink)"
+              >
+                <For each={REGION_OPTIONS}>{(r) => <option value={r}>{r}</option>}</For>
+              </select>
+              <button
+                type="button"
+                onClick={() => void startSearch()}
+                disabled={searchPending() || !props.gameId}
+                class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-1 text-xs uppercase tracking-wider text-(--color-system-accent-soft) disabled:opacity-50"
+              >
+                Start search
+              </button>
+            </div>
+          </Show>
+        </div>
+
+        <Show when={searchActive()}>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" disabled={searchPending()} onClick={() => void runFilter({ kind: "changed" })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50">≠ Changed</button>
+            <button type="button" disabled={searchPending()} onClick={() => void runFilter({ kind: "unchanged" })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50">= Unchanged</button>
+            <button type="button" disabled={searchPending()} onClick={() => void runFilter({ kind: "increased" })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50">▲ Increased</button>
+            <button type="button" disabled={searchPending()} onClick={() => void runFilter({ kind: "decreased" })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50">▼ Decreased</button>
+            <span class="text-[0.65rem] text-(--color-oa-ink-dim)">or</span>
+            <input
+              type="number"
+              min="0"
+              max="255"
+              value={searchEqualValue()}
+              onInput={(e) => {
+                const n = Number(e.currentTarget.value);
+                if (Number.isFinite(n)) setSearchEqualValue(n);
+              }}
+              class="w-16 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-mono text-(--color-oa-ink)"
+            />
+            <button type="button" disabled={searchPending()} onClick={() => void runFilter({ kind: "equal_to_value", value: searchEqualValue() })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50">= value</button>
+            <button type="button" onClick={() => void peek()}
+              class="ml-auto rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)">↻ Refresh</button>
+          </div>
+
+          <Show when={searchSummary() && searchSummary()!.top.length > 0} fallback={
+            <p class="mt-2 text-[0.6rem] text-(--color-oa-ink-dim)">
+              Do something in-game that changes the value you're looking for, then pick a filter above.
+            </p>
+          }>
+            <div class="mt-3 flex max-h-48 flex-col gap-1 overflow-y-auto">
+              <For each={searchSummary()!.top}>
+                {(hit) => (
+                  <div class="flex items-center gap-2 rounded border border-white/5 bg-white/[0.02] px-2 py-1.5 text-xs font-mono">
+                    <span class="text-(--color-oa-ink-dim)">0x{hit.offset.toString(16).toUpperCase().padStart(4, "0")}</span>
+                    <span class="text-(--color-oa-ink)">= {hit.currentValue}</span>
+                    <span class="text-(--color-oa-ink-dim)">(was {hit.previousValue})</span>
+                    <button
+                      type="button"
+                      onClick={() => makeCheatFrom(hit.offset, hit.currentValue)}
+                      class="ml-auto rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+                    >
+                      Make cheat
+                    </button>
+                  </div>
+                )}
+              </For>
+              <Show when={searchSummary()!.candidateCount > searchSummary()!.top.length}>
+                <p class="text-[0.6rem] text-(--color-oa-ink-dim)">
+                  + {searchSummary()!.candidateCount - searchSummary()!.top.length} more — apply another filter to narrow.
+                </p>
+              </Show>
+            </div>
+          </Show>
+        </Show>
+      </div>
+
+      <Show when={cheats().length === 0 && draft() === null}>
+        <div class="rounded-md border border-white/5 bg-white/[0.02] p-3 text-xs text-(--color-oa-ink-dim)">
+          No cheats configured for this game.
+        </div>
+      </Show>
+
+      <For each={cheats()}>
+        {(c) => (
+          <div class="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
+            <input
+              type="checkbox"
+              checked={c.enabled}
+              onChange={() => void toggle(c)}
+              title={c.enabled ? "Enabled" : "Disabled"}
+            />
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm text-(--color-oa-ink)">{c.name || "(unnamed)"}</p>
+              <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                {c.region} · 0x{c.offset.toString(16).toUpperCase().padStart(4, "0")} ·
+                {" "}{c.width}B · = {c.value}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDraft({ ...c })}
+              class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08]"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => c.id && void remove(c.id)}
+              class="rounded border border-red-500/30 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </For>
+
+      <Show
+        when={draft() !== null}
+        fallback={
+          <button
+            type="button"
+            onClick={() => setDraft(blank())}
+            class="self-start rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-system-accent-soft) hover:bg-(--color-system-accent)/25"
+          >
+            + Add cheat
+          </button>
+        }
+      >
+        {(_) => {
+          const d = draft()!;
+          return (
+            <div class="rounded-md border border-(--color-system-accent)/30 bg-white/[0.02] p-3">
+              <div class="grid grid-cols-2 gap-2">
+                <label class="col-span-2 flex flex-col gap-1 text-xs">
+                  <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Type</span>
+                  <select
+                    value={d.kind}
+                    onChange={(e) => setDraft({ ...d, kind: e.currentTarget.value })}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-(--color-oa-ink)"
+                  >
+                    <option value="memory_poke">Memory poke (raw address + value)</option>
+                    <option value="libretro_code">Code (Game Genie / GameShark / Action Replay / raw)</option>
+                  </select>
+                </label>
+                <label class="col-span-2 flex flex-col gap-1 text-xs">
+                  <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Name</span>
+                  <input
+                    type="text"
+                    value={d.name}
+                    onInput={(e) => setDraft({ ...d, name: e.currentTarget.value })}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-(--color-oa-ink)"
+                    placeholder="Infinite lives"
+                  />
+                </label>
+
+                <Show when={d.kind === "libretro_code"} fallback={
+                  <>
+                    <label class="flex flex-col gap-1 text-xs">
+                      <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Region</span>
+                      <select
+                        value={d.region}
+                        onChange={(e) => setDraft({ ...d, region: e.currentTarget.value })}
+                        class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-(--color-oa-ink)"
+                      >
+                        <For each={REGION_OPTIONS}>
+                          {(r) => <option value={r}>{r}</option>}
+                        </For>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs">
+                      <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Width</span>
+                      <select
+                        value={String(d.width)}
+                        onChange={(e) => setDraft({ ...d, width: Number(e.currentTarget.value) })}
+                        class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-(--color-oa-ink)"
+                      >
+                        <option value="1">1 byte</option>
+                        <option value="2">2 bytes</option>
+                        <option value="4">4 bytes</option>
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs">
+                      <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Offset (hex)</span>
+                      <input
+                        type="text"
+                        value={"0x" + d.offset.toString(16).toUpperCase()}
+                        onChange={(e) => {
+                          const raw = e.currentTarget.value.trim().replace(/^0x/i, "");
+                          const n = parseInt(raw, 16);
+                          if (Number.isFinite(n)) setDraft({ ...d, offset: n });
+                        }}
+                        class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm font-mono text-(--color-oa-ink)"
+                      />
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs">
+                      <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">Value (decimal)</span>
+                      <input
+                        type="number"
+                        value={d.value}
+                        onInput={(e) => {
+                          const n = Number(e.currentTarget.value);
+                          if (Number.isFinite(n)) setDraft({ ...d, value: n });
+                        }}
+                        class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm font-mono text-(--color-oa-ink)"
+                      />
+                    </label>
+                  </>
+                }>
+                  <label class="col-span-2 flex flex-col gap-1 text-xs">
+                    <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">
+                      Code (Game Genie / GameShark / Action Replay / raw address:value)
+                    </span>
+                    <input
+                      type="text"
+                      value={d.code ?? ""}
+                      onInput={(e) => setDraft({ ...d, code: e.currentTarget.value })}
+                      class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm font-mono text-(--color-oa-ink)"
+                      placeholder="e.g. SXIOPO   ·   AENZIAEH+OZNZAAOE   ·   00B0CFA:09"
+                    />
+                    <span class="text-[0.6rem] text-(--color-oa-ink-dim)">
+                      Format is decided by the core for this system. Beetle / Mednafen
+                      cores generally accept Game Genie / Pro Action Replay / raw
+                      <code> address:value</code> strings; FCEUmm + Mesen accept 6-char
+                      Game Genie + ARLY format. Multiple codes joined with <code>+</code>.
+                    </span>
+                  </label>
+                </Show>
+              </div>
+              <div class="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void save(d)}
+                  disabled={!d.name.trim()}
+                  class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1 text-xs uppercase tracking-wider text-(--color-system-accent-soft) disabled:opacity-50"
+                >
+                  {d.id ? "Save" : "Add"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft(null)}
+                  class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        }}
+      </Show>
     </div>
   );
 };

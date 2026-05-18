@@ -36,6 +36,14 @@ export type LayoutPrefs = {
   sortKey: SortKey;
   groupBy: GroupBy;
   systemOrder: string[];
+  /// System ids the user has explicitly hidden from the left sidebar.
+  /// Mirrors `widgetHidden`. LaunchBox-equivalent of unchecking a platform
+  /// in "Manage Platforms".
+  hiddenSystems: string[];
+  /// Auto-hide systems with zero games. Default true. Independent of
+  /// `hiddenSystems` — flipping this off shows the entire registry; the
+  /// explicit hide list still suppresses individual entries.
+  autoHideEmptySystems: boolean;
 };
 
 export type ViewMode = "capsule" | "list";
@@ -84,6 +92,8 @@ const DEFAULT_LAYOUT: LayoutPrefs = {
   sortKey: "title",
   groupBy: "none",
   systemOrder: [],
+  hiddenSystems: [],
+  autoHideEmptySystems: true,
 };
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -110,6 +120,8 @@ export function createLayoutStore() {
   const [sortKey, setSortKey] = createSignal<SortKey>(DEFAULT_LAYOUT.sortKey);
   const [groupBy, setGroupBy] = createSignal<GroupBy>(DEFAULT_LAYOUT.groupBy);
   const [systemOrder, setSystemOrder] = createSignal<string[]>(DEFAULT_LAYOUT.systemOrder);
+  const [hiddenSystems, setHiddenSystems] = createSignal<string[]>(DEFAULT_LAYOUT.hiddenSystems);
+  const [autoHideEmptySystems, setAutoHideEmptySystems] = createSignal<boolean>(DEFAULT_LAYOUT.autoHideEmptySystems);
   // Suppress write-through during the initial hydrate so we don't echo
   // defaults back to disk before the real values land.
   const [hydrated, setHydrated] = createSignal(false);
@@ -147,6 +159,12 @@ export function createLayoutStore() {
       if (Array.isArray(prefs.systemOrder)) {
         setSystemOrder(prefs.systemOrder.filter((s): s is string => typeof s === "string"));
       }
+      if (Array.isArray(prefs.hiddenSystems)) {
+        setHiddenSystems(prefs.hiddenSystems.filter((s): s is string => typeof s === "string"));
+      }
+      if (typeof prefs.autoHideEmptySystems === "boolean") {
+        setAutoHideEmptySystems(prefs.autoHideEmptySystems);
+      }
     } catch (e) {
       console.warn("LayoutStore: get_layout failed:", e);
     }
@@ -168,6 +186,8 @@ export function createLayoutStore() {
       sortKey: sortKey(),
       groupBy: groupBy(),
       systemOrder: systemOrder(),
+      hiddenSystems: hiddenSystems(),
+      autoHideEmptySystems: autoHideEmptySystems(),
     };
     invoke("set_layout", { prefs }).catch((e) =>
       console.warn("LayoutStore: set_layout failed:", e),
@@ -207,6 +227,10 @@ export function createLayoutStore() {
     setGroupBy,
     systemOrder,
     setSystemOrder,
+    hiddenSystems,
+    setHiddenSystems,
+    autoHideEmptySystems,
+    setAutoHideEmptySystems,
   };
 }
 

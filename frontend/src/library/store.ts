@@ -179,17 +179,40 @@ export function createLibraryStore() {
       }
     },
     async clear(): Promise<void> {
-      // Bulk delete via per-row delete commands. Fine for the explicit
-      // "clear library" admin action; not a hot path.
-      const ids = state.entries.map((e) => e.id);
-      for (const id of ids) {
-        try {
-          await invoke("delete_game", { id });
-        } catch (e) {
-          console.warn(`[oa-library] delete_game(${id}) failed:`, e);
-        }
+      // Single DELETE statement — much faster than the per-row loop this
+      // method previously did, and atomic. The setting page's "Reset
+      // entire library" action calls this AFTER its own confirm() dialog.
+      try {
+        await invoke<number>("delete_all_games");
+      } catch (e) {
+        console.warn("[oa-library] delete_all_games failed:", e);
       }
       setState("entries", []);
+    },
+    /// Delete every game tagged with the given system id from the DB
+    /// + the local mirror. Returns the number removed. Used by Settings
+    /// → Library → "Clear games for this system".
+    async clearForSystem(systemId: string): Promise<number> {
+      let n = 0;
+      try {
+        n = await invoke<number>("delete_games_for_system", { systemId });
+      } catch (e) {
+        console.warn(`[oa-library] delete_games_for_system(${systemId}) failed:`, e);
+        return 0;
+      }
+      setState("entries", (prev) => prev.filter((e) => e.systemId !== systemId));
+      return n;
+    },
+    /// Re-hydrate the local mirror from Rust. Used after operations that
+    /// modify the DB outside the store's usual write-through path (e.g.
+    /// the auto-remove watcher event).
+    async reload(): Promise<void> {
+      try {
+        const fresh = await invoke<RomEntry[]>("list_games");
+        setState("entries", fresh);
+      } catch (e) {
+        console.warn("[oa-library] reload failed:", e);
+      }
     },
   };
 }

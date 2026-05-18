@@ -211,6 +211,137 @@ pub struct retro_variable {
     pub value: *const c_char,
 }
 
+// ---------- core option declaration structs ----------
+//
+// libretro evolved three formats for cores to declare their configurable
+// options. Modern cores use V2 (categories + intl); older cores use V1
+// (no categories) or the legacy "variables" format where each option's
+// `value` field is a formatted string `"description; opt1|opt2|opt3"`.
+//
+// All option arrays are sentinel-terminated:
+//   - V1/V2 definitions terminate at the first entry with `key = NULL`.
+//   - The embedded `values` array inside each definition terminates at
+//     the first entry with `value = NULL`.
+//   - V2 categories terminate at the first entry with `key = NULL`.
+//
+// Capacity 128 matches `RETRO_NUM_CORE_OPTION_VALUES_MAX` from libretro.h.
+
+pub const RETRO_NUM_CORE_OPTION_VALUES_MAX: usize = 128;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_option_value {
+    pub value: *const c_char,
+    pub label: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_option_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_options_intl {
+    pub us: *mut retro_core_option_definition,
+    pub local: *mut retro_core_option_definition,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_option_v2_category {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_option_v2_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub desc_categorized: *const c_char,
+    pub info: *const c_char,
+    pub info_categorized: *const c_char,
+    pub category_key: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_options_v2 {
+    pub categories: *mut retro_core_option_v2_category,
+    pub definitions: *mut retro_core_option_v2_definition,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_options_v2_intl {
+    pub us: *mut retro_core_options_v2,
+    pub local: *mut retro_core_options_v2,
+}
+
+// ---------- disc control callback structs ----------
+//
+// Cores with multi-disc support (PCE-CD with `.m3u`, PSX, Saturn, etc.)
+// register an interface via SET_DISK_CONTROL_INTERFACE (v1) or
+// SET_DISK_CONTROL_EXT_INTERFACE (v2). The frontend stores the function
+// pointers and calls them when the user wants to swap discs.
+//
+// Disc swap protocol:
+//   1. set_eject_state(true)  — open the virtual tray
+//   2. set_image_index(N)     — load disc N
+//   3. set_eject_state(false) — close the tray
+// The core resumes reading from the new disc on its next frame.
+
+pub type retro_set_eject_state_t   = unsafe extern "C" fn(ejected: bool) -> bool;
+pub type retro_get_eject_state_t   = unsafe extern "C" fn() -> bool;
+pub type retro_get_image_index_t   = unsafe extern "C" fn() -> u32;
+pub type retro_set_image_index_t   = unsafe extern "C" fn(index: u32) -> bool;
+pub type retro_get_num_images_t    = unsafe extern "C" fn() -> u32;
+pub type retro_replace_image_index_t =
+    unsafe extern "C" fn(index: u32, info: *const retro_game_info) -> bool;
+pub type retro_add_image_index_t   = unsafe extern "C" fn() -> bool;
+pub type retro_set_initial_image_t =
+    unsafe extern "C" fn(index: u32, path: *const c_char) -> bool;
+pub type retro_get_image_path_t    =
+    unsafe extern "C" fn(index: u32, path: *mut c_char, len: usize) -> bool;
+pub type retro_get_image_label_t   =
+    unsafe extern "C" fn(index: u32, label: *mut c_char, len: usize) -> bool;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_disk_control_callback {
+    pub set_eject_state: Option<retro_set_eject_state_t>,
+    pub get_eject_state: Option<retro_get_eject_state_t>,
+    pub get_image_index: Option<retro_get_image_index_t>,
+    pub set_image_index: Option<retro_set_image_index_t>,
+    pub get_num_images: Option<retro_get_num_images_t>,
+    pub replace_image_index: Option<retro_replace_image_index_t>,
+    pub add_image_index: Option<retro_add_image_index_t>,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_disk_control_ext_callback {
+    pub set_eject_state: Option<retro_set_eject_state_t>,
+    pub get_eject_state: Option<retro_get_eject_state_t>,
+    pub get_image_index: Option<retro_get_image_index_t>,
+    pub set_image_index: Option<retro_set_image_index_t>,
+    pub get_num_images: Option<retro_get_num_images_t>,
+    pub replace_image_index: Option<retro_replace_image_index_t>,
+    pub add_image_index: Option<retro_add_image_index_t>,
+    pub set_initial_image: Option<retro_set_initial_image_t>,
+    pub get_image_path: Option<retro_get_image_path_t>,
+    pub get_image_label: Option<retro_get_image_label_t>,
+}
+
 pub type retro_log_printf_t = unsafe extern "C" fn(level: u32, fmt: *const c_char, ...);
 
 #[repr(C)]
@@ -246,6 +377,8 @@ pub type retro_unload_game_t                = unsafe extern "C" fn();
 pub type retro_get_region_t                 = unsafe extern "C" fn() -> u32;
 pub type retro_get_memory_data_t            = unsafe extern "C" fn(id: u32) -> *mut c_void;
 pub type retro_get_memory_size_t            = unsafe extern "C" fn(id: u32) -> usize;
+pub type retro_cheat_reset_t                = unsafe extern "C" fn();
+pub type retro_cheat_set_t                  = unsafe extern "C" fn(index: u32, enabled: bool, code: *const c_char);
 
 pub type retro_set_environment_t        = unsafe extern "C" fn(cb: retro_environment_t);
 pub type retro_set_video_refresh_t      = unsafe extern "C" fn(cb: retro_video_refresh_t);

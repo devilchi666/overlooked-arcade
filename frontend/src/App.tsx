@@ -172,8 +172,13 @@ const App: Component = () => {
   });
 
   // Keyboard handling — same gate-by-focus rules as before.
+  // F1 reset, F2 pause, F3 frame-advance, F5 save, F6 fast-forward,
+  // F7 slow-motion, F8 load, F12 screenshot — all consumed by the emu
+  // thread; preventDefault here so the browser doesn't open Help / open
+  // dev tools / etc.
   const SUPPRESS_DEFAULT = new Set([
-    "F1", "F5", "F8", "Enter", "z", "Z", "x", "X", "Shift",
+    "F1", "F2", "F3", "F5", "F6", "F7", "F8", "F12",
+    "Enter", "z", "Z", "x", "X", "Shift",
     "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
   ]);
@@ -440,6 +445,14 @@ const App: Component = () => {
       await invoke("set_bloom_amount", { amount: effective.bloomAmount }).catch((e) =>
         console.warn("[oa-launch] set_bloom_amount failed:", e),
       );
+      // RetroArch-parity slice — push the merged per-system + per-game
+      // core-option overrides to the running core. The emu thread's
+      // LoadRom handler already applied per-system defaults; this overlays
+      // any per-game values on top. No-op if the core hasn't registered
+      // any options yet (first launch ever for this system).
+      await invoke("apply_game_core_options", { gameId: entry.id }).catch((e) =>
+        console.warn("[oa-launch] apply_game_core_options failed:", e),
+      );
       await Promise.all([
         invoke("set_scaling_mode", { mode: effective.scaling }).catch((e) =>
           console.warn("[oa-launch] set_scaling_mode failed:", e),
@@ -471,6 +484,14 @@ const App: Component = () => {
           if (n > 0) console.log(`[oa-launch] armed ${n} milestone(s)`);
         })
         .catch((e) => console.warn("[oa-launch] arm_milestones failed:", e));
+      // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
+      // story as milestones (SQLite is source of truth; emu-thread
+      // runtime is the live evaluator that runs on next launch otherwise).
+      void invoke<number>("arm_cheats", { gameId: entry.id })
+        .then((n) => {
+          if (n > 0) console.log(`[oa-launch] armed ${n} cheat(s)`);
+        })
+        .catch((e) => console.warn("[oa-launch] arm_cheats failed:", e));
       setGameRunning(true);
       setCurrentRomTitle(entry.title);
       setRunningEntry(entry);
@@ -749,9 +770,26 @@ const App: Component = () => {
       });
       unlistenRemoved = await listen<{ path: string }>(
         "oa://library-watch-removed",
-        (event) => {
-          console.log("[oa-watch] file removed (kept in library):", event.payload.path);
-          // Soft policy: keep the entry — user might be moving the file.
+        async (event) => {
+          // Soft policy by default: keep the entry (user might be moving
+          // the file). Settings → Library → "Auto-remove on file delete"
+          // flips this to a hard policy where the matching DB row gets
+          // removed when the watcher reports the file gone.
+          if (!settings.autoRemoveOnDelete()) {
+            console.log("[oa-watch] file removed (kept in library):", event.payload.path);
+            return;
+          }
+          try {
+            const id = await invoke<string | null>("find_game_id_by_path", {
+              path: event.payload.path,
+            });
+            if (id) {
+              await library.remove(id);
+              console.log("[oa-watch] auto-removed from library:", event.payload.path, "->", id);
+            }
+          } catch (e) {
+            console.warn("[oa-watch] auto-remove failed:", e);
+          }
         },
       );
     } catch (e) {
@@ -1053,6 +1091,18 @@ const App: Component = () => {
         onOpenSystemSettings={(id, tab) =>
           setCurrentView({ kind: "system-settings", id, initialTab: tab })
         }
+        onHideSystem={(id) => {
+          const current = layout.hiddenSystems();
+          if (!current.includes(id)) {
+            layout.setHiddenSystems([...current, id]);
+          }
+          // If the user hid the system they were viewing, kick them back
+          // to "All games" so they aren't stranded on a sidebar entry
+          // that just disappeared.
+          if (currentView().kind === "system" && (currentView() as { id: string }).id === id) {
+            setCurrentView({ kind: "all" });
+          }
+        }}
       />
       <TileContextMenu
         entry={contextMenuFor()?.entry ?? null}

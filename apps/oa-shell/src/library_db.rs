@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 7;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -52,6 +52,19 @@ pub struct GameOverrides {
     /// always wins over the TOML's default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bloom_amount: Option<f32>,
+    /// RetroArch-parity slice — per-game libretro core-option overrides.
+    /// Map of `option_key -> value`. Inherits the per-system override (which
+    /// in turn falls back to the schema's `default_value`). Applied at
+    /// launch via `set_option` callbacks on the running core.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub core_options: std::collections::HashMap<String, String>,
+    /// RetroArch-parity slice — absolute path to an IPS / UPS / BPS patch
+    /// applied to the ROM bytes before `retro_load_game`. None = no
+    /// patching. Only takes effect for byte-source ROMs (HuCards, NES,
+    /// SNES carts, etc.) — CD images are opened by the core directly
+    /// and can't be patched in-place from our side.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch_path: Option<String>,
     /// Phase 4 slice A — per-game rewind enabled toggle. None = inherit
     /// the per-system override (or OA-wide).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +122,54 @@ pub struct Milestone {
 
 fn default_edge_only() -> bool {
     true
+}
+
+/// RetroArch parity slice 5 — per-game cheat. Runtime evaluator writes
+/// `value` (little-endian, `width` bytes) into memory at
+/// `(region, offset)` every frame the cheat is enabled. Width is
+/// constrained to 1 / 2 / 4; rows with other widths silently no-op
+/// (defensive against corrupted persisted data).
+///
+/// Game Genie / Action Replay / GameShark codes are not first-class —
+/// they're system-specific encodings. Users translate to raw
+/// address+value via online tables for now; per-system decoders are a
+/// follow-up.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Cheat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub game_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Memory region tag matching `oa_core::MemoryRegionId::as_str()`.
+    /// `system_ram` is the typical choice for trainer-style cheats.
+    pub region: String,
+    pub offset: u32,
+    /// Width in bytes: 1 / 2 / 4. Writes are little-endian.
+    pub width: u8,
+    /// Value to write. Stored as i64 to fit any width + signed flavor.
+    pub value: i64,
+    /// Apply every frame while enabled. The whole machinery short-
+    /// circuits on `!enabled` so this is a hot toggle.
+    pub enabled: bool,
+    /// "memory_poke" (default) or "libretro_code". Memory pokes write
+    /// `value` to `(region, offset)` every frame via memory_region_mut.
+    /// Libretro codes pass through `retro_cheat_set(index, enabled, code)`
+    /// and let the core decode (Game Genie / GameShark / Action Replay /
+    /// raw — per the core's conventions).
+    #[serde(default = "default_cheat_kind")]
+    pub kind: String,
+    /// Raw libretro-format code string. Only meaningful when
+    /// `kind == "libretro_code"`; ignored otherwise. For Game Genie
+    /// the user-entered code goes in here verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+fn default_cheat_kind() -> String {
+    "memory_poke".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -283,7 +344,87 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v5 (split CD games to pce-cd)");
         }
 
+        // v5 → v6: cheats table (RetroArch parity slice 5 — per-game
+        // memory-poke cheats).
+        if current < 6 {
+            Self::migrate_v5_to_v6(conn)?;
+            conn.pragma_update(None, "user_version", 6)
+                .map_err(|e| format!("set user_version=6: {e}"))?;
+            log::info!("library_db: schema migrated to v6 (per-game cheats)");
+        }
+
+        // v6 → v7: cheat kind + code columns (slice 8 — Game Genie /
+        // Action Replay / GameShark via libretro retro_cheat_set).
+        if current < 7 {
+            Self::migrate_v6_to_v7(conn)?;
+            conn.pragma_update(None, "user_version", 7)
+                .map_err(|e| format!("set user_version=7: {e}"))?;
+            log::info!("library_db: schema migrated to v7 (cheat kinds)");
+        }
+
         Ok(())
+    }
+
+    fn migrate_v6_to_v7(conn: &Connection) -> Result<(), String> {
+        // Add `kind` (default 'memory_poke' so v6 rows still apply via
+        // memory_region_mut) + `code` (NULL for memory_poke, Some(code)
+        // for libretro_code). SQLite ALTER TABLE doesn't support
+        // IF NOT EXISTS, so we check the column list first — same
+        // pattern as migrate_v1_to_v2's archive_inner_path. Re-running
+        // the migration (e.g. tests that rewind user_version) must be
+        // a no-op.
+        let existing_cols: std::collections::HashSet<String> = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(cheats)")
+                .map_err(|e| format!("table_info cheats: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| format!("query table_info: {e}"))?;
+            let mut out = std::collections::HashSet::new();
+            for r in rows {
+                out.insert(r.map_err(|e| format!("row table_info: {e}"))?);
+            }
+            out
+        };
+        if !existing_cols.contains("kind") {
+            conn.execute(
+                "ALTER TABLE cheats ADD COLUMN kind TEXT NOT NULL DEFAULT 'memory_poke'",
+                [],
+            )
+            .map_err(|e| format!("alter cheats add kind: {e}"))?;
+        }
+        if !existing_cols.contains("code") {
+            conn.execute("ALTER TABLE cheats ADD COLUMN code TEXT", [])
+                .map_err(|e| format!("alter cheats add code: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Cheats table — one row per cheat. The runtime evaluator (emu
+    /// thread) writes `value` (little-endian, `width` bytes) to the
+    /// memory at `(region, offset)` every frame the cheat is enabled.
+    /// Same shape as the milestones table — region tags match
+    /// `MemoryRegionId::as_str()`. Width is stored u8 but constrained
+    /// 1 / 2 / 4 (matches what we write LE).
+    fn migrate_v5_to_v6(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS cheats (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id      TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                description  TEXT NOT NULL DEFAULT '',
+                region       TEXT NOT NULL,
+                offset       INTEGER NOT NULL,
+                width        INTEGER NOT NULL,
+                value        INTEGER NOT NULL,
+                enabled      INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_cheats_game ON cheats(game_id);
+            "#,
+        )
+        .map_err(|e| format!("create cheats table: {e}"))
     }
 
     /// Retag tg16 games with CD-image extensions as `pce-cd`. Idempotent
@@ -676,6 +817,44 @@ impl LibraryDb {
         Ok(n as usize)
     }
 
+    /// Look up a game id by its `file_path`. Returns None when no row
+    /// matches. Used by the auto-remove-on-delete path so the watcher
+    /// callback can find the id from just the path the OS reported.
+    pub fn find_id_by_file_path(&self, file_path: &str) -> Result<Option<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let id: Option<String> = conn
+            .query_row(
+                "SELECT id FROM games WHERE file_path = ?1",
+                params![file_path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("find_id_by_file_path: {e}"))?;
+        Ok(id)
+    }
+
+    /// Delete every game tagged with the given system id. Returns the
+    /// number of rows removed. Used by the Settings → Library "Clear
+    /// games for this system" action.
+    pub fn delete_games_for_system(&self, system_id: &str) -> Result<usize, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let n = conn
+            .execute("DELETE FROM games WHERE system_id = ?1", params![system_id])
+            .map_err(|e| format!("delete_games_for_system: {e}"))?;
+        Ok(n)
+    }
+
+    /// Delete every game row. Returns the count removed. Used by the
+    /// Settings → Library "Reset entire library" action (with a
+    /// confirmation dialog on the frontend before firing).
+    pub fn delete_all_games(&self) -> Result<usize, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let n = conn
+            .execute("DELETE FROM games", [])
+            .map_err(|e| format!("delete_all_games: {e}"))?;
+        Ok(n)
+    }
+
     // --- Per-game overrides (Phase 2.8 slice D) --------------------------
     //
     // Lives in `games.overrides_json`. NULL = no overrides set. Round-trips
@@ -711,6 +890,8 @@ impl LibraryDb {
             && overrides.region_override.is_none()
             && overrides.shader_preset.is_none()
             && overrides.bloom_amount.is_none()
+            && overrides.core_options.is_empty()
+            && overrides.patch_path.is_none()
             && overrides.rewind_enabled.is_none()
             && overrides.rewind_capture_interval_frames.is_none()
             && overrides.rewind_buffer_megabytes.is_none();
@@ -845,6 +1026,86 @@ impl LibraryDb {
         )
         .map_err(|e| format!("reset milestone: {e}"))?;
         Ok(())
+    }
+
+    // --- Cheats CRUD (RetroArch parity slice 5) --------------------------
+
+    pub fn list_cheats(&self, game_id: &str) -> Result<Vec<Cheat>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, game_id, name, description, region, offset, width, value, enabled, kind, code
+                 FROM cheats WHERE game_id = ?1 ORDER BY id",
+            )
+            .map_err(|e| format!("prepare list_cheats: {e}"))?;
+        let rows = stmt
+            .query_map([game_id], |row| {
+                Ok(Cheat {
+                    id: Some(row.get::<_, i64>(0)?),
+                    game_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    region: row.get(4)?,
+                    offset: row.get::<_, i64>(5)? as u32,
+                    width: row.get::<_, i64>(6)? as u8,
+                    value: row.get(7)?,
+                    enabled: row.get::<_, i64>(8)? != 0,
+                    kind: row.get(9)?,
+                    code: row.get::<_, Option<String>>(10)?,
+                })
+            })
+            .map_err(|e| format!("query_map list_cheats: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("row list_cheats: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    pub fn add_cheat(&self, c: &Cheat) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "INSERT INTO cheats (game_id, name, description, region, offset, width, value, enabled, kind, code)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                &c.game_id, &c.name, &c.description, &c.region,
+                c.offset as i64, c.width as i64, c.value,
+                if c.enabled { 1i64 } else { 0i64 },
+                &c.kind, &c.code,
+            ],
+        )
+        .map_err(|e| format!("insert cheat: {e}"))?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_cheat(&self, c: &Cheat) -> Result<(), String> {
+        let id = c.id.ok_or("update_cheat: missing id")?;
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let rows = conn
+            .execute(
+                "UPDATE cheats
+                 SET name = ?1, description = ?2, region = ?3, offset = ?4,
+                     width = ?5, value = ?6, enabled = ?7, kind = ?8, code = ?9
+                 WHERE id = ?10",
+                rusqlite::params![
+                    &c.name, &c.description, &c.region, c.offset as i64,
+                    c.width as i64, c.value,
+                    if c.enabled { 1i64 } else { 0i64 },
+                    &c.kind, &c.code,
+                    id,
+                ],
+            )
+            .map_err(|e| format!("update cheat: {e}"))?;
+        if rows == 0 {
+            return Err(format!("update_cheat: no row with id={id}"));
+        }
+        Ok(())
+    }
+
+    pub fn delete_cheat(&self, id: i64) -> Result<usize, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute("DELETE FROM cheats WHERE id = ?1", [id])
+            .map_err(|e| format!("delete cheat: {e}"))
     }
 
     // --- Folder + folder_rules CRUD --------------------------------------
@@ -1214,6 +1475,57 @@ mod tests {
     }
 
     #[test]
+    fn find_id_by_file_path_returns_match_or_none() {
+        let db = fresh_db();
+        let mut a = row("a", "Alpha");
+        a.file_path = "/roms/alpha.pce".into();
+        db.add_games(&[a]).expect("seed");
+        assert_eq!(
+            db.find_id_by_file_path("/roms/alpha.pce").expect("hit"),
+            Some("a".to_string())
+        );
+        assert_eq!(db.find_id_by_file_path("/roms/missing.pce").expect("miss"), None);
+    }
+
+    #[test]
+    fn delete_games_for_system_removes_only_that_system() {
+        let db = fresh_db();
+        let mut a = row("a", "Alpha");
+        a.system_id = "tg16".into();
+        let mut b = row("b", "Bravo");
+        b.system_id = "nes".into();
+        b.file_path = "/roms/b.nes".into();
+        let mut c = row("c", "Charlie");
+        c.system_id = "nes".into();
+        c.file_path = "/roms/c.nes".into();
+        db.add_games(&[a, b, c]).expect("seed");
+
+        let removed = db.delete_games_for_system("nes").expect("bulk delete");
+        assert_eq!(removed, 2);
+        let remaining = db.list_games().expect("list");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "a");
+
+        // Idempotent — second call removes nothing.
+        let removed = db.delete_games_for_system("nes").expect("bulk delete 2");
+        assert_eq!(removed, 0);
+    }
+
+    #[test]
+    fn delete_all_games_resets_library() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha"), row("b", "Bravo"), row("c", "Charlie")])
+            .expect("seed");
+        assert_eq!(db.count().expect("count"), 3);
+        let removed = db.delete_all_games().expect("reset");
+        assert_eq!(removed, 3);
+        assert_eq!(db.count().expect("count post-reset"), 0);
+        // Idempotent — second call is a 0-row no-op, not an error.
+        let removed = db.delete_all_games().expect("reset again");
+        assert_eq!(removed, 0);
+    }
+
+    #[test]
     fn search_empty_returns_all() {
         let db = fresh_db();
         db.add_games(&[row("a", "Alpha"), row("b", "Bravo")]).expect("seed");
@@ -1247,6 +1559,81 @@ mod tests {
         let remaining = db.list_games().expect("list");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, "real");
+    }
+
+    #[test]
+    fn cheats_crud_roundtrip() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha")]).expect("seed");
+        // List on a game with no cheats → empty.
+        assert!(db.list_cheats("a").expect("empty").is_empty());
+
+        // Add three cheats.
+        let mut c1 = Cheat {
+            id: None,
+            game_id: "a".into(),
+            name: "Infinite lives".into(),
+            description: String::new(),
+            region: "system_ram".into(),
+            offset: 0x1F22,
+            width: 1,
+            value: 9,
+            enabled: true,
+            kind: "memory_poke".into(),
+            code: None,
+        };
+        let id1 = db.add_cheat(&c1).expect("add 1");
+        c1.id = Some(id1);
+        let id2 = db.add_cheat(&Cheat {
+            id: None,
+            game_id: "a".into(),
+            name: "Max score".into(),
+            description: "Sets score to 999999 every frame".into(),
+            region: "system_ram".into(),
+            offset: 0x2000,
+            width: 4,
+            value: 999999,
+            enabled: false,
+            kind: "memory_poke".into(),
+            code: None,
+        }).expect("add 2");
+        // Libretro-format Game Genie code — region / offset / width / value
+        // unused but the schema requires them; default to harmless values.
+        db.add_cheat(&Cheat {
+            id: None,
+            game_id: "a".into(),
+            name: "Infinite health (GG)".into(),
+            description: "Castlevania Game Genie code".into(),
+            region: "system_ram".into(),
+            offset: 0,
+            width: 1,
+            value: 0,
+            enabled: true,
+            kind: "libretro_code".into(),
+            code: Some("SXIOPO".into()),
+        }).expect("add libretro");
+
+        let listed = db.list_cheats("a").expect("list");
+        assert_eq!(listed.len(), 3);
+        let gg = listed.iter().find(|c| c.kind == "libretro_code").expect("gg row");
+        assert_eq!(gg.code.as_deref(), Some("SXIOPO"));
+
+        // Update the first cheat's value + disable.
+        c1.value = 5;
+        c1.enabled = false;
+        db.update_cheat(&c1).expect("update");
+        let after = db.list_cheats("a").expect("list after");
+        let updated = after.iter().find(|c| c.id == Some(id1)).unwrap();
+        assert_eq!(updated.value, 5);
+        assert!(!updated.enabled);
+
+        // Delete the second; first + the libretro one still present.
+        assert_eq!(db.delete_cheat(id2).expect("delete"), 1);
+        assert_eq!(db.list_cheats("a").expect("after delete").len(), 2);
+
+        // FK cascade — deleting the game also drops its cheats.
+        db.delete_game("a").expect("delete game");
+        assert!(db.list_cheats("a").expect("post-cascade").is_empty());
     }
 
     #[test]
@@ -1481,6 +1868,8 @@ mod tests {
             region_override: Some("japan".to_string()),
             shader_preset: Some("crt-lite".to_string()),
             bloom_amount: Some(0.45),
+            core_options: std::collections::HashMap::new(),
+            patch_path: None,
             rewind_enabled: Some(true),
             rewind_capture_interval_frames: Some(3),
             rewind_buffer_megabytes: Some(48),

@@ -636,6 +636,32 @@ const SettingsPage: Component<Props> = (props) => {
               </label>
 
               <label class="block space-y-1">
+                <span class="text-xs text-(--color-oa-ink-dim)">Run-ahead frames</span>
+                <div class="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="1"
+                    value={props.settings.runAheadFrames()}
+                    onInput={(e) => {
+                      const v = Number(e.currentTarget.value);
+                      if (Number.isInteger(v)) props.settings.setRunAheadFrames(v);
+                    }}
+                    class="flex-1"
+                  />
+                  <span class="font-mono text-sm w-12 text-right tabular-nums">
+                    {props.settings.runAheadFrames() === 0 ? "off" : `+${props.settings.runAheadFrames()}f`}
+                  </span>
+                </div>
+                <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Reduces perceived input latency by N frames. Each costs 1 save_state + 1 run_frame + 1
+                  load_state per frame — cheap on PCE / NES, may exceed budget on heavier cores. Skipped
+                  during scrub / TAS / pause / fast-forward / slow-mo.
+                </span>
+              </label>
+
+              <label class="block space-y-1">
                 <span class="text-xs text-(--color-oa-ink-dim)">Phosphor bloom amount</span>
                 <div class="flex items-center gap-3">
                   <input
@@ -1121,6 +1147,119 @@ const SettingsPage: Component<Props> = (props) => {
                   </For>
                 </ul>
               </Show>
+
+              {/* --- Sidebar systems (LaunchBox-equivalent) --- */}
+              <div class="mt-6 space-y-2">
+                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                  Sidebar systems
+                </h3>
+                <label class="flex items-center gap-2 text-xs text-(--color-oa-ink)">
+                  <input
+                    type="checkbox"
+                    checked={props.layout.autoHideEmptySystems()}
+                    onChange={(e) => props.layout.setAutoHideEmptySystems(e.currentTarget.checked)}
+                  />
+                  <span>Auto-hide systems with no games</span>
+                </label>
+                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Uncheck a system to hide it from the left sidebar. Hidden systems still live
+                  in the registry; per-system files (bindings, settings) are preserved.
+                </p>
+                <ul class="space-y-1">
+                  <For each={Object.keys(systemThemes) as SystemId[]}>
+                    {(id) => {
+                      const theme = systemThemes[id];
+                      const count = () =>
+                        props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
+                      const hidden = () => props.layout.hiddenSystems().includes(id);
+                      return (
+                        <li class="flex items-center gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={!hidden()}
+                            onChange={(e) => {
+                              const list = props.layout.hiddenSystems();
+                              if (e.currentTarget.checked) {
+                                props.layout.setHiddenSystems(list.filter((s) => s !== id));
+                              } else if (!list.includes(id)) {
+                                props.layout.setHiddenSystems([...list, id]);
+                              }
+                            }}
+                          />
+                          <span class="flex-1 truncate text-(--color-oa-ink)">{theme.displayName}</span>
+                          <span class="text-(--color-oa-ink-dim) tabular-nums">{count()}</span>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ul>
+              </div>
+
+              {/* --- Library cleanup --- */}
+              <div class="mt-6 space-y-2">
+                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                  Cleanup
+                </h3>
+                <label class="flex items-center gap-2 text-xs text-(--color-oa-ink)">
+                  <input
+                    type="checkbox"
+                    checked={props.settings.autoRemoveOnDelete()}
+                    onChange={(e) => props.settings.setAutoRemoveOnDelete(e.currentTarget.checked)}
+                  />
+                  <span>Auto-remove from library when the file is deleted</span>
+                </label>
+                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Off (default) keeps library entries when files vanish — useful for moves /
+                  renames. On removes the matching row when the watcher reports the file gone.
+                </p>
+
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                  <span class="text-xs text-(--color-oa-ink-dim)">Clear games for:</span>
+                  <select
+                    class={SELECT_CLASS}
+                    value=""
+                    onChange={async (e) => {
+                      const id = e.currentTarget.value as SystemId;
+                      e.currentTarget.value = "";
+                      if (!id) return;
+                      const theme = systemThemes[id];
+                      if (!window.confirm(
+                        `Remove all ${theme.displayName} games from the library? Files on disk are NOT touched.`,
+                      )) return;
+                      const n = await props.library.clearForSystem(id);
+                      window.alert(`Removed ${n} game${n === 1 ? "" : "s"} from ${theme.displayName}.`);
+                    }}
+                  >
+                    <option value="" disabled>(pick a system)</option>
+                    <For each={Object.keys(systemThemes) as SystemId[]}>
+                      {(id) => <option value={id}>{systemThemes[id].displayName}</option>}
+                    </For>
+                  </select>
+                </div>
+
+                <div class="mt-3 rounded border border-red-500/30 bg-red-500/[0.05] p-3">
+                  <p class="text-xs text-red-300 font-medium">Danger zone</p>
+                  <p class="mt-1 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    Resets the entire game library. Files on disk are NOT touched — the
+                    library DB just forgets everything. Re-scan or re-import folders to
+                    rebuild.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.currentTarget.blur();
+                      if (!window.confirm(
+                        "Reset the entire library? Every game row will be removed from the database. Files on disk are NOT deleted.",
+                      )) return;
+                      await props.library.clear();
+                      window.alert("Library reset. Re-scan a folder to rebuild.");
+                    }}
+                    class="mt-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs uppercase tracking-wider text-red-300 transition hover:bg-red-500/20"
+                  >
+                    Reset entire library
+                  </button>
+                </div>
+              </div>
             </div>
             </Show>
             </section>

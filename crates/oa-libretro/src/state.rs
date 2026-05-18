@@ -9,9 +9,12 @@
 //! the Mutex is theoretically uncontended — it's a safety net, not a hot path
 //! contention point.
 
+use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
 use std::sync::{LazyLock, Mutex};
+
+use oa_core::{CoreOption, CoreOptionCategory, CoreOptionValue};
 
 use crate::ffi::*;
 use crate::pixel;
@@ -75,6 +78,34 @@ pub(crate) struct State {
     /// Whether the core has been initialised (retro_init called). Drop uses this
     /// to decide whether retro_deinit is needed.
     pub initialised: bool,
+    /// Parsed option definitions registered by the core via one of the
+    /// libretro core-option environment callbacks (SET_VARIABLES /
+    /// SET_CORE_OPTIONS / SET_CORE_OPTIONS_V2 + their _INTL variants).
+    /// Populated during `retro_set_environment` or `retro_load_game`.
+    pub core_options: Vec<CoreOption>,
+    /// V2 categories. Empty for cores using V1 / legacy variables.
+    pub option_categories: Vec<CoreOptionCategory>,
+    /// User-overridden option values. Keyed by `CoreOption::key`. The
+    /// `CString` is held here so the pointer we hand back via
+    /// `GET_VARIABLE` stays valid until the next write — cores typically
+    /// re-read at the top of each frame, so the pointer's lifetime only
+    /// needs to span one frame, but holding it indefinitely costs ~nothing.
+    pub option_values: HashMap<String, CString>,
+    /// Set whenever `option_values` is mutated. Cores poll
+    /// `GET_VARIABLE_UPDATE`; returning `true` once + clearing tells the
+    /// core "values changed, re-read all your variables." Initial value
+    /// `true` is intentional — on the first poll cores expect to be told
+    /// "yes, fetch your initial values now."
+    pub variables_updated: bool,
+    /// Disc control v1 callbacks, registered via SET_DISK_CONTROL_INTERFACE.
+    /// `None` until the core registers; cores without multi-disc support
+    /// never call this env, in which case all the disc-control methods on
+    /// LibretroCore return as-if-empty.
+    pub disk_v1: Option<retro_disk_control_callback>,
+    /// Disc control v2 callbacks. When `Some`, the frontend prefers this
+    /// over `disk_v1` (it carries label + path getters too). Cores typically
+    /// register one or the other — modern Beetle cores use v2.
+    pub disk_v2: Option<retro_disk_control_ext_callback>,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -105,6 +136,22 @@ impl State {
             pending_ext: CString::new("").unwrap(),
             pending_info_ext: zeroed_info_ext(),
             initialised: false,
+            core_options: Vec::new(),
+            option_categories: Vec::new(),
+            option_values: HashMap::new(),
+            variables_updated: true,
+            disk_v1: None,
+            disk_v2: None,
+        }
+    }
+
+    /// Set a single user-overridden option value + raise the update flag.
+    /// Called from `LibretroCore::set_option`. `value` must be valid UTF-8;
+    /// the wrapper converts it to a `CString` for stable C pointer life.
+    pub fn set_option_value(&mut self, key: &str, value: &str) {
+        if let Ok(cstr) = CString::new(value) {
+            self.option_values.insert(key.to_string(), cstr);
+            self.variables_updated = true;
         }
     }
 
@@ -137,6 +184,174 @@ fn zeroed_info_ext() -> retro_game_info_ext {
 /// Pointing them at a valid "" instead of NULL costs ~nothing and dodges
 /// the issue across every core that has the same bug class.
 static EMPTY_CSTR: LazyLock<CString> = LazyLock::new(|| CString::new("").unwrap());
+
+// ---- core-option declaration parsers --------------------------------
+//
+// Cores register their option schemas via one of three libretro callbacks:
+//
+//   SET_VARIABLES (legacy, all cores still ship)  — array of retro_variable,
+//     each `value` formatted as `"description; opt1|opt2|opt3"`. First
+//     option is the default.
+//   SET_CORE_OPTIONS / SET_CORE_OPTIONS_INTL (V1) — array of
+//     retro_core_option_definition with split desc/info + values array.
+//   SET_CORE_OPTIONS_V2 / SET_CORE_OPTIONS_V2_INTL — adds categories.
+//
+// All arrays terminate at the sentinel (first entry whose key is NULL).
+//
+// SAFETY: callers must ensure the array pointer remains valid for the
+// duration of the call. libretro cores typically declare options from
+// static memory so this is fine, but we copy out all strings into owned
+// Rust types so the State's snapshot doesn't alias core memory.
+
+unsafe fn cstr_to_string(p: *const c_char) -> Option<String> {
+    if p.is_null() {
+        return None;
+    }
+    Some(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
+}
+
+unsafe fn cstr_to_string_default(p: *const c_char) -> String {
+    unsafe { cstr_to_string(p) }.unwrap_or_default()
+}
+
+/// Walk the `values` array embedded in a V1 / V2 option definition. Stops
+/// at the first entry with a NULL `value` pointer.
+unsafe fn parse_option_values(
+    values: &[retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+) -> Vec<CoreOptionValue> {
+    let mut out = Vec::new();
+    for v in values.iter() {
+        if v.value.is_null() {
+            break;
+        }
+        out.push(CoreOptionValue {
+            value: unsafe { cstr_to_string_default(v.value) },
+            label: unsafe { cstr_to_string(v.label) },
+        });
+    }
+    out
+}
+
+/// Parse the legacy `retro_variable` array. The `value` field is a
+/// formatted string: `"Display description; option1|option2|option3"`.
+/// First option in the pipe-separated list is treated as the default.
+unsafe fn parse_legacy_variables(arr: *const retro_variable) -> Vec<CoreOption> {
+    let mut out = Vec::new();
+    if arr.is_null() {
+        return out;
+    }
+    let mut i = 0isize;
+    loop {
+        let entry = unsafe { &*arr.offset(i) };
+        if entry.key.is_null() {
+            break;
+        }
+        let key = unsafe { cstr_to_string_default(entry.key) };
+        let raw_value = unsafe { cstr_to_string(entry.value) }.unwrap_or_default();
+        let (desc, options_str) = match raw_value.split_once(';') {
+            Some((d, o)) => (d.trim().to_string(), o.trim()),
+            None => (raw_value.clone(), raw_value.as_str()),
+        };
+        let values: Vec<CoreOptionValue> = options_str
+            .split('|')
+            .filter(|s| !s.is_empty())
+            .map(|s| CoreOptionValue { value: s.trim().to_string(), label: None })
+            .collect();
+        if values.is_empty() {
+            i += 1;
+            continue;
+        }
+        let default_value = values[0].value.clone();
+        out.push(CoreOption { key, desc, info: None, category_key: None, default_value, values });
+        i += 1;
+    }
+    out
+}
+
+/// Parse the V1 `retro_core_option_definition` array.
+unsafe fn parse_core_options_v1(arr: *const retro_core_option_definition) -> Vec<CoreOption> {
+    let mut out = Vec::new();
+    if arr.is_null() {
+        return out;
+    }
+    let mut i = 0isize;
+    loop {
+        let entry = unsafe { &*arr.offset(i) };
+        if entry.key.is_null() {
+            break;
+        }
+        let values = unsafe { parse_option_values(&entry.values) };
+        if values.is_empty() {
+            i += 1;
+            continue;
+        }
+        let default_value = unsafe { cstr_to_string(entry.default_value) }
+            .unwrap_or_else(|| values[0].value.clone());
+        out.push(CoreOption {
+            key: unsafe { cstr_to_string_default(entry.key) },
+            desc: unsafe { cstr_to_string_default(entry.desc) },
+            info: unsafe { cstr_to_string(entry.info) },
+            category_key: None,
+            default_value,
+            values,
+        });
+        i += 1;
+    }
+    out
+}
+
+/// Parse the V2 `retro_core_option_v2_definition` array (with categories).
+unsafe fn parse_core_options_v2(arr: *const retro_core_option_v2_definition) -> Vec<CoreOption> {
+    let mut out = Vec::new();
+    if arr.is_null() {
+        return out;
+    }
+    let mut i = 0isize;
+    loop {
+        let entry = unsafe { &*arr.offset(i) };
+        if entry.key.is_null() {
+            break;
+        }
+        let values = unsafe { parse_option_values(&entry.values) };
+        if values.is_empty() {
+            i += 1;
+            continue;
+        }
+        let default_value = unsafe { cstr_to_string(entry.default_value) }
+            .unwrap_or_else(|| values[0].value.clone());
+        out.push(CoreOption {
+            key: unsafe { cstr_to_string_default(entry.key) },
+            desc: unsafe { cstr_to_string_default(entry.desc) },
+            info: unsafe { cstr_to_string(entry.info) },
+            category_key: unsafe { cstr_to_string(entry.category_key) },
+            default_value,
+            values,
+        });
+        i += 1;
+    }
+    out
+}
+
+unsafe fn parse_v2_categories(arr: *const retro_core_option_v2_category) -> Vec<CoreOptionCategory> {
+    let mut out = Vec::new();
+    if arr.is_null() {
+        return out;
+    }
+    let mut i = 0isize;
+    loop {
+        let entry = unsafe { &*arr.offset(i) };
+        if entry.key.is_null() {
+            break;
+        }
+        out.push(CoreOptionCategory {
+            key: unsafe { cstr_to_string_default(entry.key) },
+            desc: unsafe { cstr_to_string_default(entry.desc) },
+            info: unsafe { cstr_to_string(entry.info) },
+        });
+        i += 1;
+    }
+    out
+}
 
 pub(crate) static STATE: Mutex<Option<State>> = Mutex::new(None);
 
@@ -359,26 +574,118 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             .unwrap_or(false)
         }
         RETRO_ENVIRONMENT_GET_VARIABLE => {
-            // Reply "not set" for every option — core falls back to its compiled
-            // defaults, which is what we want for first-cut parity.
+            // Look up the user-overridden value if any; otherwise fall back
+            // to the default the core itself registered. Returning NULL would
+            // make the core use its hardcoded defaults — that worked for
+            // first-cut parity but defeats the per-system / per-game option
+            // override flow now that the schema is captured + persisted.
             if data.is_null() {
                 return false;
             }
             let var = unsafe { &mut *(data as *mut retro_variable) };
-            var.value = std::ptr::null();
-            false
+            let key = unsafe { cstr_to_string(var.key) }.unwrap_or_default();
+            with_state(|s| {
+                if let Some(cstr) = s.option_values.get(&key) {
+                    var.value = cstr.as_ptr();
+                    return true;
+                }
+                // No override — fall back to the core's declared default
+                // (synthesized as a CString stored on the State so the
+                // pointer outlives the env call).
+                if let Some(opt) = s.core_options.iter().find(|o| o.key == key) {
+                    let default = opt.default_value.clone();
+                    let cstr = s
+                        .option_values
+                        .entry(key.clone())
+                        .or_insert_with(|| CString::new(default).unwrap_or_default());
+                    var.value = cstr.as_ptr();
+                    return true;
+                }
+                var.value = std::ptr::null();
+                false
+            })
+            .unwrap_or(false)
         }
-        // Core option declarations — accept all (we ignore the actual option
-        // schemas; GET_VARIABLE returns "not set" so the core uses defaults).
-        // Returning true keeps cores like Beetle from skipping their internal
-        // option-init logic, which some versions tie to a "frontend supports
-        // options" flag set by these acks.
-        RETRO_ENVIRONMENT_SET_VARIABLES
-        | RETRO_ENVIRONMENT_SET_CORE_OPTIONS
-        | RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL
-        | RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2
-        | RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL
-        | RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
+        RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE => {
+            // Return + clear the dirty flag. Initial value is `true` so the
+            // core's first poll says "yes, fetch your variables."
+            if data.is_null() { return false; }
+            with_state(|s| {
+                let updated = s.variables_updated;
+                s.variables_updated = false;
+                unsafe { *(data as *mut bool) = updated; }
+                true
+            })
+            .unwrap_or(false)
+        }
+        RETRO_ENVIRONMENT_SET_VARIABLES => {
+            if data.is_null() { return true; }
+            let parsed = unsafe { parse_legacy_variables(data as *const retro_variable) };
+            with_state(|s| {
+                s.core_options = parsed;
+                s.option_categories.clear();
+                s.variables_updated = true;
+            });
+            true
+        }
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS => {
+            if data.is_null() { return true; }
+            let parsed = unsafe {
+                parse_core_options_v1(data as *const retro_core_option_definition)
+            };
+            with_state(|s| {
+                s.core_options = parsed;
+                s.option_categories.clear();
+                s.variables_updated = true;
+            });
+            true
+        }
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL => {
+            // INTL struct has `us` (English fallback) + `local` (current
+            // locale, may be NULL). Prefer `local` when present; we don't
+            // do locale resolution today.
+            if data.is_null() { return true; }
+            let intl = unsafe { &*(data as *const retro_core_options_intl) };
+            let src = if !intl.local.is_null() { intl.local } else { intl.us };
+            let parsed = unsafe { parse_core_options_v1(src) };
+            with_state(|s| {
+                s.core_options = parsed;
+                s.option_categories.clear();
+                s.variables_updated = true;
+            });
+            true
+        }
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 => {
+            if data.is_null() { return true; }
+            let v2 = unsafe { &*(data as *const retro_core_options_v2) };
+            let categories = unsafe { parse_v2_categories(v2.categories) };
+            let definitions = unsafe { parse_core_options_v2(v2.definitions) };
+            with_state(|s| {
+                s.core_options = definitions;
+                s.option_categories = categories;
+                s.variables_updated = true;
+            });
+            true
+        }
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL => {
+            if data.is_null() { return true; }
+            let intl = unsafe { &*(data as *const retro_core_options_v2_intl) };
+            let src = if !intl.local.is_null() { intl.local } else { intl.us };
+            if src.is_null() { return true; }
+            let v2 = unsafe { &*src };
+            let categories = unsafe { parse_v2_categories(v2.categories) };
+            let definitions = unsafe { parse_core_options_v2(v2.definitions) };
+            with_state(|s| {
+                s.core_options = definitions;
+                s.option_categories = categories;
+                s.variables_updated = true;
+            });
+            true
+        }
+        // SET_CORE_OPTIONS_DISPLAY toggles individual option visibility.
+        // We accept-and-ignore for v1 (the option list always renders).
+        // A future polish: respect the visible bit per option.
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
 
         // Frontend "I support core option API version N". Report v2 so modern
         // cores use SET_CORE_OPTIONS_V2 instead of the legacy path.
@@ -427,6 +734,32 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             true
         }
 
+        // Disc control callbacks — register the function-pointer struct
+        // so LibretroCore::disc_* can call through. Cores typically only
+        // register one of v1 or v2.
+        RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE => {
+            if data.is_null() { return true; }
+            let cb = unsafe { *(data as *const retro_disk_control_callback) };
+            with_state(|s| s.disk_v1 = Some(cb));
+            true
+        }
+        RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE => {
+            if data.is_null() { return true; }
+            let cb = unsafe { *(data as *const retro_disk_control_ext_callback) };
+            with_state(|s| s.disk_v2 = Some(cb));
+            true
+        }
+        RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION => {
+            // Report v1 — that's enough to cover the get/set_eject_state +
+            // set_image_index + get_num_images surface we expose. We DO
+            // accept v2 (handled above) and read its label getter when
+            // available; reporting v2 here would have cores assume we
+            // call the ext-only callbacks too, which we don't yet.
+            if data.is_null() { return false; }
+            unsafe { *(data as *mut u32) = 1; }
+            true
+        }
+
         // Both A and V are enabled. Bit 0 = enable video, bit 1 = enable audio.
         // (Bit 2 = fast-forward, bit 3 = hardcore mode — we leave these off.)
         RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE => {
@@ -451,15 +784,9 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE
         | RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK
         | RETRO_ENVIRONMENT_SET_HW_RENDER => false,
-        RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE => {
-            if data.is_null() {
-                return false;
-            }
-            unsafe {
-                *(data as *mut bool) = false;
-            }
-            true
-        }
+        // GET_VARIABLE_UPDATE — handled above in the core-options block
+        // alongside GET_VARIABLE / SET_VARIABLES so the state mutation
+        // lives next to the rest of the option machinery.
         RETRO_ENVIRONMENT_GET_CAN_DUPE => {
             if data.is_null() {
                 return false;

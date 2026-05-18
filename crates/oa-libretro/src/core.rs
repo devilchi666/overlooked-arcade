@@ -462,6 +462,137 @@ impl Core for LibretroCore {
         Ok(())
     }
 
+    fn options(&self) -> Vec<oa_core::CoreOption> {
+        state::with_state(|s| s.core_options.clone()).unwrap_or_default()
+    }
+
+    fn option_categories(&self) -> Vec<oa_core::CoreOptionCategory> {
+        state::with_state(|s| s.option_categories.clone()).unwrap_or_default()
+    }
+
+    fn set_option(&mut self, key: &str, value: &str) {
+        state::with_state(|s| s.set_option_value(key, value));
+    }
+
+    fn disc_state(&self) -> Option<oa_core::DiscInfo> {
+        state::with_state(|s| {
+            // Prefer v2 (carries labels). Fall back to v1.
+            if let Some(cb) = s.disk_v2.as_ref() {
+                let num_discs = cb.get_num_images.map(|f| unsafe { f() }).unwrap_or(0);
+                if num_discs == 0 {
+                    return None;
+                }
+                let current_index = cb.get_image_index.map(|f| unsafe { f() }).unwrap_or(0);
+                let ejected = cb.get_eject_state.map(|f| unsafe { f() }).unwrap_or(false);
+                let labels: Vec<String> = if let Some(get_label) = cb.get_image_label {
+                    (0..num_discs)
+                        .map(|i| {
+                            let mut buf = [0i8; 256];
+                            let ok = unsafe { get_label(i, buf.as_mut_ptr() as *mut _, buf.len()) };
+                            if !ok {
+                                return String::new();
+                            }
+                            let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
+                            cstr.to_string_lossy().into_owned()
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                return Some(oa_core::DiscInfo { num_discs, current_index, ejected, labels });
+            }
+            let cb = s.disk_v1.as_ref()?;
+            let num_discs = cb.get_num_images.map(|f| unsafe { f() }).unwrap_or(0);
+            if num_discs == 0 {
+                return None;
+            }
+            let current_index = cb.get_image_index.map(|f| unsafe { f() }).unwrap_or(0);
+            let ejected = cb.get_eject_state.map(|f| unsafe { f() }).unwrap_or(false);
+            Some(oa_core::DiscInfo {
+                num_discs,
+                current_index,
+                ejected,
+                labels: Vec::new(),
+            })
+        })
+        .flatten()
+    }
+
+    fn set_disc_eject(&mut self, ejected: bool) {
+        state::with_state(|s| {
+            let cb = s
+                .disk_v2
+                .as_ref()
+                .and_then(|c| c.set_eject_state)
+                .or_else(|| s.disk_v1.as_ref().and_then(|c| c.set_eject_state));
+            if let Some(f) = cb {
+                let ok = unsafe { f(ejected) };
+                if !ok {
+                    log::warn!("oa-libretro: set_eject_state({ejected}) returned false");
+                }
+            }
+        });
+    }
+
+    fn set_disc_image(&mut self, index: u32) {
+        state::with_state(|s| {
+            let cb = s
+                .disk_v2
+                .as_ref()
+                .and_then(|c| c.set_image_index)
+                .or_else(|| s.disk_v1.as_ref().and_then(|c| c.set_image_index));
+            if let Some(f) = cb {
+                let ok = unsafe { f(index) };
+                if !ok {
+                    log::warn!("oa-libretro: set_image_index({index}) returned false");
+                }
+            }
+        });
+    }
+
+    fn cheat_reset(&mut self) {
+        if !self.rom_loaded {
+            return;
+        }
+        unsafe { (self.lib.fns.cheat_reset)() };
+    }
+
+    fn cheat_set(&mut self, index: u32, enabled: bool, code: &str) {
+        if !self.rom_loaded {
+            return;
+        }
+        // libretro requires the code as a NUL-terminated C string. Bail
+        // silently on interior NULs (no core would accept those anyway).
+        let Ok(c) = std::ffi::CString::new(code) else {
+            log::warn!("oa-libretro: cheat_set rejected — code contained interior NUL");
+            return;
+        };
+        unsafe { (self.lib.fns.cheat_set)(index, enabled, c.as_ptr()) };
+    }
+
+    fn memory_region_mut(&mut self, id: MemoryRegionId) -> Option<&mut [u8]> {
+        if !self.rom_loaded {
+            return None;
+        }
+        let retro_id = id as u32;
+        let size = unsafe { (self.lib.fns.get_memory_size)(retro_id) };
+        if size == 0 {
+            return None;
+        }
+        let ptr = unsafe { (self.lib.fns.get_memory_data)(retro_id) };
+        if ptr.is_null() {
+            return None;
+        }
+        // SAFETY: same guarantees as `memory_region` — libretro keeps
+        // the pointer stable for `size` bytes between
+        // retro_load_game/retro_unload_game, and the borrow is tied to
+        // `&mut self` so the caller drops it before any other method
+        // can invalidate it. Mutable access is the whole point — the
+        // cheat runtime writes into this region.
+        let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size) };
+        Some(slice)
+    }
+
     fn memory_region(&self, id: MemoryRegionId) -> Option<&[u8]> {
         if !self.rom_loaded {
             return None;

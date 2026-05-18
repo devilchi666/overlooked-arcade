@@ -7,7 +7,7 @@ import type { LayoutStore } from "./state";
 /// Lets the system page header's quick-action buttons + SystemContextMenu
 /// deep-link past the persisted last-tab so e.g. "Edit bindings…" actually
 /// drops on Input regardless of what was open last session.
-export type SystemSettingsTab = "display" | "audio" | "input" | "rewind" | "cores" | "shaders" | "theme";
+export type SystemSettingsTab = "display" | "audio" | "input" | "rewind" | "cores" | "core-options" | "shaders" | "theme";
 
 export type SidebarView =
   | { kind: "all" }
@@ -80,11 +80,25 @@ function orderedSystemIds(
 const LeftSidebar: Component<Props> = (props) => {
   const isCollapsed = () => props.layout.leftSidebarCollapsed();
   const registryIds = createMemo(() => Object.keys(systemThemes) as SystemId[]);
-  const systemIds = createMemo(() =>
-    orderedSystemIds(registryIds(), props.layout.systemOrder()),
-  );
   const countForSystem = (id: SystemId): number =>
     props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
+  // Filter the registry by (a) explicitly user-hidden and (b) auto-hide-empty
+  // when that pref is on. Order applies AFTER filtering. The active view's
+  // system is always kept visible even if it would otherwise be hidden, so
+  // navigating into a system never makes the sidebar entry vanish under you.
+  const systemIds = createMemo(() => {
+    const hidden = new Set(props.layout.hiddenSystems());
+    const autoHide = props.layout.autoHideEmptySystems();
+    const activeId =
+      props.currentView.kind === "system" ? props.currentView.id : null;
+    const filtered = registryIds().filter((id) => {
+      if (id === activeId) return true;
+      if (hidden.has(id)) return false;
+      if (autoHide && countForSystem(id) === 0) return false;
+      return true;
+    });
+    return orderedSystemIds(filtered, props.layout.systemOrder());
+  });
   const totalCount = createMemo(() => props.library.state.entries.filter((e) => !e.seed).length);
   // Drag state — tracks which system index the user is dragging plus the
   // current drop-target index for the visual indicator.

@@ -16,6 +16,10 @@ type Props = {
   /// bindings…" item passes `"input"`, "System settings…" passes
   /// undefined (which respects the user's last-viewed tab).
   onOpenSystemSettings: (id: SystemId, tab?: SystemSettingsTab) => void;
+  /// Hide this system from the left sidebar. Lives in LayoutPrefs.
+  /// hiddenSystems; user can unhide from Settings → Library → Sidebar
+  /// systems. Mirrors LaunchBox's "uncheck a platform" UX.
+  onHideSystem: (id: SystemId) => void;
 };
 
 const ITEM_CLASS =
@@ -46,6 +50,11 @@ const SystemContextMenu: Component<Props> = (props) => {
   function openSettings(tab?: SystemSettingsTab) {
     if (!props.systemId) return;
     closeAfter(() => props.onOpenSystemSettings(props.systemId!, tab));
+  }
+
+  function hideSystem() {
+    if (!props.systemId) return;
+    closeAfter(() => props.onHideSystem(props.systemId!));
   }
 
   function onWindowKey(e: KeyboardEvent) {
@@ -108,6 +117,14 @@ const SystemContextMenu: Component<Props> = (props) => {
                   <span>System settings…</span>
                   <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
                     ⚙
+                  </span>
+                </button>
+              </li>
+              <li class="border-t border-white/5 mt-1 pt-1">
+                <button type="button" class={ITEM_CLASS} onClick={hideSystem}>
+                  <span>Hide from sidebar</span>
+                  <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    👁
                   </span>
                 </button>
               </li>

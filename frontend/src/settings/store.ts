@@ -74,6 +74,19 @@ const DEFAULT_SHADER_PRESET: ShaderPreset = "system-default";
 // what the four built-in TOML presets ship as.
 const DEFAULT_BLOOM_AMOUNT = 0.6;
 
+// Run-ahead frames (RetroArch parity slice 7). 0 = off, 1-5 = peek that
+// many frames ahead each render frame to reduce perceived input latency.
+// Each extra frame costs 1 save_state + 1 run_frame + 1 load_state per
+// real frame; cheap on PCE/NES, eats budget on heavier cores.
+const DEFAULT_RUN_AHEAD_FRAMES = 0;
+
+// Auto-remove ROMs from the library when the file is deleted from disk.
+// Default off — the watcher's "removed" event keeps the entry (matches
+// the historical "soft policy" where the user might be moving / renaming
+// the file). Users who keep a tidy library can flip this on so the
+// library auto-cleans when ROMs are deleted.
+const DEFAULT_AUTO_REMOVE_ON_DELETE = false;
+
 // Phase 4 slice A — rewind defaults. Off by default; 6-frame capture
 // interval = ~100 ms at 60 fps (RetroArch's default); 64 MB buffer holds
 // ~10 s of any current core (PCE ~50 KB/snap, SNES ~300 KB/snap).
@@ -88,6 +101,8 @@ type Persisted = {
   libraryFolders: string[];
   shaderPreset: ShaderPreset;
   bloomAmount: number;
+  runAheadFrames: number;
+  autoRemoveOnDelete: boolean;
   rewindEnabled: boolean;
   rewindCaptureIntervalFrames: number;
   rewindBufferMegabytes: number;
@@ -122,6 +137,8 @@ function load(): Persisted {
     libraryFolders: [],
     shaderPreset: DEFAULT_SHADER_PRESET,
     bloomAmount: DEFAULT_BLOOM_AMOUNT,
+    runAheadFrames: DEFAULT_RUN_AHEAD_FRAMES,
+    autoRemoveOnDelete: DEFAULT_AUTO_REMOVE_ON_DELETE,
     rewindEnabled: DEFAULT_REWIND_ENABLED,
     rewindCaptureIntervalFrames: DEFAULT_REWIND_INTERVAL,
     rewindBufferMegabytes: DEFAULT_REWIND_BUFFER_MB,
@@ -143,6 +160,16 @@ function load(): Persisted {
         typeof parsed.bloomAmount === "number" && Number.isFinite(parsed.bloomAmount)
           ? Math.min(1, Math.max(0, parsed.bloomAmount))
           : DEFAULT_BLOOM_AMOUNT,
+      autoRemoveOnDelete:
+        typeof parsed.autoRemoveOnDelete === "boolean"
+          ? parsed.autoRemoveOnDelete
+          : DEFAULT_AUTO_REMOVE_ON_DELETE,
+      runAheadFrames:
+        typeof parsed.runAheadFrames === "number"
+          && Number.isInteger(parsed.runAheadFrames)
+          && parsed.runAheadFrames >= 0
+          ? Math.min(5, parsed.runAheadFrames)
+          : DEFAULT_RUN_AHEAD_FRAMES,
       rewindEnabled:
         typeof parsed.rewindEnabled === "boolean" ? parsed.rewindEnabled : DEFAULT_REWIND_ENABLED,
       rewindCaptureIntervalFrames:
@@ -179,6 +206,8 @@ export function createSettingsStore() {
   const [libraryFolders, setLibraryFolders] = createSignal<string[]>(initial.libraryFolders);
   const [shaderPreset, setShaderPreset] = createSignal<ShaderPreset>(initial.shaderPreset);
   const [bloomAmount, setBloomAmount] = createSignal<number>(initial.bloomAmount);
+  const [runAheadFrames, setRunAheadFrames] = createSignal<number>(initial.runAheadFrames);
+  const [autoRemoveOnDelete, setAutoRemoveOnDelete] = createSignal<boolean>(initial.autoRemoveOnDelete);
   const [rewindEnabled, setRewindEnabled] = createSignal<boolean>(initial.rewindEnabled);
   const [rewindCaptureIntervalFrames, setRewindCaptureIntervalFrames] =
     createSignal<number>(initial.rewindCaptureIntervalFrames);
@@ -206,6 +235,8 @@ export function createSettingsStore() {
       libraryFolders: libraryFolders(),
       shaderPreset: shaderPreset(),
       bloomAmount: bloomAmount(),
+      runAheadFrames: runAheadFrames(),
+      autoRemoveOnDelete: autoRemoveOnDelete(),
       rewindEnabled: rewindEnabled(),
       rewindCaptureIntervalFrames: rewindCaptureIntervalFrames(),
       rewindBufferMegabytes: rewindBufferMegabytes(),
@@ -218,6 +249,14 @@ export function createSettingsStore() {
     const amount = bloomAmount();
     invoke("set_bloom_amount", { amount }).catch((e) =>
       console.warn("set_bloom_amount failed:", e),
+    );
+  });
+  // Push run-ahead frame count to the emu thread on change. The emu
+  // thread clamps to 0..=5; UI honors the same range.
+  createEffect(() => {
+    const frames = runAheadFrames();
+    invoke("set_run_ahead", { frames }).catch((e) =>
+      console.warn("set_run_ahead failed:", e),
     );
   });
 
@@ -294,6 +333,8 @@ export function createSettingsStore() {
     audioDevice, setAudioDevice,
     shaderPreset, setShaderPreset,
     bloomAmount, setBloomAmount,
+    runAheadFrames, setRunAheadFrames,
+    autoRemoveOnDelete, setAutoRemoveOnDelete,
     rewindEnabled, setRewindEnabled,
     rewindCaptureIntervalFrames, setRewindCaptureIntervalFrames,
     rewindBufferMegabytes, setRewindBufferMegabytes,

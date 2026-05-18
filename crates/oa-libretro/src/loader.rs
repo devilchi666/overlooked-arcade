@@ -28,6 +28,8 @@ pub struct LibretroFns {
     pub get_region: retro_get_region_t,
     pub get_memory_data: retro_get_memory_data_t,
     pub get_memory_size: retro_get_memory_size_t,
+    pub cheat_reset: retro_cheat_reset_t,
+    pub cheat_set: retro_cheat_set_t,
 
     pub set_environment: retro_set_environment_t,
     pub set_video_refresh: retro_set_video_refresh_t,
@@ -77,6 +79,8 @@ impl LibretroLibrary {
                 get_region: sym(&lib, b"retro_get_region\0")?,
                 get_memory_data: sym(&lib, b"retro_get_memory_data\0")?,
                 get_memory_size: sym(&lib, b"retro_get_memory_size\0")?,
+                cheat_reset: sym(&lib, b"retro_cheat_reset\0")?,
+                cheat_set: sym(&lib, b"retro_cheat_set\0")?,
 
                 set_environment: sym(&lib, b"retro_set_environment\0")?,
                 set_video_refresh: sym(&lib, b"retro_set_video_refresh\0")?,

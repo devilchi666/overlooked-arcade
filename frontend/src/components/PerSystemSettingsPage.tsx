@@ -22,6 +22,7 @@ import {
 } from "../settings/store";
 import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
 import { systemThemes, type SystemId } from "../themes/registry";
+import CoreOptionsPanel from "./CoreOptionsPanel";
 import SettingRow from "./SettingRow";
 import SystemBindingsEditor from "./SystemBindingsEditor";
 
@@ -66,28 +67,30 @@ type Props = {
   /// value instead of the localStorage-persisted last choice. Used by the
   /// SystemHeader's quick-action buttons + SystemContextMenu's "Edit
   /// bindings…" item to land directly on the user-requested tab.
-  initialTab?: "display" | "audio" | "input" | "rewind" | "cores" | "shaders" | "theme";
+  initialTab?: "display" | "audio" | "input" | "rewind" | "cores" | "core-options" | "shaders" | "theme";
 };
 
-const TABS = ["display", "audio", "input", "rewind", "cores", "shaders", "theme"] as const;
+const TABS = ["display", "audio", "input", "rewind", "cores", "core-options", "shaders", "theme"] as const;
 type TabId = typeof TABS[number];
 const TAB_LABELS: Record<TabId, string> = {
-  display: "Display",
-  audio:   "Audio",
-  input:   "Input",
-  rewind:  "Rewind",
-  cores:   "Cores",
-  shaders: "Shaders",
-  theme:   "Theme",
+  display:        "Display",
+  audio:          "Audio",
+  input:          "Input",
+  rewind:         "Rewind",
+  cores:          "Cores",
+  "core-options": "Core options",
+  shaders:        "Shaders",
+  theme:          "Theme",
 };
 const TAB_HINTS: Record<TabId, string> = {
-  display: "Scaling + window-mode + monitor override",
-  audio:   "Per-system audio output (Phase 3+)",
-  input:   "Button bindings (managed from the system page)",
-  rewind:  "Hold-Backspace rewind enable / buffer size",
-  cores:   "Default libretro core for this system",
-  shaders: "Default visual preset (Phase 3+)",
-  theme:   "Per-system accent + marquee override (Phase 4+)",
+  display:        "Scaling + window-mode + monitor override",
+  audio:          "Per-system audio output (Phase 3+)",
+  input:          "Button bindings (managed from the system page)",
+  rewind:         "Hold-Backspace rewind enable / buffer size",
+  cores:          "Default libretro core for this system",
+  "core-options": "Per-core knobs surfaced from the libretro options API",
+  shaders:        "Default visual preset (Phase 3+)",
+  theme:          "Per-system accent + marquee override (Phase 4+)",
 };
 
 // Mirror the same picker sets as the OA-wide Gameplay tab so the inheritance
@@ -595,6 +598,11 @@ const PerSystemSettingsPage: Component<Props> = (props) => {
                 add a new entry; edits hot-reload while the game is running (slice D).
               </p>
             </div>
+          </Show>
+
+          {/* --- Core options ----------------------------------------------- */}
+          <Show when={activeTab() === "core-options"}>
+            <CoreOptionsPanel systemId={props.systemId} gameId={null} />
           </Show>
 
           {/* --- Theme ------------------------------------------------------ */}

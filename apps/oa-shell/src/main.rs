@@ -16,11 +16,14 @@
 
 mod archive;
 mod bindings;
+mod cheat_search;
+mod core_options;
 mod layout;
 mod library_db;
 mod media;
 mod metadata;
 mod normalize;
+mod patch;
 mod scan_service;
 mod shader_presets;
 mod shader_presets_watcher;
@@ -133,6 +136,33 @@ enum EmuCommand {
     /// side. No-op for non-Phosphor presets (the renderer accepts it
     /// regardless; the shader branch only reads it when preset_id == 3).
     SetBloomAmount(f32),
+    /// RetroArch-parity slice — push a single libretro core-option value
+    /// into the running core. Calls `Core::set_option(key, value)` which
+    /// writes into the libretro state map + raises the
+    /// `GET_VARIABLE_UPDATE` flag so the core re-reads on its next poll.
+    /// Drops silently if no core is loaded.
+    SetCoreOption { key: String, value: String },
+    /// RetroArch-parity slice — bulk-apply every effective core-option
+    /// value for the active ROM (per-game overlay on per-system overlay
+    /// on schema default). Sent once on every LoadRom right after the
+    /// core finishes load_game.
+    ApplyCoreOptions(std::collections::HashMap<String, String>),
+    /// RetroArch-parity slice 7 — set the run-ahead frame count.
+    /// 0 = disabled (default); 1-5 = run that many frames forward each
+    /// real frame, present the future framebuffer, then rollback via
+    /// save/load_state. Reduces perceived input latency by N frames.
+    /// Suppressed during scrub / TAS / pause / FF / SM.
+    SetRunAhead(u32),
+    /// RetroArch-parity slice — open or close the disc tray (multi-disc
+    /// CD games). Drops silently if the current core hasn't registered
+    /// a disc-control interface. Emu thread refreshes `disc_state` cache
+    /// after the call so the frontend's next `get_disc_state` reflects
+    /// the new tray state.
+    SetDiscEject(bool),
+    /// RetroArch-parity slice — swap to disc `index` (0-based). Only
+    /// effective while the tray is ejected; cores typically refuse +
+    /// log otherwise. Emu thread refreshes `disc_state` cache.
+    SetDiscImage(u32),
     ApplyBindings(Bindings),
     /// `None` = system default device. The emu thread rebuilds the cpal stream
     /// against the new selection; failure is logged but doesn't kill the thread.
@@ -196,6 +226,13 @@ enum EmuCommand {
     /// trigger time via `mark_milestone_triggered` on the same
     /// shared LibraryDb handle.
     LoadMilestones(Vec<library_db::Milestone>),
+    /// RetroArch parity slice 5 — load the per-game cheat set into the
+    /// runtime evaluator. Replaces whatever was previously armed. Sent
+    /// from `handleLaunch` after `arm_milestones` so every frame's
+    /// post-`run_frame` write loop sees the fresh set. Enabled cheats
+    /// write `value` (`width` bytes, little-endian) into memory at
+    /// `(region, offset)`.
+    LoadCheats(Vec<library_db::Cheat>),
     /// Phase 4 slice F — clear the runtime evaluator. Sent on
     /// UnloadRom; also clears any "already-triggered this session"
     /// state so re-launching the same game re-evaluates fresh.
@@ -455,6 +492,62 @@ fn sanitize_stem(rom_path: &str) -> String {
 
 fn slot_path(app_data_dir: &Path, stem: &str, slot: u32) -> PathBuf {
     app_data_dir.join("saves").join(stem).join(format!("slot-{}.bin", slot))
+}
+
+/// RetroArch-parity slice 5 — apply every enabled cheat to the core's
+/// memory regions. Called after each NORMAL / FAST-FORWARD / SLOW-MO
+/// run_frame so trainers + locked-value cheats stay in effect frame-
+/// over-frame. Width-3 / width-other rows silently no-op (defensive
+/// against corrupted persisted rows). Skipped during TAS replay — cheats
+/// modifying memory would diverge from the recorded inputs' outcome.
+fn apply_cheats(core: &mut dyn oa_core::Core, cheats: &[library_db::Cheat]) {
+    for c in cheats.iter().filter(|c| c.enabled && c.kind == "memory_poke") {
+        let Some(region_id) = oa_core::MemoryRegionId::parse(&c.region) else { continue };
+        let Some(mem) = core.memory_region_mut(region_id) else { continue };
+        let offset = c.offset as usize;
+        match c.width {
+            1 => {
+                if offset < mem.len() {
+                    mem[offset] = c.value as u8;
+                }
+            }
+            2 => {
+                if offset + 2 <= mem.len() {
+                    let bytes = (c.value as u16).to_le_bytes();
+                    mem[offset..offset + 2].copy_from_slice(&bytes);
+                }
+            }
+            4 => {
+                if offset + 4 <= mem.len() {
+                    let bytes = (c.value as u32).to_le_bytes();
+                    mem[offset..offset + 4].copy_from_slice(&bytes);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// RetroArch-parity slice 3 — write the current framebuffer to a PNG
+/// screenshot under `appData/screenshots/<stem>/<timestamp>.png`. Reuses
+/// the same png encode path as save-state thumbnails. Returns the
+/// absolute path on success so the success toast can name the file.
+fn write_screenshot(
+    app_data_dir: &Path,
+    stem: &str,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> std::io::Result<PathBuf> {
+    let dir = app_data_dir.join("screenshots").join(stem);
+    std::fs::create_dir_all(&dir)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("{timestamp}.png"));
+    write_thumbnail(&path, width, height, rgba)?;
+    Ok(path)
 }
 
 /// Encode an RGBA8 framebuffer to a PNG file. Full-size (no downsample).
@@ -735,6 +828,18 @@ struct AppState {
     /// app lifetime. Dropping it stops the watcher.
     #[allow(dead_code)]
     shader_presets_watcher: Option<shader_presets_watcher::ShaderPresetsWatcher>,
+    /// RetroArch-parity slice — cached disc-control snapshot, refreshed
+    /// by the emu thread after LoadRom + every successful eject/swap.
+    /// `None` = no disc-control interface registered (HuCard / cart) OR
+    /// no core loaded. Tauri's `get_disc_state` reads from here without
+    /// touching the libretro singleton.
+    disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
+    /// RetroArch-parity slice — in-flight cheat search session. Holds
+    /// the previous snapshot + the current candidate list. None when no
+    /// search is active. Lives outside the emu thread because the
+    /// memory snapshot is already refreshed there every frame; the
+    /// search command just reads from `memory_snapshot`.
+    cheat_search: Arc<Mutex<Option<cheat_search::CheatSearchSession>>>,
 }
 
 /// Window label that drives input gating. Two-window mode wants the native
@@ -867,6 +972,27 @@ fn main() {
             get_game_overrides,
             set_game_overrides,
             delete_game,
+            find_game_id_by_path,
+            delete_games_for_system,
+            delete_all_games,
+            list_core_options,
+            set_system_core_option,
+            set_game_core_option,
+            apply_game_core_options,
+            get_disc_state,
+            set_disc_eject,
+            set_disc_image,
+            pick_patch_file,
+            list_cheats,
+            add_cheat,
+            update_cheat,
+            delete_cheat,
+            arm_cheats,
+            start_cheat_search,
+            filter_cheat_search,
+            peek_cheat_search,
+            end_cheat_search,
+            set_run_ahead,
             search_games,
             list_folders,
             add_folder,
@@ -943,9 +1069,12 @@ fn main() {
                 let video_state = Arc::new(Mutex::new(SharedVideoState::default()));
                 // Per-frame memory snapshot (slice E) — same pattern.
                 let memory_snapshot = Arc::new(Mutex::new(MemorySnapshot::default()));
+                // Cached disc-control snapshot (RetroArch parity). Refreshed
+                // on LoadRom + after each disc swap; read by Tauri commands.
+                let disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>> = Arc::new(Mutex::new(None));
                 let shell_window = match shell_mode {
-                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), app_handle)?,
-                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), app_handle)?,
+                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), app_handle)?,
+                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), app_handle)?,
                 };
 
                 // MediaState: shared in-memory MediaDb + region prefs, hydrated
@@ -1016,6 +1145,8 @@ fn main() {
                     memory_snapshot,
                     active_shader_preset,
                     shader_presets_watcher,
+                    disc_state,
+                    cheat_search: Arc::new(Mutex::new(None)),
                 });
 
                 // Register the quit shortcut now that the plugin is initialized.
@@ -1074,6 +1205,7 @@ fn setup_two_window(
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
+    disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     app_handle: tauri::AppHandle,
 ) -> tauri::Result<ShellWindow> {
     let _library = tauri::WebviewWindowBuilder::new(
@@ -1116,7 +1248,7 @@ fn setup_two_window(
                     let game = game.clone();
                     Box::new(move || game.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, app_handle);
             }
         })?;
 
@@ -1135,6 +1267,7 @@ fn setup_single_window(
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
+    disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     app_handle: tauri::AppHandle,
 ) -> tauri::Result<ShellWindow> {
     let window = tauri::WebviewWindowBuilder::new(
@@ -1167,7 +1300,7 @@ fn setup_single_window(
                     let window = window.clone();
                     Box::new(move || window.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, app_handle);
             }
         })?;
 
@@ -1189,6 +1322,7 @@ fn run_emu_render(
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
+    disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     app_handle: tauri::AppHandle,
 ) {
     use oa_core::Core;
@@ -1376,6 +1510,23 @@ fn run_emu_render(
     let mut prev_f8 = false;
     let mut current_slot: u32 = 0;
     let mut prev_digit = [false; 10];
+
+    // RetroArch-parity slice 3 — gameplay hotkeys. F2 toggles pause,
+    // F3 advances one frame while paused, F6/F7 are hold-for-effect
+    // (fast-forward / slow-motion), F12 captures a screenshot.
+    // F1 reset is already wired above.
+    let mut prev_f2 = false;
+    let mut prev_f3 = false;
+    let mut prev_f12 = false;
+    let mut paused = false;
+    let mut frame_advance_request = false;
+    // Slow-motion runs run_frame on every Nth render cycle. 2 = half speed
+    // (RetroArch default); the rest of the cycles render the last frame.
+    const SLOW_MOTION_DIVISOR: u32 = 2;
+    let mut slow_mo_phase: u32 = 0;
+    // Fast-forward bursts: call run_frame N times per render cycle.
+    // 4 = 4× normal speed.
+    const FAST_FORWARD_BURST: u32 = 4;
 
     // Esc rising-edge detection. Emits `oa://request-quick-settings` to
     // the frontend so two-window mode (where the native game window has
@@ -1573,6 +1724,21 @@ fn run_emu_render(
         }
     }
     let mut milestone_runtime: Vec<MilestoneRuntime> = Vec::new();
+    // RetroArch parity slice 5 — armed cheats. Enabled rows write
+    // `value` to `(region, offset)` after every NORMAL/REPLAY run_frame.
+    let mut cheat_runtime: Vec<library_db::Cheat> = Vec::new();
+
+    // Run-ahead state. Hoisted buffers avoid per-frame allocation —
+    // save_buf holds a state snapshot we'll roll back to after the
+    // future-frame peek; audio_buf carries the REAL audio (drained
+    // between the real run_frame and the peek frames) since the post-
+    // peek drain would mix in samples from frames the user shouldn't
+    // hear yet. Disabled when SetRunAhead(0); only fires on the truly-
+    // normal play branch (skipped in scrub / TAS replay / TAS record /
+    // pause / fast-forward / slow-motion).
+    let mut run_ahead_frames: u32 = 0;
+    let mut run_ahead_save_buf: Vec<u8> = Vec::new();
+    let mut run_ahead_audio_buf: Vec<i16> = Vec::new();
     let mut milestone_prev_true: Vec<bool> = Vec::new();
 
     // Mutable because a per-game core swap may load a core with different fps
@@ -1755,6 +1921,53 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // RetroArch-parity slice — refresh the cached
+                            // disc-control snapshot. None for HuCard / cart
+                            // games; populated for multi-disc CD images.
+                            if let Ok(mut s) = disc_state.lock() {
+                                *s = core_ref.disc_state();
+                            }
+
+                            // RetroArch-parity slice — capture the core's
+                            // freshly-registered option schema to disk so
+                            // the per-system settings page can render the
+                            // option list even when no core is running.
+                            // Preserves any existing user values whose keys
+                            // still appear in the new schema (a core update
+                            // can remove options).
+                            let schema = core_ref.options();
+                            let categories = core_ref.option_categories();
+                            if !schema.is_empty() {
+                                if let Err(e) = core_options::refresh_schema(
+                                    &app_data_dir,
+                                    &current_system_id,
+                                    schema.clone(),
+                                    categories,
+                                ) {
+                                    log::warn!("oa-shell: core_options refresh_schema failed: {e}");
+                                }
+                                // Apply the effective per-system + per-game
+                                // overrides immediately so the core sees them
+                                // on its first GET_VARIABLE poll. The
+                                // emu-thread `ApplyCoreOptions` handler also
+                                // does this, but inlining here means we don't
+                                // pay an extra channel hop.
+                                let file = core_options::read(&app_data_dir, &current_system_id);
+                                let merged = core_options::build_effective_values(
+                                    &schema,
+                                    &file.values,
+                                    &std::collections::HashMap::new(),
+                                );
+                                for (k, v) in &merged {
+                                    core_ref.set_option(k, v);
+                                }
+                                log::info!(
+                                    "oa-shell: captured {} core option(s) for {} + applied",
+                                    schema.len(),
+                                    current_system_id,
+                                );
+                            }
                             current_slot = restore_slot.unwrap_or(0);
                             // Snapshots from any previous game are unsafe to
                             // feed back into a different core — drop them on
@@ -1800,6 +2013,10 @@ fn run_emu_render(
                             // LoadMilestones right after.
                             milestone_runtime.clear();
                             milestone_prev_true.clear();
+                            // Cheats — same lifecycle as milestones.
+                            // Frontend re-arms via LoadCheats after
+                            // launch resolves the per-game list.
+                            cheat_runtime.clear();
                             if let Some(slot) = restore_slot {
                                 let p = slot_path(&app_data_dir, &stem, slot);
                                 match std::fs::read(&p) {
@@ -1893,6 +2110,41 @@ fn run_emu_render(
                 }
                 Ok(EmuCommand::SetBloomAmount(amt)) => {
                     renderer.set_bloom_amount(amt);
+                }
+                Ok(EmuCommand::SetCoreOption { key, value }) => {
+                    if let Some(c) = core.as_mut() {
+                        c.set_option(&key, &value);
+                    }
+                }
+                Ok(EmuCommand::ApplyCoreOptions(values)) => {
+                    if let Some(c) = core.as_mut() {
+                        for (k, v) in values.iter() {
+                            c.set_option(k, v);
+                        }
+                        log::info!(
+                            "oa-shell: applied {} core option(s) to {}",
+                            values.len(),
+                            current_system_id,
+                        );
+                    }
+                }
+                Ok(EmuCommand::SetDiscEject(ejected)) => {
+                    if let Some(c) = core.as_mut() {
+                        c.set_disc_eject(ejected);
+                        if let Ok(mut s) = disc_state.lock() {
+                            *s = c.disc_state();
+                        }
+                        log::info!("oa-shell: disc tray eject={ejected}");
+                    }
+                }
+                Ok(EmuCommand::SetDiscImage(idx)) => {
+                    if let Some(c) = core.as_mut() {
+                        c.set_disc_image(idx);
+                        if let Ok(mut s) = disc_state.lock() {
+                            *s = c.disc_state();
+                        }
+                        log::info!("oa-shell: disc swap -> {idx}");
+                    }
                 }
                 Ok(EmuCommand::ApplyBindings(b)) => {
                     apply_bindings_to_poller(&mut input, &current_system_id, &b);
@@ -2190,6 +2442,39 @@ fn run_emu_render(
                     milestone_runtime.clear();
                     milestone_prev_true.clear();
                 }
+                Ok(EmuCommand::LoadCheats(list)) => {
+                    cheat_runtime = list;
+                    log::info!(
+                        "oa-shell: cheats loaded — {} total ({} enabled)",
+                        cheat_runtime.len(),
+                        cheat_runtime.iter().filter(|c| c.enabled).count(),
+                    );
+                    // Reset + re-register libretro-format cheats with the
+                    // core. The core's own decoder handles Game Genie /
+                    // GameShark / Action Replay / Pro Action Replay /
+                    // raw per-system encodings. Memory-poke cheats stay
+                    // out of this path — they're handled by apply_cheats
+                    // every frame.
+                    if let Some(c) = core.as_mut() {
+                        c.cheat_reset();
+                        let mut idx: u32 = 0;
+                        for cheat in cheat_runtime.iter() {
+                            if cheat.kind == "libretro_code" {
+                                if let Some(code) = cheat.code.as_deref() {
+                                    c.cheat_set(idx, cheat.enabled, code);
+                                    idx += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(EmuCommand::SetRunAhead(n)) => {
+                    let clamped = n.min(5);
+                    if clamped != run_ahead_frames {
+                        log::info!("oa-shell: run-ahead {} -> {} frame(s)", run_ahead_frames, clamped);
+                    }
+                    run_ahead_frames = clamped;
+                }
                 Ok(EmuCommand::StopVideoCapture { discard }) => {
                     let Some(worker) = video_capture.take() else {
                         log::info!("oa-shell: StopVideoCapture — nothing to stop");
@@ -2351,8 +2636,33 @@ fn run_emu_render(
         // reset took effect — single-window game mode hides chrome, so
         // without the toast the user has no UI feedback.
         let f1 = enable && input.is_pressed(Keycode::F1);
+        let f2 = enable && input.is_pressed(Keycode::F2);
+        let f3 = enable && input.is_pressed(Keycode::F3);
         let f5 = enable && input.is_pressed(Keycode::F5);
+        let f6_held = enable && input.is_pressed(Keycode::F6);
+        let f7_held = enable && input.is_pressed(Keycode::F7);
         let f8 = enable && input.is_pressed(Keycode::F8);
+        let f12 = enable && input.is_pressed(Keycode::F12);
+
+        // F2 (edge) — toggle pause. The pause flag short-circuits the
+        // NORMAL forward-play branch's run_frame; scrub / replay / rewind
+        // paths are unaffected (those have their own time semantics).
+        if f2 && !prev_f2 {
+            if let Some(c) = core.as_ref() {
+                if c.has_rom() {
+                    paused = !paused;
+                    log::info!("oa-shell: F2 — {}", if paused { "paused" } else { "resumed" });
+                    toast(&app_handle, ToastLevel::Info, if paused { "Paused" } else { "Resumed" });
+                }
+            }
+        }
+        // F3 (edge) — frame advance. Only meaningful while paused. Sets
+        // a one-shot flag the run_frame branch honors then clears.
+        if f3 && !prev_f3 && paused {
+            frame_advance_request = true;
+        }
+        prev_f2 = f2;
+        prev_f3 = f3;
 
         // Esc → request Quick Settings overlay. Rising-edge so a held key
         // only fires once. We don't toggle from this side — once the
@@ -2467,6 +2777,37 @@ fn run_emu_render(
                 }
             }
 
+            // F12 (edge) — write the current framebuffer to a PNG under
+            // appData/screenshots/<rom-stem>/<timestamp>.png. Uses the
+            // `png` crate that already drives save-state thumbnails +
+            // video capture, so no new deps. Files-on-disk path because
+            // the user typically wants to share / move screenshots; an
+            // in-app gallery is a separate follow-up.
+            if f12 && !prev_f12 {
+                if let Some(stem) = current_rom_stem.as_deref() {
+                    let fb = core_ref.framebuffer();
+                    match write_screenshot(&app_data_dir, stem, fb.width, fb.height, fb.pixels) {
+                        Ok(path) => {
+                            log::info!("oa-shell: F12 — screenshot saved to {}", path.display());
+                            toast(&app_handle, ToastLevel::Success, format!("Screenshot saved: {}", path.file_name().and_then(|s| s.to_str()).unwrap_or("(unknown)")));
+                        }
+                        Err(e) => {
+                            log::warn!("oa-shell: F12 — screenshot failed: {e}");
+                            toast(&app_handle, ToastLevel::Warn, format!("Screenshot failed: {e}"));
+                        }
+                    }
+                } else {
+                    toast(&app_handle, ToastLevel::Info, "No ROM loaded");
+                }
+            }
+
+            // RetroArch parity slice 7 — set true when the normal-play
+            // branch's run_frame triggered a run-ahead lookahead that
+            // already presented the future framebuffer + pushed real
+            // audio. The post-frame present/drain block at the bottom
+            // of the `if let Some(core_ref)` block honors this flag to
+            // avoid double-presenting + audio duplication.
+            let mut ran_ahead = false;
             // Four mutually-exclusive play modes:
             //
             //   1. SCRUB mode (Phase 4 slice B). User opened the rewind
@@ -2630,7 +2971,100 @@ fn run_emu_render(
                         publish_tas_state(TasMode::Recording, n, 0, &name, &tas_state);
                     }
                 }
-                core_ref.run_frame();
+
+                // RetroArch-parity slice 3 — pause / fast-forward / slow-motion.
+                // PAUSED: skip run_frame entirely (or run exactly one frame
+                // when F3 requested a frame advance; clear the flag after).
+                // FAST-FORWARD (F6 held): run multiple frames per render
+                // cycle so wall-clock seconds map to N× game-seconds.
+                // SLOW-MOTION (F7 held): run_frame only every Nth render
+                // cycle — render stays at full rate, game time slows.
+                // None of these affect scrub / replay / rewind branches.
+                if paused {
+                    if frame_advance_request {
+                        core_ref.run_frame();
+                        apply_cheats(core_ref, &cheat_runtime);
+                        frame_advance_request = false;
+                    }
+                    // else: hold the last frame; framebuffer is unchanged.
+                } else if f6_held {
+                    // Fast-forward — single render frame, multiple game frames.
+                    for _ in 0..FAST_FORWARD_BURST {
+                        core_ref.run_frame();
+                        apply_cheats(core_ref, &cheat_runtime);
+                    }
+                    slow_mo_phase = 0;
+                } else if f7_held {
+                    // Slow-motion — only run on every Nth render frame.
+                    slow_mo_phase = (slow_mo_phase + 1) % SLOW_MOTION_DIVISOR;
+                    if slow_mo_phase == 0 {
+                        core_ref.run_frame();
+                        apply_cheats(core_ref, &cheat_runtime);
+                    }
+                } else {
+                    slow_mo_phase = 0;
+                    core_ref.run_frame();
+                    apply_cheats(core_ref, &cheat_runtime);
+
+                    // === Run-Ahead lookahead =============================
+                    //
+                    // Reduce perceived input latency by N frames: after
+                    // the real run_frame produces frame X, save the
+                    // post-X state, run N more frames (no new input),
+                    // present the resulting frame X+N, then rollback to
+                    // X. The user sees frame X+N's pixels (effectively
+                    // a peek into the future) while the core's "real"
+                    // position is still X, so when the next render frame
+                    // arrives with input I, the core processes I from
+                    // state X — but the visible result is from N frames
+                    // beyond that.
+                    //
+                    // Cost: 1 save_state + N extra run_frames + 1
+                    // load_state per render frame. PCE/NES-class cores
+                    // sit at ~0.5ms total at N=2; bigger cores can
+                    // exceed budget — that's why this is opt-in with a
+                    // clamp at 5.
+                    //
+                    // Skipped during scrubbing / TAS replay / TAS
+                    // recording — those branches have their own time
+                    // semantics where peeking ahead is wrong or breaks
+                    // determinism. Other special modes (paused / FF /
+                    // SM) don't reach this branch.
+                    if run_ahead_frames > 0
+                        && !scrubbing
+                        && tas_replay.is_none()
+                        && tas_recording.is_none()
+                    {
+                        // Capture the REAL audio between the real
+                        // run_frame and the future-frame run_frames so
+                        // the user hears samples from the same frame
+                        // they're (notionally) on input-wise, not the
+                        // future. drain_audio is &mut self and clears
+                        // the internal accumulator so future-frame
+                        // audio is naturally discarded by drain after
+                        // load_state.
+                        run_ahead_audio_buf.clear();
+                        run_ahead_audio_buf.extend_from_slice(core_ref.drain_audio());
+                        run_ahead_save_buf.clear();
+                        if core_ref.save_state(&mut run_ahead_save_buf).is_ok() {
+                            for _ in 0..run_ahead_frames {
+                                core_ref.run_frame();
+                                apply_cheats(core_ref, &cheat_runtime);
+                            }
+                            renderer.present(core_ref.framebuffer());
+                            if let Err(e) = core_ref.load_state(&mut run_ahead_save_buf.as_slice()) {
+                                log::warn!("oa-shell: run-ahead rollback failed: {e:?}");
+                            } else if let Some(sink) = audio.as_mut() {
+                                if !run_ahead_audio_buf.is_empty() {
+                                    sink.push(&run_ahead_audio_buf);
+                                }
+                            }
+                            ran_ahead = true;
+                        } else {
+                            log::warn!("oa-shell: run-ahead save_state failed; disabling for this frame");
+                        }
+                    }
+                }
 
                 // Phase 4 slice E + F — refresh the memory snapshot
                 // every frame so the inspector + milestone evaluator
@@ -2766,17 +3200,22 @@ fn run_emu_render(
                     }
                 }
             }
-            renderer.present(core_ref.framebuffer());
+            // Run-ahead already presented the future frame + pushed the
+            // real audio; skip both here to avoid double-rendering and
+            // duplicated audio samples.
+            if !ran_ahead {
+                renderer.present(core_ref.framebuffer());
 
-            // Pump audio: drain whatever the core produced this frame into the sink.
-            // `drain_audio` borrows &mut self, so this has to come after `framebuffer()`.
-            if let Some(sink) = audio.as_mut() {
-                let samples = core_ref.drain_audio();
-                if !samples.is_empty() {
-                    sink.push(samples);
+                // Pump audio: drain whatever the core produced this frame into the sink.
+                // `drain_audio` borrows &mut self, so this has to come after `framebuffer()`.
+                if let Some(sink) = audio.as_mut() {
+                    let samples = core_ref.drain_audio();
+                    if !samples.is_empty() {
+                        sink.push(samples);
+                    }
+                } else {
+                    let _ = core_ref.drain_audio();
                 }
-            } else {
-                let _ = core_ref.drain_audio();
             }
 
             frame_n += 1;
@@ -2799,6 +3238,7 @@ fn run_emu_render(
         prev_f1 = f1;
         prev_f5 = f5;
         prev_f8 = f8;
+        prev_f12 = f12;
 
         next_frame += frame_period;
         let now = Instant::now();
@@ -3440,6 +3880,172 @@ fn arm_milestones(game_id: String, state: tauri::State<'_, AppState>, db: tauri:
     Ok(count)
 }
 
+// --- Cheats CRUD (RetroArch parity slice 5) -------------------------------
+
+#[allow(non_snake_case)]
+#[tauri::command]
+fn list_cheats(gameId: String, db: tauri::State<'_, library_db::LibraryDb>) -> Result<Vec<library_db::Cheat>, String> {
+    db.list_cheats(&gameId)
+}
+
+#[tauri::command]
+fn add_cheat(cheat: library_db::Cheat, db: tauri::State<'_, library_db::LibraryDb>) -> Result<i64, String> {
+    db.add_cheat(&cheat)
+}
+
+#[tauri::command]
+fn update_cheat(cheat: library_db::Cheat, db: tauri::State<'_, library_db::LibraryDb>) -> Result<(), String> {
+    db.update_cheat(&cheat)
+}
+
+#[tauri::command]
+fn delete_cheat(id: i64, db: tauri::State<'_, library_db::LibraryDb>) -> Result<usize, String> {
+    db.delete_cheat(id)
+}
+
+/// Read the current bytes for a memory region from the per-frame snapshot.
+/// Used by the cheat-search Tauri commands instead of hitting the libretro
+/// singleton directly — the emu thread already maintains a copy at frame
+/// rate (via the memory inspector + milestone runtime path).
+fn read_region_snapshot(snap: &MemorySnapshot, region: &str) -> Option<Vec<u8>> {
+    let id = oa_core::MemoryRegionId::parse(region)?;
+    snap.region(id).map(|bytes| bytes.to_vec())
+}
+
+/// Start a cheat search. Snapshots the named region's current bytes from
+/// the cached `memory_snapshot` and primes the candidate list with every
+/// offset.
+///
+/// The memory snapshot is normally only refreshed when the memory
+/// inspector OR a milestone runtime is using it (per-frame copy cost
+/// optimization). To make Start work in the common case where the user
+/// jumps straight into cheat search without first opening the inspector,
+/// we write a sentinel `Some(Vec::new())` into the matching field —
+/// that flips the per-frame "need_snapshot" gate on — then poll briefly
+/// for the emu thread to seed the real bytes.
+#[tauri::command]
+fn start_cheat_search(
+    region: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<cheat_search::CheatSearchSummary, String> {
+    use oa_core::MemoryRegionId::*;
+    let id = oa_core::MemoryRegionId::parse(&region)
+        .ok_or_else(|| format!("unknown region: {region}"))?;
+    // Flip the snapshot gate by writing a non-None field into the
+    // matching region slot. The next emu-thread frame will overwrite
+    // with the real bytes.
+    {
+        let mut snap = state.memory_snapshot.lock().map_err(|_| "memory_snapshot poisoned".to_string())?;
+        match id {
+            SaveRam if snap.save_ram.is_none() => snap.save_ram = Some(Vec::new()),
+            Rtc if snap.rtc.is_none() => snap.rtc = Some(Vec::new()),
+            SystemRam if snap.system_ram.is_none() => snap.system_ram = Some(Vec::new()),
+            VideoRam if snap.video_ram.is_none() => snap.video_ram = Some(Vec::new()),
+            _ => {}
+        }
+    }
+    // Poll briefly for the emu thread to fill the region. At 60 fps a
+    // frame is ~16 ms so 5 × 20 ms covers ~6 frames of slack.
+    let mut bytes: Vec<u8> = Vec::new();
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let snap = state.memory_snapshot.lock().map_err(|_| "memory_snapshot poisoned".to_string())?;
+        if let Some(b) = read_region_snapshot(&snap, &region) {
+            if !b.is_empty() {
+                bytes = b;
+                break;
+            }
+        }
+    }
+    if bytes.is_empty() {
+        return Err(format!(
+            "region {region} couldn't be seeded — make sure a ROM is loaded and the core exposes that region"
+        ));
+    }
+    let session = cheat_search::CheatSearchSession {
+        region: region.clone(),
+        width: 1,
+        previous: bytes.clone(),
+        candidates: (0..bytes.len() as u32).collect(),
+    };
+    let summary = cheat_search::summarize(&session, &bytes, 32);
+    *state.cheat_search.lock().map_err(|_| "cheat_search poisoned".to_string())? = Some(session);
+    Ok(summary)
+}
+
+/// Apply a filter to the active search session. Returns the updated
+/// candidate count + the top-N entries with current/previous bytes.
+#[tauri::command]
+fn filter_cheat_search(
+    filter: cheat_search::CheatSearchFilter,
+    state: tauri::State<'_, AppState>,
+) -> Result<cheat_search::CheatSearchSummary, String> {
+    // Pull the current snapshot first so the lock-order is consistent
+    // with start_cheat_search.
+    let current = {
+        let snap = state.memory_snapshot.lock().map_err(|_| "memory_snapshot poisoned".to_string())?;
+        let region = state
+            .cheat_search
+            .lock()
+            .map_err(|_| "cheat_search poisoned".to_string())?
+            .as_ref()
+            .map(|s| s.region.clone())
+            .ok_or_else(|| "no active cheat search".to_string())?;
+        read_region_snapshot(&snap, &region)
+            .ok_or_else(|| format!("region {region} no longer available"))?
+    };
+    let mut guard = state.cheat_search.lock().map_err(|_| "cheat_search poisoned".to_string())?;
+    let session = guard.as_mut().ok_or_else(|| "no active cheat search".to_string())?;
+    cheat_search::apply_filter(session, &current, filter);
+    Ok(cheat_search::summarize(session, &current, 32))
+}
+
+/// Snapshot the current candidate list + values without filtering.
+/// Lets the UI refresh after the user does something in-game but BEFORE
+/// they pick a filter — handy for "what changed since last filter".
+#[tauri::command]
+fn peek_cheat_search(
+    state: tauri::State<'_, AppState>,
+) -> Result<cheat_search::CheatSearchSummary, String> {
+    let region = state
+        .cheat_search
+        .lock()
+        .map_err(|_| "cheat_search poisoned".to_string())?
+        .as_ref()
+        .map(|s| s.region.clone())
+        .ok_or_else(|| "no active cheat search".to_string())?;
+    let current = {
+        let snap = state.memory_snapshot.lock().map_err(|_| "memory_snapshot poisoned".to_string())?;
+        read_region_snapshot(&snap, &region).ok_or_else(|| format!("region {region} unavailable"))?
+    };
+    let guard = state.cheat_search.lock().map_err(|_| "cheat_search poisoned".to_string())?;
+    let session = guard.as_ref().ok_or_else(|| "no active cheat search".to_string())?;
+    Ok(cheat_search::summarize(session, &current, 32))
+}
+
+/// End the active search session. Idempotent — calling with no session
+/// is a no-op.
+#[tauri::command]
+fn end_cheat_search(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    *state.cheat_search.lock().map_err(|_| "cheat_search poisoned".to_string())? = None;
+    Ok(())
+}
+
+/// Re-arm the cheat runtime for a game. Called from `handleLaunch` after
+/// `arm_milestones` so the emu thread's frame body picks up the freshly-
+/// resolved set on its very next pass. Also called by the per-game cheats
+/// editor after Add / Update / Toggle / Delete so live edits take effect
+/// without a relaunch.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn arm_cheats(gameId: String, state: tauri::State<'_, AppState>, db: tauri::State<'_, library_db::LibraryDb>) -> Result<usize, String> {
+    let list = db.list_cheats(&gameId)?;
+    let count = list.len();
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::LoadCheats(list)).map_err(|e| format!("emu thread closed: {e}"))?;
+    Ok(count)
+}
+
 /// Phase 4 slice D-2 — convert a PNG-sequence video clip to a single WebM
 /// file via the system's `ffmpeg`. Reads the clip's manifest for fps + frame
 /// pattern, then shells out to `ffmpeg -framerate FPS -i frame_%06d.png
@@ -3898,6 +4504,234 @@ fn delete_game(id: String, db: tauri::State<'_, library_db::LibraryDb>) -> Resul
     db.delete_game(&id)
 }
 
+/// Look up a game's id by its file path. Returns null if no row matches.
+/// Used by the auto-remove-on-delete watcher path so the frontend can
+/// turn a file-system event into a `delete_game(id)` call without having
+/// to scan the live library state.
+#[tauri::command]
+fn find_game_id_by_path(
+    path: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<String>, String> {
+    db.find_id_by_file_path(&path)
+}
+
+/// Delete every game tagged with the given system id. Returns the count
+/// removed for the success toast. Used by Settings → Library →
+/// "Clear games for this system".
+#[tauri::command]
+fn delete_games_for_system(
+    system_id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<usize, String> {
+    db.delete_games_for_system(&system_id)
+}
+
+/// Delete every game row. Returns the count removed. Settings → Library →
+/// "Reset entire library" calls this AFTER a frontend `confirm()` dialog.
+#[tauri::command]
+fn delete_all_games(db: tauri::State<'_, library_db::LibraryDb>) -> Result<usize, String> {
+    db.delete_all_games()
+}
+
+/// RetroArch-parity slice — return the cached option schema + per-system
+/// values for a system. Optionally overlays a game's per-game values if
+/// `game_id` is provided. Schema is captured at every successful core
+/// load (see the LoadRom path); empty until first launch of a system.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn list_core_options(
+    systemId: String,
+    gameId: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<core_options::CoreOptionsSnapshot, String> {
+    let file = core_options::read(&state.app_data_dir, &systemId);
+    let game_values = if let Some(id) = gameId {
+        db.get_game_overrides(&id)
+            .map(|o| o.core_options)
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    Ok(core_options::CoreOptionsSnapshot {
+        schema: file.schema,
+        categories: file.categories,
+        system_values: file.values,
+        game_values,
+    })
+}
+
+/// RetroArch-parity slice — set or clear a per-system core option.
+/// `value = None` clears the override (the next-tier value — per-game
+/// override OR the schema default — takes effect). When a core is
+/// currently loaded for this system, also sends `SetCoreOption` to the
+/// emu thread so the change is live without a relaunch.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_system_core_option(
+    systemId: String,
+    key: String,
+    value: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut file = core_options::read(&state.app_data_dir, &systemId);
+    match value.clone() {
+        Some(v) => { file.values.insert(key.clone(), v); }
+        None => { file.values.remove(&key); }
+    }
+    core_options::write(&state.app_data_dir, &systemId, &file)
+        .map_err(|e| format!("write core-options: {e}"))?;
+    // Push to the live core. If `value` is None (clear) we resolve to the
+    // schema default — the next launch picks up per-game overrides naturally;
+    // mid-session clears are best-effort with the schema default value.
+    let effective = value.unwrap_or_else(|| {
+        file.schema
+            .iter()
+            .find(|o| o.key == key)
+            .map(|o| o.default_value.clone())
+            .unwrap_or_default()
+    });
+    if !effective.is_empty() {
+        let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+        let _ = tx.send(EmuCommand::SetCoreOption { key, value: effective });
+    }
+    Ok(())
+}
+
+/// RetroArch-parity slice — set or clear a per-game core option. Stored
+/// in the existing `games.overrides_json` blob (`GameOverrides.core_options`
+/// map). When a core is currently loaded, also pushes to the emu thread.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_game_core_option(
+    gameId: String,
+    key: String,
+    value: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let mut overrides = db.get_game_overrides(&gameId)?;
+    match value.clone() {
+        Some(v) => { overrides.core_options.insert(key.clone(), v); }
+        None => { overrides.core_options.remove(&key); }
+    }
+    db.set_game_overrides(&gameId, &overrides)?;
+    // For the live core, push the effective value (per-game override OR
+    // per-system OR schema default). The frontend can also re-apply the
+    // whole option map via `apply_game_core_options` if desired.
+    if let Some(row) = db.list_games()?.into_iter().find(|g| g.id == gameId) {
+        let file = core_options::read(&state.app_data_dir, &row.system_id);
+        let effective = value.unwrap_or_else(|| {
+            file.values
+                .get(&key)
+                .cloned()
+                .or_else(|| file.schema.iter().find(|o| o.key == key).map(|o| o.default_value.clone()))
+                .unwrap_or_default()
+        });
+        if !effective.is_empty() {
+            let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+            let _ = tx.send(EmuCommand::SetCoreOption { key, value: effective });
+        }
+    }
+    Ok(())
+}
+
+/// RetroArch parity slice 7 — set the OA-wide run-ahead frame count.
+/// 0 = disabled, 1-5 = peek that many frames ahead each render frame
+/// (save_state + N extra run_frames + load_state). Reduces perceived
+/// input latency by N frames at the cost of (N + 1 + serialize-size)
+/// per render frame. Heavier cores may exceed budget; the renderer-
+/// thread's frame-budget timer hides it but the audio sink will start
+/// dropping if the loop exceeds 16 ms. v1 is OA-wide; per-system /
+/// per-game override is a small follow-up.
+#[tauri::command]
+fn set_run_ahead(frames: u32, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetRunAhead(frames))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    Ok(())
+}
+
+/// RetroArch-parity slice — file picker for ROM patches. Returns the
+/// absolute path of the selected `.ips` / `.ups` / `.bps` file, or null
+/// if the user cancelled. The frontend feeds this into the per-game
+/// settings drawer's `patch_path` slot.
+#[tauri::command]
+async fn pick_patch_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("ROM patch", &["ips", "ups", "bps"])
+        .blocking_pick_file();
+    Ok(path.and_then(|fp| fp.as_path().map(|p| p.display().to_string())))
+}
+
+/// RetroArch-parity slice — read the cached disc-control snapshot.
+/// Returns null for cart games / cores without a disc-control interface.
+/// The cache is refreshed by the emu thread on LoadRom + after every
+/// successful eject/swap so consumer commands stay reactive.
+#[tauri::command]
+fn get_disc_state(state: tauri::State<'_, AppState>) -> Result<Option<oa_core::DiscInfo>, String> {
+    let guard = state.disc_state.lock().map_err(|_| "disc_state poisoned".to_string())?;
+    Ok(guard.clone())
+}
+
+/// RetroArch-parity slice — open or close the virtual disc tray.
+/// Disc-swap protocol: eject → set image → close. UI buttons typically
+/// run the full sequence; this command exposes the steps individually so
+/// "Eject" / "Insert disc N" can be separate user actions.
+#[tauri::command]
+fn set_disc_eject(ejected: bool, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetDiscEject(ejected))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    Ok(())
+}
+
+/// RetroArch-parity slice — swap to disc `index` (0-based). Only effective
+/// while the tray is ejected; cores typically refuse + log otherwise. The
+/// UI runs eject → set_image → close as a single user action.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_disc_image(index: u32, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetDiscImage(index))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    Ok(())
+}
+
+/// RetroArch-parity slice — bulk-apply the merged per-system + per-game
+/// option set for a specific game to the running core. Called from
+/// `handleLaunch` after `set_shader_preset` so the core sees user-chosen
+/// values from its very first frame.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn apply_game_core_options(
+    gameId: String,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<usize, String> {
+    let row = db
+        .list_games()?
+        .into_iter()
+        .find(|g| g.id == gameId)
+        .ok_or_else(|| format!("game id not found: {gameId}"))?;
+    let file = core_options::read(&state.app_data_dir, &row.system_id);
+    let game_overrides = db.get_game_overrides(&gameId)?;
+    let merged = core_options::build_effective_values(
+        &file.schema,
+        &file.values,
+        &game_overrides.core_options,
+    );
+    let count = merged.len();
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::ApplyCoreOptions(merged))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    Ok(count)
+}
+
 #[tauri::command]
 fn search_games(
     query: String,
@@ -4280,6 +5114,7 @@ fn launch_rom(
     // callers (launchRom-with-old-args) still works.
     systemId: Option<String>,
     state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     let system_id = systemId.unwrap_or_else(|| "tg16".to_string());
     // Three launch shapes:
@@ -4295,7 +5130,7 @@ fn launch_rom(
     // lets us keep file_path unique in SQLite without parsing-by-suffix
     // ambiguity (some filenames contain `#`).
 
-    let (resolved_path, resolved_bytes);
+    let (resolved_path, mut resolved_bytes);
     let is_archived = archiveInnerPath.is_some();
 
     if let Some(inner) = archiveInnerPath.as_deref() {
@@ -4377,6 +5212,33 @@ fn launch_rom(
         };
         resolved_path = path.clone();
         resolved_bytes = bytes;
+    }
+
+    // RetroArch-parity slice — soft patches (IPS / UPS / BPS). Applied to
+    // byte-source ROMs only (cart formats); CD images skip since the core
+    // opens the .cue/.chd/.m3u directly and we have no shadow-mount path.
+    // Per-game patch_path lives in GameOverrides; missing = no patching.
+    if !resolved_bytes.is_empty() {
+        if let Some(id) = entryId.as_deref() {
+            if let Ok(overrides) = db.get_game_overrides(id) {
+                if let Some(patch_path) = overrides.patch_path.as_deref() {
+                    let pp = std::path::Path::new(patch_path);
+                    match patch::apply_from_path(pp, &resolved_bytes) {
+                        Ok(patched) => {
+                            log::info!(
+                                "oa-shell: soft patch applied {} ({} -> {} bytes)",
+                                patch_path, resolved_bytes.len(), patched.len()
+                            );
+                            resolved_bytes = patched;
+                        }
+                        Err(e) => {
+                            log::warn!("oa-shell: soft patch failed ({patch_path}): {e}");
+                            return Err(format!("patch {patch_path}: {e}"));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     log::info!(

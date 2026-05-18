@@ -104,7 +104,14 @@ type MemoryRegionInfo = {
   bytes: number[];
 };
 
-type QuickView = "actions" | "rewind" | "tas" | "video" | "memory";
+type QuickView = "actions" | "rewind" | "tas" | "video" | "memory" | "disc";
+
+type DiscInfo = {
+  numDiscs: number;
+  currentIndex: number;
+  ejected: boolean;
+  labels: string[];
+};
 
 const MEMORY_WINDOW_BYTES = 256;
 
@@ -135,6 +142,35 @@ const QuickSettings: Component<Props> = (props) => {
   const [memoryOffset, setMemoryOffset] = createSignal(0);
   const [memoryView, setMemoryView] = createSignal<MemoryRegionInfo | null>(null);
   let memoryPollId: number | undefined;
+
+  // RetroArch parity slice — disc control.
+  const [discInfo, setDiscInfo] = createSignal<DiscInfo | null>(null);
+  const [discSwapping, setDiscSwapping] = createSignal(false);
+  async function refreshDiscState() {
+    try {
+      const s = await invoke<DiscInfo | null>("get_disc_state");
+      setDiscInfo(s);
+    } catch (e) {
+      console.warn("[oa-quick] get_disc_state failed:", e);
+    }
+  }
+  /// Run the canonical eject → set_image → close sequence. Cores resume
+  /// reading from the new disc on the next frame. Disabled while another
+  /// swap is in flight so we don't interleave protocol steps.
+  async function swapToDisc(index: number) {
+    if (discSwapping()) return;
+    setDiscSwapping(true);
+    try {
+      await invoke("set_disc_eject", { ejected: true });
+      await invoke("set_disc_image", { index });
+      await invoke("set_disc_eject", { ejected: false });
+      await refreshDiscState();
+    } catch (e) {
+      console.warn("[oa-quick] swapToDisc failed:", e);
+    } finally {
+      setDiscSwapping(false);
+    }
+  }
 
   // Esc closes. Capture-phase so we win against the App.tsx-level Esc
   // handler. While in rewind view, Esc cancels the scrub first.
@@ -173,6 +209,7 @@ const QuickSettings: Component<Props> = (props) => {
       void invoke<VideoState>("get_video_state")
         .then((s) => setVideoState(s ?? null))
         .catch(() => setVideoState(null));
+      void refreshDiscState();
       requestAnimationFrame(() => {
         if (!cardRef) return;
         const firstBtn = cardRef.querySelector<HTMLButtonElement>(
@@ -594,6 +631,18 @@ const QuickSettings: Component<Props> = (props) => {
                 hint="dev / power user"
                 onClick={() => setView("memory")}
               />
+              <Show when={discInfo() !== null}>
+                <ActionRow
+                  icon="💿"
+                  label="Disc control…"
+                  hint={
+                    (discInfo()?.numDiscs ?? 0) > 1
+                      ? `disc ${(discInfo()?.currentIndex ?? 0) + 1} / ${discInfo()?.numDiscs ?? 1}`
+                      : "single disc"
+                  }
+                  onClick={() => setView("disc")}
+                />
+              </Show>
               <ActionRow
                 icon="⏱"
                 label="Save / Load states"
@@ -711,9 +760,96 @@ const QuickSettings: Component<Props> = (props) => {
               onBack={() => setView("actions")}
             />
           </Show>
+
+          <Show when={view() === "disc" && discInfo() !== null}>
+            <DiscPanel
+              info={discInfo()!}
+              swapping={discSwapping()}
+              onSwap={(idx) => void swapToDisc(idx)}
+              onBack={() => setView("actions")}
+            />
+          </Show>
         </div>
       </div>
     </Show>
+  );
+};
+
+// --- Disc control panel ----------------------------------------------
+
+type DiscPanelProps = {
+  info: DiscInfo;
+  swapping: boolean;
+  onSwap: (index: number) => void;
+  onBack: () => void;
+};
+
+/// RetroArch-parity slice — multi-disc swap UI. Listed under
+/// QuickSettings when the active core registered a disc-control
+/// interface AND has more than one disc image (single-disc games hide
+/// the row entirely). Clicking "Insert" runs the canonical
+/// eject → set_image_index → close sequence; the core resumes from the
+/// new disc on the next frame.
+const DiscPanel: Component<DiscPanelProps> = (props) => {
+  const labelFor = (idx: number): string => {
+    const fromCore = props.info.labels[idx];
+    if (fromCore && fromCore.trim().length > 0) return fromCore;
+    return `Disc ${idx + 1}`;
+  };
+  return (
+    <div class="flex flex-col gap-3 p-4">
+      <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        <span>Disc control</span>
+        <span>
+          {props.info.numDiscs} {props.info.numDiscs === 1 ? "disc" : "discs"}
+          {props.info.ejected ? " · tray open" : ""}
+        </span>
+      </div>
+      <Show when={props.info.numDiscs <= 1}>
+        <p class="rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+          Single-disc game — disc swap only meaningful for multi-disc images
+          (e.g. <code class="font-mono normal-case">.m3u</code> playlists).
+        </p>
+      </Show>
+      <div class="flex flex-col gap-1.5">
+        <For each={Array.from({ length: props.info.numDiscs }, (_, i) => i)}>
+          {(idx) => {
+            const isActive = () => idx === props.info.currentIndex;
+            return (
+              <div
+                class="flex items-center gap-3 rounded-md border p-2.5"
+                classList={{
+                  "border-(--color-system-accent)/40 bg-(--color-system-accent)/10": isActive(),
+                  "border-white/10 bg-white/[0.03]": !isActive(),
+                }}
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-(--color-oa-ink)">{labelFor(idx)}</p>
+                  <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    {isActive() ? "loaded" : "available"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => props.onSwap(idx)}
+                  disabled={isActive() || props.swapping}
+                  class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {props.swapping ? "…" : isActive() ? "Loaded" : "Insert"}
+                </button>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+      <button
+        type="button"
+        onClick={props.onBack}
+        class="self-start rounded border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+      >
+        ← Back
+      </button>
+    </div>
   );
 };
 
