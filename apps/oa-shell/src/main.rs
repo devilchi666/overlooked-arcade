@@ -17,6 +17,7 @@
 mod archive;
 mod bindings;
 mod cheat_search;
+mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
@@ -1018,6 +1019,8 @@ fn main() {
             probe_core_file,
             install_core_from_path,
             remove_installed_core,
+            core_installer::available_cores,
+            core_installer::download_core,
             get_core_pref,
             set_core_pref,
             quit_app,
@@ -1094,6 +1097,12 @@ fn main() {
                 // Background scan service state — tracks in-flight scan jobs
                 // so cancel_background_scan can flip their cancel flags.
                 app.manage(scan_service::ScanServiceState::default());
+
+                // Cores directory pointer — buildbot installer commands need
+                // to walk it on every call. Resolved once here so the
+                // commands don't re-derive it (which would lock us out of
+                // testing relative-path setups in the future).
+                app.manage(core_installer::CoresDir(resolve_cores_dir()));
 
                 // Filesystem watcher — the frontend calls set_watched_folders
                 // once its settings store is hydrated. Until then this just

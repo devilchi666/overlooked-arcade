@@ -1,8 +1,29 @@
-import { createMemo, createResource, createSignal, For, Show, type Component } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { CoreEntry } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
+
+type AvailableCore = {
+  base: string;
+  fileName: string;
+  displayName: string;
+  blurb: string;
+  systems: string[];
+  installed: boolean;
+  installedVersion?: string;
+  supportedOnHost: boolean;
+  buildbotUrl?: string;
+};
+
+type DownloadProgress = {
+  fileName: string;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  phase: "downloading" | "extracting" | "done" | "error";
+  message?: string;
+};
 
 type Props = {
   /// Back button target — same shape as SettingsPage / PerSystemSettingsPage.
@@ -60,6 +81,61 @@ const CoresPage: Component<Props> = (props) => {
 
   const [busy, setBusy] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<string>("");
+
+  // Feature 2 — catalog of buildbot-installable cores. Re-fetched after every
+  // install/remove so the "Installed (v…)" chip stays in sync with the
+  // installed list.
+  const [catalogTick, setCatalogTick] = createSignal(0);
+  const [catalog] = createResource(catalogTick, async (): Promise<AvailableCore[]> => {
+    try {
+      return await invoke<AvailableCore[]>("available_cores");
+    } catch (e) {
+      console.warn("available_cores failed:", e);
+      return [];
+    }
+  });
+  const refreshCatalog = () => setCatalogTick((n) => n + 1);
+
+  // Per-base progress map. Phase + downloaded/total bytes feed the row's
+  // little progress strip while a download is in flight.
+  const [progress, setProgress] = createSignal<Record<string, DownloadProgress>>({});
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<DownloadProgress>("oa://core-download-progress", (e) => {
+      setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
+      if (e.payload.phase === "done" || e.payload.phase === "error") {
+        // Refresh the installed-cores list once the .dll lands so the
+        // row flips to "Installed (v…)".
+        refetch();
+        refreshCatalog();
+      }
+    }).then((un) => (unlisten = un));
+    onCleanup(() => unlisten?.());
+  });
+
+  function progressPercent(p: DownloadProgress | undefined): number | null {
+    if (!p || !p.totalBytes || p.totalBytes <= 0) return null;
+    return Math.min(100, Math.round((p.downloadedBytes / p.totalBytes) * 100));
+  }
+
+  async function handleInstall(c: AvailableCore) {
+    if (!c.supportedOnHost) {
+      setStatus(`No buildbot build for this OS/ARCH (${navigator.platform}).`);
+      return;
+    }
+    setBusy(`install-${c.base}`);
+    setStatus(`Downloading ${c.displayName}…`);
+    try {
+      await invoke<string>("download_core", { base: c.base });
+      setStatus(`Installed ${c.displayName}.`);
+      refetch();
+      refreshCatalog();
+    } catch (e) {
+      setStatus(`Install failed: ${String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const systemsUsingCore = (fileName: string): SystemId[] => {
     const p = prefs() ?? {};
@@ -191,18 +267,21 @@ const CoresPage: Component<Props> = (props) => {
         </div>
       </Show>
 
-      <section class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <section class="min-h-0 flex-1 overflow-y-auto px-6 py-6 space-y-8">
         <Show when={!empty()} fallback={
           <div class="rounded-lg border border-dashed border-white/10 bg-black/10 px-6 py-12 text-center">
             <p class="text-sm text-(--color-oa-ink-dim)">
               No libretro cores found in <code class="text-(--color-oa-ink)">&lt;exe_dir&gt;/cores/</code>.
             </p>
             <p class="mt-2 text-[0.7rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-              Use "Add core…" to install one, or drop .dll/.so/.dylib files into the folder manually.
+              Use "Add core…" to install one, or browse the buildbot catalog below.
             </p>
           </div>
         }>
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-3" data-installed-list>
+            <h3 class="text-[0.7rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+              Installed
+            </h3>
             <For each={cores() ?? []}>
               {(c) => (
                 <article
@@ -226,6 +305,24 @@ const CoresPage: Component<Props> = (props) => {
                       </p>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
+                      {/* Per-row Update — only renders when the file maps
+                          back to a catalog entry that supports this host. */}
+                      {(() => {
+                        const cat = (catalog() ?? []).find((x) => x.fileName === c.fileName);
+                        if (!cat || !cat.supportedOnHost) return null;
+                        const busyKey = `install-${cat.base}`;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void handleInstall(cat)}
+                            disabled={busy() === busyKey}
+                            class="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:opacity-50"
+                            title={`Re-fetch from ${cat.buildbotUrl ?? "buildbot"}`}
+                          >
+                            {busy() === busyKey ? "Updating…" : "Update"}
+                          </button>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => handleRemove(c)}
@@ -313,6 +410,131 @@ const CoresPage: Component<Props> = (props) => {
             </For>
           </div>
         </Show>
+
+        {/* --- Browse cores (buildbot catalog) -------------------------- */}
+        <div class="flex flex-col gap-3">
+          <div class="flex items-baseline justify-between">
+            <h3 class="text-[0.7rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+              Browse cores
+            </h3>
+            <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              buildbot.libretro.com · nightly
+            </span>
+          </div>
+          <Show when={(catalog() ?? []).some((c) => !c.supportedOnHost)}>
+            <p class="rounded-md border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-[0.7rem] text-amber-200">
+              No buildbot build for this OS/architecture — Install is disabled. You can still
+              drop a .dll/.so/.dylib in <code>&lt;exe_dir&gt;/cores/</code> manually.
+            </p>
+          </Show>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <For each={catalog() ?? []}>
+              {(c) => {
+                const p = () => progress()[c.fileName];
+                const phase = () => p()?.phase;
+                const pct = () => progressPercent(p());
+                const busyKey = `install-${c.base}`;
+                const installable = c.supportedOnHost;
+                return (
+                  <article class="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <header class="flex items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <h4 class="truncate text-sm font-semibold text-(--color-oa-ink)">
+                          {c.displayName}
+                          <Show when={c.installed}>
+                            <span class="ml-2 rounded bg-(--color-system-accent)/20 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink)">
+                              installed
+                              <Show when={c.installedVersion}>
+                                <span> · v{c.installedVersion}</span>
+                              </Show>
+                            </span>
+                          </Show>
+                        </h4>
+                        <p class="mt-0.5 text-[0.7rem] text-(--color-oa-ink-dim)">
+                          {c.blurb}
+                        </p>
+                        <p class="mt-0.5 truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          <code class="lowercase">{c.fileName}</code>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleInstall(c)}
+                        disabled={!installable || busy() === busyKey}
+                        class="shrink-0 rounded-md border px-2.5 py-1 text-[0.6rem] uppercase tracking-wider transition disabled:opacity-50"
+                        classList={{
+                          "border-(--color-system-accent)/30 bg-(--color-system-accent)/15 text-(--color-oa-ink) hover:bg-(--color-system-accent)/25":
+                            installable && !c.installed,
+                          "border-white/10 bg-white/[0.03] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                            installable && c.installed,
+                          "border-white/5 bg-black/30 text-(--color-oa-ink-dim) cursor-not-allowed":
+                            !installable,
+                        }}
+                        title={
+                          !installable
+                            ? "No buildbot build for this OS/architecture"
+                            : c.installed
+                              ? "Re-download and replace"
+                              : "Download to <exe_dir>/cores/"
+                        }
+                      >
+                        {busy() === busyKey
+                          ? phase() === "extracting" ? "Extracting…" : "Downloading…"
+                          : c.installed ? "Update" : "Install"}
+                      </button>
+                    </header>
+                    <Show when={c.systems.length > 0}>
+                      <div class="mt-2 flex flex-wrap gap-1">
+                        <For each={c.systems}>
+                          {(s) => {
+                            const t = systemThemes[s as SystemId];
+                            return (
+                              <span
+                                class="rounded bg-white/[0.06] px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)"
+                                data-system={s}
+                              >
+                                {t?.shortName ?? s}
+                              </span>
+                            );
+                          }}
+                        </For>
+                      </div>
+                    </Show>
+                    <Show when={busy() === busyKey || phase() === "extracting" || phase() === "downloading"}>
+                      <div class="mt-2">
+                        <div class="h-1 overflow-hidden rounded bg-white/[0.06]">
+                          <div
+                            class="h-full bg-(--color-system-accent) transition-all"
+                            style={{
+                              width:
+                                pct() !== null
+                                  ? `${pct()}%`
+                                  : phase() === "extracting"
+                                    ? "100%"
+                                    : "30%",
+                            }}
+                          />
+                        </div>
+                        <p class="mt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          {phase() === "extracting"
+                            ? "Extracting zip"
+                            : pct() !== null
+                              ? `${pct()}% · ${humanBytes(p()?.downloadedBytes ?? 0)} of ${humanBytes(p()?.totalBytes ?? 0)}`
+                              : `${humanBytes(p()?.downloadedBytes ?? 0)} downloaded`}
+                        </p>
+                      </div>
+                    </Show>
+                    <Show when={phase() === "error"}>
+                      <p class="mt-2 rounded bg-red-950/30 px-2 py-1 text-[0.65rem] text-red-300">
+                        {p()?.message ?? "Install failed."}
+                      </p>
+                    </Show>
+                  </article>
+                );
+              }}
+            </For>
+          </div>
+        </div>
       </section>
     </div>
   );
