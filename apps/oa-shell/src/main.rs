@@ -25,6 +25,7 @@ mod media;
 mod metadata;
 mod normalize;
 mod patch;
+mod rom_hashes;
 mod scan_service;
 mod shader_presets;
 mod shader_presets_watcher;
@@ -1037,6 +1038,9 @@ fn main() {
             metadata::sync_metadata_for_system,
             media::media_storage_stats,
             media::open_media_folder,
+            rom_hashes::sync_rom_hashes_for_system,
+            rom_hashes::resolve_rom_hashes_for_system,
+            rom_hashes::lookup_rom_hash,
         ])
         .setup({
             let running = running.clone();

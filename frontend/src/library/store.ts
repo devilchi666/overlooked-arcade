@@ -126,6 +126,17 @@ export function createLibraryStore() {
   return {
     state,
     hydrated,
+    /// Pull the authoritative game list from Rust and replace the local
+    /// mirror. Used after server-side mutations the store didn't initiate
+    /// (e.g. the rom_hashes resolve flow rewriting canonical titles).
+    async refresh(): Promise<void> {
+      try {
+        const fresh = await invoke<RomEntry[]>("list_games");
+        setState("entries", fresh);
+      } catch (e) {
+        console.warn("[oa-library] refresh failed:", e);
+      }
+    },
     /// Add scanned ROMs. Writes through to Rust, then refreshes local cache
     /// from the source of truth. Returns the number of newly-added entries
     /// (Rust dedups by file_path).

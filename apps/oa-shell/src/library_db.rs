@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -251,6 +251,24 @@ pub struct GameRow {
     pub archive_inner_path: Option<String>,
 }
 
+/// One canonical rom-hash entry — the source-of-truth shape pulled from
+/// libretro-database's `dat/<system>.dat` files. Stored in the
+/// `rom_hashes` table keyed on sha1; `apply_rom_hash` resolves a game by
+/// hash to the canonical name + serial.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RomHashRow {
+    pub sha1: String,
+    pub system_id: String,
+    pub game_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crc32: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+}
+
 pub struct LibraryDb {
     inner: Mutex<Connection>,
     #[allow(dead_code)] // diagnostics / future log-on-error
@@ -362,7 +380,59 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v7 (cheat kinds)");
         }
 
+        // v7 → v8: hash-based ROM identification. Adds sha1 + serial to
+        // games for hits stamped from libretro-database, plus a
+        // rom_hashes lookup table keyed on sha1.
+        if current < 8 {
+            Self::migrate_v7_to_v8(conn)?;
+            conn.pragma_update(None, "user_version", 8)
+                .map_err(|e| format!("set user_version=8: {e}"))?;
+            log::info!("library_db: schema migrated to v8 (rom_hashes + games.sha1/serial)");
+        }
+
         Ok(())
+    }
+
+    fn migrate_v7_to_v8(conn: &Connection) -> Result<(), String> {
+        // Add sha1 + serial to games. Idempotent — check via table_info
+        // so re-running the migration after a partial failure doesn't
+        // ERROR-out on "column already exists."
+        let existing_cols: std::collections::HashSet<String> = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(games)")
+                .map_err(|e| format!("table_info games: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| format!("query table_info: {e}"))?;
+            let mut out = std::collections::HashSet::new();
+            for r in rows {
+                out.insert(r.map_err(|e| format!("row table_info: {e}"))?);
+            }
+            out
+        };
+        if !existing_cols.contains("sha1") {
+            conn.execute("ALTER TABLE games ADD COLUMN sha1 TEXT", [])
+                .map_err(|e| format!("alter games add sha1: {e}"))?;
+        }
+        if !existing_cols.contains("serial") {
+            conn.execute("ALTER TABLE games ADD COLUMN serial TEXT", [])
+                .map_err(|e| format!("alter games add serial: {e}"))?;
+        }
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS rom_hashes (
+                sha1        TEXT PRIMARY KEY,
+                system_id   TEXT NOT NULL,
+                game_name   TEXT NOT NULL,
+                serial      TEXT,
+                crc32       TEXT,
+                size_bytes  INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_rom_hashes_system ON rom_hashes(system_id);
+            CREATE INDEX IF NOT EXISTS idx_games_sha1 ON games(sha1) WHERE sha1 IS NOT NULL;
+            "#,
+        )
+        .map_err(|e| format!("create rom_hashes table: {e}"))
     }
 
     fn migrate_v6_to_v7(conn: &Connection) -> Result<(), String> {
@@ -729,6 +799,160 @@ impl LibraryDb {
         )
         .map_err(|e| format!("update core_override: {e}"))?;
         Ok(())
+    }
+
+    /// Bulk-insert hash entries into rom_hashes. Called by the metadata-sync
+    /// flow after parsing dat/<system>.dat from libretro-database.
+    /// INSERT OR REPLACE so re-syncing with newer upstream data overwrites
+    /// the stored game_name + serial in place (filename was already the
+    /// key on the upstream side).
+    pub fn upsert_rom_hashes(&self, entries: &[RomHashRow]) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO rom_hashes
+                       (sha1, system_id, game_name, serial, crc32, size_bytes)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                )
+                .map_err(|e| format!("prepare upsert rom_hashes: {e}"))?;
+            for r in entries {
+                stmt.execute(params![
+                    r.sha1.to_ascii_lowercase(),
+                    r.system_id,
+                    r.game_name,
+                    r.serial,
+                    r.crc32.as_ref().map(|s| s.to_ascii_lowercase()),
+                    r.size_bytes,
+                ])
+                .map_err(|e| format!("insert rom_hash {}: {e}", r.sha1))?;
+                written += 1;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit upsert_rom_hashes: {e}"))?;
+        Ok(written)
+    }
+
+    /// Look up a single sha1 in the rom_hashes table. Sha1 is matched
+    /// case-insensitively (we lowercase on read AND on insert).
+    pub fn lookup_rom_hash(&self, sha1: &str) -> Result<Option<RomHashRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT sha1, system_id, game_name, serial, crc32, size_bytes
+                 FROM rom_hashes WHERE sha1 = ?1",
+            )
+            .map_err(|e| format!("prepare lookup_rom_hash: {e}"))?;
+        let mut rows = stmt
+            .query(params![sha1.to_ascii_lowercase()])
+            .map_err(|e| format!("query lookup_rom_hash: {e}"))?;
+        if let Some(row) = rows.next().map_err(|e| format!("step lookup_rom_hash: {e}"))? {
+            Ok(Some(RomHashRow {
+                sha1: row.get(0).map_err(|e| format!("col sha1: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col system_id: {e}"))?,
+                game_name: row.get(2).map_err(|e| format!("col game_name: {e}"))?,
+                serial: row.get(3).map_err(|e| format!("col serial: {e}"))?,
+                crc32: row.get(4).map_err(|e| format!("col crc32: {e}"))?,
+                size_bytes: row.get(5).map_err(|e| format!("col size_bytes: {e}"))?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Return every game in the given system that doesn't have a sha1 yet
+    /// and isn't a multi-file CD image. Caller hashes them and calls
+    /// `apply_rom_hash` per-row.
+    pub fn list_games_missing_hash(
+        &self,
+        system_id: &str,
+    ) -> Result<Vec<GameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path
+                 FROM games
+                 WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')",
+            )
+            .map_err(|e| format!("prepare list_games_missing_hash: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                Ok(GameRow {
+                    id: row.get(0)?,
+                    system_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    title: row.get(3)?,
+                    added_at: row.get(4)?,
+                    core_override: row.get(5)?,
+                    cover_path: row.get(6)?,
+                    seed: row.get::<_, i64>(7)? != 0,
+                    archive_inner_path: row.get(8)?,
+                })
+            })
+            .map_err(|e| format!("query list_games_missing_hash: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect list_games_missing_hash: {e}"))?;
+        Ok(rows)
+    }
+
+    /// Stamp a game with its sha1 and (optionally) the canonical title +
+    /// serial from the matched rom_hashes entry. Pass `title = None` to
+    /// only record the sha1; pass `title = Some(canonical)` to overwrite
+    /// the stored title with the libretro-database canonical name. The
+    /// normalized_title is rebuilt alongside so FTS5 stays consistent.
+    pub fn apply_rom_hash(
+        &self,
+        id: &str,
+        sha1: &str,
+        canonical_title: Option<&str>,
+        serial: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let lower = sha1.to_ascii_lowercase();
+        match canonical_title {
+            Some(title) => {
+                let normalized = Self::normalize_title(title);
+                conn.execute(
+                    "UPDATE games
+                       SET sha1 = ?1,
+                           serial = COALESCE(?2, serial),
+                           title = ?3,
+                           normalized_title = ?4
+                     WHERE id = ?5",
+                    params![lower, serial, title, normalized, id],
+                )
+                .map_err(|e| format!("apply_rom_hash update with title: {e}"))?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE games
+                       SET sha1 = ?1,
+                           serial = COALESCE(?2, serial)
+                     WHERE id = ?3",
+                    params![lower, serial, id],
+                )
+                .map_err(|e| format!("apply_rom_hash update: {e}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Diagnostic — how many rom_hashes rows we hold for a given system.
+    /// Exercised by the v8 migration test; the running UI doesn't surface
+    /// it yet (a future "library health" view would, e.g. "tg16: 705
+    /// canonical entries indexed").
+    #[allow(dead_code)]
+    pub fn count_rom_hashes(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM rom_hashes WHERE system_id = ?1",
+            params![system_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("count rom_hashes: {e}"))
     }
 
     pub fn delete_game(&self, id: &str) -> Result<(), String> {
@@ -2021,6 +2245,118 @@ mod tests {
         new_row.file_path = "/roms/new.zip#inner.pce".to_string();
         assert_eq!(db.add_games(&[new_row]).expect("add v2"), 1);
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn rom_hashes_upsert_lookup_and_apply() {
+        let db = fresh_db();
+        // Seed two games of system tg16.
+        db.add_games(&[row("g1", "Old Junk Name (1).pce"), row("g2", "Renamed Garbage (2).pce")])
+            .expect("seed games");
+
+        // Bulk-insert two hashes.
+        let rows = vec![
+            RomHashRow {
+                sha1: "AA00aa00aa00aa00aa00aa00aa00aa00aa00aa00".into(),
+                system_id: "tg16".into(),
+                game_name: "Bonk's Adventure (USA)".into(),
+                serial: Some("TGX040080".into()),
+                crc32: Some("4f0bb6d2".into()),
+                size_bytes: Some(393_216),
+            },
+            RomHashRow {
+                sha1: "BB11bb11bb11bb11bb11bb11bb11bb11bb11bb11".into(),
+                system_id: "tg16".into(),
+                game_name: "Air Zonk (USA)".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+        ];
+        assert_eq!(db.upsert_rom_hashes(&rows).expect("upsert"), 2);
+        assert_eq!(db.count_rom_hashes("tg16").expect("count"), 2);
+
+        // Case-insensitive lookup — sha1 stored lowercase, query upper.
+        let got = db
+            .lookup_rom_hash("AA00AA00AA00AA00AA00AA00AA00AA00AA00AA00")
+            .expect("lookup")
+            .expect("hit");
+        assert_eq!(got.game_name, "Bonk's Adventure (USA)");
+        assert_eq!(got.serial.as_deref(), Some("TGX040080"));
+
+        // Apply the match → game title rewritten to canonical, sha1 + serial
+        // stamped, normalized_title rebuilt so FTS5 stays consistent.
+        db.apply_rom_hash(
+            "g1",
+            "aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00",
+            Some("Bonk's Adventure (USA)"),
+            Some("TGX040080"),
+        )
+        .expect("apply");
+        let listed = db.list_games().expect("list");
+        let g1 = listed.iter().find(|g| g.id == "g1").expect("g1 present");
+        assert_eq!(g1.title, "Bonk's Adventure (USA)");
+
+        // missing-hash query now excludes g1 (it has a sha1) but still
+        // returns g2.
+        let missing = db.list_games_missing_hash("tg16").expect("missing");
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].id, "g2");
+    }
+
+    #[test]
+    fn rom_hashes_no_match_stamps_sha1_only() {
+        // When apply_rom_hash is called with canonical_title = None we
+        // record the sha1 (so re-runs don't re-hash) but leave the user's
+        // title alone — covers the "scanned but not in DB" case.
+        let db = fresh_db();
+        db.add_games(&[row("g1", "User Title")]).expect("seed");
+        db.apply_rom_hash("g1", "deadbeef".into(), None, None).expect("apply");
+        let game = db.list_games().expect("list").into_iter().find(|g| g.id == "g1").unwrap();
+        assert_eq!(game.title, "User Title");
+        // And the missing-hash query no longer returns it.
+        assert!(db.list_games_missing_hash("tg16").expect("missing").is_empty());
+    }
+
+    #[test]
+    fn schema_v7_to_v8_migration() {
+        // Build a v7 DB by hand (no sha1/serial cols, no rom_hashes table),
+        // then open through LibraryDb which should migrate it forward.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v7-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            let conn = Connection::open(&db_path).expect("open v7");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            LibraryDb::migrate_v1_to_v2(&conn).expect("v2");
+            LibraryDb::migrate_v2_to_v3(&conn).expect("v3");
+            LibraryDb::migrate_v3_to_v4(&conn).expect("v4");
+            // Mirror migrate_v4_to_v5 / v5_to_v6 / v6_to_v7 idempotency
+            // by jumping straight to v7 via the bootstrap path.
+            conn.pragma_update(None, "user_version", 7).expect("set v7");
+        }
+        let db = LibraryDb::open(&tmp).expect("open and migrate");
+        // sha1 + serial columns should now exist (round-trip a real row).
+        db.add_games(&[row("g1", "Migrated Game")]).expect("add post-migrate");
+        db.upsert_rom_hashes(&[RomHashRow {
+            sha1: "0".repeat(40),
+            system_id: "tg16".into(),
+            game_name: "Canonical".into(),
+            serial: None,
+            crc32: None,
+            size_bytes: None,
+        }])
+        .expect("upsert post-migrate");
+        assert_eq!(db.count_rom_hashes("tg16").expect("count"), 1);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -308,6 +308,97 @@ const SettingsPage: Component<Props> = (props) => {
     }
   }
 
+  // Feature 3 — hash-based ROM identification.
+  // Two stages: first sync the libretro-database dat into our local
+  // rom_hashes table; then resolve every game in the library that
+  // doesn't yet have a sha1 stamped on it, hashing + looking up + on
+  // hit overwriting the title with the canonical name. Both stages
+  // are per-system; we surface them on the Game media tab next to the
+  // other sync rows.
+  type HashSyncSummaryPayload = {
+    systemId: string;
+    upstreamEntries: number;
+    written: number;
+    fromCache: boolean;
+  };
+  type HashResolveProgressPayload = {
+    systemId: string;
+    done: number;
+    total: number;
+    currentTitle: string;
+    lastAction: string;
+  };
+  type HashResolveSummaryPayload = {
+    systemId: string;
+    scanned: number;
+    matched: number;
+    unmatched: number;
+    skippedCd: number;
+    errors: number;
+  };
+  const [hashSyncing, setHashSyncing] = createSignal<Record<string, boolean>>({});
+  const [hashSyncSummary, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
+  const [hashResolving, setHashResolving] = createSignal<Record<string, boolean>>({});
+  const [hashResolveProgress, setHashResolveProgress] =
+    createSignal<Record<string, HashResolveProgressPayload>>({});
+  const [hashResolveSummary, setHashResolveSummary] =
+    createSignal<Record<string, HashResolveSummaryPayload>>({});
+
+  onMount(() => {
+    let un1: UnlistenFn | undefined;
+    let un2: UnlistenFn | undefined;
+    let un3: UnlistenFn | undefined;
+    void (async () => {
+      try {
+        un1 = await listen<HashSyncSummaryPayload>("oa://rom-hashes-synced", (ev) => {
+          setHashSyncSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+          setHashSyncing((p) => ({ ...p, [ev.payload.systemId]: false }));
+        });
+        un2 = await listen<HashResolveProgressPayload>("oa://rom-hash-resolve-progress", (ev) => {
+          setHashResolveProgress((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+        });
+        un3 = await listen<HashResolveSummaryPayload>("oa://rom-hash-resolve-complete", (ev) => {
+          setHashResolveSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+          setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
+        });
+      } catch (e) {
+        console.warn("SettingsPage: hash listen failed:", e);
+      }
+    })();
+    onCleanup(() => {
+      un1?.();
+      un2?.();
+      un3?.();
+    });
+  });
+
+  async function startHashSync(systemId: SystemId) {
+    setHashSyncing((p) => ({ ...p, [systemId]: true }));
+    try {
+      await invoke("sync_rom_hashes_for_system", { systemId });
+    } catch (e) {
+      console.warn("sync_rom_hashes_for_system failed:", e);
+      setHashSyncing((p) => ({ ...p, [systemId]: false }));
+    }
+  }
+
+  async function startHashResolve(systemId: SystemId) {
+    setHashResolving((p) => ({ ...p, [systemId]: true }));
+    setHashResolveProgress((p) => ({
+      ...p,
+      [systemId]: { systemId, done: 0, total: 0, currentTitle: "", lastAction: "starting…" },
+    }));
+    try {
+      await invoke("resolve_rom_hashes_for_system", { systemId });
+      // The completed library should reflect canonical titles now —
+      // pull a fresh entries list so the UI updates.
+      await props.library.refresh();
+    } catch (e) {
+      console.warn("resolve_rom_hashes_for_system failed:", e);
+      setHashResolving((p) => ({ ...p, [systemId]: false }));
+    }
+  }
+
   async function startMetadataSync(systemId: SystemId) {
     const entries = props.library.state.entries
       .filter((e) => e.systemId === systemId && !e.seed)
@@ -936,6 +1027,30 @@ const SettingsPage: Component<Props> = (props) => {
                           >
                             {isMetaSyncing() ? "Syncing…" : "Sync metadata"}
                           </button>
+                          <button
+                            type="button"
+                            disabled={hashSyncing()[id] === true}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void startHashSync(id);
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Fetch libretro-database hash DB for this system"
+                          >
+                            {hashSyncing()[id] ? "Syncing…" : "Sync hashes"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={hashResolving()[id] === true}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void startHashResolve(id);
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Hash every ROM in this system and rename to the canonical title on a match"
+                          >
+                            {hashResolving()[id] ? "Identifying…" : "Identify ROMs"}
+                          </button>
                         </span>
                       </div>
                       <Show when={prog()}>
@@ -966,6 +1081,44 @@ const SettingsPage: Component<Props> = (props) => {
                               metadata · {p().done}/{p().total} · {p().currentRomTitle || p().lastAction}
                             </p>
                           </>
+                        )}
+                      </Show>
+                      <Show when={hashSyncSummary()[id]}>
+                        {(s) => (
+                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            hashes ·
+                            {s().written > 0
+                              ? ` ${s().written} canonical entries indexed${s().fromCache ? " (from cache)" : ""}`
+                              : " no upstream dat for this system"}
+                          </p>
+                        )}
+                      </Show>
+                      <Show when={hashResolveProgress()[id]}>
+                        {(p) => {
+                          const pct = (): number => {
+                            const v = p();
+                            return v.total === 0 ? 0 : Math.round((v.done / v.total) * 100);
+                          };
+                          return (
+                            <>
+                              <div class="h-1 w-full overflow-hidden rounded-full bg-white/5">
+                                <div
+                                  class="h-full bg-(--color-system-accent) transition-[width] duration-200"
+                                  style={{ width: `${pct()}%` }}
+                                />
+                              </div>
+                              <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                                identify · {p().done}/{p().total} · {p().currentTitle || p().lastAction}
+                              </p>
+                            </>
+                          );
+                        }}
+                      </Show>
+                      <Show when={hashResolveSummary()[id]}>
+                        {(s) => (
+                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            identify done · {s().matched} matched · {s().unmatched} unknown · {s().skippedCd} CD-skipped · {s().errors} errors
+                          </p>
                         )}
                       </Show>
                     </div>
