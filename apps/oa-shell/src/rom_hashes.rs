@@ -394,23 +394,34 @@ pub async fn sync_rom_hashes_for_system(
 /// archive at the recorded `inner_path` (no extraction-to-disk). For
 /// raw byte-source ROMs, hash the file in 64 KiB chunks. CD images are
 /// caller-filtered before we get here.
+///
+/// `file_path` follows the library's encoded shape: archived entries
+/// look like `"<archive_path>#<inner>"` (matches `encode_file_path` in
+/// archive.rs); raw ROMs are a plain path. We always run the input
+/// through `archive::decode_file_path` first so callers don't have to
+/// duplicate the split logic.
 fn sha1_of_rom(file_path: &str, archive_inner: Option<&str>) -> Result<String, String> {
-    if let Some(inner) = archive_inner {
+    let (real_path, decoded_inner) = archive::decode_file_path(file_path);
+    let inner = archive_inner.map(|s| s.to_string()).or_else(|| {
+        if decoded_inner.is_empty() { None } else { Some(decoded_inner) }
+    });
+    if let Some(inner) = inner {
         // Archived entry — load the inner bytes via the existing archive
         // module, which already handles every archive kind we support.
-        let bytes = archive::read_inner_to_bytes(Path::new(file_path), inner)
-            .map_err(|e| format!("archive read {file_path}#{inner}: {e}"))?;
+        let bytes = archive::read_inner_to_bytes(&real_path, &inner).map_err(|e| {
+            format!("archive read {}#{inner}: {e}", real_path.display())
+        })?;
         let mut hasher = Sha1::new();
         hasher.update(&bytes);
         return Ok(format!("{:x}", hasher.finalize()));
     }
     use std::io::Read;
-    let mut file = std::fs::File::open(file_path)
-        .map_err(|e| format!("open {file_path}: {e}"))?;
+    let mut file = std::fs::File::open(&real_path)
+        .map_err(|e| format!("open {}: {e}", real_path.display()))?;
     let mut hasher = Sha1::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
-        let n = file.read(&mut buf).map_err(|e| format!("read {file_path}: {e}"))?;
+        let n = file.read(&mut buf).map_err(|e| format!("read {}: {e}", real_path.display()))?;
         if n == 0 { break; }
         hasher.update(&buf[..n]);
     }
@@ -647,5 +658,54 @@ game (
         for ext in ["pce", "nes", "smc", "sfc", "lnx"] {
             assert!(!is_cd_container_ext(ext), "{ext} should NOT be a CD container");
         }
+    }
+
+    #[test]
+    fn sha1_of_raw_file_hashes_bytes() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-romhash-raw-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        std::fs::write(&tmp, b"abc").unwrap();
+        let got = sha1_of_rom(tmp.to_str().unwrap(), None).expect("hash");
+        // sha1("abc") = a9993e364706816aba3e25717850c26c9cd0d89d
+        assert_eq!(got, "a9993e364706816aba3e25717850c26c9cd0d89d");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn sha1_of_archived_entry_decodes_encoded_path() {
+        use std::io::Write;
+        // Build a tiny in-memory zip on disk containing one file with
+        // known content, then verify sha1_of_rom both with the encoded
+        // `<zip>#<inner>` shape AND with the inner_path argument set.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-romhash-zip-{}-{}.zip",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        {
+            let file = std::fs::File::create(&tmp).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file::<_, ()>("Xexyz (USA).nes", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"abc").unwrap();
+            zip.finish().unwrap();
+        }
+        let encoded = format!("{}#Xexyz (USA).nes", tmp.display());
+        // The library stores BOTH the encoded path (in file_path) AND
+        // the inner (in archive_inner_path). Make sure both routings work.
+        let with_inner = sha1_of_rom(&encoded, Some("Xexyz (USA).nes")).expect("hash with inner");
+        assert_eq!(with_inner, "a9993e364706816aba3e25717850c26c9cd0d89d");
+        let only_encoded = sha1_of_rom(&encoded, None).expect("hash encoded only");
+        assert_eq!(only_encoded, "a9993e364706816aba3e25717850c26c9cd0d89d");
+        let _ = std::fs::remove_file(&tmp);
     }
 }
