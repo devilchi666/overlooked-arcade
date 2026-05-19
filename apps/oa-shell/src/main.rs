@@ -842,6 +842,15 @@ struct AppState {
     /// The emu thread holds a clone and reads it each frame to gate input.
     /// Default `false` — set to `true` while a modal/binding-capture is active.
     ui_intercepting: Arc<AtomicBool>,
+    /// Phase 6 Cross-system slice 3 — "Game focus" mode. When `true`, OA
+    /// hotkeys (F1/F2/F3/F5/F6/F7/F8/F12/Esc/digits/Backspace) stop firing
+    /// inside the emu thread so the libretro keyboard-passthrough pump can
+    /// hand those keys to the core unchallenged. Toggled from the Tools
+    /// menu checkbox + the Scroll Lock / Ctrl+G hotkeys via
+    /// `set_game_focus`. Default `false` (OA owns its hotkeys).
+    /// Independent of [`ui_intercepting`]: a modal still suppresses
+    /// input regardless of Game-focus state.
+    game_focus: Arc<AtomicBool>,
     /// Tracks the entry_id of the currently-loaded game. Set by launch_rom,
     /// consumed by unload_rom for archive::cleanup_temp(). None when no ROM
     /// is loaded or when the loaded ROM isn't archived.
@@ -917,6 +926,9 @@ fn main() {
     // setup paths and the WindowEvent handler share the same Arcs.
     let game_focused = Arc::new(AtomicBool::new(true));
     let ui_intercepting = Arc::new(AtomicBool::new(false));
+    // Phase 6 Cross-system slice 3 — Game focus toggle. Default OFF so OA
+    // hotkeys own F-keys / Esc / digits / Backspace until the user opts in.
+    let game_focus = Arc::new(AtomicBool::new(false));
     let game_focused_for_event = game_focused.clone();
     let shell_mode_for_event: Arc<std::sync::OnceLock<ShellMode>> = Arc::new(std::sync::OnceLock::new());
     let shell_mode_for_event_evt = shell_mode_for_event.clone();
@@ -1070,6 +1082,8 @@ fn main() {
             get_audio_device_pref,
             set_audio_device_pref,
             set_ui_intercepting,
+            set_game_focus,
+            get_game_focus,
             list_cores,
             probe_core_file,
             install_core_from_path,
@@ -1103,6 +1117,7 @@ fn main() {
             let rom_path = rom_path.clone();
             let game_focused = game_focused.clone();
             let ui_intercepting = ui_intercepting.clone();
+            let game_focus = game_focus.clone();
             let shell_mode_for_event = shell_mode_for_event.clone();
             let logger_handle = logger_handle.clone();
             move |app| {
@@ -1150,8 +1165,8 @@ fn main() {
                 // on LoadRom + after each disc swap; read by Tauri commands.
                 let disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>> = Arc::new(Mutex::new(None));
                 let shell_window = match shell_mode {
-                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
-                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
+                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
+                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
                 };
 
                 // MediaState: shared in-memory MediaDb + region prefs, hydrated
@@ -1221,6 +1236,7 @@ fn main() {
                     shell_mode,
                     app_data_dir,
                     ui_intercepting: ui_intercepting.clone(),
+                    game_focus: game_focus.clone(),
                     active_archive_entry_id: Arc::new(Mutex::new(None)),
                     rewind_state,
                     tas_state,
@@ -1286,6 +1302,7 @@ fn setup_two_window(
     app_data_dir: PathBuf,
     game_focused: Arc<AtomicBool>,
     ui_intercepting: Arc<AtomicBool>,
+    game_focus: Arc<AtomicBool>,
     rewind_state: Arc<Mutex<SharedRewindState>>,
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
@@ -1334,7 +1351,7 @@ fn setup_two_window(
                     let game = game.clone();
                     Box::new(move || game.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1349,6 +1366,7 @@ fn setup_single_window(
     app_data_dir: PathBuf,
     game_focused: Arc<AtomicBool>,
     ui_intercepting: Arc<AtomicBool>,
+    game_focus: Arc<AtomicBool>,
     rewind_state: Arc<Mutex<SharedRewindState>>,
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
@@ -1387,7 +1405,7 @@ fn setup_single_window(
                     let window = window.clone();
                     Box::new(move || window.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1405,6 +1423,7 @@ fn run_emu_render(
     app_data_dir: PathBuf,
     game_focused: Arc<AtomicBool>,
     ui_intercepting: Arc<AtomicBool>,
+    game_focus: Arc<AtomicBool>,
     rewind_state: Arc<Mutex<SharedRewindState>>,
     tas_state: Arc<Mutex<SharedTasState>>,
     video_state: Arc<Mutex<SharedVideoState>>,
@@ -1638,6 +1657,14 @@ fn run_emu_render(
             &system_settings::read_system_settings(&app_data_dir, "tg16"),
         );
     let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
+
+    // Phase 6 Cross-system slice 3 — rising-edge tracking for the Ctrl+G
+    // Game-focus toggle hotkey. We can't use Scroll Lock because the
+    // `device_query` crate doesn't expose a ScrollLock variant; Ctrl+G is
+    // the single binding. Bypasses every input gate (focus / UI-intercept /
+    // game-focus / hotkeys_enabled) so the user can always toggle out.
+    // Edge state lives outside the loop so a held combo only fires once.
+    let mut prev_ctrl_g_held = false;
 
     // Rewind ring (Phase 4 slice A). Bounded by total bytes; populated only
     // when `rewind_config.enabled` is true. Holding Backspace pops the
@@ -2733,6 +2760,40 @@ fn run_emu_render(
         let enable = game_focused.load(Ordering::SeqCst) && !ui_intercepting.load(Ordering::SeqCst);
         input.set_enabled(enable);
 
+        // Phase 6 Cross-system slice 3 — Ctrl+G toggles Game focus. This
+        // edge detector runs UNCONDITIONALLY (no `enable` gate) so the
+        // user can always toggle out of Game-focus even when the WebView
+        // has stolen focus or a modal is intercepting. The trade is that
+        // a Ctrl+G chord typed for any other reason while OA is running
+        // also flips the toggle — Ctrl+G isn't bound to anything OA-side
+        // and most apps don't use it either, so the collision is rare.
+        let ctrl_g_held = (input.is_pressed(Keycode::LControl) || input.is_pressed(Keycode::RControl))
+            && input.is_pressed(Keycode::G);
+        if ctrl_g_held && !prev_ctrl_g_held {
+            let new_state = !game_focus.load(Ordering::SeqCst);
+            game_focus.store(new_state, Ordering::SeqCst);
+            // Tell the frontend so the Tools-menu checkbox + toolbar chip
+            // reflect the live state without polling. The single-window
+            // WebView sees the keydown too (and the frontend's keydown
+            // handler is a no-op for Ctrl+G), but two-window users have
+            // no other way for the UI to know.
+            if let Err(e) = app_handle.emit("oa://game-focus-changed", new_state) {
+                log::warn!("oa-shell: emit game-focus-changed failed: {e:?}");
+            }
+            log::info!("oa-shell: Ctrl+G — game_focus = {new_state}");
+        }
+        prev_ctrl_g_held = ctrl_g_held;
+
+        // Phase 6 Cross-system slice 3 — when Game-focus mode is ON, OA's
+        // hotkeys (F1/F2/F3/F5/F6/F7/F8/F12/Esc/digits/Backspace-rewind)
+        // stop firing so the keyboard-passthrough pump can hand those keys
+        // to the core unchallenged. Gameplay input (the InputPoller-based
+        // bindings) still runs — Game-focus only gates *hotkeys*, not the
+        // configured controller bindings. UI-intercept still wins (a rebind
+        // capture or modal blocks even with Game-focus ON).
+        let game_focus_on = game_focus.load(Ordering::SeqCst);
+        let hotkeys_enabled = enable && !game_focus_on;
+
         // Phase 6 Cross-system slice 2 — libretro keyboard-passthrough pump.
         //
         // For computer-shaped systems (MAME, MSX/MSX2) the core registered
@@ -2810,7 +2871,7 @@ fn run_emu_render(
             Keycode::Key5, Keycode::Key6, Keycode::Key7, Keycode::Key8, Keycode::Key9,
         ];
         for (i, key) in digit_keys.iter().enumerate() {
-            let pressed = enable && input.is_pressed(*key);
+            let pressed = hotkeys_enabled && input.is_pressed(*key);
             if pressed && !prev_digit[i] {
                 current_slot = i as u32;
                 log::info!("oa-shell: active save slot = {}", current_slot);
@@ -2828,14 +2889,14 @@ fn run_emu_render(
         // `Core::reset()` which forwards to `retro_reset`. Toast confirms the
         // reset took effect — single-window game mode hides chrome, so
         // without the toast the user has no UI feedback.
-        let f1 = enable && input.is_pressed(Keycode::F1);
-        let f2 = enable && input.is_pressed(Keycode::F2);
-        let f3 = enable && input.is_pressed(Keycode::F3);
-        let f5 = enable && input.is_pressed(Keycode::F5);
-        let f6_held = enable && input.is_pressed(Keycode::F6);
-        let f7_held = enable && input.is_pressed(Keycode::F7);
-        let f8 = enable && input.is_pressed(Keycode::F8);
-        let f12 = enable && input.is_pressed(Keycode::F12);
+        let f1 = hotkeys_enabled && input.is_pressed(Keycode::F1);
+        let f2 = hotkeys_enabled && input.is_pressed(Keycode::F2);
+        let f3 = hotkeys_enabled && input.is_pressed(Keycode::F3);
+        let f5 = hotkeys_enabled && input.is_pressed(Keycode::F5);
+        let f6_held = hotkeys_enabled && input.is_pressed(Keycode::F6);
+        let f7_held = hotkeys_enabled && input.is_pressed(Keycode::F7);
+        let f8 = hotkeys_enabled && input.is_pressed(Keycode::F8);
+        let f12 = hotkeys_enabled && input.is_pressed(Keycode::F12);
 
         // F2 (edge) — toggle pause. The pause flag short-circuits the
         // NORMAL forward-play branch's run_frame; scrub / replay / rewind
@@ -2862,7 +2923,7 @@ fn run_emu_render(
         // overlay opens, ui_intercepting flips true and `enable` goes
         // false, so this branch can't double-fire. Closing is handled by
         // QuickSettings's own keydown listener in the library WebView.
-        let esc = enable && input.is_pressed(Keycode::Escape);
+        let esc = hotkeys_enabled && input.is_pressed(Keycode::Escape);
         if esc && !prev_esc {
             if let Some(core_ref) = core.as_ref() {
                 if core_ref.has_rom() {
@@ -3024,7 +3085,7 @@ fn run_emu_render(
             //   4. NORMAL forward play. Dispatch input, run_frame,
             //      capture a snapshot every `capture_interval_frames`.
             //      When recording, also log the dispatched input frame.
-            let rewind_held = enable
+            let rewind_held = hotkeys_enabled
                 && rewind_config.enabled
                 && core_ref.has_rom()
                 && !scrubbing
@@ -5371,6 +5432,26 @@ fn set_ui_intercepting(intercepting: bool, state: tauri::State<'_, AppState>) ->
     state.ui_intercepting.store(intercepting, Ordering::SeqCst);
     log::debug!("oa-shell: ui_intercepting = {intercepting}");
     Ok(())
+}
+
+/// Phase 6 Cross-system slice 3 — set the Game-focus toggle. When `true`,
+/// OA hotkeys (F1/F2/F3/F5/F6/F7/F8/F12/Esc/digits/Backspace) stop firing
+/// inside the emu thread so the keyboard-passthrough pump can deliver
+/// those keys to the core unchallenged. Frontend calls this from the
+/// Tools menu checkbox + the Scroll Lock / Ctrl+G hotkey handler.
+#[tauri::command]
+fn set_game_focus(active: bool, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.game_focus.store(active, Ordering::SeqCst);
+    log::info!("oa-shell: game_focus = {active}");
+    Ok(())
+}
+
+/// Phase 6 Cross-system slice 3 — read the current Game-focus state.
+/// Frontend calls this once at mount to hydrate its local signal so the
+/// Tools menu checkbox + toolbar chip reflect the live state.
+#[tauri::command]
+fn get_game_focus(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.game_focus.load(Ordering::SeqCst))
 }
 
 #[derive(serde::Serialize)]

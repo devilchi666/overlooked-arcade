@@ -29,16 +29,16 @@ Decision 2026-05-19 (project DECISIONS.md "Keyboard-heavy systems"): handle MAME
 - ✅ Documented the TAB workflow + the four system buttons in `docs/cores/mame/README.md` — "for non-standard controls (driving, lightgun, mahjong, pinball), press TAB in-game to open MAME's input config. MAME stores remaps per-driver under `<appData>/cfg/<driver>.cfg`."
 - ⬜ Verify the new buttons round-trip through `to_libretro_bits("mame", …)` to the right libretro IDs against a running MAME core (test confirms the identity-mask is correct in software; live wiring to MAME's actual operator inputs depends on Phase 2 keyboard-passthrough since MAME's libretro core today routes Service / Tab through the keyboard device, not RetroPad bits).
 
-### ⬜ Input — Phase 2 (keyboard passthrough infrastructure, cross-system unlock)
+### ✅ Input — Phase 2 (keyboard passthrough infrastructure, cross-system unlock)
 
-Lives in `oa-libretro`, NOT under MAME. Benefits MSX + every future computer-shaped system simultaneously.
+Lives in `oa-libretro`, NOT under MAME. Benefits MSX + every future computer-shaped system simultaneously. Shipped as commits `3acb696` (oa-libretro plumbing), `4aac0f5` (shell pump + SystemSettings flag), `<slice-3>` (Game-focus toggle).
 
-- ⬜ Implement `retro_set_keyboard_callback` registration in `oa-libretro::loader`.
-- ⬜ Add a `KeyboardEvent { down: bool, keycode: u32, character: u32, modifiers: u16 }` channel from `oa-input` to the emu thread; emu thread forwards to the core when keyboard device is enabled for any active port.
-- ⬜ Translate `device_query::Keycode` → libretro `retro_key` values (a ~150-entry lookup table; reference: `libretro.h`'s `retro_key` enum).
-- ⬜ Add a `keyboard_passthrough: bool` flag to `system_settings::SystemSettings` defaulting to `true` for `"mame"` and `"msx"` / `"msx2"`, `false` everywhere else.
-- ⬜ Add a `Tools → Game focus` checkbox + hotkey toggle (proposed: `Scroll Lock`, with `Ctrl+G` fallback for tenkeyless keyboards). When ON, OA hotkeys (F1-F8 / Esc / Ctrl+W / etc.) pass through to the core instead of triggering OA actions. Status chip in the toolbar so user knows which mode is active.
-- ⬜ Wire `RETRO_DEVICE_KEYBOARD` for the relevant port in `LibretroCore::set_controller_port_device` once MAME loads — needs to fire AFTER `retro_load_game` per the existing Mednafen-pattern memory.
+- ✅ `retro_set_keyboard_callback` registration: `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` moves out of `oa-libretro`'s decline list and stashes the callback in `State.keyboard_cb`. `LibretroCore::send_keyboard_event` calls it under the dropped-mutex pattern (the core may re-enter via GET_LOG_INTERFACE). `LibretroCore::has_keyboard_callback()` lets the shell short-circuit the pump when the core declined keyboard input.
+- ✅ Frame-driven keyboard pump in the emu thread (no dedicated `KeyboardEvent` channel was needed — `oa-input::InputPoller::pressed_keys()` returns the current snapshot and the diff happens inline against a `HashSet<Keycode>` from the previous frame). Edge-detects press / release transitions and forwards them via `send_keyboard_event`. On focus-loss / passthrough-disabled / core-dropped, fires release events for every still-held key so the core doesn't see them as stuck.
+- ✅ `oa_libretro::keycode_to_retro_key(device_query::Keycode) → u32` — full enum coverage, lowercase ASCII letters, KP keyspace, F1-F15, navigation cluster, L/R modifier distinction, macOS Option-as-ALT + Command-as-META folding. F16-F20 → `RETROK_UNKNOWN` since libretro stops at F15. 9 unit tests.
+- ✅ `SystemSettings::keyboard_passthrough: Option<bool>` with `default_keyboard_passthrough(system_id)` → true for `mame` / `msx` / `msx2`, false everywhere else. `effective_keyboard_passthrough()` resolves override-vs-default. Refreshed on every LoadRom.
+- ✅ `Tools → Game focus` MenuCheckbox + Ctrl+G hotkey. (Scroll Lock isn't queryable via `device_query` so the proposal's primary binding was downgraded to its fallback.) Status chip in `toolbarRight` visible only when active. Rising-edge detector in the emu thread runs unconditionally so the user can always toggle out; `oa://game-focus-changed` Tauri event syncs the frontend signal. Game-focus ON gates `hotkeys_enabled = enable && !game_focus`; F1/F2/F3/F5/F6/F7/F8/F12/Esc/digit/Backspace-rewind reads all use `hotkeys_enabled`.
+- ⬜ Wiring `RETRO_DEVICE_KEYBOARD` via `LibretroCore::set_port_device` for MAME — **deliberately skipped.** MAME's libretro core expects JOYPAD on port 0 (arcade controls) with the keyboard callback running in parallel; rebinding port 0 to KEYBOARD would remove the 6-button arcade input. `set_port_device` stays available for the MSX onboarding which DOES need port-as-keyboard.
 
 ### ⬜ Input — Phase 3 (analog, deferred until forced)
 

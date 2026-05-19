@@ -161,6 +161,26 @@ const App: Component = () => {
   // Tools → Performance HUD toggle. UI-side render-loop FPS only (v1);
   // emulator-side telemetry will plug into the same overlay when wired.
   const [perfHudVisible, setPerfHudVisible] = createSignal(false);
+  // Phase 6 Cross-system slice 3 — Game focus toggle. When true, OA hotkeys
+  // (F1/F2/F5/F8/Esc/digits/Backspace) stop firing inside the emu thread
+  // so the keyboard-passthrough pump can deliver those keys to the core
+  // unchallenged. Hydrated from `get_game_focus` at mount; pushed to Rust
+  // via `set_game_focus` on user change; updated reactively when the Rust
+  // side toggles via the Ctrl+G hotkey by listening to the
+  // `oa://game-focus-changed` event.
+  const [gameFocus, setGameFocusSignal] = createSignal(false);
+  function toggleGameFocus(next: boolean) {
+    setGameFocusSignal(next);
+    void invoke("set_game_focus", { active: next });
+  }
+  onMount(() => {
+    void invoke<boolean>("get_game_focus").then((on) => setGameFocusSignal(on));
+    let unlisten: (() => void) | undefined;
+    void listen<boolean>("oa://game-focus-changed", (e) => {
+      setGameFocusSignal(!!e.payload);
+    }).then((u) => { unlisten = u; });
+    onCleanup(() => unlisten?.());
+  });
   // Tools ▾ menu items request the overlay to land on a specific panel.
   // Cleared on close so a subsequent Esc-open lands on the action grid.
   const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
@@ -825,6 +845,12 @@ const App: Component = () => {
             checked={perfHudVisible()}
             onChange={(next) => setPerfHudVisible(next)}
           />
+          <MenuCheckbox
+            label="Game focus"
+            hint="Ctrl+G"
+            checked={gameFocus()}
+            onChange={(next) => toggleGameFocus(next)}
+          />
         </Menu>
         <Menu label="Settings">
           <MenuItem label="Display…" onClick={() => setSettingsDialog("display")} />
@@ -873,6 +899,14 @@ const App: Component = () => {
 
   const toolbarRight = (
     <>
+      <Show when={gameFocus()}>
+        <span
+          title="Game focus is ON — OA hotkeys pass through to the core. Press Ctrl+G to disable."
+          class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--color-system-accent)"
+        >
+          Game focus
+        </span>
+      </Show>
       <Show when={shellMode() === "single-window"}>
         <button
           type="button"

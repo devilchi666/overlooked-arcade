@@ -64,13 +64,13 @@ Street Fighter purists will want to remap (SF veterans expect LP/MP/HP on the to
 | P2_START | R2 | 2 | Player-2 START (placeholder — see note below) |
 | P2_COIN | L2 | 6 | Player-2 COIN (placeholder — see note below) |
 
-The libretro RetroPad bit assignments for SERVICE / MAME_MENU are placeholders: MAME's libretro core today expects Service / Tab to arrive over `RETRO_DEVICE_KEYBOARD` (F2 / Tab), not over the joypad. The keyboard slot is the live path. Phase 2 work (keyboard-passthrough infrastructure in `oa-libretro`) will hook the keyboard events through; until that lands, these bindings exist so the per-system Bindings UI can show and rebind them but the F2 / Tab keys won't reach the core yet.
+The libretro RetroPad bit assignments for SERVICE / MAME_MENU are vestigial. MAME's libretro core actually receives `F2` (Service) and `Tab` (per-driver menu) over `RETRO_DEVICE_KEYBOARD` via the Phase 2 keyboard-passthrough pump — the joypad bits in the per-system Bindings UI just keep the names addressable for an eventual remap-while-the-pump-runs feature.
 
 P2_START / P2_COIN are similarly placeholders. Shell input is single-port (port 0) today; libretro's standard convention is that P2 controls arrive on port 1 with the *same* START / SELECT bits, not as new bits on port 0. The per-port wiring is a follow-up — these entries reserve the names so the UI can register them now.
 
 ### The TAB workflow
 
-The MAME core ships its own per-driver input menu, reachable in-game by pressing the key bound to `MAME_MENU` (default Tab). That's the entry point for anything beyond the base 6-button arcade layout:
+The MAME core ships its own per-driver input menu, reachable in-game by pressing `Tab` on the keyboard. The Phase 2 keyboard-passthrough pump (live as of `4aac0f5`) forwards `Tab` straight to the core. That's the entry point for anything beyond the base 6-button arcade layout:
 
 - Pinball flippers (Williams, Bally tables) — per-driver flipper / nudge / start
 - Mahjong / Hanafuda games — 30+ named keys per player
@@ -81,7 +81,11 @@ The MAME core ships its own per-driver input menu, reachable in-game by pressing
 
 Remaps made through the TAB menu persist in MAME's per-driver config under `<appData>/cfg/<driver>.cfg`. They survive across launches of the same ROM set.
 
-> ⚠ Today the TAB menu is reachable only via the **gamepad** binding (default MAME_MENU = R3, which most modern controllers don't expose as a face button). The keyboard binding (Tab) won't reach the core until Phase 2 keyboard-passthrough lands. If you need the menu right now, rebind `MAME_MENU` to a gamepad button you actually have, or wait for Phase 2.
+### Game focus
+
+Some MAME drivers bind important keys to F1-F8 / Esc / digits / Backspace — these also drive OA hotkeys (save state, reset, screenshot, rewind, etc.). When the conflict bites, toggle **Tools → Game focus** (or press `Ctrl+G`). Game focus ON tells OA to keep its hotkeys quiet for the duration; the keyboard pump still delivers every key to the core. A small chip in the toolbar shows the live state. Toggle off (`Ctrl+G` again) when you want OA's hotkeys back.
+
+Game focus is per-session (default OFF every launch). The keyboard-passthrough pump itself is per-system; the `keyboard_passthrough` field in `<appData>/systems/mame.json` overrides the compiled-in default (true) if a user wants to suppress key forwarding entirely.
 
 ## Current status (2026-05-19)
 
