@@ -1,7 +1,6 @@
 import { onCleanup, onMount, Show, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
-import type { SystemSettingsTab } from "../layout/LeftSidebar";
 
 type Props = {
   systemId: SystemId | null;
@@ -11,11 +10,12 @@ type Props = {
   /// Navigate to the system-filtered library (same as left-click on the
   /// sidebar entry — duplicated here for discoverability).
   onShowLibrary: (id: SystemId) => void;
-  /// Navigate to the per-system settings page (PerSystemSettingsPage).
-  /// Optional `tab` lands directly on a specific tab — the "Edit
-  /// bindings…" item passes `"input"`, "System settings…" passes
-  /// undefined (which respects the user's last-viewed tab).
-  onOpenSystemSettings: (id: SystemId, tab?: SystemSettingsTab) => void;
+  /// Open the per-system Bindings dialog for this system.
+  onOpenBindings: (id: SystemId) => void;
+  /// Open the default per-system settings dialog (Display overrides) for
+  /// this system. The rest of the per-system surfaces are reachable from
+  /// the top-bar System ▾ menu.
+  onOpenSettings: (id: SystemId) => void;
   /// Hide this system from the left sidebar. Lives in LayoutPrefs.
   /// hiddenSystems; user can unhide from Settings → Library → Sidebar
   /// systems. Mirrors LaunchBox's "uncheck a platform" UX.
@@ -47,9 +47,14 @@ const SystemContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onShowLibrary(props.systemId!));
   }
 
-  function openSettings(tab?: SystemSettingsTab) {
+  function openBindings() {
     if (!props.systemId) return;
-    closeAfter(() => props.onOpenSystemSettings(props.systemId!, tab));
+    closeAfter(() => props.onOpenBindings(props.systemId!));
+  }
+
+  function openSettings() {
+    if (!props.systemId) return;
+    closeAfter(() => props.onOpenSettings(props.systemId!));
   }
 
   function hideSystem() {
@@ -105,7 +110,7 @@ const SystemContextMenu: Component<Props> = (props) => {
                 </button>
               </li>
               <li>
-                <button type="button" class={ITEM_CLASS} onClick={() => openSettings("input")}>
+                <button type="button" class={ITEM_CLASS} onClick={openBindings}>
                   <span>Edit bindings…</span>
                   <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
                     ⌨
@@ -113,7 +118,7 @@ const SystemContextMenu: Component<Props> = (props) => {
                 </button>
               </li>
               <li>
-                <button type="button" class={ITEM_CLASS} onClick={() => openSettings()}>
+                <button type="button" class={ITEM_CLASS} onClick={openSettings}>
                   <span>System settings…</span>
                   <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
                     ⚙

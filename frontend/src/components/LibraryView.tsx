@@ -2,7 +2,7 @@ import { createMemo, Show, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
 import type { LayoutStore } from "../layout/state";
-import type { SidebarView, SystemSettingsTab } from "../layout/LeftSidebar";
+import type { SidebarView } from "../layout/LeftSidebar";
 import { filterEntries, groupEntries, sortEntries } from "../library/filter";
 import { useMedia } from "../library/media";
 import { systemThemes, type SystemId } from "../themes/registry";
@@ -21,12 +21,6 @@ type Props = {
   onPickContext: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus: (entry: RomEntry) => void;
   onPickFolder: () => void;
-  /** Navigate to the per-system settings page. Only relevant when the
-   *  current view is system-filtered — LibraryView decides whether to pass
-   *  it through to GridControls based on currentView.kind. Optional `tab`
-   *  argument lands directly on a specific tab (Input / Cores / Shaders /
-   *  …) — surfaced by the SystemHeader's quick-action buttons. */
-  onOpenSystemSettings?: (id: SystemId, tab?: SystemSettingsTab) => void;
 };
 
 /**
@@ -59,15 +53,10 @@ const LibraryView: Component<Props> = (props) => {
     }
     switch (cv.kind) {
       case "all": return "All Games";
-      case "home": return "Home";
-      case "favorites": return "Favorites";
-      case "recent": return "Recent";
-      case "continue": return "Continue";
-      // LibraryView never mounts in settings / system-settings / cores
-      // mode (App.tsx Switch routes them to dedicated pages), but
-      // TypeScript wants the discriminant exhaustive.
+      // LibraryView never mounts in settings / cores mode (App.tsx Switch
+      // routes them to dedicated pages), but TypeScript wants the
+      // discriminant exhaustive.
       case "settings": return "Settings";
-      case "system-settings": return "System settings";
       case "cores": return "Cores";
     }
   };
@@ -77,31 +66,13 @@ const LibraryView: Component<Props> = (props) => {
 
   return (
     <div class="flex h-full flex-col" data-system={props.currentView.kind === "system" ? props.currentView.id : undefined}>
-      <Show when={props.currentView.kind === "system" && props.onOpenSystemSettings}>
+      <Show when={props.currentView.kind === "system"}>
         {(_) => {
           const id = (props.currentView as { kind: "system"; id: SystemId }).id;
-          return (
-            <SystemHeader
-              systemId={id}
-              gameCount={count()}
-              onOpenSettings={(tab) => props.onOpenSystemSettings!(id, tab)}
-            />
-          );
+          return <SystemHeader systemId={id} gameCount={count()} />;
         }}
       </Show>
-      <GridControls
-        layout={props.layout}
-        title={title()}
-        count={count()}
-        onOpenSystemSettings={
-          props.currentView.kind === "system" && props.onOpenSystemSettings
-            ? (() => {
-                const id = (props.currentView as { kind: "system"; id: SystemId }).id;
-                return () => props.onOpenSystemSettings!(id);
-              })()
-            : undefined
-        }
-      />
+      <GridControls title={title()} count={count()} />
       <div class="min-h-0 flex-1">
         <Show
           when={hasAny()}

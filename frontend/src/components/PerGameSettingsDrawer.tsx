@@ -75,15 +75,14 @@ type SystemSettings = {
   rewindBufferMegabytes?: number | null;
 };
 
-const TABS = ["overview", "core", "core-options", "display", "audio", "input", "rewind", "shaders", "region", "milestones", "cheats"] as const;
-type TabId = typeof TABS[number];
+const TABS = ["overview", "core", "core-options", "display", "rewind", "shaders", "region", "milestones", "cheats"] as const;
+export type GameDrawerTab = typeof TABS[number];
+type TabId = GameDrawerTab;
 const TAB_LABELS: Record<TabId, string> = {
   overview:       "Overview",
   core:           "Core",
   "core-options": "Core options",
   display:        "Display",
-  audio:          "Audio",
-  input:          "Input",
   rewind:         "Rewind",
   shaders:        "Shaders",
   region:         "Region",
@@ -120,6 +119,10 @@ type Props = {
   /// Source for the OA-wide inherited defaults.
   settings: SettingsStore;
   library: LibraryStore;
+  /// Optional deep-link target — landing tab when the drawer opens. The
+  /// Game ▾ menu items use this so e.g. "Cheats…" drops the user directly
+  /// on the Cheats tab instead of always opening on Overview.
+  initialTab?: TabId;
 };
 
 const SELECT_CLASS =
@@ -140,7 +143,7 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
   createEffect(() => {
     const e = props.entry;
     if (!props.open || !e) return;
-    setActiveTab("overview");
+    setActiveTab(props.initialTab ?? "overview");
     void (async () => {
       try {
         const got = await invoke<GameOverrides>("get_game_overrides", { id: e.id });
@@ -656,23 +659,6 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                   </select>
                 </SettingRow>
               </div>
-            </Show>
-
-            {/* --- Audio -------------------------------------------------- */}
-            <Show when={activeTab() === "audio"}>
-              <ScaffoldBanner>
-                Per-game audio profile (volume / latency / mono-fold) — placeholder. OA-wide
-                audio output applies to every game today.
-              </ScaffoldBanner>
-            </Show>
-
-            {/* --- Input -------------------------------------------------- */}
-            <Show when={activeTab() === "input"}>
-              <ScaffoldBanner>
-                Per-game button remap is deferred. System bindings on the system page apply
-                to every game; per-game overrides need a richer Input surface that knows how
-                to overlay just a few buttons (e.g. "this game uses A for jump instead of B").
-              </ScaffoldBanner>
             </Show>
 
             {/* --- Rewind -------------------------------------------------- */}

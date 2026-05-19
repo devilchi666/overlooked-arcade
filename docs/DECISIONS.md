@@ -327,3 +327,103 @@ Neither applies today. Re-evaluate per-system if it does.
 - Slice B (rewind scrubbing UI) consumes the same ring: it'll add a peek-by-index accessor for thumbnail strip rendering + a "set head to position N" that pops everything above and `load_state`s the target.
 - Slice C (TAS recording + deterministic replay) shares the snapshot format — TAS recording dumps the ring's contents as initial state + per-frame input deltas; replay rewinds via the same mechanism.
 - Per-game milestone tracking (slice F) can subscribe to memory regions per-snapshot; the ring becomes a value-history channel as well as a state-history channel.
+
+---
+
+## 2026-05-18 — Top-bar menu-bar replaces scattered settings entry points
+
+**Decision:** Reorganize the shell's information architecture around a named menu bar at the top (Library · View · System ▾ · Game ▾ · Tools · Settings · Help), with each tier of the existing three-tier settings split (OA-wide / per-system / per-game) getting its own menu. Configuration surfaces become menu-launched modal dialogs; the two genuinely wide editors (library folders + media sync, and core install/uninstall) stay as full-page routes. The in-game `QuickSettings` overlay shrinks to verbs only (Resume / Save / Info / Exit) — its drill-in tools (Rewind / TAS / Video / Memory / Disc) move to the `Tools ▾` menu, which can deep-link the overlay to a specific panel.
+
+**Why:**
+1. **One door per room.** Pre-redesign the per-system settings were reachable five ways (sidebar bottom button, GridControls ⚙, SystemHeader's four quick-action chips, SystemContextMenu items, toolbar `⚙`), the OA-wide Settings page had seven tabs of mixed scope, and Cores lived in four places. Inconsistent doors made the IA feel improvised. The menu bar gives each tier exactly one canonical home.
+2. **Tier shows in the menu name.** A user looking at `Game ▾ → Cheats…` knows the cheat lives at the per-game tier; `System ▾ → Shaders…` is per-system; `Settings → Shaders…` is OA-wide. Pre-redesign that distinction was implicit in which route the user took to get there.
+3. **LaunchBox discipline, modern visual language.** Researched LaunchBox / BigBox / RetroArch Ozone / RetroArch XMB. LaunchBox's classic Windows menu bar (File / Edit / View / Tools / Help) is the most familiar IA for desktop emulator-frontend users — but its Win32 styling reads as legacy. Adopted the discipline (named menus dispatching to focused surfaces) and rendered it in our type system (stylized text, no pipes, accent-on-open) so it reads like Spotify's top nav, not Notepad's.
+4. **Disabled rather than hidden for contextual menus.** `System ▾` and `Game ▾` stay visible at all times — dimmed when there's no active context — with tooltips explaining what to do. Hidden-when-empty hurts discoverability; the user shouldn't have to remember "the System menu only exists when I've clicked a system." This was explicit user feedback during the planning chat.
+5. **`QuickSettings` should be a pause menu, not a power-user console.** Today's overlay tries to be both — 10 rows of mixed verbs + configuration drill-ins crammed into a ~600px-wide modal where memory inspector and TAS recorder fight for space. Splitting it: verbs stay on Esc (instant), tools open via menu-bar `Tools ▾` (one more click, but each drill-in gets the full overlay area).
+6. **Three-tier inheritance preserved.** OA-wide → per-system → per-game chain is unchanged at the persistence layer; the redesign is purely UI. The "scaffold" per-system Display overrides that persist but don't yet take effect at runtime continue to persist (the override JSON is the same); the dialog's amber "Scaffold" banner tells users the runtime wiring is pending.
+
+**Considered and rejected:**
+- **RetroArch XMB-style horizontal tab row.** Familiar to RetroArch users, but its discrete top-level tabs (Main Menu / Settings / Favorites / History / playlists) don't map cleanly to our tier split; settings would all collapse into one Settings tab with 20+ sub-categories. Worse for "where am I" awareness.
+- **RetroArch Ozone-style three-column sidebar.** Replaces our left sidebar entirely with a categorical column. Conflicts with the existing left sidebar being a *library* nav surface (per-system, per-playlist), which is the user's main navigation target — not the settings tree.
+- **Single consolidated `Settings` page with all tabs (status quo, retired here).** Worked but couldn't surface tier scope in the UI; users had to learn that "Cores" in Settings means OA-wide while right-click a tile → Run with core means per-game. Both visible, no shared frame.
+- **Icon-based menu bar (icon + label chips).** Faster to scan visually but our system accents already do the high-frequency theming work. Stylized text reads as more "premium" within our visual language (the Spotify / Heroic / Linear axis vs the Win32 / GIMP / desktop-utility axis).
+
+**Where this applies going forward:**
+- New systems plug into the existing menus automatically (the system loop in `LeftSidebar` and the per-system dialogs all dispatch by `SystemId`).
+- New per-game tabs (when we wire genuine orphans like Cheat Search v2) become menu items + drawer tabs; menu items deep-link the drawer to the right tab via `initialTab`.
+- New in-game tools (Performance HUD, Screenshot gallery) become `Tools ▾` items. If they're light, they live as inline `MenuItem`s with state toggles (Performance HUD = a `MenuCheckbox`); if they're heavy, they open dialogs.
+- Step 10 polish (icon set replacement, type ramp tightening, accent usage in more places) is deferred to a separate pass with a live dev server in front of an actual human eye.
+
+**Companion docs:** `docs/UI_AUDIT.md` is the surface-by-surface inventory of the pre-redesign UI; `docs/UI_MENU_BAR_PLAN.md` is the redesign proposal with the full field-to-menu mapping and visual treatment spec.
+
+---
+
+## 2026-05-18 — Three-output logger (stderr + file + ring) with frontend bridge
+
+**Decision:** Replace bare `env_logger::init()` in `apps/oa-shell/src/main.rs` with a custom `MultiLogger` (`apps/oa-shell/src/logger.rs`) that fans every `log::*!` record to three sinks:
+
+1. **stderr** — preserves the `cargo tauri dev` workflow (same log stream operators saw before).
+2. **File** — two writers via a `TeeWriter`:
+   - `appData/logs/oa-current.log` — truncated on every launch. **Stable path** so a debugger can always `Read` it without negotiating timestamps.
+   - `appData/logs/oa-<YYYYMMDD-HHmmss>.log` — per-session archive. Last 5 retained; older pruned on startup.
+3. **Ring** — bounded `VecDeque<LogEntry>` (capacity 2000). Tauri command `get_recent_logs(limit)` serves the live tail to the `Help → Debug log…` dialog at 1 Hz.
+
+Frontend log bridge (`frontend/src/lib/logbridge.ts`, installed in `index.tsx` before SolidJS hydration) wraps `console.log/info/warn/error/debug` plus `window.onerror` and `unhandledrejection`. Bracket prefixes like `[oa-launch]` in existing `console.log` call sites are parsed and become the Rust `target` field — no source changes required.
+
+**Why:**
+1. **Stable on-disk path beats per-session paths for debugging.** A debugger using the `Read` tool needs a single path it can pull on demand. The timestamped archives are for sharing prior runs ("the bug repro from yesterday"); the stable `oa-current.log` is for "tell me what just happened." Both come for free via the `TeeWriter`.
+2. **Two-phase init avoids losing early logs.** `app_data_dir` is not resolvable until Tauri `setup()` runs, but `main()` needs logging immediately (cli arg parse, shell-mode resolution). Solution: `logger::init_early()` at `main()` top installs stderr + ring; `logger::configure_file_output(&app_data_dir)` inside `setup()` enables file output once the path lands. The tiny window between those two points (about 5 log lines) hits stderr + ring only, not the file. Acceptable.
+3. **Ring is bounded; file is unbounded.** A long session could fill the ring 100x over; oldest entries silently drop. The file captures everything for post-mortem. The dialog reads from the ring, not the file, so polling at 1 Hz with 2000 entries is bounded work.
+4. **Unified Rust + frontend timeline.** Without the bridge, frontend logs live in WebView DevTools and Rust logs live in stderr/file — two consoles to correlate. With the bridge, every event goes through the same `log::Log` impl: same timestamps, same target conventions, same dialog. The original `console.*` is preserved so DevTools still works.
+5. **Bracket-target parser is zero-cost ergonomics.** The codebase already had `console.log("[oa-launch] handleLaunch called", entry)` patterns everywhere. The bridge parses `[oa-launch]` as the Rust target without source changes; the convention is preserved as a first-class field.
+6. **Crash-survival via level-driven flush.** `WARN` + `ERROR` records flush the `BufWriter` immediately so a panic mid-line still leaves a useful tail. `INFO` / `DEBUG` ride the buffer (flushed on drop or buffer fill). Best of both: cheap normal operation, durable error path.
+
+**Considered and rejected:**
+- **`env_logger` + dedicated file appender.** Two parallel loggers is doable but you lose the ring (which is the live-dialog substrate). Custom `Log` impl is about 150 lines and gives all three outputs in one place.
+- **`fern` crate.** Standard choice for multi-output Rust logging; would have saved some code. Skipped because we would be importing a crate for a feature that is 150 lines hand-rolled, and the hand-rolled version lets us bake the bracket-target parser + ring snapshot semantics into the same impl.
+- **Tauri events for every log record.** Tried mentally; rejected. Log volume can be per-frame in some paths (rewind capture, video frame submission); JSON-serializing each into an event payload adds up. Polling the ring at 1 Hz is cheaper and gives identical UX.
+- **JSON Lines on-disk format.** Better for grep/jq but worse for human scanning. The current format (`ISO-8601 LEVEL [target] message`) is grep-friendly AND readable. If we ever need structured analysis, we still have the in-memory `LogEntry` shape.
+- **Drop the timestamped archives.** Tried, kept. The "stable current path" alone breaks down when you want to compare two sessions ("yesterday's run had X but today's does not"). Retaining the last 5 archives is about 5 MB worst case.
+
+**Where this applies going forward:**
+- New Tauri commands needing a "current" log surface can add to the ring via `log::info!`; the dialog and file both pick them up.
+- Any frontend module using `console.*` automatically participates — no per-module wiring.
+- When debugging cross-thread issues, the unified ring shows Rust + frontend events in real-time order (same `OffsetDateTime` source). Useful for "did the renderer ack before the UI's `set_shader_preset` invoke?" questions.
+- The `target` field is the primary filter axis. Convention: Rust modules use their `module_path!` (`oa_shell::media`); frontend uses bracket prefixes (`[oa-launch]` becomes `frontend::oa-launch`). Keep prefixes short + namespaced.
+
+---
+
+## 2026-05-18 — Shared emu-thread state pattern (Arc<Mutex<T>> + Tauri command)
+
+**Decision (formalized after 5 instances):** State that needs to flow from the emu thread to the frontend uses one canonical shape:
+
+1. **Struct** with `#[derive(Clone, Debug, Default, serde::Serialize)] #[serde(rename_all = "camelCase")]`. Implements `Copy` when small enough; otherwise `Clone`.
+2. **`Arc<Mutex<T>>` field on `AppState`.** Threaded into `EmuLoopArgs` via the same chain through `setup_two_window` / `setup_single_window` / `run_emu_render`.
+3. **Initialized to `T::default()` in the Tauri `setup()` closure** alongside the other shared states; cloned once for `AppState`, once for the emu thread.
+4. **Writer: emu thread**, on a cadence appropriate to the field (every frame for memory snapshots; every N frames for perf stats; on every state transition for TAS / video / rewind).
+5. **Readers: Tauri commands** named `get_<field>` that lock + clone + return. Pattern: `fn get_X(state: tauri::State<'_, AppState>) -> Result<X, String> { Ok(*state.X.lock().map_err(|_| "X poisoned")?) }`
+6. **Reset on `UnloadRom`** so the next launch does not inherit stale data.
+
+This pattern has now been applied to:
+- `SharedRewindState` (Phase 4 slice B)
+- `SharedTasState` (Phase 4 slice C)
+- `SharedVideoState` (Phase 4 slice D)
+- `MemorySnapshot` (Phase 4 slice E) — `Vec<u8>` body, not Copy
+- `SharedPerfStats` (debug-console pass, 2026-05-18)
+
+**Why this is the right shape (not events, not channels):**
+1. **Idempotent reads.** The frontend polls when it needs the value; missing a frame's update never matters because the next read still gets the latest. Events would require buffering on the frontend side to handle "what was the value when I opened the dialog."
+2. **Mutex is uncontended in practice.** Writer touches the lock at most once per frame; readers poll at 1–4 Hz from Tauri commands. The window between writer-release and reader-acquire is always non-overlapping. Tried `RwLock`; not worth the API overhead for this pattern.
+3. **Per-frame copy is cheap.** Largest state in the set (`MemorySnapshot`) is about 30 KB; the others are under 500 bytes. Cloning under the lock and releasing fast keeps the writer side never blocked.
+4. **Resetting on `UnloadRom` is mandatory.** Without it, the HUD shows "60 fps" forever after the game closes, the memory inspector dumps stale bytes, etc. The reset belongs with the rest of the unload cleanup (rewind ring clear + video flush + milestone evaluator clear). Centralizing it in one block is a maintenance anchor.
+
+**Recipe for adding a new shared state:**
+1. Define `SharedFoo` struct next to the existing ones (around line ~280 in `main.rs`).
+2. Add `foo: Arc<Mutex<SharedFoo>>` to `AppState` (preserve doc-comment style).
+3. Init `let foo = Arc::new(Mutex::new(SharedFoo::default()));` in the setup closure.
+4. Thread through both setup functions + `run_emu_render` (4 signature sites).
+5. Update from the emu loop at chosen cadence; reset in the `UnloadRom` handler.
+6. Add `get_foo` Tauri command following the standard pattern; register in `invoke_handler`.
+7. Frontend polls via `invoke<SharedFoo>("get_foo")` — typically inside a `createEffect` gated on a `visible` signal so we do not pay IPC cost when not displayed.
+
+The pattern's mechanical reliability across 5 implementations is the evidence it is correct.

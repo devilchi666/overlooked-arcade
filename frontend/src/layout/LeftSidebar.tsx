@@ -7,16 +7,9 @@ import type { LayoutStore } from "./state";
 /// Lets the system page header's quick-action buttons + SystemContextMenu
 /// deep-link past the persisted last-tab so e.g. "Edit bindings…" actually
 /// drops on Input regardless of what was open last session.
-export type SystemSettingsTab = "display" | "audio" | "input" | "rewind" | "cores" | "core-options" | "shaders" | "theme";
-
 export type SidebarView =
   | { kind: "all" }
-  | { kind: "home" }
-  | { kind: "favorites" }
-  | { kind: "recent" }
-  | { kind: "continue" }
   | { kind: "system"; id: SystemId }
-  | { kind: "system-settings"; id: SystemId; initialTab?: SystemSettingsTab }
   | { kind: "settings" }
   | { kind: "cores" };
 
@@ -150,11 +143,7 @@ const LeftSidebar: Component<Props> = (props) => {
       <nav class="flex-1 overflow-y-auto overscroll-contain px-2 py-3">
         {/* Quick destinations */}
         <ul class="space-y-0.5">
-          <QuickItem icon="◐" label="Home" badge="soon" disabled active={isActive({ kind: "home" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "home" })} />
           <QuickItem icon="▦" label="All Games" badge={totalCount() > 0 ? String(totalCount()) : undefined} active={isActive({ kind: "all" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "all" })} />
-          <QuickItem icon="★" label="Favorites" badge="soon" disabled active={isActive({ kind: "favorites" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "favorites" })} />
-          <QuickItem icon="⏱" label="Recent" badge="soon" disabled active={isActive({ kind: "recent" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "recent" })} />
-          <QuickItem icon="▶" label="Continue" badge="soon" disabled active={isActive({ kind: "continue" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "continue" })} />
         </ul>
 
         {/* Systems */}

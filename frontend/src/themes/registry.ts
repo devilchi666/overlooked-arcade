@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame";
 
 export type SystemTheme = {
   id: SystemId;
@@ -98,6 +98,26 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // SNES games shipped with developers' awareness of CRT aliasing — many
     // titles look noticeably better through scanlines + bloom. crt-lite
     // default matches the era.
+    defaultShaderPreset: "crt-lite",
+  },
+  mame: {
+    id: "mame",
+    displayName: "Arcade (MAME)",
+    shortName: "MAME",
+    // MAME ROM-sets are .zip archives keyed by short game name (e.g.
+    // pacman.zip). The archive layer peeks inside .zip files first and
+    // reclassifies to NES / SNES / etc. when it finds a recognized inner
+    // extension; MAME zips contain hardware-specific binary blobs with
+    // no standard extension, so they fall through to MAME by elimination.
+    // `.chd` also appears for CD-/DVD-/HDD-backed arcade games (Killer
+    // Instinct, etc.) — listed here so the scanner doesn't classify
+    // those as PCE-CD.
+    extensions: ["zip", "chd"],
+    // Arcade flyer art is typically landscape — instruction cards and
+    // marquees both lean wide.
+    tileAspect: "4/3",
+    // CRT-lite reads as period-correct for late-'80s / '90s arcade
+    // hardware (15 kHz CRT monitors with visible scanlines on tubes).
     defaultShaderPreset: "crt-lite",
   },
 };

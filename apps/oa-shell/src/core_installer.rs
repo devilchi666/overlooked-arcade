@@ -52,203 +52,882 @@ pub struct CatalogEntry {
     /// Short blurb shown under the title — what the core is, what's
     /// special about it.
     pub blurb: &'static str,
-    /// OA system slugs this core can drive. Empty = no first-wave OA
-    /// system matches today (still installable; useful for power users
-    /// who add a new SystemId in their fork).
+    /// System slugs this core can drive. Used by the frontend to bucket
+    /// entries: slugs that match `systemThemes` keys go under the
+    /// matching system; multi-entry rows go in the "Multi-system"
+    /// section; slugs that don't match any wired OA system go in the
+    /// "Not yet wired" section. NEVER empty — at minimum, name a system
+    /// slug even if OA's registry doesn't have it yet (that's how this
+    /// section gets populated).
     pub systems: &'static [&'static str],
+    /// True for the OA-tested / first-pick core for each system. The
+    /// frontend renders a "recommended" chip next to these so users
+    /// who don't want to read every blurb know which to install. When
+    /// multiple cores in the same system are marked recommended (rare —
+    /// only when a system has distinct emulator families), the first
+    /// one in catalog order wins for default-picking heuristics.
+    pub recommended: bool,
+    /// Required BIOS / firmware filename (relative to `<exe_dir>/system/`)
+    /// when the core needs one. None for cores that ship complete.
+    /// Surfaced in the UI as a warning chip before install.
+    pub bios_required: Option<&'static str>,
 }
 
-/// Curated catalog of cores we expose in the installer. Includes the
-/// first-wave OA systems plus a handful of mainstream alternates that
-/// libretro power users typically expect to see (NES / SNES / Genesis /
-/// PSX / N64). Adding a core here is a one-line edit; the runtime
-/// derives `<base>_libretro.<ext>` for the host's platform automatically.
+/// Curated catalog of cores we expose in the installer. Adding a core
+/// here is one struct row; the runtime derives `<base>_libretro.<ext>`
+/// for the host's platform automatically. The frontend groups by the
+/// `systems` field: slugs that match `systemThemes` keys (currently
+/// `tg16 | pce-cd | lynx | nes | snes`) go under the wired section;
+/// everything else goes under "Not yet wired" as a punch list.
+///
+/// Curation policy:
+/// - **Included:** every system-emulator core covering hardware OA
+///   targets now or plans to target. Vintage computers are deferred
+///   (atari800 / vice_* / fuse / hatari / cap32 / px68k / x1 / etc.).
+/// - **Special-case included:** ScummVM + DOSBox-Pure — not strictly
+///   "system" emulators but standard parts of any retro library.
+/// - **Excluded:** fantasy consoles + interpreters + one-game cores
+///   (TIC-80 / WASM-4 / vircon32 / Anarch / ChaiLove / lutro / 2048 /
+///   Dinothawr / Jumpnbump / NXEngine / OpenLara / etc.).
+///
+/// Recommendation policy: exactly one `recommended: true` per system
+/// where a clear first pick exists (the OA-tested core or the broad
+/// libretro consensus pick); multiple recommendations are acceptable
+/// only when a system has genuinely distinct families (e.g. SNES has
+/// snes9x for compat + bsnes for accuracy — both reasonable defaults).
 pub const CATALOG: &[CatalogEntry] = &[
+    // ════════════════════════════════════════════════════════════════
+    // Wired in OA today (tg16 / pce-cd / lynx / nes / snes)
+    // ════════════════════════════════════════════════════════════════
+
     // -------- TG-16 / PC Engine family --------
     CatalogEntry {
         base: "mednafen_pce_fast_libretro",
         display_name: "Beetle PCE Fast",
         blurb: "Mednafen-derived. Fast, plays HuCard + CD. OA default.",
         systems: &["tg16", "pce-cd"],
+        recommended: true,
+        bios_required: None,
     },
     CatalogEntry {
         base: "mednafen_pce_libretro",
         display_name: "Beetle PCE (full Mednafen)",
         blurb: "Higher-accuracy alternative. Heavier, same library coverage.",
         systems: &["tg16", "pce-cd"],
+        recommended: false,
+        bios_required: None,
     },
     CatalogEntry {
         base: "mednafen_supergrafx_libretro",
         display_name: "Beetle SuperGrafx",
         blurb: "SGX-only — the four SuperGrafx-enhanced HuCards.",
         systems: &["tg16"],
+        recommended: false,
+        bios_required: None,
     },
-    // -------- Lynx --------
+    CatalogEntry {
+        base: "geargrafx_libretro",
+        display_name: "GearGrafx",
+        blurb: "Modern PC Engine core (gear* family). Active development.",
+        systems: &["tg16", "pce-cd"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Atari Lynx --------
     CatalogEntry {
         base: "mednafen_lynx_libretro",
         display_name: "Beetle Lynx",
         blurb: "Atari Lynx. Needs lynxboot.img in <exe_dir>/system/.",
         systems: &["lynx"],
+        recommended: true,
+        bios_required: Some("lynxboot.img"),
     },
     CatalogEntry {
         base: "handy_libretro",
         display_name: "Handy",
         blurb: "Older Lynx core, slightly different audio character.",
         systems: &["lynx"],
+        recommended: false,
+        bios_required: None,
     },
+    CatalogEntry {
+        base: "gearlynx_libretro",
+        display_name: "GearLynx",
+        blurb: "Modern Lynx core (gear* family). Active development.",
+        systems: &["lynx"],
+        recommended: false,
+        bios_required: Some("lynxboot.img"),
+    },
+    CatalogEntry {
+        base: "holani_libretro",
+        display_name: "Holani",
+        blurb: "High-accuracy Lynx — newer entrant focused on chip-level accuracy.",
+        systems: &["lynx"],
+        recommended: false,
+        bios_required: Some("lynxboot.img"),
+    },
+
     // -------- NES / Famicom --------
     CatalogEntry {
         base: "fceumm_libretro",
         display_name: "FCEUmm",
         blurb: "FCEU + community mapper updates. Wide mapper coverage.",
         systems: &["nes"],
+        recommended: true,
+        bios_required: None,
     },
     CatalogEntry {
         base: "mesen_libretro",
         display_name: "Mesen",
         blurb: "Higher-accuracy NES. Cycle-stepped PPU.",
         systems: &["nes"],
+        recommended: false,
+        bios_required: None,
     },
     CatalogEntry {
         base: "nestopia_libretro",
         display_name: "Nestopia UE",
         blurb: "Long-running cycle-accurate NES core.",
         systems: &["nes"],
+        recommended: false,
+        bios_required: None,
     },
-    // -------- SNES --------
+    CatalogEntry {
+        base: "quicknes_libretro",
+        display_name: "QuickNES",
+        blurb: "Performance-focused NES. Lower compatibility, very fast.",
+        systems: &["nes"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- SNES / Super Famicom --------
     CatalogEntry {
         base: "snes9x_libretro",
         display_name: "Snes9x",
         blurb: "Standard SNES core. Fast, broad compatibility.",
         systems: &["snes"],
+        recommended: true,
+        bios_required: None,
     },
     CatalogEntry {
         base: "bsnes_libretro",
         display_name: "bsnes",
-        blurb: "Higher accuracy SNES (byuu-derived).",
+        blurb: "Higher-accuracy SNES (byuu-derived).",
         systems: &["snes"],
+        recommended: true,
+        bios_required: None,
     },
     CatalogEntry {
         base: "mesen-s_libretro",
         display_name: "Mesen-S",
         blurb: "Mesen author's SNES core, accuracy-focused.",
         systems: &["snes"],
+        recommended: false,
+        bios_required: None,
     },
-    // -------- Sega Master System / Game Gear / Genesis (queued systems) --------
+    CatalogEntry {
+        base: "bsnes-jg_libretro",
+        display_name: "bsnes-jg",
+        blurb: "Modernized bsnes maintenance fork.",
+        systems: &["snes"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "bsnes_hd_beta_libretro",
+        display_name: "bsnes-HD (beta)",
+        blurb: "bsnes with mode-7 hi-res rendering. Looks gorgeous on F-Zero etc.",
+        systems: &["snes"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "mednafen_supafaust_libretro",
+        display_name: "Beetle Supafaust",
+        blurb: "Performance-focused SNES (Mednafen Faust fork).",
+        systems: &["snes"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "snes9x2010_libretro",
+        display_name: "Snes9x 2010",
+        blurb: "Snes9x mid-2010 snapshot — lighter for older hardware.",
+        systems: &["snes"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "snes9x2005_plus_libretro",
+        display_name: "Snes9x 2005 Plus",
+        blurb: "Even lighter Snes9x for ultra-low-end devices.",
+        systems: &["snes"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // ════════════════════════════════════════════════════════════════
+    // Queued systems (registry entry not yet added in OA)
+    // ════════════════════════════════════════════════════════════════
+
+    // -------- Atari 2600 --------
+    CatalogEntry {
+        base: "stella_libretro",
+        display_name: "Stella",
+        blurb: "Atari 2600 — the standard pick.",
+        systems: &["atari2600"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "stella2014_libretro",
+        display_name: "Stella 2014",
+        blurb: "Older Stella snapshot.",
+        systems: &["atari2600"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Atari 5200 --------
+    CatalogEntry {
+        base: "a5200_libretro",
+        display_name: "Atari800-derived 5200",
+        blurb: "Atari 5200. BIOS required.",
+        systems: &["atari5200"],
+        recommended: true,
+        bios_required: Some("5200.rom"),
+    },
+
+    // -------- Atari 7800 --------
+    CatalogEntry {
+        base: "prosystem_libretro",
+        display_name: "ProSystem",
+        blurb: "Atari 7800. BIOS optional but recommended.",
+        systems: &["atari7800"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Atari Jaguar --------
+    CatalogEntry {
+        base: "virtualjaguar_libretro",
+        display_name: "Virtual Jaguar",
+        blurb: "Atari Jaguar. Compatibility is patchy by game.",
+        systems: &["jaguar"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Sega Master System / Game Gear / Genesis / Sega CD / 32X --------
     CatalogEntry {
         base: "genesis_plus_gx_libretro",
         display_name: "Genesis Plus GX",
-        blurb: "SMS / GG / Mega Drive / Sega CD — the standard pick.",
-        systems: &[],
+        blurb: "SMS / GG / Mega Drive / Sega CD — the standard multi-Sega pick.",
+        systems: &["sms", "gamegear", "genesis", "segacd"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "genesis_plus_gx_wide_libretro",
+        display_name: "Genesis Plus GX Wide",
+        blurb: "Genesis Plus GX with widescreen hacks.",
+        systems: &["genesis", "segacd"],
+        recommended: false,
+        bios_required: None,
     },
     CatalogEntry {
         base: "picodrive_libretro",
         display_name: "PicoDrive",
         blurb: "Lighter Mega Drive / 32X / Sega CD.",
-        systems: &[],
+        systems: &["genesis", "segacd", "sega32x"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "blastem_libretro",
+        display_name: "BlastEm",
+        blurb: "Higher-accuracy Mega Drive — chip-level focus.",
+        systems: &["genesis"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "clownmdemu_libretro",
+        display_name: "ClownMDEmu",
+        blurb: "Modern Mega Drive core, active development.",
+        systems: &["genesis"],
+        recommended: false,
+        bios_required: None,
     },
     CatalogEntry {
         base: "smsplus_libretro",
         display_name: "SMS Plus GX",
         blurb: "SMS / Game Gear-only alternative.",
-        systems: &[],
+        systems: &["sms", "gamegear"],
+        recommended: false,
+        bios_required: None,
     },
-    // -------- Atari 7800 --------
     CatalogEntry {
-        base: "prosystem_libretro",
-        display_name: "ProSystem",
-        blurb: "Atari 7800 core. ProSystem-derived.",
-        systems: &[],
+        base: "gearsystem_libretro",
+        display_name: "Gearsystem",
+        blurb: "Modern SMS / GG / SG-1000 / ColecoVision (gear* family).",
+        systems: &["sms", "gamegear"],
+        recommended: false,
+        bios_required: None,
     },
-    // -------- MSX / MSX2 --------
+
+    // -------- Sega Saturn --------
+    CatalogEntry {
+        base: "mednafen_saturn_libretro",
+        display_name: "Beetle Saturn",
+        blurb: "Sega Saturn — Mednafen-derived, high accuracy. Demanding.",
+        systems: &["saturn"],
+        recommended: true,
+        bios_required: Some("sega_101.bin (or equivalent)"),
+    },
+    CatalogEntry {
+        base: "kronos_libretro",
+        display_name: "Kronos",
+        blurb: "Faster Saturn core. Lower accuracy, broader hardware reach.",
+        systems: &["saturn"],
+        recommended: false,
+        bios_required: Some("sega_101.bin (or equivalent)"),
+    },
+    CatalogEntry {
+        base: "yabasanshiro_libretro",
+        display_name: "YabaSanshiro",
+        blurb: "Yabause-derived Saturn core.",
+        systems: &["saturn"],
+        recommended: false,
+        bios_required: Some("sega_101.bin (or equivalent)"),
+    },
+    CatalogEntry {
+        base: "yabause_libretro",
+        display_name: "Yabause",
+        blurb: "Older Saturn core, original Yabause branch.",
+        systems: &["saturn"],
+        recommended: false,
+        bios_required: Some("sega_101.bin (or equivalent)"),
+    },
+
+    // -------- Sega Dreamcast --------
+    CatalogEntry {
+        base: "flycast_libretro",
+        display_name: "Flycast",
+        blurb: "Dreamcast / Naomi / Atomiswave. The standard DC pick.",
+        systems: &["dreamcast"],
+        recommended: true,
+        bios_required: Some("dc_boot.bin + dc_flash.bin"),
+    },
+
+    // -------- Game Boy / GBC --------
+    CatalogEntry {
+        base: "gambatte_libretro",
+        display_name: "Gambatte",
+        blurb: "GB / GBC — very high accuracy, the standard pick.",
+        systems: &["gameboy"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "sameboy_libretro",
+        display_name: "SameBoy",
+        blurb: "Highest-accuracy GB / GBC core. Recommended for cycle-perfect.",
+        systems: &["gameboy"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "gearboy_libretro",
+        display_name: "Gearboy",
+        blurb: "Modern GB / GBC (gear* family).",
+        systems: &["gameboy"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "tgbdual_libretro",
+        display_name: "TGB Dual",
+        blurb: "Two GB / GBC instances simultaneously — link-cable simulation.",
+        systems: &["gameboy"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Game Boy Advance --------
+    CatalogEntry {
+        base: "mgba_libretro",
+        display_name: "mGBA",
+        blurb: "GBA + GB / GBC — the standard pick.",
+        systems: &["gba", "gameboy"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "vba_next_libretro",
+        display_name: "VBA Next",
+        blurb: "Lighter VBA-derived GBA core.",
+        systems: &["gba"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "vbam_libretro",
+        display_name: "VBA-M",
+        blurb: "VisualBoyAdvance-M — community fork.",
+        systems: &["gba"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "mednafen_gba_libretro",
+        display_name: "Beetle GBA",
+        blurb: "Mednafen GBA — VBA-derived, Mednafen wrapping.",
+        systems: &["gba"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "gpsp_libretro",
+        display_name: "gpSP",
+        blurb: "Performance-focused GBA, originally for PSP.",
+        systems: &["gba"],
+        recommended: false,
+        bios_required: Some("gba_bios.bin"),
+    },
+
+    // -------- Sony PlayStation --------
+    CatalogEntry {
+        base: "mednafen_psx_hw_libretro",
+        display_name: "Beetle PSX HW",
+        blurb: "Sony PlayStation, HW renderer. High accuracy.",
+        systems: &["psx"],
+        recommended: true,
+        bios_required: Some("scph5500.bin / scph5501.bin / scph5502.bin"),
+    },
+    CatalogEntry {
+        base: "swanstation_libretro",
+        display_name: "SwanStation",
+        blurb: "Faster PSX, fork of DuckStation.",
+        systems: &["psx"],
+        recommended: true,
+        bios_required: Some("scph5500.bin / scph5501.bin / scph5502.bin"),
+    },
+    CatalogEntry {
+        base: "mednafen_psx_libretro",
+        display_name: "Beetle PSX (software)",
+        blurb: "Beetle PSX without HW renderer. Lower system requirements.",
+        systems: &["psx"],
+        recommended: false,
+        bios_required: Some("scph5500.bin / scph5501.bin / scph5502.bin"),
+    },
+    CatalogEntry {
+        base: "pcsx_rearmed_libretro",
+        display_name: "PCSX-ReARMed",
+        blurb: "Lightweight PSX, originally for ARM. Strong perf-per-watt.",
+        systems: &["psx"],
+        recommended: false,
+        bios_required: Some("scph5500.bin / scph5501.bin / scph5502.bin"),
+    },
+
+    // -------- Sony PlayStation 2 --------
+    CatalogEntry {
+        base: "pcsx2_libretro",
+        display_name: "PCSX2",
+        blurb: "PS2 — official PCSX2 libretro core. Demanding.",
+        systems: &["ps2"],
+        recommended: true,
+        bios_required: Some("PS2 BIOS (ps2-0230a-20080220.bin etc.)"),
+    },
+    CatalogEntry {
+        base: "play_libretro",
+        display_name: "Play!",
+        blurb: "Lighter PS2 core. Lower compatibility.",
+        systems: &["ps2"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Sony PSP --------
+    CatalogEntry {
+        base: "ppsspp_libretro",
+        display_name: "PPSSPP",
+        blurb: "PlayStation Portable. The standard pick, runs most games well.",
+        systems: &["psp"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Nintendo 64 --------
+    CatalogEntry {
+        base: "mupen64plus_next_libretro",
+        display_name: "Mupen64Plus-Next",
+        blurb: "N64 — GLideN64-based renderer. The standard pick.",
+        systems: &["n64"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "parallel_n64_libretro",
+        display_name: "ParaLLEl N64",
+        blurb: "N64 with ParaLLEl-RDP/RSP. Accuracy-focused, demands a strong GPU.",
+        systems: &["n64"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Nintendo DS --------
+    CatalogEntry {
+        base: "melonds_libretro",
+        display_name: "melonDS",
+        blurb: "Nintendo DS — high accuracy, modern.",
+        systems: &["nds"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "melondsds_libretro",
+        display_name: "melonDS DS",
+        blurb: "melonDS variant with multi-screen UI options.",
+        systems: &["nds"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "desmume_libretro",
+        display_name: "DeSmuME",
+        blurb: "Long-running DS core. Stable but slower than melonDS.",
+        systems: &["nds"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "desmume2015_libretro",
+        display_name: "DeSmuME 2015",
+        blurb: "Older DeSmuME snapshot, lighter perf profile.",
+        systems: &["nds"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "noods_libretro",
+        display_name: "NooDS",
+        blurb: "Modern DS core. Active development.",
+        systems: &["nds"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Nintendo 3DS --------
+    CatalogEntry {
+        base: "citra_libretro",
+        display_name: "Citra",
+        blurb: "Nintendo 3DS — the standard pick. Heavy.",
+        systems: &["3ds"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "citra2018_libretro",
+        display_name: "Citra 2018",
+        blurb: "Older Citra snapshot.",
+        systems: &["3ds"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "panda3ds_libretro",
+        display_name: "Panda3DS",
+        blurb: "Modern 3DS core, active development.",
+        systems: &["3ds"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "azahar_libretro",
+        display_name: "Azahar",
+        blurb: "Citra-derived 3DS fork.",
+        systems: &["3ds"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- Nintendo GameCube / Wii --------
+    CatalogEntry {
+        base: "dolphin_libretro",
+        display_name: "Dolphin",
+        blurb: "GameCube + Wii. Very demanding — requires a strong host.",
+        systems: &["gamecube", "wii"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Nintendo Virtual Boy --------
+    CatalogEntry {
+        base: "mednafen_vb_libretro",
+        display_name: "Beetle VB",
+        blurb: "Mednafen Virtual Boy. Anaglyph or split-screen 3D.",
+        systems: &["virtualboy"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Nintendo Pokémon Mini --------
+    CatalogEntry {
+        base: "pokemini_libretro",
+        display_name: "PokeMini",
+        blurb: "Pokémon Mini handheld.",
+        systems: &["pokemini"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- Bandai WonderSwan / WS Color --------
+    CatalogEntry {
+        base: "mednafen_wswan_libretro",
+        display_name: "Beetle WonderSwan",
+        blurb: "WonderSwan + WonderSwan Color.",
+        systems: &["wonderswan"],
+        recommended: true,
+        bios_required: None,
+    },
+
+    // -------- SNK Neo Geo Pocket / Color --------
+    CatalogEntry {
+        base: "mednafen_ngp_libretro",
+        display_name: "Beetle NeoPop",
+        blurb: "Neo Geo Pocket + NGP Color. Mednafen-wrapped NeoPop.",
+        systems: &["ngp"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "race_libretro",
+        display_name: "RACE",
+        blurb: "Lighter Neo Geo Pocket core.",
+        systems: &["ngp"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- SNK Neo Geo CD --------
+    CatalogEntry {
+        base: "neocd_libretro",
+        display_name: "NeoCD",
+        blurb: "Neo Geo CD.",
+        systems: &["neogeocd"],
+        recommended: true,
+        bios_required: Some("neocd_z.rom + neocd_sp.rom + neocd_f.rom"),
+    },
+
+    // -------- NEC PC-FX --------
+    CatalogEntry {
+        base: "mednafen_pcfx_libretro",
+        display_name: "Beetle PC-FX",
+        blurb: "NEC PC-FX — Mednafen-derived. Sister system to PCE-CD.",
+        systems: &["pcfx"],
+        recommended: true,
+        bios_required: Some("pcfx.rom"),
+    },
+
+    // -------- MSX / MSX2 / Turbo R --------
     CatalogEntry {
         base: "bluemsx_libretro",
         display_name: "blueMSX",
         blurb: "MSX / MSX2 / MSX Turbo R. Broad coverage.",
-        systems: &[],
+        systems: &["msx", "msx2"],
+        recommended: true,
+        bios_required: None,
     },
     CatalogEntry {
         base: "fmsx_libretro",
         display_name: "fMSX",
         blurb: "Lighter MSX alternative.",
-        systems: &[],
+        systems: &["msx"],
+        recommended: false,
+        bios_required: None,
     },
+
     // -------- ColecoVision --------
     CatalogEntry {
         base: "gearcoleco_libretro",
         display_name: "GearColeco",
-        blurb: "ColecoVision. Needs colecovision.col BIOS.",
-        systems: &[],
+        blurb: "ColecoVision (gear* family).",
+        systems: &["coleco"],
+        recommended: true,
+        bios_required: Some("colecovision.col"),
     },
+
     // -------- Vectrex --------
     CatalogEntry {
         base: "vecx_libretro",
         display_name: "Vecx",
         blurb: "Vectrex with optional overlay support.",
-        systems: &[],
+        systems: &["vectrex"],
+        recommended: true,
+        bios_required: None,
     },
-    // -------- Virtual Boy --------
+
+    // -------- Magnavox Odyssey² / Philips Videopac --------
     CatalogEntry {
-        base: "mednafen_vb_libretro",
-        display_name: "Beetle VB",
-        blurb: "Mednafen Virtual Boy. Anaglyph or split-screen 3D.",
-        systems: &[],
+        base: "o2em_libretro",
+        display_name: "O2EM",
+        blurb: "Magnavox Odyssey² / Philips Videopac G7000.",
+        systems: &["odyssey2"],
+        recommended: true,
+        bios_required: Some("o2rom.bin"),
     },
-    // -------- WonderSwan --------
+
+    // -------- Mattel Intellivision --------
     CatalogEntry {
-        base: "mednafen_wswan_libretro",
-        display_name: "Beetle WonderSwan",
-        blurb: "WonderSwan + WonderSwan Color.",
-        systems: &[],
+        base: "freeintv_libretro",
+        display_name: "FreeIntv",
+        blurb: "Intellivision.",
+        systems: &["intellivision"],
+        recommended: true,
+        bios_required: Some("exec.bin + grom.bin"),
     },
-    // -------- Mainstream alternates (broad libretro audience) --------
+
+    // -------- Fairchild Channel F --------
     CatalogEntry {
-        base: "mgba_libretro",
-        display_name: "mGBA",
-        blurb: "Game Boy / GB Color / GB Advance — the standard pick.",
-        systems: &[],
+        base: "freechaf_libretro",
+        display_name: "FreeChaF",
+        blurb: "Fairchild Channel F.",
+        systems: &["channelf"],
+        recommended: true,
+        bios_required: None,
     },
+
+    // ════════════════════════════════════════════════════════════════
+    // Multi-system / arcade / DOS / engines
+    // ════════════════════════════════════════════════════════════════
+
+    // -------- MAME family --------
     CatalogEntry {
-        base: "gambatte_libretro",
-        display_name: "Gambatte",
-        blurb: "GB / GBC-only, very high accuracy.",
-        systems: &[],
-    },
-    CatalogEntry {
-        base: "mednafen_psx_hw_libretro",
-        display_name: "Beetle PSX HW",
-        blurb: "Sony PlayStation, HW renderer. Needs PSX BIOS.",
-        systems: &[],
-    },
-    CatalogEntry {
-        base: "swanstation_libretro",
-        display_name: "SwanStation",
-        blurb: "Faster PSX, fork of DuckStation. Needs PSX BIOS.",
-        systems: &[],
-    },
-    CatalogEntry {
-        base: "mupen64plus_next_libretro",
-        display_name: "Mupen64Plus-Next",
-        blurb: "N64 — GLideN64-based renderer.",
-        systems: &[],
-    },
-    CatalogEntry {
-        base: "stella_libretro",
-        display_name: "Stella",
-        blurb: "Atari 2600.",
-        systems: &[],
+        base: "mame_libretro",
+        display_name: "MAME (latest)",
+        blurb: "Latest MAME. Heaviest, broadest hardware coverage.",
+        systems: &["mame"],
+        recommended: false,
+        bios_required: None,
     },
     CatalogEntry {
-        base: "neocd_libretro",
-        display_name: "NeoCD",
-        blurb: "Neo Geo CD. Needs Neo Geo CD BIOS.",
-        systems: &[],
+        base: "mame2003_plus_libretro",
+        display_name: "MAME 2003 Plus",
+        blurb: "MAME 2003 with community additions. Strong compat/perf balance.",
+        systems: &["mame"],
+        recommended: true,
+        bios_required: None,
     },
+    CatalogEntry {
+        base: "mame2010_libretro",
+        display_name: "MAME 2010",
+        blurb: "MAME 2010 snapshot. Lighter than latest, narrower coverage.",
+        systems: &["mame"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "mame2003_libretro",
+        display_name: "MAME 2003",
+        blurb: "MAME 2003 baseline. Lower system requirements.",
+        systems: &["mame"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "mame2000_libretro",
+        display_name: "MAME 2000",
+        blurb: "Very old MAME snapshot for ultra-low-end devices.",
+        systems: &["mame"],
+        recommended: false,
+        bios_required: None,
+    },
+
+    // -------- FinalBurn family --------
     CatalogEntry {
         base: "fbneo_libretro",
         display_name: "FinalBurn Neo",
-        blurb: "Arcade — Neo Geo, CPS1/2/3, Cave, more.",
-        systems: &[],
+        blurb: "Arcade — Neo Geo, CPS1/2/3, Cave, more. The standard arcade pick.",
+        systems: &["fbneo"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "fbalpha2012_libretro",
+        display_name: "FB Alpha 2012",
+        blurb: "Older FB Alpha snapshot.",
+        systems: &["fbneo"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "fbalpha2012_cps1_libretro",
+        display_name: "FB Alpha 2012 (CPS-1)",
+        blurb: "Capcom Play System 1 only — lighter for older devices.",
+        systems: &["fbneo"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "fbalpha2012_cps2_libretro",
+        display_name: "FB Alpha 2012 (CPS-2)",
+        blurb: "Capcom Play System 2 only.",
+        systems: &["fbneo"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "fbalpha2012_cps3_libretro",
+        display_name: "FB Alpha 2012 (CPS-3)",
+        blurb: "Capcom Play System 3 only (Street Fighter III, Jojo).",
+        systems: &["fbneo"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "fbalpha2012_neogeo_libretro",
+        display_name: "FB Alpha 2012 (Neo Geo)",
+        blurb: "Neo Geo only — lighter for older devices.",
+        systems: &["fbneo"],
+        recommended: false,
+        bios_required: Some("neogeo.zip"),
+    },
+
+    // -------- DOS / ScummVM --------
+    CatalogEntry {
+        base: "dosbox_pure_libretro",
+        display_name: "DOSBox-Pure",
+        blurb: "DOS games — the standard libretro DOSBox. Mounts .zip / .iso directly.",
+        systems: &["dos"],
+        recommended: true,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "dosbox_core_libretro",
+        display_name: "DOSBox (vanilla)",
+        blurb: "Closer-to-mainline DOSBox port.",
+        systems: &["dos"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "dosbox_svn_libretro",
+        display_name: "DOSBox SVN",
+        blurb: "SVN-based DOSBox snapshot.",
+        systems: &["dos"],
+        recommended: false,
+        bios_required: None,
+    },
+    CatalogEntry {
+        base: "scummvm_libretro",
+        display_name: "ScummVM",
+        blurb: "Point-and-click adventure runtime — Lucasarts, Sierra, etc.",
+        systems: &["scummvm"],
+        recommended: true,
+        bios_required: None,
     },
 ];
 
@@ -287,11 +966,16 @@ fn buildbot_path_segment() -> Option<&'static str> {
 
 /// Final buildbot URL for a catalog `base`. None when the platform isn't
 /// in [`buildbot_path_segment`].
+///
+/// Note: every catalog `base` already includes the `_libretro` suffix
+/// (e.g. `mednafen_pce_fast_libretro`). The URL is just `{base}.{ext}.zip`,
+/// not `{base}_libretro.{ext}.zip` — the latter produced double-libretro
+/// 404s for every entry until 2026-05-19.
 fn buildbot_url_for(base: &str) -> Option<String> {
     let segment = buildbot_path_segment()?;
     let ext = dylib_ext();
     Some(format!(
-        "https://buildbot.libretro.com/nightly/{segment}/latest/{base}_libretro.{ext}.zip",
+        "https://buildbot.libretro.com/nightly/{segment}/latest/{base}.{ext}.zip",
     ))
 }
 
@@ -316,6 +1000,13 @@ pub struct AvailableCore {
     /// The URL the installer will hit. Surfaced for diagnostics only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buildbot_url: Option<String>,
+    /// True for the OA-tested / first-pick core for its system(s). The
+    /// frontend renders a "recommended" chip when set.
+    pub recommended: bool,
+    /// BIOS / firmware filename(s) the core requires under
+    /// `<exe_dir>/system/`. Surfaced as a warning chip before install.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bios_required: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -393,6 +1084,8 @@ pub fn available_cores(cores_dir: tauri::State<'_, CoresDir>) -> Vec<AvailableCo
                 installed_version: installed_version.filter(|v| !v.is_empty()),
                 supported_on_host: host_supported,
                 buildbot_url: buildbot_url_for(c.base),
+                recommended: c.recommended,
+                bios_required: c.bios_required.map(|s| s.to_string()),
             }
         })
         .collect()
@@ -563,6 +1256,33 @@ mod tests {
         assert!(url.starts_with("https://buildbot.libretro.com/"), "{url}");
         assert!(url.contains("mednafen_pce_fast_libretro"), "{url}");
         assert!(url.ends_with(".zip"), "{url}");
+        // Regression guard (2026-05-19): URL builder used to append
+        // `_libretro` to a base that already ends with `_libretro`,
+        // producing `mednafen_pce_fast_libretro_libretro.dll.zip` — 404
+        // for every entry. Buildbot serves just `{base}.{ext}.zip`.
+        assert!(!url.contains("_libretro_libretro"), "double-libretro: {url}");
+        let ext = dylib_ext();
+        assert!(
+            url.ends_with(&format!("mednafen_pce_fast_libretro.{ext}.zip")),
+            "expected tail mednafen_pce_fast_libretro.{ext}.zip in {url}"
+        );
+    }
+
+    #[test]
+    fn no_catalog_url_double_libretro() {
+        // Every catalog entry should produce a buildbot URL that does
+        // NOT contain `_libretro_libretro` — guards against catalog
+        // authors accidentally bare-naming a core (omitting the
+        // `_libretro` suffix) under the wrong assumption the URL
+        // builder adds it.
+        if buildbot_path_segment().is_none() { return; }
+        for entry in CATALOG {
+            let url = buildbot_url_for(entry.base).unwrap();
+            assert!(
+                !url.contains("_libretro_libretro"),
+                "{} produces double-libretro URL: {url}", entry.base
+            );
+        }
     }
 
     #[test]

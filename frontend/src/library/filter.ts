@@ -33,9 +33,6 @@ export function filterEntries(
   if (view.kind === "system") {
     result = result.filter((e) => e.systemId === view.id);
   }
-  // home / all / favorites / recent / continue currently all show every
-  // non-seed entry. Real Favorites/Recent/Continue logic ships when
-  // play_history + favorites columns get a UI in Phase 4.
 
   if (q.length > 0) {
     result = result.filter((e) => e.title.toLowerCase().includes(q));

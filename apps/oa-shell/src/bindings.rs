@@ -96,6 +96,27 @@ pub mod snes {
     pub const R: u32     = 1 << 11;
 }
 
+/// MAME (arcade) button bit positions. 6 face buttons (Capcom / SNK
+/// fighter layout — Street Fighter II's punch/kick triplets), plus
+/// START + COIN, plus the d-pad / 8-way stick. Buttons map identity-style
+/// onto libretro RetroPad bits — same convention RetroArch's MAME core
+/// ships with. Coin lands on libretro SELECT (the common operator-mode
+/// "insert coin" mapping); P1 Start on libretro START.
+pub mod mame {
+    pub const B1: u32     = 1 << 0;  // libretro B  — Button 1 (SF: weak punch)
+    pub const B3: u32     = 1 << 1;  // libretro Y  — Button 3 (SF: strong punch)
+    pub const COIN: u32   = 1 << 2;  // libretro SELECT — insert coin
+    pub const START: u32  = 1 << 3;  // libretro START
+    pub const UP: u32     = 1 << 4;
+    pub const DOWN: u32   = 1 << 5;
+    pub const LEFT: u32   = 1 << 6;
+    pub const RIGHT: u32  = 1 << 7;
+    pub const B2: u32     = 1 << 8;  // libretro A  — Button 2 (SF: medium punch)
+    pub const B4: u32     = 1 << 9;  // libretro X  — Button 4 (SF: weak kick)
+    pub const B5: u32     = 1 << 10; // libretro L  — Button 5 (SF: medium kick)
+    pub const B6: u32     = 1 << 11; // libretro R  — Button 6 (SF: strong kick)
+}
+
 /// A single binding slot. Either field can be `None` to leave that input kind
 /// unbound for this button.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -188,6 +209,28 @@ pub fn snes_bit_for(button: &str) -> Option<u32> {
     SNES_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
+/// MAME button bits in declaration order. 12 entries — 4-way d-pad,
+/// 6 face buttons (B1-B6 in the SF-fighter convention), START + COIN.
+pub const MAME_BUTTONS: &[(&str, u32)] = &[
+    ("UP",    mame::UP),
+    ("DOWN",  mame::DOWN),
+    ("LEFT",  mame::LEFT),
+    ("RIGHT", mame::RIGHT),
+    ("B1",    mame::B1),
+    ("B2",    mame::B2),
+    ("B3",    mame::B3),
+    ("B4",    mame::B4),
+    ("B5",    mame::B5),
+    ("B6",    mame::B6),
+    ("START", mame::START),
+    ("COIN",  mame::COIN),
+];
+
+/// Resolve a system-button name to its MAME bit mask.
+pub fn mame_bit_for(button: &str) -> Option<u32> {
+    MAME_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
+}
+
 /// Per-system dispatch for button-name → bit-mask lookup. Drives the
 /// `apply_bindings_to_poller` + `set_binding` paths once the active system
 /// becomes per-launch instead of hardcoded PCE.
@@ -198,6 +241,7 @@ pub fn bit_for(system_id: &str, button: &str) -> Option<u32> {
         "lynx" => lynx_bit_for(button),
         "nes" => nes_bit_for(button),
         "snes" => snes_bit_for(button),
+        "mame" => mame_bit_for(button),
         _ => None,
     }
 }
@@ -212,6 +256,7 @@ pub fn buttons_for(system_id: &str) -> &'static [(&'static str, u32)] {
         "lynx" => LYNX_BUTTONS,
         "nes" => NES_BUTTONS,
         "snes" => SNES_BUTTONS,
+        "mame" => MAME_BUTTONS,
         _ => &[],
     }
 }
@@ -280,6 +325,24 @@ pub fn snes_to_libretro_bits(b: u32) -> u32 {
         | snes::R)
 }
 
+/// MAME → libretro bit remap. Identity by construction (the `mame::*`
+/// constants are laid out as libretro RetroPad bits directly); mask
+/// trims to the 12-bit MAME button set so stray high bits get dropped.
+pub fn mame_to_libretro_bits(b: u32) -> u32 {
+    b & (mame::B1
+        | mame::B2
+        | mame::B3
+        | mame::B4
+        | mame::B5
+        | mame::B6
+        | mame::COIN
+        | mame::START
+        | mame::UP
+        | mame::DOWN
+        | mame::LEFT
+        | mame::RIGHT)
+}
+
 /// Per-system dispatch for the shell-internal → libretro bit remap. Called
 /// from the emu thread's `set_input_remapped` once per port per frame.
 /// Unknown system ids fall back to identity (no remap) so a brand-new
@@ -291,6 +354,7 @@ pub fn to_libretro_bits(system_id: &str, b: u32) -> u32 {
         "lynx" => lynx_to_libretro_bits(b),
         "nes" => nes_to_libretro_bits(b),
         "snes" => snes_to_libretro_bits(b),
+        "mame" => mame_to_libretro_bits(b),
         _ => b,
     }
 }
@@ -422,6 +486,48 @@ pub fn default_snes_bindings() -> Bindings {
     b
 }
 
+/// MAME defaults — six-button arcade fighter layout (Street Fighter II
+/// punch/kick triplets). **Z = Button 1 (primary)**, **X = Button 2** to
+/// match the project-wide PCE convention. SF veterans expect the punches
+/// on the top row (B1 B2 B3 = LP MP HP — A, S, D) and kicks on the
+/// bottom row (B4 B5 B6 = LK MK HK — Z, X, C); we deliberately depart
+/// from that mapping in favor of the cross-system "Z is primary" rule
+/// (per the test in this file). Users who want SF-native layouts can
+/// remap via the per-system Bindings dialog.
+///
+/// COIN sits on `5` — RetroArch's standard "insert coin" key on the
+/// keyboard side. START on `1` for player-1 start.
+pub fn default_mame_bindings() -> Bindings {
+    let mut b = Bindings::new();
+    let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("UP",    Some("Up"),     Some("DPadUp")),
+        ("DOWN",  Some("Down"),   Some("DPadDown")),
+        ("LEFT",  Some("Left"),   Some("DPadLeft")),
+        ("RIGHT", Some("Right"),  Some("DPadRight")),
+        // Button 1-2: primary action duo (Z/X — cross-system convention).
+        ("B1",    Some("Z"),      Some("South")),    // libretro B
+        ("B2",    Some("X"),      Some("East")),     // libretro A
+        // Button 3-4: secondary face buttons (top row of SF diamond).
+        ("B3",    Some("A"),      Some("West")),     // libretro Y
+        ("B4",    Some("S"),      Some("North")),    // libretro X
+        // Button 5-6: shoulder buttons (SF heavy kicks / Capcom triplets).
+        ("B5",    Some("Q"),      Some("LeftTrigger")),
+        ("B6",    Some("W"),      Some("RightTrigger")),
+        ("START", Some("Key1"),   Some("Start")),    // RetroArch standard: 1 = P1 Start
+        ("COIN",  Some("Key5"),   Some("Select")),   // RetroArch standard: 5 = Insert Coin P1
+    ];
+    for (name, kb, pad) in pairs {
+        b.insert(
+            (*name).into(),
+            BindingPair {
+                keyboard: kb.map(|s| s.to_string()),
+                gamepad: pad.map(|s| s.to_string()),
+            },
+        );
+    }
+    b
+}
+
 /// Return the compiled-in defaults for a given system, or `None` if the system
 /// has no registered defaults.
 pub fn defaults_for(system_id: &str) -> Option<Bindings> {
@@ -430,6 +536,7 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "lynx" => Some(default_lynx_bindings()),
         "nes" => Some(default_nes_bindings()),
         "snes" => Some(default_snes_bindings()),
+        "mame" => Some(default_mame_bindings()),
         _ => None,
     }
 }
@@ -528,7 +635,7 @@ mod tests {
         // Cover every registered system's defaults — a new system that
         // ships a default keyboard name device_query doesn't recognize
         // would silently fail to bind without this check.
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.keyboard {
@@ -543,7 +650,7 @@ mod tests {
 
     #[test]
     fn default_pads_round_trip_to_button() {
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.gamepad {
@@ -624,6 +731,25 @@ mod tests {
     }
 
     #[test]
+    fn defaults_cover_every_mame_button() {
+        let b = default_mame_bindings();
+        for (name, _) in MAME_BUTTONS {
+            assert!(b.contains_key(*name), "mame default missing: {name}");
+        }
+    }
+
+    #[test]
+    fn mame_remap_is_identity() {
+        for (_, bit) in MAME_BUTTONS {
+            assert_eq!(mame_to_libretro_bits(*bit), *bit);
+        }
+        let all = mame::B1 | mame::B2 | mame::B3 | mame::B4 | mame::B5 | mame::B6
+                | mame::COIN | mame::START
+                | mame::UP | mame::DOWN | mame::LEFT | mame::RIGHT;
+        assert_eq!(mame_to_libretro_bits(all | (1 << 20)), all);
+    }
+
+    #[test]
     fn dpad_lands_on_correct_libretro_bits_for_every_system() {
         // Regression-lock for the bug where switching from PCE to
         // NES/SNES/Lynx left the InputPoller pointed at PCE's clockwise
@@ -643,7 +769,7 @@ mod tests {
         const LIBRETRO_DOWN: u32  = 1 << 5;
         const LIBRETRO_LEFT: u32  = 1 << 6;
         const LIBRETRO_RIGHT: u32 = 1 << 7;
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
             let up    = bit_for(sys, "UP").expect("UP bit registered");
             let down  = bit_for(sys, "DOWN").expect("DOWN bit registered");
             let left  = bit_for(sys, "LEFT").expect("LEFT bit registered");
@@ -671,6 +797,7 @@ mod tests {
             ("lynx", "A", "B"),
             ("nes", "A", "B"),
             ("snes", "A", "B"),
+            ("mame", "B1", "B2"),
         ] {
             let bindings = defaults_for(sys).expect("defaults registered");
             let primary = bindings.get(*primary_name).expect("primary button present");

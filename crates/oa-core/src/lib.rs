@@ -49,6 +49,10 @@ pub enum SystemId {
     Nes,
     /// Super Nintendo Entertainment System / Super Famicom.
     Snes,
+    /// MAME — arcade. Drives many different arcade boards via one core;
+    /// the shell treats it as a single SystemId, with the ROM-set naming
+    /// inside the .zip distinguishing individual games.
+    Mame,
 }
 
 /// Native output dimensions and timing.

@@ -46,3 +46,13 @@
   --color-system-accent-soft: oklch(0.93 0.05 270);
   --color-system-glow: oklch(0.62 0.18 270 / 0.35);
 }
+
+/* MAME — saturated arcade red. Picked to evoke neon arcade-cabinet signage
+   and the red-and-yellow operator panels of late-'80s / '90s coin-ops.
+   Hue 12° sits just warmer than NES red (28°) so a mixed library reads at
+   a glance — NES = blood red, MAME = neon scarlet. */
+[data-system="mame"] {
+  --color-system-accent: oklch(0.64 0.24 12);
+  --color-system-accent-soft: oklch(0.93 0.06 12);
+  --color-system-glow: oklch(0.64 0.24 12 / 0.35);
+}

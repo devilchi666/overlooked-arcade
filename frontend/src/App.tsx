@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
@@ -6,10 +6,9 @@ import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
-import PerGameSettingsDrawer from "./components/PerGameSettingsDrawer";
+import PerGameSettingsDrawer, { type GameDrawerTab } from "./components/PerGameSettingsDrawer";
 import CoresPage from "./components/CoresPage";
-import PerSystemSettingsPage from "./components/PerSystemSettingsPage";
-import QuickSettings from "./components/QuickSettings";
+import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
 import SettingsPage from "./components/SettingsPage";
 import SystemContextMenu from "./components/SystemContextMenu";
@@ -18,9 +17,44 @@ import TileContextMenu from "./components/TileContextMenu";
 import ToastStack from "./components/ToastStack";
 import Shell from "./layout/Shell";
 import TopToolbar from "./layout/TopToolbar";
-import LeftSidebar, { type SidebarView, type SystemSettingsTab } from "./layout/LeftSidebar";
+import LeftSidebar, { type SidebarView } from "./layout/LeftSidebar";
+import { MenuBar, Menu, MenuItem, MenuLabel, MenuDivider, MenuRadio, MenuCheckbox } from "./layout/MenuBar";
+import {
+  AudioDialog,
+  DisplayDialog,
+  GameplayDialog,
+  ShadersDialog,
+  SHELL_MODE_LABELS,
+  SHELL_OPTIONS,
+  type ShellMode,
+} from "./components/SettingsDialogs";
+import {
+  SystemBindingsDialog,
+  SystemCoreOptionsDialog,
+  SystemSettingsDialog,
+  type SystemDialogSection,
+} from "./components/SystemDialogs";
+import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
+import { DebugLogDialog } from "./components/DebugLogDialog";
+import { WidgetCustomizerDialog } from "./components/WidgetCustomizerDialog";
+import { ScreenshotGalleryDialog } from "./components/ScreenshotGalleryDialog";
+import { PerformanceHud } from "./components/PerformanceHud";
 import RightSidebar from "./layout/RightSidebar";
-import { createLayoutStore, PRESENTATION_LABELS } from "./layout/state";
+import {
+  createLayoutStore,
+  PRESENTATION_LABELS,
+  PRESENTATION_OPTIONS,
+  VIEW_MODE_LABELS,
+  VIEW_MODE_OPTIONS,
+  SORT_KEY_LABELS,
+  SORT_KEY_OPTIONS,
+  GROUP_BY_LABELS,
+  GROUP_BY_OPTIONS,
+  type PresentationMode,
+  type ViewMode,
+  type SortKey,
+  type GroupBy,
+} from "./layout/state";
 import {
   ingestFolderPath,
   pickFolderAndIngest,
@@ -41,7 +75,6 @@ import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } f
 import type { SystemId } from "./themes/registry";
 
 type Busy = "idle" | "scanning" | "launching";
-type ShellMode = "two-window" | "single-window";
 
 function ingestStatus(result: IngestResult): string {
   switch (result.kind) {
@@ -71,6 +104,22 @@ const App: Component = () => {
   const [status, setStatus] = createSignal<string>("");
   const [shellMode, setShellMode] = createSignal<ShellMode>("two-window");
   const [libraryVisible, setLibraryVisible] = createSignal(true);
+  // OA-wide Settings dialogs (Step 4). Single open-dialog signal — opening
+  // one closes the others. `null` means no dialog open.
+  const [settingsDialog, setSettingsDialog] = createSignal<
+    "display" | "audio" | "gameplay" | "shaders" | null
+  >(null);
+  // Per-system dialogs (Step 5). The target system + which section is
+  // open. Opening from the System ▾ menu uses the actively-viewed system;
+  // opening from the SystemContextMenu (right-click in sidebar) uses the
+  // right-clicked system, which may differ from what's on screen.
+  const [systemDialog, setSystemDialog] = createSignal<{
+    section: SystemDialogSection;
+    target: SystemId;
+  } | null>(null);
+  function openSystemDialog(section: SystemDialogSection, target: SystemId) {
+    setSystemDialog({ section, target });
+  }
   // Current navigation target — replaces the old systemPage signal. The
   // sidebar drives this, App routes content from it.
   const [currentView, setCurrentView] = createSignal<SidebarView>({ kind: "all" });
@@ -83,6 +132,14 @@ const App: Component = () => {
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
+  // Game ▾ menu items that conceptually map to a drawer tab use this
+  // signal to land on the right tab when the drawer opens. Cleared when
+  // the drawer closes so the next "Properties…" click opens on Overview.
+  const [propertiesInitialTab, setPropertiesInitialTab] = createSignal<GameDrawerTab | undefined>(undefined);
+  function openGameDrawer(entry: RomEntry, tab?: GameDrawerTab) {
+    setPropertiesInitialTab(tab);
+    setPropertiesFor(entry);
+  }
   // Game-running state — drives game-mode chrome behavior.
   const [gameRunning, setGameRunning] = createSignal(false);
   const [currentRomTitle, setCurrentRomTitle] = createSignal<string | null>(null);
@@ -93,6 +150,24 @@ const App: Component = () => {
   // Quick Settings overlay (slice 2.8.B). Replaces the slice-A Esc → library
   // toggle behavior during single-window gameplay.
   const [quickSettingsOpen, setQuickSettingsOpen] = createSignal(false);
+  // Help menu dialogs.
+  const [helpDialog, setHelpDialog] = createSignal<"shortcuts" | "about" | "debug-log" | null>(null);
+  // View → Customize widgets… dialog.
+  const [widgetCustomizerOpen, setWidgetCustomizerOpen] = createSignal(false);
+  // Tools → Screenshot gallery. Targets the active game (running or
+  // focused) at the time of opening; entry stays bound until the dialog
+  // closes.
+  const [screenshotGalleryFor, setScreenshotGalleryFor] = createSignal<RomEntry | null>(null);
+  // Tools → Performance HUD toggle. UI-side render-loop FPS only (v1);
+  // emulator-side telemetry will plug into the same overlay when wired.
+  const [perfHudVisible, setPerfHudVisible] = createSignal(false);
+  // Tools ▾ menu items request the overlay to land on a specific panel.
+  // Cleared on close so a subsequent Esc-open lands on the action grid.
+  const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
+  function openQuickSettings(view: QuickSettingsView) {
+    setQuickSettingsRequestedView(view);
+    setQuickSettingsOpen(true);
+  }
   // Toolbar idle-hide flag (single-window gameplay).
   const [headerHidden, setHeaderHidden] = createSignal(false);
   // Last-focused library tile — drives the right sidebar widgets when nothing
@@ -100,6 +175,14 @@ const App: Component = () => {
   const [focusedEntry, setFocusedEntry] = createSignal<RomEntry | null>(null);
   // Overflow menu state (toolbar … button).
   const [overflowOpen, setOverflowOpen] = createSignal(false);
+  // Library menu deep-links into the Library Manager page. The page hosts
+  // two tabs (library / media); these menu items pick which one to land on.
+  const [libraryManagerInitialTab, setLibraryManagerInitialTab] =
+    createSignal<"library" | "media" | undefined>(undefined);
+  function openLibraryManager(tab?: "library" | "media") {
+    setLibraryManagerInitialTab(tab);
+    setCurrentView({ kind: "settings" });
+  }
   // Right-click context menu over a system entry in the left sidebar.
   // Open when the user right-clicks a SystemItem; null when closed.
   const [systemContextFor, setSystemContextFor] = createSignal<{
@@ -118,16 +201,6 @@ const App: Component = () => {
   // True while a folder is being dragged over the window — drives the
   // drop-overlay UI. Cleared on drop / leave / cancel by the Tauri event.
   const [dropOverlayVisible, setDropOverlayVisible] = createSignal(false);
-
-  // Per-system settings page route (slice 2.8.C). The previous SystemPage
-  // is retired — clicking a system in the sidebar now shows the library
-  // filtered to that system (LibraryView handles via filter.ts), and the
-  // per-system settings are reached via a ⚙ button on GridControls when
-  // the view is system-filtered.
-  const systemSettingsPage = createMemo<{ id: SystemId; tab?: SystemSettingsTab } | null>(() => {
-    const cv = currentView();
-    return cv.kind === "system-settings" ? { id: cv.id, tab: cv.initialTab } : null;
-  });
 
   // Right-sidebar pinned entry (lookup from id in layout store).
   const pinnedEntry = createMemo<RomEntry | null>(() => {
@@ -536,17 +609,17 @@ const App: Component = () => {
     }
   }
 
-  // Breadcrumb path string. "Library" base, then current view label.
-  const breadcrumb = createMemo(() => {
+  // Context for the contextual menus: System ▾ is disabled unless the user
+  // is viewing a system-filtered library or a per-system settings page;
+  // Game ▾ is disabled unless a tile is focused, a ROM is running, or one
+  // is pinned in the right sidebar.
+  const activeSystemId = createMemo<SystemId | null>(() => {
     const cv = currentView();
-    if (cv.kind === "system") return ["Library", cv.id.toUpperCase()];
-    if (cv.kind === "system-settings") return ["Library", cv.id.toUpperCase(), "Settings"];
-    if (cv.kind === "home") return ["Home"];
-    if (cv.kind === "favorites") return ["Library", "Favorites"];
-    if (cv.kind === "recent") return ["Library", "Recent"];
-    if (cv.kind === "continue") return ["Library", "Continue"];
-    if (cv.kind === "settings") return ["Settings"];
-    return ["Library"];
+    if (cv.kind === "system") return cv.id;
+    return null;
+  });
+  const activeGameEntry = createMemo<RomEntry | null>(() => {
+    return runningEntry() ?? focusedEntry() ?? pinnedEntry();
   });
 
   const toolbarLeft = (
@@ -562,20 +635,217 @@ const App: Component = () => {
       >
         ◐
       </button>
-      <div class="flex min-w-0 items-center gap-1.5 text-xs font-medium text-(--color-oa-ink-dim)">
-        <For each={breadcrumb()}>
-          {(crumb, i) => (
-            <>
-              <Show when={i() > 0}>
-                <span class="text-(--color-oa-ink-dim)/50">›</span>
-              </Show>
-              <span class="truncate" classList={{ "text-(--color-oa-ink)": i() === breadcrumb().length - 1 }}>
-                {crumb}
-              </span>
-            </>
-          )}
-        </For>
-      </div>
+      <MenuBar>
+        <Menu label="Library">
+          <MenuItem
+            label={busy() === "scanning" ? "Scanning…" : "Import folder…"}
+            disabled={busy() !== "idle"}
+            onClick={() => setWizardOpen(true)}
+          />
+          <MenuItem
+            label="Rescan tracked folders"
+            disabled={settings.libraryFolders().length === 0 || busy() !== "idle"}
+            onClick={() => void handleRescanLibraryFolders()}
+          />
+          <MenuDivider />
+          <MenuItem label="Library Manager…" onClick={() => openLibraryManager("library")} />
+          <MenuItem label="Sync media…" onClick={() => openLibraryManager("media")} />
+          <MenuItem label="Cores Manager…" onClick={() => setCurrentView({ kind: "cores" })} />
+          <MenuDivider />
+          <MenuCheckbox
+            label="Auto-hide empty systems"
+            checked={layout.autoHideEmptySystems()}
+            onChange={(next) => layout.setAutoHideEmptySystems(next)}
+          />
+          <MenuCheckbox
+            label="Auto-remove on file delete"
+            checked={settings.autoRemoveOnDelete()}
+            onChange={(next) => settings.setAutoRemoveOnDelete(next)}
+          />
+        </Menu>
+        <Menu label="View">
+          <MenuRadio<ViewMode>
+            label="View mode"
+            value={layout.viewMode()}
+            onChange={(v) => layout.setViewMode(v)}
+            options={VIEW_MODE_OPTIONS.map((m) => ({ value: m, label: VIEW_MODE_LABELS[m] }))}
+          />
+          <MenuDivider />
+          <MenuRadio<SortKey>
+            label="Sort by"
+            value={layout.sortKey()}
+            onChange={(v) => layout.setSortKey(v)}
+            options={SORT_KEY_OPTIONS.map((k) => ({ value: k, label: SORT_KEY_LABELS[k] }))}
+          />
+          <MenuDivider />
+          <MenuRadio<GroupBy>
+            label="Group by"
+            value={layout.groupBy()}
+            onChange={(v) => layout.setGroupBy(v)}
+            options={GROUP_BY_OPTIONS.map((g) => ({ value: g, label: GROUP_BY_LABELS[g] }))}
+          />
+          <MenuDivider />
+          <MenuCheckbox
+            label="Left sidebar"
+            hint="Ctrl+B"
+            checked={!layout.leftSidebarCollapsed()}
+            onChange={(next) => layout.setLeftSidebarCollapsed(!next)}
+          />
+          <MenuCheckbox
+            label="Right sidebar"
+            checked={layout.rightSidebarVisible()}
+            onChange={(next) => layout.setRightSidebarVisible(next)}
+          />
+          <MenuItem
+            label="Customize widgets…"
+            onClick={() => setWidgetCustomizerOpen(true)}
+          />
+          <MenuDivider />
+          <MenuRadio<PresentationMode>
+            label="Mode"
+            value={layout.presentationMode()}
+            onChange={(v) => layout.setPresentationMode(v)}
+            options={PRESENTATION_OPTIONS.map((m) => ({ value: m, label: PRESENTATION_LABELS[m] }))}
+          />
+        </Menu>
+        <Menu
+          label="System"
+          disabled={activeSystemId() === null}
+          disabledHint="Pick a system in the sidebar"
+        >
+          <Show when={activeSystemId()}>
+            {(id) => (
+              <>
+                <MenuLabel>{id()}</MenuLabel>
+                <MenuDivider />
+                <MenuItem
+                  label="Show library"
+                  onClick={() => setCurrentView({ kind: "system", id: id() })}
+                />
+                <MenuDivider />
+                <MenuItem label="Bindings…" onClick={() => openSystemDialog("bindings", id())} />
+                <MenuItem label="Default core…" onClick={() => openSystemDialog("default-core", id())} />
+                <MenuItem label="Shaders…" onClick={() => openSystemDialog("shaders", id())} />
+                <MenuItem label="Core options…" onClick={() => openSystemDialog("core-options", id())} />
+                <MenuItem label="Rewind overrides…" onClick={() => openSystemDialog("rewind", id())} />
+                <MenuItem label="Display overrides…" onClick={() => openSystemDialog("display", id())} />
+                <MenuDivider />
+                <MenuItem
+                  label="Hide from sidebar"
+                  onClick={() => {
+                    const cur = layout.hiddenSystems();
+                    if (!cur.includes(id())) layout.setHiddenSystems([...cur, id()]);
+                    if (currentView().kind === "system" && (currentView() as { id: string }).id === id()) {
+                      setCurrentView({ kind: "all" });
+                    }
+                  }}
+                />
+              </>
+            )}
+          </Show>
+        </Menu>
+        <Menu
+          label="Game"
+          disabled={activeGameEntry() === null}
+          disabledHint="Focus a game tile, or start playing one"
+        >
+          <Show when={activeGameEntry()}>
+            {(entry) => (
+              <>
+                <MenuLabel>{entry().title}</MenuLabel>
+                <MenuDivider />
+                <Show
+                  when={runningEntry() && runningEntry()!.id === entry().id}
+                  fallback={
+                    <MenuItem label="Launch" onClick={() => void handleLaunch(entry())} />
+                  }
+                >
+                  <MenuItem
+                    label="Exit to library"
+                    hint="Ctrl+W"
+                    destructive
+                    onClick={() => void handleUnload()}
+                  />
+                </Show>
+                <MenuDivider />
+                <MenuItem label="Save states…" onClick={() => setSavesEntry(entry())} />
+                <MenuItem label="Game info…" onClick={() => setGameInfoFor(entry())} />
+                <MenuItem label="Properties…" onClick={() => openGameDrawer(entry())} />
+                <MenuDivider />
+                <MenuItem label="Cheats…" onClick={() => openGameDrawer(entry(), "cheats")} />
+                <MenuItem label="Milestones…" onClick={() => openGameDrawer(entry(), "milestones")} />
+                <MenuItem label="Shaders…" onClick={() => openGameDrawer(entry(), "shaders")} />
+                <MenuItem label="Rewind overrides…" onClick={() => openGameDrawer(entry(), "rewind")} />
+                <MenuItem label="ROM patch…" onClick={() => openGameDrawer(entry(), "core")} />
+                <MenuItem label="Display overrides…" onClick={() => openGameDrawer(entry(), "display")} />
+                <MenuItem label="Core options…" onClick={() => openGameDrawer(entry(), "core-options")} />
+                <MenuDivider />
+                <MenuItem label="Pick region…" onClick={() => setRegionPickerFor(entry())} />
+              </>
+            )}
+          </Show>
+        </Menu>
+        <Menu label="Tools">
+          <MenuItem
+            label="Rewind…"
+            disabled={!gameRunning()}
+            onClick={() => openQuickSettings("rewind")}
+          />
+          <MenuItem
+            label="TAS recorder…"
+            disabled={!gameRunning()}
+            onClick={() => openQuickSettings("tas")}
+          />
+          <MenuItem
+            label="Video capture…"
+            disabled={!gameRunning()}
+            onClick={() => openQuickSettings("video")}
+          />
+          <MenuItem
+            label="Memory inspector…"
+            disabled={!gameRunning()}
+            onClick={() => openQuickSettings("memory")}
+          />
+          <MenuItem
+            label="Disc control…"
+            disabled={!gameRunning()}
+            onClick={() => openQuickSettings("disc")}
+          />
+          <MenuDivider />
+          <MenuItem
+            label="Screenshot gallery…"
+            disabled={activeGameEntry() === null}
+            onClick={() => {
+              const entry = activeGameEntry();
+              if (entry) setScreenshotGalleryFor(entry);
+            }}
+          />
+          <MenuCheckbox
+            label="Performance HUD"
+            checked={perfHudVisible()}
+            onChange={(next) => setPerfHudVisible(next)}
+          />
+        </Menu>
+        <Menu label="Settings">
+          <MenuItem label="Display…" onClick={() => setSettingsDialog("display")} />
+          <MenuItem label="Audio…" onClick={() => setSettingsDialog("audio")} />
+          <MenuItem label="Gameplay…" onClick={() => setSettingsDialog("gameplay")} />
+          <MenuItem label="Shaders…" onClick={() => setSettingsDialog("shaders")} />
+          <MenuDivider />
+          <MenuRadio<ShellMode>
+            label="Shell mode"
+            value={settings.shellModePref()}
+            onChange={(v) => settings.setShellModePref(v)}
+            options={SHELL_OPTIONS.map((m) => ({ value: m, label: SHELL_MODE_LABELS[m] }))}
+          />
+        </Menu>
+        <Menu label="Help">
+          <MenuItem label="Debug log…" onClick={() => setHelpDialog("debug-log")} />
+          <MenuDivider />
+          <MenuItem label="Keyboard shortcuts…" onClick={() => setHelpDialog("shortcuts")} />
+          <MenuItem label="About Overlooked Arcade…" onClick={() => setHelpDialog("about")} />
+        </Menu>
+      </MenuBar>
     </>
   );
 
@@ -643,73 +913,6 @@ const App: Component = () => {
           ‹
         </button>
       </Show>
-      <div class="relative">
-        <button
-          type="button"
-          onClick={(e) => {
-            // stopPropagation prevents the window-level click handler from
-            // immediately closing the menu we just opened.
-            e.stopPropagation();
-            e.currentTarget.blur();
-            setOverflowOpen((v) => !v);
-          }}
-          class={TOOLBAR_BTN}
-          aria-expanded={overflowOpen()}
-          aria-haspopup="menu"
-          title="More actions"
-        >
-          ⋯
-        </button>
-        <Show when={overflowOpen()}>
-          <div
-            class="absolute right-0 top-full z-30 mt-1 w-48 rounded-md border border-white/10 bg-(--color-oa-bg-deep) py-1 shadow-2xl shadow-black/60"
-            role="menu"
-          >
-            <OverflowItem
-              label={busy() === "scanning" ? "Scanning…" : "Import folder…"}
-              disabled={busy() !== "idle"}
-              onClick={() => {
-                setOverflowOpen(false);
-                setWizardOpen(true);
-              }}
-            />
-            <OverflowItem
-              label="Rescan tracked folders"
-              disabled={settings.libraryFolders().length === 0 || busy() !== "idle"}
-              onClick={() => {
-                setOverflowOpen(false);
-                void handleRescanLibraryFolders();
-              }}
-            />
-            <div class="my-1 border-t border-white/5" />
-            <OverflowItem
-              label={`Mode: ${PRESENTATION_LABELS[layout.presentationMode()]}`}
-              onClick={() => {
-                setOverflowOpen(false);
-                setCurrentView({ kind: "settings" });
-              }}
-            />
-            <OverflowItem
-              label={layout.leftSidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={() => {
-                setOverflowOpen(false);
-                layout.setLeftSidebarCollapsed(!layout.leftSidebarCollapsed());
-              }}
-            />
-          </div>
-        </Show>
-      </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.currentTarget.blur();
-          setCurrentView({ kind: "settings" });
-        }}
-        class={TOOLBAR_BTN}
-        title="Settings"
-      >
-        ⚙
-      </button>
       <button
         type="button"
         onClick={(e) => {
@@ -996,9 +1199,6 @@ const App: Component = () => {
                   onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
                   onFocus={(entry) => setFocusedEntry(entry)}
                   onPickFolder={handlePickFolder}
-                  onOpenSystemSettings={(id, tab) =>
-                    setCurrentView({ kind: "system-settings", id, initialTab: tab })
-                  }
                 />
               </div>
             }
@@ -1012,6 +1212,7 @@ const App: Component = () => {
                   layout={layout}
                   onAddLibraryFolder={handleAddLibraryFolder}
                   onRescanLibraryFolders={handleRescanLibraryFolders}
+                  initialTab={libraryManagerInitialTab()}
                 />
               </div>
             </Match>
@@ -1019,18 +1220,6 @@ const App: Component = () => {
               <div class="h-full overflow-y-auto">
                 <CoresPage onBack={() => setCurrentView({ kind: "all" })} />
               </div>
-            </Match>
-            <Match when={systemSettingsPage()} keyed>
-              {(spp) => (
-                <div class="h-full overflow-y-auto">
-                  <PerSystemSettingsPage
-                    systemId={spp.id}
-                    initialTab={spp.tab}
-                    settings={settings}
-                    onBack={() => setCurrentView({ kind: "system", id: spp.id })}
-                  />
-                </div>
-              )}
             </Match>
           </Switch>
           <Show when={gameMode() && headerHidden()}>
@@ -1066,13 +1255,16 @@ const App: Component = () => {
       />
       <QuickSettings
         open={quickSettingsOpen()}
-        onClose={() => setQuickSettingsOpen(false)}
+        onClose={() => {
+          setQuickSettingsOpen(false);
+          setQuickSettingsRequestedView(null);
+        }}
         entry={runningEntry()}
         settings={settings}
         onShowSaves={(entry) => setSavesEntry(entry)}
         onShowInfo={(entry) => setGameInfoFor(entry)}
         onExitToLibrary={() => void handleUnload()}
-        onOpenAllSettings={() => setCurrentView({ kind: "settings" })}
+        requestedView={quickSettingsRequestedView()}
       />
       <SaveSlotsModal
         entry={savesEntry()}
@@ -1094,9 +1286,8 @@ const App: Component = () => {
         library={library}
         onClose={() => setSystemContextFor(null)}
         onShowLibrary={(id) => setCurrentView({ kind: "system", id })}
-        onOpenSystemSettings={(id, tab) =>
-          setCurrentView({ kind: "system-settings", id, initialTab: tab })
-        }
+        onOpenBindings={(id) => openSystemDialog("bindings", id)}
+        onOpenSettings={(id) => openSystemDialog("display", id)}
         onHideSystem={(id) => {
           const current = layout.hiddenSystems();
           if (!current.includes(id)) {
@@ -1125,9 +1316,13 @@ const App: Component = () => {
       <PerGameSettingsDrawer
         open={propertiesFor() !== null}
         entry={propertiesFor()}
-        onClose={() => setPropertiesFor(null)}
+        onClose={() => {
+          setPropertiesFor(null);
+          setPropertiesInitialTab(undefined);
+        }}
         settings={settings}
         library={library}
+        initialTab={propertiesInitialTab()}
       />
       <GameInfoModal
         entry={gameInfoFor()}
@@ -1157,35 +1352,81 @@ const App: Component = () => {
         entry={regionPickerFor()}
         onClose={() => setRegionPickerFor(null)}
       />
+      <DisplayDialog
+        open={settingsDialog() === "display"}
+        onClose={() => setSettingsDialog(null)}
+        settings={settings}
+      />
+      <AudioDialog
+        open={settingsDialog() === "audio"}
+        onClose={() => setSettingsDialog(null)}
+        settings={settings}
+      />
+      <GameplayDialog
+        open={settingsDialog() === "gameplay"}
+        onClose={() => setSettingsDialog(null)}
+        settings={settings}
+      />
+      <ShadersDialog
+        open={settingsDialog() === "shaders"}
+        onClose={() => setSettingsDialog(null)}
+        settings={settings}
+      />
+      <Show when={systemDialog()} keyed>
+        {(sd) => (
+          <Switch>
+            <Match when={sd.section === "bindings"}>
+              <SystemBindingsDialog
+                open
+                systemId={sd.target}
+                onClose={() => setSystemDialog(null)}
+              />
+            </Match>
+            <Match when={sd.section === "core-options"}>
+              <SystemCoreOptionsDialog
+                open
+                systemId={sd.target}
+                onClose={() => setSystemDialog(null)}
+              />
+            </Match>
+            <Match when={true}>
+              <SystemSettingsDialog
+                open
+                section={sd.section}
+                systemId={sd.target}
+                onClose={() => setSystemDialog(null)}
+                settings={settings}
+              />
+            </Match>
+          </Switch>
+        )}
+      </Show>
+      <WidgetCustomizerDialog
+        open={widgetCustomizerOpen()}
+        onClose={() => setWidgetCustomizerOpen(false)}
+        layout={layout}
+      />
+      <ScreenshotGalleryDialog
+        open={screenshotGalleryFor() !== null}
+        onClose={() => setScreenshotGalleryFor(null)}
+        entry={screenshotGalleryFor()}
+      />
+      <PerformanceHud visible={perfHudVisible()} />
+      <KeyboardShortcutsDialog
+        open={helpDialog() === "shortcuts"}
+        onClose={() => setHelpDialog(null)}
+      />
+      <AboutDialog
+        open={helpDialog() === "about"}
+        onClose={() => setHelpDialog(null)}
+      />
+      <DebugLogDialog
+        open={helpDialog() === "debug-log"}
+        onClose={() => setHelpDialog(null)}
+      />
       <ToastStack />
     </MediaProvider>
   );
 };
-
-const OverflowItem: Component<{
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-}> = (props) => (
-  <button
-    type="button"
-    role="menuitem"
-    disabled={props.disabled}
-    onClick={(e) => {
-      console.log("[oa-overflow] item clicked:", props.label, "disabled=", props.disabled);
-      e.stopPropagation();
-      e.currentTarget.blur();
-      if (!props.disabled) {
-        console.log("[oa-overflow] firing onClick for:", props.label);
-        props.onClick();
-      } else {
-        console.log("[oa-overflow] item disabled, skipping");
-      }
-    }}
-    class="block w-full px-3 py-1.5 text-left text-xs text-(--color-oa-ink) transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-  >
-    {props.label}
-  </button>
-);
 
 export default App;

@@ -11,7 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
-import { SCALING_MODE_LABELS, type SettingsStore } from "../settings/store";
+import type { SettingsStore } from "../settings/store";
 
 // Phase 2.8 slice B (Quick Settings overlay) + Phase 4 slice B (rewind
 // scrubbing). Triggered by Escape during gameplay. Two-mode card:
@@ -28,6 +28,10 @@ import { SCALING_MODE_LABELS, type SettingsStore } from "../settings/store";
 // the scrub before the overlay tears down so we never leave the emu
 // thread frozen in scrub mode with no UI driving it.
 
+// Public view ids — exported so the parent can request the overlay to
+// open pre-set on a specific drill-in (Tools ▾ menu items).
+export type QuickSettingsView = "actions" | "rewind" | "tas" | "video" | "memory" | "disc";
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -35,8 +39,11 @@ type Props = {
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
-  onOpenAllSettings: () => void;
   settings: SettingsStore;
+  /// Optional landing view on open. Defaults to "actions". Set by the
+  /// Tools menu items to drop the user directly on the panel they asked
+  /// for instead of forcing them through the action grid.
+  requestedView?: QuickSettingsView | null;
 };
 
 const BTN_BASE =
@@ -210,6 +217,16 @@ const QuickSettings: Component<Props> = (props) => {
         .then((s) => setVideoState(s ?? null))
         .catch(() => setVideoState(null));
       void refreshDiscState();
+      // Tools-menu deep-link: open straight on the requested panel. Each
+      // view-specific enter helper does its own hydration (recordings,
+      // clip list, scrub start, …) — calling them here keeps the
+      // landing-by-link path equivalent to the action-row click path.
+      const req = props.requestedView ?? null;
+      if (req === "rewind") void enterRewindView();
+      else if (req === "tas") void enterTasView();
+      else if (req === "video") void enterVideoView();
+      else if (req === "memory") setView("memory");
+      else if (req === "disc") setView("disc");
       requestAnimationFrame(() => {
         if (!cardRef) return;
         const firstBtn = cardRef.querySelector<HTMLButtonElement>(
@@ -312,24 +329,11 @@ const QuickSettings: Component<Props> = (props) => {
     return systemThemes[e.systemId]?.shortName ?? e.systemId;
   };
 
-  const scalingLabel = (): string =>
-    SCALING_MODE_LABELS[props.settings.scalingMode()] ?? props.settings.scalingMode();
-
   // Can the user enter the scrubber right now? Needs rewind enabled +
   // a non-empty ring.
   const rewindAvailable = (): boolean => {
     const s = rewindState();
     return s !== null && s.enabled && s.snapshotCount > 0;
-  };
-
-  const rewindHint = (): string => {
-    const s = rewindState();
-    if (!s) return "loading…";
-    if (!s.enabled) return "off";
-    if (s.snapshotCount === 0) return "no history";
-    // Show seconds + count summary on the action row.
-    const seconds = (s.snapshotCount * s.captureIntervalFrames) / Math.max(s.fps, 1);
-    return `${seconds.toFixed(1)}s · ${s.snapshotCount} snaps`;
   };
 
   async function enterRewindView() {
@@ -363,19 +367,6 @@ const QuickSettings: Component<Props> = (props) => {
   }
 
   // --- TAS helpers ------------------------------------------------------
-
-  const tasActionHint = (): string => {
-    const t = tasState();
-    if (!t) return "loading…";
-    switch (t.mode) {
-      case "recording":
-        return `recording · ${t.frame} frames`;
-      case "replaying":
-        return `replaying · ${t.frame} / ${t.totalFrames}`;
-      default:
-        return "record or replay";
-    }
-  };
 
   async function enterTasView() {
     setView("tas");
@@ -460,16 +451,6 @@ const QuickSettings: Component<Props> = (props) => {
   }
 
   // --- Video capture helpers --------------------------------------------
-
-  const videoActionHint = (): string => {
-    const v = videoState();
-    if (!v) return "loading…";
-    if (v.capturing) {
-      const drops = v.droppedFrameCount > 0 ? ` (${v.droppedFrameCount} dropped)` : "";
-      return `capturing · ${v.frameCount} frames${drops}`;
-    }
-    return "record video clip";
-  };
 
   async function enterVideoView() {
     setView("video");
@@ -607,43 +588,6 @@ const QuickSettings: Component<Props> = (props) => {
             <div class="flex flex-col gap-1.5 p-3">
               <ActionRow icon="▶" label="Resume" hint="Esc" onClick={props.onClose} autoFocus />
               <ActionRow
-                icon="⏪"
-                label="Rewind…"
-                hint={rewindHint()}
-                disabled={!rewindAvailable()}
-                onClick={() => void enterRewindView()}
-              />
-              <ActionRow
-                icon="⏺"
-                label="TAS recording…"
-                hint={tasActionHint()}
-                onClick={() => void enterTasView()}
-              />
-              <ActionRow
-                icon="🎥"
-                label="Video capture…"
-                hint={videoActionHint()}
-                onClick={() => void enterVideoView()}
-              />
-              <ActionRow
-                icon="🧠"
-                label="Memory inspector…"
-                hint="dev / power user"
-                onClick={() => setView("memory")}
-              />
-              <Show when={discInfo() !== null}>
-                <ActionRow
-                  icon="💿"
-                  label="Disc control…"
-                  hint={
-                    (discInfo()?.numDiscs ?? 0) > 1
-                      ? `disc ${(discInfo()?.currentIndex ?? 0) + 1} / ${discInfo()?.numDiscs ?? 1}`
-                      : "single disc"
-                  }
-                  onClick={() => setView("disc")}
-                />
-              </Show>
-              <ActionRow
                 icon="⏱"
                 label="Save / Load states"
                 onClick={() => {
@@ -663,24 +607,6 @@ const QuickSettings: Component<Props> = (props) => {
                   }
                 }}
               />
-              <ActionRow
-                icon="📐"
-                label={`Scaling: ${scalingLabel()}`}
-                hint="opens Settings"
-                onClick={() => {
-                  props.onClose();
-                  props.onOpenAllSettings();
-                }}
-              />
-              <ActionRow icon="🎨" label="Shader" hint="Phase 3" disabled onClick={() => {}} />
-              <ActionRow
-                icon="⚙"
-                label="All settings"
-                onClick={() => {
-                  props.onClose();
-                  props.onOpenAllSettings();
-                }}
-              />
               <div class="my-1 border-t border-white/5" />
               <ActionRow
                 icon="🚪"
@@ -692,6 +618,9 @@ const QuickSettings: Component<Props> = (props) => {
                   props.onExitToLibrary();
                 }}
               />
+              <p class="px-2 pt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                Rewind · TAS · Video · Memory → top bar <span class="text-(--color-oa-ink)">Tools</span> menu
+              </p>
             </div>
           </Show>
 

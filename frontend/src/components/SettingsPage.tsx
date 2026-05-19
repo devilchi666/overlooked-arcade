@@ -3,26 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { LibraryStore } from "../library/store";
 import { useMedia } from "../library/media";
-import {
-  PRESENTATION_LABELS,
-  PRESENTATION_OPTIONS,
-  type LayoutStore,
-} from "../layout/state";
-import {
-  SCALING_MODE_LABELS,
-  SCALING_OPTIONS,
-  SHELL_MODE_LABELS,
-  SHELL_OPTIONS,
-  WINDOW_MODE_LABELS,
-  WINDOW_OPTIONS,
-  type AudioDeviceInfo,
-  type CoreEntry,
-  type MonitorInfo,
-  type ScalingMode,
-  type SettingsStore,
-  type ShellMode,
-  type WindowMode,
-} from "../settings/store";
+import type { LayoutStore } from "../layout/state";
+import type { SettingsStore } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 
 type Props = {
@@ -34,6 +16,9 @@ type Props = {
   layout: LayoutStore;
   onAddLibraryFolder: () => void;
   onRescanLibraryFolders: () => void;
+  /// Optional deep-link target — Library menu items use this to land on
+  /// "library" vs "media" instead of the persisted last-visited tab.
+  initialTab?: "library" | "media";
 };
 
 type SyncProgressPayload = {
@@ -78,41 +63,25 @@ function humanBytes(b: number): string {
   return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function monitorLabel(m: MonitorInfo): string {
-  const name = m.name?.trim() || `Monitor ${m.index + 1}`;
-  return `${name} (${m.width}×${m.height})`;
-}
-
 const SELECT_CLASS =
   "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-oa-ink-dim)";
 
-const TABS = ["presentation", "display", "audio", "gameplay", "cores", "library", "media"] as const;
+// After the menu-bar redesign, this page only renders the Library +
+// Game-media tabs. The other tabs (Display / Audio / Gameplay / Shaders)
+// became top-bar Settings menu dialogs; Presentation moved to View menu;
+// Cores moved to the dedicated CoresPage. Library + Media stay full-page
+// because of the wide editors (folder lists, per-system sync rows with
+// progress bars, region priority editor, disk-usage panel).
+const TABS = ["library", "media"] as const;
 type TabId = typeof TABS[number];
 const TAB_LABELS: Record<TabId, string> = {
-  presentation: "Presentation",
-  display:      "Display",
-  audio:        "Audio",
-  gameplay:     "Gameplay",
-  cores:        "Cores",
   library:      "Library",
   media:        "Game media",
 };
 const TAB_HINTS: Record<TabId, string> = {
-  presentation: "Mode (Desktop / Theater / Cabinet) + sidebar layout",
-  display:      "Scaling, window mode, monitor, shell mode",
-  audio:        "Output device + sample-rate routing",
-  gameplay:     "Rewind, save-state behavior, replay",
-  cores:        "Detected libretro cores + per-system defaults",
   library:      "Tracked folders, scanning, ingest",
   media:        "Cover art + snapshots + titles, libretro-thumbnails sync, region priority",
 };
-
-// Reasonable picker steps for the rewind buffer + capture interval.
-// Capture interval: 1 frame (smoothest, costliest) to 30 frames (~500ms at 60 fps).
-const REWIND_INTERVAL_OPTIONS: readonly number[] = [1, 2, 3, 6, 10, 15, 30];
-// Buffer cap: 8 MB to 512 MB. Operators on systems with big RAM can push it up;
-// the default 64 MB holds ~10 s on every current core comfortably.
-const REWIND_BUFFER_OPTIONS: readonly number[] = [8, 16, 32, 64, 128, 256, 512];
 
 const SettingsPage: Component<Props> = (props) => {
   // Tabbed layout — sidebar nav on the left, per-tab content on the right.
@@ -120,8 +89,9 @@ const SettingsPage: Component<Props> = (props) => {
   // lands you where you were.
   const TAB_STORAGE = "oa.settings.activeTab";
   const initialTab: TabId = (() => {
+    if (props.initialTab && TABS.includes(props.initialTab as TabId)) return props.initialTab as TabId;
     const saved = localStorage.getItem(TAB_STORAGE) as TabId | null;
-    return saved && TABS.includes(saved) ? saved : "display";
+    return saved && TABS.includes(saved) ? saved : "library";
   })();
   const [activeTab, setActiveTab] = createSignal<TabId>(initialTab);
   createEffect(() => {
@@ -141,65 +111,7 @@ const SettingsPage: Component<Props> = (props) => {
   onMount(() => window.addEventListener("keydown", escHandler, { capture: true }));
   onCleanup(() => window.removeEventListener("keydown", escHandler, { capture: true }));
 
-  // Page-mode resource fetches: fire once on mount; un/remount handles the
-  // refresh cadence the modal-era `() => props.open` source used to drive.
-  const [monitors] = createResource(async (): Promise<MonitorInfo[]> => {
-    try {
-      return await invoke<MonitorInfo[]>("list_monitors");
-    } catch (e) {
-      console.warn("list_monitors failed:", e);
-      return [];
-    }
-  });
-
-  const [audioDevices] = createResource(async (): Promise<AudioDeviceInfo[]> => {
-    try {
-      return await invoke<AudioDeviceInfo[]>("list_audio_devices");
-    } catch (e) {
-      console.warn("list_audio_devices failed:", e);
-      return [];
-    }
-  });
-
-  // Cores-folder scan + per-system core preference state. The preference is
-  // file-backed on the Rust side (appDataDir/cores.json) and takes effect on
-  // next launch — same pattern as shellMode.
-  const [cores] = createResource(async (): Promise<CoreEntry[]> => {
-    try {
-      return await invoke<CoreEntry[]>("list_cores");
-    } catch (e) {
-      console.warn("list_cores failed:", e);
-      return [];
-    }
-  });
-
   const systemIds = Object.keys(systemThemes) as SystemId[];
-  const [corePrefs, setCorePrefs] = createSignal<Record<SystemId, string | null>>(
-    Object.fromEntries(systemIds.map((id) => [id, null])) as Record<SystemId, string | null>,
-  );
-  // Hydrate per-system core prefs from Rust once on page mount.
-  createResource(async () => {
-    const next: Record<string, string | null> = {};
-    for (const id of systemIds) {
-      try {
-        const v = await invoke<string | null>("get_core_pref", { systemId: id });
-        next[id] = v ?? null;
-      } catch (e) {
-        console.warn(`get_core_pref(${id}) failed:`, e);
-        next[id] = null;
-      }
-    }
-    setCorePrefs(next as Record<SystemId, string | null>);
-    return null;
-  });
-  async function setCorePref(systemId: SystemId, fileName: string | null) {
-    setCorePrefs((prev) => ({ ...prev, [systemId]: fileName }));
-    try {
-      await invoke("set_core_pref", { systemId, fileName });
-    } catch (e) {
-      console.warn("set_core_pref failed:", e);
-    }
-  }
 
   // --- Game media (covers): sync, region priority, storage stats ---
 
@@ -587,366 +499,6 @@ const SettingsPage: Component<Props> = (props) => {
                 resources (createResource etc. are tied to props.open, so
                 this is purely a visibility toggle). */}
             <section class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
-            <Show when={activeTab() === "presentation"}>
-            <div class="space-y-4">
-              <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                Presentation
-              </h3>
-
-              <div class="space-y-2">
-                <p class="text-xs text-(--color-oa-ink-dim)">Mode</p>
-                <div class="grid grid-cols-3 gap-2">
-                  <For each={PRESENTATION_OPTIONS}>
-                    {(mode) => {
-                      const active = () => props.layout.presentationMode() === mode;
-                      const description =
-                        mode === "desktop" ? "Mouse + keyboard, full chrome."
-                        : mode === "theater" ? "Couch + controller, larger fonts, idle-hide chrome."
-                        : "Kiosk: chromeless coverflow, attract loop, PIN-locked admin.";
-                      return (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.currentTarget.blur();
-                            props.layout.setPresentationMode(mode);
-                          }}
-                          aria-pressed={active()}
-                          class="flex flex-col gap-1 rounded-md border px-3 py-3 text-left transition"
-                          classList={{
-                            "border-(--color-system-accent) bg-(--color-system-accent)/10": active(),
-                            "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]": !active(),
-                          }}
-                        >
-                          <span class="text-sm font-semibold uppercase tracking-wider text-(--color-oa-ink)">
-                            {PRESENTATION_LABELS[mode]}
-                          </span>
-                          <span class="text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
-                            {description}
-                          </span>
-                        </button>
-                      );
-                    }}
-                  </For>
-                </div>
-                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Cabinet mode ships as layout-only in this build — attract loop, marquee output, and PIN-locked admin land in Phase 4.
-                </p>
-              </div>
-
-              <div class="space-y-2">
-                <p class="text-xs text-(--color-oa-ink-dim)">Sidebars</p>
-                <div class="flex flex-col gap-1.5">
-                  <label class="flex cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 transition hover:bg-white/[0.05]">
-                    <input
-                      type="checkbox"
-                      checked={!props.layout.leftSidebarCollapsed()}
-                      onChange={(e) => props.layout.setLeftSidebarCollapsed(!e.currentTarget.checked)}
-                      class="h-3.5 w-3.5 accent-(--color-system-accent)"
-                    />
-                    <div class="flex-1">
-                      <p class="text-xs text-(--color-oa-ink)">Left sidebar expanded</p>
-                      <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                        Toggle with Ctrl+B
-                      </p>
-                    </div>
-                  </label>
-                  <label class="flex cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 transition hover:bg-white/[0.05]">
-                    <input
-                      type="checkbox"
-                      checked={props.layout.rightSidebarVisible()}
-                      onChange={(e) => props.layout.setRightSidebarVisible(e.currentTarget.checked)}
-                      class="h-3.5 w-3.5 accent-(--color-system-accent)"
-                    />
-                    <div class="flex-1">
-                      <p class="text-xs text-(--color-oa-ink)">Right sidebar visible</p>
-                      <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                        Game details + widgets
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-            </Show>
-
-            <Show when={activeTab() === "display"}>
-            <div class="space-y-3">
-              <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                Display
-              </h3>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Scaling mode</span>
-                <select
-                  value={props.settings.scalingMode()}
-                  onChange={(e) =>
-                    props.settings.setScalingMode(e.currentTarget.value as ScalingMode)
-                  }
-                  class={SELECT_CLASS}
-                >
-                  <For each={SCALING_OPTIONS}>
-                    {(mode) => <option value={mode}>{SCALING_MODE_LABELS[mode]}</option>}
-                  </For>
-                </select>
-              </label>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Window mode</span>
-                <select
-                  value={props.settings.windowMode()}
-                  onChange={(e) =>
-                    props.settings.setWindowMode(e.currentTarget.value as WindowMode)
-                  }
-                  class={SELECT_CLASS}
-                >
-                  <For each={WINDOW_OPTIONS}>
-                    {(mode) => <option value={mode}>{WINDOW_MODE_LABELS[mode]}</option>}
-                  </For>
-                </select>
-              </label>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Monitor (for borderless)</span>
-                <select
-                  value={props.settings.monitorIndex() === null ? "current" : String(props.settings.monitorIndex())}
-                  onChange={(e) => {
-                    const v = e.currentTarget.value;
-                    props.settings.setMonitorIndex(v === "current" ? null : Number(v));
-                  }}
-                  class={SELECT_CLASS}
-                >
-                  <option value="current">Current monitor</option>
-                  <For each={monitors() ?? []}>
-                    {(m) => <option value={String(m.index)}>{monitorLabel(m)}</option>}
-                  </For>
-                </select>
-              </label>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Shell mode</span>
-                <select
-                  value={props.settings.shellModePref()}
-                  onChange={(e) =>
-                    props.settings.setShellModePref(e.currentTarget.value as ShellMode)
-                  }
-                  class={SELECT_CLASS}
-                >
-                  <For each={SHELL_OPTIONS}>
-                    {(mode) => <option value={mode}>{SHELL_MODE_LABELS[mode]}</option>}
-                  </For>
-                </select>
-                <Show
-                  when={props.settings.activeShellMode() !== props.settings.shellModePref()}
-                  fallback={
-                    <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Takes effect on next launch.
-                    </span>
-                  }
-                >
-                  <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-system-accent)">
-                    Active this session: {SHELL_MODE_LABELS[props.settings.activeShellMode()]}.
-                    The <code class="font-mono normal-case">OA_SHELL_MODE</code> env var is
-                    overriding the saved preference. Unset it to use the saved value next launch.
-                  </span>
-                </Show>
-              </label>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Run-ahead frames</span>
-                <div class="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="5"
-                    step="1"
-                    value={props.settings.runAheadFrames()}
-                    onInput={(e) => {
-                      const v = Number(e.currentTarget.value);
-                      if (Number.isInteger(v)) props.settings.setRunAheadFrames(v);
-                    }}
-                    class="flex-1"
-                  />
-                  <span class="font-mono text-sm w-12 text-right tabular-nums">
-                    {props.settings.runAheadFrames() === 0 ? "off" : `+${props.settings.runAheadFrames()}f`}
-                  </span>
-                </div>
-                <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Reduces perceived input latency by N frames. Each costs 1 save_state + 1 run_frame + 1
-                  load_state per frame — cheap on PCE / NES, may exceed budget on heavier cores. Skipped
-                  during scrub / TAS / pause / fast-forward / slow-mo.
-                </span>
-              </label>
-
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Phosphor bloom amount</span>
-                <div class="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={props.settings.bloomAmount()}
-                    onInput={(e) => {
-                      const v = Number(e.currentTarget.value);
-                      if (Number.isFinite(v)) props.settings.setBloomAmount(v);
-                    }}
-                    class="flex-1"
-                  />
-                  <span class="font-mono text-sm w-12 text-right tabular-nums">
-                    {props.settings.bloomAmount().toFixed(2)}
-                  </span>
-                </div>
-                <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  OA-wide default for the Phosphor preset's source/blur mix. Per-system + per-game
-                  overrides win at launch. Only meaningful when the active preset's base is Phosphor.
-                </span>
-              </label>
-            </div>
-            </Show>
-
-            <Show when={activeTab() === "gameplay"}>
-            <div class="space-y-4">
-              <div class="space-y-3">
-                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                  Rewind
-                </h3>
-                <p class="text-xs leading-relaxed text-(--color-oa-ink-dim)">
-                  Hold <kbd class="rounded border border-white/15 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[0.65rem] text-(--color-oa-ink)">Backspace</kbd>
-                  {" "}during gameplay to walk emulation backwards. Snapshots are captured every N frames into
-                  a memory-bounded ring; older snapshots are evicted when the cap is reached.
-                </p>
-
-                <label class="flex cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm transition hover:bg-white/[0.06]">
-                  <input
-                    type="checkbox"
-                    checked={props.settings.rewindEnabled()}
-                    onChange={(e) => props.settings.setRewindEnabled(e.currentTarget.checked)}
-                    class="size-4 cursor-pointer accent-(--color-system-accent)"
-                  />
-                  <span class="flex-1">
-                    <span class="block text-(--color-oa-ink)">Enable rewind</span>
-                    <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Captures save-state snapshots while playing
-                    </span>
-                  </span>
-                </label>
-
-                <label class="block space-y-1">
-                  <span class="text-xs text-(--color-oa-ink-dim)">Capture interval (frames between snapshots)</span>
-                  <select
-                    value={String(props.settings.rewindCaptureIntervalFrames())}
-                    onChange={(e) =>
-                      props.settings.setRewindCaptureIntervalFrames(Number(e.currentTarget.value))
-                    }
-                    class={SELECT_CLASS}
-                    disabled={!props.settings.rewindEnabled()}
-                  >
-                    <For each={REWIND_INTERVAL_OPTIONS}>
-                      {(n) => (
-                        <option value={String(n)}>
-                          {n === 1 ? "Every frame" : `Every ${n} frames`}
-                          {" "}
-                          (~{Math.round((n / 60) * 1000)} ms at 60 fps)
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                  <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                    Lower = smoother rewind, more CPU + RAM. Higher = coarser rewind, cheaper.
-                  </span>
-                </label>
-
-                <label class="block space-y-1">
-                  <span class="text-xs text-(--color-oa-ink-dim)">Buffer cap</span>
-                  <select
-                    value={String(props.settings.rewindBufferMegabytes())}
-                    onChange={(e) =>
-                      props.settings.setRewindBufferMegabytes(Number(e.currentTarget.value))
-                    }
-                    class={SELECT_CLASS}
-                    disabled={!props.settings.rewindEnabled()}
-                  >
-                    <For each={REWIND_BUFFER_OPTIONS}>
-                      {(mb) => <option value={String(mb)}>{mb} MB</option>}
-                    </For>
-                  </select>
-                  <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                    Hard cap on RAM. Cores with large save states (SNES ~300 KB / snap) get fewer
-                    seconds of history per MB.
-                  </span>
-                </label>
-              </div>
-            </div>
-            </Show>
-
-            <Show when={activeTab() === "cores"}>
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                  Cores
-                </h3>
-                <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  in <code class="font-mono normal-case">&lt;exe_dir&gt;/cores/</code>
-                </span>
-              </div>
-              <Show
-                when={(cores() ?? []).length > 0}
-                fallback={
-                  <p class="text-xs leading-relaxed text-(--color-oa-ink-dim)">
-                    No libretro cores detected. Download a core .dll from
-                    {" "}
-                    <code class="font-mono normal-case">buildbot.libretro.com/nightly/</code>
-                    {" "}
-                    and drop it in the cores folder next to the .exe.
-                  </p>
-                }
-              >
-                <ul class="space-y-1">
-                  <For each={cores() ?? []}>
-                    {(c) => (
-                      <li class="rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
-                        <div class="flex items-baseline justify-between gap-3">
-                          <span class="font-medium text-(--color-oa-ink)">{c.libraryName}</span>
-                          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">{c.libraryVersion}</span>
-                        </div>
-                        <div class="mt-0.5 truncate font-mono text-[0.65rem] text-(--color-oa-ink-dim)">{c.fileName}</div>
-                        <div class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                          ext: {c.validExtensions || "—"}
-                        </div>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-
-              <For each={systemIds}>
-                {(id) => (
-                  <label class="block space-y-1">
-                    <span class="text-xs text-(--color-oa-ink-dim)">
-                      Default core for {systemThemes[id].shortName}
-                    </span>
-                    <select
-                      value={corePrefs()[id] ?? "__default__"}
-                      onChange={(e) => {
-                        const v = e.currentTarget.value;
-                        void setCorePref(id, v === "__default__" ? null : v);
-                      }}
-                      class={SELECT_CLASS}
-                    >
-                      <option value="__default__">Default (auto-detect)</option>
-                      <For each={cores() ?? []}>
-                        {(c) => <option value={c.fileName}>{c.libraryName} ({c.fileName})</option>}
-                      </For>
-                    </select>
-                    <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Takes effect on next launch.
-                    </span>
-                  </label>
-                )}
-              </For>
-            </div>
-            </Show>
-
             <Show when={activeTab() === "media"}>
             <div class="space-y-3">
               <div class="flex items-center justify-between">
@@ -1256,38 +808,6 @@ const SettingsPage: Component<Props> = (props) => {
                   </p>
                 )}
               </Show>
-            </div>
-            </Show>
-
-            <Show when={activeTab() === "audio"}>
-            <div class="space-y-3">
-              <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                Audio
-              </h3>
-              <label class="block space-y-1">
-                <span class="text-xs text-(--color-oa-ink-dim)">Output device</span>
-                <select
-                  value={props.settings.audioDevice() ?? "__default__"}
-                  onChange={(e) => {
-                    const v = e.currentTarget.value;
-                    props.settings.setAudioDevice(v === "__default__" ? null : v);
-                  }}
-                  class={SELECT_CLASS}
-                >
-                  <option value="__default__">System default</option>
-                  <For each={audioDevices() ?? []}>
-                    {(d) => (
-                      <option value={d.name}>
-                        {d.name}
-                        {d.isDefault ? " (default)" : ""}
-                      </option>
-                    )}
-                  </For>
-                </select>
-                <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Takes effect immediately — the running stream swaps in place.
-                </span>
-              </label>
             </div>
             </Show>
 

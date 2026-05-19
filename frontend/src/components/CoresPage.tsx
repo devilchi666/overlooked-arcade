@@ -4,37 +4,74 @@ import { listen } from "@tauri-apps/api/event";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { CoreEntry } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
+import {
+  CatalogCoreCard,
+  humanBytes,
+  type AvailableCore,
+  type DownloadProgress,
+} from "./CatalogCoreCard";
 
-type AvailableCore = {
-  base: string;
-  fileName: string;
-  displayName: string;
-  blurb: string;
-  systems: string[];
-  installed: boolean;
-  installedVersion?: string;
-  supportedOnHost: boolean;
-  buildbotUrl?: string;
+/// Display labels for system slugs that don't have OA registry entries
+/// yet. The frontend uses these to render section headers under
+/// "Not yet wired in OA" so the user sees a real system name instead of
+/// a raw slug. Add to this map any new slug you mention in the Rust
+/// catalog's `systems` field that isn't in `systemThemes` yet.
+const QUEUED_SYSTEM_LABELS: Record<string, string> = {
+  atari2600: "Atari 2600",
+  atari5200: "Atari 5200",
+  atari7800: "Atari 7800",
+  jaguar: "Atari Jaguar",
+  sms: "Sega Master System",
+  gamegear: "Sega Game Gear",
+  genesis: "Sega Genesis / Mega Drive",
+  segacd: "Sega CD",
+  sega32x: "Sega 32X",
+  saturn: "Sega Saturn",
+  dreamcast: "Sega Dreamcast",
+  gameboy: "Game Boy / Color",
+  gba: "Game Boy Advance",
+  n64: "Nintendo 64",
+  nds: "Nintendo DS",
+  "3ds": "Nintendo 3DS",
+  gamecube: "Nintendo GameCube",
+  wii: "Nintendo Wii",
+  virtualboy: "Virtual Boy",
+  pokemini: "Pokémon Mini",
+  wonderswan: "WonderSwan / Color",
+  ngp: "Neo Geo Pocket / Color",
+  neogeocd: "Neo Geo CD",
+  pcfx: "PC-FX",
+  psx: "Sony PlayStation",
+  ps2: "Sony PlayStation 2",
+  psp: "Sony PSP",
+  msx: "MSX",
+  msx2: "MSX2",
+  coleco: "ColecoVision",
+  vectrex: "Vectrex",
+  odyssey2: "Magnavox Odyssey²",
+  intellivision: "Mattel Intellivision",
+  channelf: "Fairchild Channel F",
+  fbneo: "Arcade — FinalBurn Neo",
+  dos: "MS-DOS",
+  scummvm: "ScummVM",
 };
 
-type DownloadProgress = {
-  fileName: string;
-  downloadedBytes: number;
-  totalBytes: number | null;
-  phase: "downloading" | "extracting" | "done" | "error";
-  message?: string;
+type CatalogGroup = {
+  /// Stable key for accordion expanded-state.
+  id: string;
+  /// Section header label.
+  label: string;
+  /// True when the system has an OA registry entry (themed in-app).
+  wired: boolean;
+  /// `data-system` for the section header — drives accent color.
+  accentSystem?: string;
+  entries: AvailableCore[];
 };
 
 type Props = {
   /// Back button target — same shape as SettingsPage / PerSystemSettingsPage.
   onBack: () => void;
 };
-
-function humanBytes(b: number): string {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
 
 function humanModified(unixMs: number): string {
   if (unixMs <= 0) return "—";
@@ -113,10 +150,128 @@ const CoresPage: Component<Props> = (props) => {
     onCleanup(() => unlisten?.());
   });
 
-  function progressPercent(p: DownloadProgress | undefined): number | null {
-    if (!p || !p.totalBytes || p.totalBytes <= 0) return null;
-    return Math.min(100, Math.round((p.downloadedBytes / p.totalBytes) * 100));
+  // Accordion expanded-state. Wired-in-OA sections + Multi-system start
+  // expanded; "Not yet wired" subsections also start expanded per design
+  // intent (give the user a punch list). User can collapse anything.
+  const [expandedGroups, setExpandedGroups] = createSignal<Set<string>>(new Set());
+  function toggleGroup(id: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
+
+  /// Group the flat catalog into the three section classes used in the
+  /// UI: per-wired-system, multi-system, per-queued-system. Single-system
+  /// cores land under their system; cores listing 2+ systems land under
+  /// Multi-system; cores whose system slugs don't match the registry land
+  /// under their queued-system section (e.g. "Sega Saturn" once we add a
+  /// Saturn slug to `systemThemes` the section migrates up automatically).
+  const catalogGroups = createMemo((): CatalogGroup[] => {
+    const all = catalog() ?? [];
+    if (all.length === 0) return [];
+
+    const wiredSlugs = new Set(Object.keys(systemThemes));
+
+    // Bucket: wired-system groups (keyed by slug, ordered by registry).
+    // Multi-system bucket (one section).
+    // Queued-system groups (keyed by slug, ordered by first appearance in catalog).
+    const wiredBuckets = new Map<string, AvailableCore[]>();
+    const multi: AvailableCore[] = [];
+    const queuedBuckets = new Map<string, AvailableCore[]>();
+
+    for (const entry of all) {
+      const wiredHits = entry.systems.filter((s) => wiredSlugs.has(s));
+      const queuedHits = entry.systems.filter((s) => !wiredSlugs.has(s));
+
+      // Multi-system if it covers more than one slug, period. This is
+      // independent of "wired" — Genesis Plus GX is multi-system even
+      // though some of its slugs (sms / gamegear / genesis) are queued.
+      if (entry.systems.length > 1) {
+        multi.push(entry);
+        continue;
+      }
+
+      if (wiredHits.length === 1) {
+        const slug = wiredHits[0];
+        if (!wiredBuckets.has(slug)) wiredBuckets.set(slug, []);
+        wiredBuckets.get(slug)!.push(entry);
+        continue;
+      }
+
+      if (queuedHits.length === 1) {
+        const slug = queuedHits[0];
+        if (!queuedBuckets.has(slug)) queuedBuckets.set(slug, []);
+        queuedBuckets.get(slug)!.push(entry);
+        continue;
+      }
+
+      // Shouldn't happen — catalog policy says `systems` is never empty.
+      // Drop into a "misc" queued bucket so the entry still renders.
+      if (!queuedBuckets.has("misc")) queuedBuckets.set("misc", []);
+      queuedBuckets.get("misc")!.push(entry);
+    }
+
+    const groups: CatalogGroup[] = [];
+
+    // Wired sections in sidebar order — same iteration as Object.keys
+    // over the registry preserves declaration order (tg16, pce-cd, lynx,
+    // nes, snes today).
+    for (const slug of Object.keys(systemThemes)) {
+      const entries = wiredBuckets.get(slug);
+      if (!entries || entries.length === 0) continue;
+      const theme = systemThemes[slug as SystemId];
+      groups.push({
+        id: `sys-${slug}`,
+        label: theme?.displayName ?? slug,
+        wired: true,
+        accentSystem: slug,
+        entries,
+      });
+    }
+
+    // Multi-system section.
+    if (multi.length > 0) {
+      groups.push({
+        id: "multi-system",
+        label: "Multi-system",
+        wired: true,
+        entries: multi,
+      });
+    }
+
+    // Queued sections — sort alphabetically by display label so the
+    // punch list is scannable.
+    const queuedKeys = Array.from(queuedBuckets.keys()).sort((a, b) => {
+      const la = QUEUED_SYSTEM_LABELS[a] ?? a;
+      const lb = QUEUED_SYSTEM_LABELS[b] ?? b;
+      return la.localeCompare(lb);
+    });
+    for (const slug of queuedKeys) {
+      groups.push({
+        id: `queued-${slug}`,
+        label: QUEUED_SYSTEM_LABELS[slug] ?? slug,
+        wired: false,
+        entries: queuedBuckets.get(slug)!,
+      });
+    }
+
+    return groups;
+  });
+
+  // Expand every group by default the first time the catalog hydrates.
+  // Subsequent group additions (e.g. after wiring a new system) also
+  // start expanded if the user hasn't touched the accordion since launch.
+  createMemo(() => {
+    const groups = catalogGroups();
+    if (groups.length === 0) return;
+    setExpandedGroups((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(groups.map((g) => g.id));
+    });
+  });
 
   async function handleInstall(c: AvailableCore) {
     if (!c.supportedOnHost) {
@@ -427,117 +582,64 @@ const CoresPage: Component<Props> = (props) => {
               drop a .dll/.so/.dylib in <code>&lt;exe_dir&gt;/cores/</code> manually.
             </p>
           </Show>
-          <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <For each={catalog() ?? []}>
-              {(c) => {
-                const p = () => progress()[c.fileName];
-                const phase = () => p()?.phase;
-                const pct = () => progressPercent(p());
-                const busyKey = `install-${c.base}`;
-                const installable = c.supportedOnHost;
-                return (
-                  <article class="rounded-lg border border-white/10 bg-black/20 p-3">
-                    <header class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <h4 class="truncate text-sm font-semibold text-(--color-oa-ink)">
-                          {c.displayName}
-                          <Show when={c.installed}>
-                            <span class="ml-2 rounded bg-(--color-system-accent)/20 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink)">
-                              installed
-                              <Show when={c.installedVersion}>
-                                <span> · v{c.installedVersion}</span>
-                              </Show>
-                            </span>
-                          </Show>
-                        </h4>
-                        <p class="mt-0.5 text-[0.7rem] text-(--color-oa-ink-dim)">
-                          {c.blurb}
-                        </p>
-                        <p class="mt-0.5 truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                          <code class="lowercase">{c.fileName}</code>
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleInstall(c)}
-                        disabled={!installable || busy() === busyKey}
-                        class="shrink-0 rounded-md border px-2.5 py-1 text-[0.6rem] uppercase tracking-wider transition disabled:opacity-50"
+          <For each={catalogGroups()}>
+            {(group) => {
+              const isExpanded = () => expandedGroups().has(group.id);
+              return (
+                <section
+                  class="rounded-md border border-white/10 bg-black/15"
+                  data-system={group.accentSystem}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.id)}
+                    class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-white/[0.03]"
+                  >
+                    <div class="flex items-baseline gap-3">
+                      <span
+                        class="text-[0.6rem] uppercase tracking-widest"
                         classList={{
-                          "border-(--color-system-accent)/30 bg-(--color-system-accent)/15 text-(--color-oa-ink) hover:bg-(--color-system-accent)/25":
-                            installable && !c.installed,
-                          "border-white/10 bg-white/[0.03] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
-                            installable && c.installed,
-                          "border-white/5 bg-black/30 text-(--color-oa-ink-dim) cursor-not-allowed":
-                            !installable,
+                          "text-(--color-system-accent)": isExpanded(),
+                          "text-(--color-oa-ink-dim)": !isExpanded(),
                         }}
-                        title={
-                          !installable
-                            ? "No buildbot build for this OS/architecture"
-                            : c.installed
-                              ? "Re-download and replace"
-                              : "Download to <exe_dir>/cores/"
-                        }
                       >
-                        {busy() === busyKey
-                          ? phase() === "extracting" ? "Extracting…" : "Downloading…"
-                          : c.installed ? "Update" : "Install"}
-                      </button>
-                    </header>
-                    <Show when={c.systems.length > 0}>
-                      <div class="mt-2 flex flex-wrap gap-1">
-                        <For each={c.systems}>
-                          {(s) => {
-                            const t = systemThemes[s as SystemId];
-                            return (
-                              <span
-                                class="rounded bg-white/[0.06] px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)"
-                                data-system={s}
-                              >
-                                {t?.shortName ?? s}
-                              </span>
-                            );
-                          }}
-                        </For>
-                      </div>
-                    </Show>
-                    <Show when={busy() === busyKey || phase() === "extracting" || phase() === "downloading"}>
-                      <div class="mt-2">
-                        <div class="h-1 overflow-hidden rounded bg-white/[0.06]">
-                          <div
-                            class="h-full bg-(--color-system-accent) transition-all"
-                            style={{
-                              width:
-                                pct() !== null
-                                  ? `${pct()}%`
-                                  : phase() === "extracting"
-                                    ? "100%"
-                                    : "30%",
-                            }}
+                        {isExpanded() ? "▼" : "▶"}
+                      </span>
+                      <h4 class="text-sm font-semibold text-(--color-oa-ink)">{group.label}</h4>
+                      <Show when={!group.wired}>
+                        <span class="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-amber-300">
+                          not yet wired
+                        </span>
+                      </Show>
+                    </div>
+                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                      {group.entries.filter((c) => c.installed).length} installed ·
+                      {" "}{group.entries.length} {group.entries.length === 1 ? "core" : "cores"}
+                    </span>
+                  </button>
+                  <Show when={isExpanded()}>
+                    <div class="grid grid-cols-1 gap-3 border-t border-white/5 p-3 lg:grid-cols-2">
+                      <For each={group.entries}>
+                        {(c) => (
+                          <CatalogCoreCard
+                            core={c}
+                            progress={progress()[c.fileName]}
+                            busyKey={busy()}
+                            onInstall={() => void handleInstall(c)}
                           />
-                        </div>
-                        <p class="mt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                          {phase() === "extracting"
-                            ? "Extracting zip"
-                            : pct() !== null
-                              ? `${pct()}% · ${humanBytes(p()?.downloadedBytes ?? 0)} of ${humanBytes(p()?.totalBytes ?? 0)}`
-                              : `${humanBytes(p()?.downloadedBytes ?? 0)} downloaded`}
-                        </p>
-                      </div>
-                    </Show>
-                    <Show when={phase() === "error"}>
-                      <p class="mt-2 rounded bg-red-950/30 px-2 py-1 text-[0.65rem] text-red-300">
-                        {p()?.message ?? "Install failed."}
-                      </p>
-                    </Show>
-                  </article>
-                );
-              }}
-            </For>
-          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </section>
+              );
+            }}
+          </For>
         </div>
       </section>
     </div>
   );
 };
+
 
 export default CoresPage;

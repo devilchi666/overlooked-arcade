@@ -21,6 +21,7 @@ mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
+mod logger;
 mod media;
 mod metadata;
 mod normalize;
@@ -321,6 +322,37 @@ struct SharedTasState {
     display_name: String,
 }
 
+/// Live emu-thread perf stats. Surfaces FPS / frame count / audio
+/// counters to the frontend so the Tools → Performance HUD can display
+/// real telemetry instead of just UI render-loop FPS. Updated by the emu
+/// thread every ~30 frames (cheap; doesn't churn the Mutex on every
+/// frame). Reset to defaults when the core unloads so a fresh launch
+/// starts with a zeroed counter.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedPerfStats {
+    /// True while a core is loaded + running. When false, the other
+    /// fields are stale (preserved from the last session for one
+    /// frontend poll, then cleared by the unload handler).
+    core_loaded: bool,
+    /// Rolling-average actual frame rate the emu thread is hitting.
+    /// Calculated from `frame_count / elapsed_since_core_load`. Will
+    /// match `core_fps_nominal` when the host can keep up.
+    fps: f64,
+    /// Total emu frames since the current core was loaded.
+    frame_count: u64,
+    /// Audio samples pushed to the host's audio sink since core load.
+    audio_pushed: u64,
+    /// Audio samples dropped (ring-buffer full) since core load. Should
+    /// stay near 0 in healthy operation; a non-zero counter means the
+    /// emu thread is producing samples faster than the host can consume
+    /// them (host fell behind, or buffer cap too small).
+    audio_dropped: u64,
+    /// Core's nominal frame rate (`retro_system_av_info.timing.fps`).
+    /// PCE 59.83, SNES 60.10, Lynx 75, etc. 0.0 when no core is loaded.
+    core_fps_nominal: f64,
+}
+
 /// Live rewind-ring stats published by the emu thread for Tauri commands
 /// to read. Cheap to copy + small enough that locking the Mutex is faster
 /// than any atomic-per-field scheme. The emu thread writes after every
@@ -376,6 +408,7 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "pce-cd" => oa_core::SystemId::PceCdRom2,
         "nes" | "famicom" => oa_core::SystemId::Nes,
         "snes" | "super-famicom" => oa_core::SystemId::Snes,
+        "mame" | "arcade" => oa_core::SystemId::Mame,
         _ => oa_core::SystemId::PcEngine,
     }
 }
@@ -394,6 +427,10 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         "nes" => "fceumm_libretro.dll",
         // Snes9x — the standard libretro SNES core. bsnes for accuracy.
         "snes" => "snes9x_libretro.dll",
+        // MAME (latest) — the standard libretro MAME build. Operators
+        // who want lighter perf-vs-compat tradeoffs (mame2003_plus_libretro,
+        // mame2010_libretro, etc.) swap via the per-system Cores dialog.
+        "mame" => "mame_libretro.dll",
         // Default — covers tg16, pce-cd, and any unknown system that ships
         // before the table is updated. The PCE Fast Mednafen build handles
         // both HuCard + CD if its BIOS is present in `<exe_dir>/system/`.
@@ -821,6 +858,14 @@ struct AppState {
     /// Phase 4 slice E — per-frame memory snapshot for the inspector
     /// UI. Writer = emu thread; readers = Tauri commands.
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
+    /// Emu-thread perf stats — fps, frame count, audio counters. Writer
+    /// = emu thread (updated every ~30 frames in the run loop); readers
+    /// = `get_perf_stats` Tauri command driving the Performance HUD.
+    perf_stats: Arc<Mutex<SharedPerfStats>>,
+    /// Debug-console logger handle — ring buffer + current session
+    /// file path. Used by `get_recent_logs` / `get_log_file_path` /
+    /// `reveal_logs_folder` / `log_from_frontend`.
+    logger_handle: logger::LoggerHandle,
     /// Phase 3 slice D — name of the currently-selected shader preset.
     /// Updated by `set_shader_preset`; read by the shader presets watcher
     /// to re-apply the same preset when its TOML changes on disk. None
@@ -855,7 +900,7 @@ fn focus_target_label(mode: ShellMode) -> &'static str {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let logger_handle = logger::init_early();
     log::info!("oa-shell starting");
 
     let rom_path = std::env::var("OA_ROM").ok();
@@ -933,6 +978,11 @@ fn main() {
             set_bloom_amount,
             set_rewind_config,
             get_rewind_state,
+            get_perf_stats,
+            get_recent_logs,
+            get_log_file_path,
+            reveal_logs_folder,
+            log_from_frontend,
             start_rewind_scrub,
             set_rewind_scrub_position,
             end_rewind_scrub,
@@ -950,6 +1000,9 @@ fn main() {
             convert_video_clip_to_webm,
             delete_video_clip,
             open_video_clip_folder,
+            list_screenshots,
+            delete_screenshot,
+            open_screenshot_folder,
             read_memory_region,
             list_milestones,
             add_milestone,
@@ -1050,6 +1103,7 @@ fn main() {
             let game_focused = game_focused.clone();
             let ui_intercepting = ui_intercepting.clone();
             let shell_mode_for_event = shell_mode_for_event.clone();
+            let logger_handle = logger_handle.clone();
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
@@ -1058,6 +1112,15 @@ fn main() {
                     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
                 });
                 log::info!("oa-shell: app_data_dir = {}", app_data_dir.display());
+
+                // Now that app_data_dir is resolved, switch the logger's
+                // file output on. Earlier log lines (cli arg parse,
+                // shell_mode resolution) went to stderr + ring only;
+                // from here on they also hit the file.
+                match logger::configure_file_output(&app_data_dir) {
+                    Ok(path) => log::info!("oa-shell: log file = {}", path.display()),
+                    Err(e) => log::warn!("oa-shell: log file setup failed: {e}"),
+                }
 
                 // Sweep any temp dirs left behind by crashed or force-killed
                 // previous sessions. Archived CD games extract into
@@ -1075,6 +1138,7 @@ fn main() {
                 // (Tauri reader) and the emu thread (writer) hold the same
                 // Arc.
                 let rewind_state = Arc::new(Mutex::new(SharedRewindState::default()));
+                let perf_stats = Arc::new(Mutex::new(SharedPerfStats::default()));
                 // Shared TAS recording/replay state — same ownership model.
                 let tas_state = Arc::new(Mutex::new(SharedTasState::default()));
                 // Shared video-capture state — same.
@@ -1085,8 +1149,8 @@ fn main() {
                 // on LoadRom + after each disc swap; read by Tauri commands.
                 let disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>> = Arc::new(Mutex::new(None));
                 let shell_window = match shell_mode {
-                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), app_handle)?,
-                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), app_handle)?,
+                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
+                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
                 };
 
                 // MediaState: shared in-memory MediaDb + region prefs, hydrated
@@ -1161,6 +1225,8 @@ fn main() {
                     tas_state,
                     video_state,
                     memory_snapshot,
+                    perf_stats: perf_stats.clone(),
+                    logger_handle: logger_handle.clone(),
                     active_shader_preset,
                     shader_presets_watcher,
                     disc_state,
@@ -1224,6 +1290,7 @@ fn setup_two_window(
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
+    perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
 ) -> tauri::Result<ShellWindow> {
     let _library = tauri::WebviewWindowBuilder::new(
@@ -1266,7 +1333,7 @@ fn setup_two_window(
                     let game = game.clone();
                     Box::new(move || game.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1286,6 +1353,7 @@ fn setup_single_window(
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
+    perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
 ) -> tauri::Result<ShellWindow> {
     let window = tauri::WebviewWindowBuilder::new(
@@ -1318,7 +1386,7 @@ fn setup_single_window(
                     let window = window.clone();
                     Box::new(move || window.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, app_handle);
+                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1341,6 +1409,7 @@ fn run_emu_render(
     video_state: Arc<Mutex<SharedVideoState>>,
     memory_snapshot: Arc<Mutex<MemorySnapshot>>,
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
+    perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
 ) {
     use oa_core::Core;
@@ -2091,6 +2160,9 @@ fn run_emu_render(
                         publish_video_state(None, 0, "", &video_state);
                         if let Ok(mut s) = memory_snapshot.lock() {
                             *s = MemorySnapshot::default();
+                        }
+                        if let Ok(mut s) = perf_stats.lock() {
+                            *s = SharedPerfStats::default();
                         }
                         milestone_runtime.clear();
                         milestone_prev_true.clear();
@@ -3233,6 +3305,25 @@ fn run_emu_render(
             }
 
             frame_n += 1;
+            // Update perf_stats every 30 frames (~0.5 s at 60 fps). The
+            // Tauri-side HUD polls at 250 ms so it'll see a fresh value
+            // on every other poll. Cheap: one Mutex acquisition + 7
+            // field writes.
+            if frame_n % 30 == 0 {
+                let elapsed = started.elapsed().as_secs_f64();
+                let actual_fps = if elapsed > 0.0 { frame_n as f64 / elapsed } else { 0.0 };
+                let (pushed, dropped) = audio.as_ref().map(|a| a.stats()).unwrap_or((0, 0));
+                if let Ok(mut s) = perf_stats.lock() {
+                    *s = SharedPerfStats {
+                        core_loaded: core_ref.has_rom(),
+                        fps: actual_fps,
+                        frame_count: frame_n,
+                        audio_pushed: pushed as u64,
+                        audio_dropped: dropped as u64,
+                        core_fps_nominal: timing.fps,
+                    };
+                }
+            }
             if frame_n % 120 == 0 {
                 let fb = core_ref.framebuffer();
                 let elapsed = started.elapsed().as_secs_f32();
@@ -3568,6 +3659,110 @@ fn get_rewind_state(state: tauri::State<'_, AppState>) -> Result<SharedRewindSta
     Ok(*s)
 }
 
+/// Read the latest published emu-thread perf stats. Used by the Tools
+/// → Performance HUD overlay to surface real emulator fps + audio
+/// counters (the HUD's UI-side `requestAnimationFrame` counter measures
+/// WebView render rate, which can run at host display rate even when
+/// the emu is stalled).
+#[tauri::command]
+fn get_perf_stats(state: tauri::State<'_, AppState>) -> Result<SharedPerfStats, String> {
+    let s = state.perf_stats.lock().map_err(|_| "perf_stats poisoned".to_string())?;
+    Ok(*s)
+}
+
+// ---- Debug console -----------------------------------------------------
+
+/// Snapshot the recent-logs ring. `limit` caps the number of returned
+/// entries (oldest dropped); `None` returns the whole ring. Used by the
+/// `Help → Debug log…` dialog polling at 1 Hz.
+#[tauri::command]
+fn get_recent_logs(
+    limit: Option<usize>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<logger::LogEntry>, String> {
+    let ring = state
+        .logger_handle
+        .ring
+        .lock()
+        .map_err(|_| "log ring poisoned".to_string())?;
+    Ok(ring.snapshot(limit))
+}
+
+/// Absolute path of the current session's `oa-current.log`. Used by
+/// the "Copy log path" button so the user can paste it into a chat
+/// with the developer (me). Stable across launches: the same path
+/// every time, contents truncated on each session start.
+#[tauri::command]
+fn get_log_file_path(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    let p = state
+        .logger_handle
+        .file_path
+        .lock()
+        .map_err(|_| "log path poisoned".to_string())?;
+    Ok(p.as_ref().map(|pb| pb.to_string_lossy().into_owned()))
+}
+
+/// Open the logs folder in the OS file manager. Same per-OS dispatch
+/// as `open_video_clip_folder` / `open_screenshot_folder`.
+#[tauri::command]
+fn reveal_logs_folder(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let dir = state.app_data_dir.join("logs");
+    if !dir.is_dir() {
+        return Err("no logs folder yet".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn explorer: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn open: {e}"))?;
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn xdg-open: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Bridge frontend `console.log/warn/error/info` calls into the unified
+/// Rust log stream. Lets the debug-log dialog show a single timeline
+/// of Rust + frontend events. The frontend `logbridge.ts` wraps each
+/// `console.*` method to invoke this; existing call sites in the
+/// codebase don't have to change.
+#[tauri::command]
+fn log_from_frontend(level: String, target: String, message: String) {
+    let lvl = match level.as_str() {
+        "error" => log::Level::Error,
+        "warn" => log::Level::Warn,
+        "debug" => log::Level::Debug,
+        "trace" => log::Level::Trace,
+        _ => log::Level::Info,
+    };
+    // The `target` prefix marks frontend records visually in the file.
+    let scoped_target = if target.is_empty() {
+        "frontend".to_string()
+    } else {
+        format!("frontend::{target}")
+    };
+    log::logger().log(
+        &log::Record::builder()
+            .level(lvl)
+            .target(&scoped_target)
+            .args(format_args!("{}", message))
+            .build(),
+    );
+}
+
 /// Phase 4 slice B — enter scrub mode. Forward play + capture freeze
 /// until `end_rewind_scrub` arrives. Idempotent: a second start is a
 /// no-op. Ignored when rewind isn't enabled or the ring is empty.
@@ -3799,6 +3994,120 @@ fn delete_video_clip(clip_dir: String) -> Result<(), String> {
     }
     std::fs::remove_dir_all(&path).map_err(|e| format!("delete {}: {e}", path.display()))?;
     log::info!("oa-shell: deleted video clip {}", path.display());
+    Ok(())
+}
+
+// ---- Screenshot gallery (Tools → Screenshot gallery) ------------------
+
+/// One screenshot file under `appData/screenshots/<stem>/`. The `path`
+/// round-trips through the frontend back to `delete_screenshot` /
+/// `open_screenshot_folder` so we don't need to recompute it server-side.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotEntry {
+    /// Absolute path to the PNG, OS-native separators.
+    path: String,
+    /// `<timestamp>.png` (or whatever the user renamed it to).
+    file_name: String,
+    /// Bytes on disk; 0 when stat fails.
+    size_bytes: u64,
+    /// Modified time, ms since epoch; falls back to 0 when unavailable.
+    modified_unix_ms: u64,
+}
+
+#[tauri::command]
+fn list_screenshots(rom_path: String, state: tauri::State<'_, AppState>) -> Result<Vec<ScreenshotEntry>, String> {
+    let stem = sanitize_stem(&rom_path);
+    let dir = state.app_data_dir.join("screenshots").join(&stem);
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("read_dir({}): {e}", dir.display()))?;
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("png")) != Some(true) {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let (size_bytes, modified_unix_ms) = match entry.metadata() {
+            Ok(m) => {
+                let size = m.len();
+                let modified = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                (size, modified)
+            }
+            Err(_) => (0, 0),
+        };
+        out.push(ScreenshotEntry {
+            path: path.to_string_lossy().into_owned(),
+            file_name,
+            size_bytes,
+            modified_unix_ms,
+        });
+    }
+    out.sort_by(|a, b| b.modified_unix_ms.cmp(&a.modified_unix_ms));
+    Ok(out)
+}
+
+#[tauri::command]
+fn delete_screenshot(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    // Sanity: only delete .png files inside an `appData/screenshots/`
+    // subtree. Prevents the frontend from removing arbitrary files if it
+    // hands us a bad path.
+    if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("png")) != Some(true) {
+        return Err("not a .png file".into());
+    }
+    if !p.components().any(|c| c.as_os_str() == "screenshots") {
+        return Err("not under screenshots/".into());
+    }
+    std::fs::remove_file(&p).map_err(|e| format!("delete {}: {e}", p.display()))?;
+    log::info!("oa-shell: deleted screenshot {}", p.display());
+    Ok(())
+}
+
+#[tauri::command]
+fn open_screenshot_folder(rom_path: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let stem = sanitize_stem(&rom_path);
+    let dir = state.app_data_dir.join("screenshots").join(&stem);
+    if !dir.is_dir() {
+        return Err("no screenshots folder for this ROM".into());
+    }
+    // Reuse the same `open` path that `open_video_clip_folder` uses —
+    // see that function for the per-OS rationale.
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn explorer: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn open: {e}"))?;
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("spawn xdg-open: {e}"))?;
+    }
     Ok(())
 }
 

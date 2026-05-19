@@ -74,6 +74,22 @@ See `docs/PARKING_LOT.md`. If something comes up that isn't current-phase work f
 - Frontend is NOT a Cargo crate. Lives at `frontend/` with `package.json`, built by Vite.
 - Shaders in `crates/oa-render/shaders/*.wgsl` (engine-level) and `shaders/presets/*.preset.toml` (shipped presets).
 
+## Debugging — where the logs live
+
+A unified Rust + frontend log stream lands in three places at runtime (see `docs/DECISIONS.md` 2026-05-18 "Three-output logger" entry for the full design):
+
+- **stderr** — visible when running via `cargo tauri dev`.
+- **`appData/logs/oa-current.log`** — stable path, truncated each launch. Read this file when investigating bugs. On Windows: `C:\Users\<user>\AppData\Roaming\com.oa.overlooked-arcade\logs\oa-current.log`.
+- **`appData/logs/oa-<YYYYMMDD-HHmmss>.log`** — per-session archive, last 5 retained.
+- **In-app**: `Help → Debug log…` opens a live filterable view of the in-memory ring (last 2000 entries).
+
+When the human reports a bug:
+1. Ask them to open `Help → Debug log…` and click **Copy path** — they can paste it back so I can `Read` the file directly.
+2. The format is `ISO-8601 LEVEL [target] message`. `target` is the Rust module path (`oa_shell::media`) for Rust logs, or `frontend::<bracket-prefix>` (e.g. `frontend::oa-launch`) for frontend logs.
+3. Frontend logs come from existing `console.log("[oa-launch] …")` call sites — the bracket prefix is parsed into the target by `frontend/src/lib/logbridge.ts`. New code can just keep using `console.*` and it lands in the same stream.
+
+When the bug is "X stopped working in the new session" but the old session showed something useful, ask for one of the timestamped archives (same folder).
+
 ## Reference
 
 The approved setup plan: `C:\Users\Devilchi\.claude\plans\jazzy-spinning-blum.md`. Read it for the full Cargo layout, directory tree, Tauri+wgpu integration approach, license discussion, build/dev workflow, phase plan, and risk list.
