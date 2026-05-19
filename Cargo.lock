@@ -2928,6 +2928,7 @@ name = "oa-libretro"
 version = "0.0.1"
 dependencies = [
  "cc",
+ "device_query",
  "libloading 0.8.9",
  "log",
  "oa-core",

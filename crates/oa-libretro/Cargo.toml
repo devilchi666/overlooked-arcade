@@ -6,10 +6,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
-oa-core    = { workspace = true }
-libloading = { workspace = true }
-log        = { workspace = true }
-thiserror  = { workspace = true }
+oa-core      = { workspace = true }
+device_query = { workspace = true }
+libloading   = { workspace = true }
+log          = { workspace = true }
+thiserror    = { workspace = true }
 
 [build-dependencies]
 cc         = { workspace = true }

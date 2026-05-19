@@ -52,9 +52,11 @@
 
 mod core;
 pub mod ffi;
+mod keycode;
 mod loader;
 mod pixel;
 mod state;
 
 pub use crate::core::{probe, CoreInfo, LibretroCore, LibretroError, RomSource};
 pub use crate::ffi::PixelFormat;
+pub use crate::keycode::{keycode_to_retro_key, modifiers_from_held};

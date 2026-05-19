@@ -5,7 +5,7 @@
 //! is straightforward. Layouts use `#[repr(C)]` and the field order matches the
 //! C structs byte-for-byte.
 
-#![allow(non_camel_case_types, non_snake_case, dead_code)]
+#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
 
 use std::ffi::c_void;
 use std::os::raw::c_char;
@@ -37,6 +37,7 @@ impl PixelFormat {
 // ---------- device IDs ----------
 
 pub const RETRO_DEVICE_JOYPAD: u32 = 1;
+pub const RETRO_DEVICE_KEYBOARD: u32 = 3;
 
 pub const RETRO_DEVICE_ID_JOYPAD_B: u32       = 0;
 pub const RETRO_DEVICE_ID_JOYPAD_Y: u32       = 1;
@@ -386,3 +387,189 @@ pub type retro_set_audio_sample_t       = unsafe extern "C" fn(cb: retro_audio_s
 pub type retro_set_audio_sample_batch_t = unsafe extern "C" fn(cb: retro_audio_sample_batch_t);
 pub type retro_set_input_poll_t         = unsafe extern "C" fn(cb: retro_input_poll_t);
 pub type retro_set_input_state_t        = unsafe extern "C" fn(cb: retro_input_state_t);
+
+// ---------- keyboard ----------
+//
+// libretro keyboard support is the "computer-shaped systems" path — MAME's
+// service / TAB menu, MSX BASIC, every future home-computer core. The core
+// registers a `retro_keyboard_event_t` via `RETRO_ENVIRONMENT_SET_KEYBOARD_
+// CALLBACK`; the frontend then calls that function pointer whenever a key
+// transitions, passing the libretro `retro_key` code (NOT the OS scancode),
+// a unicode character (or 0 if not a printable transition), and a bitmask
+// of currently-held modifiers.
+//
+// Constants below mirror `libretro.h` enum `retro_key` byte-for-byte; the
+// values are stable and many MAME/Mednafen cores reference them by number.
+
+pub type retro_keyboard_event_t = unsafe extern "C" fn(
+    down: bool,
+    keycode: u32,
+    character: u32,
+    key_modifiers: u16,
+);
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_keyboard_callback {
+    pub callback: Option<retro_keyboard_event_t>,
+}
+
+// retro_mod — bitmask of currently-held modifiers passed alongside each
+// keyboard event. Mirrors `libretro.h` enum `retro_mod`.
+pub const RETROKMOD_NONE:       u16 = 0x0000;
+pub const RETROKMOD_SHIFT:      u16 = 0x0001;
+pub const RETROKMOD_CTRL:       u16 = 0x0002;
+pub const RETROKMOD_ALT:        u16 = 0x0004;
+pub const RETROKMOD_META:       u16 = 0x0008;
+pub const RETROKMOD_NUMLOCK:    u16 = 0x0010;
+pub const RETROKMOD_CAPSLOCK:   u16 = 0x0020;
+pub const RETROKMOD_SCROLLLOCK: u16 = 0x0040;
+
+// retro_key — libretro's own keycode space. Roughly SDL1-shaped with a
+// handful of additions; not the same as Windows VK or X11 keysyms.
+// Values are stable across every core that uses keyboard input.
+pub const RETROK_UNKNOWN:    u32 = 0;
+pub const RETROK_BACKSPACE:  u32 = 8;
+pub const RETROK_TAB:        u32 = 9;
+pub const RETROK_CLEAR:      u32 = 12;
+pub const RETROK_RETURN:     u32 = 13;
+pub const RETROK_PAUSE:      u32 = 19;
+pub const RETROK_ESCAPE:     u32 = 27;
+pub const RETROK_SPACE:      u32 = 32;
+pub const RETROK_EXCLAIM:    u32 = 33;
+pub const RETROK_QUOTEDBL:   u32 = 34;
+pub const RETROK_HASH:       u32 = 35;
+pub const RETROK_DOLLAR:     u32 = 36;
+pub const RETROK_AMPERSAND:  u32 = 38;
+pub const RETROK_QUOTE:      u32 = 39;
+pub const RETROK_LEFTPAREN:  u32 = 40;
+pub const RETROK_RIGHTPAREN: u32 = 41;
+pub const RETROK_ASTERISK:   u32 = 42;
+pub const RETROK_PLUS:       u32 = 43;
+pub const RETROK_COMMA:      u32 = 44;
+pub const RETROK_MINUS:      u32 = 45;
+pub const RETROK_PERIOD:     u32 = 46;
+pub const RETROK_SLASH:      u32 = 47;
+pub const RETROK_0: u32 = 48;
+pub const RETROK_1: u32 = 49;
+pub const RETROK_2: u32 = 50;
+pub const RETROK_3: u32 = 51;
+pub const RETROK_4: u32 = 52;
+pub const RETROK_5: u32 = 53;
+pub const RETROK_6: u32 = 54;
+pub const RETROK_7: u32 = 55;
+pub const RETROK_8: u32 = 56;
+pub const RETROK_9: u32 = 57;
+pub const RETROK_COLON:        u32 = 58;
+pub const RETROK_SEMICOLON:    u32 = 59;
+pub const RETROK_LESS:         u32 = 60;
+pub const RETROK_EQUALS:       u32 = 61;
+pub const RETROK_GREATER:      u32 = 62;
+pub const RETROK_QUESTION:     u32 = 63;
+pub const RETROK_AT:           u32 = 64;
+pub const RETROK_LEFTBRACKET:  u32 = 91;
+pub const RETROK_BACKSLASH:    u32 = 92;
+pub const RETROK_RIGHTBRACKET: u32 = 93;
+pub const RETROK_CARET:        u32 = 94;
+pub const RETROK_UNDERSCORE:   u32 = 95;
+pub const RETROK_BACKQUOTE:    u32 = 96;
+pub const RETROK_a: u32 = 97;
+pub const RETROK_b: u32 = 98;
+pub const RETROK_c: u32 = 99;
+pub const RETROK_d: u32 = 100;
+pub const RETROK_e: u32 = 101;
+pub const RETROK_f: u32 = 102;
+pub const RETROK_g: u32 = 103;
+pub const RETROK_h: u32 = 104;
+pub const RETROK_i: u32 = 105;
+pub const RETROK_j: u32 = 106;
+pub const RETROK_k: u32 = 107;
+pub const RETROK_l: u32 = 108;
+pub const RETROK_m: u32 = 109;
+pub const RETROK_n: u32 = 110;
+pub const RETROK_o: u32 = 111;
+pub const RETROK_p: u32 = 112;
+pub const RETROK_q: u32 = 113;
+pub const RETROK_r: u32 = 114;
+pub const RETROK_s: u32 = 115;
+pub const RETROK_t: u32 = 116;
+pub const RETROK_u: u32 = 117;
+pub const RETROK_v: u32 = 118;
+pub const RETROK_w: u32 = 119;
+pub const RETROK_x: u32 = 120;
+pub const RETROK_y: u32 = 121;
+pub const RETROK_z: u32 = 122;
+pub const RETROK_LEFTBRACE:  u32 = 123;
+pub const RETROK_BAR:        u32 = 124;
+pub const RETROK_RIGHTBRACE: u32 = 125;
+pub const RETROK_TILDE:      u32 = 126;
+pub const RETROK_DELETE:     u32 = 127;
+
+pub const RETROK_KP0: u32 = 256;
+pub const RETROK_KP1: u32 = 257;
+pub const RETROK_KP2: u32 = 258;
+pub const RETROK_KP3: u32 = 259;
+pub const RETROK_KP4: u32 = 260;
+pub const RETROK_KP5: u32 = 261;
+pub const RETROK_KP6: u32 = 262;
+pub const RETROK_KP7: u32 = 263;
+pub const RETROK_KP8: u32 = 264;
+pub const RETROK_KP9: u32 = 265;
+pub const RETROK_KP_PERIOD:   u32 = 266;
+pub const RETROK_KP_DIVIDE:   u32 = 267;
+pub const RETROK_KP_MULTIPLY: u32 = 268;
+pub const RETROK_KP_MINUS:    u32 = 269;
+pub const RETROK_KP_PLUS:     u32 = 270;
+pub const RETROK_KP_ENTER:    u32 = 271;
+pub const RETROK_KP_EQUALS:   u32 = 272;
+
+pub const RETROK_UP:       u32 = 273;
+pub const RETROK_DOWN:     u32 = 274;
+pub const RETROK_RIGHT:    u32 = 275;
+pub const RETROK_LEFT:     u32 = 276;
+pub const RETROK_INSERT:   u32 = 277;
+pub const RETROK_HOME:     u32 = 278;
+pub const RETROK_END:      u32 = 279;
+pub const RETROK_PAGEUP:   u32 = 280;
+pub const RETROK_PAGEDOWN: u32 = 281;
+
+pub const RETROK_F1:  u32 = 282;
+pub const RETROK_F2:  u32 = 283;
+pub const RETROK_F3:  u32 = 284;
+pub const RETROK_F4:  u32 = 285;
+pub const RETROK_F5:  u32 = 286;
+pub const RETROK_F6:  u32 = 287;
+pub const RETROK_F7:  u32 = 288;
+pub const RETROK_F8:  u32 = 289;
+pub const RETROK_F9:  u32 = 290;
+pub const RETROK_F10: u32 = 291;
+pub const RETROK_F11: u32 = 292;
+pub const RETROK_F12: u32 = 293;
+pub const RETROK_F13: u32 = 294;
+pub const RETROK_F14: u32 = 295;
+pub const RETROK_F15: u32 = 296;
+
+pub const RETROK_NUMLOCK:    u32 = 300;
+pub const RETROK_CAPSLOCK:   u32 = 301;
+pub const RETROK_SCROLLOCK:  u32 = 302;
+pub const RETROK_RSHIFT:     u32 = 303;
+pub const RETROK_LSHIFT:     u32 = 304;
+pub const RETROK_RCTRL:      u32 = 305;
+pub const RETROK_LCTRL:      u32 = 306;
+pub const RETROK_RALT:       u32 = 307;
+pub const RETROK_LALT:       u32 = 308;
+pub const RETROK_RMETA:      u32 = 309;
+pub const RETROK_LMETA:      u32 = 310;
+pub const RETROK_LSUPER:     u32 = 311;
+pub const RETROK_RSUPER:     u32 = 312;
+pub const RETROK_MODE:       u32 = 313;
+pub const RETROK_COMPOSE:    u32 = 314;
+pub const RETROK_HELP:       u32 = 315;
+pub const RETROK_PRINT:      u32 = 316;
+pub const RETROK_SYSREQ:     u32 = 317;
+pub const RETROK_BREAK:      u32 = 318;
+pub const RETROK_MENU:       u32 = 319;
+pub const RETROK_POWER:      u32 = 320;
+pub const RETROK_EURO:       u32 = 321;
+pub const RETROK_UNDO:       u32 = 322;
+pub const RETROK_OEM_102:    u32 = 323;

@@ -106,6 +106,15 @@ pub(crate) struct State {
     /// over `disk_v1` (it carries label + path getters too). Cores typically
     /// register one or the other — modern Beetle cores use v2.
     pub disk_v2: Option<retro_disk_control_ext_callback>,
+    /// Keyboard-event callback registered by the core via
+    /// `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. Cores that want raw key
+    /// events (MAME for its operator-test / TAB menu, MSX for BASIC, every
+    /// future computer-shaped core) register this; the frontend then calls
+    /// it on every key transition for ports wired up as RETRO_DEVICE_KEYBOARD.
+    /// `None` until the core registers — cores that never call the
+    /// SET_KEYBOARD_CALLBACK env leave this unset and the frontend's
+    /// `send_keyboard_event` becomes a no-op.
+    pub keyboard_cb: Option<retro_keyboard_event_t>,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -142,6 +151,7 @@ impl State {
             variables_updated: true,
             disk_v1: None,
             disk_v2: None,
+            keyboard_cb: None,
         }
     }
 
@@ -776,14 +786,28 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         }
 
         // Decline these — we don't have rumble / sensors / camera / location
-        // / keyboard / HW render interfaces, and lying about them risks the
-        // core calling a null function pointer.
+        // / HW render interfaces, and lying about them risks the core calling
+        // a null function pointer.
         RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE
         | RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE
         | RETRO_ENVIRONMENT_GET_CAMERA_INTERFACE
         | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE
-        | RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK
         | RETRO_ENVIRONMENT_SET_HW_RENDER => false,
+
+        // Keyboard callback registration. Cores that want raw key events
+        // (MAME for operator-test / TAB menu, MSX for BASIC, every future
+        // computer-shaped core) call this with a `retro_keyboard_callback`
+        // pointing at the function we should invoke on every key transition.
+        // The shell side decides per-system whether to actually pump events
+        // (`SystemSettings::keyboard_passthrough` flag) and whether to wire
+        // the port as `RETRO_DEVICE_KEYBOARD`. Storing the pointer is cheap
+        // and harmless even for systems that never enable passthrough.
+        RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK => {
+            if data.is_null() { return false; }
+            let cb = unsafe { &*(data as *const retro_keyboard_callback) };
+            with_state(|s| s.keyboard_cb = cb.callback);
+            true
+        }
         // GET_VARIABLE_UPDATE — handled above in the core-options block
         // alongside GET_VARIABLE / SET_VARIABLES so the state mutation
         // lives next to the rest of the option machinery.

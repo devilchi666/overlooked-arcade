@@ -316,6 +316,61 @@ impl LibretroCore {
         self.rom_loaded
     }
 
+    /// Re-wire a controller port to the given libretro device type. Used to
+    /// switch a port between `RETRO_DEVICE_JOYPAD` (default arcade / console
+    /// behavior) and `RETRO_DEVICE_KEYBOARD` (for MAME's operator inputs,
+    /// MSX, future computer-shaped systems). Must run AFTER `retro_load_game`
+    /// — Mednafen-derived cores clobber `data_ptr[]` during load, so a
+    /// pre-load wiring silently disconnects. See
+    /// `reference_libretro_controller_after_load_game`.
+    pub fn set_port_device(&mut self, port: u32, device: u32) {
+        if !self.rom_loaded {
+            log::warn!(
+                "oa-libretro: set_port_device({port}, {device}) called before load_rom — ignored"
+            );
+            return;
+        }
+        unsafe { (self.lib.fns.set_controller_port_device)(port, device) };
+    }
+
+    /// Forward a keyboard transition to the core via the callback the core
+    /// registered through `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. No-op
+    /// when the core never registered (the typical console / handheld case).
+    ///
+    /// - `down`: `true` on key press, `false` on key release.
+    /// - `keycode`: libretro `retro_key` value (NOT an OS scancode). See the
+    ///   `RETROK_*` constants in [`crate::ffi`]; translate from
+    ///   `device_query::Keycode` via [`crate::keycode_to_retro_key`].
+    /// - `character`: unicode codepoint for printable transitions, `0`
+    ///   otherwise. Most cores ignore this and key off `keycode` alone.
+    /// - `modifiers`: bitmask of currently-held modifiers (combine the
+    ///   `RETROKMOD_*` constants).
+    pub fn send_keyboard_event(
+        &mut self,
+        down: bool,
+        keycode: u32,
+        character: u32,
+        modifiers: u16,
+    ) {
+        // Copy the function pointer out under the mutex, then release the
+        // lock before calling the core. The core may call back into our env
+        // handler from inside the keyboard callback (e.g. to log via
+        // GET_LOG_INTERFACE); holding the State mutex across the call would
+        // deadlock that path.
+        let cb = state::with_state(|s| s.keyboard_cb).flatten();
+        if let Some(f) = cb {
+            unsafe { f(down, keycode, character, modifiers) };
+        }
+    }
+
+    /// True if the active core has registered a keyboard-event callback.
+    /// Used by the shell to short-circuit the keyboard-event pump when the
+    /// core has declined keyboard input — pumping events to a core that
+    /// hasn't registered wastes work and the callback would be no-op anyway.
+    pub fn has_keyboard_callback(&self) -> bool {
+        state::with_state(|s| s.keyboard_cb.is_some()).unwrap_or(false)
+    }
+
     /// Release the currently-loaded ROM via `retro_unload_game` but keep the
     /// core initialised so a subsequent `load_rom` can re-use the singleton.
     /// No-op if no ROM is loaded.
