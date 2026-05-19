@@ -62,6 +62,36 @@ pub struct SystemSettings {
     /// seconds of history per MB; the UI surfaces seconds_held live.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rewind_buffer_megabytes: Option<u32>,
+    /// Phase 6 Cross-system slice 2 — forward raw keyboard transitions
+    /// to the core via `retro_set_keyboard_callback`. None = use the
+    /// system's compiled-in default ([`default_keyboard_passthrough`]),
+    /// which is `true` for computer-shaped systems (MAME, MSX/MSX2)
+    /// where keyboard input is meaningful and `false` for everything
+    /// else where pumping keys would cost work for no benefit.
+    /// Use [`effective_keyboard_passthrough`] to resolve the override
+    /// against the default in one call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyboard_passthrough: Option<bool>,
+}
+
+/// Compiled-in default for [`SystemSettings::keyboard_passthrough`] per
+/// system. `true` for systems with meaningful keyboard input (MAME for
+/// operator / TAB menu / per-driver keys; MSX + MSX2 for BASIC and
+/// keyboard-driven games). `false` everywhere else — sending keyboard
+/// events to a console core that never registered a keyboard callback
+/// is harmless but wasted work, and could surprise debugging if a core
+/// later adds an unsolicited keyboard listener.
+pub fn default_keyboard_passthrough(system_id: &str) -> bool {
+    matches!(system_id, "mame" | "msx" | "msx2")
+}
+
+/// Resolve a `SystemSettings` override against the system's compiled-in
+/// default. Returns the effective passthrough value the emu thread should
+/// use for this system + settings combination.
+pub fn effective_keyboard_passthrough(system_id: &str, settings: &SystemSettings) -> bool {
+    settings
+        .keyboard_passthrough
+        .unwrap_or_else(|| default_keyboard_passthrough(system_id))
 }
 
 fn system_settings_dir(app_data_dir: &Path) -> PathBuf {
@@ -111,6 +141,32 @@ mod tests {
         assert!(d.rewind_enabled.is_none());
         assert!(d.rewind_capture_interval_frames.is_none());
         assert!(d.rewind_buffer_megabytes.is_none());
+        assert!(d.keyboard_passthrough.is_none());
+    }
+
+    #[test]
+    fn keyboard_passthrough_default_per_system() {
+        // Computer-shaped systems default to passthrough ON.
+        assert!(default_keyboard_passthrough("mame"));
+        assert!(default_keyboard_passthrough("msx"));
+        assert!(default_keyboard_passthrough("msx2"));
+        // Console / handheld systems default OFF.
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "sms", "gamegear", "atari7800"] {
+            assert!(!default_keyboard_passthrough(sys), "{sys}: expected off");
+        }
+    }
+
+    #[test]
+    fn effective_keyboard_passthrough_uses_override_when_set() {
+        let mut s = SystemSettings::default();
+        // Unset → falls back to compiled-in default.
+        assert!(effective_keyboard_passthrough("mame", &s));
+        assert!(!effective_keyboard_passthrough("nes", &s));
+        // Explicit override beats the default in either direction.
+        s.keyboard_passthrough = Some(false);
+        assert!(!effective_keyboard_passthrough("mame", &s));
+        s.keyboard_passthrough = Some(true);
+        assert!(effective_keyboard_passthrough("nes", &s));
     }
 
     #[test]
@@ -148,6 +204,7 @@ mod tests {
             rewind_enabled: Some(true),
             rewind_capture_interval_frames: Some(6),
             rewind_buffer_megabytes: Some(32),
+            keyboard_passthrough: Some(true),
         };
         write_system_settings(&tmp, "tg16", &prefs).expect("write");
         let read = read_system_settings(&tmp, "tg16");

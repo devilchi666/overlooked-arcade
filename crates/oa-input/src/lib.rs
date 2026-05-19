@@ -195,6 +195,16 @@ impl InputPoller {
         self.device_state.get_keys().contains(&key)
     }
 
+    /// Snapshot of every currently-pressed key. Used by the libretro
+    /// keyboard-passthrough pump in the shell to edge-detect transitions
+    /// frame-to-frame and forward them to the core via
+    /// `LibretroCore::send_keyboard_event`. Also bypasses the enabled gate —
+    /// the caller decides whether to pump or pump-releases-only based on
+    /// focus + per-system passthrough settings.
+    pub fn pressed_keys(&self) -> Vec<Keycode> {
+        self.device_state.get_keys()
+    }
+
     /// Read the current input state for a given port.
     pub fn poll(&mut self, port: PortIndex) -> InputState {
         // Always pump gilrs so connect/disconnect tracking stays live even

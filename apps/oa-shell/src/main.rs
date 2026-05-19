@@ -34,6 +34,7 @@ mod system_settings;
 mod video_capture;
 mod watcher;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -924,8 +925,8 @@ fn main() {
     // Ctrl/Cmd+Q handler to ignore the shortcut when our app isn't focused —
     // otherwise pressing Ctrl+Q in Notepad would quit us. Updated by the
     // WindowEvent::Focused handler below.
-    let focused_windows: Arc<Mutex<std::collections::BTreeSet<String>>> =
-        Arc::new(Mutex::new(std::collections::BTreeSet::new()));
+    let focused_windows: Arc<Mutex<std::collections::HashSet<String>>> =
+        Arc::new(Mutex::new(std::collections::HashSet::new()));
     let focused_windows_event = focused_windows.clone();
     let focused_windows_shortcut = focused_windows.clone();
 
@@ -1623,6 +1624,21 @@ fn run_emu_render(
     // only when the game window has focus and no modal is intercepting.
     let mut prev_esc = false;
 
+    // Phase 6 Cross-system slice 2 — libretro keyboard passthrough.
+    // Tracks the set of keys held last frame so the pump can edge-detect
+    // press/release transitions and forward them to the core via
+    // `LibretroCore::send_keyboard_event`. The `active` flag combines the
+    // per-system `SystemSettings::keyboard_passthrough` override with the
+    // system's compiled-in default — refreshed on every successful
+    // LoadRom so a system change re-resolves the flag. Initial value
+    // matches the bootstrap system (tg16 → keyboard passthrough off).
+    let mut keyboard_passthrough_active: bool =
+        system_settings::effective_keyboard_passthrough(
+            "tg16",
+            &system_settings::read_system_settings(&app_data_dir, "tg16"),
+        );
+    let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
+
     // Rewind ring (Phase 4 slice A). Bounded by total bytes; populated only
     // when `rewind_config.enabled` is true. Holding Backspace pops the
     // newest snapshot and load_states it, producing visual rewind at
@@ -2008,6 +2024,29 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // Phase 6 Cross-system slice 2 — refresh the
+                            // keyboard-passthrough flag now that the active
+                            // system may have changed. If the new system
+                            // wants passthrough OFF and we have held keys
+                            // pending, the next frame's pump will see
+                            // active=false and emit release events for
+                            // every still-held key so the previous system's
+                            // core doesn't think they're stuck (defensive
+                            // against the prior core surviving across the
+                            // swap, which is rare but possible).
+                            let new_settings = system_settings::read_system_settings(
+                                &app_data_dir,
+                                &current_system_id,
+                            );
+                            keyboard_passthrough_active = system_settings::effective_keyboard_passthrough(
+                                &current_system_id,
+                                &new_settings,
+                            );
+                            log::info!(
+                                "oa-shell: keyboard passthrough for {} = {}",
+                                current_system_id, keyboard_passthrough_active,
+                            );
 
                             // RetroArch-parity slice — refresh the cached
                             // disc-control snapshot. None for HuCard / cart
@@ -2693,6 +2732,74 @@ fn run_emu_render(
         // the UI don't leak into the emu thread.
         let enable = game_focused.load(Ordering::SeqCst) && !ui_intercepting.load(Ordering::SeqCst);
         input.set_enabled(enable);
+
+        // Phase 6 Cross-system slice 2 — libretro keyboard-passthrough pump.
+        //
+        // For computer-shaped systems (MAME, MSX/MSX2) the core registered
+        // a `retro_keyboard_event_t` via `RETRO_ENVIRONMENT_SET_KEYBOARD_
+        // CALLBACK`; we forward raw key transitions through it. The
+        // existing OA hotkey path (F1/F2/F5/F8/Esc/digits below) still
+        // fires in parallel — Slice 3's "Game focus" toggle will gate
+        // those off when the user wants the core to own the keyboard.
+        // Until Slice 3 lands, TAB + letters + numbers reach the core
+        // without OA conflict; F-keys + Esc go to both.
+        //
+        // `should_pump` combines: focused + UI not intercepting + per-
+        // system passthrough on + core has actually registered a callback.
+        // The last condition short-circuits work when the active core
+        // declined keyboard input even though the system defaults to on
+        // (e.g. an old MAME build without keyboard support).
+        let core_has_kb_cb = core.as_ref().map(|c| c.has_keyboard_callback()).unwrap_or(false);
+        let should_pump = enable && keyboard_passthrough_active && core_has_kb_cb;
+        let current_keys: HashSet<Keycode> = if should_pump {
+            input.pressed_keys().into_iter().collect()
+        } else {
+            HashSet::new()
+        };
+        if should_pump {
+            // Modifiers carry the CURRENT frame's held set — `device_query`
+            // doesn't deliver edges, so a press of `A` while Shift is held
+            // sees both keys in `current_keys`. We pass the current
+            // modifier mask alongside each transition so a core that
+            // remaps Shift+letter sees the right combo.
+            let modifiers = oa_libretro::modifiers_from_held(&input.pressed_keys());
+            // Presses: keys in `current` but not in `prev`.
+            for k in current_keys.difference(&prev_keyboard_keys) {
+                let rk = oa_libretro::keycode_to_retro_key(*k);
+                if rk == 0 {
+                    continue; // RETROK_UNKNOWN — don't waste a callback dispatch.
+                }
+                if let Some(c) = core.as_mut() {
+                    c.send_keyboard_event(true, rk, 0, modifiers);
+                }
+            }
+            // Releases: keys in `prev` but not in `current`.
+            for k in prev_keyboard_keys.difference(&current_keys) {
+                let rk = oa_libretro::keycode_to_retro_key(*k);
+                if rk == 0 {
+                    continue;
+                }
+                if let Some(c) = core.as_mut() {
+                    c.send_keyboard_event(false, rk, 0, modifiers);
+                }
+            }
+            prev_keyboard_keys = current_keys;
+        } else if !prev_keyboard_keys.is_empty() {
+            // Pump stopped (focus lost, passthrough disabled, core dropped).
+            // Emit releases for every still-held key so the core doesn't
+            // see them as stuck-down. Modifier mask is 0 — by the time we
+            // get here we're no longer reading live keyboard state.
+            for k in prev_keyboard_keys.iter() {
+                let rk = oa_libretro::keycode_to_retro_key(*k);
+                if rk == 0 {
+                    continue;
+                }
+                if let Some(c) = core.as_mut() {
+                    c.send_keyboard_event(false, rk, 0, 0);
+                }
+            }
+            prev_keyboard_keys.clear();
+        }
 
         // Number keys 0-9 select the active slot (rising-edge). Hotkeys gate
         // on the same focus + UI-intercept flags as gameplay input, so typing
