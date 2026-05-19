@@ -1232,6 +1232,7 @@ const App: Component = () => {
                   onShowSaves={(entry) => setSavesEntry(entry)}
                   onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
                   onFocus={(entry) => setFocusedEntry(entry)}
+                  selectedId={() => focusedEntry()?.id ?? null}
                   onPickFolder={handlePickFolder}
                 />
               </div>

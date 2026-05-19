@@ -9,16 +9,20 @@ import { Dialog } from "../layout/Dialog";
 
 type Shortcut = {
   keys: string;
-  /// Where the shortcut works — "anywhere" or "in-game". Display-only.
-  scope: "anywhere" | "in-game";
+  /// Where the shortcut works — "anywhere", "in-game", or "library".
+  scope: "anywhere" | "in-game" | "library";
   action: string;
 };
 
 const SHORTCUTS: readonly Shortcut[] = [
+  { keys: "Click",        scope: "library", action: "Select game (no launch)" },
+  { keys: "Double-click", scope: "library", action: "Launch selected game" },
+  { keys: "Right-click",  scope: "library", action: "Open tile context menu" },
   { keys: "Esc", scope: "in-game", action: "Pause / open Quick Settings" },
   { keys: "Esc", scope: "anywhere", action: "Close menus / dialogs" },
   { keys: "Ctrl+W", scope: "in-game", action: "Exit to library" },
   { keys: "Ctrl+B", scope: "anywhere", action: "Toggle left sidebar" },
+  { keys: "Ctrl+G", scope: "anywhere", action: "Toggle Game focus (OA hotkeys ↔ core)" },
   { keys: "F1", scope: "in-game", action: "Reset" },
   { keys: "F2", scope: "in-game", action: "Pause / resume" },
   { keys: "F3", scope: "in-game", action: "Frame advance (while paused)" },

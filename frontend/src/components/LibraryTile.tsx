@@ -10,11 +10,17 @@ type Props = {
   /// Right-click handler. Opens the unified tile context menu (cover, saves,
   /// core picker, remove). Position is raw client coords for the popover anchor.
   onPickContext?: (entry: RomEntry, position: { x: number; y: number }) => void;
-  /// Focus tracker — called on pointer enter / keyboard focus so the right
-  /// sidebar can display this entry's widgets. The sidebar treats this as
-  /// "last focused" and stays sticky; we do not emit a clearing event on
-  /// pointer leave, so a brief scroll past a tile keeps the sidebar populated.
+  /// Focus / select callback — fired on single-click (mouse) and on keyboard
+  /// focus (Tab navigation). Hover does NOT trigger this; selection sticks
+  /// until the user clicks another tile or Tabs away. Used by the right
+  /// sidebar to display widgets for the currently-picked entry and by Tools
+  /// menu / per-system / per-game settings to know which game is "active"
+  /// without having to launch it.
   onFocus?: (entry: RomEntry) => void;
+  /// Visual selected state. The tile renders an accent ring when true. Parent
+  /// derives this from the current selection signal so virtualized tiles only
+  /// re-render when their own selected-ness flips.
+  selected?: boolean;
 };
 
 const Placeholder: Component = () => (
@@ -57,15 +63,31 @@ const LibraryTile: Component<Props> = (props) => {
   return (
     <button
       type="button"
-      onClick={() => props.onLaunch(props.entry)}
+      // Single click selects; double click launches. Hover no longer changes
+      // selection — picking a game and then mousing toward the menu used to
+      // re-focus whichever tiles the cursor crossed, which made "pick game,
+      // open its settings" effectively impossible.
+      onClick={() => props.onFocus?.(props.entry)}
+      onDblClick={() => props.onLaunch(props.entry)}
       onContextMenu={(e) => {
         if (props.entry.seed || !props.onPickContext) return;
         e.preventDefault();
         props.onPickContext(props.entry, { x: e.clientX, y: e.clientY });
       }}
-      onPointerEnter={() => props.onFocus?.(props.entry)}
+      // Keyboard focus still feeds the selection — Tab-to-tile then Enter
+      // (the browser's default Activate-button) launches via the click path,
+      // which now selects. To launch from the keyboard, the user can press
+      // Enter twice quickly (the double-click handler fires on rapid
+      // repeats), use the right sidebar's Launch button, or right-click →
+      // Launch from the context menu.
       onFocus={() => props.onFocus?.(props.entry)}
-      class="group relative flex w-full flex-col overflow-hidden rounded-lg border border-white/5 bg-white/[0.03] text-left shadow-lg shadow-black/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+      class="group relative flex w-full flex-col overflow-hidden rounded-lg border bg-white/[0.03] text-left shadow-lg shadow-black/40 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+      classList={{
+        "border-white/5": !props.selected,
+        "border-(--color-system-accent) ring-1 ring-(--color-system-accent)/60":
+          props.selected === true,
+      }}
+      aria-pressed={props.selected === true}
       data-system={props.entry.systemId}
     >
       <div

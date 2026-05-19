@@ -19,6 +19,9 @@ type Props = {
   onShowSaves?: (entry: RomEntry) => void;
   onPickContext?: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (entry: RomEntry) => void;
+  /// Currently-selected entry id (or null). Each row compares its own entry
+  /// id to derive its `selected` state.
+  selectedId?: () => string | null;
 };
 
 type ListRow =
@@ -106,6 +109,7 @@ const DetailListView: Component<Props> = (props) => {
                     onShowSaves={props.onShowSaves}
                     onPickContext={props.onPickContext}
                     onFocus={props.onFocus}
+                    selectedId={props.selectedId}
                   />
                 </Show>
               </div>
@@ -123,26 +127,34 @@ const DetailRow: Component<{
   onShowSaves?: (e: RomEntry) => void;
   onPickContext?: (e: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (e: RomEntry) => void;
+  selectedId?: () => string | null;
 }> = (props) => {
   const media = useMedia();
   const theme = () => systemThemes[props.entry.systemId];
   const meta = () => media.media(props.entry.id)?.metadata;
   const coverSrc = () =>
     media.coverUrl(props.entry.systemId, props.entry.id, "boxart", "thumb");
+  const selected = () => props.selectedId?.() === props.entry.id;
 
   return (
     <button
       type="button"
       data-system={props.entry.systemId}
-      onClick={() => props.onLaunch(props.entry)}
-      onPointerEnter={() => props.onFocus?.(props.entry)}
+      // Single click selects; double click launches. See LibraryTile.tsx for
+      // the rationale (hover no longer drives selection).
+      onClick={() => props.onFocus?.(props.entry)}
+      onDblClick={() => props.onLaunch(props.entry)}
       onFocus={() => props.onFocus?.(props.entry)}
       onContextMenu={(e) => {
         if (props.entry.seed || !props.onPickContext) return;
         e.preventDefault();
         props.onPickContext(props.entry, { x: e.clientX, y: e.clientY });
       }}
+      aria-pressed={selected()}
       class="group flex w-full items-center gap-4 px-(--layout-content-padding-x) py-2 text-left transition hover:bg-white/[0.03] focus-visible:bg-white/[0.05]"
+      classList={{
+        "bg-(--color-system-accent)/10 border-l-2 border-(--color-system-accent)": selected(),
+      }}
       style={{ "content-visibility": "auto", "contain-intrinsic-size": `auto 100% ${GAME_ROW_HEIGHT}px` }}
     >
       <div class="relative h-14 w-20 shrink-0 overflow-hidden rounded border border-white/10 bg-(--color-oa-bg-deep)">

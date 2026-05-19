@@ -20,6 +20,10 @@ type Props = {
   onShowSaves: (entry: RomEntry) => void;
   onPickContext: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus: (entry: RomEntry) => void;
+  /// Accessor for the currently-selected entry id (or null). Passed through
+  /// to the grid / list views so tiles can render an accent ring on the
+  /// active pick.
+  selectedId?: () => string | null;
   onPickFolder: () => void;
 };
 
@@ -93,6 +97,7 @@ const LibraryView: Component<Props> = (props) => {
                 onShowSaves={props.onShowSaves}
                 onPickContext={props.onPickContext}
                 onFocus={props.onFocus}
+                selectedId={props.selectedId}
               />
             }
           >
@@ -102,6 +107,7 @@ const LibraryView: Component<Props> = (props) => {
               onShowSaves={props.onShowSaves}
               onPickContext={props.onPickContext}
               onFocus={props.onFocus}
+              selectedId={props.selectedId}
             />
           </Show>
         </Show>

@@ -31,6 +31,11 @@ type Props = {
   onShowSaves?: (entry: RomEntry) => void;
   onPickContext?: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (entry: RomEntry) => void;
+  /// Accessor for the current selection id. Each tile compares its own
+  /// entry id to derive its `selected` state — passed as a getter (not a
+  /// raw value) so virtualized tiles only re-render when their own
+  /// selected-ness actually flips, not when any other tile is picked.
+  selectedId?: () => string | null;
 };
 
 type GridRow =
@@ -169,6 +174,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                             onShowSaves={props.onShowSaves}
                             onPickContext={props.onPickContext}
                             onFocus={props.onFocus}
+                            selected={props.selectedId?.() === entry.id}
                           />
                         </div>
                       )}
