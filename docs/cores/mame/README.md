@@ -35,27 +35,53 @@ Varies by arcade board. The core reports its own `retro_system_av_info` per load
 
 The renderer uses whatever the core reports; the scaling-mode picker handles non-standard aspect ratios.
 
-## Input
+## Controls
 
-12-button arcade layout (6 face buttons + d-pad + START + COIN), defined in `apps/oa-shell/src/bindings.rs::mame`. Maps identity-style to libretro RetroPad bits.
+16-button layout defined in `apps/oa-shell/src/bindings.rs::mame`. The first 12 buttons are the arcade base layer (6 face buttons + d-pad + P1 START + P1 COIN) and map identity-style onto libretro RetroPad bits. The remaining 4 are Phase-1.5 system buttons (P2 START / P2 COIN / SERVICE / MAME_MENU) parked on otherwise-unused RetroPad bits.
 
-**Keyboard defaults (per the cross-system "Z is primary" rule):**
+**Base layer — arcade controls (keyboard defaults follow the cross-system "Z is primary" rule):**
 
-| Button | Key | Notes |
-|---|---|---|
-| UP/DOWN/LEFT/RIGHT | Arrows | 8-way stick |
-| B1 (weak punch) | Z | Primary action |
-| B2 (medium punch) | X | Secondary |
-| B3 (strong punch) | A | |
-| B4 (weak kick) | S | |
-| B5 (medium kick) | Q | |
-| B6 (strong kick) | W | |
-| START (P1) | 1 | RetroArch standard |
-| COIN (P1) | 5 | RetroArch standard |
-
-**Gamepad defaults:** 6 face buttons map to East/South/West/North + LeftTrigger/RightTrigger; Start/Select for P1 Start/Coin.
+| Button | libretro bit | Key | Pad | Notes |
+|---|---|---|---|---|
+| UP/DOWN/LEFT/RIGHT | UP/DOWN/LEFT/RIGHT | Arrows | DPad | 8-way stick |
+| B1 (weak punch) | B | Z | South | Primary action |
+| B2 (medium punch) | A | X | East | Secondary |
+| B3 (strong punch) | Y | A | West | |
+| B4 (weak kick) | X | S | North | |
+| B5 (medium kick) | L | Q | LeftTrigger | |
+| B6 (strong kick) | R | W | RightTrigger | |
+| START (P1) | START | 1 | Start | RetroArch standard |
+| COIN (P1) | SELECT | 5 | Select | RetroArch standard |
 
 Street Fighter purists will want to remap (SF veterans expect LP/MP/HP on the top row, LK/MK/HK on the bottom) — use the per-system Bindings dialog.
+
+**System buttons (Phase-1.5):**
+
+| Button | libretro bit | Key | Purpose |
+|---|---|---|---|
+| SERVICE | L3 | F2 | MAME's operator Service / Test mode |
+| MAME_MENU | R3 | Tab | Opens MAME's per-driver input config |
+| P2_START | R2 | 2 | Player-2 START (placeholder — see note below) |
+| P2_COIN | L2 | 6 | Player-2 COIN (placeholder — see note below) |
+
+The libretro RetroPad bit assignments for SERVICE / MAME_MENU are placeholders: MAME's libretro core today expects Service / Tab to arrive over `RETRO_DEVICE_KEYBOARD` (F2 / Tab), not over the joypad. The keyboard slot is the live path. Phase 2 work (keyboard-passthrough infrastructure in `oa-libretro`) will hook the keyboard events through; until that lands, these bindings exist so the per-system Bindings UI can show and rebind them but the F2 / Tab keys won't reach the core yet.
+
+P2_START / P2_COIN are similarly placeholders. Shell input is single-port (port 0) today; libretro's standard convention is that P2 controls arrive on port 1 with the *same* START / SELECT bits, not as new bits on port 0. The per-port wiring is a follow-up — these entries reserve the names so the UI can register them now.
+
+### The TAB workflow
+
+The MAME core ships its own per-driver input menu, reachable in-game by pressing the key bound to `MAME_MENU` (default Tab). That's the entry point for anything beyond the base 6-button arcade layout:
+
+- Pinball flippers (Williams, Bally tables) — per-driver flipper / nudge / start
+- Mahjong / Hanafuda games — 30+ named keys per player
+- Lightgun games (Operation Wolf, Lethal Enforcers) — point + trigger axis
+- Driving (OutRun, Pole Position) — steering wheel + pedals
+- Yokes (After Burner II) — analog stick variants
+- Spinners and trackballs (Tempest, Marble Madness) — relative-motion devices
+
+Remaps made through the TAB menu persist in MAME's per-driver config under `<appData>/cfg/<driver>.cfg`. They survive across launches of the same ROM set.
+
+> ⚠ Today the TAB menu is reachable only via the **gamepad** binding (default MAME_MENU = R3, which most modern controllers don't expose as a face button). The keyboard binding (Tab) won't reach the core until Phase 2 keyboard-passthrough lands. If you need the menu right now, rebind `MAME_MENU` to a gamepad button you actually have, or wait for Phase 2.
 
 ## Current status (2026-05-19)
 

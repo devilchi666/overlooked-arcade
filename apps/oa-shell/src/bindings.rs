@@ -102,19 +102,34 @@ pub mod snes {
 /// onto libretro RetroPad bits — same convention RetroArch's MAME core
 /// ships with. Coin lands on libretro SELECT (the common operator-mode
 /// "insert coin" mapping); P1 Start on libretro START.
+///
+/// Phase-1.5 extras (`SERVICE`, `MAME_MENU`, `P2_START`, `P2_COIN`) park
+/// on the four otherwise-unused RetroPad bits (L2/R2/L3/R3). MAME's
+/// libretro core doesn't wire its operator-mode functions to RetroPad
+/// bits directly today — Service/Test/Menu are reachable through the
+/// `RETRO_DEVICE_KEYBOARD` device (F2 / Tab) and the per-driver TAB menu.
+/// Phase 2 keyboard-passthrough work will hook those up; until then
+/// the keyboard defaults below are the live path. P2_START / P2_COIN
+/// likewise need per-port wiring (port 1 START / SELECT) which is a
+/// follow-up — for now they exist as port-0 placeholder bindings so the
+/// per-system Bindings UI can register them.
 pub mod mame {
-    pub const B1: u32     = 1 << 0;  // libretro B  — Button 1 (SF: weak punch)
-    pub const B3: u32     = 1 << 1;  // libretro Y  — Button 3 (SF: strong punch)
-    pub const COIN: u32   = 1 << 2;  // libretro SELECT — insert coin
-    pub const START: u32  = 1 << 3;  // libretro START
-    pub const UP: u32     = 1 << 4;
-    pub const DOWN: u32   = 1 << 5;
-    pub const LEFT: u32   = 1 << 6;
-    pub const RIGHT: u32  = 1 << 7;
-    pub const B2: u32     = 1 << 8;  // libretro A  — Button 2 (SF: medium punch)
-    pub const B4: u32     = 1 << 9;  // libretro X  — Button 4 (SF: weak kick)
-    pub const B5: u32     = 1 << 10; // libretro L  — Button 5 (SF: medium kick)
-    pub const B6: u32     = 1 << 11; // libretro R  — Button 6 (SF: strong kick)
+    pub const B1: u32        = 1 << 0;  // libretro B  — Button 1 (SF: weak punch)
+    pub const B3: u32        = 1 << 1;  // libretro Y  — Button 3 (SF: strong punch)
+    pub const COIN: u32      = 1 << 2;  // libretro SELECT — insert coin (P1)
+    pub const START: u32     = 1 << 3;  // libretro START — P1 start
+    pub const UP: u32        = 1 << 4;
+    pub const DOWN: u32      = 1 << 5;
+    pub const LEFT: u32      = 1 << 6;
+    pub const RIGHT: u32     = 1 << 7;
+    pub const B2: u32        = 1 << 8;  // libretro A  — Button 2 (SF: medium punch)
+    pub const B4: u32        = 1 << 9;  // libretro X  — Button 4 (SF: weak kick)
+    pub const B5: u32        = 1 << 10; // libretro L  — Button 5 (SF: medium kick)
+    pub const B6: u32        = 1 << 11; // libretro R  — Button 6 (SF: strong kick)
+    pub const P2_COIN: u32   = 1 << 12; // libretro L2 — placeholder; needs port-1 wiring
+    pub const P2_START: u32  = 1 << 13; // libretro R2 — placeholder; needs port-1 wiring
+    pub const SERVICE: u32   = 1 << 14; // libretro L3 — operator service/test (keyboard F2)
+    pub const MAME_MENU: u32 = 1 << 15; // libretro R3 — MAME TAB menu (keyboard Tab)
 }
 
 /// A single binding slot. Either field can be `None` to leave that input kind
@@ -209,21 +224,27 @@ pub fn snes_bit_for(button: &str) -> Option<u32> {
     SNES_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
-/// MAME button bits in declaration order. 12 entries — 4-way d-pad,
-/// 6 face buttons (B1-B6 in the SF-fighter convention), START + COIN.
+/// MAME button bits in declaration order. 16 entries — 4-way d-pad,
+/// 6 face buttons (B1-B6 in the SF-fighter convention), P1 START + COIN,
+/// and four Phase-1.5 system buttons (P2_START / P2_COIN / SERVICE /
+/// MAME_MENU) parked on otherwise-free libretro RetroPad bits.
 pub const MAME_BUTTONS: &[(&str, u32)] = &[
-    ("UP",    mame::UP),
-    ("DOWN",  mame::DOWN),
-    ("LEFT",  mame::LEFT),
-    ("RIGHT", mame::RIGHT),
-    ("B1",    mame::B1),
-    ("B2",    mame::B2),
-    ("B3",    mame::B3),
-    ("B4",    mame::B4),
-    ("B5",    mame::B5),
-    ("B6",    mame::B6),
-    ("START", mame::START),
-    ("COIN",  mame::COIN),
+    ("UP",        mame::UP),
+    ("DOWN",      mame::DOWN),
+    ("LEFT",      mame::LEFT),
+    ("RIGHT",     mame::RIGHT),
+    ("B1",        mame::B1),
+    ("B2",        mame::B2),
+    ("B3",        mame::B3),
+    ("B4",        mame::B4),
+    ("B5",        mame::B5),
+    ("B6",        mame::B6),
+    ("START",     mame::START),
+    ("COIN",      mame::COIN),
+    ("P2_START",  mame::P2_START),
+    ("P2_COIN",   mame::P2_COIN),
+    ("SERVICE",   mame::SERVICE),
+    ("MAME_MENU", mame::MAME_MENU),
 ];
 
 /// Resolve a system-button name to its MAME bit mask.
@@ -327,7 +348,7 @@ pub fn snes_to_libretro_bits(b: u32) -> u32 {
 
 /// MAME → libretro bit remap. Identity by construction (the `mame::*`
 /// constants are laid out as libretro RetroPad bits directly); mask
-/// trims to the 12-bit MAME button set so stray high bits get dropped.
+/// trims to the 16-bit MAME button set so stray high bits get dropped.
 pub fn mame_to_libretro_bits(b: u32) -> u32 {
     b & (mame::B1
         | mame::B2
@@ -340,7 +361,11 @@ pub fn mame_to_libretro_bits(b: u32) -> u32 {
         | mame::UP
         | mame::DOWN
         | mame::LEFT
-        | mame::RIGHT)
+        | mame::RIGHT
+        | mame::P2_COIN
+        | mame::P2_START
+        | mame::SERVICE
+        | mame::MAME_MENU)
 }
 
 /// Per-system dispatch for the shell-internal → libretro bit remap. Called
@@ -513,8 +538,16 @@ pub fn default_mame_bindings() -> Bindings {
         // Button 5-6: shoulder buttons (SF heavy kicks / Capcom triplets).
         ("B5",    Some("Q"),      Some("LeftTrigger")),
         ("B6",    Some("W"),      Some("RightTrigger")),
-        ("START", Some("Key1"),   Some("Start")),    // RetroArch standard: 1 = P1 Start
-        ("COIN",  Some("Key5"),   Some("Select")),   // RetroArch standard: 5 = Insert Coin P1
+        ("START",     Some("Key1"), Some("Start")),  // RetroArch standard: 1 = P1 Start
+        ("COIN",      Some("Key5"), Some("Select")), // RetroArch standard: 5 = Insert Coin P1
+        // Phase-1.5 system buttons. Keyboard mirrors RetroArch / MAME's
+        // own muscle memory: 2 = P2 Start, 6 = P2 Coin, F2 = Service /
+        // Test, Tab = MAME's per-driver input menu. Gamepad slots stay
+        // unbound by default — these are keyboard-first system controls.
+        ("P2_START",  Some("Key2"), None),
+        ("P2_COIN",   Some("Key6"), None),
+        ("SERVICE",   Some("F2"),   None),
+        ("MAME_MENU", Some("Tab"),  None),
     ];
     for (name, kb, pad) in pairs {
         b.insert(

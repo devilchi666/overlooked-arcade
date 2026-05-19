@@ -427,3 +427,33 @@ This pattern has now been applied to:
 7. Frontend polls via `invoke<SharedFoo>("get_foo")` — typically inside a `createEffect` gated on a `visible` signal so we do not pay IPC cost when not displayed.
 
 The pattern's mechanical reliability across 5 implementations is the evidence it is correct.
+
+---
+
+## 2026-05-19 — Keyboard-heavy systems: hybrid RetroPad + keyboard passthrough (MAME / MSX / future computers)
+
+**Decision:** For systems that need more inputs than a 12-button RetroPad covers — MAME's long-tail (mahjong, pinball, system-level controls), MSX (keyboard-driven home computer), and the eventual vintage-computer wave — adopt a **three-phase hybrid** rather than expanding our bindings tables indefinitely or punting entirely to the core's native input UI:
+
+1. **Phase 1 — minimal OA bindings + document the native escape hatch.** For MAME specifically: add `SERVICE`, `MAME_MENU`, `P2_START`, `P2_COIN` to the existing 12-button table so the operator + local-multiplayer common cases work through OA's bindings dialog. Document the **TAB workflow** in `docs/cores/mame/README.md` — pressing TAB in-game opens MAME's own input config, which is per-driver-aware and stores remaps natively. This covers ~95% of arcade games out of the box with no new plumbing.
+
+2. **Phase 2 — keyboard passthrough infrastructure (`oa-libretro`).** Wire `RETRO_DEVICE_KEYBOARD` so a keyboard-shaped system can receive raw key events in parallel with the RetroPad. Add a **"Game focus" toggle** (Tools menu checkbox + hotkey, RetroArch convention is Scroll Lock) that switches OA's keyboard between "OA controls only" (F1-F8 / Esc trigger OA actions) and "everything passes to the core" (the core eats all key events). Unlocks mahjong, pinball-with-shift-flippers, MAME's TAB menu without conflicts, MSX BASIC input, and every future home-computer system.
+
+3. **Phase 3 — analog input (deferred until a real game demands it).** Steering wheels (OutRun), trackballs (Marble Madness, Centipede), paddles (Arkanoid), yokes (After Burner II). Touches `oa-input` (gilrs axes), `bindings.rs` (analog isn't a bitmask — needs a separate axis-binding schema), and the libretro analog device declaration. Defer until the operator wants to play one of these.
+
+**Why this hybrid wins:**
+1. **The common case stays simple.** 80%+ of arcade games are stick + 1-6 buttons + Start + Coin — Phase 1 covers that with no new infrastructure.
+2. **The long tail uses MAME's existing solution.** MAME already has a robust per-driver input config UI reached by TAB. Building OA-side mappers for 40,000 arcade drivers + cabinet hardware categories would be a massive duplication of MAME's work; passing raw keyboard through and pointing users at TAB delegates the long-tail to the tool that already solved it.
+3. **Phase 2 is cross-system infrastructure, not a MAME thing.** MSX (already in the catalog as a queued system), eventual Amiga / Atari ST / C64 / ZX Spectrum / Apple II / MS-DOS via DOSBox — all need keyboard passthrough too. Treating Phase 2 as "raw keyboard support" not "MAME input" means the next computer-shaped system onboarding is free.
+4. **The Game-focus toggle pattern is proven.** RetroArch ships exactly this — a toggle that gates whether OA hotkeys or the core eat keypresses. Picking up the same model means our hotkey muscle-memory transfers and we can borrow conventions directly.
+5. **Analog is genuinely different — defer until forced.** The bit-mask model `bit_for(sys, button) -> u32` is wrong shape for axes (value 0-65535, not on/off). Doing analog right means a parallel axis-binding system, more crate surface, and `gilrs` analog stick handling we haven't built. Phase 3 lands when a real game demands it, not as speculative scaffolding.
+
+**Considered and rejected:**
+- **Bigger static MAME button table.** 30+ buttons (B1-B10, all SF moves, all flippers, etc.) clutters the per-system bindings editor for users playing Pac-Man, doesn't solve analog, and still doesn't help MAME drivers using literal keyboard letters. Wrong shape.
+- **Per-game input profiles via MAME's listxml.** Ingesting MAME's ~80 MB listxml + categorizing each driver's input type would let OA auto-pick "2-button" vs "6-button" vs "lightgun" profiles. Heavy ingest, and it still needs Option C / Phase 2 underneath for the keyboard-y categories. Worth revisiting after Phase 2 lands and we have a year of MAME usage data to know if auto-profile would pay back the implementation cost.
+- **Punt to MAME's native input menu only (no OA bindings for MAME at all).** Inconsistent with every other system in OA — users would learn one workflow for NES/SNES/etc. and a different one for MAME. The hybrid keeps the common path consistent and lets the long tail escape into MAME natively when it has to.
+
+**Where this applies going forward:**
+- Phase 1 is one diff (4 buttons + docs). Ship alongside MAME onboarding hardening.
+- Phase 2's keyboard-passthrough work in `oa-libretro` lands once and unlocks every keyboard-shaped system. Plan it as `oa-libretro` infrastructure, not under MAME.
+- When MSX onboarding lands, it inherits the Phase 2 infrastructure with zero additional work — the system just registers as wanting keyboard passthrough and the existing pipeline handles it.
+- Phase 3 analog gets its own DECISIONS entry when it lands — likely paired with whichever system forces the issue (OutRun = Saturn / Dreamcast / arcade; Marble Madness = MAME; Arkanoid = NES via Vaus paddle).

@@ -164,7 +164,11 @@ Re-scoped 2026-05-18 after the libretro pivot put most of the originally-planned
 
 ## 🟨 Phase 6+ — Next systems (first-wave, then ongoing)
 
-First-wave order (revised 2026-05-18): **Lynx (Phase 0 ✅ + operator-validated) → NES (Phase 0 ✅ 2026-05-18) → SNES (Phase 0 ✅ 2026-05-18) → 7800 → SMS/GG → MSX/MSX2 → ColecoVision → Vectrex → Virtual Boy → WonderSwan**. NES + SNES jumped the first-wave order on operator request — they're popular systems the user wanted to host alongside the niche-focused original first-wave list. After the first wave, additions are continuous — the project's long-term ambition is to host almost all of retro gaming (see `docs/VISION.md` for the broader picture, including the bigger list of likely future systems beyond the first wave).
+First-wave order (revised 2026-05-18, MAME jumped 2026-05-19): **Lynx (Phase 0 ✅ + operator-validated) → NES (Phase 0 ✅ 2026-05-18) → SNES (Phase 0 ✅ 2026-05-18) → MAME (Phase 0 ✅ 2026-05-19, hardening in flight) → 7800 → SMS/GG → MSX/MSX2 → ColecoVision → Vectrex → Virtual Boy → WonderSwan**. NES + SNES jumped on operator request — popular systems wanted alongside the niche-focused original list. MAME jumped after operator installed `mame_libretro.dll v0.287` and validated the catalog's Install path. After the first wave, additions are continuous — the project's long-term ambition is to host almost all of retro gaming (see `docs/VISION.md` for the broader picture).
+
+### Cross-system infrastructure currently active
+
+- 🟨 **Keyboard passthrough infrastructure** (`oa-libretro` + Game-focus toggle). Triggered by MAME onboarding 2026-05-19 needing more inputs than the 12-button RetroPad covers; benefits MSX + every future keyboard-shaped system. Three-phase plan per the 2026-05-19 DECISIONS entry "Keyboard-heavy systems": **Phase 1** adds SERVICE / MAME_MENU / P2_START / P2_COIN to MAME's button table + documents the TAB workflow (small, ships first). **Phase 2** wires `RETRO_DEVICE_KEYBOARD` through `oa-libretro` + adds a Tools-menu "Game focus" toggle that gates whether OA hotkeys or the core eat keypresses (cross-system unlock). **Phase 3** analog input — deferred until a steering / trackball / paddle game forces it.
 
 **Modern per-system recipe** (since the 2026-05-16 libretro pivot — the 8-step static-crate pattern in `feedback_multi_core_architecture_ready.md` is retired):
 
