@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800";
 
 export type SystemTheme = {
   id: SystemId;
@@ -98,6 +98,24 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // SNES games shipped with developers' awareness of CRT aliasing — many
     // titles look noticeably better through scanlines + bloom. crt-lite
     // default matches the era.
+    defaultShaderPreset: "crt-lite",
+  },
+  atari7800: {
+    id: "atari7800",
+    displayName: "Atari 7800 ProSystem",
+    shortName: "Atari 7800",
+    // .a78 is the canonical Atari 7800 dump — 128-byte header carries
+    // mapper / region / BIOS-required flags the ProSystem core reads at
+    // load time. Some old dumps are headerless `.bin`; intentionally
+    // NOT included here to avoid colliding with future Atari 2600 / SMS
+    // / other systems that all reuse `.bin`. Users with headerless 7800
+    // dumps can rename to .a78 — the ProSystem core autodetects.
+    extensions: ["a78"],
+    // 7800 boxes (Big Box era, Atari Corp 1986+) shipped portrait — vertical
+    // slip-cases with the title across the top. 3/4 fits the whole scan.
+    tileAspect: "3/4",
+    // 320×240 NTSC source running on early-'80s CRTs. crt-lite picks up
+    // the visible scanlines + bloom these games were designed against.
     defaultShaderPreset: "crt-lite",
   },
   mame: {

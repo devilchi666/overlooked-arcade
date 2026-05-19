@@ -96,6 +96,28 @@ pub mod snes {
     pub const R: u32     = 1 << 11;
 }
 
+/// Atari 7800 button bit positions. The Pro-Line joystick had a d-pad
+/// (8-way) plus two fire buttons (Button 1 = primary, Button 2 =
+/// secondary), with Pause / Select / Reset on the console. The libretro
+/// ProSystem core surfaces Pause + Select via the standard
+/// `RETRO_DEVICE_ID_JOYPAD_START` / `_SELECT` bits; Reset is operator-
+/// side (hardware switch) so the frontend exposes it via the per-tile
+/// context menu's Reset action, not via bindings.
+///
+/// Bits are laid out to match the libretro `RETRO_DEVICE_ID_JOYPAD_*`
+/// positions directly so the remap is identity — same pattern as Lynx /
+/// NES / SNES / MAME.
+pub mod atari7800 {
+    pub const B1: u32     = 1 << 0;  // libretro B  — Button 1 (right fire / primary)
+    pub const SELECT: u32 = 1 << 2;
+    pub const PAUSE: u32  = 1 << 3;  // libretro START → Pause/Start
+    pub const UP: u32     = 1 << 4;
+    pub const DOWN: u32   = 1 << 5;
+    pub const LEFT: u32   = 1 << 6;
+    pub const RIGHT: u32  = 1 << 7;
+    pub const B2: u32     = 1 << 8;  // libretro A  — Button 2 (left fire / secondary)
+}
+
 /// MAME (arcade) button bit positions. 6 face buttons (Capcom / SNK
 /// fighter layout — Street Fighter II's punch/kick triplets), plus
 /// START + COIN, plus the d-pad / 8-way stick. Buttons map identity-style
@@ -224,6 +246,25 @@ pub fn snes_bit_for(button: &str) -> Option<u32> {
     SNES_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
+/// Atari 7800 button bits in declaration order. 8 entries — 4-way
+/// d-pad, 2 fire buttons (B1 = primary / Button 1, B2 = secondary /
+/// Button 2), Pause, Select.
+pub const ATARI7800_BUTTONS: &[(&str, u32)] = &[
+    ("UP",     atari7800::UP),
+    ("DOWN",   atari7800::DOWN),
+    ("LEFT",   atari7800::LEFT),
+    ("RIGHT",  atari7800::RIGHT),
+    ("B1",     atari7800::B1),
+    ("B2",     atari7800::B2),
+    ("PAUSE",  atari7800::PAUSE),
+    ("SELECT", atari7800::SELECT),
+];
+
+/// Resolve a system-button name to its Atari 7800 bit mask.
+pub fn atari7800_bit_for(button: &str) -> Option<u32> {
+    ATARI7800_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
+}
+
 /// MAME button bits in declaration order. 16 entries — 4-way d-pad,
 /// 6 face buttons (B1-B6 in the SF-fighter convention), P1 START + COIN,
 /// and four Phase-1.5 system buttons (P2_START / P2_COIN / SERVICE /
@@ -263,6 +304,7 @@ pub fn bit_for(system_id: &str, button: &str) -> Option<u32> {
         "nes" => nes_bit_for(button),
         "snes" => snes_bit_for(button),
         "mame" => mame_bit_for(button),
+        "atari7800" => atari7800_bit_for(button),
         _ => None,
     }
 }
@@ -278,6 +320,7 @@ pub fn buttons_for(system_id: &str) -> &'static [(&'static str, u32)] {
         "nes" => NES_BUTTONS,
         "snes" => SNES_BUTTONS,
         "mame" => MAME_BUTTONS,
+        "atari7800" => ATARI7800_BUTTONS,
         _ => &[],
     }
 }
@@ -346,6 +389,21 @@ pub fn snes_to_libretro_bits(b: u32) -> u32 {
         | snes::R)
 }
 
+/// Atari 7800 → libretro bit remap. Identity by construction (the
+/// `atari7800::*` constants are laid out as libretro RetroPad bits
+/// directly); mask trims to the 8-bit Atari 7800 button set so stray
+/// high bits get dropped.
+pub fn atari7800_to_libretro_bits(b: u32) -> u32 {
+    b & (atari7800::B1
+        | atari7800::B2
+        | atari7800::SELECT
+        | atari7800::PAUSE
+        | atari7800::UP
+        | atari7800::DOWN
+        | atari7800::LEFT
+        | atari7800::RIGHT)
+}
+
 /// MAME → libretro bit remap. Identity by construction (the `mame::*`
 /// constants are laid out as libretro RetroPad bits directly); mask
 /// trims to the 16-bit MAME button set so stray high bits get dropped.
@@ -380,6 +438,7 @@ pub fn to_libretro_bits(system_id: &str, b: u32) -> u32 {
         "nes" => nes_to_libretro_bits(b),
         "snes" => snes_to_libretro_bits(b),
         "mame" => mame_to_libretro_bits(b),
+        "atari7800" => atari7800_to_libretro_bits(b),
         _ => b,
     }
 }
@@ -511,6 +570,38 @@ pub fn default_snes_bindings() -> Bindings {
     b
 }
 
+/// Atari 7800 defaults — Pro-Line joystick layout. **Z = Button 1
+/// (primary fire)**, **X = Button 2** per the cross-system "Z is
+/// primary" rule. The 7800's two-button design is the simplest in OA's
+/// lineup beyond the single-button Atari 2600; most games use Button 1
+/// for the main action (shoot / jump) and Button 2 for a secondary
+/// (kick / weapon switch / lightning). Enter for Pause; RShift for
+/// Select (the 7800 console had a hardware Select switch the libretro
+/// core surfaces via `RETRO_DEVICE_ID_JOYPAD_SELECT`).
+pub fn default_atari7800_bindings() -> Bindings {
+    let mut b = Bindings::new();
+    let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("UP",     Some("Up"),     Some("DPadUp")),
+        ("DOWN",   Some("Down"),   Some("DPadDown")),
+        ("LEFT",   Some("Left"),   Some("DPadLeft")),
+        ("RIGHT",  Some("Right"),  Some("DPadRight")),
+        ("B1",     Some("Z"),      Some("East")),    // libretro B — primary (Button 1)
+        ("B2",     Some("X"),      Some("South")),   // libretro A — secondary (Button 2)
+        ("PAUSE",  Some("Enter"),  Some("Start")),
+        ("SELECT", Some("RShift"), Some("Select")),
+    ];
+    for (name, kb, pad) in pairs {
+        b.insert(
+            (*name).into(),
+            BindingPair {
+                keyboard: kb.map(|s| s.to_string()),
+                gamepad: pad.map(|s| s.to_string()),
+            },
+        );
+    }
+    b
+}
+
 /// MAME defaults — six-button arcade fighter layout (Street Fighter II
 /// punch/kick triplets). **Z = Button 1 (primary)**, **X = Button 2** to
 /// match the project-wide PCE convention. SF veterans expect the punches
@@ -570,6 +661,7 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "nes" => Some(default_nes_bindings()),
         "snes" => Some(default_snes_bindings()),
         "mame" => Some(default_mame_bindings()),
+        "atari7800" => Some(default_atari7800_bindings()),
         _ => None,
     }
 }
@@ -668,7 +760,7 @@ mod tests {
         // Cover every registered system's defaults — a new system that
         // ships a default keyboard name device_query doesn't recognize
         // would silently fail to bind without this check.
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.keyboard {
@@ -683,7 +775,7 @@ mod tests {
 
     #[test]
     fn default_pads_round_trip_to_button() {
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.gamepad {
@@ -802,7 +894,7 @@ mod tests {
         const LIBRETRO_DOWN: u32  = 1 << 5;
         const LIBRETRO_LEFT: u32  = 1 << 6;
         const LIBRETRO_RIGHT: u32 = 1 << 7;
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800"] {
             let up    = bit_for(sys, "UP").expect("UP bit registered");
             let down  = bit_for(sys, "DOWN").expect("DOWN bit registered");
             let left  = bit_for(sys, "LEFT").expect("LEFT bit registered");
@@ -831,6 +923,7 @@ mod tests {
             ("nes", "A", "B"),
             ("snes", "A", "B"),
             ("mame", "B1", "B2"),
+            ("atari7800", "B1", "B2"),
         ] {
             let bindings = defaults_for(sys).expect("defaults registered");
             let primary = bindings.get(*primary_name).expect("primary button present");
@@ -861,6 +954,39 @@ mod tests {
                      | snes::SELECT | snes::START
                      | snes::UP | snes::DOWN | snes::LEFT | snes::RIGHT;
         assert_eq!(snes_to_libretro_bits(all_snes | (1 << 20)), all_snes);
+    }
+
+    #[test]
+    fn defaults_cover_every_atari7800_button() {
+        let b = default_atari7800_bindings();
+        for (name, _) in ATARI7800_BUTTONS {
+            assert!(b.contains_key(*name), "atari7800 default missing: {name}");
+        }
+    }
+
+    #[test]
+    fn atari7800_remap_is_identity() {
+        for (_, bit) in ATARI7800_BUTTONS {
+            assert_eq!(atari7800_to_libretro_bits(*bit), *bit);
+        }
+        let all = atari7800::B1 | atari7800::B2 | atari7800::SELECT | atari7800::PAUSE
+                | atari7800::UP | atari7800::DOWN | atari7800::LEFT | atari7800::RIGHT;
+        assert_eq!(atari7800_to_libretro_bits(all), all);
+        // Stray high bits get masked off.
+        assert_eq!(atari7800_to_libretro_bits(all | (1 << 20)), all);
+    }
+
+    #[test]
+    fn atari7800_dispatch_round_trips() {
+        // Sanity-check the per-system dispatch: bit_for / buttons_for /
+        // to_libretro_bits / defaults_for all return populated values for
+        // "atari7800". A missed dispatch arm would silently fall through
+        // to "unknown" defaults and the operator would see empty bindings.
+        assert!(buttons_for("atari7800").len() == ATARI7800_BUTTONS.len());
+        assert!(defaults_for("atari7800").is_some());
+        assert_eq!(bit_for("atari7800", "B1"), Some(atari7800::B1));
+        assert_eq!(bit_for("atari7800", "PAUSE"), Some(atari7800::PAUSE));
+        assert_eq!(to_libretro_bits("atari7800", atari7800::B1), atari7800::B1);
     }
 
     #[test]

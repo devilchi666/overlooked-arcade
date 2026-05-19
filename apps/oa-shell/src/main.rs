@@ -432,6 +432,12 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // who want lighter perf-vs-compat tradeoffs (mame2003_plus_libretro,
         // mame2010_libretro, etc.) swap via the per-system Cores dialog.
         "mame" => "mame_libretro.dll",
+        // ProSystem — the long-standing libretro Atari 7800 core. BIOS
+        // (`7800 BIOS (U).rom`) optional but recommended; without it
+        // games skip the boot logo but otherwise run. Operators who
+        // want the alternate `a7800_libretro` build swap via the
+        // per-system Cores dialog.
+        "atari7800" => "prosystem_libretro.dll",
         // Default — covers tg16, pce-cd, and any unknown system that ships
         // before the table is updated. The PCE Fast Mednafen build handles
         // both HuCard + CD if its BIOS is present in `<exe_dir>/system/`.

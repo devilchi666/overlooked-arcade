@@ -56,3 +56,15 @@
   --color-system-accent-soft: oklch(0.93 0.06 12);
   --color-system-glow: oklch(0.64 0.24 12 / 0.35);
 }
+
+/* Atari 7800 — amber/gold. The 7800 era's marketing leaned on a black-and-
+   red Atari Corp palette but red is taken twice over (NES 28° + MAME 12°),
+   so we pull the secondary color from the era's title screens + manual
+   covers (Choplifter, Centipede, Ms. Pac-Man 7800 all run gold-on-black).
+   Hue 80° lands between TG-16 orange (55°) and a green-amber range,
+   distinct from every other system. */
+[data-system="atari7800"] {
+  --color-system-accent: oklch(0.78 0.18 80);
+  --color-system-accent-soft: oklch(0.94 0.05 80);
+  --color-system-glow: oklch(0.78 0.18 80 / 0.35);
+}
