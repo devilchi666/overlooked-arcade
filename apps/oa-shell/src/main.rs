@@ -1031,6 +1031,8 @@ fn main() {
             media::set_region_priority,
             media::get_media_kinds_to_fetch,
             media::set_media_kinds_to_fetch,
+            media::get_only_sync_identified,
+            media::set_only_sync_identified,
             media::set_manual_cover,
             media::clear_media,
             media::set_selected_variant,

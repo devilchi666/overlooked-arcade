@@ -272,6 +272,7 @@ const SettingsPage: Component<Props> = (props) => {
         title: e.title,
         filePath: e.filePath,
         systemId: e.systemId,
+        sha1: e.sha1,
       }));
     if (entries.length === 0) {
       setSyncProgress((prev) => ({
@@ -387,6 +388,24 @@ const SettingsPage: Component<Props> = (props) => {
     }
   }
 
+  // "Only sync identified ROMs" pref — file-backed on the Rust side
+  // alongside the other media prefs. Hydrated once on mount; setter
+  // writes through.
+  const [onlySyncIdentified, setOnlySyncIdentifiedLocal] = createSignal<boolean>(true);
+  onMount(() => {
+    void invoke<boolean>("get_only_sync_identified")
+      .then((v) => setOnlySyncIdentifiedLocal(v))
+      .catch((e) => console.warn("get_only_sync_identified failed:", e));
+  });
+  async function setOnlySyncIdentifiedPref(v: boolean) {
+    setOnlySyncIdentifiedLocal(v);
+    try {
+      await invoke("set_only_sync_identified", { enabled: v });
+    } catch (e) {
+      console.warn("set_only_sync_identified failed:", e);
+    }
+  }
+
   async function startHashResolve(systemId: SystemId) {
     setHashResolving((p) => ({ ...p, [systemId]: true }));
     setHashResolveProgress((p) => ({
@@ -412,6 +431,7 @@ const SettingsPage: Component<Props> = (props) => {
         title: e.title,
         filePath: e.filePath,
         systemId: e.systemId,
+        sha1: e.sha1,
       }));
     if (entries.length === 0) {
       setMetaProgress((prev) => ({
@@ -944,6 +964,32 @@ const SettingsPage: Component<Props> = (props) => {
                   Open folder
                 </button>
               </div>
+
+              {/* Only-sync-identified gate. Default on — the fuzzy
+                  filename matcher produced a lot of wrong-art mismatches
+                  in the field, especially for repacked / renamed sets.
+                  When this is on, only ROMs whose sha1 matched a
+                  libretro-database canonical entry (via Identify ROMs)
+                  get their art synced. Turn it off to fall back to
+                  fuzzy filename matching against ALL library entries
+                  at the strict 0.95 threshold. */}
+              <label class="flex cursor-pointer items-start gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-(--color-oa-ink)">
+                <input
+                  type="checkbox"
+                  checked={onlySyncIdentified()}
+                  onChange={(e) => void setOnlySyncIdentifiedPref(e.currentTarget.checked)}
+                  class="mt-0.5 h-3.5 w-3.5 accent-(--color-system-accent)"
+                />
+                <span class="flex-1">
+                  <span class="block font-medium">
+                    Only sync media for identified ROMs (recommended)
+                  </span>
+                  <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                    Skip ROMs that haven't been hash-identified via Identify ROMs. Stops the fuzzy
+                    filename matcher from producing wrong-art mismatches on repacked or renamed sets.
+                  </span>
+                </span>
+              </label>
 
               {/* Kinds to fetch — controls which libretro-thumbnails subdirs
                   the sync pulls per ROM. Defaults to all three; users on

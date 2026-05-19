@@ -249,6 +249,18 @@ pub struct GameRow {
     /// in-memory-bytes vs extract-to-temp based on the inner extension.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_inner_path: Option<String>,
+    /// SHA-1 (40-char lowercase hex) of the ROM bytes, stamped by the
+    /// rom_hashes resolve flow. `None` until the user runs Identify ROMs
+    /// — `Some` after that, whether or not the hash matched a canonical
+    /// entry. The media sync uses this to look the canonical name up
+    /// server-side for exact filename matching against libretro-thumbnails.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha1: Option<String>,
+    /// Region / catalog serial pulled from libretro-database's rom_hashes
+    /// dat on a hash match (e.g. "TGX040080"). Diagnostic for now; surfaced
+    /// in the GameInfoModal later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -718,7 +730,8 @@ impl LibraryDb {
         let mut stmt = conn
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
-                        core_override, cover_path, seed, archive_inner_path
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -735,6 +748,8 @@ impl LibraryDb {
                     cover_path: row.get(6)?,
                     seed: row.get::<_, i64>(7)? != 0,
                     archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -873,7 +888,8 @@ impl LibraryDb {
         let mut stmt = conn
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
-                        core_override, cover_path, seed, archive_inner_path
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial
                  FROM games
                  WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')",
             )
@@ -890,6 +906,8 @@ impl LibraryDb {
                     cover_path: row.get(6)?,
                     seed: row.get::<_, i64>(7)? != 0,
                     archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -973,7 +991,8 @@ impl LibraryDb {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, system_id, file_path, title, added_at,
-                            core_override, cover_path, seed, archive_inner_path
+                            core_override, cover_path, seed, archive_inner_path,
+                            sha1, serial
                      FROM games
                      ORDER BY title COLLATE NOCASE
                      LIMIT ?1",
@@ -991,6 +1010,8 @@ impl LibraryDb {
                         cover_path: row.get(6)?,
                         seed: row.get::<_, i64>(7)? != 0,
                         archive_inner_path: row.get(8)?,
+                        sha1: row.get(9)?,
+                        serial: row.get(10)?,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -1005,7 +1026,8 @@ impl LibraryDb {
         let mut stmt = conn
             .prepare(
                 "SELECT g.id, g.system_id, g.file_path, g.title, g.added_at,
-                        g.core_override, g.cover_path, g.seed, g.archive_inner_path
+                        g.core_override, g.cover_path, g.seed, g.archive_inner_path,
+                        g.sha1, g.serial
                  FROM games g
                  INNER JOIN games_fts f ON f.rowid = g.rowid
                  WHERE games_fts MATCH ?1
@@ -1025,6 +1047,8 @@ impl LibraryDb {
                     cover_path: row.get(6)?,
                     seed: row.get::<_, i64>(7)? != 0,
                     archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -1655,6 +1679,8 @@ mod tests {
             core_override: None,
             seed: false,
             archive_inner_path: None,
+            sha1: None,
+            serial: None,
         }
     }
 

@@ -123,17 +123,31 @@ pub struct MediaPrefs {
     /// extras to cut sync bandwidth ~3×.
     #[serde(default = "default_kinds_to_fetch")]
     pub kinds_to_fetch: Vec<String>,
+    /// When true, the media sync only fetches artwork for ROMs that
+    /// have been hash-identified (i.e. games whose sha1 matched an
+    /// entry in rom_hashes — that's how we learn the canonical title
+    /// libretro-thumbnails actually keys its boxarts on). When false,
+    /// unidentified games fall through to the fuzzy filename matcher
+    /// at the high-confidence threshold (0.95) — fewer mismatches than
+    /// the old 0.85, but still false-positive prone for repacked or
+    /// regional names. Default on because the fuzzy fallback was the
+    /// source of the "wrong art on the wrong game" complaints.
+    #[serde(default = "default_only_sync_identified")]
+    pub only_sync_identified: bool,
 }
 
 fn default_kinds_to_fetch() -> Vec<String> {
     vec!["boxart".into(), "snap".into(), "title".into()]
 }
 
+fn default_only_sync_identified() -> bool { true }
+
 impl Default for MediaPrefs {
     fn default() -> Self {
         Self {
             region_priority: vec!["USA".into(), "World".into(), "Europe".into(), "Japan".into()],
             kinds_to_fetch: default_kinds_to_fetch(),
+            only_sync_identified: default_only_sync_identified(),
         }
     }
 }
@@ -713,6 +727,14 @@ pub struct SyncRomEntry {
     pub title: String,
     pub file_path: String,
     pub system_id: String,
+    /// Optional sha1 stamped on the games row by the rom_hashes resolve
+    /// flow. When set we look the hash up in rom_hashes and use the
+    /// canonical name for an exact (case-insensitive) match against
+    /// libretro-thumbnails — bypassing the fuzzy filename matcher
+    /// entirely. Repacked / renamed / no-intro-suffix ROMs all match
+    /// reliably via this path when they're hash-identified.
+    #[serde(default)]
+    pub sha1: Option<String>,
 }
 
 /// Per-ROM progress event, fired as each entry completes (download / cached / no-match / error).
@@ -862,7 +884,14 @@ enum SyncOutcome {
     NoMatch,
 }
 
-const MATCH_THRESHOLD: f64 = 0.85;
+/// Fuzzy fallback threshold for filename → canonical-name matching when
+/// the ROM has no hash-identified canonical name. Set high enough that
+/// almost-but-not-quite hits ("Bonk II" vs "Bonk's Adventure", Japanese
+/// vs USA cuts of the same title) get rejected rather than producing
+/// wrong-art mismatches. Was 0.85 — that produced the "wrong art on
+/// wrong game" complaints in the field. Identified ROMs bypass fuzzy
+/// matching entirely.
+const FUZZY_MATCH_THRESHOLD: f64 = 0.95;
 
 async fn sync_single_rom(
     client: &reqwest::Client,
@@ -873,29 +902,68 @@ async fn sync_single_rom(
     app_data_dir: &Path,
     db: &Arc<RwLock<MediaDb>>,
     entry: &SyncRomEntry,
+    canonical_name: Option<&str>,
 ) -> Result<SyncOutcome, String> {
-    // 1. Normalize ROM title (use filename stem if title is filename-derived).
-    let rom_norm = crate::normalize::normalize_title(&entry.title);
-    if rom_norm.is_empty() {
-        return Ok(SyncOutcome::NoMatch);
-    }
-
-    // 2. Score every upstream entry; take the best.
-    let mut best: Option<(&crate::normalize::ParsedUpstream, f64)> = None;
-    for u in parsed {
-        let score = crate::normalize::match_score(&rom_norm, &u.normalized);
+    // 1. Resolve target match. Prefer canonical name (hash-identified) →
+    // exact case-insensitive filename match in the libretro-thumbnails
+    // tree. Fall back to fuzzy filename matching with the much stricter
+    // 0.95 threshold when the ROM is unidentified.
+    let matched_ref: Option<&crate::normalize::ParsedUpstream>;
+    let match_source: &str;
+    let owned_score: f64;
+    if let Some(canon) = canonical_name {
+        let needle = canon.to_ascii_lowercase();
+        let hit = parsed.iter().find(|u| {
+            std::path::Path::new(&u.filename)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|stem| stem.to_ascii_lowercase() == needle)
+                .unwrap_or(false)
+        });
+        if let Some(u) = hit {
+            matched_ref = Some(u);
+            match_source = "canonical";
+            owned_score = 1.0;
+        } else {
+            // Canonical name didn't appear in this repo's tree (rare —
+            // typically means the canonical entry exists but lacks
+            // artwork in libretro-thumbnails for this kind). Skip the
+            // fuzzy fallback: a hash-identified ROM with no matching
+            // tree entry is "no upstream art for this kind," not "let's
+            // guess again."
+            log::debug!(
+                "oa-shell: canonical '{canon}' not in libretro-thumbnails {repo}/{subdir} — skipping fuzzy fallback"
+            );
+            return Ok(SyncOutcome::NoMatch);
+        }
+    } else {
+        // Unidentified ROM — fuzzy match.
+        let rom_norm = crate::normalize::normalize_title(&entry.title);
+        if rom_norm.is_empty() {
+            return Ok(SyncOutcome::NoMatch);
+        }
+        let mut best: Option<(&crate::normalize::ParsedUpstream, f64)> = None;
+        for u in parsed {
+            let score = crate::normalize::match_score(&rom_norm, &u.normalized);
+            match best {
+                Some((_, s)) if score <= s => {}
+                _ => best = Some((u, score)),
+            }
+        }
         match best {
-            Some((_, s)) if score <= s => {}
-            _ => best = Some((u, score)),
+            Some((u, s)) if s >= FUZZY_MATCH_THRESHOLD => {
+                matched_ref = Some(u);
+                match_source = "fuzzy";
+                owned_score = s;
+            }
+            _ => return Ok(SyncOutcome::NoMatch),
         }
     }
-    let (matched, score) = match best {
-        Some((u, s)) if s >= MATCH_THRESHOLD => (u, s),
-        _ => return Ok(SyncOutcome::NoMatch),
-    };
+
+    let matched = matched_ref.expect("matched_ref set above");
     log::debug!(
-        "oa-shell: sync match {} [{}] → {} (score {:.3})",
-        entry.title, kind.as_str(), matched.filename, score
+        "oa-shell: sync match {} [{}] → {} (source={match_source}, score {:.3})",
+        entry.title, kind.as_str(), matched.filename, owned_score,
     );
 
     // 3. Build destination paths. Subdir is part of the cache path so
@@ -1035,20 +1103,59 @@ pub async fn sync_media_for_system(
     systemId: String,
     entries: Vec<SyncRomEntry>,
     state: tauri::State<'_, MediaState>,
+    library: tauri::State<'_, crate::library_db::LibraryDb>,
     app: tauri::AppHandle,
 ) -> Result<SyncSummary, String> {
     use futures::stream::{self, StreamExt};
     use tauri::Emitter;
 
     let enabled_kinds = enabled_sync_kinds(&state.prefs);
+    let only_identified = state.prefs.read().ok()
+        .map(|p| p.only_sync_identified)
+        .unwrap_or(true);
+
+    // Resolve canonical names server-side: for every entry with a
+    // sha1, look it up in rom_hashes and remember the canonical name.
+    // The hash-identified subset becomes the "trusted match" set.
+    let mut canonical_by_id: std::collections::HashMap<String, String> = Default::default();
+    for e in entries.iter() {
+        if let Some(sha) = e.sha1.as_deref() {
+            if !sha.is_empty() {
+                if let Ok(Some(row)) = library.lookup_rom_hash(sha) {
+                    canonical_by_id.insert(e.id.clone(), row.game_name);
+                }
+            }
+        }
+    }
+
+    // Optionally filter entries to only those that have a canonical
+    // match — the recommended setting. Stops the sync from churning
+    // through unidentified ROMs that would either no-match or
+    // false-positive via fuzzy matching.
+    let entries: Vec<SyncRomEntry> = if only_identified {
+        let kept: Vec<SyncRomEntry> = entries
+            .into_iter()
+            .filter(|e| canonical_by_id.contains_key(&e.id))
+            .collect();
+        log::info!(
+            "oa-shell: sync_media_for_system({systemId}) — only-identified ON: keeping {} hash-matched entries",
+            kept.len()
+        );
+        kept
+    } else {
+        entries
+    };
+
     log::info!(
-        "oa-shell: sync_media_for_system({systemId}) — {} entries × {} kinds {:?}",
+        "oa-shell: sync_media_for_system({systemId}) — {} entries × {} kinds {:?} ({} canonical)",
         entries.len(), enabled_kinds.len(),
         enabled_kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+        canonical_by_id.len(),
     );
 
     let app_data_dir = state.app_data_dir.clone();
     let db = state.db.clone();
+    let canonical_by_id = Arc::new(canonical_by_id);
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(45))
@@ -1166,9 +1273,12 @@ pub async fn sync_media_for_system(
                     let done_ctr = done2.clone();
                     let system_id = system_id2.clone();
                     let subdir = subdir_owned.clone();
+                    let canonical_by_id = canonical_by_id.clone();
                     async move {
+                        let canonical = canonical_by_id.get(&entry.id).map(|s| s.as_str());
                         let outcome = sync_single_rom(
                             &client, &parsed, repo, kind, &subdir, &app_data_dir, &db, &entry,
+                            canonical,
                         ).await;
                         let d = done_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                         log::info!(
@@ -1391,6 +1501,23 @@ pub fn set_media_kinds_to_fetch(
     prefs.kinds_to_fetch = filtered;
     write_media_prefs(&state.app_data_dir, &prefs).map_err(|e| e.to_string())?;
     log::info!("oa-shell: media kinds_to_fetch updated -> {:?}", prefs.kinds_to_fetch);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_only_sync_identified(state: tauri::State<'_, MediaState>) -> bool {
+    state.prefs.read().map(|p| p.only_sync_identified).unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn set_only_sync_identified(
+    enabled: bool,
+    state: tauri::State<'_, MediaState>,
+) -> Result<(), String> {
+    let mut prefs = state.prefs.write().map_err(|_| "media prefs lock poisoned".to_string())?;
+    prefs.only_sync_identified = enabled;
+    write_media_prefs(&state.app_data_dir, &prefs).map_err(|e| e.to_string())?;
+    log::info!("oa-shell: media only_sync_identified -> {enabled}");
     Ok(())
 }
 

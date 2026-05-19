@@ -23,6 +23,15 @@ export type RomEntry = {
   /// instead of `std::fs::read`. Cart-format inners run from extracted bytes;
   /// CD-set inners (cue/m3u/toc) extract to appData/temp/<rom_id>/.
   archiveInnerPath?: string;
+  /// SHA-1 of the ROM bytes, stamped by the Identify ROMs flow. Sent
+  /// to sync_media_for_system so the server can resolve the canonical
+  /// libretro-database name and do exact-filename matching against
+  /// libretro-thumbnails (much fewer false positives than the old fuzzy
+  /// filename comparison).
+  sha1?: string;
+  /// Region / catalog serial pulled from libretro-database on a hash
+  /// match. Diagnostic for now.
+  serial?: string;
 };
 
 export type LibraryState = {
