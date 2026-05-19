@@ -447,18 +447,97 @@ pub struct RomResolveSummary {
     pub unmatched: usize,
     pub skipped_cd: usize,
     pub errors: usize,
+    /// Number of canonical hash entries the local rom_hashes table held
+    /// for this system at resolve time. When 0, every game in the
+    /// system shows up as "unknown" — the UI uses this to surface
+    /// "no hash DB available" rather than "we tried 1904 and found 0."
+    pub canonical_entries: i64,
 }
 
 /// Hash every ROM in `system_id` that doesn't have a sha1 yet, look it
 /// up in `rom_hashes`, and stamp the canonical title + serial on a
 /// match. CD images are skipped (see module docs).
+///
+/// Auto-syncs the libretro-database `dat/<system>.dat` into our local
+/// `rom_hashes` table if the system currently has zero canonical
+/// entries — otherwise every game ends up "unknown" and the user has
+/// no good signal as to why. The explicit `sync_rom_hashes_for_system`
+/// command stays available for power users who want to force a refresh.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn resolve_rom_hashes_for_system(
     systemId: String,
     app: tauri::AppHandle,
+    state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomResolveSummary, String> {
+    // Auto-sync if our local rom_hashes table is empty for this system.
+    // Without this, "Identify ROMs" against an unsynced system returns
+    // N unknown / 0 matched with no obvious cause; auto-syncing turns
+    // the typical one-click flow into "fetch then resolve" transparently.
+    if db.count_rom_hashes(&systemId)? == 0 {
+        // Mirror the sync_rom_hashes_for_system flow inline. Failures
+        // here are non-fatal — we still want to scan + stamp sha1s on
+        // every game so re-runs don't re-hash, even when the upstream
+        // dat is missing.
+        let app_data_dir = state.app_data_dir.clone();
+        if let Some(name) = libretro_db_name_for_system(&systemId) {
+            let client = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(120))
+                .build()
+            {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    log::warn!("rom_hashes: reqwest client build failed: {e}");
+                    None
+                }
+            };
+            if let Some(client) = client {
+                match fetch_libretro_dat(&client, name).await {
+                    Ok(Some(text)) => {
+                        let entries = parse_libretro_dat(&text, &systemId);
+                        let n = entries.len();
+                        log::info!("rom_hashes: auto-sync {systemId} fetched {n} entries");
+                        let _ = db.upsert_rom_hashes(&entries);
+                        if !entries.is_empty() {
+                            let cache_path = hash_cache_path(&app_data_dir, &systemId);
+                            if let Some(parent) = cache_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let now = SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0);
+                            let cached = CachedHashDb { fetched_at_unix_secs: now, entries };
+                            let _ = std::fs::write(
+                                &cache_path,
+                                serde_json::to_vec(&cached).unwrap_or_default(),
+                            );
+                        }
+                        let _ = app.emit(
+                            "oa://rom-hashes-synced",
+                            &RomHashSyncSummary {
+                                system_id: systemId.clone(),
+                                upstream_entries: n,
+                                written: n,
+                                from_cache: false,
+                            },
+                        );
+                    }
+                    Ok(None) => {
+                        log::warn!("rom_hashes: upstream has no dat for {systemId} ({name})");
+                    }
+                    Err(e) => {
+                        log::warn!("rom_hashes: auto-sync {systemId} fetch failed: {e}");
+                    }
+                }
+            }
+        } else {
+            log::info!("rom_hashes: no libretro-database mapping for {systemId}");
+        }
+    }
+
+    let canonical_entries = db.count_rom_hashes(&systemId)?;
     let games = db.list_games_missing_hash(&systemId)?;
     let total = games.len();
     let mut summary = RomResolveSummary {
@@ -468,7 +547,19 @@ pub async fn resolve_rom_hashes_for_system(
         unmatched: 0,
         skipped_cd: 0,
         errors: 0,
+        canonical_entries,
     };
+
+    // Short-circuit: nothing to match against. Skip the per-game hash
+    // pass entirely — better to stamp 0 sha1s than to burn cycles on a
+    // database the user can't possibly hit.
+    if canonical_entries == 0 {
+        log::info!(
+            "rom_hashes: resolve {systemId} — no canonical entries available, returning early",
+        );
+        let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
+        return Ok(summary);
+    }
     // Tiny in-process cache so re-hashing identical files in this batch
     // (e.g. user has the same ROM in two folders) doesn't pay for it
     // twice. Keyed on `(file_path, archive_inner)` since that's the

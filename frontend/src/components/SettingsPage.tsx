@@ -335,6 +335,11 @@ const SettingsPage: Component<Props> = (props) => {
     unmatched: number;
     skippedCd: number;
     errors: number;
+    /// Canonical entries available in the local rom_hashes table when
+    /// the resolve started. `0` = libretro-database has no dat for this
+    /// system → the UI shows a "no hash DB available" message rather
+    /// than "X unknown."
+    canonicalEntries: number;
   };
   const [hashSyncing, setHashSyncing] = createSignal<Record<string, boolean>>({});
   const [hashSyncSummary, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
@@ -1117,7 +1122,9 @@ const SettingsPage: Component<Props> = (props) => {
                       <Show when={hashResolveSummary()[id]}>
                         {(s) => (
                           <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            identify done · {s().matched} matched · {s().unmatched} unknown · {s().skippedCd} CD-skipped · {s().errors} errors
+                            {s().canonicalEntries === 0
+                              ? "identify · libretro-database has no hash DB for this system"
+                              : `identify done · ${s().matched} matched · ${s().unmatched} unknown · ${s().skippedCd} CD-skipped · ${s().errors} errors (${s().canonicalEntries} canonical entries in DB)`}
                           </p>
                         )}
                       </Show>
