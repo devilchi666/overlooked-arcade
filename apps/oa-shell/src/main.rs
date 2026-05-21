@@ -2480,7 +2480,9 @@ fn main() {
             remove_folder,
             list_folder_rules,
             set_folder_rules,
+            reorder_folders,
             migrate_library_from_local_storage,
+            migrate_folders_from_local_storage,
             directory_is_empty,
             start_background_scan,
             cancel_background_scan,
@@ -7750,6 +7752,18 @@ fn set_folder_rules(
     db.set_folder_rules(&folder_id, &rules)
 }
 
+/// Persist the user's drag-reorder from the Settings → Library tab. Bulk
+/// `UPDATE folders SET display_order = ?` in one transaction so concurrent
+/// `list_folders` calls never see a partially-reordered list.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn reorder_folders(
+    orderedIds: Vec<String>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.reorder_folders(&orderedIds)
+}
+
 /// One-shot migration from the WebView's localStorage[oa.library.v1].
 /// Called by App.tsx on first launch after the SQLite upgrade — once it
 /// returns Ok, the frontend clears the localStorage key.
@@ -7759,6 +7773,20 @@ fn migrate_library_from_local_storage(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<usize, String> {
     db.migrate_from_local_storage(&entries)
+}
+
+/// One-shot migration from the WebView's localStorage[oa.settings.v1]
+/// `libraryFolders` array. Called by the settings store on first launch
+/// after the SQLite-folders unification (2026-05-21) — once it returns Ok,
+/// the frontend strips the field from the settings payload. Returns the
+/// count of paths actually inserted; paths already present in `folders`
+/// are skipped (idempotent across re-runs / crashes).
+#[tauri::command]
+fn migrate_folders_from_local_storage(
+    paths: Vec<String>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<usize, String> {
+    db.migrate_folders_from_local_storage(&paths)
 }
 
 // --- Background scan service ------------------------------------------

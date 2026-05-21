@@ -165,10 +165,14 @@ const SortableMediaRegionRow: Component<{
 /// the scan-collision policy (first-folder-wins on duplicate ROM
 /// filenames) so this drag-reorder is functional, not just cosmetic.
 const SortableFolderRow: Component<{
+  /// SQLite folder id (e.g. `folder-1ddb42376878b631`). Used as the
+  /// solid-dnd sortable id so reorder maps cleanly to a single
+  /// `reorder_folders` Tauri call.
+  id: string;
   folder: string;
-  onRemove: (folder: string) => void;
+  onRemove: (folderId: string) => void;
 }> = (props) => {
-  const sortable = createSortable(props.folder);
+  const sortable = createSortable(props.id);
   return (
     <li
       ref={sortable.ref}
@@ -200,7 +204,7 @@ const SortableFolderRow: Component<{
         type="button"
         onClick={(e) => {
           e.currentTarget.blur();
-          props.onRemove(props.folder);
+          props.onRemove(props.id);
         }}
         class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
       >
@@ -297,24 +301,22 @@ const SettingsPage: Component<Props> = (props) => {
     next.splice(toIdx, 0, moved);
     void persistLibraryPrefs({ ...prefs, regionPriority: next });
   };
-  /// solid-dnd onDragEnd for the library-folders list. Folder paths
-  /// are guaranteed unique by the add-folder flow (we already filter
-  /// duplicates before setLibraryFolders), so they're safe ids.
+  /// solid-dnd onDragEnd for the library-folders list. Drag ids are
+  /// the SQLite folder ids (stable across reorder) so a reorder maps
+  /// to a single `reorder_folders` Tauri call without ambiguity.
   const handleFolderDragEnd: DragEventHandler = ({ draggable, droppable }) => {
     if (!draggable || !droppable) return;
-    const folders = props.settings.libraryFolders();
-    const fromIdx = folders.indexOf(draggable.id as string);
-    const toIdx = folders.indexOf(droppable.id as string);
+    const rows = props.settings.libraryFolderRows();
+    const fromIdx = rows.findIndex((r) => r.id === draggable.id);
+    const toIdx = rows.findIndex((r) => r.id === droppable.id);
     if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
-    const next = [...folders];
+    const next = [...rows];
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
-    props.settings.setLibraryFolders(next);
+    void props.settings.reorderLibraryFolderIds(next.map((r) => r.id));
   };
-  function removeLibraryFolder(folder: string) {
-    props.settings.setLibraryFolders(
-      props.settings.libraryFolders().filter((f) => f !== folder),
-    );
+  function removeLibraryFolder(folderId: string) {
+    void props.settings.removeLibraryFolderById(folderId);
   }
   // moveRegion was used by the old ↑/↓ buttons in the media region
   // list; the drag-reorder path replaces it. Keep the helper around
@@ -1055,12 +1057,13 @@ const SettingsPage: Component<Props> = (props) => {
                   collisionDetector={closestCenter}
                 >
                   <DragDropSensors />
-                  <SortableProvider ids={props.settings.libraryFolders()}>
+                  <SortableProvider ids={props.settings.libraryFolderRows().map((r) => r.id)}>
                     <ul class="space-y-1">
-                      <For each={props.settings.libraryFolders()}>
-                        {(folder) => (
+                      <For each={props.settings.libraryFolderRows()}>
+                        {(row) => (
                           <SortableFolderRow
-                            folder={folder}
+                            id={row.id}
+                            folder={row.path}
                             onRemove={removeLibraryFolder}
                           />
                         )}

@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 11;
+const SCHEMA_VERSION: i32 = 12;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -540,6 +540,50 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v11 (mame_titles)");
         }
 
+        // v11 → v12: `display_order` column on `folders` so the Settings →
+        // Library tab can persist drag-reorder. Backfill existing rows with
+        // their insertion order (rowid) so the migration is a no-op visually.
+        // Bumped when finishing the localStorage → SQLite library-folders
+        // unification — see DECISIONS.md 2026-05-21 "Library folders: SQLite
+        // is the single source of truth".
+        if current < 12 {
+            Self::migrate_v11_to_v12(conn)?;
+            conn.pragma_update(None, "user_version", 12)
+                .map_err(|e| format!("set user_version=12: {e}"))?;
+            log::info!("library_db: schema migrated to v12 (folders.display_order)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v11_to_v12(conn: &Connection) -> Result<(), String> {
+        // Idempotent ALTER (mirrors migrate_v1_to_v2's pattern) so re-running
+        // on a partially-migrated DB doesn't error on "column already exists."
+        let has_column: bool = conn
+            .prepare("PRAGMA table_info(folders)")
+            .and_then(|mut stmt| {
+                let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+                let mut found = false;
+                for r in rows {
+                    if r? == "display_order" {
+                        found = true;
+                        break;
+                    }
+                }
+                Ok(found)
+            })
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute(
+                "ALTER TABLE folders ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|e| format!("alter folders add display_order: {e}"))?;
+            // Seed display_order from rowid so existing folders keep their
+            // chronological order on first launch after upgrade.
+            conn.execute("UPDATE folders SET display_order = rowid", [])
+                .map_err(|e| format!("seed folders.display_order: {e}"))?;
+        }
         Ok(())
     }
 
@@ -2044,8 +2088,11 @@ impl LibraryDb {
                 .map_err(|e| format!("collect folders by_path: {e}"))?;
             Ok(rows)
         } else {
+            // ORDER BY display_order, then rowid as a tiebreaker so equal
+            // display_orders (which can happen when two adds race during
+            // bulk migration) still produce a stable order.
             let mut stmt = conn
-                .prepare(&format!("{sql} ORDER BY path"))
+                .prepare(&format!("{sql} ORDER BY display_order, rowid"))
                 .map_err(|e| format!("prepare folders: {e}"))?;
             let rows = stmt
                 .query_map([], map_row)
@@ -2092,9 +2139,11 @@ impl LibraryDb {
     ) -> Result<Folder, String> {
         let id = folder_id_for_path(path);
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        // Append to the end of the user's current display order. COALESCE
+        // handles the empty-table case where MAX() returns NULL.
         conn.execute(
-            "INSERT INTO folders (id, path, scan_subfolders, subfolders_are_systems, watch_enabled, last_scanned_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+            "INSERT INTO folders (id, path, scan_subfolders, subfolders_are_systems, watch_enabled, last_scanned_at, display_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM folders))",
             params![
                 id,
                 path,
@@ -2113,6 +2162,68 @@ impl LibraryDb {
             last_scanned_at: None,
             rules: None,
         })
+    }
+
+    /// Bulk-update `display_order` for the given folder ids in one tx so the
+    /// SettingsPage drag-reorder persists. Ids absent from `ordered_ids` are
+    /// left untouched, but UI callers typically pass the full current set.
+    pub fn reorder_folders(&self, ordered_ids: &[String]) -> Result<(), String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin reorder tx: {e}"))?;
+        {
+            let mut stmt = tx
+                .prepare("UPDATE folders SET display_order = ?1 WHERE id = ?2")
+                .map_err(|e| format!("prepare reorder update: {e}"))?;
+            for (i, id) in ordered_ids.iter().enumerate() {
+                stmt.execute(params![(i as i64) + 1, id])
+                    .map_err(|e| format!("update display_order for {id}: {e}"))?;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit reorder tx: {e}"))?;
+        Ok(())
+    }
+
+    /// One-shot import for folders that lived in the WebView's localStorage
+    /// `oa.settings.v1.libraryFolders` array before the SQLite migration.
+    /// For each `path` not already in `folders`, inserts a row with the
+    /// quick-add defaults (scan subfolders, watch enabled, no rules — the
+    /// frontend posts default rules in a follow-up `set_folder_rules`).
+    /// Returns the count actually inserted (paths already in SQLite are
+    /// silently skipped).
+    pub fn migrate_folders_from_local_storage(
+        &self,
+        paths: &[String],
+    ) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin folder migration tx: {e}"))?;
+        let mut inserted = 0usize;
+        for path in paths {
+            let id = folder_id_for_path(path);
+            // Skip paths already tracked — keeps the migration idempotent
+            // across launches if the frontend's "clear localStorage after
+            // migrate" step ever races a crash.
+            let exists: bool = tx
+                .query_row(
+                    "SELECT 1 FROM folders WHERE id = ?1",
+                    params![id],
+                    |_| Ok(true),
+                )
+                .optional()
+                .map_err(|e| format!("check existing folder: {e}"))?
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO folders (id, path, scan_subfolders, subfolders_are_systems, watch_enabled, last_scanned_at, display_order)
+                 VALUES (?1, ?2, 1, 0, 1, NULL, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM folders))",
+                params![id, path],
+            )
+            .map_err(|e| format!("insert migrated folder {path}: {e}"))?;
+            inserted += 1;
+        }
+        tx.commit().map_err(|e| format!("commit folder migration tx: {e}"))?;
+        Ok(inserted)
     }
 
     /// Apply a partial update to a folder row. Fields left `None` in the
@@ -2696,6 +2807,83 @@ mod tests {
             .set_folder_rules(&f.id, &[rule(&f.id, "*.pce", "tg16")])
             .expect_err("set on missing folder errors");
         assert!(err.contains("unknown folder id"));
+    }
+
+    #[test]
+    fn folders_display_order_persists_and_reorders() {
+        let db = fresh_db();
+        let a = db.add_folder("/roms/aaa", true, false, true).expect("a");
+        let b = db.add_folder("/roms/bbb", true, false, true).expect("b");
+        let c = db.add_folder("/roms/ccc", true, false, true).expect("c");
+
+        // Insertion order is the default display order.
+        let listed: Vec<String> = db
+            .list_folders(false)
+            .expect("list")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(listed, vec!["/roms/aaa", "/roms/bbb", "/roms/ccc"]);
+
+        // Reorder C, A, B — drag-drop in the Settings UI.
+        db.reorder_folders(&[c.id.clone(), a.id.clone(), b.id.clone()])
+            .expect("reorder");
+        let after: Vec<String> = db
+            .list_folders(false)
+            .expect("list after reorder")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(after, vec!["/roms/ccc", "/roms/aaa", "/roms/bbb"]);
+
+        // Adding a new folder appends to the end of the user's order.
+        let d = db.add_folder("/roms/ddd", true, false, true).expect("d");
+        let _ = d;
+        let after_add: Vec<String> = db
+            .list_folders(false)
+            .expect("list after add")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            after_add,
+            vec!["/roms/ccc", "/roms/aaa", "/roms/bbb", "/roms/ddd"]
+        );
+    }
+
+    #[test]
+    fn migrate_folders_from_local_storage_idempotent() {
+        let db = fresh_db();
+        // Pre-existing folder via the wizard path — migration should leave
+        // it alone, not duplicate.
+        db.add_folder("/roms/pre", true, false, true).expect("seed");
+
+        let n = db
+            .migrate_folders_from_local_storage(&[
+                "/roms/pre".to_string(),
+                "/roms/new1".to_string(),
+                "/roms/new2".to_string(),
+            ])
+            .expect("migrate");
+        assert_eq!(n, 2, "only the two new paths were inserted");
+
+        let after: Vec<String> = db
+            .list_folders(false)
+            .expect("list")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(after, vec!["/roms/pre", "/roms/new1", "/roms/new2"]);
+
+        // Re-running with the same set is a no-op.
+        let n2 = db
+            .migrate_folders_from_local_storage(&[
+                "/roms/pre".to_string(),
+                "/roms/new1".to_string(),
+                "/roms/new2".to_string(),
+            ])
+            .expect("migrate again");
+        assert_eq!(n2, 0);
     }
 
     #[test]

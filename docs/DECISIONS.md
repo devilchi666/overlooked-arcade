@@ -588,3 +588,29 @@ Operators who set OA up once via LaunchBox / BigBox / EmulationStation get the r
 - **Store `visible: bool` on `CoreOption` itself.** Cleaner shape but the schema captured to disk is then mutated per session (visibility is dynamic; schema definitions are not). Keeping the visibility set as a sibling field of the schema preserves the "schema is the immutable core declaration" invariant.
 - **Emit a Tauri event when visibility changes, instead of having the frontend re-fetch.** The frontend already calls `refetch()` after `set_system_core_option` / `set_game_core_option`. An event would let the panel update if visibility changed because of an emu-thread side-effect (e.g. core flipped visibility mid-frame from a game-state predicate), but no shipped core does that — every UPDATE_DISPLAY_CALLBACK invocation is frontend-initiated. Adding the event surface for hypothetical cores is YAGNI.
 - **Don't bother with the UPDATE_DISPLAY_CALLBACK env (just honor the initial visibility set during load).** Tempting given the complexity delta, but the whole point of dynamic visibility is dependent options — e.g. "Lightgun crosshair color" should appear the moment the user flips "Lightgun" on, not on next core reload. Without env 69 we'd ship a stale visibility set.
+
+---
+
+## 2026-05-21 — Library folders: SQLite is the single source of truth
+
+**Decision:** Drop the localStorage `oa.settings.v1.libraryFolders` array. The SQLite `folders` table (created in slice 2.7.C alongside the Import Wizard) is now the single source of truth for tracked library folders. The Settings → Library tab, the Rescan-all menu item, the file-system watcher (`set_watched_folders`), and the ImportWizard's "pick a tracked folder" dropdown all read through `list_folders` via the settings store's SQLite-backed signal.
+
+**Why:** Operator reported "no folders tracked" in Settings even though 5 folders were actively imported with hundreds of ROMs. Diagnosis: the SQLite `folders` table held the 5 paths correctly but the localStorage `libraryFolders` array was empty. The ImportWizard's commit step writes to both stores (`add_folder` + `setLibraryFolders([...tracked, f])`), but the two had diverged at some point — most likely a manual "remove all" click on the Settings list, a write race during the v0→v1 settings schema upgrade, or a clean of WebView2 storage between dev sessions. The mirror line in ImportWizard.tsx:530 was always a known half-measure: its own comment said *"Slice C leaves both stores live; a future slice can migrate the watcher to read from SQLite."*
+
+A single source of truth removes the class entirely: ANY divergence between localStorage and SQLite means the UI lies about reality. The fix that actually closes that gap is dropping one of the two stores.
+
+**Why SQLite and not localStorage:**
+- SQLite already carries the richer schema: scan-subfolders + subfolders-are-systems + watch-enabled + last-scanned-at + folder_rules (FK-cascaded). localStorage only stored a string array.
+- SQLite persists across WebView reinstalls / profile clears (it lives in `appData/.../library/games.sqlite`, not `localAppData/.../EBWebView/`). localStorage routinely gets nuked when WebView2 reprovisions a profile — particularly common in `cargo tauri dev` iteration.
+- SQLite is shared across windows (single-window vs two-window mode) without origin-isolation concerns; localStorage isn't guaranteed to be in all WebView configurations.
+
+**Migration shape:**
+- Schema v12: new `folders.display_order INTEGER NOT NULL DEFAULT 0`. `list_folders` orders by it. `add_folder` sets it to `MAX(display_order) + 1` so adds go to the end. New `reorder_folders(orderedIds)` bulk-update for drag-reorder. Backfilled from `rowid` so existing folders keep insertion order on first launch after upgrade.
+- New `migrate_folders_from_local_storage(paths)` Tauri command — idempotent: paths already in `folders` are skipped. Called once on settings-store init with whatever's in the legacy localStorage payload, then the field is dropped from the persisted JSON forever.
+- Frontend `settings` API: `libraryFolders()` still returns `string[]` (drop-in compat for the watcher + Rescan-all). `libraryFolderRows()` returns the full Folder rows for UI that needs ids. `addLibraryFolderPath`, `removeLibraryFolderById`, `reorderLibraryFolderIds`, `refreshLibraryFolders` replace the old `setLibraryFolders` setter — each one writes through to SQLite then refreshes the signal.
+
+**Considered and rejected:**
+- **Keep both stores, fix the mirror.** That keeps the divergence class alive — a single dropped `setLibraryFolders` call somewhere in the wizard flow is all it takes to break Settings again. Single source of truth is the only fix that survives further refactors.
+- **Move to a sidecar JSON file in `appData/.../library/folders.json`.** Better than localStorage (persistent + cross-window) but worse than SQLite because (a) we already have the SQLite table, (b) JSON loses the `folder_rules` FK relationship, and (c) two persistent stores is exactly what we're escaping.
+- **Keep localStorage as the source of truth.** Would mean migrating folder rules + scan settings OUT of SQLite. Strictly worse: localStorage doesn't survive WebView reprovisioning, doesn't have transactions, and doesn't enforce relational invariants.
+- **Make the migration a one-way "settings store calls SQLite on init, then keeps the localStorage mirror updated on writes."** Two writes per mutation = same divergence risk on partial failure.
