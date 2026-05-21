@@ -1307,16 +1307,38 @@ pub async fn resolve_rom_hashes_for_system(
                         && g.archive_inner_path.is_none()
                         && matches!(systemId.as_str(), "ps2" | "gamecube" | "dreamcast")
                     {
-                        match stream_sha1_of_file(std::path::Path::new(&g.file_path)) {
+                        // PS2/GameCube/Dreamcast .iso dumps are 1.4–8 GB.
+                        // Streaming SHA-1 reads + hashes the entire file
+                        // sequentially — multi-second to multi-minute
+                        // work that would block this async task's runtime
+                        // worker for the whole duration. spawn_blocking
+                        // moves it to Tokio's blocking pool so the rest
+                        // of the async runtime stays responsive.
+                        let path_for_task = g.file_path.clone();
+                        let sha_result = tokio::task::spawn_blocking(move || {
+                            stream_sha1_of_file(std::path::Path::new(&path_for_task))
+                        })
+                        .await
+                        .map_err(|e| format!("stream_sha1 join: {e}"))?;
+                        match sha_result {
                             Ok(sha) => {
                                 match db.lookup_rom_hash(&sha)? {
                                     Some(row) if row.system_id == systemId => {
                                         summary.matched += 1;
+                                        // apply_rom_hash signature is
+                                        // (id, sha1, canonical_title, serial).
+                                        // Pre-fix this call swapped the two
+                                        // tail args — stored serial as title
+                                        // and title as serial, corrupting
+                                        // both columns on every PS2/GC/DC
+                                        // .iso match via this fallback. Cart
+                                        // loop below (line ~1431) was always
+                                        // correct.
                                         if let Err(e) = db.apply_rom_hash(
                                             &g.id,
                                             &sha,
-                                            row.serial.as_deref(),
                                             Some(&row.game_name),
+                                            row.serial.as_deref(),
                                         ) {
                                             log::warn!("rom_hashes: apply_rom_hash {} failed: {e}", g.id);
                                             summary.errors += 1;
