@@ -162,6 +162,13 @@ export type IngestResult =
       /// this to scope post-ingest follow-ups (e.g., auto-Identify
       /// ROMs) without re-resolving the whole library.
       systemIds: SystemId[];
+      /// Full set of entries scanned in this ingest. Passed through to
+      /// post-import sync_media / sync_metadata which need (id, title,
+      /// filePath, systemId) per entry to populate progress + match.
+      /// Server-side hydrates sha1 from library_db at sync time
+      /// (see hydrate_sha1_and_canonical_for_system) so we don't need
+      /// to re-fetch entries between resolve and sync.
+      entries: RomEntry[];
     };
 
 export function romIdFromPath(path: string): string {
@@ -284,6 +291,7 @@ export async function ingestFolderPath(
     skipped: skipped + (entries.length - added),
     total: scanned.length,
     systemIds,
+    entries,
   };
 }
 
@@ -294,6 +302,10 @@ export type RescanSummary = {
   /// Unique systems that received at least one entry across all
   /// rescanned folders. Same intent as `IngestResult.systemIds`.
   systemIds: SystemId[];
+  /// Aggregate of every scanned entry across all rescanned folders.
+  /// Same purpose as `IngestResult.entries` — passed through to
+  /// post-rescan sync_media / sync_metadata.
+  entries: RomEntry[];
 };
 
 export async function rescanFolders(
@@ -306,6 +318,7 @@ export async function rescanFolders(
   const now = Date.now();
   let totalAdded = 0;
   const touchedSystems = new Set<SystemId>();
+  const allEntries: RomEntry[] = [];
   for (const folder of folders) {
     let scanned: ScannedRom[];
     try {
@@ -332,12 +345,16 @@ export async function rescanFolders(
     }
     await resolveMameTitles(entries);
     totalAdded += await store.addScannedRoms(entries);
-    for (const e of entries) touchedSystems.add(e.systemId);
+    for (const e of entries) {
+      touchedSystems.add(e.systemId);
+      allEntries.push(e);
+    }
   }
   return {
     folders: folders.length,
     totalAdded,
     errors,
     systemIds: Array.from(touchedSystems) as SystemId[],
+    entries: allEntries,
   };
 }

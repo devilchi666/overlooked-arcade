@@ -438,11 +438,17 @@ const SettingsPage: Component<Props> = (props) => {
       await media.refreshAll();
     } catch (e) {
       console.warn("sync_media_for_system failed:", e);
-      setSyncing((prev) => ({ ...prev, [systemId]: false }));
       setSyncProgress((prev) => ({
         ...prev,
         [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: `error: ${e}` },
       }));
+    } finally {
+      // H10 belt-and-braces — clear the loading state regardless of
+      // outcome and regardless of whether the oa://library-sync-complete
+      // event listener actually fires. Pre-fix, an early-return on the
+      // Rust side (e.g. entries.len()=0 before the emit) or a dropped
+      // event left the button stuck on "Syncing…" forever.
+      setSyncing((prev) => ({ ...prev, [systemId]: false }));
     }
   }
 
@@ -487,6 +493,23 @@ const SettingsPage: Component<Props> = (props) => {
   const [hashResolveSummary, setHashResolveSummary] =
     createSignal<Record<string, HashResolveSummaryPayload>>({});
 
+  /// Cross-button gating (H9). Any per-system sync op in flight
+  /// disables ALL of that system's buttons (Sync media, Sync metadata,
+  /// Clear metadata, Sync hashes, Identify ROMs). The server-side
+  /// per-system mutex (H11) already serializes concurrent ops, but
+  /// disabling the UI prevents the operator from queuing up confusing
+  /// button-mash sequences and stops fast-fingers from hitting the
+  /// same op twice while the first is still in flight.
+  function isSystemBusy(id: SystemId): boolean {
+    return (
+      syncing()[id] === true ||
+      metaSyncing()[id] === true ||
+      metaClearing()[id] === true ||
+      hashSyncing()[id] === true ||
+      hashResolving()[id] === true
+    );
+  }
+
   onMount(() => {
     let un1: UnlistenFn | undefined;
     let un2: UnlistenFn | undefined;
@@ -521,6 +544,11 @@ const SettingsPage: Component<Props> = (props) => {
       await invoke("sync_rom_hashes_for_system", { systemId });
     } catch (e) {
       console.warn("sync_rom_hashes_for_system failed:", e);
+    } finally {
+      // H10 belt-and-braces — see startSync. The
+      // oa://rom-hashes-synced listener also clears this signal on the
+      // happy path (line ~498), so this is just the safety net for
+      // missed-event cases.
       setHashSyncing((p) => ({ ...p, [systemId]: false }));
     }
   }
@@ -556,6 +584,23 @@ const SettingsPage: Component<Props> = (props) => {
       await props.library.refresh();
     } catch (e) {
       console.warn("resolve_rom_hashes_for_system failed:", e);
+      // H10 — surface the error in the status line so the operator
+      // sees that something went wrong, not just a button that
+      // suddenly reverted to "Identify ROMs".
+      setHashResolveProgress((p) => ({
+        ...p,
+        [systemId]: {
+          systemId,
+          done: 0,
+          total: 0,
+          currentTitle: "",
+          lastAction: `error: ${e}`,
+        },
+      }));
+    } finally {
+      // H10 belt-and-braces — see startSync. The
+      // oa://rom-hash-resolve-complete listener also clears this on
+      // the happy path.
       setHashResolving((p) => ({ ...p, [systemId]: false }));
     }
   }
@@ -593,11 +638,13 @@ const SettingsPage: Component<Props> = (props) => {
       await media.refreshAll();
     } catch (e) {
       console.warn("sync_metadata_for_system failed:", e);
-      setMetaSyncing((prev) => ({ ...prev, [systemId]: false }));
       setMetaProgress((prev) => ({
         ...prev,
         [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: `error: ${e}` },
       }));
+    } finally {
+      // H10 belt-and-braces — see startSync.
+      setMetaSyncing((prev) => ({ ...prev, [systemId]: false }));
     }
   }
 
@@ -897,7 +944,7 @@ const SettingsPage: Component<Props> = (props) => {
                         <span class="flex gap-1.5">
                           <button
                             type="button"
-                            disabled={isSyncing()}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startSync(id);
@@ -908,7 +955,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={isMetaSyncing()}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startMetadataSync(id);
@@ -919,7 +966,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={metaClearing()[id] === true}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startClearMetadata(id);
@@ -931,7 +978,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={hashSyncing()[id] === true}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startHashSync(id);
@@ -943,7 +990,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={hashResolving()[id] === true}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startHashResolve(id);
