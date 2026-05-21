@@ -339,7 +339,28 @@ const App: Component = () => {
       };
     }
     console.log("[oa-direct-launch] auto-launching:", entry);
-    await handleLaunch(entry);
+    await handleLaunch(entry, cfg.slot ?? undefined);
+
+    // After the launch cascade settles, apply CLI-only overrides that
+    // sit on top of per-game / per-system / OA-wide settings.
+    if (cfg.fullscreen) {
+      void invoke("set_window_mode", { mode: "fullscreen", monitorIndex: null }).catch((e) =>
+        console.warn("[oa-direct-launch] --fullscreen set_window_mode failed:", e),
+      );
+    }
+    if (cfg.tasReplay) {
+      void invoke("start_tas_replay", { filePath: cfg.tasReplay }).catch((e) =>
+        console.warn("[oa-direct-launch] --tas-replay start_tas_replay failed:", e),
+      );
+    }
+    if (cfg.stateFile) {
+      // --state-file is reserved for a future restore_state_file command;
+      // log so the operator sees the request didn't take effect rather
+      // than silently dropping it.
+      console.warn(
+        "[oa-direct-launch] --state-file is not wired in this build; use --slot for a per-game save slot.",
+      );
+    }
   }
 
   // Slice C — populate the shader preset registry signal once, on app
@@ -576,7 +597,7 @@ const App: Component = () => {
     setBusy("idle");
   }
 
-  async function handleLaunch(entry: RomEntry) {
+  async function handleLaunch(entry: RomEntry, slot?: number) {
     // Diagnostic — verify the click reached us + log the full entry shape
     // so we can confirm archiveInnerPath/coreOverride/etc. are populated.
     console.log("[oa-launch] handleLaunch called", {
@@ -587,6 +608,7 @@ const App: Component = () => {
       archiveInnerPath: entry.archiveInnerPath,
       coreOverride: entry.coreOverride,
       seed: entry.seed,
+      slot,
     });
     if (entry.seed) {
       console.log("[oa-launch] entry.seed=true → skipping");
@@ -731,7 +753,7 @@ const App: Component = () => {
       console.warn("[oa-launch] override resolution failed:", e);
     }
 
-    const result = await launchRom(entry);
+    const result = await launchRom(entry, slot);
     console.log("[oa-launch] launchRom result:", result);
     setStatus(launchStatus(result));
     setBusy("idle");
