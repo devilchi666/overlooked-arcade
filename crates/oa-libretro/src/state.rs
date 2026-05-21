@@ -75,6 +75,16 @@ pub(crate) struct State {
     /// from `InputState.pointer`; cb_input_state returns the right
     /// component for RETRO_DEVICE_POINTER queries.
     pub input_pointer: [(i16, i16, bool); 5],
+    /// Per-port analog-button pressure. Layout: `[port][button_id]`
+    /// where `button_id` matches the RETRO_DEVICE_ID_JOYPAD_* bit
+    /// position (0-15). Range 0..32767. Cores polling
+    /// `cb_input_state(port, RETRO_DEVICE_ANALOG,
+    /// RETRO_DEVICE_INDEX_ANALOG_BUTTON, button_id)` get the pressure
+    /// for that button — used by Gran Turismo brake-pressure,
+    /// Metal Gear Solid prone-walk, GameCube L/R triggers, PS2/DC
+    /// pressure-sensitive face buttons. Set per frame via
+    /// LibretroCore::set_input from `InputState.analog_buttons`.
+    pub input_analog_buttons: [[i16; 16]; 5],
     /// Snapshotted display aspect (final image W:H, 0.0 = caller falls back to width:height).
     pub display_aspect: f32,
     /// Path/dir/ext strings the core may request via environment callbacks.
@@ -170,6 +180,7 @@ impl State {
             input_bits: [0; 5],
             input_axes: [[0; 4]; 5],
             input_pointer: [(0, 0, false); 5],
+            input_analog_buttons: [[0; 16]; 5],
             display_aspect: 0.0,
             system_dir: CString::new(".").unwrap(),
             save_dir: CString::new(".").unwrap(),
@@ -496,15 +507,23 @@ pub(crate) unsafe extern "C" fn cb_input_state(
     // this device with `index = LEFT/RIGHT` and `id = X/Y`. Values are
     // i16 in the libretro range -32768..32767.
     if device == RETRO_DEVICE_ANALOG {
+        // RETRO_DEVICE_INDEX_ANALOG_BUTTON queries pressure for a
+        // specific joypad button — DualShock face / trigger pressure,
+        // GC L/R analog triggers, DC L/R triggers, PS2 pressure-
+        // sensitive face buttons. Returns the per-port analog-button
+        // value for the queried `id` (which matches the corresponding
+        // RETRO_DEVICE_ID_JOYPAD_* bit position). 0 for unmapped slots.
+        if index == RETRO_DEVICE_INDEX_ANALOG_BUTTON {
+            if id > 15 {
+                return 0;
+            }
+            return with_state(|s| s.input_analog_buttons[port as usize][id as usize]).unwrap_or(0);
+        }
         let axis_idx = match (index, id) {
             (RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X)  => 0,
             (RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y)  => 1,
             (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) => 2,
             (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y) => 3,
-            // RETRO_DEVICE_INDEX_ANALOG_BUTTON queries an "analog
-            // button" (analog L2/R2 triggers on DualShock and GC), which
-            // OA doesn't surface separately yet — return 0 (button is
-            // covered by the digital path via RETRO_DEVICE_JOYPAD).
             _ => return 0,
         };
         return with_state(|s| s.input_axes[port as usize][axis_idx]).unwrap_or(0);

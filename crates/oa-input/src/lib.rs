@@ -478,7 +478,44 @@ impl InputPoller {
         // the game window doesn't cover the full screen.
         let pointer = self.poll_pointer();
 
-        InputState { buttons: bits, axes, pointer }
+        // Per-button analog pressure. Slot i corresponds to RetroPad
+        // bit i (same indexing the digital `bits` uses). For most
+        // buttons the value is binary: 0 if released, 32767 if
+        // pressed — mirrors the digital bitmask so cores that poll
+        // ANALOG_BUTTON for non-trigger buttons get a sensible value.
+        // L2 (slot 12) and R2 (slot 13) get their continuous values
+        // from gilrs's actual trigger axes when a gamepad is
+        // connected, so pressure-sensitive titles (Gran Turismo's
+        // brake, Metal Gear Solid's prone walk, GameCube's analog
+        // triggers) receive real analog data.
+        let mut analog_buttons: [i16; 16] = [0; 16];
+        for bit in 0..16 {
+            if (bits >> bit) & 1 == 1 {
+                analog_buttons[bit] = i16::MAX;
+            }
+        }
+        if let Some(pad) = pad_opt.as_ref() {
+            // gilrs's LeftTrigger2 / RightTrigger2 (L2 / R2) are analog
+            // buttons. `button_data(btn).map(|d| d.value())` returns the
+            // pressure as f32 in 0.0..=1.0 — actual analog value rather
+            // than just the button state. Override the binary slot
+            // values above with the real pressure when a gamepad is
+            // connected. L2 = slot 12, R2 = slot 13 per RetroPad layout.
+            if let Some(d) = pad.button_data(gilrs::Button::LeftTrigger2) {
+                let v = d.value().clamp(0.0, 1.0);
+                if v > 0.0 {
+                    analog_buttons[12] = (v * i16::MAX as f32) as i16;
+                }
+            }
+            if let Some(d) = pad.button_data(gilrs::Button::RightTrigger2) {
+                let v = d.value().clamp(0.0, 1.0);
+                if v > 0.0 {
+                    analog_buttons[13] = (v * i16::MAX as f32) as i16;
+                }
+            }
+        }
+
+        InputState { buttons: bits, axes, pointer, analog_buttons }
     }
 
     /// Sample the OS mouse position + left-button state via
@@ -732,6 +769,60 @@ mod analog_tests {
     fn default_routing_right_uses_right_stick() {
         let r = AnalogStickRouting::default_right();
         assert_eq!(r.gamepad_source, GamepadStick::Right);
+    }
+
+    // --- Analog-button-pressure synthesis -------------------------------
+    //
+    // The poll-time logic that builds `InputState.analog_buttons` runs
+    // inside `InputPoller::poll` and depends on a live gilrs Gamepad
+    // (button_data has no constructor outside a real device session).
+    // We exercise the mirror-the-digital-bitmask formula directly via a
+    // helper that matches what poll() does — anything more requires a
+    // mock gamepad layer that doesn't exist today.
+
+    fn analog_buttons_from_bits(bits: u32) -> [i16; 16] {
+        let mut out: [i16; 16] = [0; 16];
+        for bit in 0..16 {
+            if (bits >> bit) & 1 == 1 {
+                out[bit] = i16::MAX;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn analog_buttons_mirror_digital_bitmask() {
+        // Every pressed digital bit should map to MAX pressure at the
+        // matching analog-button slot. Slot mapping is identity to
+        // RetroPad bit position so the libretro core sees the same
+        // pressure on its ANALOG_BUTTON poll as it does on its
+        // JOYPAD bitmask poll, for cores that read both.
+        let bits = 0b0000_0000_0000_1011; // bits 0, 1, 3 set
+        let out = analog_buttons_from_bits(bits);
+        assert_eq!(out[0], i16::MAX);
+        assert_eq!(out[1], i16::MAX);
+        assert_eq!(out[2], 0);
+        assert_eq!(out[3], i16::MAX);
+        for i in 4..16 {
+            assert_eq!(out[i], 0);
+        }
+    }
+
+    #[test]
+    fn analog_buttons_zero_when_no_digital_press() {
+        assert_eq!(analog_buttons_from_bits(0), [0; 16]);
+    }
+
+    #[test]
+    fn analog_buttons_array_is_16_slots_for_retropad_bits_0_through_15() {
+        // The slot count must match libretro's RetroPad button range
+        // (RETRO_DEVICE_ID_JOYPAD_R3 = 15). cb_input_state masks `id >
+        // 15` to 0 already, but the array's bound is the contract.
+        let out = analog_buttons_from_bits(u32::MAX);
+        assert_eq!(out.len(), 16);
+        for i in 0..16 {
+            assert_eq!(out[i], i16::MAX, "slot {} should saturate at MAX", i);
+        }
     }
 
     // --- Pointer viewport math ------------------------------------------

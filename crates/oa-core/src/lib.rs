@@ -313,7 +313,7 @@ pub enum PortIndex {
 /// Right Y]`). `pointer` carries touch-screen / mouse pointer state for systems
 /// that use libretro RETRO_DEVICE_POINTER (Nintendo DS stylus, light-gun games,
 /// etc.). All three are zero-filled for purely-digital cores that don't poll them.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct InputState {
     /// System-specific button bitfield.
     pub buttons: u32,
@@ -327,6 +327,31 @@ pub struct InputState {
     ///   real touch screen).
     /// Set to `(0, 0, false)` for systems that don't use the pointer device.
     pub pointer: (i16, i16, bool),
+    /// Per-button analog pressure for cores that poll
+    /// `RETRO_DEVICE_INDEX_ANALOG_BUTTON`. Slot `i` corresponds to
+    /// `RETRO_DEVICE_ID_JOYPAD_<bit i>`. Range 0..32767 (positive only —
+    /// analog buttons don't go below "fully released"). For most buttons
+    /// the value is binary (0 when released, 32767 when pressed); slots
+    /// 12 (L2) and 13 (R2) get continuous values from gilrs's actual
+    /// trigger axes when a gamepad is connected, so games that read
+    /// trigger pressure (Gran Turismo brake / Metal Gear Solid prone)
+    /// receive real analog data instead of all-or-nothing presses.
+    ///
+    /// Zero-filled for cores that don't poll the analog-button index;
+    /// the digital `buttons` bitmask remains the source of truth for
+    /// `RETRO_DEVICE_JOYPAD` polls regardless of this field's contents.
+    pub analog_buttons: [i16; 16],
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        Self {
+            buttons: 0,
+            axes: [0; 4],
+            pointer: (0, 0, false),
+            analog_buttons: [0; 16],
+        }
+    }
 }
 
 /// Errors a core may surface across the FFI boundary or during state I/O.

@@ -5080,20 +5080,49 @@ fn run_emu_render(
                     // the touch/aim coordinate. v1 recordings load with
                     // pointer zeroed (covered by TasInputFrame::default).
                     let pointer = (f.pointer_x, f.pointer_y, f.pointer_pressed);
-                    let state = oa_core::InputState { buttons: f.port0, axes: [0; 4], pointer };
+                    // TAS frames don't carry per-button analog pressure
+                    // today (the recording format predates the analog-
+                    // button field); zero-fill so the replay matches the
+                    // recorded digital state. Future TAS format bump
+                    // could capture analog_buttons for pressure-sensitive
+                    // titles, mirroring how pointer fields got added.
+                    let state = oa_core::InputState {
+                        buttons: f.port0,
+                        axes: [0; 4],
+                        pointer,
+                        analog_buttons: [0; 16],
+                    };
                     // Recorded input bits are ALREADY libretro-shape
                     // (we record what the core received). Set directly
                     // — bypass the per-system remap that's only for
                     // device_query/gilrs poll output.
                     core_ref.set_input(oa_core::PortIndex::Port0, state);
                     if f.port1 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port1, oa_core::InputState { buttons: f.port1, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port1,
+                            oa_core::InputState {
+                                buttons: f.port1, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     if f.port2 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port2, oa_core::InputState { buttons: f.port2, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port2,
+                            oa_core::InputState {
+                                buttons: f.port2, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     if f.port3 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port3, oa_core::InputState { buttons: f.port3, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port3,
+                            oa_core::InputState {
+                                buttons: f.port3, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     core_ref.run_frame();
                     // Phase 4 slice D — submit framebuffer to the video
@@ -5172,7 +5201,10 @@ fn run_emu_render(
                 let polled = input.poll(PortIndex::Port0);
                 let libretro_bits = bindings::to_libretro_bits(&current_system_id, polled.buttons);
                 core_ref.set_input(PortIndex::Port0, oa_core::InputState {
-                    buttons: libretro_bits, axes: polled.axes, pointer: polled.pointer,
+                    buttons: libretro_bits,
+                    axes: polled.axes,
+                    pointer: polled.pointer,
+                    analog_buttons: polled.analog_buttons,
                 });
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
