@@ -39,6 +39,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use rayon::prelude::*;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
 use tauri::Emitter;
@@ -1163,7 +1164,76 @@ pub async fn resolve_rom_hashes_for_system(
     // (e.g. user has the same ROM in two folders) doesn't pay for it
     // twice. Keyed on `(file_path, archive_inner)`; value is the full
     // candidate set so a re-hit doesn't pay for header-stripping either.
+    //
+    // Pre-populated in parallel — the cartridge-game read+hash work is
+    // the dominant cost of resolve_rom_hashes_for_system, and was the
+    // single biggest serial bottleneck in OA's library scan. Rayon
+    // par_iter over the unique cart-game keys saturates all cores;
+    // failed reads aren't inserted (the for-loop below will retry them
+    // and surface the error through its existing progress-emission
+    // path). CD games skip the cache entirely (they go through
+    // peek_disc_id, not rom_bytes_for + candidate_sha1s).
     let mut hash_cache: HashMap<(String, Option<String>), Vec<Sha1Candidate>> = HashMap::new();
+    {
+        // Collect deduped cart keys. Skipping any game whose extension
+        // is a CD container keeps the parallel pass focused on the
+        // path it actually accelerates.
+        let mut seen: std::collections::HashSet<(String, Option<String>)> =
+            std::collections::HashSet::new();
+        let mut cart_keys: Vec<(String, Option<String>)> = Vec::new();
+        for g in &games {
+            let ext = std::path::Path::new(g.archive_inner_path.as_deref().unwrap_or(&g.file_path))
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_default();
+            if is_cd_container_ext(&ext) {
+                continue;
+            }
+            let key = (g.file_path.clone(), g.archive_inner_path.clone());
+            if seen.insert(key.clone()) {
+                cart_keys.push(key);
+            }
+        }
+        if !cart_keys.is_empty() {
+            let n = cart_keys.len();
+            let started = std::time::Instant::now();
+            let system_for_hash = systemId.clone();
+            // Run on Tokio's blocking pool so the async runtime isn't
+            // blocked for the duration. rayon::par_iter inside the
+            // closure spreads the work across rayon's CPU pool —
+            // effectively saturating all cores for the duration.
+            let results: Vec<((String, Option<String>), Vec<Sha1Candidate>)> =
+                tokio::task::spawn_blocking(move || {
+                    cart_keys
+                        .into_par_iter()
+                        .filter_map(|key| {
+                            let (file_path, inner) = &key;
+                            match rom_bytes_for(file_path, inner.as_deref()) {
+                                Ok(bytes) => {
+                                    let candidates = candidate_sha1s(&bytes, &system_for_hash);
+                                    Some((key, candidates))
+                                }
+                                // Skip failures here — the for-loop's
+                                // cache-miss path will retry and surface
+                                // the error through its existing
+                                // progress-emission flow.
+                                Err(_) => None,
+                            }
+                        })
+                        .collect()
+                })
+                .await
+                .map_err(|e| format!("parallel hash join: {e}"))?;
+            for (k, v) in results {
+                hash_cache.insert(k, v);
+            }
+            log::info!(
+                "rom_hashes: parallel pre-hash {} cart key(s) for {} in {:?} ({} cached)",
+                n, systemId, started.elapsed(), hash_cache.len(),
+            );
+        }
+    }
 
     let mut done = 0usize;
     for g in games {
