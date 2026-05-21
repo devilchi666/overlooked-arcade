@@ -14,6 +14,7 @@
 // UPDATE/DELETE triggers so the application code never has to think about
 // keeping the index in sync.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -1219,26 +1220,52 @@ impl LibraryDb {
         }
     }
 
-    /// Fetch just the `sha1` column for a single game row by id. Cheaper
-    /// than `find_game_by_sha1` (no full row materialization) and used by
-    /// the media + metadata sync paths to hydrate the authoritative sha1
-    /// for the rows being synced — the frontend sends `SyncRomEntry`s
-    /// constructed before `resolve_rom_hashes_for_system` runs, so the
-    /// payload's `sha1` field is often `None` even when the DB row has
-    /// been freshly stamped.
-    pub fn find_sha1_by_id(&self, id: &str) -> Result<Option<String>, String> {
+    /// Bulk-hydrate sha1 + canonical-no-intro title for every game tagged
+    /// with `system_id`. Returns a `HashMap<id, (sha1, Option<canonical_title>)>`
+    /// covering only entries whose `games.sha1` is non-null and whose
+    /// sha1 matches a `rom_hashes` row for the same system.
+    ///
+    /// Single prepared LEFT JOIN — runs in one lock acquisition, one
+    /// SQL execution, regardless of how many entries the caller has.
+    /// Pre-2026-05-21 the media + metadata sync paths fell back on
+    /// `find_sha1_by_id` + `lookup_rom_hash` per entry, which on a
+    /// 1160-entry sync did ~11,400 sequential lock cycles before the
+    /// network walk could begin. This helper collapses that to one
+    /// query.
+    ///
+    /// Skips rows whose sha1 is empty/null (entries that resolve_rom_hashes
+    /// hasn't stamped yet — caller will get those after the next resolve).
+    pub fn hydrate_sha1_and_canonical_for_system(
+        &self,
+        system_id: &str,
+    ) -> Result<HashMap<String, (String, Option<String>)>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn
-            .prepare("SELECT sha1 FROM games WHERE id = ?1 LIMIT 1")
-            .map_err(|e| format!("prepare find_sha1_by_id: {e}"))?;
-        let mut rows = stmt
-            .query(params![id])
-            .map_err(|e| format!("query find_sha1_by_id: {e}"))?;
-        if let Some(row) = rows.next().map_err(|e| format!("step find_sha1_by_id: {e}"))? {
-            Ok(row.get(0).map_err(|e| format!("col sha1: {e}"))?)
-        } else {
-            Ok(None)
+            .prepare(
+                "SELECT g.id, g.sha1, h.game_name
+                 FROM games g
+                 LEFT JOIN rom_hashes h
+                   ON h.sha1 = g.sha1 AND h.system_id = g.system_id
+                 WHERE g.system_id = ?1
+                   AND g.sha1 IS NOT NULL
+                   AND g.sha1 <> ''",
+            )
+            .map_err(|e| format!("prepare hydrate_sha1_and_canonical_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                let id: String = row.get(0)?;
+                let sha1: String = row.get(1)?;
+                let canonical: Option<String> = row.get(2)?;
+                Ok((id, sha1, canonical))
+            })
+            .map_err(|e| format!("query hydrate_sha1_and_canonical_for_system: {e}"))?;
+        let mut out: HashMap<String, (String, Option<String>)> = HashMap::new();
+        for row in rows {
+            let (id, sha1, canonical) = row
+                .map_err(|e| format!("step hydrate_sha1_and_canonical_for_system: {e}"))?;
+            out.insert(id, (sha1, canonical));
         }
+        Ok(out)
     }
 
     /// Return every game in the given system that doesn't have a sha1 yet

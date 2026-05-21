@@ -1649,25 +1649,34 @@ pub async fn sync_media_for_system(
         .map(|p| p.only_sync_identified)
         .unwrap_or(true);
 
-    // Resolve canonical names server-side: for every entry, look up
-    // the authoritative sha1 from library_db (the frontend sends
-    // SyncRomEntry payloads constructed before resolve_rom_hashes had
-    // a chance to stamp the rows — entry.sha1 is typically None even
-    // when the DB row has a fresh sha1). Falls back to the entry's
-    // own sha1 field for callers that explicitly hydrate it (the
-    // store-level syncSystem path does this; the ImportWizard path
-    // doesn't). The hash-identified subset becomes the "trusted match"
-    // set.
+    // Resolve canonical names server-side: bulk-hydrate sha1 +
+    // canonical title from library_db in one SQL statement. Pre-2026-
+    // 05-21 this was N×2 sequential SQLite lookups per entry; for
+    // a 1160-entry sync that was ~11,400 lock cycles before any
+    // network walk began, serializing against any concurrent
+    // resolve_rom_hashes_for_system writes. The bulk LEFT JOIN
+    // collapses that to one query + one lock acquisition.
+    //
+    // Entries whose game.sha1 is null (resolve hasn't stamped them
+    // yet) drop out of `hydrated` and won't pass the
+    // `only_identified` filter below — same behaviour as before, just
+    // arrived at much faster.
+    let hydrated = library
+        .hydrate_sha1_and_canonical_for_system(&systemId)
+        .map_err(|e| format!("hydrate sha1+canonical: {e}"))?;
     let mut canonical_by_id: std::collections::HashMap<String, String> = Default::default();
     for e in entries.iter() {
-        let sha = library
-            .find_sha1_by_id(&e.id)
-            .ok()
-            .flatten()
-            .or_else(|| e.sha1.clone());
-        if let Some(sha) = sha {
+        if let Some((_sha, Some(game_name))) = hydrated.get(&e.id) {
+            canonical_by_id.insert(e.id.clone(), game_name.clone());
+        } else if let Some(sha) = e.sha1.as_deref() {
+            // Fallback for callers that explicitly hydrated entry.sha1
+            // before invoking (e.g. the store-level syncSystem path).
+            // The bulk JOIN already covers the common case (entry.id is
+            // in the library); this branch catches the rare ad-hoc
+            // direct-launch path that might pass an entry not yet in
+            // library_db.
             if !sha.is_empty() {
-                if let Ok(Some(row)) = library.lookup_rom_hash(&sha) {
+                if let Ok(Some(row)) = library.lookup_rom_hash(sha) {
                     canonical_by_id.insert(e.id.clone(), row.game_name);
                 }
             }

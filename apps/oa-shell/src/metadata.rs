@@ -447,17 +447,20 @@ pub async fn sync_metadata_for_system(
     // title, jumping match rate from ~10% (filename fuzzy) to ~95%
     // (canonical) on a typical library. Filename-derived title is
     // the fallback for entries the rom_hashes resolve couldn't
-    // identify (homebrew, hacks, unstamped). Same lookup pattern as
-    // sync_media_for_system's canonical_by_id.
+    // identify (homebrew, hacks, unstamped).
+    //
+    // Single bulk LEFT JOIN — see hydrate_sha1_and_canonical_for_system
+    // in library_db.rs. Replaces the prior N×2 sequential lookups
+    // that were the chief cost driver of metadata sync on libraries
+    // with 1000+ entries.
+    let hydrated = library
+        .hydrate_sha1_and_canonical_for_system(&systemId)
+        .map_err(|e| format!("hydrate sha1+canonical: {e}"))?;
     let mut canonical_title_by_id: std::collections::HashMap<String, String> =
         Default::default();
     for e in entries.iter() {
-        if let Some(sha) = library.find_sha1_by_id(&e.id).ok().flatten() {
-            if !sha.is_empty() {
-                if let Ok(Some(row)) = library.lookup_rom_hash(&sha) {
-                    canonical_title_by_id.insert(e.id.clone(), row.game_name);
-                }
-            }
+        if let Some((_sha, Some(game_name))) = hydrated.get(&e.id) {
+            canonical_title_by_id.insert(e.id.clone(), game_name.clone());
         }
     }
 
