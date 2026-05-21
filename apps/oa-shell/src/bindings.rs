@@ -2600,6 +2600,11 @@ pub fn default_dreamcast_bindings() -> Bindings {
 /// stick" core option to get full-tilt movement from arrow keys.
 pub fn default_n64_bindings() -> Bindings {
     let mut b = Bindings::new();
+    // Note: R shoulder lives on E rather than the natural W. WASD is
+    // reserved for the left analog stick's keyboard fallback (see
+    // `system_settings::default_analog_routing("n64")`); putting W on
+    // R-shoulder would mean every WASD press also triggered R. E is
+    // the symmetrical complement to L's Q on a keyboard's top row.
     let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
         ("UP",      Some("Up"),     Some("DPadUp")),
         ("DOWN",    Some("Down"),   Some("DPadDown")),
@@ -2609,7 +2614,7 @@ pub fn default_n64_bindings() -> Bindings {
         ("B",       Some("X"),      Some("South")),   // libretro Y — secondary
         ("START",   Some("Enter"),  Some("Start")),
         ("L",       Some("Q"),      Some("LeftTrigger")),
-        ("R",       Some("W"),      Some("RightTrigger")),
+        ("R",       Some("E"),      Some("RightTrigger")),
         ("Z",       Some("Space"),  Some("LeftTrigger2")), // Z trigger is the iconic N64 "use" button
         ("C_UP",    Some("T"),      Some("North")),    // C-stick directions on QWERTY T/G/F/H
         ("C_DOWN",  Some("G"),      None),
