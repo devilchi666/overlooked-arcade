@@ -193,6 +193,41 @@ impl MediaState {
 
 // ---- persistence ----
 
+/// Atomically write `bytes` to `path` — writes to `<path>.tmp` first,
+/// then renames into place. On all platforms `std::fs::rename` is
+/// atomic when the source and destination are on the same filesystem
+/// (which is always the case here — we write within the app_data
+/// directory). On Windows, rename also replaces an existing target
+/// file silently (per `MoveFileEx`/`MOVEFILE_REPLACE_EXISTING`
+/// semantics that std::fs::rename uses).
+///
+/// Pre-fix `write_media_db` and `write_media_prefs` did a direct
+/// `std::fs::write`. A crash mid-write left the file truncated;
+/// next launch's parser hit the truncated JSON, fell back to
+/// `MediaDb::default()`, and silently lost all the operator's
+/// custom cover selections, region priorities, and so on.
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Append .tmp to the full filename (preserves extension visibility
+    // and avoids collisions with any other transient files in the dir).
+    let mut tmp_os = path.as_os_str().to_owned();
+    tmp_os.push(".tmp");
+    let tmp_path = PathBuf::from(tmp_os);
+    std::fs::write(&tmp_path, bytes)?;
+    match std::fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Rename failed — try to clean up the .tmp so we don't
+            // leave debris on disk. Ignore cleanup errors; the
+            // primary failure is what gets surfaced.
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(e)
+        }
+    }
+}
+
 fn media_db_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("library").join("media.json")
 }
@@ -221,12 +256,9 @@ pub fn read_media_db(app_data_dir: &Path) -> MediaDb {
 
 pub fn write_media_db(app_data_dir: &Path, db: &MediaDb) -> std::io::Result<()> {
     let p = media_db_path(app_data_dir);
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let bytes = serde_json::to_vec_pretty(db)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(&p, &bytes)
+    atomic_write_bytes(&p, &bytes)
 }
 
 pub fn read_media_prefs(app_data_dir: &Path) -> MediaPrefs {
@@ -239,12 +271,9 @@ pub fn read_media_prefs(app_data_dir: &Path) -> MediaPrefs {
 
 pub fn write_media_prefs(app_data_dir: &Path, prefs: &MediaPrefs) -> std::io::Result<()> {
     let p = media_prefs_path(app_data_dir);
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let bytes = serde_json::to_vec_pretty(prefs)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(&p, &bytes)
+    atomic_write_bytes(&p, &bytes)
 }
 
 // ---- active-variant resolver ----
@@ -947,12 +976,23 @@ fn generate_thumbnail(bytes: &[u8], dest: &Path) -> Result<(u32, u32), String> {
     // MediaDb, so the tile never gets a cover.
     let rgba: image::RgbaImage = img.to_rgba8();
     let resized = image::imageops::resize(&rgba, new_w, new_h, image::imageops::FilterType::Triangle);
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir thumb dir: {e}"))?;
-    }
-    resized
-        .save_with_format(dest, image::ImageFormat::WebP)
+    // Encode WebP to an in-memory buffer first, then atomically write
+    // via the .tmp + rename helper. Pre-fix `save_with_format` wrote
+    // directly to `dest`, leaving a window where two concurrent
+    // sync_single_rom tasks targeting the same content-addressed
+    // sha could torn-write (both saw `thumb_abs.exists() == false`,
+    // both encoded, both wrote — last write wins but readers in the
+    // middle could see a partial file). With the .tmp + rename
+    // pattern each task writes to its own tmp path (path + ".tmp")
+    // and the rename is atomic, so readers always see either the
+    // old file or a complete new file, never a torn one.
+    let mut buf: Vec<u8> = Vec::new();
+    let dyn_img = image::DynamicImage::ImageRgba8(resized);
+    dyn_img
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::WebP)
         .map_err(|e| format!("encode webp ({}x{} → {}x{}): {e}", orig_w, orig_h, new_w, new_h))?;
+    atomic_write_bytes(dest, &buf)
+        .map_err(|e| format!("write thumb {}: {e}", dest.display()))?;
     Ok((orig_w, orig_h))
 }
 
@@ -2109,24 +2149,48 @@ pub async fn clear_metadata_for_system(
     let _gate_guard = gate.lock().await;
 
     let ids = library.list_game_ids_for_system(&systemId)?;
-    let mut cleared = 0usize;
-    let mut updated_payloads: Vec<(String, GameMedia)> = Vec::new();
-    {
+    // Pre-fix this loop cloned every cleared GameMedia under the write
+    // lock and stored them in `updated_payloads` for the event emit
+    // step. For a 5000-entry library that's 5000 clones (each
+    // GameMedia carries multiple Vec<MediaVariant>) held alive while
+    // the write lock blocks every concurrent reader. Now: the
+    // mutating loop only collects ids that were cleared, the write
+    // lock drops, the file write happens outside the lock, and the
+    // per-row clones for the emit payload run under a READ lock
+    // (multiple concurrent readers are fine).
+    let cleared_ids: Vec<String> = {
         let mut db = state.db.write().map_err(|_| "media db lock poisoned".to_string())?;
+        let mut out: Vec<String> = Vec::new();
         for id in &ids {
             if let Some(gm) = db.get_mut(id) {
                 if gm.metadata.is_some() {
                     gm.metadata = None;
-                    cleared += 1;
-                    updated_payloads.push((id.clone(), gm.clone()));
+                    out.push(id.clone());
                 }
             }
         }
-        if cleared > 0 {
-            write_media_db(&state.app_data_dir, &db)
-                .map_err(|e| format!("write media.json: {e}"))?;
-        }
+        out
+    }; // <-- write lock drops here
+
+    let cleared = cleared_ids.len();
+    if cleared > 0 {
+        // File write under a brief read lock — atomic_write_bytes
+        // makes this crash-safe via tmp+rename.
+        let db_r = state.db.read().map_err(|_| "media db lock poisoned".to_string())?;
+        write_media_db(&state.app_data_dir, &db_r)
+            .map_err(|e| format!("write media.json: {e}"))?;
     }
+
+    // Build emit payloads under a brief read lock — readers are
+    // shareable, so this doesn't contend with other concurrent
+    // sync_media / get_media_index callers.
+    let updated_payloads: Vec<(String, GameMedia)> = {
+        let db_r = state.db.read().map_err(|_| "media db lock poisoned".to_string())?;
+        cleared_ids
+            .iter()
+            .filter_map(|id| db_r.get(id).map(|gm| (id.clone(), gm.clone())))
+            .collect()
+    };
     use tauri::Emitter;
     for (rom_id, gm) in &updated_payloads {
         let _ = app.emit(

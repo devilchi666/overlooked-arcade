@@ -48,6 +48,42 @@ pub struct DiscId {
     pub system_hint: Option<String>,
 }
 
+/// Resolve an m3u to the first listed disc image. m3u is a plain-text
+/// playlist (one path per line, lines starting with `#` are comments).
+/// Multi-disc games (FFVII, Lunar, Policenauts, etc.) ship as an
+/// m3u + N .cue/.chd/.bin pairs. Disc-id only needs ONE disc to
+/// identify the title — pick the first non-comment entry and resolve
+/// it relative to the m3u file's directory.
+///
+/// Pre-fix `is_cd_container_ext` included "m3u" → routed to
+/// peek_disc_id → `read_data_track_header` → DiscFormat detection
+/// → error ("disc format .m3u not supported"). All multi-disc M3Us
+/// silently fell into skipped_cd.
+fn resolve_m3u_first_disc(m3u_path: &Path) -> Result<PathBuf, String> {
+    let text = std::fs::read_to_string(m3u_path)
+        .map_err(|e| format!("read m3u {}: {e}", m3u_path.display()))?;
+    let parent = m3u_path.parent().unwrap_or(Path::new(""));
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // m3u entries can be absolute or relative. Relative resolves
+        // against the m3u's directory (standard m3u semantics).
+        let candidate = PathBuf::from(trimmed);
+        let resolved = if candidate.is_absolute() {
+            candidate
+        } else {
+            parent.join(candidate)
+        };
+        return Ok(resolved);
+    }
+    Err(format!(
+        "m3u {} has no playable entries (all blank or commented)",
+        m3u_path.display()
+    ))
+}
+
 /// Open the disc image, read enough of the data track to extract the
 /// embedded game id, dispatch to the per-system extractor.
 ///
@@ -193,7 +229,22 @@ const HEADER_BYTES: usize = 32 * 1024;
 /// Read the data track's first `HEADER_BYTES` of user data. Single
 /// entry point for all extractor code so per-system extractors only
 /// deal with deframed bytes.
+///
+/// Handles m3u indirection: if `path` is an m3u, resolves to the first
+/// listed disc image and reads its header. Disc-id only needs one
+/// disc to identify the title (the catalog code on Disc 1 is the
+/// canonical lookup key in redump).
 pub fn read_data_track_header(path: &Path) -> Result<Vec<u8>, String> {
+    // m3u indirection — resolve to first disc + recurse. Done before
+    // detect_format so we don't have to add a DiscFormat::M3u variant.
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    if matches!(ext.as_deref(), Some("m3u")) {
+        let first_disc = resolve_m3u_first_disc(path)?;
+        return read_data_track_header(&first_disc);
+    }
     match detect_format(path)? {
         DiscFormat::Iso => read_iso_header(path),
         DiscFormat::Cue => cue::read_data_track_header(path),

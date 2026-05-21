@@ -21,7 +21,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 12;
+const SCHEMA_VERSION: i32 = 13;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -589,7 +589,38 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v12 (folders.display_order)");
         }
 
+        // v12 → v13: complementary partial index for list_games_missing_hash.
+        // The existing `idx_games_sha1 WHERE sha1 IS NOT NULL` covers the
+        // common find-by-sha1 lookup but is the INVERSE of what
+        // list_games_missing_hash queries. Pre-fix the missing-hash
+        // query (`WHERE sha1 IS NULL OR sha1 = ''`) had no usable
+        // index — SQLite did a full table scan, fine at OA's current
+        // 5697-row scale but a serious problem at 50K+ row libraries
+        // (every Identify ROMs click would scan the whole table).
+        if current < 13 {
+            Self::migrate_v12_to_v13(conn)?;
+            conn.pragma_update(None, "user_version", 13)
+                .map_err(|e| format!("set user_version=13: {e}"))?;
+            log::info!("library_db: schema migrated to v13 (idx_games_missing_hash)");
+        }
+
         Ok(())
+    }
+
+    /// Add a complementary partial index for list_games_missing_hash.
+    /// SQLite stores partial indexes as compact b-trees keyed on
+    /// system_id, so this gives the missing-hash query a per-system
+    /// fast path: at 50K rows where ~80% are already stamped, the
+    /// index covers the 10K-row remainder without touching the rest.
+    fn migrate_v12_to_v13(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_games_missing_hash
+                ON games(system_id)
+                WHERE sha1 IS NULL OR sha1 = '';
+            "#,
+        )
+        .map_err(|e| format!("create idx_games_missing_hash: {e}"))
     }
 
     fn migrate_v11_to_v12(conn: &Connection) -> Result<(), String> {
@@ -743,6 +774,13 @@ impl LibraryDb {
             );
             CREATE INDEX IF NOT EXISTS idx_rom_hashes_system ON rom_hashes(system_id);
             CREATE INDEX IF NOT EXISTS idx_games_sha1 ON games(sha1) WHERE sha1 IS NOT NULL;
+            -- Complementary partial index for list_games_missing_hash —
+            -- see migrate_v12_to_v13 for the rationale. Bootstrapped
+            -- here so fresh installs get it without waiting for the
+            -- v13 migration to run.
+            CREATE INDEX IF NOT EXISTS idx_games_missing_hash
+                ON games(system_id)
+                WHERE sha1 IS NULL OR sha1 = '';
             "#,
         )
         .map_err(|e| format!("create rom_hashes table: {e}"))

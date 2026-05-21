@@ -95,9 +95,20 @@ impl MetadatKind {
 /// `tg16` system_id but different metadat files), lifts non-PCE systems
 /// from 10% to ~95% match rate.
 fn metadat_system_name_for(system_id: &str, ext: &str) -> Option<&'static str> {
-    // TG-16 has three internal variants split by extension since they
-    // share the system_id but route to different upstream metadats.
-    if system_id == "tg16" || system_id == "pce-cd" {
+    // pce-cd is CD-shape by definition — even if an entry somehow has
+    // a non-CD extension (manifest editing, scan misclassification),
+    // route to the CD catalog rather than fall through to the PCE
+    // cart catalog. Pre-fix the system_id == "pce-cd" branch shared
+    // the same match arm as tg16 and the wildcard `_` arm routed to
+    // the PCE cart catalog — anomalous pce-cd entries silently
+    // matched against the wrong upstream.
+    if system_id == "pce-cd" {
+        return Some("NEC - PC Engine CD - TurboGrafx-CD");
+    }
+    // TG-16 cart-family — three variants split by extension since the
+    // PCE cart, PCE-CD, and SGX libraries share the same `tg16`
+    // system_id but route to different upstream metadats.
+    if system_id == "tg16" {
         return Some(match ext {
             "sgx" => "NEC - PC Engine SuperGrafx",
             "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso" => "NEC - PC Engine CD - TurboGrafx-CD",
@@ -175,7 +186,19 @@ struct CachedMetadat {
     entries: Vec<UpstreamMetadat>,
 }
 
-const METADAT_CACHE_TTL_SECS: u64 = 86_400; // 24h
+const METADAT_CACHE_TTL_SECS: u64 = 86_400; // 24h for non-empty caches
+
+/// Shorter TTL for empty-result caches. Some systems have no upstream
+/// metadat at all (pce-cd has no genre/year/etc dat in libretro-
+/// database, 3DO same, etc.). Pre-fix those returned `Ok(vec![])` and
+/// the cache write was skipped — every subsequent sync hit the
+/// network for all 5 kinds, pounding GitHub raw with five 404s per
+/// sync. Now we write an empty-marker cache with a 1h TTL: re-runs
+/// within an hour skip the network entirely, but the short TTL means
+/// a system that gains upstream coverage (libretro-database does
+/// publish new dats periodically) gets picked up within an hour
+/// instead of the user having to wait 24h or clear the cache.
+const METADAT_EMPTY_CACHE_TTL_SECS: u64 = 3_600; // 1h for empty markers
 
 fn metadat_cache_path(app_data_dir: &Path, system_name: &str) -> PathBuf {
     app_data_dir
@@ -279,15 +302,24 @@ async fn get_system_metadat_cached(
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            // Skip empty caches — they're either from a prior buggy parser
-            // run (pre-comment-vs-name fix) or from a system with no
-            // upstream coverage. Either way, a refetch is what we want;
-            // the new code won't re-cache empties.
+            let age = now.saturating_sub(cached.fetched_at_unix_secs);
+            // Empty cache (system has no upstream metadat coverage)
+            // honored for a SHORT TTL only — see
+            // METADAT_EMPTY_CACHE_TTL_SECS. Avoids hammering GitHub
+            // raw on every sync for no-coverage systems (pce-cd,
+            // 3do, …) while still allowing fresh coverage to land
+            // within an hour.
             if cached.entries.is_empty() {
+                if age < METADAT_EMPTY_CACHE_TTL_SECS {
+                    log::info!(
+                        "oa-shell: empty-marker cache for {system_name} still fresh ({age}s); skipping fetch"
+                    );
+                    return Ok(Vec::new());
+                }
                 log::info!(
-                    "oa-shell: stale empty cache for {system_name}; refetching"
+                    "oa-shell: empty-marker cache for {system_name} aged past TTL; refetching"
                 );
-            } else if now.saturating_sub(cached.fetched_at_unix_secs) < METADAT_CACHE_TTL_SECS {
+            } else if age < METADAT_CACHE_TTL_SECS {
                 log::info!(
                     "oa-shell: metadat for {system_name} from cache ({} entries)",
                     cached.entries.len()
@@ -334,32 +366,31 @@ async fn get_system_metadat_cached(
         }
     }
     let entries: Vec<UpstreamMetadat> = by_name.into_values().collect();
-    // Don't cache empty results — they typically mean the system has no
-    // metadat at all (every kind 404'd, see e.g. PCE-CD which libretro-
-    // database doesn't carry). Caching the empty would lock the user out
-    // for 24h; leaving the cache absent lets a retry re-fetch immediately
-    // if upstream publishes data later. Non-empty caches still last the
-    // full TTL.
+    // Write both cases — non-empty for the standard 24h TTL,
+    // empty-marker for the short 1h TTL (see
+    // METADAT_EMPTY_CACHE_TTL_SECS). Pre-fix empties weren't cached
+    // at all and every sync re-fetched all 5 kinds (typically all
+    // 404s), pounding GitHub raw needlessly.
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let cached = CachedMetadat {
+        fetched_at_unix_secs: now,
+        entries: entries.clone(),
+    };
+    if let Some(parent) = cache_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(
+        &cache_path,
+        serde_json::to_vec_pretty(&cached).unwrap_or_default(),
+    );
     if entries.is_empty() {
         log::warn!(
-            "oa-shell: no metadat available for system {system_name} (all kinds 404 or empty); skipping cache write"
+            "oa-shell: no metadat available for system {system_name} (all kinds 404 or empty); writing empty-marker (TTL {METADAT_EMPTY_CACHE_TTL_SECS}s)"
         );
     } else {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let cached = CachedMetadat {
-            fetched_at_unix_secs: now,
-            entries: entries.clone(),
-        };
-        if let Some(parent) = cache_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(
-            &cache_path,
-            serde_json::to_vec_pretty(&cached).unwrap_or_default(),
-        );
         log::info!(
             "oa-shell: metadat for {system_name} fetched fresh ({} entries)",
             entries.len()

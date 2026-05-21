@@ -576,11 +576,38 @@ const App: Component = () => {
       setStatus(`Couldn't read ${picked}: ${String(e)}`);
       return;
     }
+    // Persist the folder row BEFORE the scan so a watcher / restart
+    // can still find it if the operator interrupts mid-scan. On a
+    // total scan failure (0 added AND every folder errored — i.e.,
+    // the directory was unreadable or every ROM hit an error) we
+    // roll back so the operator doesn't see a phantom folder in
+    // Settings → Library. Partial errors (some imports succeeded)
+    // keep the folder and surface the error count in the status.
     await settings.addLibraryFolderPath(picked);
     setBusy("scanning");
     setStatus(`Scanning ${picked}…`);
     const summary = await rescanFolders(library, [picked], scanProgressReporter);
-    setStatus(`Added ${summary.totalAdded} from ${picked}.`);
+    if (summary.totalAdded === 0 && summary.errors.length > 0) {
+      // Total scan failure — roll back the persisted folder. The
+      // store doesn't expose a by-path remove; look the row up from
+      // libraryFolderRows() (post-refresh) and remove by id.
+      console.warn("rescan errors:", summary.errors);
+      try {
+        const row = settings.libraryFolderRows().find((r) => r.path === picked);
+        if (row) {
+          await settings.removeLibraryFolderById(row.id);
+        }
+      } catch (e) {
+        console.warn(`[oa-app] folder rollback failed for ${picked}:`, e);
+      }
+      const firstErr = summary.errors[0] ?? "unknown error";
+      setStatus(`Failed to scan ${picked}: ${firstErr}`);
+      setBusy("idle");
+      return;
+    }
+    const errSuffix = summary.errors.length > 0 ? ` (${summary.errors.length} errored)` : "";
+    setStatus(`Added ${summary.totalAdded} from ${picked}${errSuffix}.`);
+    if (summary.errors.length > 0) console.warn("rescan errors:", summary.errors);
     if (summary.totalAdded > 0) {
       void autoSyncAfterIngest(summary.systemIds, summary.entries);
     }

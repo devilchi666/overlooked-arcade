@@ -187,7 +187,20 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       const initial = await invoke<MediaIndex>("get_media_index");
       const map = new Map(Object.entries(initial));
       console.log("[oa-media] hydrated MediaIndex with", map.size, "entries:", [...map.keys()]);
-      setIndex(map);
+      // Merge instead of replace — the listener was installed first
+      // (above) so per-row oa://media-updated events that arrived
+      // between listener-install and this hydrate are already in
+      // `prev`. A plain `setIndex(map)` would clobber them with the
+      // older hydrate snapshot. Newer wins: copy hydrate values
+      // first, then overlay anything `prev` already has so in-flight
+      // updates take precedence.
+      setIndex((prev) => {
+        const merged = new Map(map);
+        for (const [k, v] of prev) {
+          merged.set(k, v);
+        }
+        return merged;
+      });
     } catch (e) {
       console.warn("MediaProvider: initial hydrate failed:", e);
     }

@@ -401,6 +401,18 @@ const ImportWizard: Component<Props> = (props) => {
   async function startScan() {
     const f = folder();
     if (!f) return;
+    // Belt-and-braces: tear down any prior listeners before re-arming.
+    // Pre-fix `startScan` would just overwrite `progressUnlisten` /
+    // `completeUnlisten` if called twice (rescan from step 3, or
+    // Back→Next re-firing the auto-start effect). The previous
+    // listeners stayed attached to Tauri's event bus for the lifetime
+    // of the modal — orphaned, never unregistered. Each one filtered
+    // events by jobId (current call's payload would be dropped by the
+    // orphan listener since jobId didn't match), so behaviour was
+    // "right" but every replay leaked a listener + a small allocation
+    // for its filter closure.
+    teardownListeners();
+
     setScanRunning(true);
     setScanError(null);
     setScanRows([]);
