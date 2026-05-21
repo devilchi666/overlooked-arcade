@@ -3863,7 +3863,15 @@ fn run_emu_render(
                             // SetAnalogRouting commands. We don't have the
                             // current game's id here so the per-system pass
                             // is all we can do automatically.
+                            //
+                            // Resolution: explicit user setting → compiled-in
+                            // per-system default (today N64 = WASD on the left
+                            // stick) → identity. Same chain as
+                            // `arm_analog_routing` so the LoadRom baseline
+                            // and the post-launch game-level pass agree on
+                            // the per-system layer.
                             let analog_sys = new_settings.analog_routing.clone()
+                                .or_else(|| system_settings::default_analog_routing(&current_system_id))
                                 .unwrap_or_else(system_settings::AnalogRoutingPrefs::identity);
                             for port_idx in 0u32..5 {
                                 let port = match port_idx {
@@ -7034,7 +7042,14 @@ fn arm_analog_routing(
         .ok_or_else(|| format!("game id not found: {gameId}"))?;
     let sys = system_settings::read_system_settings(&state.app_data_dir, &row.system_id);
     let game_overrides = db.get_game_overrides(&gameId)?;
+    // Resolution chain for the per-system layer: an explicit user
+    // setting wins; otherwise fall back to the compiled-in per-system
+    // default (today: N64 gets WASD on the left stick); otherwise
+    // identity. The per-system default is the difference between a
+    // keyboard-only N64 player who has to enable Mupen's d-pad-to-stick
+    // hack and one who can use WASD out of the box.
     let sys_routing = sys.analog_routing.clone()
+        .or_else(|| system_settings::default_analog_routing(&row.system_id))
         .unwrap_or_else(system_settings::AnalogRoutingPrefs::identity);
     let game_routing = game_overrides.analog_routing.clone();
     let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;

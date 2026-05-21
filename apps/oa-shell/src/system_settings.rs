@@ -340,6 +340,58 @@ pub fn effective_keyboard_passthrough(system_id: &str, settings: &SystemSettings
         .unwrap_or_else(|| default_keyboard_passthrough(system_id))
 }
 
+/// Compiled-in default analog routing per system. Returns `Some` for
+/// systems whose canonical controller has an analog stick and whose
+/// keyboard-only operators should get a sensible fallback out of the
+/// box. Returns `None` for systems with no analog stick (cart-era
+/// digital-only consoles) or no canonical keyboard fallback decision —
+/// the caller falls back to identity routing.
+///
+/// Today this is N64-only. The N64 controller's analog stick is the
+/// primary movement input for almost every game; before this default
+/// landed, keyboard-only operators had to enable Mupen64Plus-Next's
+/// "Map d-pad to analog stick" core option (a digital-only hack that
+/// gives all-or-nothing tilt). With the default, WASD on the left
+/// analog stick provides smooth keyboard-only analog movement out of
+/// the box, complementing the existing arrow-key d-pad and Z/X face
+/// buttons.
+///
+/// **New core onboarding checklist item:** if the system has an
+/// analog stick and there's a sensible keyboard fallback, add an arm
+/// here. Otherwise leave it returning `None` — operators can configure
+/// per-system keyboard-to-axis routing via the Settings page once an
+/// analog peripheral matters for their library.
+pub fn default_analog_routing(system_id: &str) -> Option<AnalogRoutingPrefs> {
+    match system_id {
+        // Nintendo 64 — WASD on the left analog stick. R shoulder
+        // moves from W → E in `bindings::default_n64_bindings()` to
+        // free up W for stick-up. Right stick is identity (no
+        // keyboard fallback) because the N64 controller has only
+        // one analog stick; the C-buttons are digital and already
+        // bound to T/G/F/H in the keyboard bindings table.
+        "n64" => Some(AnalogRoutingPrefs {
+            ports: vec![AnalogPortRouting {
+                left: AnalogStickPrefs {
+                    gamepad_source: "left".into(),
+                    keyboard: [
+                        Some("W".into()), // up
+                        Some("S".into()), // down
+                        Some("A".into()), // left
+                        Some("D".into()), // right
+                    ],
+                    deadzone: 0.0,
+                    sensitivity: 1.0,
+                    invert_x: false,
+                    invert_y: false,
+                },
+                right: AnalogStickPrefs::default_right(),
+                stick_swap: false,
+            }],
+        }),
+        _ => None,
+    }
+}
+
 fn system_settings_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("systems")
 }
@@ -405,6 +457,70 @@ mod tests {
         for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "sms", "gamegear", "atari7800"] {
             assert!(!default_keyboard_passthrough(sys), "{sys}: expected off");
         }
+    }
+
+    #[test]
+    fn default_analog_routing_n64_is_wasd_on_left_stick() {
+        let routing = default_analog_routing("n64").expect("n64 has a default");
+        // Single configured port (port 0). Other ports fall through to
+        // identity via `AnalogRoutingPrefs::port_routing`.
+        let port0 = routing.port_routing(0);
+        assert_eq!(
+            port0.left.keyboard,
+            [Some("W".into()), Some("S".into()), Some("A".into()), Some("D".into())],
+            "n64 left stick keyboard fallback must be WASD in [up, down, left, right] order"
+        );
+        assert_eq!(
+            port0.left.gamepad_source, "left",
+            "n64 left stick must still draw from the gamepad's left stick (not none)"
+        );
+        // Right stick is identity-default (no keyboard fallback on the
+        // n64 — the C-buttons are digital and bound in the keyboard
+        // bindings table, not on the right stick).
+        assert_eq!(port0.right.keyboard, [None, None, None, None]);
+        assert!(!port0.stick_swap);
+
+        // Each keyboard name must resolve through device_query — a
+        // string that doesn't round-trip silently drops the binding.
+        for name in port0.left.keyboard.iter().flatten() {
+            assert!(
+                crate::bindings::keycode_from_name(name).is_some(),
+                "n64 default keyboard name {name:?} must round-trip through keycode_from_name"
+            );
+        }
+    }
+
+    #[test]
+    fn default_analog_routing_returns_none_for_unknown_systems() {
+        // Cart-era digital-only consoles → identity (no keyboard
+        // fallback for an analog stick they don't have).
+        for sys in &["nes", "snes", "tg16", "lynx", "atari7800", "2600", "channelf"] {
+            assert!(
+                default_analog_routing(sys).is_none(),
+                "{sys}: expected no compiled-in analog default (cart-era / digital-only)"
+            );
+        }
+        // Unknown id → None.
+        assert!(default_analog_routing("not-a-real-system").is_none());
+    }
+
+    #[test]
+    fn default_analog_routing_round_trips_to_runtime() {
+        // The conversion to `oa_input::AnalogStickRouting` must
+        // resolve every key name. The arm_analog_routing pipeline
+        // calls `to_runtime` on each port routing immediately before
+        // pushing to the input poller; a malformed name would
+        // silently drop the binding rather than surfacing as an error.
+        let routing = default_analog_routing("n64").expect("n64 has a default");
+        let runtime = routing.port_routing(0).to_runtime();
+        assert_eq!(
+            runtime.left.keyboard.len(),
+            4,
+            "AnalogStickRouting keyboard array is fixed at 4 slots"
+        );
+        // All four WASD slots must have resolved to Some(Keycode).
+        assert!(runtime.left.keyboard.iter().all(|k| k.is_some()),
+            "n64 WASD default must resolve every slot to a real Keycode");
     }
 
     #[test]
