@@ -22,6 +22,8 @@ type Props = {
   /// Currently-selected entry id (or null). Each row compares its own entry
   /// id to derive its `selected` state.
   selectedId?: () => string | null;
+  /// Lookup for the variant count badge — see VirtualLibraryGrid.
+  variantCountFor?: (id: string) => number | undefined;
 };
 
 type ListRow =
@@ -110,6 +112,11 @@ const DetailListView: Component<Props> = (props) => {
                     onPickContext={props.onPickContext}
                     onFocus={props.onFocus}
                     selectedId={props.selectedId}
+                    variantCount={
+                      props.variantCountFor?.(
+                        (row() as Extract<ListRow, { kind: "game" }>).entry.id,
+                      )
+                    }
                   />
                 </Show>
               </div>
@@ -128,6 +135,7 @@ const DetailRow: Component<{
   onPickContext?: (e: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (e: RomEntry) => void;
   selectedId?: () => string | null;
+  variantCount?: number;
 }> = (props) => {
   const media = useMedia();
   const theme = () => systemThemes[props.entry.systemId];
@@ -182,7 +190,14 @@ const DetailRow: Component<{
         </Show>
       </div>
       <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium text-(--color-oa-ink)">{props.entry.title}</p>
+        <p class="truncate text-sm font-medium text-(--color-oa-ink)">
+          {props.entry.title}
+          <Show when={(props.variantCount ?? 0) > 1}>
+            <span class="ml-2 rounded bg-white/5 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft)">
+              ▼ {props.variantCount}
+            </span>
+          </Show>
+        </p>
         <p class="mt-0.5 truncate text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
           <span class="text-(--color-system-accent)">{theme().shortName}</span>
           <Show when={meta()?.year}>{(y) => <> · {y()}</>}</Show>

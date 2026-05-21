@@ -11,9 +11,15 @@
 //! ```text
 //! offset bytes  meaning
 //! 0      5      magic "OATAS"
-//! 5      2      u16 LE: format version (currently 1)
+//! 5      2      u16 LE: format version (currently 2)
 //! 7      ..     zstd-compressed payload (see [`write_payload`])
 //! ```
+//!
+//! Version history:
+//! - v1: per-frame = 4 × u32 ports = 16 bytes. No pointer.
+//! - v2: per-frame = 4 × u32 ports + i16 pointer_x + i16 pointer_y +
+//!       u8 pointer_pressed = 21 bytes. v1 files still load (pointer
+//!       fields zeroed); v2 files always emit.
 //!
 //! The payload is hand-rolled binary (length-prefixed strings + u32-LE
 //! length-prefixed byte buffers + fixed-width primitives). Hand-rolled
@@ -38,17 +44,29 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 const MAGIC: &[u8; 5] = b"OATAS";
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 const ZSTD_LEVEL: i32 = 3;
 
-/// One frame's worth of input bits, indexed by port. Frame number is
-/// implicit (position in the recording's `input_frames` vec).
+/// One frame's worth of input state. Frame number is implicit
+/// (position in the recording's `input_frames` vec). v2 adds pointer
+/// fields for NDS stylus / light-gun replay; v1 files load with pointer
+/// fields zeroed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TasInputFrame {
     pub port0: u32,
     pub port1: u32,
     pub port2: u32,
     pub port3: u32,
+    /// v2+: pointer X in libretro POINTER range (-32768..32767). Zero
+    /// when no pointer-using device on this frame (e.g. cart games).
+    #[serde(default)]
+    pub pointer_x: i16,
+    /// v2+: pointer Y in libretro POINTER range. Zero when no pointer.
+    #[serde(default)]
+    pub pointer_y: i16,
+    /// v2+: pointer pressed flag. False when no pointer.
+    #[serde(default)]
+    pub pointer_pressed: bool,
 }
 
 /// Metadata header that prefixes the binary payload. Cheap to copy +
@@ -132,6 +150,11 @@ impl TasRecording {
     /// version / truncated payload. Doesn't enforce that
     /// `header.core_file_name` matches an installed core — that's the
     /// caller's job (replay safety check happens in the shell).
+    ///
+    /// Accepts v1 (no pointer) and v2 (with pointer). v1 input frames
+    /// load with pointer fields zeroed — NDS / light-gun replays of
+    /// pre-v2 recordings stay correct for the digital-only parts of
+    /// gameplay.
     pub fn read_from(path: &Path) -> io::Result<Self> {
         let f = std::fs::File::open(path)?;
         let mut r = std::io::BufReader::new(f);
@@ -146,14 +169,14 @@ impl TasRecording {
         let mut version_bytes = [0u8; 2];
         r.read_exact(&mut version_bytes)?;
         let version = u16::from_le_bytes(version_bytes);
-        if version != VERSION {
+        if version < 1 || version > VERSION {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("unsupported TAS recording version {version} (expected {VERSION})"),
+                format!("unsupported TAS recording version {version} (expected 1..={VERSION})"),
             ));
         }
         let mut dec = zstd::Decoder::new(r)?;
-        read_payload(&mut dec)
+        read_payload(&mut dec, version)
     }
 
     /// Header-only read — skips parsing the bulky initial_state +
@@ -175,7 +198,7 @@ impl TasRecording {
         let mut version_bytes = [0u8; 2];
         r.read_exact(&mut version_bytes)?;
         let version = u16::from_le_bytes(version_bytes);
-        if version != VERSION {
+        if version < 1 || version > VERSION {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unsupported TAS recording version {version}"),
@@ -189,31 +212,59 @@ impl TasRecording {
 fn write_payload<W: Write>(w: &mut W, rec: &TasRecording) -> io::Result<()> {
     write_header(w, &rec.header)?;
     write_bytes(w, &rec.initial_state)?;
-    // Each input frame = 4 × u32 LE = 16 bytes. We emit raw bytes for
-    // density (saves the per-element length tag).
+    // v2 per-frame: 4 × u32 ports (16) + i16 pointer_x (2) + i16
+    // pointer_y (2) + u8 pointer_pressed (1) = 21 bytes. Raw bytes
+    // for density (saves the per-element length tag).
     w.write_all(&(rec.input_frames.len() as u64).to_le_bytes())?;
     for f in &rec.input_frames {
         w.write_all(&f.port0.to_le_bytes())?;
         w.write_all(&f.port1.to_le_bytes())?;
         w.write_all(&f.port2.to_le_bytes())?;
         w.write_all(&f.port3.to_le_bytes())?;
+        w.write_all(&f.pointer_x.to_le_bytes())?;
+        w.write_all(&f.pointer_y.to_le_bytes())?;
+        w.write_all(&[if f.pointer_pressed { 1u8 } else { 0u8 }])?;
     }
     Ok(())
 }
 
-fn read_payload<R: Read>(r: &mut R) -> io::Result<TasRecording> {
+fn read_payload<R: Read>(r: &mut R, version: u16) -> io::Result<TasRecording> {
     let header = read_header(r)?;
     let initial_state = read_bytes(r)?;
     let count = read_u64(r)? as usize;
     let mut input_frames = Vec::with_capacity(count.min(1024 * 1024));
-    let mut buf = [0u8; 16];
-    for _ in 0..count {
-        r.read_exact(&mut buf)?;
-        let port0 = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let port1 = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-        let port2 = u32::from_le_bytes(buf[8..12].try_into().unwrap());
-        let port3 = u32::from_le_bytes(buf[12..16].try_into().unwrap());
-        input_frames.push(TasInputFrame { port0, port1, port2, port3 });
+    if version >= 2 {
+        let mut buf = [0u8; 21];
+        for _ in 0..count {
+            r.read_exact(&mut buf)?;
+            let port0 = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+            let port1 = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+            let port2 = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+            let port3 = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+            let pointer_x = i16::from_le_bytes(buf[16..18].try_into().unwrap());
+            let pointer_y = i16::from_le_bytes(buf[18..20].try_into().unwrap());
+            let pointer_pressed = buf[20] != 0;
+            input_frames.push(TasInputFrame {
+                port0, port1, port2, port3,
+                pointer_x, pointer_y, pointer_pressed,
+            });
+        }
+    } else {
+        // v1 — 16 bytes per frame, pointer fields zeroed.
+        let mut buf = [0u8; 16];
+        for _ in 0..count {
+            r.read_exact(&mut buf)?;
+            let port0 = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+            let port1 = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+            let port2 = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+            let port3 = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+            input_frames.push(TasInputFrame {
+                port0, port1, port2, port3,
+                pointer_x: 0,
+                pointer_y: 0,
+                pointer_pressed: false,
+            });
+        }
     }
     Ok(TasRecording {
         header,

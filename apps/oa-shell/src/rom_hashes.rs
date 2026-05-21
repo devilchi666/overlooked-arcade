@@ -40,30 +40,326 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
+#[cfg(test)]
 use sha1::{Digest, Sha1};
 use tauri::Emitter;
 
 use crate::archive;
-use crate::library_db::{LibraryDb, RomHashRow};
+use crate::library_db::{GameSerialRow, LibraryDb, RomHashRow};
+use crate::rom_header::{candidate_sha1s, HeaderRule, Sha1Candidate};
 
 const HASH_CACHE_TTL_SECS: u64 = 86_400; // 24h, matches metadat cache
 const HASH_DB_CACHE_DIR: &str = "library-db/hashes";
 
-/// Map an OA SystemId to the libretro-database system name (the basename
-/// of the .dat file under `dat/`). `None` means we have no upstream
-/// .dat for the system — sync is a no-op rather than an error.
+/// A reference to one libretro-database `.dat` file. The repo lays its
+/// dat files out as `<subdir>/<basename>.dat` and the same system can
+/// have multiple dat files across subdirs — `metadat/no-intro/<sys>.dat`
+/// for the canonical unheadered hashes, plus an optional
+/// `metadat/headered/<sys>.dat` carrying headered-variant hashes for the
+/// systems (NES iNES, Lynx LNX, Atari 7800 A78) where the upstream
+/// curator maintains both. Both subdirs land in our local `rom_hashes`
+/// table — different sha1s, same `canonical_title` — so headered and
+/// unheadered files both hit directly.
+#[derive(Debug, Clone, Copy)]
+pub struct DatRef {
+    pub subdir: &'static str,
+    pub basename: &'static str,
+}
+
+/// Map an OA SystemId to one or more libretro-database `.dat` files.
+/// Empty slice = no upstream dat for the system (sync is a no-op rather
+/// than an error). The `dat/` subdir we used to target is a small
+/// curated set; the canonical sources live under `metadat/no-intro/`
+/// (cart-based) and `metadat/redump/` (CD-based). For systems where the
+/// upstream curator also maintains a `metadat/headered/<sys>.dat`, we
+/// fetch that too so headered files match without needing our algorithmic
+/// header-strip pass (see `rom_header.rs`).
 ///
-/// Names match libretro-database's `dat/` directory listings; revisit
-/// when adding new systems.
-fn libretro_db_name_for_system(system_id: &str) -> Option<&'static str> {
-    Some(match system_id {
-        "tg16"     => "NEC - PC Engine - TurboGrafx 16",
-        "pce-cd"   => return None, // CD images aren't hash-matched (see module docs)
-        "lynx"     => "Atari - Lynx",
-        "nes"      => "Nintendo - Nintendo Entertainment System",
-        "snes"     => "Nintendo - Super Nintendo Entertainment System",
-        _ => return None,
-    })
+/// **New-core onboarding checklist item:** every system_id registered in
+/// `bindings.rs` (dispatch arms) **must** also get an arm here — even if
+/// the answer is `&[]` — so the wildcard fallback only ever fires on
+/// truly-unknown ids. Forgetting this leaves new-system ROMs unmatched
+/// against libretro-database with only an info-level log explaining why.
+/// The canonical onboarded list lives in `bindings.rs` test fixtures
+/// (search for `"tg16", "pce-cd", "lynx"`); keep this match in sync.
+///
+/// Reference: https://github.com/libretro/libretro-database/tree/master/metadat
+fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
+    match system_id {
+        "tg16" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "NEC - PC Engine - TurboGrafx 16",
+        }],
+        // CD images aren't hash-matched against single-file sha1s — the
+        // disc-id extractor (Phase 2b) keys against game_serials instead.
+        // Once that lands, this arm should switch to the redump dat
+        // (metadat/redump/NEC - PC Engine CD - TurboGrafx-CD.dat) which
+        // populates game_serials via parse_libretro_dat's serial path.
+        "pce-cd" => &[],
+        "lynx" => &[
+            DatRef { subdir: "metadat/no-intro", basename: "Atari - Lynx" },
+            DatRef { subdir: "metadat/headered", basename: "Atari - Lynx" },
+        ],
+        "nes" => &[
+            DatRef {
+                subdir: "metadat/no-intro",
+                basename: "Nintendo - Nintendo Entertainment System",
+            },
+            DatRef {
+                subdir: "metadat/headered",
+                basename: "Nintendo - Nintendo Entertainment System",
+            },
+        ],
+        "snes" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Super Nintendo Entertainment System",
+        }],
+        "atari7800" => &[
+            DatRef { subdir: "metadat/no-intro", basename: "Atari - 7800" },
+            DatRef { subdir: "metadat/headered", basename: "Atari - 7800" },
+        ],
+        // Arcade ROM identification is set-based (MAME's own DAT/zip
+        // layout), not single-file sha1 against libretro-database.
+        "mame" => &[],
+        // Mega Drive / Genesis. libretro-database keeps the no-intro
+        // Sega MD dat in `metadat/no-intro/Sega - Mega Drive - Genesis.dat`.
+        // SMD-format dumps would hash to different sha1s after
+        // deinterleaving; no separate metadat/headered dat exists for
+        // MD (modern dump sets all ship .md/.bin raw), so first-pass
+        // identification will miss .smd files until rom_header.rs grows
+        // an SMD-deinterleaver in a follow-up. Plain .md dumps match.
+        "genesis" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Sega - Mega Drive - Genesis",
+        }],
+        // Sega CD / Mega-CD. CD-shape — hash-based identification keys
+        // against redump rather than no-intro because CD images aren't
+        // single-file sha1-matched. cd_id.rs::extractors::sega_cd reads
+        // the serial at offset 0x180 of the data track (after the
+        // "SEGADISCSYSTEM" signature); the redump dat's `serial` fields
+        // populate game_serials via parse_libretro_dat's serial path.
+        "segacd" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Sega - Mega-CD - Sega CD",
+        }],
+        // Sega 32X. Cart-shape addon — single no-intro dat covers the
+        // small library (~36 official cart releases + homebrew).
+        // Headerless raw .32x dumps; raw sha1 matches directly.
+        "sega32x" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Sega - 32X",
+        }],
+        // Sega Saturn. CD-shape — disc-id extraction via cd_id.rs reads
+        // the product number at offset 0x20 of the IP.BIN header (after
+        // the "SEGA SEGASATURN" signature). The redump dat's `serial`
+        // fields populate game_serials so the lookup chain hits.
+        "saturn" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Sega - Saturn",
+        }],
+        // Sony PlayStation. CD-shape — cd_id.rs::extractors::psx_family
+        // scans the first 32 KB of the data track for the SYSTEM.CNF
+        // BOOT line and normalizes the catalog code (SLUS_001.67 →
+        // SLUS-00167). The redump dat's `serial` field is the canonical
+        // shape libretro-database uses for cover-art keying.
+        "psx" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Sony - PlayStation",
+        }],
+        // SNK Neo Geo. Cart-shape ROM-sets. libretro-database catalogs
+        // the Neo Geo AES home + MVS arcade library under a single
+        // no-intro dat. ROM-set hash matching is set-based (multiple
+        // .p1/.c1/.m1 files per game), so the simple sha1 path matches
+        // .neo single-file dumps cleanly but .zip ROM-set dumps will
+        // need set-level matching — same gap MAME has. First-pass
+        // matches .neo; ROM-set support is a Phase 2 polish.
+        "neogeo" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "SNK - Neo Geo",
+        }],
+        // SNK Neo Geo CD. CD-shape — cd_id.rs::extractors::neo_geo_cd
+        // scans for SNK catalog code prefixes (NGCD-/ADCD-/NCDZ-/TBCD-)
+        // in the data track. The redump dat's `serial` field stores the
+        // canonical form (e.g. "NGCD-030", "ADCD-103").
+        "neocd" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "SNK - Neo Geo CD",
+        }],
+        // SNK Neo Geo Pocket / Color. Single slug covers both NGP +
+        // NGPC; libretro-database keeps them in separate no-intro
+        // dats — we merge into one local corpus via fetch_and_parse_all
+        // (same gb/WonderSwan pattern).
+        "ngp" => &[
+            DatRef { subdir: "metadat/no-intro", basename: "SNK - Neo Geo Pocket" },
+            DatRef { subdir: "metadat/no-intro", basename: "SNK - Neo Geo Pocket Color" },
+        ],
+        // Atari Jaguar. Cart-shape; single no-intro dat covers retail
+        // + homebrew. Headerless raw .j64 / .jag dumps; raw sha1
+        // matches directly.
+        "jaguar" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Atari - Jaguar",
+        }],
+        // 3DO Interactive Multiplayer. CD-shape — STAYS empty even
+        // though the libretro-database 3DO dat exists, because that dat
+        // carries NO `serial` fields (3DO never standardized a catalog
+        // code). Disc-id lookup is structurally impossible — callers
+        // fall back to filename + fuzzy title matching. The library can
+        // still ID 3DO games by file SHA-1 against the redump dat if we
+        // ever wire that path (currently CD-shape sha1 matching is
+        // deferred because per-track .bin hashes vary by dump quality).
+        "3do" => &[],
+        // NEC PC-FX. CD-shape — cd_id.rs::extractors::pcfx scans for
+        // FX-prefixed catalog codes (FXNHE742 + optional -N disc suffix)
+        // after the "PC-FX:" signature. The redump dat's `serial` field
+        // is the canonical key.
+        "pcfx" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "NEC - PC-FX",
+        }],
+        // Nintendo 64. Cart-shape; single no-intro dat. .n64/.z64/.v64
+        // are different byte-order conventions for the same canonical
+        // content; the dat keys against the canonical Big-Endian (.z64)
+        // sha1 so .n64 and .v64 dumps will miss until rom_header.rs
+        // grows a byte-order normalization pass (Phase 2 polish).
+        "n64" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Nintendo 64",
+        }],
+        // Nintendo GameCube. Disc-image-shape — cd_id.rs::extractors::gamecube
+        // reads the 6-byte header at offset 0 (console + game + region +
+        // maker), synthesizes the canonical "DL-DOL-XXXX-REG" serial
+        // libretro-database uses, and the redump dat's `serial` field
+        // populates game_serials for lookup.
+        "gamecube" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Nintendo - GameCube",
+        }],
+        // Sega Dreamcast. GD-ROM disc-shape — cd_id.rs::extractors::dreamcast
+        // reads the product number at offset 0x40 of IP.BIN (after the
+        // "SEGA SEGAKATANA" signature). Wider window captures PAL "-50"
+        // suffix that overflows the on-disc 10-byte field. The redump
+        // dat's `serial` field populates game_serials.
+        "dreamcast" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Sega - Dreamcast",
+        }],
+        // Sony PlayStation Portable. UMD-shape (.iso/.cso/.pbp).
+        // Single-file dumps can match against the no-intro PSP dat —
+        // .iso/.cso are single-file containers that .pbp also wraps.
+        "psp" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Sony - PlayStation Portable",
+        }],
+        // Sony PlayStation 2. DVD-shape — disc-id extraction shares the
+        // PSX SYSTEM.CNF pattern (cd_id.rs::extractors::psx_family
+        // accepts both PSX SLUS/SLES and PS2 SLPM/SLPS prefixes). The
+        // redump dat's `serial` field populates game_serials.
+        "ps2" => &[DatRef {
+            subdir: "metadat/redump",
+            basename: "Sony - PlayStation 2",
+        }],
+        // Nintendo DS. Cart-shape (.nds single-file). Headerless raw
+        // dumps key directly against the no-intro NDS dat.
+        "nds" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Nintendo DS",
+        }],
+        // Sega Master System. libretro-database catalogs both the
+        // Western SMS lineup and the Japanese Mark III variants under
+        // the same no-intro dat. Plain .sms dumps are headerless raw,
+        // so the Raw candidate sha1 hits directly without header strip.
+        "sms" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Sega - Master System - Mark III",
+        }],
+        // Sega Game Gear. Headerless .gg dumps, raw sha1 hits directly.
+        "gamegear" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Sega - Game Gear",
+        }],
+        // Game Boy + Game Boy Color share one slug; libretro-database keeps
+        // them in separate no-intro dats. We merge both into the single
+        // `gb` corpus via `fetch_and_parse_all` so `.gb` and `.gbc` dumps
+        // both match against the right canonical names.
+        "gb" => &[
+            DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy" },
+            DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy Color" },
+        ],
+        // Game Boy Advance — single no-intro dat covers the entire library.
+        // GBA dumps are headerless raw .gba files; the raw sha1 candidate
+        // matches directly without header strip.
+        "gba" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Game Boy Advance",
+        }],
+        // Atari 2600 — single no-intro dat. 2600 dumps are headerless
+        // raw cart bytes; raw sha1 matches directly. NOTE: a small
+        // number of bankswitching schemes use a 256-byte header on
+        // disk for the "Supercharger" cassette / multicart formats;
+        // those would need a header-strip pass to match, but they're
+        // a niche subset of the 2600 corpus. First-pass identification
+        // matches stock .a26 dumps; the Supercharger / multicart pass
+        // is a follow-up.
+        "2600" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Atari - 2600",
+        }],
+        // ColecoVision — single no-intro dat. Headerless raw cart dumps.
+        "coleco" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Coleco - ColecoVision",
+        }],
+        // Mattel Intellivision — single no-intro dat. Headerless raw dumps.
+        "intv" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Mattel - Intellivision",
+        }],
+        // Magnavox Odyssey² + Videopac G7000. The libretro-database dat
+        // covers the US Odyssey² + EU Videopac G7000 + Videopac+ G7400
+        // libraries in one file.
+        "o2" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Magnavox - Odyssey2",
+        }],
+        // Fairchild Channel F — tiny library (~26 official titles +
+        // homebrew). Single no-intro dat.
+        "channelf" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Fairchild - Channel F",
+        }],
+        // GCE Vectrex — tiny library (~30 official titles + active
+        // homebrew). Single no-intro dat.
+        "vectrex" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "GCE - Vectrex",
+        }],
+        // Nintendo Virtual Boy — small library (~22 official titles).
+        // Headerless raw dumps; raw sha1 matches directly.
+        "virtualboy" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Virtual Boy",
+        }],
+        // Bandai WonderSwan + WonderSwan Color. Single slug covers both
+        // hardware variants; libretro-database keeps them in separate
+        // dats — we merge into one local corpus via fetch_and_parse_all.
+        "wonderswan" => &[
+            DatRef { subdir: "metadat/no-intro", basename: "Bandai - WonderSwan" },
+            DatRef { subdir: "metadat/no-intro", basename: "Bandai - WonderSwan Color" },
+        ],
+        // Atari 5200 SuperSystem. Cart-shape; headerless raw .a52 / .bin
+        // dumps. Atari800 reads them directly.
+        "5200" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Atari - 5200",
+        }],
+        // Nintendo Pokémon Mini. Cart-shape; raw .min dumps.
+        "pokemini" => &[DatRef {
+            subdir: "metadat/no-intro",
+            basename: "Nintendo - Pokemon Mini",
+        }],
+        _ => &[],
+    }
 }
 
 /// Extensions we deliberately skip when computing hashes — CD-container
@@ -83,6 +379,20 @@ fn hash_cache_path(app_data_dir: &Path, system_id: &str) -> PathBuf {
 struct CachedHashDb {
     fetched_at_unix_secs: u64,
     entries: Vec<RomHashRow>,
+    /// Serial → canonical title pivot, parallel to `entries`. Default is
+    /// empty so caches written by older builds (no `serials` field on
+    /// disk) deserialize cleanly; first sync after upgrade refills it.
+    #[serde(default)]
+    serials: Vec<GameSerialRow>,
+}
+
+/// Output of one `parse_libretro_dat` pass — both shapes the upstream
+/// `.dat` produces. `rom_hashes` is one row per `rom ( ... sha1 ... )`;
+/// `game_serials` is one row per `game (... serial ...)` block (zero
+/// rows for blocks with no serial).
+pub struct ParsedDat {
+    pub rom_hashes: Vec<RomHashRow>,
+    pub game_serials: Vec<GameSerialRow>,
 }
 
 /// Parse the libretro-database clrmamepro-format .dat. Each `game (...)`
@@ -95,7 +405,7 @@ struct CachedHashDb {
 /// Robust to upstream comments + indentation variations. Lines we don't
 /// recognize inside a game block are ignored — we only consume `name`,
 /// `serial`, and the contents of `rom (...)` parens.
-pub fn parse_libretro_dat(content: &str, system_id: &str) -> Vec<RomHashRow> {
+pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
     /// One pending rom entry while we're inside a `game (...)` block.
     /// game.serial may appear before OR after the `rom ( ... )` line
     /// depending on the upstream dat, so we accumulate and stamp the
@@ -106,7 +416,8 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> Vec<RomHashRow> {
         size_bytes: Option<i64>,
     }
 
-    let mut out: Vec<RomHashRow> = Vec::new();
+    let mut rom_hashes: Vec<RomHashRow> = Vec::new();
+    let mut game_serials: Vec<GameSerialRow> = Vec::new();
     let mut in_game = false;
     let mut current_name: Option<String> = None;
     let mut current_serial: Option<String> = None;
@@ -127,7 +438,7 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> Vec<RomHashRow> {
             in_game = false;
             if let Some(name) = current_name.take() {
                 for r in pending.drain(..) {
-                    out.push(RomHashRow {
+                    rom_hashes.push(RomHashRow {
                         sha1: r.sha1,
                         system_id: system_id.to_string(),
                         game_name: name.clone(),
@@ -135,6 +446,21 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> Vec<RomHashRow> {
                         crc32: r.crc32,
                         size_bytes: r.size_bytes,
                     });
+                }
+                // Emit one game_serials row per game block that carries
+                // a serial. Title is the same canonical `name` we'd have
+                // stamped via apply_rom_hash on a sha1 hit. Region stays
+                // None for now — extracting it from "(USA)" / "(Japan)"
+                // suffixes is a Phase 2b polish item.
+                if let Some(serial) = current_serial.take() {
+                    if !serial.is_empty() {
+                        game_serials.push(GameSerialRow {
+                            system_id: system_id.to_string(),
+                            serial,
+                            canonical_title: name,
+                            region: None,
+                        });
+                    }
                 }
             }
             current_serial = None;
@@ -170,6 +496,105 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> Vec<RomHashRow> {
             }
             if let Some(sha1) = sha1 {
                 pending.push(PendingRom { sha1, crc32, size_bytes: size });
+            }
+        }
+    }
+    // De-dupe game_serials by (system_id, serial). Some upstream .dats
+    // ship multiple regional dumps under the same serial; first
+    // occurrence wins (matches what INSERT-OR-REPLACE would do on a
+    // database round-trip, just without the round-trip).
+    let mut seen = HashMap::new();
+    let mut deduped = Vec::with_capacity(game_serials.len());
+    for row in game_serials {
+        if seen.insert((row.system_id.clone(), row.serial.clone()), ()).is_none() {
+            deduped.push(row);
+        }
+    }
+    ParsedDat { rom_hashes, game_serials: deduped }
+}
+
+/// Parse a MAME-style clrmamepro dat into name-keyed title rows.
+/// Source format from libretro-database `metadat/mame/MAME.dat`:
+///
+/// ```text
+/// game (
+///     name "Street Fighter II: Champion Edition (World 920313)"
+///     year "1992"
+///     developer "Capcom"
+///     rom ( name sf2ce.zip size 5042192 crc XXXXX md5 XXXXX sha1 XXXXX )
+/// )
+/// ```
+///
+/// Each entry produces one [`MameTitleRow`] keyed by the .zip basename
+/// (lowercased, extension stripped). Games with multiple `rom (...)`
+/// lines emit one row per .zip — covers MAME's "merged" sets where a
+/// parent + clones share a single game block.
+pub fn parse_mame_dat(content: &str) -> Vec<crate::library_db::MameTitleRow> {
+    let mut out = Vec::new();
+    let mut in_game = false;
+    let mut current_name: Option<String> = None;
+    let mut current_year: Option<String> = None;
+    let mut current_dev: Option<String> = None;
+    let mut pending_zips: Vec<String> = Vec::new();
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.starts_with("game (") {
+            in_game = true;
+            current_name = None;
+            current_year = None;
+            current_dev = None;
+            pending_zips.clear();
+            continue;
+        }
+        if !in_game {
+            continue;
+        }
+        if line == ")" {
+            in_game = false;
+            if let Some(title) = current_name.take() {
+                for zip in pending_zips.drain(..) {
+                    let stem = std::path::Path::new(&zip)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_ascii_lowercase())
+                        .unwrap_or_else(|| zip.to_ascii_lowercase());
+                    if stem.is_empty() {
+                        continue;
+                    }
+                    out.push(crate::library_db::MameTitleRow {
+                        rom_set: stem,
+                        title: title.clone(),
+                        year: current_year.clone(),
+                        developer: current_dev.clone(),
+                    });
+                }
+            }
+            current_year = None;
+            current_dev = None;
+            pending_zips.clear();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("name ") {
+            current_name = Some(unquote(rest));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("year ") {
+            current_year = Some(unquote(rest));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("developer ") {
+            current_dev = Some(unquote(rest));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("rom (") {
+            // Extract the `name` field — that's the .zip filename.
+            let body = rest.trim_end_matches(')').trim();
+            let mut tokens = TokenIter::new(body);
+            while let Some((key, value)) = tokens.next_pair() {
+                if key == "name" && value.ends_with(".zip") {
+                    pending_zips.push(value);
+                    break;
+                }
             }
         }
     }
@@ -252,16 +677,66 @@ impl<'a> TokenIter<'a> {
     }
 }
 
-/// Fetch `dat/<system>.dat` from libretro-database via the raw GitHub URL.
-/// 404 = upstream has no .dat for the system; we return Ok(None) so the
-/// caller can clean up without surfacing as an error.
+/// Fetch one `<subdir>/<basename>.dat` from libretro-database via the
+/// raw GitHub URL. 404 = upstream has no .dat at that path; we return
+/// Ok(None) so the caller can fall through to the next ref (or report
+/// "system has no dats") without surfacing as a hard error.
+/// MAME title-lookup sync. Fetches `metadat/mame/MAME.dat` from libretro-
+/// database, parses the clrmamepro entries into name-keyed rows, and
+/// bulk-inserts into the `mame_titles` table. Frontend calls this on the
+/// first MAME ingest (or via a manual "Sync MAME titles" action); the
+/// result is consulted on subsequent imports so library tiles show human
+/// titles instead of .zip filenames.
+#[tauri::command]
+pub async fn sync_mame_titles(
+    db: tauri::State<'_, LibraryDb>,
+) -> Result<MameTitleSyncSummary, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("reqwest client: {e}"))?;
+    let dat_ref = DatRef { subdir: "metadat/mame", basename: "MAME" };
+    let body = match fetch_libretro_dat(&client, dat_ref).await? {
+        Some(b) => b,
+        None => {
+            return Err("libretro-database has no MAME.dat at metadat/mame/MAME.dat".to_string());
+        }
+    };
+    let entries = parse_mame_dat(&body);
+    let upstream_entries = entries.len();
+    let written = db.replace_mame_titles(&entries)?;
+    log::info!("rom_hashes: mame_titles synced — {upstream_entries} parsed, {written} written");
+    Ok(MameTitleSyncSummary { upstream_entries, written })
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MameTitleSyncSummary {
+    pub upstream_entries: usize,
+    pub written: usize,
+}
+
+/// Frontend ingest helper — look up a MAME ROM-set by .zip basename
+/// (e.g. "sf2ce") and return the human title + year + developer. Returns
+/// `null` if the rom_set isn't in the catalog (homebrew, hack, or an
+/// older MAME set the catalog hasn't picked up yet).
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn lookup_mame_title(
+    romSet: String,
+    db: tauri::State<'_, LibraryDb>,
+) -> Result<Option<crate::library_db::MameTitleRow>, String> {
+    db.lookup_mame_title(&romSet)
+}
+
 async fn fetch_libretro_dat(
     client: &reqwest::Client,
-    libretro_db_name: &str,
+    dat_ref: DatRef,
 ) -> Result<Option<String>, String> {
     let url = format!(
-        "https://raw.githubusercontent.com/libretro/libretro-database/master/dat/{}.dat",
-        urlencoding::encode(libretro_db_name),
+        "https://raw.githubusercontent.com/libretro/libretro-database/master/{}/{}.dat",
+        dat_ref.subdir,
+        urlencoding::encode(dat_ref.basename),
     );
     let resp = client
         .get(&url)
@@ -271,7 +746,7 @@ async fn fetch_libretro_dat(
         .map_err(|e| format!("fetch {url}: {e}"))?;
     let status = resp.status();
     if status == reqwest::StatusCode::NOT_FOUND {
-        log::debug!("rom_hashes: {url} 404 (no dat for this system)");
+        log::debug!("rom_hashes: {url} 404 (no dat at this path)");
         return Ok(None);
     }
     if !status.is_success() {
@@ -279,6 +754,60 @@ async fn fetch_libretro_dat(
     }
     let body = resp.text().await.map_err(|e| format!("dat body: {e}"))?;
     Ok(Some(body))
+}
+
+/// Fetch + parse every DatRef registered for a system, merging the
+/// results into one `ParsedDat`. A 404 on any individual ref is logged
+/// and skipped (some systems intentionally have only the primary `.dat`
+/// and no headered variant). Returns `Ok(None)` only when EVERY ref
+/// 404s — at which point the caller treats the system as having no
+/// upstream coverage at all.
+async fn fetch_and_parse_all(
+    client: &reqwest::Client,
+    refs: &[DatRef],
+    system_id: &str,
+) -> Result<Option<ParsedDat>, String> {
+    let mut all_rom_hashes = Vec::new();
+    let mut all_serials = Vec::new();
+    let mut any_hit = false;
+    for r in refs {
+        match fetch_libretro_dat(client, *r).await? {
+            Some(text) => {
+                any_hit = true;
+                let parsed = parse_libretro_dat(&text, system_id);
+                log::info!(
+                    "rom_hashes: {system_id} {}/{} → {} entries / {} serials",
+                    r.subdir,
+                    r.basename,
+                    parsed.rom_hashes.len(),
+                    parsed.game_serials.len(),
+                );
+                all_rom_hashes.extend(parsed.rom_hashes);
+                all_serials.extend(parsed.game_serials);
+            }
+            None => {
+                log::debug!(
+                    "rom_hashes: {system_id} {}/{}: 404, skipping",
+                    r.subdir,
+                    r.basename
+                );
+            }
+        }
+    }
+    if !any_hit {
+        return Ok(None);
+    }
+    // Dedupe merged serials by (system_id, serial) — first wins, same as
+    // the parser's per-dat dedupe. Across dats (no-intro vs headered) the
+    // serial is identical for the same game; we just want one row.
+    let mut seen = HashMap::new();
+    all_serials.retain(|row| {
+        seen.insert((row.system_id.clone(), row.serial.clone()), ()).is_none()
+    });
+    Ok(Some(ParsedDat {
+        rom_hashes: all_rom_hashes,
+        game_serials: all_serials,
+    }))
 }
 
 #[derive(Serialize, Clone)]
@@ -302,7 +831,8 @@ pub async fn sync_rom_hashes_for_system(
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomHashSyncSummary, String> {
     let app_data_dir = state.app_data_dir.clone();
-    let Some(name) = libretro_db_name_for_system(&systemId) else {
+    let refs = libretro_dat_refs_for_system(&systemId);
+    if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {systemId}; skipping sync");
         return Ok(RomHashSyncSummary {
             system_id: systemId,
@@ -310,7 +840,7 @@ pub async fn sync_rom_hashes_for_system(
             written: 0,
             from_cache: false,
         });
-    };
+    }
 
     // Cache lookup — same TTL as the metadat cache.
     let cache_path = hash_cache_path(&app_data_dir, &systemId);
@@ -324,11 +854,22 @@ pub async fn sync_rom_hashes_for_system(
                 && now.saturating_sub(cached.fetched_at_unix_secs) < HASH_CACHE_TTL_SECS
             {
                 log::info!(
-                    "rom_hashes: {systemId} cache hit ({} entries)",
-                    cached.entries.len()
+                    "rom_hashes: {systemId} cache hit ({} entries, {} serials)",
+                    cached.entries.len(),
+                    cached.serials.len(),
                 );
                 let upstream_entries = cached.entries.len();
-                let written = db.upsert_rom_hashes(&cached.entries)?;
+                // Wipe-and-replace per system so the local table mirrors
+                // the cached upstream snapshot exactly — entries removed
+                // upstream don't linger as orphans, and entries the user
+                // hand-imported into the wrong system aren't preserved
+                // through a sync.
+                let written = db.replace_rom_hashes_for_system(&systemId, &cached.entries)?;
+                // Older caches deserialize with serials=[] (serde
+                // default). Replacing with an empty slice clears the
+                // table for the system; the next fresh fetch fills it
+                // back in once the TTL expires.
+                let _ = db.replace_game_serials_for_system(&systemId, &cached.serials);
                 let _ = app.emit("oa://rom-hashes-synced", &RomHashSyncSummary {
                     system_id: systemId.clone(),
                     upstream_entries,
@@ -350,22 +891,32 @@ pub async fn sync_rom_hashes_for_system(
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
 
-    let dat_text = match fetch_libretro_dat(&client, name).await? {
-        Some(s) => s,
-        None => {
-            log::warn!("rom_hashes: upstream has no dat for {systemId} ({name})");
-            return Ok(RomHashSyncSummary {
-                system_id: systemId,
-                upstream_entries: 0,
-                written: 0,
-                from_cache: false,
-            });
-        }
-    };
-    let entries = parse_libretro_dat(&dat_text, &systemId);
+    let ParsedDat { rom_hashes: entries, game_serials: serials } =
+        match fetch_and_parse_all(&client, refs, &systemId).await? {
+            Some(p) => p,
+            None => {
+                log::warn!(
+                    "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
+                );
+                return Ok(RomHashSyncSummary {
+                    system_id: systemId,
+                    upstream_entries: 0,
+                    written: 0,
+                    from_cache: false,
+                });
+            }
+        };
     let upstream_entries = entries.len();
-    log::info!("rom_hashes: parsed {upstream_entries} entries for {systemId}");
-    let written = db.upsert_rom_hashes(&entries)?;
+    let upstream_serials = serials.len();
+    log::info!(
+        "rom_hashes: merged {upstream_entries} entries / {upstream_serials} serials for {systemId}"
+    );
+    // Replace the system's corpus rather than merging — upstream is the
+    // source of truth, and stale entries from a prior sync with a
+    // narrower ref set (or a since-removed upstream row) should not
+    // linger.
+    let written = db.replace_rom_hashes_for_system(&systemId, &entries)?;
+    let _ = db.replace_game_serials_for_system(&systemId, &serials);
 
     // Cache write (24h reuse).
     if !entries.is_empty() {
@@ -376,7 +927,7 @@ pub async fn sync_rom_hashes_for_system(
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let cached = CachedHashDb { fetched_at_unix_secs: now, entries };
+        let cached = CachedHashDb { fetched_at_unix_secs: now, entries, serials };
         let _ = std::fs::write(&cache_path, serde_json::to_vec(&cached).unwrap_or_default());
     }
 
@@ -390,39 +941,76 @@ pub async fn sync_rom_hashes_for_system(
     Ok(summary)
 }
 
-/// Compute the SHA-1 of a ROM. For archived entries, peek into the
-/// archive at the recorded `inner_path` (no extraction-to-disk). For
-/// raw byte-source ROMs, hash the file in 64 KiB chunks. CD images are
-/// caller-filtered before we get here.
+/// Load a ROM's bytes for hashing. Archived entries peek the archive at
+/// `inner_path` (no extraction-to-disk); raw entries `std::fs::read`.
+/// Caps at `MAX_ROM_BYTES` so a misclassified disc-image doesn't OOM us
+/// — every cart ROM we care about sits well under the cap (SNES is 8 MB,
+/// Lynx 1 MB, Atari 7800 144 KB). Past the cap we surface an error and
+/// the caller skips the row (the resolve loop already swallows hash
+/// errors and increments `summary.errors`).
 ///
 /// `file_path` follows the library's encoded shape: archived entries
 /// look like `"<archive_path>#<inner>"` (matches `encode_file_path` in
 /// archive.rs); raw ROMs are a plain path. We always run the input
 /// through `archive::decode_file_path` first so callers don't have to
 /// duplicate the split logic.
-fn sha1_of_rom(file_path: &str, archive_inner: Option<&str>) -> Result<String, String> {
+const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
+
+fn rom_bytes_for(file_path: &str, archive_inner: Option<&str>) -> Result<Vec<u8>, String> {
     let (real_path, decoded_inner) = archive::decode_file_path(file_path);
     let inner = archive_inner.map(|s| s.to_string()).or_else(|| {
         if decoded_inner.is_empty() { None } else { Some(decoded_inner) }
     });
     if let Some(inner) = inner {
-        // Archived entry — load the inner bytes via the existing archive
-        // module, which already handles every archive kind we support.
-        let bytes = archive::read_inner_to_bytes(&real_path, &inner).map_err(|e| {
+        return archive::read_inner_to_bytes(&real_path, &inner).map_err(|e| {
             format!("archive read {}#{inner}: {e}", real_path.display())
-        })?;
-        let mut hasher = Sha1::new();
-        hasher.update(&bytes);
-        return Ok(format!("{:x}", hasher.finalize()));
+        });
     }
-    use std::io::Read;
-    let mut file = std::fs::File::open(&real_path)
-        .map_err(|e| format!("open {}: {e}", real_path.display()))?;
+    let meta = std::fs::metadata(&real_path)
+        .map_err(|e| format!("stat {}: {e}", real_path.display()))?;
+    if meta.len() > MAX_ROM_BYTES {
+        return Err(format!(
+            "{} is {} bytes, exceeds {} byte cap — refusing to load into memory",
+            real_path.display(),
+            meta.len(),
+            MAX_ROM_BYTES
+        ));
+    }
+    std::fs::read(&real_path).map_err(|e| format!("read {}: {e}", real_path.display()))
+}
+
+/// Compute the SHA-1 of a ROM the way pre-header-aware code did — a
+/// single hash of the canonical bytes (equivalent to the `Raw` rule).
+/// Test-only: production resolve flow goes through `candidate_sha1s`
+/// which tries header-stripped variants too.
+#[cfg(test)]
+fn sha1_of_rom(file_path: &str, archive_inner: Option<&str>) -> Result<String, String> {
+    let bytes = rom_bytes_for(file_path, archive_inner)?;
     let mut hasher = Sha1::new();
-    let mut buf = vec![0u8; 64 * 1024];
+    hasher.update(&bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Streaming SHA-1 for large disc image files (PS2 / GameCube / Dreamcast
+/// .iso dumps that can be 1.5–8 GB). Reads in 1 MB chunks so we never
+/// hold more than ~1 MB of file bytes in memory at once. Used by the
+/// resolve loop as a fallback after disc-ID extraction misses — catches
+/// dumps the redump dat has SHA-1s for but where the disc-ID extraction
+/// returned no signature.
+fn stream_sha1_of_file(path: &std::path::Path) -> Result<String, String> {
+    use std::io::Read;
+    let f = std::fs::File::open(path)
+        .map_err(|e| format!("open {}: {e}", path.display()))?;
+    let mut reader = std::io::BufReader::with_capacity(1024 * 1024, f);
+    let mut hasher = Sha1::new();
+    let mut buf = vec![0u8; 1024 * 1024];
     loop {
-        let n = file.read(&mut buf).map_err(|e| format!("read {}: {e}", real_path.display()))?;
-        if n == 0 { break; }
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -481,7 +1069,8 @@ pub async fn resolve_rom_hashes_for_system(
         // every game so re-runs don't re-hash, even when the upstream
         // dat is missing.
         let app_data_dir = state.app_data_dir.clone();
-        if let Some(name) = libretro_db_name_for_system(&systemId) {
+        let refs = libretro_dat_refs_for_system(&systemId);
+        if !refs.is_empty() {
             let client = match reqwest::Client::builder()
                 .timeout(Duration::from_secs(120))
                 .build()
@@ -493,12 +1082,15 @@ pub async fn resolve_rom_hashes_for_system(
                 }
             };
             if let Some(client) = client {
-                match fetch_libretro_dat(&client, name).await {
-                    Ok(Some(text)) => {
-                        let entries = parse_libretro_dat(&text, &systemId);
+                match fetch_and_parse_all(&client, refs, &systemId).await {
+                    Ok(Some(ParsedDat { rom_hashes: entries, game_serials: serials })) => {
                         let n = entries.len();
-                        log::info!("rom_hashes: auto-sync {systemId} fetched {n} entries");
-                        let _ = db.upsert_rom_hashes(&entries);
+                        let s = serials.len();
+                        log::info!(
+                            "rom_hashes: auto-sync {systemId} fetched {n} entries / {s} serials"
+                        );
+                        let _ = db.replace_rom_hashes_for_system(&systemId, &entries);
+                        let _ = db.replace_game_serials_for_system(&systemId, &serials);
                         if !entries.is_empty() {
                             let cache_path = hash_cache_path(&app_data_dir, &systemId);
                             if let Some(parent) = cache_path.parent() {
@@ -508,7 +1100,11 @@ pub async fn resolve_rom_hashes_for_system(
                                 .duration_since(SystemTime::UNIX_EPOCH)
                                 .map(|d| d.as_secs())
                                 .unwrap_or(0);
-                            let cached = CachedHashDb { fetched_at_unix_secs: now, entries };
+                            let cached = CachedHashDb {
+                                fetched_at_unix_secs: now,
+                                entries,
+                                serials,
+                            };
                             let _ = std::fs::write(
                                 &cache_path,
                                 serde_json::to_vec(&cached).unwrap_or_default(),
@@ -525,7 +1121,9 @@ pub async fn resolve_rom_hashes_for_system(
                         );
                     }
                     Ok(None) => {
-                        log::warn!("rom_hashes: upstream has no dat for {systemId} ({name})");
+                        log::warn!(
+                            "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
+                        );
                     }
                     Err(e) => {
                         log::warn!("rom_hashes: auto-sync {systemId} fetch failed: {e}");
@@ -562,9 +1160,9 @@ pub async fn resolve_rom_hashes_for_system(
     }
     // Tiny in-process cache so re-hashing identical files in this batch
     // (e.g. user has the same ROM in two folders) doesn't pay for it
-    // twice. Keyed on `(file_path, archive_inner)` since that's the
-    // unique "thing to hash."
-    let mut hash_cache: HashMap<(String, Option<String>), String> = HashMap::new();
+    // twice. Keyed on `(file_path, archive_inner)`; value is the full
+    // candidate set so a re-hit doesn't pay for header-stripping either.
+    let mut hash_cache: HashMap<(String, Option<String>), Vec<Sha1Candidate>> = HashMap::new();
 
     let mut done = 0usize;
     for g in games {
@@ -575,43 +1173,189 @@ pub async fn resolve_rom_hashes_for_system(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
         if is_cd_container_ext(&ext) {
-            summary.skipped_cd += 1;
-            let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
-                system_id: systemId.clone(),
-                done,
-                total,
-                current_title: g.title.clone(),
-                last_action: format!("skipped CD container .{ext}"),
-            });
-            continue;
-        }
-
-        let key = (g.file_path.clone(), g.archive_inner_path.clone());
-        let sha1 = match hash_cache.get(&key) {
-            Some(h) => h.clone(),
-            None => match sha1_of_rom(&g.file_path, g.archive_inner_path.as_deref()) {
-                Ok(h) => {
-                    hash_cache.insert(key, h.clone());
-                    h
+            // CD path: peek the disc-id from the data track, look it up
+            // in `game_serials`, stamp `games.disc_id` so re-scans skip
+            // the peek. Archived CDs use `peek_disc_id_archived` which
+            // pulls just the cue + first ~64 KB of the data-track .bin
+            // through the existing archive reader — no full extract.
+            let peek_result = if let Some(inner) = g.archive_inner_path.as_deref() {
+                let (archive_path, _) = archive::decode_file_path(&g.file_path);
+                crate::cd_id::peek_disc_id_archived(&archive_path, inner, &systemId)
+            } else {
+                crate::cd_id::peek_disc_id(std::path::Path::new(&g.file_path), &systemId)
+            };
+            match peek_result {
+                Ok(Some(disc)) => {
+                    summary.scanned += 1;
+                    match db.lookup_game_serial(&systemId, &disc.game_id)? {
+                        Some(row) => {
+                            summary.matched += 1;
+                            if let Err(e) = db.apply_disc_id(
+                                &g.id,
+                                &disc.game_id,
+                                Some(&row.canonical_title),
+                            ) {
+                                log::warn!("rom_hashes: apply_disc_id {} failed: {e}", g.id);
+                                summary.errors += 1;
+                            }
+                            let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                                system_id: systemId.clone(),
+                                done,
+                                total,
+                                current_title: g.title.clone(),
+                                last_action: format!("matched (disc-id) → {}", row.canonical_title),
+                            });
+                        }
+                        None => {
+                            // Stamp the disc-id on the row anyway so
+                            // re-scans don't re-peek; title stays as-is.
+                            if let Err(e) = db.apply_disc_id(&g.id, &disc.game_id, None) {
+                                log::warn!("rom_hashes: apply_disc_id (no-match) {} failed: {e}", g.id);
+                                summary.errors += 1;
+                            }
+                            summary.unmatched += 1;
+                            let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                                system_id: systemId.clone(),
+                                done,
+                                total,
+                                current_title: g.title.clone(),
+                                last_action: format!("disc-id {} — no match", disc.game_id),
+                            });
+                        }
+                    }
                 }
-                Err(e) => {
-                    log::warn!("rom_hashes: hash {} failed: {e}", g.file_path);
-                    summary.errors += 1;
+                Ok(None) => {
+                    // No signature recognised in the data track. Try
+                    // file-SHA-1 fallback for .iso disc images on the
+                    // disc systems whose redump dat carries per-file
+                    // hashes (PS2 / GameCube / Dreamcast). .chd dumps
+                    // compress the underlying content so the file SHA
+                    // doesn't match redump anyway — those stay
+                    // disc-id-only.
+                    if ext == "iso"
+                        && g.archive_inner_path.is_none()
+                        && matches!(systemId.as_str(), "ps2" | "gamecube" | "dreamcast")
+                    {
+                        match stream_sha1_of_file(std::path::Path::new(&g.file_path)) {
+                            Ok(sha) => {
+                                match db.lookup_rom_hash(&sha)? {
+                                    Some(row) if row.system_id == systemId => {
+                                        summary.matched += 1;
+                                        if let Err(e) = db.apply_rom_hash(
+                                            &g.id,
+                                            &sha,
+                                            row.serial.as_deref(),
+                                            Some(&row.game_name),
+                                        ) {
+                                            log::warn!("rom_hashes: apply_rom_hash {} failed: {e}", g.id);
+                                            summary.errors += 1;
+                                        }
+                                        let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                                            system_id: systemId.clone(),
+                                            done,
+                                            total,
+                                            current_title: g.title.clone(),
+                                            last_action: format!("matched (file-sha1) → {}", row.game_name),
+                                        });
+                                        continue;
+                                    }
+                                    _ => {
+                                        summary.unmatched += 1;
+                                        let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                                            system_id: systemId.clone(),
+                                            done,
+                                            total,
+                                            current_title: g.title.clone(),
+                                            last_action: format!("file-sha1 {sha} — no match"),
+                                        });
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("rom_hashes: stream_sha1_of_file {} failed: {e}", g.file_path);
+                                // Fall through to skipped — the file
+                                // read itself failed, not a catalog miss.
+                            }
+                        }
+                    }
+                    summary.skipped_cd += 1;
                     let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
                         system_id: systemId.clone(),
                         done,
                         total,
                         current_title: g.title.clone(),
-                        last_action: format!("hash error: {e}"),
+                        last_action: format!("no disc-id signature in .{ext}"),
                     });
-                    continue;
                 }
-            },
+                Err(e) => {
+                    // Unsupported format (.chd today) or read failure.
+                    // Counts as skipped — don't surface as an error since
+                    // the operator's library may be predominantly CHDs
+                    // and that's not a setup mistake.
+                    summary.skipped_cd += 1;
+                    let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                        system_id: systemId.clone(),
+                        done,
+                        total,
+                        current_title: g.title.clone(),
+                        last_action: format!("disc-id read failed: {e}"),
+                    });
+                }
+            }
+            continue;
+        }
+
+        let key = (g.file_path.clone(), g.archive_inner_path.clone());
+        let candidates = match hash_cache.get(&key) {
+            Some(c) => c.clone(),
+            None => {
+                let bytes = match rom_bytes_for(&g.file_path, g.archive_inner_path.as_deref()) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        log::warn!("rom_hashes: read {} failed: {e}", g.file_path);
+                        summary.errors += 1;
+                        let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
+                            system_id: systemId.clone(),
+                            done,
+                            total,
+                            current_title: g.title.clone(),
+                            last_action: format!("read error: {e}"),
+                        });
+                        continue;
+                    }
+                };
+                let candidates = candidate_sha1s(&bytes, &systemId);
+                hash_cache.insert(key, candidates.clone());
+                candidates
+            }
         };
 
+        // The Raw candidate is guaranteed to be present and first — use
+        // it as the persisted sha1 on miss so re-scans skip rehashing.
+        // `candidate_sha1s` panics-by-design if Raw is dropped (would
+        // mean a bug in this module).
+        let raw_sha1 = candidates
+            .iter()
+            .find(|c| c.rule == HeaderRule::Raw)
+            .expect("candidate_sha1s always yields Raw first")
+            .sha1
+            .clone();
+
         summary.scanned += 1;
-        match db.lookup_rom_hash(&sha1)? {
-            Some(row) => {
+        // Try every candidate against the DB; first hit wins. Logging the
+        // rule on hit is genuinely diagnostic — it tells the operator
+        // whether their library is headered or not.
+        let mut matched: Option<(RomHashRow, HeaderRule, String)> = None;
+        for c in &candidates {
+            if let Some(row) = db.lookup_rom_hash(&c.sha1)? {
+                matched = Some((row, c.rule, c.sha1.clone()));
+                break;
+            }
+        }
+
+        match matched {
+            Some((row, rule, sha1)) => {
                 summary.matched += 1;
                 if let Err(e) = db.apply_rom_hash(
                     &g.id,
@@ -622,18 +1366,22 @@ pub async fn resolve_rom_hashes_for_system(
                     log::warn!("rom_hashes: apply {} failed: {e}", g.id);
                     summary.errors += 1;
                 }
+                let last_action = match rule {
+                    HeaderRule::Raw => format!("matched → {}", row.game_name),
+                    _ => format!("matched (header-stripped) → {}", row.game_name),
+                };
                 let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
                     system_id: systemId.clone(),
                     done,
                     total,
                     current_title: g.title.clone(),
-                    last_action: format!("matched → {}", row.game_name),
+                    last_action,
                 });
             }
             None => {
-                // Stamp the sha1 anyway so re-runs don't re-hash this file.
+                // Stamp the Raw sha1 so re-runs don't re-hash this file.
                 // Title stays as-is.
-                if let Err(e) = db.apply_rom_hash(&g.id, &sha1, None, None) {
+                if let Err(e) = db.apply_rom_hash(&g.id, &raw_sha1, None, None) {
                     log::warn!("rom_hashes: apply-no-match {} failed: {e}", g.id);
                     summary.errors += 1;
                 }
@@ -692,7 +1440,7 @@ game (
 
     #[test]
     fn parser_extracts_sha1_and_serial() {
-        let entries = parse_libretro_dat(SAMPLE_DAT, "tg16");
+        let ParsedDat { rom_hashes: entries, .. } = parse_libretro_dat(SAMPLE_DAT, "tg16");
         assert_eq!(entries.len(), 2, "expected 2 entries, got {entries:?}");
         let bonk = &entries[0];
         assert_eq!(bonk.game_name, "Bonk's Adventure (USA)");
@@ -706,8 +1454,43 @@ game (
     }
 
     #[test]
+    fn parser_emits_game_serials_for_blocks_with_serials() {
+        let ParsedDat { game_serials, .. } = parse_libretro_dat(SAMPLE_DAT, "tg16");
+        // Sample has 2 game blocks; only Bonk has a serial.
+        assert_eq!(game_serials.len(), 1);
+        let bonk = &game_serials[0];
+        assert_eq!(bonk.system_id, "tg16");
+        assert_eq!(bonk.serial, "TGX040080");
+        assert_eq!(bonk.canonical_title, "Bonk's Adventure (USA)");
+        assert!(bonk.region.is_none());
+    }
+
+    #[test]
+    fn parser_dedupes_game_serials_by_serial() {
+        // Two game blocks sharing the same serial → one game_serials row.
+        // Mirrors libretro-database's habit of cataloging multiple
+        // regional/revision dumps under one publisher catalog code.
+        let dat = r#"
+game (
+	name "Foo (USA)"
+	rom ( name "Foo.pce" size 1024 sha1 1111111111111111111111111111111111111111 )
+	serial "TGX040000"
+)
+
+game (
+	name "Foo (Japan)"
+	rom ( name "Foo.pce" size 1024 sha1 2222222222222222222222222222222222222222 )
+	serial "TGX040000"
+)
+"#;
+        let ParsedDat { rom_hashes, game_serials } = parse_libretro_dat(dat, "tg16");
+        assert_eq!(rom_hashes.len(), 2, "both rom rows survive");
+        assert_eq!(game_serials.len(), 1, "duplicate serials dedupe");
+    }
+
+    #[test]
     fn parser_ignores_clrmamepro_header() {
-        let entries = parse_libretro_dat(SAMPLE_DAT, "tg16");
+        let ParsedDat { rom_hashes: entries, .. } = parse_libretro_dat(SAMPLE_DAT, "tg16");
         // Sample has 1 clrmamepro block + 2 game blocks. If the parser
         // ate the header, name="NEC - PC Engine - TurboGrafx 16" would
         // show up as a row.
@@ -722,7 +1505,7 @@ game (
 	rom ( name "X.pce" size 1024 crc 11111111 )
 )
 "#;
-        let entries = parse_libretro_dat(dat, "tg16");
+        let ParsedDat { rom_hashes: entries, .. } = parse_libretro_dat(dat, "tg16");
         assert!(entries.is_empty(), "rom block without sha1 should be skipped");
     }
 
@@ -739,6 +1522,72 @@ game (
         assert_eq!(k, "sha1");
         assert_eq!(v, "ABC");
         assert!(it.next_pair().is_none());
+    }
+
+    /// Every system registered in `bindings.rs` dispatch must also have
+    /// an explicit decision recorded in `libretro_dat_refs_for_system` —
+    /// either one or more `DatRef`s, or an empty slice (listed in
+    /// `NO_DAT_SYSTEMS` below) with the reason it's skipped. Forgetting
+    /// this leaves a new system silently unmatched at "Identify ROMs"
+    /// time (info-log only).
+    ///
+    /// If you're adding a new core and this test fails: find the system
+    /// under https://github.com/libretro/libretro-database/tree/master/metadat
+    /// (no-intro for cart-based, redump for CD-based) and add a DatRef
+    /// to `libretro_dat_refs_for_system`. If the system genuinely has no
+    /// hash-based identification path, add it to `NO_DAT_SYSTEMS` below
+    /// with the reason.
+    #[test]
+    fn every_onboarded_system_has_an_explicit_rom_hashes_decision() {
+        // Keep in sync with the canonical onboarded list in
+        // `bindings.rs` tests (e.g. `default_pads_round_trip_to_button`).
+        const ONBOARDED_SYSTEMS: &[&str] = &[
+            "tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800",
+            "genesis", "segacd", "sega32x", "saturn", "psx",
+            "neogeo", "neocd", "ngp",
+            "jaguar", "3do", "pcfx",
+            "n64", "gamecube", "dreamcast",
+            "psp", "ps2", "nds",
+            "sms", "gamegear", "gb", "gba", "2600",
+            "coleco", "intv", "o2", "channelf",
+            "vectrex", "virtualboy", "wonderswan",
+            "5200", "pokemini",
+        ];
+        // Systems whose `libretro_dat_refs_for_system` returns an empty
+        // slice on purpose. Document the reason next to the id.
+        const NO_DAT_SYSTEMS: &[&str] = &[
+            "pce-cd", // PCE-CD discs use catalog codes (Hu7-series) not present in libretro-database as standalone dat — game_serials is populated via the no-intro PCE dat which doesn't cover CD-shape titles.
+            "3do",    // libretro-database 3DO dat carries NO `serial` fields — 3DO never standardized a catalog code, disc-id lookup is structurally impossible.
+            "mame",   // arcade ROM identification is set-based, not single-file.
+        ];
+        for sys in ONBOARDED_SYSTEMS {
+            let refs = libretro_dat_refs_for_system(sys);
+            if NO_DAT_SYSTEMS.contains(sys) {
+                assert!(
+                    refs.is_empty(),
+                    "{sys} is in NO_DAT_SYSTEMS but libretro_dat_refs_for_system returned refs — pick one"
+                );
+            } else {
+                assert!(
+                    !refs.is_empty(),
+                    "{sys} is onboarded but libretro_dat_refs_for_system returned no refs. \
+                     Add a DatRef pointing at the right metadat/ subdir + basename, or add \
+                     {sys} to NO_DAT_SYSTEMS with the reason."
+                );
+                // Sanity: subdirs should be one of the known layouts.
+                for r in refs {
+                    assert!(
+                        matches!(
+                            r.subdir,
+                            "dat" | "metadat/no-intro" | "metadat/redump" | "metadat/headered"
+                        ),
+                        "{sys}: unexpected subdir {:?} — extend the allowlist if libretro-database added a new layout",
+                        r.subdir
+                    );
+                    assert!(!r.basename.is_empty(), "{sys}: empty basename");
+                }
+            }
+        }
     }
 
     #[test]

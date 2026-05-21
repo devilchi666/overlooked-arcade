@@ -48,6 +48,7 @@ PCE-CD is considered "shipped" quality.
 - ⬜ **TG-CD-specific theming polish.** The cyan-blue palette ships
   v1; per-system page header art / sidebar icon / cover-art frame may
   need TG-CD-specific tweaks once we have a few titles in the library.
+- ⬜ **Per-game cover sync via libretro-thumbnails — infra ready 2026-05-19, needs operator validation.** Mapping `pce-cd → NEC_-_PC_Engine_CD_-_TurboGrafx-CD` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator: run `Settings → Library → Sync media for PC Engine CD` and confirm covers download.
 
 ---
 

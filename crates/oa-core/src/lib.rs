@@ -53,6 +53,154 @@ pub enum SystemId {
     /// the shell treats it as a single SystemId, with the ROM-set naming
     /// inside the .zip distinguishing individual games.
     Mame,
+    /// Sega Mega Drive / Genesis (cart only; Sega CD + 32X land as
+    /// separate SystemIds when those slugs onboard).
+    Genesis,
+    /// Sega Mega-CD / Sega CD. CD-shape addon for the Mega Drive —
+    /// shares the 6-button MD controller but loads game data from CD
+    /// images (`.cue` / `.chd` / `.iso` / `.m3u`). Requires a regional
+    /// BIOS (`bios_CD_E.bin` / `bios_CD_U.bin` / `bios_CD_J.bin`) in
+    /// `<exe_dir>/system/`; the shell pre-checks SHA-1 against canonical
+    /// Genesis Plus GX-blessed dumps before retro_load_game.
+    SegaCd,
+    /// Sega 32X. Cart-based expansion adding two SH-2 CPUs to the Mega
+    /// Drive (1994 launch); only PicoDrive's libretro side handles it
+    /// cleanly. Cart-only path here; 32X-CD goes through SegaCd with a
+    /// stacked override.
+    Sega32X,
+    /// Sega Saturn (1994 JP / 1995 US-EU). Heavyweight CD-shape system
+    /// — dual SH-2 CPUs + Saturn VDP1/VDP2 + 68k sound CPU. Beetle
+    /// Saturn is the canonical libretro core; alternates Kronos +
+    /// YabaSanshiro available for lighter hosts. Requires a regional
+    /// BIOS (sega_100.bin / sega_101.bin / mpr-17933.bin / mpr-19367b.bin)
+    /// in `<exe_dir>/system/`; pre-checked by `check_saturn_bios`.
+    Saturn,
+    /// Sony PlayStation (PS1). CD-shape with broad library (3000+
+    /// retail titles). Beetle PSX HW is the default (hardware-accelerated
+    /// Vulkan/OpenGL upscaling); Beetle PSX SW is the portable
+    /// software-renderer fallback. Requires a regional BIOS
+    /// (scph5500/5501/5502 v3.0, scph7001/7501 v4.x, etc.) in
+    /// `<exe_dir>/system/`; pre-checked by `check_psx_bios`. DualShock
+    /// analog sticks deferred to Phase 2 alongside shared analog-input
+    /// infra.
+    Playstation,
+    /// SNK Neo Geo (AES home + MVS arcade). Cart-shape (ROM-set in
+    /// .zip / .neo) — FBNeo is the default libretro core. AES home and
+    /// MVS arcade share the same hardware and 4-button controller
+    /// (A/B/C/D); the difference is operator-mode-specific (coin slot
+    /// vs home pad) which FBNeo handles via core option. Requires
+    /// `neogeo.zip` in `<exe_dir>/system/`; pre-checked by check_neogeo_bios.
+    NeoGeo,
+    /// SNK Neo Geo CD. CD-shape variant of the AES home console — same
+    /// 4-button controller, CD media instead of carts. `neocd_libretro.dll`
+    /// is the default. Requires `neocd_z.rom` (top-loader) or
+    /// `neocd_t.rom` (front-loader) in `<exe_dir>/system/`; pre-checked
+    /// by check_neocd_bios; slots into the CD-launch BIOS dispatch arm.
+    NeoGeoCd,
+    /// SNK Neo Geo Pocket / Color (NGP + NGPC). Single SystemId covers
+    /// both hardware variants — Beetle NeoPop auto-detects from the
+    /// ROM header (same pattern as `Gb` covering DMG + CGB and
+    /// `WonderSwan` covering mono + color). No BIOS required. Simple
+    /// d-pad + A + B + OPTION controller.
+    NeoGeoPocket,
+    /// Atari Jaguar (1993). 64-bit cart console with a notoriously
+    /// complex Pro Controller — d-pad + 3 face buttons (A/B/C) +
+    /// OPTION/PAUSE + 12-key keypad (0-9 + * + #). Cart-shape, BIOS
+    /// optional. Virtual Jaguar is the default libretro core.
+    Jaguar,
+    /// 3DO Interactive Multiplayer (1993). CD-shape; the launch console
+    /// was Panasonic's FZ-1, later joined by FZ-10 / GoldStar GDO-101M
+    /// / Sanyo Try. Opera (formerly 4DO) is the default libretro core.
+    /// Regional BIOS required (panafz1.bin / panafz10.bin / etc.).
+    ThreeDo,
+    /// NEC PC-FX (1994-1998). The PC Engine's CD-only 32-bit
+    /// successor — Japan-only platform with a library overwhelmingly
+    /// dominated by anime-style visual novels + dating sims. Beetle
+    /// PC-FX (Mednafen lineage shared with pce-cd / saturn / psx /
+    /// vb / ws / lynx / ngp) is the default core. BIOS required
+    /// (pcfx.rom).
+    PcFx,
+    /// Nintendo 64 (1996). 64-bit cart console; Mupen64Plus-Next is
+    /// the default libretro core (with GLideN64 video plugin). Heavy
+    /// CPU + GPU. BIOS-free (CIC boot ROM emulated internally). The
+    /// N64 controller's analog stick is the primary movement input
+    /// for nearly every title — Phase 0 ships digital fallbacks with
+    /// the d-pad-to-analog core option, full analog axes plumbed via
+    /// the new `set_analog_state` trait method.
+    N64,
+    /// Nintendo GameCube + Wii (2001 / 2006). Optical-disc-shape; one
+    /// Dolphin .dll covers both via runtime auto-detect from disc
+    /// container. Heavy CPU + GPU + 64-bit host required. BIOS-free.
+    /// GC pad analog + C-stick + analog triggers + Wii Remote /
+    /// Nunchuk all need analog dispatch (Phase 0 ships base analog
+    /// stick infra; full per-axis Bindings UI is Phase 2.5).
+    GameCube,
+    /// Sega Dreamcast (1998-2001). CD-shape (GD-ROM media; `.cdi` /
+    /// `.gdi` are Dreamcast-unique container formats, `.chd` shared
+    /// with other CD systems). Flycast is the default libretro core.
+    /// Regional BIOS required (`dc_boot.bin` + `dc_flash.bin` per
+    /// region). The DC controller has a single analog stick (no
+    /// C-stick); flows through the cross-cutting analog input infra.
+    /// VMU peripheral + light gun support deferred to Phase 2.5.
+    Dreamcast,
+    /// Sony PlayStation Portable (2004-2014). UMD-shape (Universal
+    /// Media Disc) handheld. PPSSPP is the default libretro core.
+    /// BIOS-free (PPSSPP synthesizes firmware behavior). Single
+    /// analog stick (no right stick on PSP-1000/2000/3000; PSP Go
+    /// added second stick but is rare). Analog stick flows through
+    /// the shared analog infra.
+    Psp,
+    /// Sony PlayStation 2 (2000-2013). DVD-shape with some CD-format
+    /// titles. LRPS2 (PCSX2) is the default libretro core. Regional
+    /// BIOS required (scph10000 JP launch / scph39001 US fat /
+    /// scph70000 US-EU slim / etc.); slots into the CD-launch BIOS
+    /// dispatch arm as the 9th CD-shape system. DualShock 2 controller
+    /// — PSX-shape + dual analog sticks (analog infra) + pressure-
+    /// sensitive face buttons + analog L2/R2 (Phase 2.5).
+    Ps2,
+    /// Nintendo DS (2004-2014). Cart-shape (DS game card). melonDS is
+    /// the default libretro core. 3-file BIOS required (bios7.bin +
+    /// bios9.bin + firmware.bin). Touch screen is the platform's
+    /// defining input — flows through the new RETRO_DEVICE_POINTER
+    /// dispatch (mouse-as-touch at Phase 0; window-relative pixel-
+    /// perfect mapping is Phase 2.5).
+    Nds,
+    /// Nintendo Game Boy + Game Boy Color (single SystemId — Gambatte
+    /// auto-detects DMG vs CGB from the loaded ROM header).
+    Gb,
+    /// Nintendo Game Boy Advance (separate SystemId from `Gb` — different
+    /// CPU architecture, different libretro cores).
+    Gba,
+    /// Atari 2600 / VCS — the granddaddy. Variant named `Atari2600`
+    /// (not just `2600`) because Rust identifiers can't start with a
+    /// digit; the slug stays `"2600"` in parse_system_id + the
+    /// frontend SystemId string union.
+    Atari2600,
+    /// Mattel Intellivision (1979). 16-direction disc controller (mapped
+    /// to libretro D-pad as 8-way in Phase 0; full disc is a Phase 2
+    /// analog-input dependency).
+    Intellivision,
+    /// Magnavox Odyssey² / Videopac G7000 (1978). Joystick + single
+    /// fire button + 47-key alphanumeric keyboard. Slug stays `"o2"`.
+    Odyssey2,
+    /// Fairchild Channel F (1976). The FIRST cartridge-based home
+    /// console; predates the 2600 by a year. Plunger controller with
+    /// 4-axis analog + push-in fire (simplified to 6 RetroPad buttons
+    /// in Phase 0).
+    ChannelF,
+    /// Atari 5200 SuperSystem (1982). Atari's console counterpart to the
+    /// 400/800 home computers — same 6502 + ANTIC/CTIA hardware, paired
+    /// with the iconic (notoriously fragile) analog-joystick + 12-key
+    /// keypad controller. Slug stays `"5200"`; variant named
+    /// `Atari5200` to dodge Rust's "no leading digit" identifier rule.
+    /// Default core `atari800_libretro.dll`. Requires `5200.rom` BIOS
+    /// in `<exe_dir>/system/`.
+    Atari5200,
+    /// Nintendo Pokémon Mini (2001-2002). The smallest first-party
+    /// Nintendo hardware ever shipped — single-button keypad (A / B /
+    /// C) + d-pad + shake sensor + IR. PokeMini libretro core handles
+    /// playback. Requires `bios.min` (4 KB).
+    PokeMini,
 }
 
 /// Native output dimensions and timing.
@@ -160,14 +308,25 @@ pub enum PortIndex {
 /// Per-frame controller state for a single port.
 ///
 /// `buttons` is a bitfield whose semantics are system-specific (the wrapper crate
-/// for each core defines its layout). `axes` is reserved for analog inputs
-/// (Vectrex stick, future systems) — set to zero for purely-digital cores.
+/// for each core defines its layout). `axes` carries analog stick inputs (libretro
+/// RETRO_DEVICE_ANALOG range, -32768..32767; layout: `[Left X, Left Y, Right X,
+/// Right Y]`). `pointer` carries touch-screen / mouse pointer state for systems
+/// that use libretro RETRO_DEVICE_POINTER (Nintendo DS stylus, light-gun games,
+/// etc.). All three are zero-filled for purely-digital cores that don't poll them.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct InputState {
     /// System-specific button bitfield.
     pub buttons: u32,
     /// Analog axes in signed 16-bit range, 0 for unused.
     pub axes: [i16; 4],
+    /// Pointer device state. `(x, y, pressed)` where:
+    /// - `x` / `y` are signed 16-bit normalized coordinates in libretro's
+    ///   POINTER range (-32768 = top-left edge, 32767 = bottom-right edge).
+    /// - `pressed` is whether the pointer is currently "touching" the screen
+    ///   (mouse button held for a mouse-as-touch input, finger down for a
+    ///   real touch screen).
+    /// Set to `(0, 0, false)` for systems that don't use the pointer device.
+    pub pointer: (i16, i16, bool),
 }
 
 /// Errors a core may surface across the FFI boundary or during state I/O.

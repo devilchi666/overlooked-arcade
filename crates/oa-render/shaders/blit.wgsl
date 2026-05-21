@@ -67,8 +67,18 @@ struct Uniforms {
     /// slider via the TOML preset format. Ignored by every preset that
     /// isn't preset_id == 3.
     bloom_amount: f32,
-    /// Reserved — keeps the struct 16-byte aligned for uniform buffers.
-    _pad: u32,
+    /// Display rotation in 90°-clockwise units (0..=3). Pushed by the
+    /// shell from RETRO_ENVIRONMENT_SET_ROTATION; non-zero on vertical
+    /// arcade boards (Pac-Man, Galaxian, DK). Applied to UV before
+    /// texture sampling so the source image appears rotated on screen.
+    rotation: u32,
+    /// Overscan crop in source UV space — texture-sample UV gets
+    /// remapped from `[0..1]` to `[uv_min..uv_max]`. Default `(0,0,1,1)`
+    /// = no crop. The destination viewport is unchanged, so cropped
+    /// pixels are stretched to fill the visible viewport (the typical
+    /// "hide TV-overscan edges + zoom to fill" behaviour).
+    uv_min: vec2<f32>,
+    uv_max: vec2<f32>,
 };
 
 @group(0) @binding(0) var framebuffer: texture_2d<f32>;
@@ -90,15 +100,40 @@ fn apply_scanlines(base: vec4<f32>, uv: vec2<f32>, fb_h: f32, intensity: f32) ->
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let base = textureSample(framebuffer, framebuffer_sampler, in.uv);
+    // Apply display rotation BEFORE the overscan-crop UV remap so the
+    // crop bounds stay aligned with the source's natural orientation.
+    // For destination pixel at screen UV (x, y) under rotation R
+    // (90° CW units):
+    //   0: src = (x, y)               [identity]
+    //   1: src = (y, 1-x)             [90° CW — vertical arcade board on landscape]
+    //   2: src = (1-x, 1-y)           [180°]
+    //   3: src = (1-y, x)             [270° CW = 90° CCW]
+    var rotated_uv: vec2<f32> = in.uv;
+    if (u.rotation == 1u) {
+        rotated_uv = vec2<f32>(in.uv.y, 1.0 - in.uv.x);
+    } else if (u.rotation == 2u) {
+        rotated_uv = vec2<f32>(1.0 - in.uv.x, 1.0 - in.uv.y);
+    } else if (u.rotation == 3u) {
+        rotated_uv = vec2<f32>(1.0 - in.uv.y, in.uv.x);
+    }
+    // Remap rotated UV [0..1] → [uv_min..uv_max] for texture sampling.
+    // The default (0,0,1,1) leaves sampling unchanged. With an overscan
+    // crop the sample_uv stays inside the crop bounds; the destination
+    // viewport is unchanged so the cropped region stretches to fill.
+    let sample_uv = mix(u.uv_min, u.uv_max, rotated_uv);
+    let base = textureSample(framebuffer, framebuffer_sampler, sample_uv);
     let fb_h = max(f32(u.fb_height), 1.0);
 
     if (u.preset_id == 1u) {
-        return apply_scanlines(base, in.uv, fb_h, 0.85);
+        // Scanlines key off the SAMPLED source row so the period stays
+        // aligned with the original framebuffer rows even when cropped.
+        return apply_scanlines(base, sample_uv, fb_h, 0.85);
     }
     if (u.preset_id == 2u) {
         // CrtLite — heavier scanlines + radial vignette + saturation lift.
-        let scanned = apply_scanlines(base, in.uv, fb_h, 0.75);
+        // Vignette uses the screen-space [0..1] in.uv so it stays
+        // centered on the visible viewport regardless of source crop.
+        let scanned = apply_scanlines(base, sample_uv, fb_h, 0.75);
         // Radial vignette around the visible UV center (0.5, 0.5). Soft
         // falloff that doesn't crush the corners.
         let cx = in.uv.x - 0.5;
@@ -116,8 +151,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // `bloom` is the blurred chain output. The composite preserves
         // high-frequency detail from the source and adds a soft halo from
         // the blur — closer to a real phosphor's behavior than a pure-blur
-        // pass would be.
-        let bloom = textureSample(secondary, secondary_sampler, in.uv);
+        // pass would be. Bloom samples the chain output at the cropped
+        // UV so both inputs cover the same source region.
+        let bloom = textureSample(secondary, secondary_sampler, sample_uv);
         let amt = clamp(u.bloom_amount, 0.0, 1.0);
         return vec4<f32>(mix(base.rgb, bloom.rgb, amt), base.a);
     }

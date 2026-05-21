@@ -12,6 +12,13 @@ type ScannedRom = {
   /// Set when the entry came from inside an archive. Stored on RomEntry as
   /// archiveInnerPath; routes the launch path through archive extraction.
   archiveInnerPath?: string;
+  /// Optional system_id classification hint emitted by the Rust scanner's
+  /// content-peek disambiguation. Currently only populated for Neo Geo
+  /// .zip ROM-sets (whose inner .p1 + .s1 file pattern is Neo Geo-unique).
+  /// When present, the ingest path uses it ahead of the generic
+  /// extension-based mapping so .zip Neo Geo sets classify as neogeo
+  /// rather than mame.
+  systemHint?: SystemId;
 };
 
 export type ScanProgress = {
@@ -145,7 +152,17 @@ export type IngestResult =
   | { kind: "cancelled" }
   | { kind: "empty"; folder: string }
   | { kind: "error"; message: string }
-  | { kind: "ingested"; folder: string; added: number; skipped: number; total: number };
+  | {
+      kind: "ingested";
+      folder: string;
+      added: number;
+      skipped: number;
+      total: number;
+      /// Unique systems that received at least one entry. Callers use
+      /// this to scope post-ingest follow-ups (e.g., auto-Identify
+      /// ROMs) without re-resolving the whole library.
+      systemIds: SystemId[];
+    };
 
 export function romIdFromPath(path: string): string {
   let h = 5381;
@@ -159,6 +176,40 @@ export function titleFromFileName(name: string): string {
   const lastDot = name.lastIndexOf(".");
   const base = lastDot > 0 ? name.slice(0, lastDot) : name;
   return base.replace(/_+/g, " ").trim();
+}
+
+type MameTitleLookup = {
+  romSet: string;
+  title: string;
+  year?: string | null;
+  developer?: string | null;
+};
+
+/// Patch the `title` field on every MAME entry in `entries` with the
+/// canonical title from `mame_titles` when the ROM-set is in the catalog.
+/// Filename-derived titles ("sf2ce") survive only when the catalog has
+/// no match (homebrew, hack, or an older MAME ROM-set the libretro DB
+/// hasn't picked up yet). Mutates `entries` in place. Errors are soft —
+/// at worst, library tiles stay as .zip filenames.
+async function resolveMameTitles(entries: RomEntry[]): Promise<void> {
+  const mameEntries = entries.filter((e) => e.systemId === "mame");
+  if (mameEntries.length === 0) return;
+  for (const entry of mameEntries) {
+    const fileName = entry.filePath.split(/[\\/]/).pop() ?? "";
+    const stem = fileName.replace(/\.zip$/i, "").toLowerCase();
+    if (!stem) continue;
+    try {
+      const hit = await invoke<MameTitleLookup | null>("lookup_mame_title", { romSet: stem });
+      if (hit && hit.title) {
+        entry.title = hit.title;
+      }
+    } catch (e) {
+      // Soft fail — catalog not synced yet, or DB error. Filename-derived
+      // title stays in place; operator can re-sync later via the MAME
+      // settings / sync metadata action.
+      console.debug("[oa-ingest] mame title lookup failed:", e);
+    }
+  }
 }
 
 export async function pickFolderAndIngest(
@@ -201,7 +252,14 @@ export async function ingestFolderPath(
   const entries: RomEntry[] = [];
   let skipped = 0;
   for (const r of scanned) {
-    const systemId = coreSystemMap.get(r.extension) ?? systemForExtension(r.extension);
+    // systemHint (content-peek disambiguation from the Rust scanner) takes
+    // precedence over extension-based mapping. Today only Neo Geo .zip
+    // ROM-sets emit a hint; .zip files without the hint fall through to
+    // the generic extension mapping (which routes them to mame by default).
+    const systemId =
+      (r.systemHint as SystemId | undefined) ??
+      coreSystemMap.get(r.extension) ??
+      systemForExtension(r.extension);
     if (!systemId) {
       skipped++;
       continue;
@@ -215,15 +273,27 @@ export async function ingestFolderPath(
       ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
     });
   }
+  await resolveMameTitles(entries);
 
   const added = await store.addScannedRoms(entries);
-  return { kind: "ingested", folder, added, skipped: skipped + (entries.length - added), total: scanned.length };
+  const systemIds = Array.from(new Set(entries.map((e) => e.systemId))) as SystemId[];
+  return {
+    kind: "ingested",
+    folder,
+    added,
+    skipped: skipped + (entries.length - added),
+    total: scanned.length,
+    systemIds,
+  };
 }
 
 export type RescanSummary = {
   folders: number;
   totalAdded: number;
   errors: string[];
+  /// Unique systems that received at least one entry across all
+  /// rescanned folders. Same intent as `IngestResult.systemIds`.
+  systemIds: SystemId[];
 };
 
 export async function rescanFolders(
@@ -235,6 +305,7 @@ export async function rescanFolders(
   const errors: string[] = [];
   const now = Date.now();
   let totalAdded = 0;
+  const touchedSystems = new Set<SystemId>();
   for (const folder of folders) {
     let scanned: ScannedRom[];
     try {
@@ -245,7 +316,10 @@ export async function rescanFolders(
     }
     const entries: RomEntry[] = [];
     for (const r of scanned) {
-      const systemId = coreSystemMap.get(r.extension) ?? systemForExtension(r.extension);
+      const systemId =
+        (r.systemHint as SystemId | undefined) ??
+        coreSystemMap.get(r.extension) ??
+        systemForExtension(r.extension);
       if (!systemId) continue;
       entries.push({
         id: romIdFromPath(r.path),
@@ -256,7 +330,14 @@ export async function rescanFolders(
         ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
       });
     }
+    await resolveMameTitles(entries);
     totalAdded += await store.addScannedRoms(entries);
+    for (const e of entries) touchedSystems.add(e.systemId);
   }
-  return { folders: folders.length, totalAdded, errors };
+  return {
+    folders: folders.length,
+    totalAdded,
+    errors,
+    systemIds: Array.from(touchedSystems) as SystemId[],
+  };
 }

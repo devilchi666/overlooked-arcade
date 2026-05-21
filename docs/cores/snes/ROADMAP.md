@@ -19,7 +19,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 - ⬜ Operator validation: launch Super Mario World or Chrono Trigger as a reference ROM. Confirm pixels + audio + controller.
 - ⬜ Special chip game validation (Super Mario RPG / Star Fox / Yoshi's Island — exercise SA-1 / SuperFX paths in the core).
-- ⬜ Per-game cover sync via libretro-thumbnails (SNES repo is one of the most complete).
+- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19, needs operator validation.** Mapping `snes → Nintendo_-_Super_Nintendo_Entertainment_System` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id` (one of the most complete libretro-thumbnails repos). Operator: run `Settings → Library → Sync media for SNES` and confirm covers download.
 
 ---
 

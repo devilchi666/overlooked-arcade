@@ -25,6 +25,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ⬜ Probe PAL compatibility — drop a PAL .a78 dump and check the European BIOS lookup. Some core versions also accept `7800 BIOS (E).rom` alongside the US ROM.
 - ⬜ Per-game ROM-set name resolution. Today's library tile shows the filename; per-game metadata sync would surface the human title (e.g. `Ms. Pac-Man (USA) (Proto)` → `Ms. Pac-Man`).
 - ⬜ POKEY audio sanity-check — Ballblazer / Commando / Centipede use POKEY for music; cores sometimes drop POKEY output on the buildbot path. If output is silent, the recommended-BIOS path is implicated.
+- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19, needs operator validation.** Mapping `atari7800 → Atari_-_7800` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator: run `Settings → Library → Sync media for Atari 7800` and confirm covers download.
 
 ---
 

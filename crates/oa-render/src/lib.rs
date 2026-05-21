@@ -63,6 +63,74 @@ impl Default for ScalingMode {
     }
 }
 
+/// Per-edge overscan crop in source-pixel space. `top + bottom` must be
+/// less than `fb.height`; `left + right` less than `fb.width`. Crop
+/// amounts beyond those bounds are clamped at apply time so an
+/// out-of-range setting can't blank the screen.
+///
+/// Visually: the cropped sub-rectangle of the framebuffer is stretched
+/// to fill the same destination viewport the un-cropped image would
+/// have filled. Matches the "hide TV-overscan edges + zoom slightly to
+/// fill" behaviour every other emulator uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OverscanCrop {
+    pub top: u32,
+    pub bottom: u32,
+    pub left: u32,
+    pub right: u32,
+}
+
+impl OverscanCrop {
+    pub const NONE: Self = Self { top: 0, bottom: 0, left: 0, right: 0 };
+
+    pub fn is_zero(self) -> bool {
+        self.top == 0 && self.bottom == 0 && self.left == 0 && self.right == 0
+    }
+
+    /// Effective source-frame dimensions after the crop is applied,
+    /// clamped to leave at least one pixel in each axis (an over-large
+    /// crop on a small framebuffer is clamped rather than yielding a
+    /// zero-area sample region).
+    pub fn effective_dims(self, fb_w: u32, fb_h: u32) -> (u32, u32) {
+        let w_consumed = self.left.saturating_add(self.right);
+        let h_consumed = self.top.saturating_add(self.bottom);
+        let w = fb_w.saturating_sub(w_consumed).max(1);
+        let h = fb_h.saturating_sub(h_consumed).max(1);
+        (w, h)
+    }
+
+    /// Source-space UV bounds derived from the crop, clamped to [0..1].
+    /// Returns `(u_min, v_min, u_max, v_max)`. With no crop this is
+    /// `(0, 0, 1, 1)`.
+    pub fn uv_bounds(self, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
+        if fb_w == 0 || fb_h == 0 {
+            return (0.0, 0.0, 1.0, 1.0);
+        }
+        // Clamp so left+right < fb_w and top+bottom < fb_h.
+        let (eff_w, eff_h) = self.effective_dims(fb_w, fb_h);
+        let left = (fb_w - eff_w).min(self.left.saturating_add(self.right));
+        let top_used = (fb_h - eff_h).min(self.top.saturating_add(self.bottom));
+        // Apportion the consumed-total per edge proportionally to the
+        // user's request (so a (top=8, bottom=0) crop ALWAYS removes
+        // bytes from the top, never bisects the source).
+        let l = if left == 0 { 0 } else {
+            (self.left as u64 * left as u64
+                / (self.left.saturating_add(self.right) as u64).max(1)) as u32
+        };
+        let t = if top_used == 0 { 0 } else {
+            (self.top as u64 * top_used as u64
+                / (self.top.saturating_add(self.bottom) as u64).max(1)) as u32
+        };
+        let r = left.saturating_sub(l);
+        let b = top_used.saturating_sub(t);
+        let u_min = l as f32 / fb_w as f32;
+        let v_min = t as f32 / fb_h as f32;
+        let u_max = (fb_w - r) as f32 / fb_w as f32;
+        let v_max = (fb_h - b) as f32 / fb_h as f32;
+        (u_min, v_min, u_max, v_max)
+    }
+}
+
 /// Selectable shader preset applied during the final blit.
 ///
 /// Phase 3 slice A ships three presets in a single fragment shader that
@@ -190,6 +258,31 @@ pub struct Renderer {
     frames_presented: u64,
     scaling_mode: ScalingMode,
     shader_preset: ShaderPreset,
+    /// Override for the framebuffer's reported display_aspect. `None`
+    /// = trust the core. See `set_display_aspect_override` for why.
+    display_aspect_override: Option<f32>,
+    /// Per-edge overscan crop applied to the source framebuffer. The
+    /// renderer passes UV bounds to the blit shader so the cropped
+    /// region stretches to fill the destination viewport. `NONE` = no
+    /// crop (default; shader UV passes through unchanged).
+    overscan_crop: OverscanCrop,
+    /// Display rotation in units of 90° clockwise (0..=3). Set by the
+    /// shell after `retro_load_game` from the core's
+    /// `RETRO_ENVIRONMENT_SET_ROTATION` value. 1 = 90° CW (vertical
+    /// arcade boards like Pac-Man / Galaxian when read on a landscape
+    /// display), 3 = 90° CCW. The viewport math swaps width / height
+    /// for odd rotations + transforms the blit quad vertices.
+    rotation: u32,
+    /// Last computed game-output rectangle inside the surface, in
+    /// physical pixels. `(x, y, width, height)`. The shell reads this
+    /// via `last_viewport()` after every present() to compute the
+    /// screen-space rectangle for window-relative pointer mapping
+    /// (NDS stylus, light-gun games). `None` until the first present().
+    last_viewport: Option<(f32, f32, f32, f32)>,
+    /// Cached `device.limits().max_texture_dimension_2d`. Used to clamp
+    /// surface dimensions in `resize` / `present` paths since going
+    /// past this panics in `Surface::configure`.
+    max_texture_dim: u32,
 }
 
 /// A single shader pass in the multi-pass effect chain. Owns its pipeline +
@@ -286,17 +379,28 @@ impl Renderer {
             .ok_or(RenderError::NoAdapter)?;
         log::info!("oa-render: adapter = {}", adapter.get_info().name);
 
+        // Request the adapter's actual limits rather than the
+        // `downlevel_defaults` cap (which sets max_texture_dimension_2d
+        // = 2048 — smaller than the user's window on any modern HiDPI
+        // display, causing Surface::configure to panic when the window
+        // is wider than 2048 physical pixels). Any modern desktop GPU
+        // reports 8192 or 16384; integrated GPUs typically 4096+.
+        let adapter_limits = adapter.limits();
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("oa-render device"),
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::downlevel_defaults(),
+                    required_limits: adapter_limits.clone(),
                     memory_hints: wgpu::MemoryHints::Performance,
                 },
                 None,
             )
             .await?;
+        log::info!(
+            "oa-render: device limits — max_texture_dimension_2d = {}",
+            adapter_limits.max_texture_dimension_2d
+        );
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -307,11 +411,23 @@ impl Renderer {
             .unwrap_or(caps.formats[0]);
         let alpha_mode = caps.alpha_modes[0];
 
+        // Clamp the surface dimensions to the device's
+        // max_texture_dimension_2d. Going past this panics in
+        // Surface::configure with "must be within the maximum
+        // supported texture size."
+        let max_dim = adapter_limits.max_texture_dimension_2d;
+        let clamped_w = width.max(1).min(max_dim);
+        let clamped_h = height.max(1).min(max_dim);
+        if clamped_w != width || clamped_h != height {
+            log::warn!(
+                "oa-render: clamping surface from {width}x{height} to {clamped_w}x{clamped_h} (device max {max_dim})"
+            );
+        }
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: width.max(1),
-            height: height.max(1),
+            width: clamped_w,
+            height: clamped_h,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode,
             view_formats: vec![],
@@ -410,12 +526,15 @@ impl Renderer {
             ],
         });
 
-        // 16-byte uniform: { preset_id: u32, fb_height: u32, _pad0: u32, _pad1: u32 }.
-        // wgpu requires uniform buffers be a multiple of 16 bytes; we round
-        // up by carrying two pad slots.
+        // 32-byte uniform:
+        //   { preset_id: u32, fb_height: u32, bloom_amount: f32, _pad: u32,
+        //     uv_min: vec2<f32>, uv_max: vec2<f32> }.
+        // The vec2s sit on a 16-byte aligned offset (8) which is fine
+        // because vec2<f32> in WGSL aligns to 8. wgpu uniform buffers
+        // need to be a multiple of 16 bytes; 32 satisfies that.
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("oa-render preset uniform"),
-            size: 16,
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -557,8 +676,13 @@ impl Renderer {
             bezel_bgl,
             bloom_amount: 0.6,
             frames_presented: 0,
+            rotation: 0,
+            last_viewport: None,
             scaling_mode: ScalingMode::default(),
             shader_preset: ShaderPreset::default(),
+            display_aspect_override: None,
+            overscan_crop: OverscanCrop::NONE,
+            max_texture_dim: adapter_limits.max_texture_dimension_2d,
         })
     }
 
@@ -801,23 +925,110 @@ impl Renderer {
         }
     }
 
+    /// Override the framebuffer's reported display_aspect. `None` =
+    /// use whatever the core reports (the default, correct for cores
+    /// that set aspect_ratio in retro_get_system_av_info). `Some(x)`
+    /// substitutes the override at viewport-math time — useful when:
+    ///   - the core reports 0.0 / doesn't set aspect (rare but real)
+    ///   - the user prefers a different aspect for their library
+    ///     (4:3 fits-on-TV vs PCE-correct 4.55:3, NES square pixels
+    ///     vs the era-authentic 8:7 stretch, etc.)
+    ///
+    /// Per-system + per-game overrides resolve at the shell layer
+    /// before pushing this through. `<= 0.0` is treated as None.
+    pub fn set_display_aspect_override(&mut self, aspect: Option<f32>) {
+        let normalised = aspect.filter(|a| *a > 0.0);
+        if self.display_aspect_override != normalised {
+            log::info!(
+                "oa-render: display_aspect override {:?} -> {:?}",
+                self.display_aspect_override, normalised
+            );
+            self.display_aspect_override = normalised;
+        }
+    }
+
+    pub fn display_aspect_override(&self) -> Option<f32> {
+        self.display_aspect_override
+    }
+
+    /// Apply a per-edge overscan crop to the source framebuffer. The
+    /// cropped region is stretched to fill the same destination
+    /// viewport an un-cropped image would have used — typical "hide
+    /// TV-overscan edges + zoom" behaviour. `OverscanCrop::NONE`
+    /// disables the crop (the default).
+    pub fn set_overscan_crop(&mut self, crop: OverscanCrop) {
+        if self.overscan_crop != crop {
+            log::info!(
+                "oa-render: overscan crop t={} b={} l={} r={} (was t={} b={} l={} r={})",
+                crop.top, crop.bottom, crop.left, crop.right,
+                self.overscan_crop.top, self.overscan_crop.bottom,
+                self.overscan_crop.left, self.overscan_crop.right,
+            );
+            self.overscan_crop = crop;
+        }
+    }
+
+    pub fn overscan_crop(&self) -> OverscanCrop {
+        self.overscan_crop
+    }
+
+    /// Set the display rotation in units of 90° clockwise (0..=3).
+    /// `0` = no rotation (the default for every console + handheld).
+    /// `1` / `3` = 90° / 270° CW, used by vertical arcade boards
+    /// (Pac-Man, Galaxian, Donkey Kong, …). `2` = 180° (very rare).
+    /// Pushed by the shell after `retro_load_game` from the core's
+    /// `RETRO_ENVIRONMENT_SET_ROTATION` value. Out-of-range values
+    /// clamp to `0`. Takes effect on the next `present()`.
+    pub fn set_rotation(&mut self, rotation: u32) {
+        let clamped = if rotation > 3 { 0 } else { rotation };
+        if self.rotation != clamped {
+            log::info!("oa-render: rotation {} -> {} (90° units)", self.rotation, clamped);
+            self.rotation = clamped;
+        }
+    }
+
+    pub fn rotation(&self) -> u32 {
+        self.rotation
+    }
+
+    /// Last computed game-output rectangle inside the surface, in
+    /// physical pixels: `(x, y, width, height)`. Updated by every
+    /// `present()` call. `None` until the first frame has rendered.
+    /// Used by the shell to compute window-relative pointer coordinates
+    /// for systems with mouse-as-touch input (NDS stylus, Dreamcast
+    /// light-gun) — the pointer's normalized libretro range maps to
+    /// THIS rectangle, not the whole window.
+    pub fn last_viewport(&self) -> Option<(f32, f32, f32, f32)> {
+        self.last_viewport
+    }
+
     /// The currently active scaling mode.
     pub fn scaling_mode(&self) -> ScalingMode {
         self.scaling_mode
     }
 
-    /// Update the surface dimensions when the window resizes.
+    /// Update the surface dimensions when the window resizes. Clamps
+    /// against `max_texture_dim` so a window larger than the device's
+    /// max texture size doesn't crash Surface::configure.
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
         }
-        if width == self.config.width && height == self.config.height {
+        let clamped_w = width.min(self.max_texture_dim);
+        let clamped_h = height.min(self.max_texture_dim);
+        if clamped_w != width || clamped_h != height {
+            log::warn!(
+                "oa-render: resize clamped {width}x{height} -> {clamped_w}x{clamped_h} (device max {})",
+                self.max_texture_dim
+            );
+        }
+        if clamped_w == self.config.width && clamped_h == self.config.height {
             return;
         }
-        self.config.width = width;
-        self.config.height = height;
+        self.config.width = clamped_w;
+        self.config.height = clamped_h;
         self.surface.configure(&self.device, &self.config);
-        log::debug!("oa-render: resized to {}x{}", width, height);
+        log::debug!("oa-render: resized to {}x{}", clamped_w, clamped_h);
     }
 
     /// Upload `fb` and present one frame. If the active preset is multi-
@@ -839,11 +1050,19 @@ impl Renderer {
         // [preset_id u32, fb_height u32, bloom_amount f32, _pad u32]. The
         // bloom_amount slot is reinterpreted as f32 on the GPU side via
         // the WGSL declaration; we write the raw u32 bit-pattern here.
-        let final_uniform: [u32; 4] = [
+        // Overscan crop → UV bounds: when crop is NONE the bounds are
+        // (0,0,1,1) and the shader's UV remap is a no-op.
+        let (u_min, v_min, u_max, v_max) =
+            self.overscan_crop.uv_bounds(fb.width, fb.height);
+        let final_uniform: [u32; 8] = [
             self.shader_preset.id(),
             fb.height,
             self.bloom_amount.to_bits(),
-            0,
+            self.rotation,
+            u_min.to_bits(),
+            v_min.to_bits(),
+            u_max.to_bits(),
+            v_max.to_bits(),
         ];
         self.queue.write_buffer(
             &self.uniform_buffer,
@@ -967,16 +1186,42 @@ impl Renderer {
             let fb_tex = self.fb_texture.as_ref().expect("fb_texture ready");
             let bind_group = final_bind_group.as_ref().unwrap_or(&fb_tex.bind_group);
             pass.set_bind_group(0, bind_group, &[]);
+            // Override the core-reported aspect when the operator has
+            // pinned one for this system/game; otherwise trust the core.
+            let mut effective_aspect = self.display_aspect_override.unwrap_or(fb.display_aspect);
+            // Overscan crop shrinks the SOURCE dimensions the viewport
+            // math sees, so Pixel-Perfect / Original / IntegerMultiple
+            // pick integer multiples against the visible (cropped) row
+            // count. Aspect-Correct / Stretched are unaffected.
+            let (mut eff_w, mut eff_h) = self.overscan_crop.effective_dims(fb.width, fb.height);
+            // Rotation swaps the EFFECTIVE source dimensions + inverts
+            // aspect for odd rotations (90° / 270°). Pac-Man at native
+            // 224×288 with rotation=1 displays as 288×224 on a landscape
+            // monitor; the viewport math needs the post-rotation shape
+            // to fit correctly. The shader does the actual pixel rotation
+            // via the UV transform; this just makes the destination
+            // rectangle the right shape.
+            if self.rotation == 1 || self.rotation == 3 {
+                std::mem::swap(&mut eff_w, &mut eff_h);
+                if effective_aspect > 0.0 {
+                    effective_aspect = 1.0 / effective_aspect;
+                }
+            }
             let (vp_x, vp_y, vp_w, vp_h) = viewport_for(
                 self.scaling_mode,
                 self.config.width,
                 self.config.height,
-                fb.width,
-                fb.height,
-                fb.display_aspect,
+                eff_w,
+                eff_h,
+                effective_aspect,
             );
             pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             pass.draw(0..3, 0..1);
+            // Cache so the shell can compute window-relative pointer
+            // coordinates against the actual game-output rectangle
+            // (not the whole window — letterboxing matters for NDS
+            // stylus + light-gun aiming).
+            self.last_viewport = Some((vp_x, vp_y, vp_w, vp_h));
         }
 
         // === Bezel overlay pass (slice B-2) =============================
@@ -1248,7 +1493,59 @@ fn fit_aspect(sw: f32, sh: f32, target_aspect: f32) -> (f32, f32, f32, f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{viewport_for, ScalingMode, ShaderPreset};
+    use super::{viewport_for, OverscanCrop, ScalingMode, ShaderPreset};
+
+    #[test]
+    fn overscan_none_is_zero() {
+        assert!(OverscanCrop::NONE.is_zero());
+        assert!(OverscanCrop::default().is_zero());
+    }
+
+    #[test]
+    fn overscan_effective_dims_subtracts_crop() {
+        let crop = OverscanCrop { top: 8, bottom: 8, left: 0, right: 0 };
+        // NES 256x224 → 256x208 visible after typical "top+bottom 8" crop.
+        assert_eq!(crop.effective_dims(256, 224), (256, 208));
+    }
+
+    #[test]
+    fn overscan_effective_dims_clamps_oversized_crop() {
+        // Crop that would consume the whole framebuffer clamps to 1x1
+        // rather than producing a zero-area sample region.
+        let crop = OverscanCrop { top: 1000, bottom: 1000, left: 1000, right: 1000 };
+        let (w, h) = crop.effective_dims(256, 224);
+        assert!(w >= 1 && h >= 1);
+    }
+
+    #[test]
+    fn overscan_uv_bounds_no_crop_is_full_range() {
+        let (umin, vmin, umax, vmax) = OverscanCrop::NONE.uv_bounds(256, 224);
+        assert!((umin - 0.0).abs() < 1e-6);
+        assert!((vmin - 0.0).abs() < 1e-6);
+        assert!((umax - 1.0).abs() < 1e-6);
+        assert!((vmax - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn overscan_uv_bounds_symmetric_top_bottom_crops_v_only() {
+        let crop = OverscanCrop { top: 8, bottom: 8, left: 0, right: 0 };
+        let (umin, vmin, umax, vmax) = crop.uv_bounds(256, 224);
+        // U unchanged: no horizontal crop.
+        assert!((umin - 0.0).abs() < 1e-6);
+        assert!((umax - 1.0).abs() < 1e-6);
+        // V starts at 8/224, ends at 216/224.
+        assert!((vmin - (8.0 / 224.0)).abs() < 1e-4);
+        assert!((vmax - (216.0 / 224.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn overscan_uv_bounds_asymmetric_apportions_to_correct_edges() {
+        // top=8, bottom=0: ALL the v consumption goes to the top edge.
+        let crop = OverscanCrop { top: 8, bottom: 0, left: 0, right: 0 };
+        let (_, vmin, _, vmax) = crop.uv_bounds(256, 224);
+        assert!((vmin - (8.0 / 224.0)).abs() < 1e-4);
+        assert!((vmax - 1.0).abs() < 1e-4); // bottom unchanged
+    }
 
     #[test]
     fn shader_preset_round_trips_strings() {
@@ -1292,6 +1589,53 @@ mod tests {
     fn phosphor_string_round_trips() {
         assert_eq!(ShaderPreset::parse("phosphor"), ShaderPreset::Phosphor);
         assert_eq!(ShaderPreset::Phosphor.as_str(), "phosphor");
+    }
+
+    // --- Rotation viewport math -----------------------------------------
+    //
+    // The renderer's actual rotation handling rotates UV in the shader
+    // AND swaps the effective viewport dimensions for odd rotations
+    // (1 = 90° CW, 3 = 270° CW). These tests cover the swap math via
+    // viewport_for directly — the shader UV remap is tested visually
+    // via operator validation against rotated arcade boards.
+
+    #[test]
+    fn viewport_for_swaps_dims_for_pacman_90deg() {
+        // Pac-Man native: 224 wide × 288 tall (vertical board). With
+        // rotation=1, viewport_for receives the SWAPPED dimensions
+        // (288 wide × 224 tall) + the INVERTED aspect (224/288 → 288/224)
+        // and computes the destination rect against the 1920×1080 surface
+        // as a landscape-oriented rectangle.
+        let sw = 1920.0_f32;
+        let sh = 1080.0_f32;
+        // Caller-supplied (post-rotation-swap) source dims for Pac-Man:
+        let eff_w = 288;
+        let eff_h = 224;
+        let effective_aspect = 288.0 / 224.0; // ≈ 1.286
+        let (_x, _y, vp_w, vp_h) =
+            viewport_for(ScalingMode::AspectCorrectFit, sw as u32, sh as u32, eff_w, eff_h, effective_aspect);
+        // Aspect-correct fit: vp_w / vp_h ≈ effective_aspect.
+        assert!(approx(vp_w / vp_h, effective_aspect));
+        // And the rectangle is wider than tall (landscape) since the
+        // POST-rotation aspect > 1.
+        assert!(vp_w > vp_h);
+    }
+
+    #[test]
+    fn viewport_for_no_rotation_keeps_portrait_for_vertical_source() {
+        // Sanity: if the caller DIDN'T swap (rotation=0), Pac-Man's
+        // native portrait shape produces a portrait rectangle inside
+        // a landscape surface.
+        let sw = 1920.0_f32;
+        let sh = 1080.0_f32;
+        let eff_w = 224;
+        let eff_h = 288;
+        let effective_aspect = 224.0 / 288.0; // ≈ 0.778
+        let (_x, _y, vp_w, vp_h) =
+            viewport_for(ScalingMode::AspectCorrectFit, sw as u32, sh as u32, eff_w, eff_h, effective_aspect);
+        assert!(approx(vp_w / vp_h, effective_aspect));
+        // Portrait: taller than wide.
+        assert!(vp_h > vp_w);
     }
 
     fn approx(a: f32, b: f32) -> bool {

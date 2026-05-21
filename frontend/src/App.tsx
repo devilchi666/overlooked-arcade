@@ -426,6 +426,9 @@ const App: Component = () => {
         settings.setLibraryFolders([...existing, result.folder]);
       }
     }
+    if (result.kind === "ingested" && result.added > 0) {
+      autoIdentifyAfterIngest(result.systemIds);
+    }
     setBusy("idle");
     setOverflowOpen(false);
   }
@@ -433,6 +436,19 @@ const App: Component = () => {
   async function handleAddLibraryFolder() {
     const picked = await pickDirectory({ directory: true, multiple: false }).catch(() => null);
     if (!picked || Array.isArray(picked)) return;
+    // Pre-flight: refuse to add an empty directory. Same check the
+    // ImportWizard uses on its Step 1; keeps the quick-add path from
+    // polluting libraryFolders with a directory that has nothing in it.
+    try {
+      const empty = await invoke<boolean>("directory_is_empty", { path: picked });
+      if (empty) {
+        setStatus(`${picked} is empty — nothing to import.`);
+        return;
+      }
+    } catch (e) {
+      setStatus(`Couldn't read ${picked}: ${String(e)}`);
+      return;
+    }
     const existing = settings.libraryFolders();
     if (!existing.includes(picked)) {
       settings.setLibraryFolders([...existing, picked]);
@@ -441,6 +457,9 @@ const App: Component = () => {
     setStatus(`Scanning ${picked}…`);
     const summary = await rescanFolders(library, [picked], scanProgressReporter);
     setStatus(`Added ${summary.totalAdded} from ${picked}.`);
+    if (summary.totalAdded > 0) {
+      autoIdentifyAfterIngest(summary.systemIds);
+    }
     setBusy("idle");
   }
 
@@ -453,6 +472,9 @@ const App: Component = () => {
     const errSuffix = summary.errors.length > 0 ? ` (${summary.errors.length} errored)` : "";
     setStatus(`Rescan: added ${summary.totalAdded} new ROMs across ${summary.folders} folders${errSuffix}.`);
     if (summary.errors.length > 0) console.warn("rescan errors:", summary.errors);
+    if (summary.totalAdded > 0) {
+      autoIdentifyAfterIngest(summary.systemIds);
+    }
     setBusy("idle");
   }
 
@@ -484,6 +506,7 @@ const App: Component = () => {
     // region wiring is per-core work; the override persists and is
     // available for individual core loaders once they consume it).
     try {
+      type OverscanCropPrefs = { top: number; bottom: number; left: number; right: number };
       type SysSettings = {
         shaderPreset?: string | null;
         bloomAmount?: number | null;
@@ -493,6 +516,9 @@ const App: Component = () => {
         rewindEnabled?: boolean | null;
         rewindCaptureIntervalFrames?: number | null;
         rewindBufferMegabytes?: number | null;
+        displayAspectOverride?: number | null;
+        overscanCropOverride?: OverscanCropPrefs | null;
+        bezelImagePath?: string | null;
       };
       type GameOver = SysSettings & {
         regionOverride?: string | null;
@@ -526,6 +552,31 @@ const App: Component = () => {
           game?.rewindBufferMegabytes
           ?? sys?.rewindBufferMegabytes
           ?? settings.rewindBufferMegabytes(),
+        // Display-aspect override chain. No OA-wide value — the bottom
+        // of the chain is `null` = "trust whatever the libretro core
+        // reports via retro_get_system_av_info" (the typical case;
+        // cores like Beetle PCE Fast set the PCE aspect correctly).
+        // Operators tune per-system or per-game when the core's
+        // reported value doesn't suit their display preference.
+        displayAspectOverride:
+          game?.displayAspectOverride
+          ?? sys?.displayAspectOverride
+          ?? null,
+        // Overscan crop chain. No OA-wide value — bottom of the chain
+        // is "no crop" (zero on every edge). Operators tune per-system
+        // (typical case: NES top=8 bottom=8) or per-game when one
+        // specific title has nasty edge garbage.
+        overscanCropOverride:
+          game?.overscanCropOverride
+          ?? sys?.overscanCropOverride
+          ?? null,
+        // Bezel image chain. Per-game → per-system → null (use shader
+        // preset's TOML default, which may itself be no bezel). The
+        // override is an absolute path to a PNG/JPEG/WebP.
+        bezelImagePath:
+          game?.bezelImagePath
+          ?? sys?.bezelImagePath
+          ?? null,
       };
       console.log("[oa-launch] resolved overrides:", effective, "region:", game?.regionOverride ?? "inherit");
       // Order matters between set_shader_preset + set_bloom_amount: the
@@ -559,6 +610,24 @@ const App: Component = () => {
           captureIntervalFrames: effective.rewindCaptureIntervalFrames,
           maxMegabytes: effective.rewindBufferMegabytes,
         }).catch((e) => console.warn("[oa-launch] set_rewind_config failed:", e)),
+        invoke("set_display_aspect_override", { aspect: effective.displayAspectOverride }).catch((e) =>
+          console.warn("[oa-launch] set_display_aspect_override failed:", e),
+        ),
+        invoke("set_overscan_crop", {
+          top:    effective.overscanCropOverride?.top    ?? 0,
+          bottom: effective.overscanCropOverride?.bottom ?? 0,
+          left:   effective.overscanCropOverride?.left   ?? 0,
+          right:  effective.overscanCropOverride?.right  ?? 0,
+        }).catch((e) => console.warn("[oa-launch] set_overscan_crop failed:", e)),
+        // Bezel: if the resolved chain ends in a path, push as
+        // override (overrides the preset's bezel from set_shader_preset
+        // above). If null, leave whatever set_shader_preset uploaded
+        // alone — the preset's TOML default stays active.
+        effective.bezelImagePath
+          ? invoke("set_bezel_image_override", { path: effective.bezelImagePath }).catch((e) =>
+              console.warn("[oa-launch] set_bezel_image_override failed:", e),
+            )
+          : Promise.resolve(),
       ]);
     } catch (e) {
       console.warn("[oa-launch] override resolution failed:", e);
@@ -578,6 +647,11 @@ const App: Component = () => {
           if (n > 0) console.log(`[oa-launch] armed ${n} milestone(s)`);
         })
         .catch((e) => console.warn("[oa-launch] arm_milestones failed:", e));
+      // Phase 2.5 — resolve per-game → per-system analog routing for
+      // all 5 ports and push to the emu thread. Soft failure: at worst
+      // the game uses per-system-only routing until restart.
+      void invoke<void>("arm_analog_routing", { gameId: entry.id })
+        .catch((e) => console.warn("[oa-launch] arm_analog_routing failed:", e));
       // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
       // story as milestones (SQLite is source of truth; emu-thread
       // runtime is the live evaluator that runs on next launch otherwise).
@@ -622,6 +696,13 @@ const App: Component = () => {
           captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
           maxMegabytes: settings.rewindBufferMegabytes(),
         }).catch(() => {}),
+        // Drop any per-game / per-system display-aspect override so the
+        // next launch starts from the core-reported value.
+        invoke("set_display_aspect_override", { aspect: null }).catch(() => {}),
+        // Drop any overscan crop so the next launch starts un-cropped.
+        invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 }).catch(() => {}),
+        // Drop any per-game / per-system bezel override.
+        invoke("clear_bezel_image_override").catch(() => {}),
       ]);
     } catch (e) {
       console.warn("unload_rom failed:", e);
@@ -1075,10 +1156,26 @@ const App: Component = () => {
   //      property). When Tauri's OS handler intercepts the drop, it emits
   //      events here.
   //
-  // The drop is committed via the Tauri path because DOM drop events in
-  // WebView2 don't give us file paths. If the Tauri handler doesn't fire
-  // (some Windows configurations leave it dormant), the DOM listener still
-  // gives the user visual feedback and a hint.
+  // External drag-drop is **known unreliable** on this build (see
+  // `docs/PARKING_LOT.md` 2026-05-19 entry) — neither shell mode delivers
+  // paths consistently. The DOM listeners give visual feedback + a
+  // fallback hint pointing at the Import Wizard. Internal HTML5
+  // drag-drop (sidebar reorder, region priority drag) is unaffected.
+  /// Kick off the canonical-title sync for each system that received
+  /// fresh games. Fire-and-forget — the resolve flow emits its own
+  /// progress events + the library auto-refreshes on completion via
+  /// the existing `oa://rom-hash-resolve-complete` listener in the
+  /// Settings page. Calling more than once for the same system in
+  /// quick succession is idempotent (no-op when no entries are
+  /// missing a sha1).
+  function autoIdentifyAfterIngest(systemIds: readonly SystemId[]) {
+    for (const id of systemIds) {
+      void invoke("resolve_rom_hashes_for_system", { systemId: id }).catch((e) =>
+        console.warn(`[oa-ingest] auto-identify ${id} failed:`, e),
+      );
+    }
+  }
+
   async function commitDroppedPath(path: string) {
     setBusy("scanning");
     setStatus(`Scanning ${path}…`);
@@ -1090,12 +1187,19 @@ const App: Component = () => {
         settings.setLibraryFolders([...existing, result.folder]);
       }
     }
+    if (result.kind === "ingested" && result.added > 0) {
+      autoIdentifyAfterIngest(result.systemIds);
+    }
     setBusy("idle");
   }
 
   onMount(async () => {
-    // Layer 1 — DOM events. preventDefault on dragover is the load-bearing
-    // one: it overrides WebView2's default "no drop allowed" cursor.
+    // DOM events. preventDefault on dragover is the load-bearing one:
+    // it overrides WebView2's default "no drop allowed" cursor. The
+    // main shell is now opaque in both shell modes — Tauri's
+    // drag-drop hook fires reliably on this window so we no longer
+    // need any overlay-window workaround.
+
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
       setDropOverlayVisible(true);
@@ -1117,13 +1221,12 @@ const App: Component = () => {
       setDropOverlayVisible(false);
       console.log("[oa-drop] DOM drop fired. files=", e.dataTransfer?.files?.length, "items=", e.dataTransfer?.items?.length);
       // We don't try to extract paths here — WebView2 doesn't expose them.
-      // The Tauri onDragDropEvent fires separately with the real OS paths.
-      // If Tauri's handler isn't firing, surface a hint to the user.
+      // In two-window mode Tauri's onDragDropEvent fires with the real
+      // OS paths; in single-window mode the drop-overlay window catches
+      // it and emits `oa://overlay-drop` (see the listener below).
+      // If neither path lands within 500ms, surface a fallback hint.
       if ((e.dataTransfer?.files?.length ?? 0) > 0) {
         setStatus("Drop received — waiting for Tauri to deliver the path…");
-        // Fallback safety: if Tauri's handler doesn't fire within 500ms,
-        // tell the user drag-drop isn't working in this build and to use the
-        // toolbar overflow → Import folder instead.
         setTimeout(() => {
           if (busy() !== "scanning") {
             setStatus("Drag-drop not delivering paths — use ⋯ → Import folder, or Settings → Library → Add.");
@@ -1143,9 +1246,10 @@ const App: Component = () => {
     });
 
     // Layer 2 — Tauri OS-level drag-drop. This is what actually gives us
-    // file paths. When it fires (default behavior), we commit the dropped
-    // folder; when it doesn't (some Windows configurations), the DOM
-    // listener above shows the fallback hint.
+    // file paths when it works. Currently unreliable across shell modes
+    // (parking-lot item from 2026-05-19); the listener is wired up
+    // anyway so any successful drops still ingest, and the DOM listener
+    // above shows the fallback hint when paths don't arrive.
     let unlisten: (() => void) | undefined;
     console.log("[oa-drop] registering onDragDropEvent listener");
     try {

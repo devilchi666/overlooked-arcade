@@ -37,3 +37,32 @@ export type RomEntry = {
 export type LibraryState = {
   entries: RomEntry[];
 };
+
+/// Variant metadata returned by Rust's `list_game_groups`. One per file —
+/// the right-click "Run version" submenu enumerates this list.
+export type VariantInfo = {
+  id: RomId;
+  title: string;
+  filePath: string;
+  archiveInnerPath?: string;
+  coverPath?: string;
+  region?: string;
+  regions: string[];
+  revision: number;
+  flags: string[];
+  isPrerelease: boolean;
+  /// True for the group's chosen default variant (frontend renders ✓
+  /// next to this entry in the context-menu submenus).
+  isDefault: boolean;
+};
+
+/// A multi-variant group (e.g. all dumps of "Castlevania" on TG-16).
+/// `displayBaseTitle` is what the tile shows; `variants` carries every
+/// dump in priority order.
+export type GameGroupInfo = {
+  systemId: SystemId;
+  baseTitleKey: string;
+  displayBaseTitle: string;
+  defaultVariantId: RomId;
+  variants: VariantInfo[];
+};

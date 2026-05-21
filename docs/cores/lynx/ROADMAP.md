@@ -27,7 +27,7 @@ Core comes online as part of the project's transition to a multi-core launcher. 
 - ⬜ Operator validation: launch a real `.lnx` ROM end-to-end (pixels + audio + controller).
 - ⬜ Save state F5/F8 round-trip confirmation. Mednafen Lynx supports `retro_serialize` so this should work via the existing path, but it hasn't been live-tested.
 - ⬜ Multi-region testing: load USA + Europe + Japan ROM dumps to confirm BIOS region handling.
-- ⬜ Per-game cover sync via libretro-thumbnails for the Lynx repo.
+- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19, needs operator validation.** Mapping `lynx → Atari_-_Lynx` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator: run `Settings → Library → Sync media for Lynx` and confirm covers download.
 
 **Acceptance gate:** A reference set of Lynx games (California Games, Blue Lightning, Lynx Casino, Crystal Mines II) all run with pixels + audio + working controller at native 75 Hz.
 

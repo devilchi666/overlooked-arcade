@@ -23,24 +23,24 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ---
 
-## ⬜ Phase 1.5 — Hardening (post-Phase-1, pre-Phase-2)
+## 🟨 Phase 1.5 — Hardening (post-Phase-1, pre-Phase-2)
 
 Small follow-ups that don't gate Phase 2 but should land before Phase 5 (PCE-CD) opens.
 
-- ⬜ Save state — wire `retro_serialize` / `retro_unserialize` through the shim, replace the `CoreError::Internal` stubs in `PceCore::save_state` / `load_state`.
+- ✅ Save state — **closed 2026-05-19, obsolete post-libretro-pivot.** The `oa-pce-sys`/`oa-pce` static-crate shim is retired (see project `docs/DECISIONS.md` 2026-05-16 "Architecture pivot: libretro frontend"). The shipped `oa_libretro::LibretroCore` wraps `retro_serialize` / `retro_unserialize` directly, and Phase 4 rewind + TAS replay (both ✅) ride that path successfully — so this stub-replacement item is implicitly resolved.
 - ⬜ Multitap exercise — pull controllers 2-5 into a test ROM that reads them, verify the per-port bit pipeline.
 - ✅ Focus-gated input (shipped earlier than logged; closed 2026-05-18). `WindowEvent::Focused` events drive an `Arc<AtomicBool>` that the emu thread reads each frame to flip `InputPoller::set_enabled`. Picks the right window in each shell mode via `focus_target_label(mode)` (label "game" in two-window, "main" in single-window). Initial value `true` so first-launch input works before any focus event fires.
-- ⬜ Pixel aspect ratio — PCE has non-square pixels (varies by horizontal mode). Wire per-system aspect ratio through `oa-render` viewport math so "Aspect-correct fit" mode in Phase 2 gets it right.
+- ✅ Pixel aspect ratio — **closed 2026-05-19.** Shipped via the cross-system `display_aspect_override` path: per-system override lives on `SystemSettings.display_aspect_override: Option<f32>` (`apps/oa-shell/src/system_settings.rs`); per-game override on `GameOverrides.display_aspect_override` (`apps/oa-shell/src/library_db.rs`); `frontend/src/App.tsx::handleLaunch` resolves per-game → per-system → core-default and pushes to the renderer viewport math.
 
 ---
 
-## ⬜ Phase 2 contributions
+## 🟨 Phase 2 contributions
 
 The Phase 2 work that lives in this core (everything else is in shared crates):
 
 - ⬜ TG-16 theme (Solid + Tailwind) — system page, library tile styling, default shader preset slot.
 - ⬜ PCE button glyphs (I / II / RUN / SELECT) for the input-mapping UI.
-- ⬜ Per-system aspect-ratio entry in the system registry (whatever shape that takes when it's designed).
+- ✅ Per-system aspect-ratio entry in the system registry — **closed 2026-05-19.** Shipped via `SystemSettings.display_aspect_override` (cross-system path); see Phase 1.5 pixel-aspect-ratio entry for code refs.
 
 ---
 

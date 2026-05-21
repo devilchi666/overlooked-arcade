@@ -22,6 +22,16 @@ import {
 } from "../settings/store";
 import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
 import CoreOptionsPanel from "./CoreOptionsPanel";
+import AnalogBindingsSection from "./AnalogBindingsSection";
+import {
+  BezelPicker,
+  OverscanEditor,
+  overscanIsZero,
+  overscanLabel,
+  pathBasename,
+  RewindLiveStats,
+  type OverscanCropPrefs,
+} from "./SystemDialogs";
 import { systemThemes } from "../themes/registry";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
@@ -62,6 +72,15 @@ type GameOverrides = {
   rewindEnabled?: boolean | null;
   rewindCaptureIntervalFrames?: number | null;
   rewindBufferMegabytes?: number | null;
+  /// Override the renderer's display_aspect for this game. Wins over
+  /// per-system. None = inherit per-system → core-reported.
+  displayAspectOverride?: number | null;
+  /// Per-game per-edge overscan crop. Wins over per-system. None or
+  /// all-zero = inherit per-system → no crop.
+  overscanCropOverride?: OverscanCropPrefs | null;
+  /// Per-game bezel image override. Wins over per-system and over the
+  /// active shader preset's TOML default.
+  bezelImagePath?: string | null;
 };
 
 type SystemSettings = {
@@ -73,9 +92,34 @@ type SystemSettings = {
   rewindEnabled?: boolean | null;
   rewindCaptureIntervalFrames?: number | null;
   rewindBufferMegabytes?: number | null;
+  displayAspectOverride?: number | null;
+  overscanCropOverride?: OverscanCropPrefs | null;
+  bezelImagePath?: string | null;
 };
 
-const TABS = ["overview", "core", "core-options", "display", "rewind", "shaders", "region", "milestones", "cheats"] as const;
+/// Common display-aspect presets surfaced in the dropdown. Mirrors the
+/// per-system dialog's `DISPLAY_ASPECT_PRESETS`; kept duplicated rather
+/// than imported to avoid coupling the per-game drawer to the per-
+/// system dialog module.
+const DISPLAY_ASPECT_PRESETS: readonly { value: string; label: string }[] = [
+  { value: "1.333", label: "4:3 (CRT TV)" },
+  { value: "1.778", label: "16:9 (Widescreen)" },
+  { value: "1.0",   label: "1:1 (Square pixels)" },
+  { value: "1.143", label: "8:7 (NES authentic)" },
+  { value: "1.185", label: "32:27 (PCE 256 authentic)" },
+  { value: "1.306", label: "64:49 (PCE 352 authentic)" },
+];
+
+/// Format an aspect ratio as a human-readable label matching the preset
+/// list when the value lands on one of them. Falls back to the raw
+/// number formatted as `1.234`. Used for the inherited-value chip.
+function aspectLabel(value: number): string {
+  const preset = DISPLAY_ASPECT_PRESETS.find((p) => Math.abs(Number(p.value) - value) < 0.01);
+  if (preset) return preset.label;
+  return value.toFixed(3);
+}
+
+const TABS = ["overview", "core", "core-options", "display", "input", "rewind", "shaders", "region", "milestones", "cheats"] as const;
 export type GameDrawerTab = typeof TABS[number];
 type TabId = GameDrawerTab;
 const TAB_LABELS: Record<TabId, string> = {
@@ -83,6 +127,7 @@ const TAB_LABELS: Record<TabId, string> = {
   core:           "Core",
   "core-options": "Core options",
   display:        "Display",
+  input:          "Input",
   rewind:         "Rewind",
   shaders:        "Shaders",
   region:         "Region",
@@ -294,6 +339,13 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
     if (next.rewindEnabled != null) cleaned.rewindEnabled = next.rewindEnabled;
     if (next.rewindCaptureIntervalFrames != null) cleaned.rewindCaptureIntervalFrames = next.rewindCaptureIntervalFrames;
     if (next.rewindBufferMegabytes != null) cleaned.rewindBufferMegabytes = next.rewindBufferMegabytes;
+    if (next.displayAspectOverride != null) cleaned.displayAspectOverride = next.displayAspectOverride;
+    if (next.overscanCropOverride != null && !overscanIsZero(next.overscanCropOverride)) {
+      cleaned.overscanCropOverride = next.overscanCropOverride;
+    }
+    if (next.bezelImagePath != null && next.bezelImagePath !== "") {
+      cleaned.bezelImagePath = next.bezelImagePath;
+    }
     setOverrides(cleaned);
     try {
       await invoke("set_game_overrides", { id: e.id, overrides: cleaned });
@@ -588,11 +640,6 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
             {/* --- Display ------------------------------------------------ */}
             <Show when={activeTab() === "display"}>
               <div class="flex flex-col gap-3">
-                <ScaffoldBanner>
-                  Per-game display overrides persist now but don't yet take effect at launch —
-                  the renderer still reads the OA-wide value. Wiring lands alongside per-game
-                  shader work in Phase 3.
-                </ScaffoldBanner>
                 <SettingRow
                   label="Scaling mode"
                   inheritedValue={inheritedScaling().label}
@@ -658,12 +705,106 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                     </For>
                   </select>
                 </SettingRow>
+                <SettingRow
+                  label="Display aspect"
+                  hint="Pixel-aspect at the renderer; affects Aspect-correct + Pixel-perfect modes"
+                  inheritedValue={
+                    systemSettings().displayAspectOverride != null
+                      ? `${aspectLabel(systemSettings().displayAspectOverride!)} (Per-system)`
+                      : "Core-reported"
+                  }
+                  inheritedFrom={
+                    systemSettings().displayAspectOverride != null
+                      ? "Per-system"
+                      : "OA default"
+                  }
+                  overridden={overrides().displayAspectOverride != null}
+                >
+                  <select
+                    class={SELECT_CLASS}
+                    value={overrides().displayAspectOverride?.toString() ?? ""}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      void patch({
+                        displayAspectOverride: v === "" ? null : Number(v),
+                      });
+                    }}
+                  >
+                    <option value="">— Use inherited —</option>
+                    <For each={DISPLAY_ASPECT_PRESETS}>
+                      {(p) => <option value={p.value}>{p.label}</option>}
+                    </For>
+                  </select>
+                </SettingRow>
+                <SettingRow
+                  label="Overscan crop"
+                  hint="Hide source pixels at each edge (T/B/L/R)"
+                  inheritedValue={
+                    overscanIsZero(systemSettings().overscanCropOverride)
+                      ? "No crop"
+                      : `${overscanLabel(systemSettings().overscanCropOverride)} (Per-system)`
+                  }
+                  inheritedFrom={
+                    overscanIsZero(systemSettings().overscanCropOverride)
+                      ? "OA default"
+                      : "Per-system"
+                  }
+                  overridden={!overscanIsZero(overrides().overscanCropOverride)}
+                >
+                  <OverscanEditor
+                    value={
+                      overrides().overscanCropOverride
+                      ?? systemSettings().overscanCropOverride
+                      ?? { top: 0, bottom: 0, left: 0, right: 0 }
+                    }
+                    onChange={(next) => void patch({
+                      overscanCropOverride: overscanIsZero(next) ? null : next,
+                    })}
+                  />
+                </SettingRow>
+                <SettingRow
+                  label="Bezel image"
+                  hint="PNG / JPEG / WebP overlaid on top of the game pixels"
+                  inheritedValue={
+                    systemSettings().bezelImagePath
+                      ? `${pathBasename(systemSettings().bezelImagePath)} (Per-system)`
+                      : "Use shader preset default"
+                  }
+                  inheritedFrom={
+                    systemSettings().bezelImagePath ? "Per-system" : "OA default"
+                  }
+                  overridden={overrides().bezelImagePath != null}
+                >
+                  <BezelPicker
+                    value={overrides().bezelImagePath ?? null}
+                    onChange={(path) => void patch({ bezelImagePath: path })}
+                  />
+                </SettingRow>
+              </div>
+            </Show>
+
+            {/* --- Input (analog routing per-game override) ---------------- */}
+            <Show when={activeTab() === "input"}>
+              <div class="flex flex-col gap-3">
+                <p class="text-xs text-(--color-oa-ink-dim)">
+                  Per-game analog routing overrides. When set, these values
+                  layer on top of the per-system Analog input settings — at
+                  launch, each port resolves per-game → per-system → identity.
+                  Use this to tweak deadzone / sensitivity / keyboard fallback
+                  for a specific game without affecting the system's default.
+                </p>
+                <AnalogBindingsSection
+                  systemId={props.entry!.systemId}
+                  mode="game"
+                  gameId={props.entry!.id}
+                />
               </div>
             </Show>
 
             {/* --- Rewind -------------------------------------------------- */}
             <Show when={activeTab() === "rewind"}>
               <div class="flex flex-col gap-3">
+                <RewindLiveStats open={activeTab() === "rewind"} />
                 <SettingRow
                   label="Enable rewind"
                   hint="Hold Backspace to step backwards"

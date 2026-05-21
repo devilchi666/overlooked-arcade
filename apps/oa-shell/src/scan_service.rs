@@ -46,6 +46,13 @@ pub struct ScannedRom {
     pub extension: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_inner_path: Option<String>,
+    /// Optional system_id classification hint emitted by content-peek
+    /// disambiguation (e.g. a .zip whose inner files match the SNK Neo
+    /// Geo ROM-set signature gets `Some("neogeo")` so the frontend
+    /// ingest path classifies it as `neogeo` rather than `mame` even
+    /// though `.zip` is shared between the two systems).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_hint: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -189,27 +196,46 @@ fn walk(
         let Some(ext) = ext else { continue };
 
         if archive::ArchiveKind::from_extension(&ext).is_some() {
-            match archive::list_rom_contents(&entry_path, wanted) {
-                Ok(inner_entries) => {
-                    for inner in inner_entries {
-                        if cancel.load(Ordering::Relaxed) {
-                            return;
+            // Neo Geo .zip content-peek disambiguation. A .zip whose
+            // inner files match the Neo Geo ROM-set signature (.p1 +
+            // .s1) gets emitted as a standalone ScannedRom for the
+            // whole zip with system_hint="neogeo" — the frontend's
+            // ingest path uses the hint to classify ahead of the
+            // generic extension-based mapping (which would otherwise
+            // route .zip files to MAME by default). MAME zips fall
+            // through to the normal archive-enumeration path below.
+            if ext == "zip" && archive::peek_zip_for_neogeo(&entry_path) {
+                out.push(ScannedRom {
+                    path: entry_path.to_string_lossy().into_owned(),
+                    file_name: name_owned.clone(),
+                    extension: ext,
+                    archive_inner_path: None,
+                    system_hint: Some("neogeo".to_string()),
+                });
+            } else {
+                match archive::list_rom_contents(&entry_path, wanted) {
+                    Ok(inner_entries) => {
+                        for inner in inner_entries {
+                            if cancel.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            let encoded_path =
+                                archive::encode_file_path(&entry_path, &inner.inner_path);
+                            let inner_name = Path::new(&inner.inner_path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| inner.inner_path.clone());
+                            out.push(ScannedRom {
+                                path: encoded_path,
+                                file_name: inner_name,
+                                extension: inner.extension.clone(),
+                                archive_inner_path: Some(inner.inner_path),
+                                system_hint: None,
+                            });
                         }
-                        let encoded_path =
-                            archive::encode_file_path(&entry_path, &inner.inner_path);
-                        let inner_name = Path::new(&inner.inner_path)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| inner.inner_path.clone());
-                        out.push(ScannedRom {
-                            path: encoded_path,
-                            file_name: inner_name,
-                            extension: inner.extension.clone(),
-                            archive_inner_path: Some(inner.inner_path),
-                        });
                     }
+                    Err(e) => log::warn!("scan_service: peek {} failed: {e}", entry_path.display()),
                 }
-                Err(e) => log::warn!("scan_service: peek {} failed: {e}", entry_path.display()),
             }
         } else if archive::ArchiveKind::is_unsupported_archive(&ext) {
             log::warn!(
@@ -222,6 +248,7 @@ fn walk(
                 file_name: name_owned.clone(),
                 extension: ext,
                 archive_inner_path: None,
+                system_hint: None,
             });
         }
 

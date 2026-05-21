@@ -29,7 +29,7 @@ This project is **non-commercial**. It's a gift to the retro community.
 ## What it is not
 
 - Not a cycle-accurate emulator. Existing tools win at accuracy. We win at experience.
-- Not a frontend over libretro. We fork the cores, modify them in-tree, and ship them embedded in our binary.
+- Not a generic libretro frontend. Cores ship as `.dll` / `.so` / `.dylib` files in `<exe_dir>/cores/` next to the binary (since the 2026-05-16 libretro pivot; see project `DECISIONS.md`). Forked-core philosophy is preserved by maintaining our own libretro-frontend builds of patched cores — e.g. our Beetle PCE Fast fork — that emit the `.dll`s we ship in the installer. Operators can also use community-built nightlies (https://buildbot.libretro.com/) for stock cores.
 - Not a competitor to Mesen/bsnes/SameBoy on the systems they already own. We don't need NES or SNES early — those audiences are served.
 - Not commercial. Free, open-source, GPLv2.
 
@@ -50,6 +50,8 @@ In planned bring-up order, biased toward forked-core availability (Mednafen + Be
 9. **Virtual Boy** (with optional real-VR mode)
 10. **WonderSwan / WonderSwan Color**
 
+**Current state (2026-05-19):** TG-16 ✅, PCE-CD ✅, Lynx ✅, NES ✅, SNES ✅, MAME ✅, Atari 7800 ✅ — all at Phase 0 onboarding done (NES + SNES + MAME jumped on operator request; A7800 onboarded after MAME). Six first-wave systems remaining: SMS / Game Gear, MSX / MSX2, ColecoVision, Vectrex, Virtual Boy, WonderSwan.
+
 ### The bigger picture — long-term ambition
 
 The first wave is the **starting point**, not the ceiling. Long-term goal is to host **as much of retro gaming as we can** — almost all major consoles, handhelds, and computer systems we can find good upstream cores for, plus cores we modify heavily or write ourselves for systems that need new work. Likely future additions (not exhaustive, not in order):
@@ -60,7 +62,7 @@ The first wave is the **starting point**, not the ceiling. Long-term goal is to 
 - **Computers:** Amiga, ZX Spectrum, Commodore 64, MSX2+, Atari 8-bit, Amstrad CPC, Apple II, Sharp X68000, NEC PC-88/98, FM Towns
 - **Arcade:** MAME-driven
 
-System priority is driven by community interest, upstream-core quality, and user direction. Adding system N+1 follows a repeatable 8-step recipe (vendor → shim → wrapper → register → theme → docs); the trait, renderer, audio sink, and input layer need zero changes per system.
+System priority is driven by community interest, upstream-core quality, and user direction. Adding system N+1 follows a repeatable 6-step post-libretro-pivot recipe — registry entry + theme CSS block + bindings module + `default_core_dll_for_system` arm + `parse_system_id` arm + per-core docs (see `feedback_multi_core_architecture_ready` for the full list). The trait, renderer, audio sink, input layer, library DB, scanner, and settings UI need zero changes per system.
 
 **Why the framing is "overlooked first":** the underserved end of the catalogue is the differentiator. The popular consoles already have great emulators; we don't need to ship NES or SNES early to justify the project. They join when we have bandwidth, not when we need the headline.
 

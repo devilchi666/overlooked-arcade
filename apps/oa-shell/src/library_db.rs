@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 11;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -75,6 +75,25 @@ pub struct GameOverrides {
     /// Phase 4 slice A — per-game rewind buffer cap in MB. None = inherit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rewind_buffer_megabytes: Option<u32>,
+    /// Per-game override for the framebuffer's display_aspect. None =
+    /// inherit per-system → core-reported. Mirrors
+    /// `SystemSettings::display_aspect_override` semantically.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_aspect_override: Option<f32>,
+    /// Per-game per-edge overscan crop. None = inherit per-system →
+    /// none. Mirrors `SystemSettings::overscan_crop_override`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overscan_crop_override: Option<crate::system_settings::OverscanCropPrefs>,
+    /// Per-game bezel image override. Wins over per-system and over
+    /// the active shader preset's TOML default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bezel_image_path: Option<String>,
+    /// Phase 2.5 — per-game analog routing override. Stacks on top of
+    /// per-system routing: each port's resolution is "per-game wins if
+    /// non-identity, else per-system, else identity". Frontend's
+    /// `arm_analog_routing` command does the resolution at launch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analog_routing: Option<crate::system_settings::AnalogRoutingPrefs>,
 }
 
 /// Phase 4 slice F — one memory-watching milestone for a game.
@@ -261,6 +280,13 @@ pub struct GameRow {
     /// in the GameInfoModal later.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub serial: Option<String>,
+    /// Disc identifier extracted from the data track of a CD-shaped
+    /// container (Hu7-series code for PCE-CD, SLUS_xxx.xx for PSX,
+    /// etc.). Stamped by the `cd_id` resolve flow, parallel to `sha1`
+    /// for cart games. `None` until the user runs Identify ROMs — Some
+    /// after that, whether or not the disc-id matched a canonical entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_id: Option<String>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -279,6 +305,39 @@ pub struct RomHashRow {
     pub crc32: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<i64>,
+}
+
+/// One MAME ROM-set entry. Keyed by `rom_set` (the .zip basename without
+/// extension, e.g. "sf2ce") rather than SHA-1 because MAME's .zip
+/// contents drift across MAME versions while the filename stays stable.
+/// Populated from libretro-database `metadat/mame/MAME.dat` via the
+/// `sync_mame_titles` Tauri command.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MameTitleRow {
+    /// .zip basename without extension (lowercased — "sf2ce" for sf2ce.zip).
+    pub rom_set: String,
+    /// Human-readable title from MAME.dat (e.g. "Street Fighter II: Champion Edition").
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
+}
+
+/// Serial-keyed canonical-title row. One per (system_id, serial). Parsed
+/// out of the same libretro-database `.dat` files as `RomHashRow` —
+/// every `game (...)` block that carries a `serial "..."` line gets a
+/// row here too. CD games consume it via the disc-id extraction path
+/// (Phase 2b); cart games can use it as a hash-miss fallback.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSerialRow {
+    pub system_id: String,
+    pub serial: String,
+    pub canonical_title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
 }
 
 pub struct LibraryDb {
@@ -402,7 +461,130 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v8 (rom_hashes + games.sha1/serial)");
         }
 
+        // v8 → v9: serial-keyed canonical-title lookup. Adds
+        // games.disc_id (the catalog identifier extracted from disc-based
+        // images at Phase 2b) and a game_serials table populated from
+        // libretro-database `serial` fields. Together they let the resolve
+        // pass identify CD-shaped games (and cart games whose sha1 we
+        // didn't match) by publisher serial / disc id.
+        if current < 9 {
+            Self::migrate_v8_to_v9(conn)?;
+            conn.pragma_update(None, "user_version", 9)
+                .map_err(|e| format!("set user_version=9: {e}"))?;
+            log::info!("library_db: schema migrated to v9 (game_serials + games.disc_id)");
+        }
+
+        // v9 → v10: per-group default-variant override. When the user
+        // sets "Castlevania (Japan)" as their default variant of the
+        // Castlevania group via the right-click menu, we store the
+        // chosen game_id here keyed on (system_id, base_title). The
+        // priority resolver consults this before falling back to the
+        // region+revision priority rules.
+        if current < 10 {
+            Self::migrate_v9_to_v10(conn)?;
+            conn.pragma_update(None, "user_version", 10)
+                .map_err(|e| format!("set user_version=10: {e}"))?;
+            log::info!("library_db: schema migrated to v10 (game_group_defaults)");
+        }
+
+        // v10 → v11: MAME ROM-set → human-title lookup table. Keyed by
+        // .zip basename (e.g. "sf2ce") rather than SHA-1 because MAME's
+        // .zip contents drift across MAME versions while the filename
+        // stays stable. Populated from libretro-database `metadat/mame/
+        // MAME.dat` via the new `sync_mame_titles` Tauri command;
+        // consulted on game ingest so the library shows
+        // "Street Fighter II: Champion Edition" rather than "sf2ce.zip".
+        if current < 11 {
+            Self::migrate_v10_to_v11(conn)?;
+            conn.pragma_update(None, "user_version", 11)
+                .map_err(|e| format!("set user_version=11: {e}"))?;
+            log::info!("library_db: schema migrated to v11 (mame_titles)");
+        }
+
         Ok(())
+    }
+
+    fn migrate_v10_to_v11(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS mame_titles (
+                rom_set    TEXT PRIMARY KEY,
+                title      TEXT NOT NULL,
+                year       TEXT,
+                developer  TEXT
+            );
+            "#,
+        )
+        .map_err(|e| format!("create mame_titles table: {e}"))
+    }
+
+    fn migrate_v9_to_v10(conn: &Connection) -> Result<(), String> {
+        // base_title is the parsed-and-lowercased title — see
+        // `title_parse::parse_canonical_title`. Lowercasing happens at
+        // write time so the (system_id, base_title) PK matches across
+        // case-quirky upstream titles.
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS game_group_defaults (
+                system_id          TEXT NOT NULL,
+                base_title         TEXT NOT NULL,
+                preferred_game_id  TEXT NOT NULL,
+                PRIMARY KEY (system_id, base_title),
+                FOREIGN KEY (preferred_game_id) REFERENCES games(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_group_defaults_system
+                ON game_group_defaults(system_id);
+            "#,
+        )
+        .map_err(|e| format!("create game_group_defaults table: {e}"))
+    }
+
+    fn migrate_v8_to_v9(conn: &Connection) -> Result<(), String> {
+        // Idempotent ALTER — re-running on a partially-migrated DB
+        // doesn't blow up. Mirrors the pattern in migrate_v7_to_v8.
+        let existing_cols: std::collections::HashSet<String> = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(games)")
+                .map_err(|e| format!("table_info games: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| format!("query table_info: {e}"))?;
+            let mut out = std::collections::HashSet::new();
+            for r in rows {
+                out.insert(r.map_err(|e| format!("row table_info: {e}"))?);
+            }
+            out
+        };
+        if !existing_cols.contains("disc_id") {
+            conn.execute("ALTER TABLE games ADD COLUMN disc_id TEXT", [])
+                .map_err(|e| format!("alter games add disc_id: {e}"))?;
+        }
+        // The `game_serials` table is a serial-keyed canonical-title
+        // lookup, parallel to `rom_hashes` (which is sha1-keyed). One
+        // row per game (system_id, serial). Populated from
+        // libretro-database `.dat` files alongside the rom_hashes upsert.
+        //
+        // For CD-based games the resolve pass extracts the on-disc serial
+        // (Phase 2b — `cd_id` module) and looks it up here. For cart
+        // games this is a fallback when the file sha1 missed — e.g. a
+        // user's regional/revision dump shares its catalog serial with
+        // the canonical entry even when the bytes differ.
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS game_serials (
+                system_id        TEXT NOT NULL,
+                serial           TEXT NOT NULL,
+                canonical_title  TEXT NOT NULL,
+                region           TEXT,
+                PRIMARY KEY (system_id, serial)
+            );
+            CREATE INDEX IF NOT EXISTS idx_game_serials_system
+                ON game_serials(system_id);
+            CREATE INDEX IF NOT EXISTS idx_games_disc_id
+                ON games(disc_id) WHERE disc_id IS NOT NULL;
+            "#,
+        )
+        .map_err(|e| format!("create game_serials table: {e}"))
     }
 
     fn migrate_v7_to_v8(conn: &Connection) -> Result<(), String> {
@@ -731,7 +913,7 @@ impl LibraryDb {
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
                         core_override, cover_path, seed, archive_inner_path,
-                        sha1, serial
+                        sha1, serial, disc_id
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -750,6 +932,7 @@ impl LibraryDb {
                     archive_inner_path: row.get(8)?,
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
+                    disc_id: row.get(11)?,
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -821,6 +1004,7 @@ impl LibraryDb {
     /// INSERT OR REPLACE so re-syncing with newer upstream data overwrites
     /// the stored game_name + serial in place (filename was already the
     /// key on the upstream side).
+    #[allow(dead_code)] // merge-semantics counterpart to replace_rom_hashes_for_system; kept for any future caller that needs append-only behaviour
     pub fn upsert_rom_hashes(&self, entries: &[RomHashRow]) -> Result<usize, String> {
         let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
@@ -889,9 +1073,10 @@ impl LibraryDb {
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
                         core_override, cover_path, seed, archive_inner_path,
-                        sha1, serial
+                        sha1, serial, disc_id
                  FROM games
-                 WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')",
+                 WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')
+                   AND (disc_id IS NULL OR disc_id = '')",
             )
             .map_err(|e| format!("prepare list_games_missing_hash: {e}"))?;
         let rows = stmt
@@ -908,6 +1093,7 @@ impl LibraryDb {
                     archive_inner_path: row.get(8)?,
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
+                    disc_id: row.get(11)?,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -958,6 +1144,149 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// Replace the entire `rom_hashes` corpus for a given system. DELETE
+    /// WHERE system_id = ? then INSERT each row, inside one transaction.
+    /// This is the right shape for sync flows where the upstream `.dat`
+    /// is the source of truth: entries removed upstream disappear locally
+    /// rather than lingering as orphans across resyncs. Use
+    /// `upsert_rom_hashes` when you really do want merge semantics.
+    ///
+    /// Entries whose `system_id` doesn't match the argument are silently
+    /// dropped (defensive — the parser stamps every row with the same
+    /// system_id, so a mismatch would mean a caller bug we'd want
+    /// surfaced via test rather than corrupting another system's table).
+    pub fn replace_rom_hashes_for_system(
+        &self,
+        system_id: &str,
+        entries: &[RomHashRow],
+    ) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        tx.execute(
+            "DELETE FROM rom_hashes WHERE system_id = ?1",
+            params![system_id],
+        )
+        .map_err(|e| format!("delete rom_hashes for {system_id}: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO rom_hashes
+                       (sha1, system_id, game_name, serial, crc32, size_bytes)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                )
+                .map_err(|e| format!("prepare replace rom_hashes: {e}"))?;
+            for r in entries {
+                if r.system_id != system_id {
+                    continue;
+                }
+                stmt.execute(params![
+                    r.sha1.to_ascii_lowercase(),
+                    r.system_id,
+                    r.game_name,
+                    r.serial,
+                    r.crc32.as_ref().map(|s| s.to_ascii_lowercase()),
+                    r.size_bytes,
+                ])
+                .map_err(|e| format!("insert rom_hash {}: {e}", r.sha1))?;
+                written += 1;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit replace_rom_hashes: {e}"))?;
+        Ok(written)
+    }
+
+    /// Bulk-replace every entry in `mame_titles`. Used by
+    /// `sync_mame_titles` to refresh the full corpus on each pull from
+    /// libretro-database. Single transaction so partial fetches don't
+    /// leave a half-populated table.
+    pub fn replace_mame_titles(&self, entries: &[MameTitleRow]) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        tx.execute("DELETE FROM mame_titles", [])
+            .map_err(|e| format!("clear mame_titles: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO mame_titles
+                       (rom_set, title, year, developer)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(|e| format!("prepare insert mame_titles: {e}"))?;
+            for r in entries {
+                stmt.execute(params![
+                    r.rom_set.to_ascii_lowercase(),
+                    r.title,
+                    r.year,
+                    r.developer,
+                ])
+                .map_err(|e| format!("insert mame_title {}: {e}", r.rom_set))?;
+                written += 1;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit replace_mame_titles: {e}"))?;
+        Ok(written)
+    }
+
+    /// Look up a single MAME ROM-set entry by `.zip` basename. Returns
+    /// `Ok(None)` when the rom_set isn't in the catalog (e.g. a homebrew
+    /// or hack the operator has that isn't in libretro-database yet).
+    pub fn lookup_mame_title(&self, rom_set: &str) -> Result<Option<MameTitleRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let key = rom_set.to_ascii_lowercase();
+        conn.query_row(
+            "SELECT rom_set, title, year, developer FROM mame_titles WHERE rom_set = ?1",
+            params![key],
+            |row| {
+                Ok(MameTitleRow {
+                    rom_set: row.get(0)?,
+                    title: row.get(1)?,
+                    year: row.get(2)?,
+                    developer: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("lookup_mame_title {rom_set}: {e}"))
+    }
+
+    /// Stamp a CD game with its disc_id and (optionally) the canonical
+    /// title from the matched game_serials entry. Parallel to
+    /// `apply_rom_hash` for cart games. Pass `title = None` to record
+    /// only the disc_id (so re-scans skip re-peeking) without
+    /// overwriting the user's title — the "scanned but unmatched" case.
+    pub fn apply_disc_id(
+        &self,
+        id: &str,
+        disc_id: &str,
+        canonical_title: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        match canonical_title {
+            Some(title) => {
+                let normalized = Self::normalize_title(title);
+                conn.execute(
+                    "UPDATE games
+                       SET disc_id = ?1,
+                           title = ?2,
+                           normalized_title = ?3
+                     WHERE id = ?4",
+                    params![disc_id, title, normalized, id],
+                )
+                .map_err(|e| format!("apply_disc_id with title: {e}"))?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE games SET disc_id = ?1 WHERE id = ?2",
+                    params![disc_id, id],
+                )
+                .map_err(|e| format!("apply_disc_id: {e}"))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Diagnostic — how many rom_hashes rows we hold for a given system.
     /// Exercised by the v8 migration test; the running UI doesn't surface
     /// it yet (a future "library health" view would, e.g. "tg16: 705
@@ -971,6 +1300,190 @@ impl LibraryDb {
             |r| r.get(0),
         )
         .map_err(|e| format!("count rom_hashes: {e}"))
+    }
+
+    /// Bulk-upsert game_serials rows. Idempotent on (system_id, serial)
+    /// — re-running the sync overwrites the canonical_title in place
+    /// rather than producing dupes.
+    #[allow(dead_code)] // merge-semantics counterpart to replace_game_serials_for_system; kept for any future caller that needs append-only behaviour
+    pub fn upsert_game_serials(&self, entries: &[GameSerialRow]) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO game_serials
+                       (system_id, serial, canonical_title, region)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(|e| format!("prepare upsert game_serials: {e}"))?;
+            for r in entries {
+                stmt.execute(params![
+                    r.system_id,
+                    r.serial,
+                    r.canonical_title,
+                    r.region,
+                ])
+                .map_err(|e| format!("insert game_serial {}/{}: {e}", r.system_id, r.serial))?;
+                written += 1;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit upsert_game_serials: {e}"))?;
+        Ok(written)
+    }
+
+    /// Look up a single (system_id, serial) in the game_serials table.
+    /// Serials are matched case-sensitively — publisher catalog codes
+    /// like "SLUS-00067" / "TGX040080" are uppercase by convention; we
+    /// store them exactly as parsed from the upstream `.dat`.
+    #[allow(dead_code)] // wired in by the Phase 2b disc-id extractor
+    pub fn lookup_game_serial(
+        &self,
+        system_id: &str,
+        serial: &str,
+    ) -> Result<Option<GameSerialRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT system_id, serial, canonical_title, region
+                 FROM game_serials WHERE system_id = ?1 AND serial = ?2",
+            )
+            .map_err(|e| format!("prepare lookup_game_serial: {e}"))?;
+        let mut rows = stmt
+            .query(params![system_id, serial])
+            .map_err(|e| format!("query lookup_game_serial: {e}"))?;
+        if let Some(row) = rows.next().map_err(|e| format!("step lookup_game_serial: {e}"))? {
+            Ok(Some(GameSerialRow {
+                system_id: row.get(0).map_err(|e| format!("col system_id: {e}"))?,
+                serial: row.get(1).map_err(|e| format!("col serial: {e}"))?,
+                canonical_title: row.get(2).map_err(|e| format!("col canonical_title: {e}"))?,
+                region: row.get(3).map_err(|e| format!("col region: {e}"))?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Replace the entire `game_serials` corpus for a given system —
+    /// same shape as `replace_rom_hashes_for_system`, see that for the
+    /// rationale.
+    pub fn replace_game_serials_for_system(
+        &self,
+        system_id: &str,
+        entries: &[GameSerialRow],
+    ) -> Result<usize, String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        tx.execute(
+            "DELETE FROM game_serials WHERE system_id = ?1",
+            params![system_id],
+        )
+        .map_err(|e| format!("delete game_serials for {system_id}: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO game_serials
+                       (system_id, serial, canonical_title, region)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(|e| format!("prepare replace game_serials: {e}"))?;
+            for r in entries {
+                if r.system_id != system_id {
+                    continue;
+                }
+                stmt.execute(params![
+                    r.system_id,
+                    r.serial,
+                    r.canonical_title,
+                    r.region,
+                ])
+                .map_err(|e| format!("insert game_serial {}/{}: {e}", r.system_id, r.serial))?;
+                written += 1;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit replace_game_serials: {e}"))?;
+        Ok(written)
+    }
+
+    /// Pin a (system_id, base_title) group to a specific variant. The
+    /// next time the library is rendered, this group's default tile
+    /// represents `preferred_game_id`. The base_title is stored
+    /// lowercased so case-quirky upstream titles still match.
+    pub fn set_game_group_default(
+        &self,
+        system_id: &str,
+        base_title: &str,
+        preferred_game_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO game_group_defaults
+               (system_id, base_title, preferred_game_id)
+             VALUES (?1, ?2, ?3)",
+            params![system_id, base_title.to_lowercase(), preferred_game_id],
+        )
+        .map_err(|e| format!("set_game_group_default: {e}"))?;
+        Ok(())
+    }
+
+    /// Remove a group's variant pin so the priority resolver falls back
+    /// to its region/revision rules. Idempotent: clearing a non-existent
+    /// row is a no-op.
+    pub fn clear_game_group_default(
+        &self,
+        system_id: &str,
+        base_title: &str,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "DELETE FROM game_group_defaults WHERE system_id = ?1 AND base_title = ?2",
+            params![system_id, base_title.to_lowercase()],
+        )
+        .map_err(|e| format!("clear_game_group_default: {e}"))?;
+        Ok(())
+    }
+
+    /// Return every group→preferred-game-id pin for a system. The
+    /// aggregator consults this map when picking the default variant of
+    /// each group; an unpinned group falls back to the priority rules.
+    pub fn list_game_group_defaults_for_system(
+        &self,
+        system_id: &str,
+    ) -> Result<std::collections::HashMap<String, String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT base_title, preferred_game_id
+                 FROM game_group_defaults WHERE system_id = ?1",
+            )
+            .map_err(|e| format!("prepare list_group_defaults: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("query list_group_defaults: {e}"))?;
+        let mut out = std::collections::HashMap::new();
+        for r in rows {
+            let (base, game_id) = r.map_err(|e| format!("row list_group_defaults: {e}"))?;
+            out.insert(base, game_id);
+        }
+        Ok(out)
+    }
+
+    /// Diagnostic — how many game_serials rows we hold for a given
+    /// system. Exercised by the v9 migration test; parallels
+    /// `count_rom_hashes`.
+    #[allow(dead_code)]
+    pub fn count_game_serials(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM game_serials WHERE system_id = ?1",
+            params![system_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("count game_serials: {e}"))
     }
 
     pub fn delete_game(&self, id: &str) -> Result<(), String> {
@@ -992,7 +1505,7 @@ impl LibraryDb {
                 .prepare(
                     "SELECT id, system_id, file_path, title, added_at,
                             core_override, cover_path, seed, archive_inner_path,
-                            sha1, serial
+                            sha1, serial, disc_id
                      FROM games
                      ORDER BY title COLLATE NOCASE
                      LIMIT ?1",
@@ -1012,6 +1525,7 @@ impl LibraryDb {
                         archive_inner_path: row.get(8)?,
                         sha1: row.get(9)?,
                         serial: row.get(10)?,
+                        disc_id: row.get(11)?,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -1027,7 +1541,7 @@ impl LibraryDb {
             .prepare(
                 "SELECT g.id, g.system_id, g.file_path, g.title, g.added_at,
                         g.core_override, g.cover_path, g.seed, g.archive_inner_path,
-                        g.sha1, g.serial
+                        g.sha1, g.serial, g.disc_id
                  FROM games g
                  INNER JOIN games_fts f ON f.rowid = g.rowid
                  WHERE games_fts MATCH ?1
@@ -1049,6 +1563,7 @@ impl LibraryDb {
                     archive_inner_path: row.get(8)?,
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
+                    disc_id: row.get(11)?,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -1681,6 +2196,7 @@ mod tests {
             archive_inner_path: None,
             sha1: None,
             serial: None,
+            disc_id: None,
         }
     }
 
@@ -2123,6 +2639,21 @@ mod tests {
             rewind_enabled: Some(true),
             rewind_capture_interval_frames: Some(3),
             rewind_buffer_megabytes: Some(48),
+            display_aspect_override: Some(1.333),
+            overscan_crop_override: Some(crate::system_settings::OverscanCropPrefs {
+                top: 8, bottom: 8, left: 0, right: 0,
+            }),
+            bezel_image_path: Some("C:/bezels/arcade.png".to_string()),
+            analog_routing: Some(crate::system_settings::AnalogRoutingPrefs {
+                ports: vec![crate::system_settings::AnalogPortRouting {
+                    left: crate::system_settings::AnalogStickPrefs {
+                        deadzone: 0.15,
+                        ..crate::system_settings::AnalogStickPrefs::default()
+                    },
+                    right: crate::system_settings::AnalogStickPrefs::default_right(),
+                    stick_swap: false,
+                }],
+            }),
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");
@@ -2343,6 +2874,322 @@ mod tests {
         assert_eq!(game.title, "User Title");
         // And the missing-hash query no longer returns it.
         assert!(db.list_games_missing_hash("tg16").expect("missing").is_empty());
+    }
+
+    #[test]
+    fn replace_rom_hashes_for_system_removes_orphans() {
+        // Seed two systems with two entries each. Calling
+        // replace_rom_hashes_for_system("tg16", &[one_new]) must:
+        // - drop both old tg16 entries
+        // - leave the snes entries untouched
+        // - end with exactly the one_new row for tg16
+        let db = fresh_db();
+        let initial = vec![
+            RomHashRow {
+                sha1: "1".repeat(40),
+                system_id: "tg16".into(),
+                game_name: "Old TG-16 A".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+            RomHashRow {
+                sha1: "2".repeat(40),
+                system_id: "tg16".into(),
+                game_name: "Old TG-16 B (since removed upstream)".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+            RomHashRow {
+                sha1: "3".repeat(40),
+                system_id: "snes".into(),
+                game_name: "Untouched SNES".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+        ];
+        assert_eq!(db.upsert_rom_hashes(&initial).expect("seed"), 3);
+
+        let replacement = vec![RomHashRow {
+            sha1: "4".repeat(40),
+            system_id: "tg16".into(),
+            game_name: "Fresh TG-16".into(),
+            serial: Some("TGX040080".into()),
+            crc32: None,
+            size_bytes: None,
+        }];
+        assert_eq!(
+            db.replace_rom_hashes_for_system("tg16", &replacement).expect("replace"),
+            1
+        );
+
+        assert_eq!(db.count_rom_hashes("tg16").expect("count tg16"), 1);
+        assert_eq!(db.count_rom_hashes("snes").expect("count snes"), 1);
+        assert!(db.lookup_rom_hash(&"1".repeat(40)).expect("lookup 1").is_none());
+        assert!(db.lookup_rom_hash(&"2".repeat(40)).expect("lookup 2").is_none());
+        let fresh = db
+            .lookup_rom_hash(&"4".repeat(40))
+            .expect("lookup 4")
+            .expect("hit");
+        assert_eq!(fresh.game_name, "Fresh TG-16");
+    }
+
+    #[test]
+    fn replace_game_serials_for_system_removes_orphans() {
+        let db = fresh_db();
+        db.upsert_game_serials(&[
+            GameSerialRow {
+                system_id: "tg16".into(),
+                serial: "TGX040080".into(),
+                canonical_title: "Old A".into(),
+                region: None,
+            },
+            GameSerialRow {
+                system_id: "tg16".into(),
+                serial: "TGXCD1037".into(),
+                canonical_title: "Old B".into(),
+                region: None,
+            },
+            GameSerialRow {
+                system_id: "snes".into(),
+                serial: "SNS-12345".into(),
+                canonical_title: "Untouched".into(),
+                region: None,
+            },
+        ])
+        .expect("seed");
+
+        db.replace_game_serials_for_system(
+            "tg16",
+            &[GameSerialRow {
+                system_id: "tg16".into(),
+                serial: "TGX040080".into(),
+                canonical_title: "Fresh A".into(),
+                region: Some("USA".into()),
+            }],
+        )
+        .expect("replace");
+
+        assert_eq!(db.count_game_serials("tg16").expect("count tg16"), 1);
+        assert_eq!(db.count_game_serials("snes").expect("count snes"), 1);
+        let fresh = db
+            .lookup_game_serial("tg16", "TGX040080")
+            .expect("lookup")
+            .expect("hit");
+        assert_eq!(fresh.canonical_title, "Fresh A");
+        assert!(db
+            .lookup_game_serial("tg16", "TGXCD1037")
+            .expect("lookup orphan")
+            .is_none());
+    }
+
+    #[test]
+    fn replace_rom_hashes_drops_rows_with_mismatched_system_id() {
+        // Defensive — calling replace("tg16", entries_for_snes) must NOT
+        // smuggle snes rows into the table. Catches parser-side bugs
+        // before they corrupt cross-system data.
+        let db = fresh_db();
+        let n = db
+            .replace_rom_hashes_for_system(
+                "tg16",
+                &[RomHashRow {
+                    sha1: "a".repeat(40),
+                    system_id: "snes".into(), // wrong system_id
+                    game_name: "Should be dropped".into(),
+                    serial: None,
+                    crc32: None,
+                    size_bytes: None,
+                }],
+            )
+            .expect("replace");
+        assert_eq!(n, 0, "row with mismatched system_id should be dropped");
+        assert_eq!(db.count_rom_hashes("tg16").expect("count"), 0);
+        assert_eq!(db.count_rom_hashes("snes").expect("count snes"), 0);
+    }
+
+    #[test]
+    fn game_serials_upsert_and_lookup() {
+        let db = fresh_db();
+        let rows = vec![
+            GameSerialRow {
+                system_id: "tg16".into(),
+                serial: "TGX040080".into(),
+                canonical_title: "Bonk's Adventure (USA)".into(),
+                region: Some("USA".into()),
+            },
+            GameSerialRow {
+                system_id: "tg16".into(),
+                serial: "TGXCD1037".into(),
+                canonical_title: "Ys Book I & II (USA)".into(),
+                region: Some("USA".into()),
+            },
+        ];
+        assert_eq!(db.upsert_game_serials(&rows).expect("upsert"), 2);
+        assert_eq!(db.count_game_serials("tg16").expect("count"), 2);
+
+        let got = db
+            .lookup_game_serial("tg16", "TGXCD1037")
+            .expect("lookup")
+            .expect("hit");
+        assert_eq!(got.canonical_title, "Ys Book I & II (USA)");
+        assert_eq!(got.region.as_deref(), Some("USA"));
+
+        // Miss on a different system_id even with the same serial.
+        assert!(db
+            .lookup_game_serial("snes", "TGX040080")
+            .expect("lookup")
+            .is_none());
+
+        // Idempotent — re-upserting an updated title replaces the row.
+        db.upsert_game_serials(&[GameSerialRow {
+            system_id: "tg16".into(),
+            serial: "TGX040080".into(),
+            canonical_title: "Bonk's Adventure (Updated)".into(),
+            region: Some("USA".into()),
+        }])
+        .expect("re-upsert");
+        let got = db.lookup_game_serial("tg16", "TGX040080").expect("re-lookup").expect("hit");
+        assert_eq!(got.canonical_title, "Bonk's Adventure (Updated)");
+        // Total count unchanged.
+        assert_eq!(db.count_game_serials("tg16").expect("count"), 2);
+    }
+
+    #[test]
+    fn apply_disc_id_round_trip() {
+        let db = fresh_db();
+        db.add_games(&[row("g1", "Castlevania - Rondo of Blood.cue")])
+            .expect("seed game");
+        // Apply with canonical title — title + disc_id both stamped.
+        db.apply_disc_id("g1", "TGXCD1037", Some("Castlevania: Rondo of Blood (USA)"))
+            .expect("apply");
+        let games = db.list_games().expect("list");
+        let g1 = games.iter().find(|g| g.id == "g1").expect("g1");
+        assert_eq!(g1.title, "Castlevania: Rondo of Blood (USA)");
+        assert_eq!(g1.disc_id.as_deref(), Some("TGXCD1037"));
+
+        // Apply with title = None — stamps disc_id only, leaves title alone.
+        db.add_games(&[row("g2", "Mystery Disc.cue")]).expect("seed g2");
+        db.apply_disc_id("g2", "UNKNOWN001", None).expect("apply no-match");
+        let games = db.list_games().expect("re-list");
+        let g2 = games.iter().find(|g| g.id == "g2").expect("g2");
+        assert_eq!(g2.title, "Mystery Disc.cue"); // unchanged
+        assert_eq!(g2.disc_id.as_deref(), Some("UNKNOWN001"));
+
+        // list_games_missing_hash should now exclude both — neither has
+        // a sha1 but BOTH have a disc_id (the new WHERE clause excludes
+        // them).
+        assert!(db
+            .list_games_missing_hash("tg16")
+            .expect("missing-hash")
+            .iter()
+            .all(|r| r.id != "g1" && r.id != "g2"));
+    }
+
+    #[test]
+    fn game_group_defaults_crud() {
+        let db = fresh_db();
+        db.add_games(&[row("g1", "Castlevania (USA).nes"), row("g2", "Castlevania (Japan).nes")])
+            .expect("seed games");
+
+        // Initially no defaults.
+        let m = db
+            .list_game_group_defaults_for_system("tg16")
+            .expect("list empty");
+        assert!(m.is_empty());
+
+        // Set, list, clear.
+        db.set_game_group_default("tg16", "Castlevania", "g1").expect("set");
+        let m = db.list_game_group_defaults_for_system("tg16").expect("list");
+        assert_eq!(m.get("castlevania").map(String::as_str), Some("g1"));
+
+        // Idempotent re-set switches to a different variant.
+        db.set_game_group_default("tg16", "Castlevania", "g2").expect("re-set");
+        let m = db.list_game_group_defaults_for_system("tg16").expect("re-list");
+        assert_eq!(m.get("castlevania").map(String::as_str), Some("g2"));
+        assert_eq!(m.len(), 1, "re-set replaces, doesn't dupe");
+
+        // Cascade: deleting the pinned game removes the default row.
+        db.delete_game("g2").expect("delete g2");
+        let m = db.list_game_group_defaults_for_system("tg16").expect("post-cascade");
+        assert!(m.is_empty(), "default cascades on game delete");
+
+        // Clear is idempotent on missing rows.
+        db.clear_game_group_default("tg16", "Nothing Set").expect("clear noop");
+    }
+
+    #[test]
+    fn schema_v9_to_v10_migration() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v9-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            let conn = Connection::open(&db_path).expect("open v9");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            LibraryDb::migrate_v1_to_v2(&conn).expect("v2");
+            LibraryDb::migrate_v2_to_v3(&conn).expect("v3");
+            LibraryDb::migrate_v3_to_v4(&conn).expect("v4");
+            LibraryDb::migrate_v4_to_v5(&conn).expect("v5");
+            LibraryDb::migrate_v5_to_v6(&conn).expect("v6");
+            LibraryDb::migrate_v6_to_v7(&conn).expect("v7");
+            LibraryDb::migrate_v7_to_v8(&conn).expect("v8");
+            LibraryDb::migrate_v8_to_v9(&conn).expect("v9");
+            conn.pragma_update(None, "user_version", 9).expect("set v9");
+        }
+        let db = LibraryDb::open(&tmp).expect("open and migrate");
+        db.add_games(&[row("g1", "Castlevania.nes")]).expect("add post-migrate");
+        db.set_game_group_default("tg16", "Castlevania", "g1")
+            .expect("set post-migrate");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn schema_v8_to_v9_migration() {
+        // Build a v8 DB by hand (sha1/serial cols + rom_hashes table, but
+        // no disc_id col and no game_serials table). Open through
+        // LibraryDb to migrate forward, then exercise the new surface.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v8-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            let conn = Connection::open(&db_path).expect("open v8");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            LibraryDb::migrate_v1_to_v2(&conn).expect("v2");
+            LibraryDb::migrate_v2_to_v3(&conn).expect("v3");
+            LibraryDb::migrate_v3_to_v4(&conn).expect("v4");
+            LibraryDb::migrate_v4_to_v5(&conn).expect("v5");
+            LibraryDb::migrate_v5_to_v6(&conn).expect("v6");
+            LibraryDb::migrate_v6_to_v7(&conn).expect("v7");
+            LibraryDb::migrate_v7_to_v8(&conn).expect("v8");
+            conn.pragma_update(None, "user_version", 8).expect("set v8");
+        }
+        let db = LibraryDb::open(&tmp).expect("open and migrate");
+        db.upsert_game_serials(&[GameSerialRow {
+            system_id: "tg16".into(),
+            serial: "TGX040080".into(),
+            canonical_title: "Migrated".into(),
+            region: None,
+        }])
+        .expect("upsert post-migrate");
+        assert_eq!(db.count_game_serials("tg16").expect("count"), 1);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

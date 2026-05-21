@@ -13,6 +13,7 @@ import {
   createResource,
   createSignal,
   For,
+  onCleanup,
   Show,
   type Component,
 } from "solid-js";
@@ -43,6 +44,13 @@ export type SystemDialogSection =
   | "default-core"
   | "core-options";
 
+export type OverscanCropPrefs = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
 type SystemSettings = {
   scalingOverride?: string | null;
   windowModeOverride?: string | null;
@@ -52,7 +60,43 @@ type SystemSettings = {
   rewindEnabled?: boolean | null;
   rewindCaptureIntervalFrames?: number | null;
   rewindBufferMegabytes?: number | null;
+  displayAspectOverride?: number | null;
+  overscanCropOverride?: OverscanCropPrefs | null;
+  bezelImagePath?: string | null;
 };
+
+/// Truncate an absolute path to its leaf basename for compact chip
+/// display in the SettingRow inheritance UI. `null` round-trips so the
+/// caller can decide what "no value" means.
+export function pathBasename(p: string | null | undefined): string | null {
+  if (!p) return null;
+  const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return idx >= 0 ? p.slice(idx + 1) : p;
+}
+
+/// True when every edge is zero — treated equivalent to "no crop set".
+export function overscanIsZero(c: OverscanCropPrefs | null | undefined): boolean {
+  if (!c) return true;
+  return c.top === 0 && c.bottom === 0 && c.left === 0 && c.right === 0;
+}
+
+export function overscanLabel(c: OverscanCropPrefs | null | undefined): string {
+  if (overscanIsZero(c)) return "No crop";
+  return `T${c!.top} · B${c!.bottom} · L${c!.left} · R${c!.right}`;
+}
+
+/// Common display-aspect presets surfaced in the dropdown. Each value
+/// is the ratio (width/height) the renderer applies; the label is what
+/// the user sees. Pick "" to clear the override → fall back to the
+/// core-reported aspect.
+const DISPLAY_ASPECT_PRESETS: readonly { value: string; label: string }[] = [
+  { value: "1.333", label: "4:3 (CRT TV)" },
+  { value: "1.778", label: "16:9 (Widescreen)" },
+  { value: "1.0",   label: "1:1 (Square pixels)" },
+  { value: "1.143", label: "8:7 (NES authentic)" },
+  { value: "1.185", label: "32:27 (PCE 256 authentic)" },
+  { value: "1.306", label: "64:49 (PCE 352 authentic)" },
+];
 
 const SELECT_CLASS =
   "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-system-accent) disabled:opacity-50";
@@ -151,6 +195,13 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
     if (next.rewindEnabled != null) cleaned.rewindEnabled = next.rewindEnabled;
     if (next.rewindCaptureIntervalFrames != null) cleaned.rewindCaptureIntervalFrames = next.rewindCaptureIntervalFrames;
     if (next.rewindBufferMegabytes != null) cleaned.rewindBufferMegabytes = next.rewindBufferMegabytes;
+    if (next.displayAspectOverride != null) cleaned.displayAspectOverride = next.displayAspectOverride;
+    if (next.overscanCropOverride != null && !overscanIsZero(next.overscanCropOverride)) {
+      cleaned.overscanCropOverride = next.overscanCropOverride;
+    }
+    if (next.bezelImagePath != null && next.bezelImagePath !== "") {
+      cleaned.bezelImagePath = next.bezelImagePath;
+    }
     try {
       await invoke("set_system_settings", { systemId: props.systemId, settings: cleaned });
       void refetchOverrides();
@@ -266,15 +317,62 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
               </For>
             </select>
           </SettingRow>
-          <p class="text-[0.6rem] uppercase tracking-widest text-amber-300/80">
-            Scaffold — persists today but runtime effect lands in Phase 3.
-          </p>
+
+          <SettingRow
+            label="Display aspect"
+            hint="Pixel-aspect at the renderer; affects Aspect-correct + Pixel-perfect modes"
+            inheritedValue="Core-reported"
+            overridden={overrides()?.displayAspectOverride != null}
+          >
+            <select
+              class={SELECT_CLASS}
+              value={overrides()?.displayAspectOverride?.toString() ?? ""}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                void patch({
+                  displayAspectOverride: v === "" ? null : Number(v),
+                });
+              }}
+            >
+              <option value="">— Use core-reported —</option>
+              <For each={DISPLAY_ASPECT_PRESETS}>
+                {(p) => <option value={p.value}>{p.label}</option>}
+              </For>
+            </select>
+          </SettingRow>
+
+          <SettingRow
+            label="Overscan crop"
+            hint="Hide source pixels at each edge (top/bottom/left/right); the cropped region stretches to fill"
+            inheritedValue="No crop"
+            overridden={!overscanIsZero(overrides()?.overscanCropOverride)}
+          >
+            <OverscanEditor
+              value={overrides()?.overscanCropOverride ?? { top: 0, bottom: 0, left: 0, right: 0 }}
+              onChange={(next) => void patch({
+                overscanCropOverride: overscanIsZero(next) ? null : next,
+              })}
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="Bezel image"
+            hint="PNG / JPEG / WebP overlaid on top of the game pixels"
+            inheritedValue="Use shader preset default"
+            overridden={overrides()?.bezelImagePath != null}
+          >
+            <BezelPicker
+              value={overrides()?.bezelImagePath ?? null}
+              onChange={(path) => void patch({ bezelImagePath: path })}
+            />
+          </SettingRow>
         </div>
       </Show>
 
       {/* --- Rewind ------------------------------------------------- */}
       <Show when={props.section === "rewind"}>
         <div class="flex flex-col gap-3">
+          <RewindLiveStats open={props.open && props.section === "rewind"} />
           <SettingRow
             label="Enable rewind"
             hint="Hold Backspace during gameplay to step backwards"
@@ -485,3 +583,227 @@ export const SystemCoreOptionsDialog: Component<{
     <CoreOptionsPanel systemId={props.systemId} gameId={null} />
   </Dialog>
 );
+
+// --- Overscan crop editor ---------------------------------------------
+//
+// Four pixel-count inputs (T / B / L / R) in one row, sharing a small
+// "reset to zero" button. Re-used by per-system + per-game Display tabs
+// — exported so PerGameSettingsDrawer can import without duplicating
+// the layout. Caller-controlled (value + onChange) so each context
+// owns its own persistence.
+
+/// Bezel-image file picker. Exported so the per-game drawer reuses
+/// it. Wraps `@tauri-apps/plugin-dialog`'s native file picker. Empty
+/// path = no override (inherit per-system / preset default).
+export const BezelPicker: Component<{
+  value: string | null;
+  onChange: (next: string | null) => void;
+}> = (props) => {
+  async function pick() {
+    try {
+      const mod = await import("@tauri-apps/plugin-dialog");
+      const picked = await mod.open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      });
+      if (typeof picked === "string" && picked.length > 0) {
+        props.onChange(picked);
+      }
+    } catch (e) {
+      console.warn("[BezelPicker] pick failed:", e);
+    }
+  }
+  return (
+    <div class="flex flex-1 flex-wrap items-center gap-2 text-xs">
+      <Show
+        when={props.value}
+        fallback={<span class="text-(--color-oa-ink-dim)">No override (inherit)</span>}
+      >
+        <span class="flex-1 truncate font-mono text-(--color-oa-ink)" title={props.value!}>
+          {pathBasename(props.value)}
+        </span>
+      </Show>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          void pick();
+        }}
+        class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+      >
+        Pick…
+      </button>
+      <Show when={props.value}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            props.onChange(null);
+          }}
+          class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+        >
+          Clear
+        </button>
+      </Show>
+    </div>
+  );
+};
+
+export const OverscanEditor: Component<{
+  value: OverscanCropPrefs;
+  onChange: (next: OverscanCropPrefs) => void;
+}> = (props) => {
+  const inputClass =
+    "w-12 rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-center text-xs text-(--color-oa-ink) focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--color-system-accent)";
+
+  function setEdge(key: keyof OverscanCropPrefs, raw: string) {
+    const n = Math.max(0, Math.min(99, Number(raw) || 0));
+    const next = { ...props.value, [key]: n };
+    props.onChange(next);
+  }
+
+  return (
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <label class="flex items-center gap-1">
+        <span class="text-(--color-oa-ink-dim)">T</span>
+        <input
+          type="number"
+          min={0}
+          max={99}
+          class={inputClass}
+          value={props.value.top}
+          onChange={(e) => setEdge("top", e.currentTarget.value)}
+        />
+      </label>
+      <label class="flex items-center gap-1">
+        <span class="text-(--color-oa-ink-dim)">B</span>
+        <input
+          type="number"
+          min={0}
+          max={99}
+          class={inputClass}
+          value={props.value.bottom}
+          onChange={(e) => setEdge("bottom", e.currentTarget.value)}
+        />
+      </label>
+      <label class="flex items-center gap-1">
+        <span class="text-(--color-oa-ink-dim)">L</span>
+        <input
+          type="number"
+          min={0}
+          max={99}
+          class={inputClass}
+          value={props.value.left}
+          onChange={(e) => setEdge("left", e.currentTarget.value)}
+        />
+      </label>
+      <label class="flex items-center gap-1">
+        <span class="text-(--color-oa-ink-dim)">R</span>
+        <input
+          type="number"
+          min={0}
+          max={99}
+          class={inputClass}
+          value={props.value.right}
+          onChange={(e) => setEdge("right", e.currentTarget.value)}
+        />
+      </label>
+      <Show when={!overscanIsZero(props.value)}>
+        <button
+          type="button"
+          class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+          onClick={() => props.onChange({ top: 0, bottom: 0, left: 0, right: 0 })}
+        >
+          Reset
+        </button>
+      </Show>
+    </div>
+  );
+};
+
+// --- Rewind live stats display ----------------------------------------
+//
+// Reads `get_rewind_state` to show the operator how many snapshots /
+// seconds / MB the ring is currently holding. Most useful while a game
+// is running; degrades gracefully to a "no rewind activity" banner when
+// the ring is empty (typical case — opening the rewind tab from the
+// system header while not in a game). Polls at 2 Hz so the bytes
+// counter ticks visibly when actively recording.
+
+type RewindState = {
+  enabled: boolean;
+  snapshotCount: number;
+  byteSize: number;
+  captureIntervalFrames: number;
+  fps: number;
+  scrubbing: boolean;
+  scrubPosition: number;
+};
+
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export const RewindLiveStats: Component<{ open: boolean }> = (props) => {
+  const [state, setState] = createSignal<RewindState | null>(null);
+  let timer: number | null = null;
+
+  async function poll() {
+    try {
+      const s = await invoke<RewindState>("get_rewind_state");
+      setState(s);
+    } catch (e) {
+      console.warn("[oa-rewind-stats] get_rewind_state failed:", e);
+    }
+  }
+
+  createEffect(() => {
+    if (props.open) {
+      void poll();
+      timer = window.setInterval(() => void poll(), 500);
+    } else if (timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  });
+  onCleanup(() => {
+    if (timer !== null) clearInterval(timer);
+  });
+
+  const secondsHeld = (): number | null => {
+    const s = state();
+    if (!s || s.snapshotCount === 0 || s.fps <= 0 || s.captureIntervalFrames === 0) return null;
+    return (s.snapshotCount * s.captureIntervalFrames) / s.fps;
+  };
+
+  return (
+    <Show when={state() !== null && state()!.snapshotCount > 0}
+      fallback={
+        <div class="rounded-md border border-white/5 bg-white/[0.02] px-4 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+          {state()?.enabled === false
+            ? "Rewind disabled — no live data"
+            : "No rewind activity (launch a game with rewind enabled to see live ring stats)"}
+        </div>
+      }
+    >
+      <div class="rounded-md border border-(--color-system-accent)/30 bg-(--color-system-accent)/[0.06] px-4 py-2 text-xs text-(--color-oa-ink)">
+        <span class="font-medium text-(--color-system-accent)">Live</span>
+        <span class="mx-2 text-(--color-oa-ink-dim)">·</span>
+        <Show when={secondsHeld() !== null}>
+          <span>{secondsHeld()!.toFixed(1)}s held</span>
+          <span class="mx-2 text-(--color-oa-ink-dim)">·</span>
+        </Show>
+        <span>{state()!.snapshotCount} snap{state()!.snapshotCount === 1 ? "" : "s"}</span>
+        <span class="mx-2 text-(--color-oa-ink-dim)">·</span>
+        <span>{formatBytes(state()!.byteSize)}</span>
+        <Show when={state()!.scrubbing}>
+          <span class="mx-2 text-(--color-oa-ink-dim)">·</span>
+          <span class="text-amber-300">scrubbing @ {state()!.scrubPosition}</span>
+        </Show>
+      </div>
+    </Show>
+  );
+};

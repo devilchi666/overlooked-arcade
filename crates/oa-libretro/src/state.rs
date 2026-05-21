@@ -62,6 +62,19 @@ pub(crate) struct State {
     pub fb_height: u32,
     pub audio: Vec<i16>,
     pub input_bits: [u16; 5],
+    /// Per-port analog axes. Layout: `[port][axis]` where axis is
+    /// `[Left X, Left Y, Right X, Right Y]` (matches the `InputState::axes`
+    /// field on the oa_core side). Values are i16 in the libretro range
+    /// (-32768 .. 32767). cb_input_state returns these for
+    /// RETRO_DEVICE_ANALOG queries. Set per frame via
+    /// LibretroCore::set_input.
+    pub input_axes: [[i16; 4]; 5],
+    /// Per-port pointer device state. Layout: `(x, y, pressed)` per
+    /// port. Used by Nintendo DS stylus, Saturn / Dreamcast / arcade
+    /// light-gun games. Set per frame via LibretroCore::set_input
+    /// from `InputState.pointer`; cb_input_state returns the right
+    /// component for RETRO_DEVICE_POINTER queries.
+    pub input_pointer: [(i16, i16, bool); 5],
     /// Snapshotted display aspect (final image W:H, 0.0 = caller falls back to width:height).
     pub display_aspect: f32,
     /// Path/dir/ext strings the core may request via environment callbacks.
@@ -74,6 +87,14 @@ pub(crate) struct State {
     pub pending_rom_size: usize,
     pub pending_name: CString,
     pub pending_ext: CString,
+    /// Synthetic file path handed to the core via
+    /// `retro_game_info_ext.full_path`. Must end with `.<ext>` because
+    /// Genesis Plus GX (and any other libretro core that detects the
+    /// system from the filename's trailing characters) reads
+    /// `&filename[strlen(filename) - 3]` directly — an empty string
+    /// makes that out-of-bounds. For Bytes-source loads we synthesize
+    /// `"<name>.<ext>"`; for Path-source loads we use the real path.
+    pub pending_full_path: CString,
     pub pending_info_ext: retro_game_info_ext,
     /// Whether the core has been initialised (retro_init called). Drop uses this
     /// to decide whether retro_deinit is needed.
@@ -115,6 +136,17 @@ pub(crate) struct State {
     /// SET_KEYBOARD_CALLBACK env leave this unset and the frontend's
     /// `send_keyboard_event` becomes a no-op.
     pub keyboard_cb: Option<retro_keyboard_event_t>,
+    /// Display rotation set by the core via
+    /// `RETRO_ENVIRONMENT_SET_ROTATION`. Units of 90° clockwise:
+    ///   0 = no rotation (default)
+    ///   1 = 90° clockwise
+    ///   2 = 180°
+    ///   3 = 270° clockwise (== 90° counter-clockwise)
+    /// Vertical arcade boards like Pac-Man / Galaxian / Donkey Kong set
+    /// `1` or `3`; non-rotated systems leave this at `0`. The shell
+    /// reads `LibretroCore::rotation()` after `retro_load_game` returns
+    /// and pushes the value to the renderer for viewport math.
+    pub rotation: u32,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -136,6 +168,8 @@ impl State {
             fb_height: 240,
             audio: Vec::with_capacity(16384),
             input_bits: [0; 5],
+            input_axes: [[0; 4]; 5],
+            input_pointer: [(0, 0, false); 5],
             display_aspect: 0.0,
             system_dir: CString::new(".").unwrap(),
             save_dir: CString::new(".").unwrap(),
@@ -143,6 +177,7 @@ impl State {
             pending_rom_size: 0,
             pending_name: CString::new("rom").unwrap(),
             pending_ext: CString::new("").unwrap(),
+            pending_full_path: CString::new("").unwrap(),
             pending_info_ext: zeroed_info_ext(),
             initialised: false,
             core_options: Vec::new(),
@@ -152,6 +187,7 @@ impl State {
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
+            rotation: 0,
         }
     }
 
@@ -441,7 +477,7 @@ pub(crate) unsafe extern "C" fn cb_input_poll() {
 pub(crate) unsafe extern "C" fn cb_input_state(
     port: u32,
     device: u32,
-    _index: u32,
+    index: u32,
     id: u32,
 ) -> i16 {
     /// Special id passed by cores that use the bitmask API (we ack'd
@@ -449,7 +485,52 @@ pub(crate) unsafe extern "C" fn cb_input_state(
     /// joypad state in one call instead of polling each button individually.
     const RETRO_DEVICE_ID_JOYPAD_MASK: u32 = 256;
 
-    if port >= 5 || device != RETRO_DEVICE_JOYPAD {
+    if port >= 5 {
+        return 0;
+    }
+
+    // Analog stick / button queries — RETRO_DEVICE_ANALOG. Routed to the
+    // per-port `input_axes` array. Layout: `[Left X, Left Y, Right X, Right Y]`.
+    // Cores that emulate analog hardware (N64 stick, GameCube C-stick,
+    // DualShock, Saturn 3D Pad, VB right D-pad, Intv 16-way disc) poll
+    // this device with `index = LEFT/RIGHT` and `id = X/Y`. Values are
+    // i16 in the libretro range -32768..32767.
+    if device == RETRO_DEVICE_ANALOG {
+        let axis_idx = match (index, id) {
+            (RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X)  => 0,
+            (RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y)  => 1,
+            (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) => 2,
+            (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y) => 3,
+            // RETRO_DEVICE_INDEX_ANALOG_BUTTON queries an "analog
+            // button" (analog L2/R2 triggers on DualShock and GC), which
+            // OA doesn't surface separately yet — return 0 (button is
+            // covered by the digital path via RETRO_DEVICE_JOYPAD).
+            _ => return 0,
+        };
+        return with_state(|s| s.input_axes[port as usize][axis_idx]).unwrap_or(0);
+    }
+
+    // Pointer device — touch screen / mouse-as-touch / light gun.
+    // Cores polling this get the per-port (x, y, pressed) tuple back.
+    // OA's `index` is ignored at Phase 0 (multi-touch is Phase 2.5);
+    // single-pointer support handles NDS stylus + light-gun titles.
+    if device == RETRO_DEVICE_POINTER {
+        return with_state(|s| {
+            let (x, y, pressed) = s.input_pointer[port as usize];
+            match id {
+                RETRO_DEVICE_ID_POINTER_X       => x,
+                RETRO_DEVICE_ID_POINTER_Y       => y,
+                RETRO_DEVICE_ID_POINTER_PRESSED => if pressed { 1 } else { 0 },
+                // POINTER_COUNT — returns the number of active pointers.
+                // Phase 0 supports single-pointer only; report 1 if
+                // pressed, 0 if not.
+                RETRO_DEVICE_ID_POINTER_COUNT   => if pressed { 1 } else { 0 },
+                _ => 0,
+            }
+        }).unwrap_or(0);
+    }
+
+    if device != RETRO_DEVICE_JOYPAD {
         return 0;
     }
     if id == RETRO_DEVICE_ID_JOYPAD_MASK {
@@ -522,7 +603,12 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                 }
                 let empty = EMPTY_CSTR.as_ptr();
                 s.pending_info_ext = retro_game_info_ext {
-                    full_path: empty,
+                    // full_path MUST end with the real extension —
+                    // some cores (Genesis Plus GX) read the last 3
+                    // bytes of this string to decide SMS vs GG vs MD.
+                    // Set by load_rom to "<name>.<ext>" for Bytes
+                    // source or the real path for Path source.
+                    full_path: s.pending_full_path.as_ptr(),
                     archive_path: empty,
                     archive_file: empty,
                     dir: empty,
@@ -542,6 +628,23 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             .unwrap_or(false)
         }
         RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => true,
+        RETRO_ENVIRONMENT_SET_ROTATION => {
+            // Core reports its preferred display rotation. Units of 90°
+            // clockwise; valid values 0..=3. Vertical arcade boards
+            // (Pac-Man / Galaxian / DK) set 1 or 3 here. We store the
+            // value and let the shell pull it via LibretroCore::rotation()
+            // after retro_load_game returns.
+            if data.is_null() {
+                return false;
+            }
+            let rot = unsafe { *(data as *const u32) };
+            if rot > 3 {
+                log::warn!("oa-libretro: SET_ROTATION got out-of-range {} (expected 0..=3); ignoring", rot);
+                return false;
+            }
+            with_state(|s| { s.rotation = rot; });
+            true
+        }
         RETRO_ENVIRONMENT_SET_GEOMETRY => {
             if data.is_null() {
                 return false;

@@ -457,3 +457,49 @@ The pattern's mechanical reliability across 5 implementations is the evidence it
 - Phase 2's keyboard-passthrough work in `oa-libretro` lands once and unlocks every keyboard-shaped system. Plan it as `oa-libretro` infrastructure, not under MAME.
 - When MSX onboarding lands, it inherits the Phase 2 infrastructure with zero additional work — the system just registers as wanting keyboard passthrough and the existing pipeline handles it.
 - Phase 3 analog gets its own DECISIONS entry when it lands — likely paired with whichever system forces the issue (OutRun = Saturn / Dreamcast / arcade; Marble Madness = MAME; Arkanoid = NES via Vaus paddle).
+
+---
+
+## 2026-05-19 — Internal drag-reorder as a UX pattern (scope + library choice)
+
+**Context.** External OS→app drag-drop (files from Explorer into the library window) is parked as unreliable — see `docs/PARKING_LOT.md` 2026-05-19 entry. Internal HTML5 drag-drop (within the WebView page, between DOM elements) is a different code path that lives entirely inside Chromium and is unaffected by the WebView2/transparency issues. After a UX-audit pass, drag-reorder slots into the app as the right interaction for several lists currently using up/down buttons or fixed orders.
+
+**Decision: ship internal drag-reorder across Tier 1, Tier 2, and Tier 4 surfaces; explicitly leave Tier 3 alone.** Reference implementation is the Region priority list — if the pattern feels right there we roll through the rest in priority order.
+
+**Tier 1 — high value, exists today, quick to wire (Diff B scope):**
+- **Region priority** — Settings → Library → Region & version priority. Today four ↑/↓ + Reset buttons per row; ordering is the only thing this list does. Reference implementation.
+- **Library folders list** — Settings → Library. Today Add/Remove only; scan-priority order matters (first-folder-wins on filename collisions) but is undocumented. Adding drag-reorder exposes the ordering control without inventing a separate setting.
+- **Sidebar systems list** — Phase 2.6 already ships flat drag-reorder via native HTML5 API (`draggable` + `onDragStart/Over/Leave/Drop/End`). Auditing 2026-05-19: implementation is solid (drop indicator line above target, source dims to 40% opacity, end-of-list drop zone for append, hit detection on upper/lower half of each row for insert-above-vs-below, draggable-only-when-expanded). Converting to `solid-dnd` for cosmetic consistency would be churn without obvious benefit; keeping native HTML5 here.
+- **Right sidebar widgets** — Hero / Title / Metadata reorder. Highest perceived polish per minute of work; visible to every operator every session.
+
+**Tier 2 — exists today, real but secondary (one-off follow-ups when each surface comes up next):**
+- **Per-system core priority list** — when multiple `.dll` cores are present for one system, give the user "try X first, fall back to Y" ordering instead of the current single "default core" dropdown.
+- **Per-game milestones list** — display order matters for visual hierarchy.
+- **Per-folder import rules** — when multiple rules apply, order resolves which wins.
+
+**Tier 3 — explicitly skip:**
+- Save state slots (numbered 0-9 by F5/F8 muscle memory; reordering breaks that).
+- Per-game settings drawer tabs (fixed order is convention).
+- Quick Settings menu items (fixed order is convention).
+- Cheats list (toggle-based, order is cosmetic).
+- TAS recordings / video clips (organizational only, users rarely curate).
+- Bindings (one slot per button, no reorder concept).
+
+**Tier 4 — speculative; revisit when the underlying feature ships:**
+- **Library tiles into playlists/collections** — drag-drop tiles between sidebar entries. Needs the "Custom playlists" feature first (in VISION).
+- **Nested system groups** ("PC Engine family" containing TG-16 + PCE-CD as children, per Phase 6 plans). Drag systems into/out of groups becomes the obvious affordance once the grouping data model exists.
+- **Shader preset chain editor** — drag-reorder passes when user-defined multi-pass shader chains arrive (Phase 3 polish).
+
+**Library: `solid-dnd`.** ~30 KB Solid-native drag-drop lib with sortable + draggable primitives + accessible keyboard reorder out of the box. Chosen over `@neodrag/solid` (no sortable primitive — would need manual implementation per surface) and rolling our own (~150 LOC base + the per-surface accessibility cost that becomes work-per-surface).
+
+**Why this scope wins:**
+1. **Tier 1 surfaces are the "ordering as primary interaction" cases.** That's exactly where drag pays for itself over buttons.
+2. **Tier 2 has real users but lower frequency.** Including them now means the same lib + pattern gets reused; the marginal cost is small.
+3. **Tier 4 is genuine future work** the data model isn't ready for. Including it in the decision doc commits us to the pattern when those features build out.
+4. **Tier 3 explicitly out** to prevent the inevitable scope drift to "well couldn't we drag-reorder cheats too?" Each item there has a specific reason it doesn't fit.
+5. **`solid-dnd` matches our framework choice.** No React/Vue baggage; works with Solid's reactivity model.
+
+**Where this applies going forward:**
+- Diff B ships Region priority as the reference implementation. If it feels right, Library Folders + Right Sidebar Widgets + Sidebar Systems audit land in the same diff.
+- Tier 2 items land as one-off follow-ups when the relevant context comes up (e.g., per-system core priority during the next core onboarding that has two cores).
+- Tier 4 items don't land standalone; they ship with the feature that builds the underlying data model.

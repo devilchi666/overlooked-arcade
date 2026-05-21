@@ -17,6 +17,7 @@ import {
   gamepadIndexToRustButton,
 } from "../systems/keymap";
 import type { SystemId } from "../themes/registry";
+import AnalogBindingsSection from "./AnalogBindingsSection";
 
 // Per-system input bindings editor.
 //
@@ -303,6 +304,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
       <Show when={error()}>
         <p class="mt-2 text-[0.7rem] text-red-300/80">{error()}</p>
       </Show>
+      <AnalogBindingsSection systemId={props.systemId} mode="system" />
     </article>
   );
 };

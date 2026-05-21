@@ -62,5 +62,5 @@ Triggered by a real game demanding it: OutRun (steering wheel), Marble Madness (
 ## ⬜ Phase 2+ contributions
 
 - ⬜ MAME-specific button glyphs for the bindings UI (LP/MP/HP/LK/MK/HK overlay icons).
-- ⬜ Per-game ROM-set metadata (year, manufacturer, hardware) via MAME's listxml output or libretro thumbnails.
+- ⬜ Per-game ROM-set metadata (year, manufacturer, hardware) via MAME's listxml output or libretro thumbnails — **libretro-thumbnails half ready 2026-05-19, needs operator validation.** Mapping `mame → MAME` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. listxml metadata still needs a separate pass. Operator: run `Settings → Library → Sync media for MAME` and confirm covers/screenshots download.
 - ⬜ Multi-game-per-zip handling — some MAME sets are bundles (clones, alternate versions); decide whether to surface clones in the library or hide them.

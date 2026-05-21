@@ -68,3 +68,428 @@
   --color-system-accent-soft: oklch(0.94 0.05 80);
   --color-system-glow: oklch(0.78 0.18 80 / 0.35);
 }
+
+/* Nintendo Game Boy / Game Boy Color — muted DMG pea-green pulled
+   directly from the iconic DMG screen color. Hue 145° sits 15° away
+   from Game Gear's 130° yellow-green AND uses a lower chroma (0.13 vs
+   0.18) so the two read as decisively distinct families in a mixed
+   library: GG = bright yellow-green, GB = muted forest pea-soup green.
+   Period-correct for the 1989 DMG launch + still recognizable for the
+   CGB era since GBC's colored translucent shells weren't the dominant
+   visual association the way the green screen was. */
+[data-system="gb"] {
+  --color-system-accent: oklch(0.62 0.13 145);
+  --color-system-accent-soft: oklch(0.93 0.04 145);
+  --color-system-glow: oklch(0.62 0.13 145 / 0.35);
+}
+
+/* GCE Vectrex — bright phosphor green evoking the iconic vector-display
+   CRT (the green phosphor was the Vectrex's defining visual). Hue 165°
+   sits in the open 155-185° range — 20° from GB pea-green (145°,
+   L=0.62) and 30° from Coleco cyan (195°, L=0.72). Lightness 0.80 makes
+   it read as bright luminescent phosphor; the other "green" systems use
+   lower lightness so the family separates cleanly: Vectrex = bright
+   phosphor, GG = mid yellow-green, GB = muted pea. */
+[data-system="vectrex"] {
+  --color-system-accent: oklch(0.80 0.16 165);
+  --color-system-accent-soft: oklch(0.94 0.05 165);
+  --color-system-glow: oklch(0.80 0.16 165 / 0.35);
+}
+
+/* Nintendo Virtual Boy — deep VB red, the iconic monochrome-red LED
+   palette that defined the system's entire visual identity. Hue 7° sits
+   5° from MAME scarlet (12°, L=0.64) and 21° from NES red (28°, L=0.62);
+   the lightness axis separates VB at L=0.55 from the others, AND the
+   high chroma (0.26) makes VB read as the most saturated red in the
+   lineup — "neon LED" rather than "scarlet" or "blood red". Channel F
+   cedar-brown (25°, L=0.45, C=0.06) is in the warm-red family too but
+   the low chroma keeps it earth-tone-distinct. */
+[data-system="virtualboy"] {
+  --color-system-accent: oklch(0.55 0.26 7);
+  --color-system-accent-soft: oklch(0.93 0.07 7);
+  --color-system-glow: oklch(0.55 0.26 7 / 0.35);
+}
+
+/* Bandai WonderSwan — pearl lavender evoking the translucent-plastic
+   shells of the WonderSwan Color line (1999-2004 era — pearl white,
+   sherbet pink, frost crystal, sky blue, lavender purple variants).
+   Hue 305° sits in the open 295-320° range — 20° from GBA indigo (285°)
+   and 20° from O2 rose (325°). Lighter (L=0.70) and lower-chroma (0.14)
+   than the saturated rose-fuchsia O2 ships, reading as "pearl" rather
+   than "vivid fuchsia". */
+[data-system="wonderswan"] {
+  --color-system-accent: oklch(0.70 0.14 305);
+  --color-system-accent-soft: oklch(0.93 0.05 305);
+  --color-system-glow: oklch(0.70 0.14 305 / 0.35);
+}
+
+/* ColecoVision — bright cyan from the open 160-215° teal-cyan range.
+   Coleco's branding wasn't strongly color-coded (console was black/silver,
+   logo was red on white); picking from unclaimed hue space avoids the
+   red collision with NES (28°) + MAME (12°). 25° from PCE-CD (220°) and
+   65° from GG (130°). */
+[data-system="coleco"] {
+  --color-system-accent: oklch(0.72 0.16 195);
+  --color-system-accent-soft: oklch(0.93 0.05 195);
+  --color-system-glow: oklch(0.72 0.16 195 / 0.35);
+}
+
+/* Mattel Intellivision — deep Mattel navy from the late-'70s / early-
+   '80s "Intelligent Television" branding (the iconic Intellivision
+   logo + console face used a saturated navy). Sits 10° from SNES violet
+   (270°, L=0.62) and 15° from Genesis cobalt (245°, L=0.62) — the
+   lightness axis (Intv L=0.50, darker) separates them in a mixed
+   library: Intv = deep navy, SNES = mid violet, Genesis = bright cobalt. */
+[data-system="intv"] {
+  --color-system-accent: oklch(0.50 0.17 260);
+  --color-system-accent-soft: oklch(0.92 0.05 260);
+  --color-system-glow: oklch(0.50 0.17 260 / 0.35);
+}
+
+/* Magnavox Odyssey² / Videopac — rose-fuchsia from the open 305-335°
+   range. The Odyssey² didn't have a strong dominant brand color (early
+   marketing used multiple palettes); picking from unclaimed hue space
+   keeps the lineup tile grid readable. 15° from SMS magenta (340°) —
+   visually distinct due to chroma + lightness placement. */
+[data-system="o2"] {
+  --color-system-accent: oklch(0.62 0.18 325);
+  --color-system-accent-soft: oklch(0.93 0.06 325);
+  --color-system-glow: oklch(0.62 0.18 325 / 0.35);
+}
+
+/* Fairchild Channel F — cedar-brown wood-grain, the 1976 ORIGINAL
+   wood-grain console (predates the 2600 by a year — Atari's wood-veneer
+   VCS design was inspired by Channel F). Both wood-grain era systems
+   share the "muted earth tone" identity; 2600 = yellow-pine brown
+   (60°, L=0.60, C=0.07), Channel F = darker red-cedar (25°, L=0.45,
+   C=0.06). The hue gap + lightness gap separate them in mixed library
+   while preserving the wood-grain visual coupling. */
+[data-system="channelf"] {
+  --color-system-accent: oklch(0.45 0.06 25);
+  --color-system-accent-soft: oklch(0.92 0.03 25);
+  --color-system-glow: oklch(0.45 0.06 25 / 0.35);
+}
+
+/* Atari 2600 / VCS — muted wood-grain brown evoking the original 1977
+   "Heavy Sixer" VCS's wood-veneer front panel, the single most iconic
+   visual association of the 2600 line (even after Atari ditched the
+   wood for the 4-switch and 2600 Jr, the original wood-grain stays the
+   visual shorthand). Hue 60° sits 5° from TG-16 orange (55°) — but
+   chroma 0.07 vs TG-16's 0.18 separates them decisively in saturation:
+   TG-16 reads as bright orange, 2600 reads as muted warm brown. The
+   low chroma is the period-correct quality of the actual wood-veneer
+   appliqué; saturating it would look like a different system entirely. */
+[data-system="2600"] {
+  --color-system-accent: oklch(0.60 0.07 60);
+  --color-system-accent-soft: oklch(0.93 0.03 60);
+  --color-system-glow: oklch(0.60 0.07 60 / 0.35);
+}
+
+/* Atari 5200 — saturated red pulled from the 1982 console's iconic
+   black-and-red faceplate + the bold red angular logo. Hue 18° sits in
+   the warm-red cluster (between VB 7° and MAME 12°) — but lightness +
+   chroma separate it: 5200 reads as the brightest red of the warm
+   cluster (L=0.62 C=0.20) where VB is darker (L=0.55) and MAME is
+   neon-saturated (C=0.27). Period-correct to the 5200's "premium red"
+   marketing aesthetic. */
+[data-system="5200"] {
+  --color-system-accent: oklch(0.62 0.20 18);
+  --color-system-accent-soft: oklch(0.93 0.06 18);
+  --color-system-glow: oklch(0.62 0.20 18 / 0.35);
+}
+
+/* Pokémon Mini — sunny yellow pulled from the 2001 launch's flagship
+   "Chickorita Green" / "Smoochum Purple" / "Wooper Blue" plastic shells
+   — yellow was the dominant marketing color across all variants. Hue
+   95° sits between NDS pearl (95° but L=0.78) and ngp pearl (105°) in
+   the Nintendo handheld pearl family. PokeMini at L=0.85 C=0.16 reads
+   as the brightest, lightest tile in the lineup — appropriate for the
+   tiniest, friendliest Nintendo platform. */
+[data-system="pokemini"] {
+  --color-system-accent: oklch(0.85 0.16 95);
+  --color-system-accent-soft: oklch(0.95 0.06 95);
+  --color-system-glow: oklch(0.85 0.16 95 / 0.35);
+}
+
+/* Nintendo Game Boy Advance — deep indigo pulled from the 2001 launch
+   GBA's clear-indigo plastic + the original Nintendo of America box art.
+   Hue 285° sits between SNES violet (270°) and Lynx purple (290°) — only
+   15° from each neighbor, but the lightness axis separates the three:
+   SNES at L=0.62 mid-violet, Lynx at L=0.65 bright purple, GBA at L=0.55
+   deep indigo. Chroma 0.20 lands between SNES (0.18) and Lynx (0.22). The
+   visual hierarchy: GBA = darkest, SNES = mid, Lynx = brightest of the
+   purple family — operator accepted the crowding for period-correctness. */
+[data-system="gba"] {
+  --color-system-accent: oklch(0.55 0.20 285);
+  --color-system-accent-soft: oklch(0.93 0.06 285);
+  --color-system-glow: oklch(0.55 0.20 285 / 0.35);
+}
+
+/* Sega Master System — neon magenta evoking the 1986-1990 Western Big
+   Box era: black-with-neon-grid-floor box art used a vivid hot pink as
+   the dominant accent. Hue 340° sits in the unclaimed magenta range
+   (closest neighbor on the wheel is NES 28° — a ~48° gap, so a mixed
+   library reads SMS as distinctly its own color). Chroma 0.22 matches
+   the saturation of the era's marketing. */
+[data-system="sms"] {
+  --color-system-accent: oklch(0.65 0.22 340);
+  --color-system-accent-soft: oklch(0.93 0.06 340);
+  --color-system-glow: oklch(0.65 0.22 340 / 0.35);
+}
+
+/* Sega Game Gear — yellow-green pulled from the GG launch palette
+   (teal/green + yellow on black). Hue 130° lands in the wide-open green
+   range — visually distinct from SMS magenta (340°) even though they
+   share a libretro core, and 90°+ from every other claimed hue. Slightly
+   lower chroma (0.18) reads cleaner against the OA dark surface than the
+   saturated magenta. */
+[data-system="gamegear"] {
+  --color-system-accent: oklch(0.72 0.18 130);
+  --color-system-accent-soft: oklch(0.93 0.05 130);
+  --color-system-glow: oklch(0.72 0.18 130 / 0.35);
+}
+
+/* Sega Mega Drive / Genesis — saturated cobalt blue, period-correct for
+   the early '90s Sega marketing ("Genesis does what Nintendon't" leaned
+   into deep electric blue). Hue 245° is a deliberate 25° shift from
+   PCE-CD's silver-cyan-blue (220°) and chroma is amped from 0.14 to 0.22
+   so a mixed library shows them as distinctly different systems at a
+   glance — PCE-CD reads silver-cyan, Genesis reads electric cobalt.
+   Distinct from SNES violet (270°) by 25° in the other direction. */
+[data-system="genesis"] {
+  --color-system-accent: oklch(0.62 0.22 245);
+  --color-system-accent-soft: oklch(0.93 0.05 245);
+  --color-system-glow: oklch(0.62 0.22 245 / 0.35);
+}
+
+/* Sega CD / Mega-CD — sapphire blue, family-cousin to Genesis cobalt
+   (245°). Hue 235° sits 10° cooler than Genesis with a darker lightness
+   axis (L=0.55 vs Genesis L=0.62) so the two read as related-but-distinct
+   in a mixed library: Genesis = electric cobalt, Sega CD = deeper
+   sapphire. The Sega family clusters in the 220-250° band (PCE-CD 220°,
+   Sega CD 235°, Genesis 245°) — different L/C profiles keep the cluster
+   readable. Period-correct for the Sega CD's silver-and-blue retail
+   marketing (Sega CD Model 2 hardware was silver with blue Sega branding). */
+[data-system="segacd"] {
+  --color-system-accent: oklch(0.55 0.20 235);
+  --color-system-accent-soft: oklch(0.92 0.05 235);
+  --color-system-glow: oklch(0.55 0.20 235 / 0.35);
+}
+
+/* Sega 32X — neon orange, period-correct for the 1994 32X marketing
+   palette (the iconic 32X mushroom-cap unit + the "32X" logotype were
+   both fiery orange-on-black). Hue 42° lands in the open 35-50° band
+   (the only register-able hue range between TG-16 orange 55° and ChannelF
+   cedar 25° / NES red 28°). Chroma 0.22 + lightness 0.68 reads as bright
+   neon orange rather than warm gold — deliberately departing from the
+   Sega family cobalt cluster because 32X identity in the era was
+   visually distinct from Genesis/Sega CD. The hue gap (42° from
+   ChannelF 25° / NES 28° / MAME 12°; 13° from TG-16 55°) keeps the
+   reds separated in mixed library views. */
+[data-system="sega32x"] {
+  --color-system-accent: oklch(0.68 0.22 42);
+  --color-system-accent-soft: oklch(0.94 0.05 42);
+  --color-system-glow: oklch(0.68 0.22 42 / 0.35);
+}
+
+/* Sega Saturn — deepest purple in the violet cluster, period-accurate
+   to the 1994-1996 Saturn launch palette (deep purple-on-black box art
+   was the iconic Saturn marketing). Hue 275° sits 5° from SNES violet
+   (270°) and 10° from GBA indigo (285°), but the lightness ladder
+   separates the cluster cleanly:
+     SNES   L=0.62  mid violet
+     Lynx   L=0.65  bright purple
+     GBA    L=0.55  deep indigo
+     Saturn L=0.45  DEEPEST purple
+   Saturn is the bottom rung — saturated but darkest, reading as
+   "premium night purple" rather than the brighter Nintendo-family
+   purples. Operator accepted the cluster crowding for period-correctness. */
+[data-system="saturn"] {
+  --color-system-accent: oklch(0.45 0.18 275);
+  --color-system-accent-soft: oklch(0.91 0.06 275);
+  --color-system-glow: oklch(0.45 0.18 275 / 0.35);
+}
+
+/* SNK Neo Geo (AES home + MVS arcade) — deepest, most-saturated red in
+   the lineup, period-correct to SNK's 1990-2004 arcade marketing palette
+   (the iconic "NEO GEO" logotype was cherry-red on black across boxart,
+   marquees, MVS cabinet sides, and AES Big Box sleeves). Hue 18° sits
+   between VB 7° / MAME 12° and NES 28° in the warm-red cluster, but
+   the L=0.50 + C=0.27 profile makes it the cluster bottom — darker than
+   MAME (L=0.64) + VB (L=0.55) + NES (L=0.62), and higher chroma than
+   any other red. Reads as "SNK arcade cherry" rather than scarlet/
+   blood-red/crimson. Operator accepted cluster crowding for
+   period-correctness. */
+[data-system="neogeo"] {
+  --color-system-accent: oklch(0.50 0.27 18);
+  --color-system-accent-soft: oklch(0.91 0.07 18);
+  --color-system-glow: oklch(0.50 0.27 18 / 0.35);
+}
+
+/* SNK Neo Geo CD — muted SNK gold, sits in the tight 45-55° gap
+   between sega32x neon orange (42°) and TG-16 warm orange (55°). The
+   muted L=0.55 + C=0.18 profile distinguishes it from both neighbors
+   (sega32x neon-bright, TG-16 saturated-warm) and reads as a "Neo Geo
+   CD" gold-bronze variant — period-correct to the silver+gold CD-Z /
+   CD-T marketing. Stays in the same warm zone as cart neogeo (red →
+   gold visual relationship) to preserve SNK arcade family identity. */
+[data-system="neocd"] {
+  --color-system-accent: oklch(0.55 0.18 50);
+  --color-system-accent-soft: oklch(0.93 0.05 50);
+  --color-system-glow: oklch(0.55 0.18 50 / 0.35);
+}
+
+/* Sony PlayStation Portable — Sony brand cool cyan in the slot
+   between Coleco 195° and PCE-CD 220°. L=0.65 + C=0.18 reads as
+   "bright premium cyan" — period-correct to the PSP's 2004-2014
+   launch marketing (white/silver/black handheld with Sony's cool
+   blue brand palette). Slots into the Sony cluster alongside psx
+   180° + ps2 215°. */
+[data-system="psp"] {
+  --color-system-accent: oklch(0.65 0.18 200);
+  --color-system-accent-soft: oklch(0.93 0.05 200);
+  --color-system-glow: oklch(0.65 0.18 200 / 0.35);
+}
+
+/* Sony PlayStation 2 — deep premium cobalt at hue 215°, period-correct
+   to the PS2's iconic blue PlayStation logo + dark-hardware-era
+   marketing (2000-2013). L=0.45 + C=0.22 reads as "deep cobalt-cyan"
+   — bottom of the cool cluster's lightness ladder (PCE-CD L=0.72 /
+   psp L=0.65 / ps2 L=0.45). Slots between Coleco 195° and PCE-CD
+   220° via the lightness axis. */
+[data-system="ps2"] {
+  --color-system-accent: oklch(0.45 0.22 215);
+  --color-system-accent-soft: oklch(0.92 0.06 215);
+  --color-system-glow: oklch(0.45 0.22 215 / 0.35);
+}
+
+/* Nintendo DS — pearl yellow-green from the open 90-100° band,
+   handheld-pastel pattern matching ngp 105° (NGPC translucent shell)
+   and WonderSwan 305° (pearl lavender). L=0.78 + C=0.14 reads as
+   "pearl translucent" — period-adjacent to the DS Lite era's
+   translucent shell variants (the original DS came in silver/black/
+   pink/red/mint variants; the DS Lite expanded the palette). Open
+   handheld outlier pattern preserves the Nintendo-handheld-as-pearl
+   convention. */
+[data-system="nds"] {
+  --color-system-accent: oklch(0.78 0.14 95);
+  --color-system-accent-soft: oklch(0.94 0.05 95);
+  --color-system-glow: oklch(0.78 0.14 95 / 0.35);
+}
+
+/* Sega Dreamcast — iconic orange swirl, period-correct to the 9/9/99
+   launch marketing and the Dreamcast spiral logo that became the
+   platform's defining visual element. Hue 32° + L=0.55 + C=0.27 reads
+   as "vivid Dreamcast orange swirl" — highest chroma in the warm zone
+   and a darker lightness profile than the bright crimsons/scarlets
+   around it. Slots between NES 28° (crimson) and sega32x 42° (neon
+   orange) with distinct L+C:
+     ChannelF  25° L=0.45 C=0.06  muted cedar
+     NES       28° L=0.62 C=0.22  crimson
+     dreamcast 32° L=0.55 C=0.27  DC ORANGE SWIRL (highest chroma)
+     sega32x   42° L=0.68 C=0.22  neon orange
+   The warm zone now hosts 12 systems in 73° — the most-crowded cluster
+   in OA's lineup — but lightness + chroma profiles keep each distinct. */
+[data-system="dreamcast"] {
+  --color-system-accent: oklch(0.55 0.27 32);
+  --color-system-accent-soft: oklch(0.92 0.07 32);
+  --color-system-glow: oklch(0.55 0.27 32 / 0.35);
+}
+
+/* Nintendo 64 — "Atomic Purple" launch palette, period-correct to the
+   1996-2001 N64 era (the iconic Atomic Purple transparent-shell N64
+   variant became the platform's visual shorthand). Hue 268° slots into
+   the violet cluster between Intv 260° navy and SNES 270° mid violet;
+   L=0.55 + C=0.22 reads as "vivid translucent purple" — mid-tier
+   lightness, high chroma. Forms the Nintendo home-console family
+   cluster with SNES 270° / n64 268° / gamecube 280° / GBA 285°. */
+[data-system="n64"] {
+  --color-system-accent: oklch(0.55 0.22 268);
+  --color-system-accent-soft: oklch(0.92 0.06 268);
+  --color-system-glow: oklch(0.55 0.22 268 / 0.35);
+}
+
+/* Nintendo GameCube + Wii — "Indigo" GameCube launch palette,
+   period-correct to the 2001 launch console color (the deep
+   Indigo-purple was the default GC shell). Hue 280° slots into the
+   violet cluster between Saturn 275° (deepest at L=0.45) and GBA 285°
+   (L=0.55); L=0.48 + C=0.22 reads as "deep premium indigo" — darker
+   than n64's vivid Atomic Purple, lighter than Saturn's deepest. The
+   Nintendo home-console family now reads as a 4-system ladder in the
+   violet cluster: SNES → n64 → gamecube → GBA. */
+[data-system="gamecube"] {
+  --color-system-accent: oklch(0.48 0.22 280);
+  --color-system-accent-soft: oklch(0.92 0.06 280);
+  --color-system-glow: oklch(0.48 0.22 280 / 0.35);
+}
+
+/* Atari Jaguar — saturated gold-orange landing in the open 65-75° band
+   between 2600 wood-grain brown (60°, low chroma) and Atari 7800 gold
+   (80°). Period-correct to the Atari Corp 1993-1996 marketing palette
+   (the JAGUAR logotype was red-orange-on-black; jaguar-cat-fur
+   reference for the spotted gold). L=0.65 + C=0.22 reads as
+   "saturated gold" rather than 7800's brighter L=0.78 or 2600's
+   muted L=0.60 C=0.07 wood-grain. Three Atari-era systems share the
+   warm zone with distinct lightness profiles:
+     2600   60°/L=0.60/C=0.07  muted brown (wood-veneer Heavy Sixer)
+     jaguar 65°/L=0.65/C=0.22  saturated gold (1993 Jaguar logotype)
+     A7800  80°/L=0.78/C=0.18  bright gold (era title screens). */
+[data-system="jaguar"] {
+  --color-system-accent: oklch(0.65 0.22 65);
+  --color-system-accent-soft: oklch(0.93 0.06 65);
+  --color-system-glow: oklch(0.65 0.22 65 / 0.35);
+}
+
+/* 3DO Interactive Multiplayer — deep 3DO purple-magenta in the tight
+   gap between Lynx purple (290°) and WonderSwan pearl lavender (305°).
+   Period-correct to the 3DO swirl logo's multi-color appearance —
+   stylized purple-magenta gradient was the dominant color in 3DO
+   marketing across the Panasonic FZ-1 / FZ-10 era (1993-1996).
+   L=0.55 + C=0.22 reads as "deep premium purple-magenta", visually
+   distinct from Lynx (brighter L=0.65) and WS (pearl L=0.70). */
+[data-system="3do"] {
+  --color-system-accent: oklch(0.55 0.22 297);
+  --color-system-accent-soft: oklch(0.92 0.06 297);
+  --color-system-glow: oklch(0.55 0.22 297 / 0.35);
+}
+
+/* NEC PC-FX — anime pink-magenta in the tight gap between WonderSwan
+   pearl lavender (305°) and Odyssey² rose-fuchsia (325°). Period-
+   correct to the PC-FX library's identity as a Japan-only anime/VN/
+   dating-sim platform — the marketing palette leaned heavily into
+   vivid pinks. L=0.62 + C=0.24 reads as "saturated anime pink",
+   distinct from O2 rose (lower C) and SMS magenta (340°, hotter hue). */
+[data-system="pcfx"] {
+  --color-system-accent: oklch(0.62 0.24 320);
+  --color-system-accent-soft: oklch(0.93 0.06 320);
+  --color-system-glow: oklch(0.62 0.24 320 / 0.35);
+}
+
+/* SNK Neo Geo Pocket / Color — pearl yellow-green from the open 95-125°
+   band, evoking the NGPC's translucent yellow shell variant (one of the
+   iconic colors from the 1999 launch palette alongside platinum, sky
+   blue, and clear purple). L=0.80 + C=0.12 reads as "pearl translucent"
+   rather than vivid color — handheld-pastel rather than arcade-neon.
+   Deliberately breaks free from the SNK arcade red/gold family to mark
+   NGPC as the handheld outlier (same precedent the WonderSwan pearl-
+   lavender uses). */
+[data-system="ngp"] {
+  --color-system-accent: oklch(0.80 0.12 105);
+  --color-system-accent-soft: oklch(0.95 0.04 105);
+  --color-system-glow: oklch(0.80 0.12 105 / 0.35);
+}
+
+/* Sony PlayStation (PS1) — teal cyan from the open 175-185° band,
+   evoking the PS1 launch palette's cool blue/cyan/silver identity (the
+   iconic "PlayStation" wordmark was light blue/cyan gradient). Hue 180°
+   sits 15° from Coleco bright cyan (195°), 40° from PCE-CD silver-cyan
+   (220°), and 55° from segacd sapphire (235°). Open band — no hue
+   crowding. L=0.65 lifts it above the segacd L=0.55 / Saturn L=0.45
+   "deep cool tones" cluster so the visual hierarchy reads clean:
+   PS1 = cool bright cyan, Saturn = deep purple, segacd = sapphire,
+   PCE-CD = silver-cyan. */
+[data-system="psx"] {
+  --color-system-accent: oklch(0.65 0.16 180);
+  --color-system-accent-soft: oklch(0.93 0.05 180);
+  --color-system-glow: oklch(0.65 0.16 180 / 0.35);
+}

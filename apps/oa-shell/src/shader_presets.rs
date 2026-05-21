@@ -208,7 +208,11 @@ fn resolve_bezel_path(image: &str, exe_dir: &Path) -> PathBuf {
     }
 }
 
-fn load_rgba_image(path: &Path) -> Result<(Vec<u8>, u32, u32), String> {
+/// Decode an image file to raw RGBA bytes + dimensions. Used by the
+/// preset TOML loader for `[bezel]` images and by the per-system /
+/// per-game bezel override path (`set_bezel_image_override` Tauri
+/// command). PNG/JPEG/WebP are all accepted by the `image` crate.
+pub fn load_rgba_image(path: &Path) -> Result<(Vec<u8>, u32, u32), String> {
     let img = image::open(path).map_err(|e| format!("open: {e}"))?;
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();

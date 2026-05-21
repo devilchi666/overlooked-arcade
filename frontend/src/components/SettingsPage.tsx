@@ -1,6 +1,15 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  closestCenter,
+  createSortable,
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  transformStyle,
+  type DragEventHandler,
+} from "@thisbeyond/solid-dnd";
 import type { LibraryStore } from "../library/store";
 import { useMedia } from "../library/media";
 import type { LayoutStore } from "../layout/state";
@@ -66,6 +75,141 @@ function humanBytes(b: number): string {
 const SELECT_CLASS =
   "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-oa-ink-dim)";
 
+/// One row in the region-priority sortable list. Lives at module scope
+/// so each row only re-creates its own `createSortable` registration on
+/// mount, not on every parent re-render. The whole row is the drag
+/// affordance — no other interactive controls compete for clicks.
+const SortableRegionRow: Component<{ region: string; idx: number }> = (props) => {
+  const sortable = createSortable(props.region);
+  return (
+    <li
+      ref={sortable.ref}
+      style={transformStyle(sortable.transform)}
+      class="flex items-center gap-2 rounded border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs select-none transition"
+      classList={{
+        "cursor-grab hover:border-white/15 hover:bg-white/[0.04]":
+          !sortable.isActiveDraggable,
+        "cursor-grabbing border-(--color-system-accent) bg-(--color-system-accent)/10 z-10 shadow-lg":
+          sortable.isActiveDraggable,
+      }}
+      {...sortable.dragActivators}
+    >
+      <span class="w-4 text-center text-(--color-oa-ink-dim)" aria-hidden="true">⋮⋮</span>
+      <span class="w-6 text-right tabular-nums text-(--color-oa-ink-dim)">
+        {props.idx + 1}.
+      </span>
+      <span class="flex-1 text-(--color-oa-ink)">{props.region}</span>
+    </li>
+  );
+};
+
+/// One row in the media region-priority sortable list (Game media
+/// tab). Mirrors the library region priority — but the underlying
+/// state lives in MediaContext (file `media.json`) so the drop
+/// handler calls `media.setRegionPriority` instead of writing to the
+/// shared library prefs.
+const SortableMediaRegionRow: Component<{
+  region: string;
+  idx: number;
+  onRemove: (region: string) => void;
+}> = (props) => {
+  const sortable = createSortable(props.region);
+  return (
+    <li
+      ref={sortable.ref}
+      style={transformStyle(sortable.transform)}
+      class="flex items-center justify-between gap-2 rounded border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs transition"
+      classList={{
+        "hover:border-white/15": !sortable.isActiveDraggable,
+        "border-(--color-system-accent) bg-(--color-system-accent)/10 z-10 shadow-lg":
+          sortable.isActiveDraggable,
+      }}
+    >
+      <div class="flex flex-1 items-center gap-2">
+        <span
+          class="select-none px-1 text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+          classList={{
+            "cursor-grab": !sortable.isActiveDraggable,
+            "cursor-grabbing": sortable.isActiveDraggable,
+          }}
+          role="button"
+          tabindex="-1"
+          aria-label={`Drag handle for ${props.region}`}
+          {...sortable.dragActivators}
+        >
+          ⋮⋮
+        </span>
+        <span class="w-6 text-right tabular-nums text-(--color-oa-ink-dim)">
+          {props.idx + 1}.
+        </span>
+        <span class="text-(--color-oa-ink)">{props.region}</span>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          props.onRemove(props.region);
+        }}
+        class="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.6rem] text-(--color-oa-ink-dim) hover:bg-red-500/15 hover:text-(--color-oa-ink)"
+        aria-label={`Remove ${props.region}`}
+      >
+        ×
+      </button>
+    </li>
+  );
+};
+
+/// One row in the library-folders sortable list. Drag activators live
+/// on the grip handle (not the whole row) so the Remove button's
+/// click event isn't captured by the drag sensor. Order matters for
+/// the scan-collision policy (first-folder-wins on duplicate ROM
+/// filenames) so this drag-reorder is functional, not just cosmetic.
+const SortableFolderRow: Component<{
+  folder: string;
+  onRemove: (folder: string) => void;
+}> = (props) => {
+  const sortable = createSortable(props.folder);
+  return (
+    <li
+      ref={sortable.ref}
+      style={transformStyle(sortable.transform)}
+      class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs transition"
+      classList={{
+        "hover:border-white/15": !sortable.isActiveDraggable,
+        "border-(--color-system-accent) bg-(--color-system-accent)/10 z-10 shadow-lg":
+          sortable.isActiveDraggable,
+      }}
+    >
+      <span
+        class="select-none px-1 text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+        classList={{
+          "cursor-grab": !sortable.isActiveDraggable,
+          "cursor-grabbing": sortable.isActiveDraggable,
+        }}
+        role="button"
+        tabindex="-1"
+        aria-label={`Drag handle for ${props.folder}`}
+        {...sortable.dragActivators}
+      >
+        ⋮⋮
+      </span>
+      <span class="flex-1 truncate font-mono text-(--color-oa-ink)" title={props.folder}>
+        {props.folder}
+      </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          props.onRemove(props.folder);
+        }}
+        class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+      >
+        Remove
+      </button>
+    </li>
+  );
+};
+
 // After the menu-bar redesign, this page only renders the Library +
 // Game-media tabs. The other tabs (Display / Audio / Gameplay / Shaders)
 // became top-bar Settings menu dialogs; Presentation moved to View menu;
@@ -112,6 +256,77 @@ const SettingsPage: Component<Props> = (props) => {
   onCleanup(() => window.removeEventListener("keydown", escHandler, { capture: true }));
 
   const systemIds = Object.keys(systemThemes) as SystemId[];
+
+  // --- Library prefs: region + revision priority for the multi-variant
+  //     grouping. Fetched once at mount; writes go straight through to
+  //     `set_library_prefs` then re-fetch the groups so tiles re-rank.
+  type RevisionPriority = "newest" | "oldest";
+  type LibraryPrefs = { regionPriority: string[]; revisionPriority: RevisionPriority };
+  const [libraryPrefs, setLibraryPrefs] = createSignal<LibraryPrefs>({
+    regionPriority: ["USA", "World", "Europe", "Japan", "Asia", "Other"],
+    revisionPriority: "newest",
+  });
+  onMount(() => {
+    invoke<LibraryPrefs>("get_library_prefs")
+      .then((p) => setLibraryPrefs(p))
+      .catch((e) => console.warn("get_library_prefs failed:", e));
+  });
+  async function persistLibraryPrefs(next: LibraryPrefs) {
+    setLibraryPrefs(next);
+    try {
+      await invoke("set_library_prefs", { prefs: next });
+      // Re-rank tiles so the change is visible immediately.
+      await props.library.refreshGroups();
+    } catch (e) {
+      console.warn("set_library_prefs failed:", e);
+    }
+  }
+  /// solid-dnd onDragEnd for the region-priority list. `draggable.id`
+  /// is the region being moved; `droppable.id` is the row it was
+  /// dropped on. Swap them by removing-and-reinserting so the rest of
+  /// the order stays stable (vs. a pairwise swap which would scramble
+  /// when crossing multiple rows).
+  const handleRegionDragEnd: DragEventHandler = ({ draggable, droppable }) => {
+    if (!draggable || !droppable) return;
+    const prefs = libraryPrefs();
+    const fromIdx = prefs.regionPriority.indexOf(draggable.id as string);
+    const toIdx = prefs.regionPriority.indexOf(droppable.id as string);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+    const next = [...prefs.regionPriority];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    void persistLibraryPrefs({ ...prefs, regionPriority: next });
+  };
+  /// solid-dnd onDragEnd for the library-folders list. Folder paths
+  /// are guaranteed unique by the add-folder flow (we already filter
+  /// duplicates before setLibraryFolders), so they're safe ids.
+  const handleFolderDragEnd: DragEventHandler = ({ draggable, droppable }) => {
+    if (!draggable || !droppable) return;
+    const folders = props.settings.libraryFolders();
+    const fromIdx = folders.indexOf(draggable.id as string);
+    const toIdx = folders.indexOf(droppable.id as string);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+    const next = [...folders];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    props.settings.setLibraryFolders(next);
+  };
+  function removeLibraryFolder(folder: string) {
+    props.settings.setLibraryFolders(
+      props.settings.libraryFolders().filter((f) => f !== folder),
+    );
+  }
+  // moveRegion was used by the old ↑/↓ buttons in the media region
+  // list; the drag-reorder path replaces it. Keep the helper around
+  // (marked unused) in case a future "keyboard mode" surface needs it.
+  void moveRegion;
+
+  function resetLibraryRegionPriority() {
+    void persistLibraryPrefs({
+      ...libraryPrefs(),
+      regionPriority: ["USA", "World", "Europe", "Japan", "Asia", "Other"],
+    });
+  }
 
   // --- Game media (covers): sync, region priority, storage stats ---
 
@@ -392,13 +607,26 @@ const SettingsPage: Component<Props> = (props) => {
       return next;
     });
   }
-  function removeRegion(idx: number) {
+  function removeRegionByName(name: string) {
     setRegionDraft((prev) => {
-      const next = prev.filter((_, i) => i !== idx);
+      const next = prev.filter((r) => r !== name);
       void media.setRegionPriority(next);
       return next;
     });
   }
+  const handleMediaRegionDragEnd: DragEventHandler = ({ draggable, droppable }) => {
+    if (!draggable || !droppable) return;
+    setRegionDraft((prev) => {
+      const fromIdx = prev.indexOf(draggable.id as string);
+      const toIdx = prev.indexOf(droppable.id as string);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      void media.setRegionPriority(next);
+      return next;
+    });
+  };
   function addRegion(name: string) {
     if (!name) return;
     setRegionDraft((prev) => {
@@ -731,57 +959,30 @@ const SettingsPage: Component<Props> = (props) => {
                 }}
               </For>
 
-              {/* Region priority — ordered list with up/down/remove + add. */}
+              {/* Region priority — drag-reorder + remove + add. */}
               <div class="space-y-1">
                 <p class="text-xs text-(--color-oa-ink-dim)">
-                  Region priority (first match wins)
+                  Region priority (first match wins) — drag to reorder
                 </p>
-                <ul class="space-y-1">
-                  <For each={regionDraft()}>
-                    {(region, i) => (
-                      <li class="flex items-center justify-between gap-2 rounded border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs">
-                        <span class="text-(--color-oa-ink)">{region}</span>
-                        <span class="flex gap-1">
-                          <button
-                            type="button"
-                            disabled={i() === 0}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              moveRegion(i(), -1);
-                            }}
-                            class="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.6rem] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="Move up"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            disabled={i() === regionDraft().length - 1}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              moveRegion(i(), 1);
-                            }}
-                            class="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.6rem] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="Move down"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              removeRegion(i());
-                            }}
-                            class="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.6rem] text-(--color-oa-ink-dim) hover:bg-red-500/15 hover:text-(--color-oa-ink)"
-                            aria-label="Remove"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
+                <DragDropProvider
+                  onDragEnd={handleMediaRegionDragEnd}
+                  collisionDetector={closestCenter}
+                >
+                  <DragDropSensors />
+                  <SortableProvider ids={regionDraft()}>
+                    <ul class="space-y-1">
+                      <For each={regionDraft()}>
+                        {(region, i) => (
+                          <SortableMediaRegionRow
+                            region={region}
+                            idx={i()}
+                            onRemove={removeRegionByName}
+                          />
+                        )}
+                      </For>
+                    </ul>
+                  </SortableProvider>
+                </DragDropProvider>
                 <select
                   onChange={(e) => {
                     const v = e.currentTarget.value;
@@ -849,29 +1050,24 @@ const SettingsPage: Component<Props> = (props) => {
                   </p>
                 }
               >
-                <ul class="space-y-1">
-                  <For each={props.settings.libraryFolders()}>
-                    {(folder) => (
-                      <li class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
-                        <span class="truncate font-mono text-(--color-oa-ink)" title={folder}>
-                          {folder}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.currentTarget.blur();
-                            props.settings.setLibraryFolders(
-                              props.settings.libraryFolders().filter((f) => f !== folder),
-                            );
-                          }}
-                          class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    )}
-                  </For>
-                </ul>
+                <DragDropProvider
+                  onDragEnd={handleFolderDragEnd}
+                  collisionDetector={closestCenter}
+                >
+                  <DragDropSensors />
+                  <SortableProvider ids={props.settings.libraryFolders()}>
+                    <ul class="space-y-1">
+                      <For each={props.settings.libraryFolders()}>
+                        {(folder) => (
+                          <SortableFolderRow
+                            folder={folder}
+                            onRemove={removeLibraryFolder}
+                          />
+                        )}
+                      </For>
+                    </ul>
+                  </SortableProvider>
+                </DragDropProvider>
               </Show>
 
               {/* --- Sidebar systems (LaunchBox-equivalent) --- */}
@@ -919,6 +1115,59 @@ const SettingsPage: Component<Props> = (props) => {
                     }}
                   </For>
                 </ul>
+              </div>
+
+              {/* --- Region & version priority --- */}
+              <div class="mt-6 space-y-2">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                    Region & version priority
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      resetLibraryRegionPriority();
+                    }}
+                    class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  When a game has dumps from multiple regions / revisions, the library tile shows
+                  the variant matching the earliest region in this list. Per-system overrides
+                  live in each system's settings panel.
+                </p>
+                <DragDropProvider
+                  onDragEnd={handleRegionDragEnd}
+                  collisionDetector={closestCenter}
+                >
+                  <DragDropSensors />
+                  <SortableProvider ids={libraryPrefs().regionPriority}>
+                    <ul class="space-y-1">
+                      <For each={libraryPrefs().regionPriority}>
+                        {(region, idx) => (
+                          <SortableRegionRow region={region} idx={idx()} />
+                        )}
+                      </For>
+                    </ul>
+                  </SortableProvider>
+                </DragDropProvider>
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                  <span class="text-xs text-(--color-oa-ink-dim)">Revision tiebreaker:</span>
+                  <select
+                    class={SELECT_CLASS}
+                    value={libraryPrefs().revisionPriority}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value as RevisionPriority;
+                      void persistLibraryPrefs({ ...libraryPrefs(), revisionPriority: v });
+                    }}
+                  >
+                    <option value="newest">Newest revision wins</option>
+                    <option value="oldest">Oldest revision wins</option>
+                  </select>
+                </div>
               </div>
 
               {/* --- Library cleanup --- */}

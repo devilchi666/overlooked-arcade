@@ -8,7 +8,7 @@
 import type { GroupBy, SortKey } from "../layout/state";
 import type { SidebarView } from "../layout/LeftSidebar";
 import type { GameMetadata } from "./media";
-import type { RomEntry } from "./types";
+import type { GameGroupInfo, RomEntry } from "./types";
 
 /** First-letter-of-title bucket label. Numbers + non-letters fall into "#". */
 function letterBucket(title: string): string {
@@ -139,4 +139,41 @@ export function groupEntries(
 /** Helper for sortEntries' getYear closure when metadata is available. */
 export function metadataYear(meta: GameMetadata | undefined): number | undefined {
   return meta?.year;
+}
+
+/**
+ * Collapse same-variant-group entries down to their default variant.
+ * Given a flat (already filtered + sorted) list and a Map keyed by
+ * EVERY variant's id pointing at its group, replaces non-default
+ * variants with their group's default and dedupes.
+ *
+ * Behaviour: if a search query matches "Castlevania (Japan)" but USA is
+ * the default, the USA tile still surfaces — the matching variant's
+ * group default replaces it. Search-by-region-name therefore "promotes"
+ * the right group's tile rather than disappearing entirely.
+ *
+ * The Map only contains entries for groups with `variants.length > 1`;
+ * single-file games are absent and pass through unchanged.
+ */
+export function collapseVariantGroups(
+  entries: RomEntry[],
+  groupsByVariantId: Map<string, GameGroupInfo>,
+  entryById: Map<string, RomEntry>,
+): RomEntry[] {
+  const seen = new Set<string>();
+  const out: RomEntry[] = [];
+  for (const entry of entries) {
+    const group = groupsByVariantId.get(entry.id);
+    if (group) {
+      if (seen.has(group.defaultVariantId)) continue;
+      seen.add(group.defaultVariantId);
+      const defaultEntry = entryById.get(group.defaultVariantId);
+      out.push(defaultEntry ?? entry);
+    } else {
+      if (seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      out.push(entry);
+    }
+  }
+  return out;
 }

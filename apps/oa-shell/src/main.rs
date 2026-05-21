@@ -16,21 +16,26 @@
 
 mod archive;
 mod bindings;
+mod cd_id;
 mod cheat_search;
 mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
+mod library_groups;
+mod library_prefs;
 mod logger;
 mod media;
 mod metadata;
 mod normalize;
 mod patch;
 mod rom_hashes;
+mod rom_header;
 mod scan_service;
 mod shader_presets;
 mod shader_presets_watcher;
 mod system_settings;
+mod title_parse;
 mod video_capture;
 mod watcher;
 
@@ -140,6 +145,24 @@ enum EmuCommand {
     /// side. No-op for non-Phosphor presets (the renderer accepts it
     /// regardless; the shader branch only reads it when preset_id == 3).
     SetBloomAmount(f32),
+    /// Override the framebuffer's reported display_aspect at the
+    /// renderer. `None` = restore "trust the core" (the default).
+    /// `Some(x)` substitutes `x` until cleared. Resolves per-game →
+    /// per-system → core-reported at the shell layer; this is the
+    /// resolved value the emu thread applies.
+    SetDisplayAspectOverride(Option<f32>),
+    /// Apply a per-edge overscan crop at the renderer. `OverscanCrop::NONE`
+    /// (the default) leaves the framebuffer un-cropped. Resolves
+    /// per-game → per-system → none at the shell layer; this is the
+    /// resolved value the emu thread applies. Crops larger than half
+    /// the framebuffer clamp to 1 visible pixel per axis renderer-side.
+    SetOverscanCrop(oa_render::OverscanCrop),
+    /// Apply a bezel image override on top of whatever the active
+    /// shader preset's TOML `[bezel]` block produced. `Some(rgba)`
+    /// uploads + shows; `None` reverts to the preset's default (which
+    /// may itself be no bezel). Resolves per-game → per-system → null
+    /// at the shell layer.
+    SetBezelOverride(Option<shader_presets::ResolvedBezel>),
     /// RetroArch-parity slice — push a single libretro core-option value
     /// into the running core. Calls `Core::set_option(key, value)` which
     /// writes into the libretro state map + raises the
@@ -168,6 +191,11 @@ enum EmuCommand {
     /// log otherwise. Emu thread refreshes `disc_state` cache.
     SetDiscImage(u32),
     ApplyBindings(Bindings),
+    /// Phase 2.5 — push analog routing (deadzone, sensitivity, invert,
+    /// keyboard-axis fallback, stick-swap) to one port's slot. Resolved
+    /// per-game → per-system → identity at the shell layer; this is the
+    /// resolved value the emu thread applies. `port` is 0..=4.
+    SetAnalogRouting { port: u32, routing: oa_input::AnalogRouting },
     /// `None` = system default device. The emu thread rebuilds the cpal stream
     /// against the new selection; failure is logged but doesn't kill the thread.
     SetAudioDevice(Option<String>),
@@ -387,7 +415,13 @@ struct SharedRewindState {
 /// these via in-memory bytes would either fail (no relative-path context) or
 /// waste hundreds of MB of RAM for CHD images.
 fn is_cd_extension(ext: &str) -> bool {
-    matches!(ext, "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso")
+    // .pbp is the PSP-format PS1 EBOOT container — Beetle PSX HW reads
+    // it directly and the BIOS pre-check still needs to fire (PSX BIOS
+    // required regardless of container). Single-file format so the
+    // Path vs Bytes routing also works either way; classifying as CD
+    // routes .pbp through the same launch path the .cue/.chd PSX games
+    // use, including the regional BIOS pre-check.
+    matches!(ext, "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso" | "pbp")
 }
 
 /// Map the frontend's `SystemId` string to `oa_core::SystemId`. The tag is
@@ -403,6 +437,21 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "gamegear" | "game-gear" => oa_core::SystemId::GameGear,
         "msx" | "msx2" => oa_core::SystemId::Msx,
         "coleco" | "colecovision" => oa_core::SystemId::Colecovision,
+        // Mattel Intellivision — the canonical slug is "intv". Accept
+        // "intellivision" as a longer-form alias.
+        "intv" | "intellivision" => oa_core::SystemId::Intellivision,
+        // Magnavox Odyssey² (US) / Videopac G7000 (EU). Slug stays "o2"
+        // since "odyssey2" / "videopac" are both regional variants of
+        // the same hardware.
+        "o2" | "odyssey2" | "odyssey-2" | "videopac" => oa_core::SystemId::Odyssey2,
+        // Fairchild Channel F — the granddaddy granddaddy (predates
+        // 2600). Slug "channelf"; accept "channel-f" alias.
+        "channelf" | "channel-f" | "fairchild" => oa_core::SystemId::ChannelF,
+        // Atari 5200 SuperSystem — Atari's 1982 console. Slug stays "5200"
+        // to dodge collision with Atari 7800 / 2600 slugs.
+        "5200" | "atari5200" | "atari-5200" => oa_core::SystemId::Atari5200,
+        // Nintendo Pokémon Mini — tiny 2001 handheld. Slug stays "pokemini".
+        "pokemini" | "pokémon-mini" | "pokemon-mini" => oa_core::SystemId::PokeMini,
         "vectrex" => oa_core::SystemId::Vectrex,
         "virtualboy" | "virtual-boy" => oa_core::SystemId::VirtualBoy,
         "wonderswan" => oa_core::SystemId::WonderSwan,
@@ -410,6 +459,58 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "nes" | "famicom" => oa_core::SystemId::Nes,
         "snes" | "super-famicom" => oa_core::SystemId::Snes,
         "mame" | "arcade" => oa_core::SystemId::Mame,
+        "genesis" | "megadrive" | "mega-drive" => oa_core::SystemId::Genesis,
+        // Sega CD / Mega-CD. CD-shape Mega Drive addon. Accept the JP
+        // "Mega-CD" branding + the "mega-cd" / "megacd" aliases that
+        // show up in saved configs.
+        "segacd" | "sega-cd" | "mega-cd" | "megacd" | "mcd" => oa_core::SystemId::SegaCd,
+        // Sega 32X. Cart-shape Mega Drive cart-slot addon. The JP name
+        // ("Super 32X" / "Mega 32X") is rarely typed; accept the "32x"
+        // shorthand for completeness.
+        "sega32x" | "32x" | "sega-32x" => oa_core::SystemId::Sega32X,
+        // Sega Saturn. Accept the "sat" / "ss" shorthand operators
+        // sometimes use in saved configs, plus the JP "satturn" alias.
+        "saturn" | "sat" | "ss" | "sega-saturn" => oa_core::SystemId::Saturn,
+        // Sony PlayStation (PS1). Accept "ps1" / "ps" / "playstation"
+        // — Sony's official naming was "PlayStation" (single word).
+        "psx" | "ps1" | "ps" | "playstation" => oa_core::SystemId::Playstation,
+        // SNK Neo Geo (AES home + MVS arcade — same SystemId; FBNeo
+        // handles both via core option).
+        "neogeo" | "neo-geo" | "aes" | "mvs" => oa_core::SystemId::NeoGeo,
+        // SNK Neo Geo CD — separate slug from neogeo because the load
+        // path differs (CD images need BIOS pre-check; carts don't).
+        "neocd" | "neo-geo-cd" | "neogeocd" => oa_core::SystemId::NeoGeoCd,
+        // SNK Neo Geo Pocket / Color — single slug per the gb pattern.
+        // Beetle NeoPop auto-detects mono vs color from ROM header.
+        "ngp" | "ngpc" | "neopocket" | "neo-geo-pocket" => oa_core::SystemId::NeoGeoPocket,
+        "jaguar" | "jag" | "atari-jaguar" => oa_core::SystemId::Jaguar,
+        // 3DO Interactive Multiplayer. Accept "3do" (canonical slug) and
+        // a few common typed-in aliases — Rust identifier can't start
+        // with a digit so the enum variant is `ThreeDo`.
+        "3do" | "threedo" | "panasonic-3do" => oa_core::SystemId::ThreeDo,
+        // NEC PC-FX — the PC Engine's CD-only 32-bit successor.
+        "pcfx" | "pc-fx" | "pcefx" => oa_core::SystemId::PcFx,
+        "n64" | "nintendo-64" | "nintendo64" => oa_core::SystemId::N64,
+        // Single slug covers both GameCube + Wii via Dolphin's runtime
+        // auto-detect from disc container.
+        "gamecube" | "gc" | "wii" | "nintendo-gamecube" => oa_core::SystemId::GameCube,
+        "dreamcast" | "dc" | "sega-dreamcast" => oa_core::SystemId::Dreamcast,
+        "psp" | "playstation-portable" => oa_core::SystemId::Psp,
+        "ps2" | "playstation-2" | "playstation2" => oa_core::SystemId::Ps2,
+        "nds" | "ds" | "nintendo-ds" => oa_core::SystemId::Nds,
+        // Single slug covers DMG + CGB — Gambatte auto-detects from the
+        // ROM header. Accept the standard slug + common aliases users
+        // might pass in from URLs or saved configs.
+        "gb" | "gbc" | "gameboy" | "game-boy" | "game-boy-color" => oa_core::SystemId::Gb,
+        // Game Boy Advance — separate SystemId from `Gb` since the
+        // hardware is a different generation (32-bit ARM7TDMI vs Sharp
+        // LR35902) and the libretro cores don't overlap.
+        "gba" | "game-boy-advance" | "gameboyadvance" => oa_core::SystemId::Gba,
+        // Atari 2600 / VCS — the granddaddy. Slug stays "2600" per the
+        // plan; Rust variant is `Atari2600` since identifiers can't
+        // start with a digit. Accept "vcs" + "atari2600" as common
+        // aliases that show up in saved configs and external URLs.
+        "2600" | "atari2600" | "vcs" => oa_core::SystemId::Atari2600,
         _ => oa_core::SystemId::PcEngine,
     }
 }
@@ -438,6 +539,243 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // want the alternate `a7800_libretro` build swap via the
         // per-system Cores dialog.
         "atari7800" => "prosystem_libretro.dll",
+        // ClownMDEmu — modern, active-development Mega Drive core
+        // (operator pick 2026-05-19 over Genesis Plus GX). Cart only;
+        // Sega CD / 32X are future segacd / sega32x slugs. BIOS-free
+        // for stock MD playback. Alternates via per-system Cores:
+        // genesis_plus_gx_libretro (multi-Sega), picodrive_libretro,
+        // blastem_libretro (higher accuracy).
+        "genesis" => "clownmdemu_libretro.dll",
+        // vecx — the libretro Vectrex default. Mature, light. The
+        // Vectrex was a vector-display console (1982-1984); vecx renders
+        // the vector beam paths to a raster framebuffer. No widely-shipped
+        // alternate. Optional BIOS (vectrex.bin) for the era-correct boot
+        // screen + Mine Storm pack-in game.
+        "vectrex" => "vecx_libretro.dll",
+        // Beetle VB — the libretro Virtual Boy default. Mednafen-derived,
+        // mature. No BIOS required (VB never shipped with one).
+        // Stereoscopic 3D output is handled core-side via configurable
+        // anaglyph / side-by-side / 2D-flat modes.
+        "virtualboy" => "mednafen_vb_libretro.dll",
+        // Beetle WonderSwan — the libretro Wonderswan + WS Color default.
+        // Mednafen-derived. Optional BIOS. Auto-detects mono vs color from
+        // ROM header; also handles game-rotation flag (vertical games
+        // automatically swap the active D-pad from X to Y physical pads).
+        "wonderswan" => "mednafen_wswan_libretro.dll",
+        // blueMSX — the long-standing libretro ColecoVision default.
+        // Wide MSX-family compatibility (covers MSX1/2 + ColecoVision +
+        // SVI-3x8 + several other Z80-era systems). Alternates: `gearcoleco`
+        // (Coleco-only, lighter footprint). BIOS REQUIRED: `coleco.rom`
+        // (~8 KB) in `<exe_dir>/system/` — the Coleco won't boot without
+        // its system BIOS (the ROM is the entire firmware including the
+        // boot screen).
+        "coleco" => "bluemsx_libretro.dll",
+        // FreeIntv — the libretro Intellivision default. Modern,
+        // actively maintained. BIOS REQUIRED: `exec.bin` (4 KB) +
+        // `grom.bin` (2 KB) in `<exe_dir>/system/`. The disc controller
+        // gets mapped to libretro D-pad as 8-way in default
+        // configuration; FreeIntv has core options to enable 16-direction
+        // analog-stick mapping (Phase 2 polish).
+        "intv" => "freeintv_libretro.dll",
+        // O2EM — the libretro Magnavox Odyssey² / Videopac default.
+        // Mature, light. BIOS REQUIRED: `o2rom.bin` for US Odyssey²
+        // and/or `c52.bin` for EU Videopac G7000 + Videopac+ G7400.
+        // The 47-key keyboard maps via libretro RETRO_DEVICE_KEYBOARD
+        // (OA's keyboard passthrough mechanism handles it).
+        "o2" => "o2em_libretro.dll",
+        // FreeChaF — the libretro Fairchild Channel F default. Tiny
+        // library, simple core. BIOS OPTIONAL: `sl31253.bin` /
+        // `sl31254.bin` / `sl90025.bin` in `<exe_dir>/system/` (the
+        // Channel F's BIOS handles the title menu); games run without
+        // it via FreeChaF's internal BIOS replacement.
+        "channelf" => "freechaf_libretro.dll",
+        // Stella — the long-standing libretro Atari 2600 default.
+        // Mature, comprehensive game compat (handles 50+ obscure
+        // bankswitching schemes), light CPU. No widely-shipped
+        // alternate in the libretro buildbot. BIOS-less — the 2600
+        // had no BIOS at all (the cart ROM is the entire system
+        // firmware), so there's nothing for the operator to install.
+        "2600" => "stella_libretro.dll",
+        // Atari800 — libretro core for the Atari 8-bit family (400/800/XL/
+        // XE home computers + the 5200 console). Requires `5200.rom` BIOS
+        // in `<exe_dir>/system/`. Pre-checked by check_atari5200_bios.
+        "5200" => "atari800_libretro.dll",
+        // PokeMini — the libretro Pokémon Mini default (in fact the only
+        // option). Requires `bios.min` (4 KB) in `<exe_dir>/system/`.
+        // Pre-checked by check_pokemini_bios.
+        "pokemini" => "pokemini_libretro.dll",
+        // mGBA — the libretro GBA gold standard. Mature, broad compat,
+        // light CPU. Alternates via per-system Cores:
+        // `vba_next_libretro.dll` (VBA-Next, lighter / less accurate),
+        // `vbam_libretro.dll` (VBA-M). BIOS optional (`gba_bios.bin` in
+        // `<exe_dir>/system/`) — a small number of games refuse to boot
+        // without it but most run fine.
+        "gba" => "mgba_libretro.dll",
+        // Gambatte — the long-standing libretro Game Boy default,
+        // covering both DMG (Game Boy) and CGB (Game Boy Color) via the
+        // same .dll. ROM-header auto-detect picks the right hardware
+        // mode. Mature, light CPU, broad compat. Alternates via
+        // per-system Cores: `sameboy_libretro.dll` (more accurate,
+        // slightly heavier), `tgbdual_libretro` (link-cable focus).
+        // BIOS optional (`dmg_boot.bin` / `cgb_boot.bin` in
+        // `<exe_dir>/system/`) — without it Gambatte just skips the
+        // boot logo.
+        "gb" => "gambatte_libretro.dll",
+        // Genesis Plus GX — long-standing libretro multi-Sega core that
+        // covers SMS + Game Gear + Mega Drive + Sega CD behind one .dll.
+        // Picked over PicoDrive for SMS/GG because GPGX is the de-facto
+        // libretro Sega 8-bit default and ships a single-install path for
+        // operators who want every Sega cart-shape system at once. BIOS
+        // (`bios.sms` / `bios.gg`) optional — games run fine without it,
+        // just skip the era-correct boot logo. Per-system Cores override
+        // can swap to picodrive_libretro for a lighter footprint.
+        "sms" | "gamegear" => "genesis_plus_gx_libretro.dll",
+        // Genesis Plus GX also drives Sega CD — same .dll already
+        // shipping for SMS / Game Gear. Drop one .dll, light up four
+        // Sega systems (SMS, GG, segacd, and genesis-via-override).
+        // BIOS REQUIRED: `bios_CD_E.bin` / `bios_CD_U.bin` / `bios_CD_J.bin`
+        // in `<exe_dir>/system/` — the regional BIOS for the launching
+        // game. The shell pre-checks SHA-1 against canonical Genesis
+        // Plus GX-blessed dumps (mirrors PCE-CD's check_pce_cd_bios)
+        // and refuses missing/wrong content before retro_load_game so
+        // the user gets a clean error toast instead of an access
+        // violation deep in CD init. Alternates via per-system Cores:
+        // picodrive_libretro (lighter, covers Sega CD too).
+        "segacd" => "genesis_plus_gx_libretro.dll",
+        // PicoDrive — the only mainstream libretro core with Sega 32X
+        // support. Wraps PicoDrive's MD core + dedicated SH-2 emulation
+        // for the 32X's twin RISC CPUs. No BIOS required for cart-only
+        // 32X games (32X-CD games would also need the Sega CD BIOS,
+        // but the cart path doesn't hit it). Extensions: .32x. No
+        // widely-shipped alternate — Genesis Plus GX doesn't do 32X,
+        // ClownMDEmu is MD-only.
+        "sega32x" => "picodrive_libretro.dll",
+        // Beetle Saturn — the Mednafen-derived libretro Saturn default.
+        // Heavyweight: dual SH-2 + VDP1/VDP2 + 68k sound CPU emulation
+        // is genuinely CPU-intensive (needs a decent modern host).
+        // BIOS REQUIRED: a regional Saturn BIOS in `<exe_dir>/system/`
+        // — `sega_101.bin` (JP v1.01) / `mpr-17933.bin` (US v1.00) /
+        // `mpr-19367b.bin` (EU PAL) etc. The shell pre-checks SHA-1
+        // against canonical Mednafen-blessed dumps (see
+        // check_saturn_bios) and refuses missing/wrong content before
+        // retro_load_game. Alternates via per-system Cores:
+        // `kronos_libretro.dll` (lighter, less accurate),
+        // `yabasanshiro_libretro.dll`.
+        "saturn" => "mednafen_saturn_libretro.dll",
+        // Beetle PSX HW — the hardware-accelerated Vulkan/OpenGL
+        // Mednafen-derived libretro PSX default. Provides upscaling +
+        // texture filtering + PGXP geometry correction; visually
+        // premium choice for PSX. If the libretro core fails to obtain
+        // a GL/Vulkan surface from our wgpu DX12 host on a particular
+        // operator's machine, the per-system Cores dialog surfaces
+        // `mednafen_psx_libretro.dll` (SW renderer, software-only —
+        // pre-registered as a recommended catalog peer) as the
+        // bulletproof fallback. Other alternates: `swanstation_libretro.dll`.
+        // BIOS REQUIRED: regional PSX BIOSes in `<exe_dir>/system/`
+        // (`scph5500.bin` JP / `scph5501.bin` US / `scph5502.bin` EU
+        // v3.0; `scph7001.bin` / `scph7501.bin` US v4.x revisions etc.).
+        // Pre-checked by `check_psx_bios`.
+        "psx" => "mednafen_psx_hw_libretro.dll",
+        // FBNeo (Final Burn Neo) — the canonical libretro Neo Geo core.
+        // Handles both AES home + MVS arcade cart-shape via the same
+        // .dll. ROM-sets land as .zip files in MAME-compatible format,
+        // or .neo single-file dumps (No-Intro standard). BIOS REQUIRED:
+        // `neogeo.zip` in `<exe_dir>/system/` — FBNeo reads the BIOS
+        // ROMs out of the zip rather than expecting a single .bin file.
+        // Pre-checked by check_neogeo_bios. No widely-shipped alternate
+        // (MAME proper can also drive Neo Geo but at much higher CPU
+        // cost; FBNeo is the libretro-buildbot default for the platform).
+        "neogeo" => "fbneo_libretro.dll",
+        // NeoCD — the dedicated libretro Neo Geo CD core. CD-shape
+        // (multi-track CD images via .cue/.chd/.iso/.m3u/.ccd/.toc).
+        // BIOS REQUIRED: `neocd_z.rom` (top-loader v1) or `neocd_t.rom`
+        // (front-loader v2) in `<exe_dir>/system/`. The two BIOS
+        // variants are functionally interchangeable for game launch;
+        // the top-loader is more commonly tested. Pre-checked by
+        // check_neocd_bios.
+        "neocd" => "neocd_libretro.dll",
+        // Beetle NeoPop — the canonical libretro Neo Geo Pocket / Color
+        // core. Mednafen-derived; same upstream lineage as Beetle PCE
+        // Fast / Beetle Saturn / Beetle PSX / Beetle VB / Beetle
+        // WonderSwan / Beetle Lynx. Single .dll covers both NGP (mono)
+        // and NGPC (color) — Beetle NeoPop auto-detects from ROM
+        // header (same pattern as Gambatte covering DMG + CGB and
+        // Beetle WonderSwan covering WS + WSC). No BIOS required.
+        "ngp" => "mednafen_ngp_libretro.dll",
+        // Virtual Jaguar — the canonical libretro Atari Jaguar core.
+        // Cart-shape (`.j64` / `.jag`). BIOS optional — `jagboot.rom`
+        // in `<exe_dir>/system/` enables the boot logo + a handful of
+        // games that touch the BIOS, but most of the library boots
+        // without it. No widely-shipped alternate libretro core.
+        "jaguar" => "virtualjaguar_libretro.dll",
+        // Opera (formerly 4DO) — the canonical libretro 3DO core.
+        // CD-shape. BIOS REQUIRED: a regional/manufacturer 3DO BIOS in
+        // `<exe_dir>/system/` (Panasonic FZ-1 `panafz1.bin` / FZ-10
+        // `panafz10.bin` / GoldStar GDO-101M / Sanyo Try IMP-21J).
+        // Pre-checked by check_3do_bios.
+        "3do" => "opera_libretro.dll",
+        // Beetle PC-FX — the Mednafen-derived libretro PC-FX core.
+        // Shares the Mednafen-family lineage with Beetle PCE Fast
+        // (pce-cd), Beetle Saturn, Beetle PSX, Beetle VB, Beetle
+        // WonderSwan, Beetle Lynx, Beetle NeoPop. CD-shape. BIOS
+        // REQUIRED: `pcfx.rom` in `<exe_dir>/system/` (single canonical
+        // BIOS — PC-FX shipped Japan-only with no regional variants).
+        // Pre-checked by check_pcfx_bios.
+        "pcfx" => "mednafen_pcfx_libretro.dll",
+        // Mupen64Plus-Next — the canonical libretro N64 default with
+        // the GLideN64 video plugin. BIOS-free (CIC boot ROM emulated
+        // internally). Heavy CPU + GPU. The N64 controller's analog
+        // stick is the primary movement input for nearly every game;
+        // Phase 0 plumbs analog axes via the new RETRO_DEVICE_ANALOG
+        // dispatch in oa-libretro, so users with a gamepad's analog
+        // stick get full movement. Keyboard-only users enable the core
+        // option "Map d-pad to analog stick" to get digital arrow keys
+        // → full-tilt analog input. Alternates via per-system Cores:
+        // `parallel_n64_libretro.dll` (more accurate, heavier).
+        "n64" => "mupen64plus_next_libretro.dll",
+        // Dolphin — the canonical libretro GameCube + Wii core. One
+        // .dll covers both via runtime auto-detect from disc container
+        // shape (.iso/.gcm/.gcz/.rvz = GameCube; .wbfs = Wii; .iso
+        // overlaps and is disambiguated by Dolphin's header check).
+        // BIOS-free (Dolphin synthesizes firmware behavior). Heavy
+        // CPU + GPU + 64-bit host required. Wii Remote / Nunchuk /
+        // Classic Controller motion-controls deferred to Phase 2.5
+        // alongside full per-system analog Bindings UI.
+        "gamecube" => "dolphin_libretro.dll",
+        // Flycast — the canonical libretro Dreamcast core. GD-ROM
+        // media (.cdi / .gdi / .chd). BIOS REQUIRED: `dc_boot.bin`
+        // (universal boot ROM, ~2 MB) + `dc_flash.bin` (regional
+        // flash RAM, 256 KB, varies per region) in `<exe_dir>/system/`.
+        // Pre-checked by `check_dreamcast_bios`; slots into the
+        // CD-launch dispatch arm as the 8th CD-shape system.
+        // Alternates via per-system Cores: `redream_libretro.dll`
+        // (lighter, less accurate; not always packaged for libretro
+        // buildbot).
+        "dreamcast" => "flycast_libretro.dll",
+        // PPSSPP — the canonical libretro PSP core. UMD-shape
+        // (.iso/.cso/.pbp). BIOS-free (PPSSPP synthesizes firmware
+        // behavior). Heavy CPU + GPU. PSP-1000/2000/3000 had a single
+        // analog stick; PSP Go added a second but is rare. Analog
+        // stick flows through the shared analog infra (gamepad
+        // LeftStick → axes[0..2]).
+        "psp" => "ppsspp_libretro.dll",
+        // LRPS2 (PCSX2) — the canonical libretro PS2 core. DVD-shape
+        // (most PS2 games shipped on DVD; some used CD). BIOS REQUIRED:
+        // regional scph10000 (JP) / scph39001 (US fat) / scph70000
+        // (US/EU slim) / scph90001 etc. in `<exe_dir>/system/`.
+        // Pre-checked by `check_ps2_bios`; slots into the CD-launch
+        // dispatch arm as the 9th CD-shape system. DualShock 2
+        // controller — PSX-shape + dual analog sticks (analog infra).
+        // Very heavy — needs a strong 64-bit host.
+        "ps2" => "pcsx2_libretro.dll",
+        // melonDS — the canonical libretro DS core. Cart-shape (.nds).
+        // BIOS REQUIRED: 3 files — `bios7.bin` (ARM7 BIOS, 16 KB) +
+        // `bios9.bin` (ARM9 BIOS, 4 KB) + `firmware.bin` (DS firmware
+        // / settings, 256 KB). Pre-checked by `check_nds_bios` (multi-
+        // file shape). Touch screen flows through the new POINTER
+        // input infra (mouse-as-touch). Alternates via per-system
+        // Cores: `desmume_libretro.dll`.
+        "nds" => "melonds_libretro.dll",
         // Default — covers tg16, pce-cd, and any unknown system that ships
         // before the table is updated. The PCE Fast Mednafen build handles
         // both HuCard + CD if its BIOS is present in `<exe_dir>/system/`.
@@ -451,11 +789,23 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
 /// the user hit the unrelated-looking crash.
 const PCE_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     // (filename,           SHA-1 uppercase,                                   description)
+    // Pre-existing Mednafen-canonical hashes (retained — operators with
+    // these BIOSes from earlier Mednafen-distributed sets continue to
+    // validate as OkCanonical).
     ("syscard3.pce",  "1F8B161A2DB40DBA2079A87C10C0A3340B56ED3B", "US TurboGrafx-CD System Card v3.00 (Mednafen-canonical)"),
-    ("syscard2.pce",  "056E3A8A7F3B7BE60EE6DEAEB0BAA67E1BA62B18", "US System Card v2.00"),
-    ("syscard1.pce",  "6DCA8A0AFD0CB1C14CFFC1CFFEA34915CD496E44", "US System Card v1.00"),
-    ("syscard3j.pce", "A01CE5F5A90F9F3A2E76EC3D34D8B03B9BD9E62A", "JP Super CD-ROM² System Card v3.00"),
-    ("gexpress.pce",  "F8A06F08F8E7BF4D7117F1B22DA5074E0F49C2BC", "Games Express CD Card"),
+    ("syscard2.pce",  "056E3A8A7F3B7BE60EE6DEAEB0BAA67E1BA62B18", "US System Card v2.00 (Mednafen-canonical)"),
+    ("syscard1.pce",  "6DCA8A0AFD0CB1C14CFFC1CFFEA34915CD496E44", "US System Card v1.00 (Mednafen-canonical)"),
+    ("syscard3j.pce", "A01CE5F5A90F9F3A2E76EC3D34D8B03B9BD9E62A", "JP Super CD-ROM² System Card v3.00 (Mednafen-canonical)"),
+    ("gexpress.pce",  "F8A06F08F8E7BF4D7117F1B22DA5074E0F49C2BC", "Games Express CD Card (Mednafen-canonical)"),
+    // libretro-database/dat/System.dat canonical (no-intro-derived).
+    // Same filenames, different content lineage — both validate.
+    ("syscard1.pce",  "A39A66DA7DE6BA94AB84D04EEF7AFEEC7D4EE66A", "JP CD-ROM² System Card v1.00 (libretro-database)"),
+    ("syscard2.pce",  "88DA02E2503F7C32810F5D93A34849D470742B6D", "JP CD-ROM² System Card v2.00 (libretro-database)"),
+    ("syscard2u.pce", "2BEA3DAC98F84B2F2F469FA77EA720B8770D598D", "US TurboGrafx-CD System Card v2.00 (libretro-database)"),
+    ("syscard3.pce",  "79F5FF55DD10187C7FD7B8DAAB0B3FFBD1F56A2C", "JP Super CD-ROM² System Card v3.00 (libretro-database)"),
+    ("syscard3u.pce", "D02611D99921986147C753DF14C7349B31D71950", "US TurboGrafx-CD System Card v3.00 (libretro-database)"),
+    ("gecard.pce",    "014881A959E045E00F4DB8F52955200865D40280", "Games Express CD Card (libretro-database)"),
+    ("gexpress.pce",  "014881A959E045E00F4DB8F52955200865D40280", "Games Express CD Card (libretro-database alternate name)"),
 ];
 
 enum BiosCheck {
@@ -506,6 +856,943 @@ fn check_pce_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
                 "oa-shell: CD load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
                 name, actual, name
             );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Sega CD / Mega-CD BIOSes. The Genesis Plus
+/// GX libretro core (the default `segacd` core per `default_core_dll_for_system`)
+/// requires one of three regional BIOS files in `<exe_dir>/system/` —
+/// `bios_CD_E.bin` (EU) / `bios_CD_U.bin` (US) / `bios_CD_J.bin` (JP) —
+/// matching the region of the disc the user is launching. Wrong content
+/// at the right filename typically causes the core to fail CD-init with
+/// an unrelated-looking access violation, so we pre-check + refuse rather
+/// than let the user hit it.
+///
+/// The set covers the most-common Genesis Plus GX-tested dumps. Operators
+/// with a BIOS dump whose SHA-1 doesn't match still get an OkUnknownHash
+/// warn-level toast — the launch proceeds and the operator can validate
+/// the BIOS against their dump's documented hash (cross-reference Redump
+/// or the libretro wiki). Same pattern as `check_pce_cd_bios`.
+const SEGA_CD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,         SHA-1 uppercase,                            description)
+    // Hashes from libretro-database/dat/System.dat. Each of the three
+    // regional Mega-CD / Sega CD BIOSes has a single canonical dump in
+    // the no-intro set; Genesis Plus GX accepts these by filename and
+    // region-checks the disc against them at launch.
+    ("bios_CD_E.bin", "F891E0EA651E2232AF0C5C4CB46A0CAE2EE8F356", "EU Mega-CD v1.00 (PAL, canonical)"),
+    ("bios_CD_J.bin", "4846F448160059A7DA0215A5DF12CA160F26DD69", "JP Mega-CD v1.00 (canonical)"),
+    ("bios_CD_U.bin", "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED", "US Sega CD v1.10 (canonical)"),
+];
+
+/// Scan `<system_dir>` for any Sega CD BIOS matching a known regional
+/// filename, compute its SHA-1, classify against the known-good table.
+/// Mirrors `check_pce_cd_bios` — same shape, same BiosCheck/BiosError
+/// vocabulary so the launch path can branch by system without duplicating
+/// the outer match shape.
+fn check_sega_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in SEGA_CD_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = SEGA_CD_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        // Hash matches a DIFFERENT canonical region (user renamed the
+        // file). The launch can still proceed via OkUnknownHash, but the
+        // log line names what the user actually has so they can rename.
+        let renamed_as = SEGA_CD_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: Sega CD load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Sega Saturn BIOSes. Beetle Saturn (the
+/// default `saturn` core per `default_core_dll_for_system`) requires
+/// one of the regional BIOS files in `<exe_dir>/system/`. Saturn region-
+/// locks strictly — JP discs need a JP BIOS, US/EU discs need a US/EU
+/// BIOS. The core fails CD init with an access violation if the BIOS
+/// is missing or has the wrong content; we pre-check + refuse cleanly.
+///
+/// Set covers the most-common Mednafen-tested Saturn dumps across the
+/// three regional + revision variants. Operators with less-common
+/// Saturn BIOS dumps (e.g. ST-V arcade variant) get OkUnknownHash —
+/// the launch proceeds with a warn-level toast.
+///
+/// All hashes sourced from libretro-database/dat/System.dat.
+const SATURN_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,           SHA-1 uppercase,                            description)
+    // JP Saturn BIOS lineage. v1.00 shipped with the 1994 JP launch
+    // hardware; v1.01 was the 1995 revision shipped with later units.
+    ("sega_100.bin",    "2B8CB4F87580683EB4D760E4ED210813D667F0A2", "JP Saturn BIOS v1.00 (1994 launch)"),
+    ("sega_100a.bin",   "3BB41FEB82838AB9A35601AC666DE5AACFD17A58", "JP Saturn BIOS v1.00a (revised 1994)"),
+    ("sega_101.bin",    "DF94C5B4D47EB3CC404D88B33A8FDA237EAF4720", "JP Saturn BIOS v1.01 (1995 revision)"),
+    ("sega1003.bin",    "7B23B53D62DE0F29A23E423D0FE751DFB469C2FA", "JP Saturn ST-V Compatible BIOS v1.003"),
+    // US/EU Saturn BIOS — Sega used a single set of mpr-* mask ROM
+    // dumps across the international Models with region byte
+    // distinguishing US vs EU at the disc level.
+    ("mpr-17933.bin",   "FAA8EA183A6D7BBE5D4E03BB1332519800D3FBC3", "US/EU Saturn BIOS v1.00a (most common)"),
+    ("mpr-18100.bin",   "8A22710E09CE75F39625894366CAFE503ED1942D", "JP Saturn BIOS Special v1.01"),
+    ("mpr-18811-mx.ic1","A67CD4F550751F8B91DE2B8B74528AB4E0C11C77", "JP Saturn Movie Card v1.10"),
+    ("mpr-19367-mx.ic1","56C1B93DA6B660BF393FBF48CA47569000EF4047", "EU Saturn Movie Card v1.20"),
+    // Generic "saturn_bios.bin" alias used by some retroarch / launchbox
+    // distributions — same content as sega_100.bin.
+    ("saturn_bios.bin", "2B8CB4F87580683EB4D760E4ED210813D667F0A2", "Generic Saturn BIOS (alias for sega_100.bin / JP v1.00)"),
+    // Hitachi-OEM HiSaturn + JVC VSaturn BIOSes — uncommon but appear in
+    // some collector dumps.
+    ("hisaturn.bin",    "49D8493008FA715CA0C94D99817A5439D6F2C796", "Hitachi HiSaturn BIOS (1995 OEM clone)"),
+    ("vsaturn.bin",     "4154E11959F3D5639B11D7902B3A393A99FB5776", "JVC V-Saturn BIOS (1995 OEM clone)"),
+];
+
+/// Scan `<system_dir>` for any Saturn BIOS matching a known regional
+/// filename, compute its SHA-1, classify against the known-good table.
+/// Same shape as `check_pce_cd_bios` and `check_sega_cd_bios`.
+fn check_saturn_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in SATURN_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = SATURN_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        let renamed_as = SATURN_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: Saturn load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Sony PlayStation BIOSes. Beetle PSX HW
+/// (the default `psx` core per `default_core_dll_for_system`) requires
+/// a regional BIOS in `<exe_dir>/system/` matching the disc's region.
+/// PSX region-locking is enforced at the BIOS level — JP discs need
+/// scph5500, US discs need scph5501, EU discs need scph5502.
+///
+/// Beetle PSX SW (the catalog peer alternate) uses the same BIOS file
+/// set — both Mednafen-derived PSX cores share the same canonical
+/// hash list.
+const PSX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,         SHA-1 uppercase,                            description)
+    // All hashes sourced from libretro-database/dat/System.dat.
+    //
+    // v1.x family — 1994-1995 SCPH-1000 / SCPH-3000 / SCPH-3500 launch units.
+    ("scph1000.bin", "343883A7B555646DA8CEE54AADD2795B6E7DD070", "JP PSX BIOS v1.0 (SCPH-1000, 1994 launch)"),
+    ("scph1001.bin", "10155D8D6E6E832D6EA66DB9BC098321FB5E8EBF", "US PSX BIOS v2.2 (SCPH-1001, common North America)"),
+    ("scph1002.bin", "20B98F3D80F11CBF5A7BFD0779B0E63760ECC62C", "EU PSX BIOS v2.0 (SCPH-1002, PAL)"),
+    ("scph3000.bin", "B06F4A861F74270BE819AA2A07DB8D0563A7CC4E", "JP PSX BIOS v2.1 (SCPH-3000)"),
+    ("scph3500.bin", "E38466A4BA8005FBA7E9E3C7B9EFEBA7205BEE3F", "JP PSX BIOS v2.2 (SCPH-3500)"),
+    ("scph5000.bin", "E340DB2696274DDA5FDC25E434A914DB71E8B02B", "JP PSX BIOS v3.0 (SCPH-5000)"),
+    // v3.0 family — the most-commonly-installed regional set. Sony
+    // shipped these in the 1995 launch / first-revision hardware.
+    ("scph5500.bin", "B05DEF971D8EC59F346F2D9AC21FB742E3EB6917", "JP PSX BIOS v3.0 (SCPH-5500, 1995)"),
+    ("scph5501.bin", "0555C6FAE8906F3F09BAF5988F00E55F88E9F30B", "US PSX BIOS v3.0 (SCPH-5501, 1995, most common NA)"),
+    ("scph5502.bin", "F6BC2D1F5EB6593DE7D089C425AC681D6FFFD3F0", "EU PSX BIOS v3.0 (SCPH-5502, PAL)"),
+    // v4.x family — 1997-1998 revisions.
+    ("scph7001.bin", "14DF4F6C1E367CE097C11DEAE21566B4FE5647A9", "US PSX BIOS v4.1 (SCPH-7001, 1997)"),
+    ("scph7002.bin", "8D5DE56A79954F29E9006929BA3FED9B6A418C1D", "EU PSX BIOS v4.1 (SCPH-7002, 1997)"),
+    ("scph7003.bin", "0555C6FAE8906F3F09BAF5988F00E55F88E9F30B", "US PSX BIOS v3.0 (SCPH-7003, alias for SCPH-5501 content)"),
+    ("scph7502.bin", "8D5DE56A79954F29E9006929BA3FED9B6A418C1D", "EU PSX BIOS v4.1 (SCPH-7502, alias for SCPH-7002 content)"),
+    // PSone (slim) BIOS — 2000-era. SCPH-100x / SCPH-101 are the PSone model line.
+    ("scph100.bin",  "339A48F4FCF63E10B5B867B8C93CFD40945FAF6C", "JP PSone BIOS v4.3 (SCPH-100)"),
+    ("scph101.bin",  "DCFFE16BD90A723499AD46C641424981338D8378", "US PSone BIOS v4.5 (SCPH-101)"),
+    ("scph102.bin",  "BEB0AC693C0DC26DAF5665B3314DB81480FA5C7C", "EU PSone BIOS v4.4 (SCPH-102, variant A)"),
+    // PSP PS1 emulator BIOSes — present in PSone-on-PSP dumps.
+    ("psxonpsp660.bin", "96880D1CA92A016FF054BE5159BB06FE03CB4E14", "Sony PSP PS1 emulator BIOS v6.60"),
+    ("ps1_rom.bin",     "C40146361EB8CF670B19FDC9759190257803CAB7", "Sony PSP-style PS1 ROM (alternate dump)"),
+];
+
+/// Scan `<system_dir>` for any PSX BIOS matching a known regional
+/// filename, compute its SHA-1, classify against the known-good table.
+/// Same shape as `check_pce_cd_bios` / `check_sega_cd_bios` / `check_saturn_bios`.
+fn check_psx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in PSX_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = PSX_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        let renamed_as = PSX_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: PSX load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for SNK Neo Geo CD BIOSes. NeoCD (the
+/// default `neocd` core) requires one of the regional/model BIOS files
+/// in `<exe_dir>/system/`. SNK shipped three CD hardware models —
+/// front-loader CD, top-loader CDZ, and CDT — each with its own BIOS.
+/// All canonical hashes sourced from libretro-database/dat/System.dat.
+///
+/// Universe BIOS CD (community-modified BIOS adding region toggle +
+/// cheat menu) is also recognized so operators using it don't trip the
+/// OkUnknownHash path.
+const NEOCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,          SHA-1 uppercase,                            description)
+    ("neocd.bin",      "7BB26D1E5D1E930515219CB18BCDE5B7B23E2EDA", "Neo Geo CD boot ROM (default libretro name)"),
+    ("neocd_f.rom",    "A5F4A7A627B3083C979F6EBE1FABC5D2DF6D083B", "Neo Geo CD Front-loader BIOS (CD-F)"),
+    ("neocd_sf.rom",   "4A94719EE5D0E3F2B981498F70EFC1B8F1CEF325", "Neo Geo CD Front-loader BIOS (CD-SF revision)"),
+    ("neocd_t.rom",    "CC92B54A18A8BFF6E595AABE8E5C360BA9E62EB5", "Neo Geo CDT BIOS (front-loader CDT model)"),
+    ("neocd_st.rom",   "19729B51BDAB60C42AAFEF6E20EA9234C7EB8410", "Neo Geo CDT BIOS (CD-ST revision)"),
+    ("neocd_z.rom",    "B0F1C4FA8D4492A04431805F6537138B842B549F", "Neo Geo CDZ BIOS (top-loader)"),
+    ("neocd_sz.rom",   "6A947457031DD3A702A296862446D7485AA89DBB", "Neo Geo CDZ BIOS (CD-SZ revision)"),
+    ("front-sp1.bin",  "53BC1F283CDF00FA2EFBB79F2E36D4C8038D743A", "Neo Geo CD Front-loader system program"),
+    ("top-sp1.bin",    "235F4D1D74364415910F73C10AE5482D90B4274F", "Neo Geo CD Top-loader system program"),
+    ("000-lo.lo",      "5992277DEBADEB64D1C1C64B0A92D9293EAF7E4A", "Neo Geo CD LO-ROM (shared with cart AES/MVS)"),
+    ("uni-bioscd.rom", "5142F205912869B673A71480C5828B1EAED782A8", "Universe BIOS CD (community-modified, region toggle + cheats)"),
+];
+
+/// Scan `<system_dir>` for any Neo Geo CD BIOS matching a known
+/// regional/model filename, compute its SHA-1, classify against the
+/// known-good table. Same shape as the other check_*_bios functions —
+/// slots into the CD-launch BIOS dispatch arm next to pce-cd / segacd
+/// / saturn / psx.
+fn check_neocd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in NEOCD_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = NEOCD_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        let renamed_as = NEOCD_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: Neo Geo CD load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for 3DO Interactive Multiplayer BIOSes.
+/// Opera (the default `3do` core) requires a regional/manufacturer
+/// BIOS in `<exe_dir>/system/`. Multiple hardware variants shipped:
+/// Panasonic FZ-1 (1993 launch), Panasonic FZ-10 (1994 revision),
+/// GoldStar GDO-101M (1995), Sanyo Try IMP-21J (Japan).
+const THREEDO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,                   SHA-1 uppercase,                            description)
+    // All hashes sourced from libretro-database/dat/System.dat.
+    //
+    // Panasonic FZ-1 (1993 launch model) — most-common dump.
+    ("panafz1.bin",            "34BF189111295F74D7B7DFC1F304D98B8D36325A", "Panasonic FZ-1 v1.x (1993 launch, most common)"),
+    ("panafz1-kanji.bin",      "ACD39A8FEE1B9D2950D5AB447846C11FB31AF63E", "Panasonic FZ-1 with Kanji ROM (Japan)"),
+    ("panafz1j.bin",           "EC7EC62D60EC0459A14ED56EBC66761EF3C80EFC", "Panasonic FZ-1 Japan-region BIOS"),
+    ("panafz1j-kanji.bin",     "884515605EE243577AB20767EF8C1A7368E4E407", "Panasonic FZ-1 Japan with Kanji ROM"),
+    ("panafz1j-norsa.bin",     "A417587AE3B0B8EF00C830920C21AF8BEE88E419", "Panasonic FZ-1 Japan, RSA-stripped"),
+    // Panasonic FZ-10 (1994 revision).
+    ("panafz10.bin",           "3C912300775D1AD730DC35757E279C274C0ACAAD", "Panasonic FZ-10 v1.x (1994 revision)"),
+    ("panafz10-norsa.bin",     "F05E642322C03694F06A809C0B90FC27AC73C002", "Panasonic FZ-10, RSA-stripped"),
+    ("panafz10e-anvil.bin",    "A900371F0CDCDC03F79557F11D406FD71251A5FD", "Panasonic FZ-10 EU 'Anvil' v1.02d"),
+    ("panafz10e-anvil-norsa.bin", "2765C7B4557CC838B32567D2428D088980295159", "Panasonic FZ-10 EU 'Anvil', RSA-stripped"),
+    ("panafz10ja-anvil-kanji.bin", "2E857B957803D0331FD229328DF01F3FFAB69EEE", "Panasonic FZ-10 JA 'Anvil' with Kanji ROM"),
+    // Third-party 3DO licensees.
+    ("goldstar.bin",           "C4A2E5336F77FB5F743DE1EEA2CDA43675EE2DE7", "GoldStar GDO-101M (1995)"),
+    ("sanyotry.bin",            "B01C53DA256DDE43FFEC4AD3FC3ADFA8D635E943", "Sanyo TRY IMP-21J (Japan)"),
+    // 3DO M2 arcade variant (rare — for completeness).
+    ("3do_arcade_saot.bin",    "520D3D1B5897800AF47F92EFD2444A26B7A7DEAD", "3DO Arcade SAOT firmware (M2 / arcade variant)"),
+];
+
+/// Scan `<system_dir>` for any 3DO BIOS matching a known
+/// regional/manufacturer filename. Same shape as the other check_*_bios
+/// functions; slots into the CD-launch BIOS dispatch arm.
+fn check_3do_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in THREEDO_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = THREEDO_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        let renamed_as = THREEDO_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: 3DO load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for NEC PC-FX BIOSes. Beetle PC-FX (the
+/// default `pcfx` core) requires `pcfx.rom` in `<exe_dir>/system/`.
+/// PC-FX was Japan-only with a single canonical BIOS — no regional
+/// variants to track.
+const PCFX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,        SHA-1 uppercase,                            description)
+    // All hashes sourced from libretro-database/dat/System.dat.
+    ("pcfx.rom",     "1A77FD83E337F906AECAB27A1604DB064CF10074", "NEC PC-FX BIOS v1.00 (canonical, Japan-only platform)"),
+    ("pcfxbios.bin", "1A77FD83E337F906AECAB27A1604DB064CF10074", "NEC PC-FX BIOS v1.00 (alternate naming, same content)"),
+    ("pcfxv101.bin", "8B662F7548078BE52A871565E19511CCCA28C5C8", "NEC PC-FX BIOS v1.01 (later revision)"),
+    ("pcfxga.rom",   "A9372202A5DB302064C994FCDA9B24D29BB1B41C", "NEC PC-FXGA / FX-1 BIOS (PC-FX expansion card)"),
+    ("fx-scsi.rom",  "65482A23AC5C10A6095AEE1DB5824CCA54EAD6E5", "NEC PC-FX SCSI BIOS (expansion accessory)"),
+];
+
+/// Scan `<system_dir>` for the PC-FX BIOS. Same shape as the other
+/// check_*_bios functions; slots into the CD-launch BIOS dispatch arm.
+fn check_pcfx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in PCFX_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = PCFX_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Sega Dreamcast BIOSes. Flycast (the
+/// default `dreamcast` core) requires:
+///   `dc_boot.bin` — boot ROM (2 MB, universal across regions)
+///   `dc_flash.bin` — flash RAM (256 KB, region-specific: US/JP/EU)
+/// in `<exe_dir>/system/`. The boot ROM is the same for all regions;
+/// the flash file carries region-locking + clock-region defaults.
+const DREAMCAST_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,      SHA-1 uppercase,                            description)
+    // Hashes sourced from libretro-database/dat/System.dat. Flycast
+    // requires `dc_boot.bin` + `dc_flash.bin`. Flash is region-coded
+    // but libretro-database tracks a single canonical factory dump —
+    // operators sometimes ship regional variants; those land on the
+    // OkUnknownHash path (launch proceeds with warn-toast).
+    ("dc_boot.bin",  "8951D1BB219AB2FF8583033D2119C899CC81F18C", "Dreamcast Boot ROM (canonical, universal across regions)"),
+    ("boot.bin",     "8951D1BB219AB2FF8583033D2119C899CC81F18C", "Dreamcast Boot ROM (alternate naming, same content)"),
+    ("dc_flash.bin", "94D44D7F9529EC1642BA3771ED3C5F756D5BC872", "Dreamcast Flash ROM (canonical factory dump)"),
+    ("flash.bin",    "94D44D7F9529EC1642BA3771ED3C5F756D5BC872", "Dreamcast Flash ROM (alternate naming, same content)"),
+];
+
+/// Scan `<system_dir>` for any Dreamcast BIOS file. Same shape as the
+/// other check_*_bios functions; slots into the CD-launch BIOS dispatch
+/// arm as the 8th CD-shape system.
+fn check_dreamcast_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in DREAMCAST_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = DREAMCAST_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        let renamed_as = DREAMCAST_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(_, h, _)| *h == sha_str)
+            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
+        if let Some(actual) = renamed_as {
+            log::warn!(
+                "oa-shell: Dreamcast load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
+                name, actual, name
+            );
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Sony PlayStation 2 BIOSes. LRPS2
+/// (PCSX2) requires a regional BIOS file in `<exe_dir>/system/`.
+/// Multiple hardware revisions shipped across the PS2's 2000-2013
+/// lifespan; the most commonly-tested set covers the launch / fat /
+/// slim eras across JP / US / EU.
+const PS2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,                  SHA-1 uppercase,                            description)
+    // All hashes sourced from libretro-database/dat/System.dat. PCSX2 /
+    // LRPS2 uses the `ps2-XXXX-YYYYMMDD.bin` naming convention; many
+    // operators have files in the legacy `scphXXXXX.bin` style. Both
+    // naming conventions are accepted here — content-by-hash matching
+    // catches mis-renames either way.
+    //
+    // SCPH-style aliases (legacy naming most BIOS distributions use).
+    ("scph10000.bin", "AEA061E6E263FDCC1C4FDBD68553EF78DAE74263", "JP PS2 fat v1.00 (SCPH-10000, 2000-03-04 launch; matches ps2-0100j)"),
+    ("scph39001.bin", "F9A5D629A036B99128F7CB530C6E3CA016E9C8B7", "US PS2 fat v1.60 (SCPH-39001; matches ps2-0160a-20020207)"),
+    ("scph70000.bin", "FBD54BFC020AF34008B317DCB80B812DD29B3759", "JP PS2 slim v2.30 (SCPH-70000; matches ps2-0230j-20080220)"),
+    ("scph77001.bin", "8361D615CC895962E0F0838489337574DBDC9173", "US PS2 slim v2.20 (SCPH-77001; matches ps2-0220a-20060905)"),
+    ("scph90001.bin", "B9CB5775AF29CD4D1EC5521E8231F8B6636E2E44", "EU PS2 slim v2.50 (SCPH-90001; matches ps2-0250e-20100415)"),
+    // PCSX2-style names (libretro-database canonical).
+    ("ps2-0100j-20000117.bin",  "AEA061E6E263FDCC1C4FDBD68553EF78DAE74263", "JP PS2 fat v1.00 (2000-01-17 build, SCPH-10000)"),
+    ("ps2-0101j-20000217.bin",  "916E02431BCD73140504DA3355C9598143B77E11", "JP PS2 fat v1.01 (2000-02-17)"),
+    ("ps2-0110a-20000727.bin",  "20F6CE6693CF97E9494F8F0227F2B7988FFAF961", "US PS2 fat v1.10 (2000-07-27)"),
+    ("ps2-0120e-20000902.bin",  "274C05FEC654913A3F698D4B0D592085866A2CBD", "EU PS2 fat v1.20 (2000-09-02)"),
+    ("ps2-0120j-20001027-185015.bin", "E481079ECA752225555F0C26D14C9D0F94D9A8E9", "JP PS2 fat v1.20 (2000-10-27)"),
+    ("ps2-0150a-20001228.bin",  "5AF5B5077D84A9C037EBE12BFAB8A38B31D8A543", "US PS2 fat v1.50 (2000-12-28)"),
+    ("ps2-0150e-20001228.bin",  "E22EF231FAF3661EDD92F2EE449A71297C82A092", "EU PS2 fat v1.50 (2000-12-28)"),
+    ("ps2-0150j-20010118.bin",  "D6F365A0F07CD04ED28108E6EC5076E2F81E5F72", "JP PS2 fat v1.50 (2001-01-18)"),
+    ("ps2-0160a-20010427.bin",  "7331A40B4B4FEB1B3F0F77B013B6D38483577BAA", "US PS2 fat v1.60 (2001-04-27)"),
+    ("ps2-0160a-20020207.bin",  "F9A5D629A036B99128F7CB530C6E3CA016E9C8B7", "US PS2 fat v1.60 (2002-02-07; SCPH-39001 equiv)"),
+    ("ps2-0160e-20020319.bin",  "BFF2902BD0CE9729A060581132541E9FD1A9FAB6", "EU PS2 fat v1.60 (2002-03-19)"),
+    ("ps2-0160j-20020426.bin",  "003628C137DAE577FF3B04B93CA1787B0C944702", "JP PS2 fat v1.60 (2002-04-26)"),
+    ("ps2-0170e-20030227.bin",  "AD15BD7EABD5BD81BA011516A5BE44947D6641AA", "EU PS2 fat v1.70 (2003-02-27)"),
+    ("ps2-0170a-20030325.bin",  "D269D1ED513227F3EF7133C76CF1B3A64F97B15D", "US PS2 fat v1.70 (2003-03-25)"),
+    ("ps2-0170j-20030206.bin",  "D812AC65C357D392396CA9EDEE812DC41BED8BDE", "JP PS2 fat v1.70 (2003-02-06)"),
+    ("ps2-0180j-20031028.bin",  "AA4A35C14EE342CF7A03B1DDE294CA10E64889E1", "JP PS2 fat v1.80 (2003-10-28)"),
+    ("ps2-0190a-20030623.bin",  "C74D92A2952A2912B6698CBCF7742ADAC8F784D3", "US PS2 fat v1.90 (2003-06-23)"),
+    ("ps2-0190e-20030623.bin",  "18B9BA833C469C4683676CC20DA5124080D980BB", "EU PS2 fat v1.90 (2003-06-23)"),
+    ("ps2-0190j-20030623.bin",  "6A6ECFE6C10E42EFF1CA056349DEF799B5629067", "JP PS2 fat v1.90 (2003-06-23)"),
+    ("ps2-0200a-20040614.bin",  "7A62E5F48603582707E9898EB055EA3EAEE50D4C", "US PS2 fat v2.00 (2004-06-14)"),
+    ("ps2-0200e-20040614.bin",  "434BC0B4EB4827DA0773EC0795AADC5162569A07", "EU PS2 fat v2.00 (2004-06-14)"),
+    ("ps2-0200j-20040614.bin",  "224AB5704AB719EDEB05CA1D835812252C97C1B3", "JP PS2 fat v2.00 (2004-06-14, SCPH-50000-series)"),
+    ("ps2-0210j-20040917.bin",  "BBB1AF3085E77599691EC430D147810157DA934F", "JP PS2 fat v2.10 (2004-09-17)"),
+    ("ps2-0220a-20050620.bin",  "48D0445DFFD1E879C7AE752C5166EC3101921555", "US PS2 fat v2.20 (2005-06-20)"),
+    ("ps2-0220e-20050620.bin",  "929A85E974FAF4B40D0A7785023B758402C43BD9", "EU PS2 fat v2.20 (2005-06-20)"),
+    ("ps2-0220j-20050620.bin",  "7FFA75D142CB8EEEA6C777DBCF263143655275D5", "JP PS2 fat v2.20 (2005-06-20)"),
+    ("ps2-0220a-20060905.bin",  "8361D615CC895962E0F0838489337574DBDC9173", "US PS2 slim v2.20 (2006-09-05, SCPH-77001)"),
+    ("ps2-0220e-20060905.bin",  "DA5AACEAD2FB55807D6D4E70B1F10F4FDCFD3281", "EU PS2 slim v2.20 (2006-09-05)"),
+    ("ps2-0220j-20060905.bin",  "3BAF847C1C217AA71AC6D298389C88EDB3DB32E2", "JP PS2 slim v2.20 (2006-09-05)"),
+    ("ps2-0230a-20080220.bin",  "F9229FE159D0353B9F0632F3FDC66819C9030458", "US PS2 slim v2.30 (2008-02-20, SCPH-79001)"),
+    ("ps2-0230e-20080220.bin",  "9915B5BA56798F4027AC1BD8D10ABE0C1C9C326A", "EU PS2 slim v2.30 (2008-02-20)"),
+    ("ps2-0230j-20080220.bin",  "FBD54BFC020AF34008B317DCB80B812DD29B3759", "JP PS2 slim v2.30 (2008-02-20, SCPH-90000)"),
+    ("ps2-0250e-20100415.bin",  "B9CB5775AF29CD4D1EC5521E8231F8B6636E2E44", "EU PS2 slim v2.50 (2010-04-15, SCPH-90001)"),
+    ("ps2-0250j-20100415.bin",  "4B5EF16B67E3B523D28ED2406106CB80470A06D0", "JP PS2 slim v2.50 (2010-04-15)"),
+];
+
+/// Scan `<system_dir>` for any PS2 BIOS matching a known revision.
+/// Same shape as the other check_*_bios functions; slots into the
+/// CD-launch BIOS dispatch arm as the 9th CD-shape system.
+fn check_ps2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in PS2_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = PS2_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Nintendo DS BIOSes. melonDS requires
+/// **three files** in `<exe_dir>/system/`:
+///   `bios7.bin` (ARM7 BIOS, 16 KB) — coprocessor BIOS handling audio +
+///                                    wireless + touch screen
+///   `bios9.bin` (ARM9 BIOS, 4 KB) — main CPU BIOS handling boot + graphics
+///   `firmware.bin` (DS firmware, 256 KB) — user settings + WiFi config
+const NDS_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,        SHA-1 uppercase,                            description)
+    // All hashes sourced from libretro-database/dat/System.dat.
+    ("bios7.bin",    "24F67BDEA115A2C847C8813A262502EE1607B7DF", "DS ARM7 BIOS (16 KB, coprocessor for audio/wireless/touch)"),
+    ("bios9.bin",    "BFAAC75F101C135E32E2AAF541DE6B1BE4C8C62D", "DS ARM9 BIOS (4 KB, main CPU boot + graphics)"),
+    ("firmware.bin", "CFE072921EE3FB93F688743F8BEEF89043C3E9AD", "DS Firmware (256 KB, region + user settings)"),
+];
+
+/// Scan `<system_dir>` for the three required DS BIOS files. Unlike
+/// the single-file BIOS checks (which short-circuit on the first
+/// matching filename), the DS check requires ALL THREE files to be
+/// present — `bios7.bin` + `bios9.bin` + `firmware.bin` together
+/// constitute the DS BIOS. Returns OkCanonical only if all three
+/// hash-match; returns OkUnknownHash if all three exist but at least
+/// one has an unexpected SHA-1; returns Missing if any are absent.
+fn check_nds_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    let mut all_canonical = true;
+    let mut last_name: String = String::new();
+    let mut last_sha: String = String::new();
+
+    for (name, expected_sha, _) in NDS_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            // Any of the three missing → BIOS is incomplete.
+            return Err(BiosError::Missing);
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+        if &sha_str != *expected_sha {
+            all_canonical = false;
+        }
+        last_name = name.to_string();
+        last_sha = sha_str;
+    }
+
+    // All three files exist; report the canonical (all-three-match) or
+    // unknown-hash (at least one mismatches) status. Use the last file
+    // checked as the representative entry in the OkCanonical /
+    // OkUnknownHash payload.
+    if all_canonical {
+        Ok(BiosCheck::OkCanonical { name: "bios7.bin + bios9.bin + firmware.bin".to_string(), sha1: "all canonical".to_string() })
+    } else {
+        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
+    }
+}
+
+/// Check for Neo Geo cart BIOS — `neogeo.zip` in `<exe_dir>/system/`.
+/// Unlike the CD-shape systems (whose BIOSes are single .bin files
+/// with stable SHA-1s), the Neo Geo cart BIOS is a multi-ROM .zip
+/// whose content SHA-1 varies by MAME revision + Universe BIOS
+/// presence. Phase 0 ships an existence-only check — operator gets a
+/// clean "missing neogeo.zip" error when absent, FBNeo handles the
+/// content validation internally if present.
+///
+/// Content peek: we open the zip and look for the canonical Neo Geo
+/// BIOS files. The minimum-viable set is:
+///   - one System BIOS: `sp-s2.sp1` (most common) OR an older `sp-s.sp1`
+///     / `sp1.jipan.1024` variant OR a Universe BIOS (`uni-bios_*.rom`)
+///   - the Z80 sound program: `sm1.sm1`
+///   - the LO-ROM sprite zoom table: `000-lo.lo`
+///
+/// All three present → OkCanonical. Zip exists but is missing one or
+/// more → OkUnknownHash (launch still proceeds — some sparse BIOS sets
+/// still boot FBNeo). Zip absent → Missing.
+fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    let p = system_dir.join("neogeo.zip");
+    if !p.is_file() {
+        return Err(BiosError::Missing);
+    }
+    // Peek inside the zip without extracting. The archive crate's
+    // `list_rom_contents` filters by extension allowlist (designed for
+    // game-content scanning), which would drop the BIOS files since
+    // `.sp1` / `.sm1` / `.lo` aren't playable extensions. Walk the zip
+    // directly with the `zip` crate here so we see every inner file.
+    let file = std::fs::File::open(&p).map_err(BiosError::Io)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| {
+        BiosError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    })?;
+    // Build a lowercase set of basenames so case-quirky dumps (some
+    // tools uppercase filenames) match.
+    let mut inner_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for i in 0..zip.len() {
+        if let Ok(entry) = zip.by_index(i) {
+            if entry.is_dir() {
+                continue;
+            }
+            // Strip any path component — some zips wrap files inside a
+            // top-level dir, but the canonical Neo Geo set is flat.
+            let name = entry.name().to_string();
+            let basename = std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&name)
+                .to_ascii_lowercase();
+            inner_names.insert(basename);
+        }
+    }
+    // Acceptable System BIOS filenames (any one satisfies the system-BIOS
+    // requirement). Order matters only for diagnostic output: prefer
+    // sp-s2.sp1 as the canonical match.
+    const SYSTEM_BIOS_CANDIDATES: &[&str] = &[
+        "sp-s2.sp1",        // canonical (Asia/USA AES + MVS, ~98% of dumps)
+        "sp-s.sp1",         // older System BIOS revision
+        "sp1.jipan.1024",   // Japan AES
+        "sp1-1v1.bin",      // Universe BIOS naming variant
+        "sp-1v1_3db8c.bin", // Universe BIOS 3 / 4 variant
+        "uni-bios_4_0.rom", // Universe BIOS 4.0
+        "uni-bios_3_3.rom", // Universe BIOS 3.3
+        "uni-bios_3_2.rom", // Universe BIOS 3.2
+        "uni-bios_3_1.rom", // Universe BIOS 3.1
+        "uni-bios_3_0.rom", // Universe BIOS 3.0
+        "uni-bios_2_3.rom", // Universe BIOS 2.3
+    ];
+    let system_bios = SYSTEM_BIOS_CANDIDATES
+        .iter()
+        .find(|name| inner_names.contains(**name));
+    let has_sm1 = inner_names.contains("sm1.sm1");
+    let has_lo = inner_names.contains("000-lo.lo");
+
+    if let (Some(sys), true, true) = (system_bios, has_sm1, has_lo) {
+        Ok(BiosCheck::OkCanonical {
+            name: "neogeo.zip".to_string(),
+            sha1: format!("CONTENT PEEK: {sys} + sm1.sm1 + 000-lo.lo present"),
+        })
+    } else {
+        // Zip exists but content is incomplete — surface what's missing
+        // so the operator can see exactly which file to fetch.
+        let missing: Vec<&str> = [
+            (system_bios.is_none(), "system BIOS (sp-s2.sp1 or Universe BIOS)"),
+            (!has_sm1, "sm1.sm1"),
+            (!has_lo, "000-lo.lo"),
+        ]
+        .into_iter()
+        .filter_map(|(m, label)| if m { Some(label) } else { None })
+        .collect();
+        Ok(BiosCheck::OkUnknownHash {
+            name: "neogeo.zip".to_string(),
+            sha1: format!("CONTENT PEEK: missing {}", missing.join(" + ")),
+        })
+    }
+}
+
+/// Known-good SHA-1 hashes for ColecoVision BIOS. BlueMSX (the default
+/// `coleco` core per `default_core_dll_for_system`) requires the
+/// `colecovision.rom` system BIOS in `<exe_dir>/system/`. All hashes
+/// sourced from libretro-database/dat/System.dat.
+const COLECO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,            SHA-1 uppercase,                            description)
+    ("colecovision.rom", "45BEDC4CBDEAC66C7DF59E9E599195C778D86A92", "ColecoVision BIOS (8 KB, canonical)"),
+    ("coleco.rom",       "45BEDC4CBDEAC66C7DF59E9E599195C778D86A92", "ColecoVision BIOS (alternate naming, same content)"),
+];
+
+/// Scan `<system_dir>` for the ColecoVision BIOS. Same shape as the
+/// CD-shape BIOS checks; slots into the cart-shape BIOS dispatch arm
+/// alongside Neo Geo / NDS.
+fn check_coleco_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in COLECO_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = COLECO_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Mattel Intellivision BIOS files. FreeIntv
+/// (the default `intv` core) requires BOTH `exec.bin` (8 KB executive
+/// ROM, the main CPU BIOS) AND `grom.bin` (2 KB graphics ROM, the
+/// character set + graphics primitives) in `<exe_dir>/system/`. All
+/// hashes sourced from libretro-database/dat/System.dat.
+const INTV_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,   SHA-1 uppercase,                            description)
+    ("exec.bin", "5A65B922B562CB1F57DAB51B73151283F0E20C7A", "Intellivision Executive ROM (8 KB)"),
+    ("grom.bin", "F9608BB4AD1CFE3640D02844C7AD8E0BCD974917", "Intellivision Graphics ROM (2 KB)"),
+];
+
+/// Scan `<system_dir>` for both required Intellivision BIOS files.
+/// Multi-file check — same shape as `check_nds_bios`: requires ALL
+/// listed files to be present. OkCanonical only if every file hash
+/// matches; OkUnknownHash if all files exist but at least one mismatches;
+/// Missing if any are absent.
+fn check_intv_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    let mut all_canonical = true;
+    let mut last_name: String = String::new();
+    let mut last_sha: String = String::new();
+
+    for (name, expected_sha, _) in INTV_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            return Err(BiosError::Missing);
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+        if &sha_str != *expected_sha {
+            all_canonical = false;
+        }
+        last_name = name.to_string();
+        last_sha = sha_str;
+    }
+
+    if all_canonical {
+        Ok(BiosCheck::OkCanonical { name: "exec.bin + grom.bin".to_string(), sha1: "all canonical".to_string() })
+    } else {
+        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
+    }
+}
+
+/// Known-good SHA-1 hashes for Magnavox Odyssey² / Philips Videopac BIOS.
+/// O2EM (the default `o2` core) requires `o2rom.bin` in
+/// `<exe_dir>/system/`. Three regional variants exist (US Odyssey²,
+/// EU Videopac G7400, FR Philips Jopac). All hashes sourced from
+/// libretro-database/dat/System.dat.
+const O2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,   SHA-1 uppercase,                            description)
+    ("o2rom.bin",  "B2E1955D957A475DE2411770452EFF4EA19F4CEE", "Magnavox Odyssey² BIOS (US, canonical)"),
+    ("c52.bin",    "A6120AED50831C9C0D95DBDF707820F601D9452E", "Philips Videopac G7400 BIOS variant (C52)"),
+    ("g7400.bin",  "5130243429B40B01A14E1304D0394B8459A6FBAE", "Philips Videopac+ G7400 BIOS"),
+    ("jopac.bin",  "54B8D2C1317628DE51A85FC1C424423A986775E4", "Philips Jopac BIOS (FR Videopac variant)"),
+];
+
+/// Scan `<system_dir>` for an Odyssey²/Videopac BIOS. Same shape as
+/// the CD-shape BIOS checks; slots into the cart-shape BIOS dispatch arm.
+fn check_o2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in O2_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = O2_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Fairchild Channel F BIOS files. FreeChaF
+/// (the default `channelf` core) requires `sl31253.bin` + `sl31254.bin`
+/// (the original 1976 launch ROM pair) in `<exe_dir>/system/`. The
+/// optional `sl90025.bin` ships with the 1978 Channel F II revision —
+/// recognized but not required. All hashes sourced from libretro-database
+/// /dat/System.dat.
+const CHANNELF_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,    SHA-1 uppercase,                            description)
+    ("sl31253.bin", "81193965A374D77B99B4743D317824B53C3E3C78", "Channel F Cartridge ROM 1 (1976 launch)"),
+    ("sl31254.bin", "8F70D1B74483BA3A37E86CF16C849D601A8C3D2C", "Channel F Cartridge ROM 2 (1976 launch)"),
+    ("sl90025.bin", "759E2ED31FBDE4A2D8DAF8B9F3E0DFFEBC90DAE2", "Channel F II Cartridge ROM (1978 revision, optional)"),
+];
+
+/// Scan `<system_dir>` for the Channel F BIOS files. Multi-file check
+/// requiring sl31253.bin + sl31254.bin (the launch pair); sl90025.bin
+/// is optional and only validated if present.
+fn check_channelf_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    // Required pair: sl31253.bin + sl31254.bin
+    let required = ["sl31253.bin", "sl31254.bin"];
+    let mut all_canonical = true;
+    let mut last_name: String = String::new();
+    let mut last_sha: String = String::new();
+
+    for name in &required {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            return Err(BiosError::Missing);
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+        let expected = CHANNELF_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, h, _)| *h)
+            .unwrap_or("");
+        if sha_str != expected {
+            all_canonical = false;
+        }
+        last_name = name.to_string();
+        last_sha = sha_str;
+    }
+
+    // Optional sl90025.bin — validated if present, ignored if not.
+    let opt = system_dir.join("sl90025.bin");
+    if opt.is_file() {
+        let bytes = std::fs::read(&opt).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+        if sha_str != "759E2ED31FBDE4A2D8DAF8B9F3E0DFFEBC90DAE2" {
+            all_canonical = false;
+            last_name = "sl90025.bin".to_string();
+            last_sha = sha_str;
+        }
+    }
+
+    if all_canonical {
+        Ok(BiosCheck::OkCanonical { name: "sl31253.bin + sl31254.bin".to_string(), sha1: "all canonical".to_string() })
+    } else {
+        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
+    }
+}
+
+/// Known-good SHA-1 hashes for Atari 5200 BIOS. Pre-staged for the
+/// `atari5200` onboarding (planned). a5200 / atari800 cores require
+/// `5200.rom` in `<exe_dir>/system/`. Sourced from libretro-database
+/// /dat/System.dat.
+const ATARI5200_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,   SHA-1 uppercase,                            description)
+    ("5200.rom", "6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530", "Atari 5200 SuperSystem BIOS (2 KB, canonical)"),
+];
+
+/// Pre-staged 5200 BIOS check (used once the `5200` SystemId variant
+/// lands in oa-core + the default core .dll is registered).
+fn check_atari5200_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in ATARI5200_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = ATARI5200_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Pokémon Mini BIOS. Pre-staged for the
+/// `pokemini` onboarding (planned). PokeMini libretro core requires
+/// `bios.min` in `<exe_dir>/system/`. Sourced from libretro-database
+/// /dat/System.dat.
+const POKEMINI_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,   SHA-1 uppercase,                            description)
+    ("bios.min", "DAAD4113713ED776FBD47727762BCA81BA74915F", "Pokémon Mini boot ROM (4 KB, canonical)"),
+];
+
+/// Pre-staged PokeMini BIOS check (used once the `pokemini` SystemId
+/// variant lands in oa-core).
+fn check_pokemini_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in POKEMINI_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = POKEMINI_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
         }
 
         return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
@@ -995,6 +2282,10 @@ fn main() {
             set_shader_preset,
             list_shader_presets,
             set_bloom_amount,
+            set_display_aspect_override,
+            set_overscan_crop,
+            set_bezel_image_override,
+            clear_bezel_image_override,
             set_rewind_config,
             get_rewind_state,
             get_perf_stats,
@@ -1039,6 +2330,10 @@ fn main() {
             set_presentation_mode,
             get_system_settings,
             set_system_settings,
+            analog_sticks_for_system,
+            set_analog_routing,
+            set_analog_routing_for_game,
+            arm_analog_routing,
             list_games,
             add_games,
             drop_seed_games,
@@ -1075,6 +2370,7 @@ fn main() {
             list_folder_rules,
             set_folder_rules,
             migrate_library_from_local_storage,
+            directory_is_empty,
             start_background_scan,
             cancel_background_scan,
             set_watched_folders,
@@ -1115,8 +2411,15 @@ fn main() {
             media::media_storage_stats,
             media::open_media_folder,
             rom_hashes::sync_rom_hashes_for_system,
+            rom_hashes::sync_mame_titles,
+            rom_hashes::lookup_mame_title,
             rom_hashes::resolve_rom_hashes_for_system,
             rom_hashes::lookup_rom_hash,
+            list_game_groups,
+            set_game_group_default,
+            clear_game_group_default,
+            get_library_prefs,
+            set_library_prefs,
         ])
         .setup({
             let running = running.clone();
@@ -1357,7 +2660,11 @@ fn setup_two_window(
                     let game = game.clone();
                     Box::new(move || game.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                let window_position_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send> = {
+                    let game = game.clone();
+                    Box::new(move || game.inner_position().ok().map(|p| (p.x, p.y)))
+                };
+                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1381,6 +2688,13 @@ fn setup_single_window(
     perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
 ) -> tauri::Result<ShellWindow> {
+    // Single-window mode = one transparent WebviewWindow whose
+    // underlying HWND hosts both the WebView UI and the wgpu game
+    // surface. Compositing happens via DWM: WebView pixels with alpha
+    // < 1 reveal wgpu paint underneath. External drag-drop is known
+    // to be unreliable on transparent WebView2 windows (see
+    // PARKING_LOT.md 2026-05-19 entry) — the Import Wizard and
+    // Settings → Library → Add cover the same ingest flow.
     let window = tauri::WebviewWindowBuilder::new(
         app,
         "main",
@@ -1411,7 +2725,11 @@ fn setup_single_window(
                     let window = window.clone();
                     Box::new(move || window.inner_size().ok().map(|s| (s.width, s.height)))
                 };
-                run_emu_render(running, inner_size_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                let window_position_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send> = {
+                    let window = window.clone();
+                    Box::new(move || window.inner_position().ok().map(|p| (p.x, p.y)))
+                };
+                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
             }
         })?;
 
@@ -1421,6 +2739,12 @@ fn setup_single_window(
 fn run_emu_render(
     running: Arc<AtomicBool>,
     inner_size_fn: Box<dyn Fn() -> Option<(u32, u32)> + Send>,
+    // window_position_fn returns the game window's content-area top-left
+    // in screen pixels. None when Tauri can't resolve it (window not yet
+    // created etc). Combined with `Renderer::last_viewport` for the
+    // game-output rectangle in screen space — drives window-relative
+    // pointer mapping (NDS stylus, Dreamcast light-gun, etc.).
+    window_position_fn: Box<dyn Fn() -> Option<(i32, i32)> + Send>,
     raw_window: raw_window_handle::RawWindowHandle,
     raw_display: raw_window_handle::RawDisplayHandle,
     initial_size: (u32, u32),
@@ -2019,31 +3343,258 @@ fn run_emu_render(
                     // than failing cleanly. Refuse the launch with a clear
                     // message instead so the user can fix the BIOS file.
                     if is_cd_extension(&ext) {
+                        // Per-system BIOS pre-check. Each CD-shape system
+                        // has its own canonical BIOS filenames + hashes +
+                        // missing-BIOS guidance, so the dispatch + messages
+                        // live next to the system_id check. Other CD-shape
+                        // systems (saturn, dreamcast, psx, 3do, pcfx, neocd)
+                        // land here as they onboard.
+                        let bios_check = match system_id.as_str() {
+                            "pce-cd" => Some((
+                                "PCE-CD",
+                                "syscard3.pce",
+                                check_pce_cd_bios(&system_dir),
+                                "1F8B161A2DB40DBA2079A87C10C0A3340B56ED3B",
+                                "the canonical v3.00 dump",
+                            )),
+                            "segacd" => Some((
+                                "Sega CD",
+                                "bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin",
+                                check_sega_cd_bios(&system_dir),
+                                "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED",
+                                "the canonical US Sega CD v1.10 dump (libretro-database)",
+                            )),
+                            "saturn" => Some((
+                                "Saturn",
+                                "saturn_bios.bin / sega_100.bin / sega_101.bin / mpr-17933.bin",
+                                check_saturn_bios(&system_dir),
+                                "2B8CB4F87580683EB4D760E4ED210813D667F0A2",
+                                "the canonical JP Saturn v1.00 dump (libretro-database)",
+                            )),
+                            "psx" => Some((
+                                "PSX",
+                                "scph5500.bin / scph5501.bin / scph5502.bin (v3.0 regional set)",
+                                check_psx_bios(&system_dir),
+                                "0555C6FAE8906F3F09BAF5988F00E55F88E9F30B",
+                                "the canonical US PSX v3.0 SCPH-5501 dump (libretro-database)",
+                            )),
+                            "neocd" => Some((
+                                "Neo Geo CD",
+                                "neocd.bin / neocd_z.rom (top-loader) / neocd_t.rom (front-loader)",
+                                check_neocd_bios(&system_dir),
+                                "7BB26D1E5D1E930515219CB18BCDE5B7B23E2EDA",
+                                "the canonical NeoCD boot ROM (libretro-database)",
+                            )),
+                            "3do" => Some((
+                                "3DO",
+                                "panafz1.bin / panafz10.bin / goldstar.bin / sanyotry.bin",
+                                check_3do_bios(&system_dir),
+                                "34BF189111295F74D7B7DFC1F304D98B8D36325A",
+                                "the canonical Panasonic FZ-1 BIOS (libretro-database)",
+                            )),
+                            "pcfx" => Some((
+                                "PC-FX",
+                                "pcfx.rom / pcfxbios.bin",
+                                check_pcfx_bios(&system_dir),
+                                "1A77FD83E337F906AECAB27A1604DB064CF10074",
+                                "the canonical PC-FX v1.00 BIOS (libretro-database)",
+                            )),
+                            "dreamcast" => Some((
+                                "Dreamcast",
+                                "dc_boot.bin + dc_flash.bin",
+                                check_dreamcast_bios(&system_dir),
+                                "8951D1BB219AB2FF8583033D2119C899CC81F18C",
+                                "the canonical Dreamcast boot ROM (libretro-database)",
+                            )),
+                            "ps2" => Some((
+                                "PS2",
+                                "scph10000.bin / scph39001.bin / scph70000.bin / scph77001.bin / scph90001.bin (or ps2-XXXX-YYYYMMDD.bin PCSX2-style names)",
+                                check_ps2_bios(&system_dir),
+                                "F9A5D629A036B99128F7CB530C6E3CA016E9C8B7",
+                                "the canonical US PS2 v1.60 BIOS (libretro-database)",
+                            )),
+                            _ => None,
+                        };
+                        if let Some((label, expected_files, result, canonical_sha, canonical_desc)) = bios_check {
+                            log::info!(
+                                "oa-shell: {} CD load — system_dir = {} (drop BIOS files here, e.g. {})",
+                                label, system_dir.display(), expected_files,
+                            );
+                            match result {
+                                Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                                    log::info!("oa-shell: {} CD load — BIOS {} verified (SHA-1 {})", label, name, sha1);
+                                }
+                                Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                                    log::warn!(
+                                        "oa-shell: {} CD load — BIOS {} has SHA-1 {} which doesn't match a known-good dump. Game may crash; if so, replace with {} (SHA-1 {}).",
+                                        label, name, sha1, canonical_desc, canonical_sha,
+                                    );
+                                    toast(&app_handle, ToastLevel::Warn, format!("BIOS {name} SHA-1 unverified — game may crash"));
+                                }
+                                Err(BiosError::Missing) => {
+                                    log::error!(
+                                        "oa-shell: {} CD load aborted — no BIOS in {}. Drop a canonical {} dump there.",
+                                        label, system_dir.display(), expected_files,
+                                    );
+                                    toast(&app_handle, ToastLevel::Error, format!("No {label} BIOS in system/ — drop {expected_files} there"));
+                                    continue;
+                                }
+                                Err(BiosError::Io(e)) => {
+                                    log::error!("oa-shell: {} CD load — BIOS check failed: {e:?}", label);
+                                    toast(&app_handle, ToastLevel::Warn, format!("BIOS check failed: {e}"));
+                                }
+                            }
+                        }
+                    }
+                    // Cart-shape BIOS pre-check for Neo Geo. Unlike the
+                    // CD-shape systems, Neo Geo's BIOS is a multi-ROM
+                    // .zip (`neogeo.zip`) whose content SHA-1 varies
+                    // by MAME revision + Universe BIOS presence —
+                    // existence-only check at Phase 0. FBNeo handles
+                    // the content validation internally if the file
+                    // exists. Other cart-shape systems land here as
+                    // they require BIOS pre-checks (currently only
+                    // Neo Geo; cart genesis/sega32x/nes etc. don't
+                    // need a BIOS).
+                    if system_id == "nds" {
                         log::info!(
-                            "oa-shell: CD load — system_dir = {} (drop BIOS .pce files here, e.g. syscard3.pce)",
+                            "oa-shell: NDS load — system_dir = {} (drop bios7.bin + bios9.bin + firmware.bin here)",
                             system_dir.display()
                         );
-                        match check_pce_cd_bios(&system_dir) {
+                        match check_nds_bios(&system_dir) {
                             Ok(BiosCheck::OkCanonical { name, sha1 }) => {
-                                log::info!("oa-shell: CD load — BIOS {} verified (SHA-1 {})", name, sha1);
+                                log::info!("oa-shell: NDS load — BIOS {} verified ({})", name, sha1);
                             }
                             Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
                                 log::warn!(
-                                    "oa-shell: CD load — BIOS {} has SHA-1 {} which doesn't match a known-good Mednafen dump. Game may crash; if so, replace with the canonical v3.00 dump (SHA-1 1F8B161A2DB40DBA2079A87C10C0A3340B56ED3B).",
-                                    name, sha1
+                                    "oa-shell: NDS load — BIOS file {} has SHA-1 {} which doesn't match a known-good melonDS dump. Game may crash; if so, replace with the canonical v1.0 dumps.",
+                                    name, sha1,
+                                );
+                                toast(&app_handle, ToastLevel::Warn, format!("NDS BIOS {name} unverified — game may crash"));
+                            }
+                            Err(BiosError::Missing) => {
+                                log::error!(
+                                    "oa-shell: NDS load aborted — bios7.bin + bios9.bin + firmware.bin must all be present in {}.",
+                                    system_dir.display()
+                                );
+                                toast(&app_handle, ToastLevel::Error, "No NDS BIOS in system/ — drop bios7.bin + bios9.bin + firmware.bin there");
+                                continue;
+                            }
+                            Err(BiosError::Io(e)) => {
+                                log::error!("oa-shell: NDS load — BIOS check failed: {e:?}");
+                                toast(&app_handle, ToastLevel::Warn, format!("BIOS check failed: {e}"));
+                            }
+                        }
+                    }
+                    if system_id == "neogeo" {
+                        log::info!(
+                            "oa-shell: Neo Geo load — system_dir = {} (drop neogeo.zip here)",
+                            system_dir.display()
+                        );
+                        match check_neogeo_bios(&system_dir) {
+                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                                log::info!("oa-shell: Neo Geo load — BIOS {} present ({})", name, sha1);
+                            }
+                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                                // Existence-only check never returns
+                                // OkUnknownHash today, but the arm
+                                // stays for forward compat with Phase 2
+                                // content-validation polish.
+                                log::warn!(
+                                    "oa-shell: Neo Geo load — BIOS {} has unexpected content ({}); FBNeo will validate.",
+                                    name, sha1,
+                                );
+                            }
+                            Err(BiosError::Missing) => {
+                                log::error!(
+                                    "oa-shell: Neo Geo load aborted — no neogeo.zip in {}. Drop the canonical Neo Geo BIOS ROM-set there.",
+                                    system_dir.display()
+                                );
+                                toast(&app_handle, ToastLevel::Error, "No Neo Geo BIOS in system/ — drop neogeo.zip there");
+                                continue;
+                            }
+                            Err(BiosError::Io(e)) => {
+                                log::error!("oa-shell: Neo Geo load — BIOS check failed: {e:?}");
+                                toast(&app_handle, ToastLevel::Warn, format!("BIOS check failed: {e}"));
+                            }
+                        }
+                    }
+                    // Cart-shape BIOS pre-checks for systems whose libretro
+                    // cores hard-require a BIOS to boot (Coleco / Intv / O2
+                    // / Channel F). Same shape as the neogeo / nds checks
+                    // above. Each is its own block so the error message can
+                    // name exactly which file(s) the operator needs to drop.
+                    let cart_bios = match system_id.as_str() {
+                        "coleco" => Some((
+                            "ColecoVision",
+                            "colecovision.rom",
+                            check_coleco_bios(&system_dir),
+                            "45BEDC4CBDEAC66C7DF59E9E599195C778D86A92",
+                            "the canonical 8 KB ColecoVision BIOS (libretro-database)",
+                        )),
+                        "intv" => Some((
+                            "Intellivision",
+                            "exec.bin + grom.bin",
+                            check_intv_bios(&system_dir),
+                            "5A65B922B562CB1F57DAB51B73151283F0E20C7A",
+                            "exec.bin + grom.bin canonical dumps (libretro-database)",
+                        )),
+                        "o2" => Some((
+                            "Odyssey²/Videopac",
+                            "o2rom.bin (or g7400.bin / c52.bin / jopac.bin)",
+                            check_o2_bios(&system_dir),
+                            "B2E1955D957A475DE2411770452EFF4EA19F4CEE",
+                            "the canonical o2rom.bin dump (libretro-database)",
+                        )),
+                        "channelf" => Some((
+                            "Channel F",
+                            "sl31253.bin + sl31254.bin (sl90025.bin optional)",
+                            check_channelf_bios(&system_dir),
+                            "81193965A374D77B99B4743D317824B53C3E3C78",
+                            "sl31253.bin + sl31254.bin canonical dumps (libretro-database)",
+                        )),
+                        "5200" => Some((
+                            "Atari 5200",
+                            "5200.rom",
+                            check_atari5200_bios(&system_dir),
+                            "6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530",
+                            "the canonical 5200.rom BIOS (libretro-database)",
+                        )),
+                        "pokemini" => Some((
+                            "Pokémon Mini",
+                            "bios.min",
+                            check_pokemini_bios(&system_dir),
+                            "DAAD4113713ED776FBD47727762BCA81BA74915F",
+                            "the canonical bios.min boot ROM (libretro-database)",
+                        )),
+                        _ => None,
+                    };
+                    if let Some((label, expected_files, result, canonical_sha, canonical_desc)) = cart_bios {
+                        log::info!(
+                            "oa-shell: {} load — system_dir = {} (drop BIOS files here, e.g. {})",
+                            label, system_dir.display(), expected_files,
+                        );
+                        match result {
+                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                                log::info!("oa-shell: {} load — BIOS {} verified (SHA-1 {})", label, name, sha1);
+                            }
+                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                                log::warn!(
+                                    "oa-shell: {} load — BIOS {} has SHA-1 {} which doesn't match a known-good dump. Game may crash; if so, replace with {} (canonical SHA-1 {}).",
+                                    label, name, sha1, canonical_desc, canonical_sha,
                                 );
                                 toast(&app_handle, ToastLevel::Warn, format!("BIOS {name} SHA-1 unverified — game may crash"));
                             }
                             Err(BiosError::Missing) => {
                                 log::error!(
-                                    "oa-shell: CD load aborted — no PCE-CD BIOS in {}. Drop a syscard3.pce dump there.",
-                                    system_dir.display()
+                                    "oa-shell: {} load aborted — no BIOS in {}. Drop a canonical {} dump there.",
+                                    label, system_dir.display(), expected_files,
                                 );
-                                toast(&app_handle, ToastLevel::Error, "No PCE-CD BIOS in system/ — drop syscard3.pce there");
+                                toast(&app_handle, ToastLevel::Error, format!("No {label} BIOS in system/ — drop {expected_files} there"));
                                 continue;
                             }
                             Err(BiosError::Io(e)) => {
-                                log::error!("oa-shell: CD load — BIOS check failed: {e:?}");
+                                log::error!("oa-shell: {} load — BIOS check failed: {e:?}", label);
                                 toast(&app_handle, ToastLevel::Warn, format!("BIOS check failed: {e}"));
                             }
                         }
@@ -2057,6 +3608,20 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // Phase 2.5 — push the core's display rotation to
+                            // the renderer. Vertical arcade boards (Pac-Man,
+                            // Galaxian, Donkey Kong, …) set this via
+                            // RETRO_ENVIRONMENT_SET_ROTATION during load;
+                            // everything else stays at 0.
+                            let rot = core_ref.rotation();
+                            renderer.set_rotation(rot);
+                            if rot != 0 {
+                                log::info!(
+                                    "oa-shell: core requested rotation {} (× 90° CW)",
+                                    rot
+                                );
+                            }
 
                             // Phase 6 Cross-system slice 2 — refresh the
                             // keyboard-passthrough flag now that the active
@@ -2080,6 +3645,31 @@ fn run_emu_render(
                                 "oa-shell: keyboard passthrough for {} = {}",
                                 current_system_id, keyboard_passthrough_active,
                             );
+
+                            // Phase 2.5 — apply per-system analog routing
+                            // baseline for all 5 ports. Per-game overrides
+                            // (which stack on top) get layered in by the
+                            // frontend's post-launch `arm_analog_routing`
+                            // call — that resolves per-game → per-system
+                            // → identity per port and fires individual
+                            // SetAnalogRouting commands. We don't have the
+                            // current game's id here so the per-system pass
+                            // is all we can do automatically.
+                            let analog_sys = new_settings.analog_routing.clone()
+                                .unwrap_or_else(system_settings::AnalogRoutingPrefs::identity);
+                            for port_idx in 0u32..5 {
+                                let port = match port_idx {
+                                    0 => oa_core::PortIndex::Port0,
+                                    1 => oa_core::PortIndex::Port1,
+                                    2 => oa_core::PortIndex::Port2,
+                                    3 => oa_core::PortIndex::Port3,
+                                    _ => oa_core::PortIndex::Port4,
+                                };
+                                input.set_analog_routing(
+                                    port,
+                                    analog_sys.port_routing(port_idx).to_runtime(),
+                                );
+                            }
 
                             // RetroArch-parity slice — refresh the cached
                             // disc-control snapshot. None for HuCard / cart
@@ -2273,6 +3863,32 @@ fn run_emu_render(
                 Ok(EmuCommand::SetBloomAmount(amt)) => {
                     renderer.set_bloom_amount(amt);
                 }
+                Ok(EmuCommand::SetDisplayAspectOverride(aspect)) => {
+                    renderer.set_display_aspect_override(aspect);
+                }
+                Ok(EmuCommand::SetOverscanCrop(crop)) => {
+                    renderer.set_overscan_crop(crop);
+                }
+                Ok(EmuCommand::SetBezelOverride(bezel)) => {
+                    match bezel {
+                        Some(b) => {
+                            if let Err(e) = renderer.set_bezel_image(&b.rgba, b.width, b.height) {
+                                log::warn!("oa-shell: set_bezel_override failed: {e}");
+                                renderer.clear_bezel_image();
+                            }
+                        }
+                        None => {
+                            // None here means "reapply whatever the
+                            // active preset's TOML carried." We could
+                            // re-derive that, but it's simpler to just
+                            // clear and let the next ApplyShaderPreset
+                            // (typically on launch) repopulate. UX:
+                            // clearing the per-game/system override
+                            // also clears the bezel until next launch.
+                            renderer.clear_bezel_image();
+                        }
+                    }
+                }
                 Ok(EmuCommand::SetCoreOption { key, value }) => {
                     if let Some(c) = core.as_mut() {
                         c.set_option(&key, &value);
@@ -2311,6 +3927,17 @@ fn run_emu_render(
                 Ok(EmuCommand::ApplyBindings(b)) => {
                     apply_bindings_to_poller(&mut input, &current_system_id, &b);
                     log::info!("oa-shell: bindings hot-reloaded ({} buttons) for {}", b.len(), current_system_id);
+                }
+                Ok(EmuCommand::SetAnalogRouting { port, routing }) => {
+                    let p = match port {
+                        0 => oa_core::PortIndex::Port0,
+                        1 => oa_core::PortIndex::Port1,
+                        2 => oa_core::PortIndex::Port2,
+                        3 => oa_core::PortIndex::Port3,
+                        _ => oa_core::PortIndex::Port4,
+                    };
+                    input.set_analog_routing(p, routing);
+                    log::debug!("oa-shell: analog routing hot-reloaded for port {} ({})", port, current_system_id);
                 }
                 Ok(EmuCommand::SetRewindConfig(cfg)) => {
                     let prev_enabled = rewind_config.enabled;
@@ -3123,20 +4750,25 @@ fn run_emu_render(
                 let idx = tas_replay_current_frame as usize;
                 if idx < rec.input_frames.len() {
                     let f = rec.input_frames[idx];
-                    let state = oa_core::InputState { buttons: f.port0, axes: [0; 4] };
+                    // v2 recordings carry pointer state — NDS stylus,
+                    // Saturn / Dreamcast light-gun replays reproduce
+                    // the touch/aim coordinate. v1 recordings load with
+                    // pointer zeroed (covered by TasInputFrame::default).
+                    let pointer = (f.pointer_x, f.pointer_y, f.pointer_pressed);
+                    let state = oa_core::InputState { buttons: f.port0, axes: [0; 4], pointer };
                     // Recorded input bits are ALREADY libretro-shape
                     // (we record what the core received). Set directly
                     // — bypass the per-system remap that's only for
                     // device_query/gilrs poll output.
                     core_ref.set_input(oa_core::PortIndex::Port0, state);
                     if f.port1 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port1, oa_core::InputState { buttons: f.port1, axes: [0; 4] });
+                        core_ref.set_input(oa_core::PortIndex::Port1, oa_core::InputState { buttons: f.port1, axes: [0; 4], pointer: (0, 0, false) });
                     }
                     if f.port2 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port2, oa_core::InputState { buttons: f.port2, axes: [0; 4] });
+                        core_ref.set_input(oa_core::PortIndex::Port2, oa_core::InputState { buttons: f.port2, axes: [0; 4], pointer: (0, 0, false) });
                     }
                     if f.port3 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port3, oa_core::InputState { buttons: f.port3, axes: [0; 4] });
+                        core_ref.set_input(oa_core::PortIndex::Port3, oa_core::InputState { buttons: f.port3, axes: [0; 4], pointer: (0, 0, false) });
                     }
                     core_ref.run_frame();
                     // Phase 4 slice D — submit framebuffer to the video
@@ -3215,7 +4847,7 @@ fn run_emu_render(
                 let polled = input.poll(PortIndex::Port0);
                 let libretro_bits = bindings::to_libretro_bits(&current_system_id, polled.buttons);
                 core_ref.set_input(PortIndex::Port0, oa_core::InputState {
-                    buttons: libretro_bits, axes: polled.axes,
+                    buttons: libretro_bits, axes: polled.axes, pointer: polled.pointer,
                 });
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
@@ -3223,6 +4855,12 @@ fn run_emu_render(
                         port1: 0,
                         port2: 0,
                         port3: 0,
+                        // v2: capture pointer state too so NDS stylus /
+                        // Saturn-light-gun / Dreamcast-light-gun replays
+                        // reproduce the touch/aim coordinates.
+                        pointer_x: polled.pointer.0,
+                        pointer_y: polled.pointer.1,
+                        pointer_pressed: polled.pointer.2,
                     });
                     // Publish the recording frame count every 30 frames.
                     if rec.input_frames.len() as u64 % 30 == 0 {
@@ -3465,6 +5103,27 @@ fn run_emu_render(
             // duplicated audio samples.
             if !ran_ahead {
                 renderer.present(core_ref.framebuffer());
+
+                // Phase 2.5 — push the freshly-computed game-output
+                // rectangle (in screen coordinates) into the InputPoller
+                // so pointer mapping is pixel-perfect against the
+                // letterboxed viewport, not the whole monitor. Cheap:
+                // last_viewport is a cached field on the renderer, the
+                // window position is a Tauri syscall that runs at
+                // 60 Hz max. Falls back to the 1080p approximation when
+                // either resolution can't be obtained.
+                if let (Some((wx, wy)), Some((vx, vy, vw, vh))) =
+                    (window_position_fn(), renderer.last_viewport())
+                {
+                    input.set_pointer_viewport(Some(oa_input::PointerViewport {
+                        screen_x: wx as f32 + vx,
+                        screen_y: wy as f32 + vy,
+                        width: vw,
+                        height: vh,
+                    }));
+                } else {
+                    input.set_pointer_viewport(None);
+                }
 
                 // Pump audio: drain whatever the core produced this frame into the sink.
                 // `drain_audio` borrows &mut self, so this has to come after `framebuffer()`.
@@ -3780,6 +5439,75 @@ fn set_bloom_amount(amount: f32, state: tauri::State<'_, AppState>) -> Result<()
     tx.send(EmuCommand::SetBloomAmount(amount))
         .map_err(|e| format!("emu thread closed: {e}"))?;
     log::info!("oa-shell: set_bloom_amount -> {:.3}", amount);
+    Ok(())
+}
+
+/// Pin a display-aspect override on the running renderer. `aspect = 0`
+/// (or any value ≤ 0) is normalised to `None` — "revert to whatever the
+/// core reports." Frontend resolves per-game → per-system → null
+/// before pushing.
+#[tauri::command]
+fn set_display_aspect_override(aspect: Option<f32>, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let normalised = aspect.filter(|a| *a > 0.0);
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetDisplayAspectOverride(normalised))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    log::info!("oa-shell: set_display_aspect_override -> {:?}", normalised);
+    Ok(())
+}
+
+/// Load a bezel image from a local file path, decode it, and push to
+/// the renderer as an override on top of the active shader preset's
+/// TOML `[bezel]` block. Frontend resolves per-game → per-system →
+/// null and calls this with the resolved path; `clear_bezel_override`
+/// reverts to "whatever the preset said." PNG/JPEG/WebP all accepted.
+#[tauri::command]
+fn set_bezel_image_override(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    let (rgba, width, height) =
+        shader_presets::load_rgba_image(p).map_err(|e| format!("decode bezel {path}: {e}"))?;
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetBezelOverride(Some(shader_presets::ResolvedBezel {
+        rgba,
+        width,
+        height,
+    })))
+    .map_err(|e| format!("emu thread closed: {e}"))?;
+    log::info!("oa-shell: set_bezel_image_override -> {path} ({width}x{height})");
+    Ok(())
+}
+
+/// Drop any active bezel override. The renderer clears the bezel
+/// immediately; the next `ApplyShaderPreset` (typically the next ROM
+/// launch) will repopulate from the preset's TOML default.
+#[tauri::command]
+fn clear_bezel_image_override(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetBezelOverride(None))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    log::debug!("oa-shell: clear_bezel_image_override");
+    Ok(())
+}
+
+/// Apply an overscan crop. All-zero = no crop. Frontend resolves
+/// per-game → per-system → all-zero before pushing.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_overscan_crop(
+    top: u32,
+    bottom: u32,
+    left: u32,
+    right: u32,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let crop = oa_render::OverscanCrop { top, bottom, left, right };
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    tx.send(EmuCommand::SetOverscanCrop(crop))
+        .map_err(|e| format!("emu thread closed: {e}"))?;
+    log::info!("oa-shell: set_overscan_crop -> t={top} b={bottom} l={left} r={right}");
     Ok(())
 }
 
@@ -4926,6 +6654,134 @@ fn set_system_settings(
         .map_err(|e| format!("write system settings: {e}"))
 }
 
+/// Frontend asks "what analog sticks does this system use?" to decide
+/// whether to render the Analog section on the per-system Bindings page,
+/// and what to label the panel(s). Returns "none" / "single" / "dual"
+/// with the friendly label(s).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnalogSticksInfo {
+    kind: &'static str,
+    left_label: Option<&'static str>,
+    right_label: Option<&'static str>,
+}
+
+#[tauri::command]
+fn analog_sticks_for_system(system_id: String) -> AnalogSticksInfo {
+    match bindings::analog_sticks_for(&system_id) {
+        bindings::AnalogSticks::None => AnalogSticksInfo {
+            kind: "none",
+            left_label: None,
+            right_label: None,
+        },
+        bindings::AnalogSticks::Single { left_label } => AnalogSticksInfo {
+            kind: "single",
+            left_label: Some(left_label),
+            right_label: None,
+        },
+        bindings::AnalogSticks::Dual { left_label, right_label } => AnalogSticksInfo {
+            kind: "dual",
+            left_label: Some(left_label),
+            right_label: Some(right_label),
+        },
+    }
+}
+
+/// Push per-system analog routing for ONE port to the running InputPoller
+/// + persist it under the system_settings file. Frontend calls this after
+/// each UI change so tuning takes effect mid-game. Per-game overrides
+/// stack on top — when a game is loaded, after this writes the per-system
+/// value the frontend should also call `arm_analog_routing(game_id)` to
+/// re-resolve per-game on top.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_analog_routing(
+    system_id: String,
+    port: u32,
+    routing: system_settings::AnalogPortRouting,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // Persist into the per-port slot of the per-system file.
+    let mut settings = system_settings::read_system_settings(&state.app_data_dir, &system_id);
+    let mut prefs = settings.analog_routing.clone().unwrap_or_default();
+    prefs.set_port_routing(port, routing.clone());
+    settings.analog_routing = if prefs.ports.is_empty() { None } else { Some(prefs) };
+    system_settings::write_system_settings(&state.app_data_dir, &system_id, &settings)
+        .map_err(|e| format!("write system settings: {e}"))?;
+    // Push to the running emu thread (no-op if no game is loaded).
+    if let Ok(tx) = state.emu_tx.lock() {
+        let _ = tx.send(EmuCommand::SetAnalogRouting {
+            port,
+            routing: routing.to_runtime(),
+        });
+    }
+    Ok(())
+}
+
+/// Persist a per-game analog routing override for ONE port and push to
+/// the running emu. Stores into `GameOverrides::analog_routing` so the
+/// per-game value layers on top of per-system at launch.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_analog_routing_for_game(
+    gameId: String,
+    port: u32,
+    routing: system_settings::AnalogPortRouting,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let mut overrides = db.get_game_overrides(&gameId)?;
+    let mut prefs = overrides.analog_routing.clone().unwrap_or_default();
+    prefs.set_port_routing(port, routing.clone());
+    overrides.analog_routing = if prefs.ports.is_empty() { None } else { Some(prefs) };
+    db.set_game_overrides(&gameId, &overrides)?;
+    if let Ok(tx) = state.emu_tx.lock() {
+        let _ = tx.send(EmuCommand::SetAnalogRouting {
+            port,
+            routing: routing.to_runtime(),
+        });
+    }
+    Ok(())
+}
+
+/// Resolve per-game → per-system → identity analog routing for all 5
+/// ports of `gameId` and push the resolved values to the emu thread.
+/// Frontend calls this after every successful launch, same shape as
+/// `arm_milestones` / `apply_effective_core_options`.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn arm_analog_routing(
+    gameId: String,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let row = db.list_games()?
+        .into_iter()
+        .find(|g| g.id == gameId)
+        .ok_or_else(|| format!("game id not found: {gameId}"))?;
+    let sys = system_settings::read_system_settings(&state.app_data_dir, &row.system_id);
+    let game_overrides = db.get_game_overrides(&gameId)?;
+    let sys_routing = sys.analog_routing.clone()
+        .unwrap_or_else(system_settings::AnalogRoutingPrefs::identity);
+    let game_routing = game_overrides.analog_routing.clone();
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    for port in 0u32..5 {
+        // Per-game wins if it has a non-identity entry; else per-system;
+        // else identity.
+        let game_port = game_routing.as_ref().map(|g| g.port_routing(port));
+        let sys_port = sys_routing.port_routing(port);
+        let resolved = match game_port {
+            Some(g) if g != system_settings::AnalogPortRouting::identity() => g,
+            _ => sys_port,
+        };
+        let _ = tx.send(EmuCommand::SetAnalogRouting {
+            port,
+            routing: resolved.to_runtime(),
+        });
+    }
+    Ok(())
+}
+
 /// Writes `appDataDir/presentation.json`. Effect is immediate via body data-attr
 /// flip on the frontend; persistence is for next launch.
 #[tauri::command]
@@ -4951,6 +6807,119 @@ fn set_presentation_mode(mode: String, state: tauri::State<'_, AppState>) -> Res
 #[tauri::command]
 fn list_games(db: tauri::State<'_, library_db::LibraryDb>) -> Result<Vec<library_db::GameRow>, String> {
     db.list_games()
+}
+
+/// List every game in the library, grouped by `(system_id, base_title)`
+/// — so different regions / revisions of the same game render as one
+/// library tile with variants behind it. Frontend uses this for the
+/// library view and the right-click "Run version" submenu.
+///
+/// Priority resolution: OA-wide region+revision prefs from
+/// `library_prefs`, with each game's `system_id` consulting its
+/// `system_settings.json` for an override. Per-group user pins live in
+/// `game_group_defaults` and override the priority rules.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn list_game_groups(
+    db: tauri::State<'_, library_db::LibraryDb>,
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> Result<Vec<library_groups::GameGroup>, String> {
+    let app_data_dir = &state.app_data_dir;
+    let prefs = library_prefs::read_library_prefs(app_data_dir);
+    let games = db.list_games()?;
+
+    // Group the games by system_id first so we read per-system settings
+    // once per system, not per-game. The aggregator runs once per
+    // system with that system's effective priority prefs, and we
+    // concatenate the resulting groups (they never overlap because the
+    // group key includes system_id).
+    use std::collections::HashMap;
+    let mut by_system: HashMap<String, Vec<library_db::GameRow>> = HashMap::new();
+    for g in games {
+        by_system.entry(g.system_id.clone()).or_default().push(g);
+    }
+
+    let mut out = Vec::new();
+    for (system_id, games) in by_system {
+        let sys = system_settings::read_system_settings(app_data_dir, &system_id);
+        let region_priority = sys
+            .region_priority_override
+            .clone()
+            .unwrap_or_else(|| prefs.region_priority.clone());
+        let revision_priority = sys
+            .revision_priority_override
+            .unwrap_or(prefs.revision_priority);
+        let defaults_for_system = db.list_game_group_defaults_for_system(&system_id)?;
+        // The aggregator wants (system_id, base_key) tuples; the DB
+        // already returns just base_key (lowercased) so wrap.
+        let defaults: HashMap<(String, String), String> = defaults_for_system
+            .into_iter()
+            .map(|(base, gid)| ((system_id.clone(), base), gid))
+            .collect();
+        let mut groups = library_groups::build_groups(
+            games,
+            &region_priority,
+            revision_priority,
+            &defaults,
+        );
+        out.append(&mut groups);
+    }
+
+    // Sort the merged output the same way build_groups sorts a
+    // single-system batch — base_title ascending, case-insensitive.
+    out.sort_by(|a, b| {
+        a.display_base_title
+            .to_lowercase()
+            .cmp(&b.display_base_title.to_lowercase())
+    });
+    Ok(out)
+}
+
+/// Pin a (system_id, base_title) group to a specific variant. Called
+/// when the user picks "Set default version → X" from the right-click
+/// submenu. base_title is the parsed (un-annotated) title — the
+/// frontend has the parsed shape from `list_game_groups` and sends
+/// `display_base_title` here.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_game_group_default(
+    systemId: String,
+    baseTitle: String,
+    preferredGameId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_game_group_default(&systemId, &baseTitle, &preferredGameId)
+}
+
+/// Remove a group's pin. The next render falls back to the priority
+/// rules.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn clear_game_group_default(
+    systemId: String,
+    baseTitle: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.clear_game_group_default(&systemId, &baseTitle)
+}
+
+/// Read the OA-wide library prefs (region + revision priority).
+#[tauri::command]
+fn get_library_prefs(
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> Result<library_prefs::LibraryPrefs, String> {
+    Ok(library_prefs::read_library_prefs(&state.app_data_dir))
+}
+
+/// Persist OA-wide library prefs. Pretty-printed JSON at
+/// `appDataDir/library/prefs.json`.
+#[tauri::command]
+fn set_library_prefs(
+    prefs: library_prefs::LibraryPrefs,
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> Result<(), String> {
+    library_prefs::write_library_prefs(&state.app_data_dir, &prefs)
+        .map_err(|e| format!("write library prefs: {e}"))
 }
 
 /// Bulk-insert. Returns the number of newly-added rows. Existing rows
@@ -5318,6 +7287,31 @@ fn migrate_library_from_local_storage(
 // `cancel_background_scan(jobId)`. Replaces the synchronous scan_rom_folder
 // for large folders without breaking the existing call sites (the sync one
 // stays for short scans and the ingest fallback path).
+
+/// Top-level empty-directory check. Returns true when the directory exists
+/// and has zero entries (no files AND no subdirectories at the top level).
+/// Used by the ImportWizard + the quick-add path in App.tsx to short-circuit
+/// before a pointless scan and surface a friendly warning to the operator.
+///
+/// Intentionally NOT recursive: a deep walk would defeat the "cheap
+/// pre-flight check" goal, and the existing "no supported ROMs found"
+/// fallback already covers the "has subdirs but they're all empty" case
+/// post-scan.
+///
+/// Errors: surfaced as `Err` when the path doesn't exist or isn't a
+/// directory — the frontend treats both as "can't scan this".
+#[tauri::command]
+fn directory_is_empty(path: String) -> Result<bool, String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+    if !p.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    let mut iter = std::fs::read_dir(p).map_err(|e| format!("read_dir {path}: {e}"))?;
+    Ok(iter.next().is_none())
+}
 
 #[tauri::command]
 async fn start_background_scan(

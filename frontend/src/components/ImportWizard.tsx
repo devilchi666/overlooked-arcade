@@ -143,6 +143,14 @@ const ImportWizard: Component<Props> = (props) => {
   // The Folder row for the currently-selected path — null when this is a
   // fresh add. Determines commit-time UPDATE vs INSERT.
   const [existingFolder, setExistingFolder] = createSignal<Folder | null>(null);
+  // Top-level empty-directory pre-flight: null = unchecked / checking,
+  // true = empty (block Next + show banner), false = has entries.
+  // Pre-flight check is intentionally top-level only (cheap O(1) read_dir);
+  // post-scan "no supported ROMs" already covers the deeper edge cases.
+  const [folderEmpty, setFolderEmpty] = createSignal<boolean | null>(null);
+  // Error from the empty-check call itself (path doesn't exist, permission
+  // denied, etc.) — surfaced inline next to the folder input.
+  const [folderCheckError, setFolderCheckError] = createSignal<string | null>(null);
 
   // Step 3 scan state.
   const [scanRows, setScanRows] = createSignal<ScannedRom[]>([]);
@@ -193,11 +201,15 @@ const ImportWizard: Component<Props> = (props) => {
   });
 
   // Each time `folder` changes, check if it's already tracked and pre-load
-  // its rules — otherwise reset to registry defaults.
+  // its rules — otherwise reset to registry defaults. Also run the
+  // top-level empty-directory pre-flight so Step 1 can warn before the
+  // user wastes time stepping through Mapping into a no-op scan.
   createEffect(() => {
     const f = folder();
     if (!f) {
       setExistingFolder(null);
+      setFolderEmpty(null);
+      setFolderCheckError(null);
       return;
     }
     const tracked = trackedFolders().find((t) => t.path === f);
@@ -212,6 +224,20 @@ const ImportWizard: Component<Props> = (props) => {
       setExistingFolder(null);
       setRules(defaultRulesFromRegistry());
     }
+    setFolderEmpty(null);
+    setFolderCheckError(null);
+    void (async () => {
+      try {
+        const empty = await invoke<boolean>("directory_is_empty", { path: f });
+        // Race guard: only apply if the user hasn't picked a different
+        // folder while the IPC was in flight.
+        if (folder() !== f) return;
+        setFolderEmpty(empty);
+      } catch (e) {
+        if (folder() !== f) return;
+        setFolderCheckError(String(e));
+      }
+    })();
   });
 
   // Reset all transient state when the modal closes.
@@ -224,6 +250,8 @@ const ImportWizard: Component<Props> = (props) => {
     setWatchEnabled(true);
     setRules(defaultRulesFromRegistry());
     setExistingFolder(null);
+    setFolderEmpty(null);
+    setFolderCheckError(null);
     setScanRows([]);
     setScanProgress(null);
     setScanRunning(false);
@@ -544,6 +572,19 @@ const ImportWizard: Component<Props> = (props) => {
         }
       }
 
+      // 5) Auto-identify each system that received games. Fire-and-
+      // forget — the resolve flow emits its own progress events + the
+      // library auto-refreshes via `oa://rom-hash-resolve-complete`.
+      // Idempotent: re-running on already-stamped games is a no-op.
+      if (added > 0) {
+        const touchedSystems = Array.from(new Set(entries.map((e) => e.systemId))) as SystemId[];
+        for (const systemId of touchedSystems) {
+          void invoke("resolve_rom_hashes_for_system", { systemId }).catch((err) =>
+            console.warn(`[oa-wizard] auto-identify ${systemId} failed:`, err),
+          );
+        }
+      }
+
       props.onStatus?.(`Added ${added} of ${entries.length} from ${f}.`);
       setCommitting(false);
       props.onClose();
@@ -596,6 +637,19 @@ const ImportWizard: Component<Props> = (props) => {
         <div class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/10 px-3 py-2 text-xs text-(--color-oa-ink)">
           This folder is already tracked. Its existing rules will be loaded; the
           wizard will rescan and update the library.
+        </div>
+      </Show>
+      <Show when={folderEmpty() === true}>
+        <div class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+          <p class="font-semibold">This folder is empty.</p>
+          <p class="mt-0.5 text-(--color-oa-ink-dim)">
+            Pick a different folder — there's nothing to scan here.
+          </p>
+        </div>
+      </Show>
+      <Show when={folderCheckError() !== null}>
+        <div class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+          Couldn't read the folder: {folderCheckError()}
         </div>
       </Show>
       <div class="flex flex-col gap-2 rounded-md border border-white/5 bg-black/20 px-3 py-2.5">
@@ -889,7 +943,11 @@ const ImportWizard: Component<Props> = (props) => {
                 <button
                   type="button"
                   class={BTN_PRIMARY}
-                  disabled={folder() === null}
+                  disabled={
+                    folder() === null
+                    || folderEmpty() === true
+                    || folderCheckError() !== null
+                  }
                   onClick={() => setStep(2)}
                 >
                   Next ›

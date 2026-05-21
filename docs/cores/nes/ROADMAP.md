@@ -19,7 +19,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 - ⬜ Operator validation: launch Super Mario Bros (USA) or another reference ROM. Confirm pixels + audio + controller.
 - ⬜ FDS validation with `disksys.rom` in `<exe_dir>/system/`.
-- ⬜ Per-game cover sync via libretro-thumbnails (the NES repo is one of the most complete in the libretro-thumbnails family).
+- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19, needs operator validation.** Mapping `nes → Nintendo_-_Nintendo_Entertainment_System` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id` (one of the most complete repos in the libretro-thumbnails family). Operator: run `Settings → Library → Sync media for NES` and confirm covers download.
 
 ---
 

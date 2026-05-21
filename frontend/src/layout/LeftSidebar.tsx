@@ -431,7 +431,7 @@ const SystemItem: Component<{
           aria-hidden="true"
         />
         <Show when={!props.collapsed}>
-          <span class="flex-1 truncate">{theme().shortName}</span>
+          <span class="flex-1 truncate">{theme().displayName}</span>
           <Show when={props.count > 0}>
             <span class="text-[0.6rem] tabular-nums uppercase tracking-widest text-(--color-oa-ink-dim)">
               {props.count}

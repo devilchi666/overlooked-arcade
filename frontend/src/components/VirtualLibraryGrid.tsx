@@ -36,6 +36,11 @@ type Props = {
   /// raw value) so virtualized tiles only re-render when their own
   /// selected-ness actually flips, not when any other tile is picked.
   selectedId?: () => string | null;
+  /// Lookup for the variant count to render the ▼N badge. Returns
+  /// `undefined` (or 1) for single-file games — no badge. Passed as a
+  /// function so the grid doesn't re-render every tile when a single
+  /// group's pin changes.
+  variantCountFor?: (id: string) => number | undefined;
 };
 
 type GridRow =
@@ -175,6 +180,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                             onPickContext={props.onPickContext}
                             onFocus={props.onFocus}
                             selected={props.selectedId?.() === entry.id}
+                            variantCount={props.variantCountFor?.(entry.id)}
                           />
                         </div>
                       )}

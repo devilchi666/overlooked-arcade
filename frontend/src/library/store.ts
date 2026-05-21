@@ -15,7 +15,7 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
-import type { LibraryState, RomEntry, RomId } from "./types";
+import type { GameGroupInfo, LibraryState, RomEntry, RomId } from "./types";
 import type { SystemId } from "../themes/registry";
 
 const LEGACY_STORAGE_KEY = "oa.library.v1";
@@ -73,6 +73,28 @@ export function createLibraryStore() {
   // is alive immediately so consumers can subscribe before hydration lands.
   const [state, setState] = createStore<LibraryState>({ entries: [] });
   const [hydrated, setHydrated] = createSignal(false);
+  // Variant grouping — keyed by EVERY variant's id (not just the
+  // default) so any tile / context-menu callsite can look up "which
+  // group am I in?" with one Map.get. Multi-variant groups have
+  // variants.length > 1; single-file games are absent from this map.
+  const [groupsByVariantId, setGroupsByVariantId] =
+    createSignal<Map<RomId, GameGroupInfo>>(new Map());
+
+  async function refreshGroups(): Promise<void> {
+    try {
+      const groups = await invoke<GameGroupInfo[]>("list_game_groups");
+      const map = new Map<RomId, GameGroupInfo>();
+      for (const g of groups) {
+        if (g.variants.length <= 1) continue; // singletons stay absent
+        for (const v of g.variants) {
+          map.set(v.id, g);
+        }
+      }
+      setGroupsByVariantId(map);
+    } catch (e) {
+      console.warn("[oa-library] list_game_groups failed:", e);
+    }
+  }
   // Suppress consumer access to the store until hydrate finishes. Components
   // can check `hydrated()` if they want to defer first render; LibraryView's
   // empty-state fallback handles the brief in-between state.
@@ -120,12 +142,15 @@ export function createLibraryStore() {
     }
 
     setState("entries", games);
+    await refreshGroups();
     setHydrated(true);
   }
 
   return {
     state,
     hydrated,
+    groupsByVariantId,
+    refreshGroups,
     /// Pull the authoritative game list from Rust and replace the local
     /// mirror. Used after server-side mutations the store didn't initiate
     /// (e.g. the rom_hashes resolve flow rewriting canonical titles).
@@ -133,8 +158,31 @@ export function createLibraryStore() {
       try {
         const fresh = await invoke<RomEntry[]>("list_games");
         setState("entries", fresh);
+        await refreshGroups();
       } catch (e) {
         console.warn("[oa-library] refresh failed:", e);
+      }
+    },
+    /// Pin a (system_id, base_title) group to a specific variant.
+    /// Re-fetches the groups so the UI updates immediately.
+    async setGroupDefault(
+      systemId: SystemId,
+      baseTitle: string,
+      preferredGameId: RomId,
+    ): Promise<void> {
+      try {
+        await invoke("set_game_group_default", { systemId, baseTitle, preferredGameId });
+        await refreshGroups();
+      } catch (e) {
+        console.warn("[oa-library] set_game_group_default failed:", e);
+      }
+    },
+    async clearGroupDefault(systemId: SystemId, baseTitle: string): Promise<void> {
+      try {
+        await invoke("clear_game_group_default", { systemId, baseTitle });
+        await refreshGroups();
+      } catch (e) {
+        console.warn("[oa-library] clear_game_group_default failed:", e);
       }
     },
     /// Add scanned ROMs. Writes through to Rust, then refreshes local cache
@@ -163,6 +211,7 @@ export function createLibraryStore() {
       try {
         const fresh = await invoke<RomEntry[]>("list_games");
         setState("entries", fresh);
+        await refreshGroups();
       } catch (e) {
         console.warn("[oa-library] refresh after add failed:", e);
       }
@@ -221,6 +270,7 @@ export function createLibraryStore() {
       try {
         const fresh = await invoke<RomEntry[]>("list_games");
         setState("entries", fresh);
+        await refreshGroups();
       } catch (e) {
         console.warn("[oa-library] reload failed:", e);
       }

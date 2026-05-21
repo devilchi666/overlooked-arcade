@@ -296,6 +296,52 @@ mod tests {
         let priority: Vec<String> = vec!["USA".into()];
         assert_eq!(resolve_active_index(&variants, None, &priority), None);
     }
+
+    /// Every system registered in `bindings.rs` dispatch must have an
+    /// explicit decision recorded in `repo_for_system_id` — either a
+    /// libretro-thumbnails repo name, or in `NO_REPO_SYSTEMS` below with
+    /// the reason. Forgetting this leaves new-system cover sync silently
+    /// no-op (with a warn-level log explaining why).
+    ///
+    /// New core onboarding: find the system under
+    /// https://github.com/libretro-thumbnails and add the arm to
+    /// `repo_for_system_id`. If the system genuinely has no repo, add
+    /// it to `NO_REPO_SYSTEMS` here with the reason.
+    #[test]
+    fn every_onboarded_system_has_an_explicit_thumbnails_decision() {
+        // Keep in sync with `bindings.rs` test fixtures.
+        const ONBOARDED_SYSTEMS: &[&str] = &[
+            "tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis",
+            "segacd", "sega32x", "saturn", "psx",
+            "neogeo", "neocd", "ngp",
+            "jaguar", "3do", "pcfx",
+            "n64", "gamecube", "dreamcast",
+            "psp", "ps2", "nds",
+            "sms", "gamegear", "gb", "gba", "2600",
+            "coleco", "intv", "o2", "channelf",
+            "vectrex", "virtualboy", "wonderswan",
+            "5200", "pokemini",
+        ];
+        // Systems whose repo_for_system_id returns None on purpose.
+        const NO_REPO_SYSTEMS: &[&str] = &[
+            // (none today — every onboarded system has a thumbnails repo)
+        ];
+        for sys in ONBOARDED_SYSTEMS {
+            let mapped = super::repo_for_system_id(sys);
+            if NO_REPO_SYSTEMS.contains(sys) {
+                assert!(
+                    mapped.is_none(),
+                    "{sys} is in NO_REPO_SYSTEMS but repo_for_system_id returned Some — pick one"
+                );
+            } else {
+                assert!(
+                    mapped.is_some(),
+                    "{sys} is onboarded but repo_for_system_id returned None. \
+                     Add an arm pointing at the libretro-thumbnails repo name."
+                );
+            }
+        }
+    }
 }
 
 // ---- oa-media:// protocol handler ----
@@ -707,8 +753,115 @@ fn ingest_manual_cover(
 
 use std::time::{Duration, SystemTime};
 
-/// Per-system → libretro-thumbnails GitHub subrepo. v1 covers the TG-16
-/// trio; additional systems map here when their SystemId lands.
+/// Per-system → libretro-thumbnails GitHub subrepo. Repos live at
+/// `github.com/libretro-thumbnails/<name>` and the names mirror
+/// libretro-database's `metadat/no-intro/` basenames with spaces
+/// replaced by underscores.
+///
+/// **New-core onboarding checklist item:** add an arm here when
+/// onboarding a system that has a libretro-thumbnails repo (most do
+/// — check https://github.com/libretro-thumbnails). Returning `None`
+/// makes the sync a no-op for that system rather than fetching from
+/// the wrong repo.
+fn repo_for_system_id(system_id: &str) -> Option<&'static str> {
+    Some(match system_id {
+        // First wave + already-onboarded systems.
+        "tg16"      => "NEC_-_PC_Engine_-_TurboGrafx_16",
+        "pce-cd"    => "NEC_-_PC_Engine_CD_-_TurboGrafx-CD",
+        "lynx"      => "Atari_-_Lynx",
+        "nes"       => "Nintendo_-_Nintendo_Entertainment_System",
+        "snes"      => "Nintendo_-_Super_Nintendo_Entertainment_System",
+        "atari7800" => "Atari_-_7800",
+        "mame"      => "MAME",
+        "genesis"   => "Sega_-_Mega_Drive_-_Genesis",
+        // Sega CD / Mega-CD. libretro-thumbnails ships one combined repo
+        // covering both regional namings ("Mega-CD" JP / EU + "Sega CD"
+        // US) under a single hyphenated path.
+        "segacd"    => "Sega_-_Mega-CD_-_Sega_CD",
+        // Sega 32X. Single thumbnails repo covers the small library.
+        "sega32x"   => "Sega_-_32X",
+        // Sega Saturn. Single thumbnails repo covers the full retail +
+        // homebrew library.
+        "saturn"    => "Sega_-_Saturn",
+        // Sony PlayStation. The libretro-thumbnails repo follows the
+        // "Sony_-_PlayStation" convention used elsewhere in the catalog.
+        "psx"       => "Sony_-_PlayStation",
+        // SNK Neo Geo (AES + MVS). Single thumbnails repo covers the
+        // home + arcade library.
+        "neogeo"    => "SNK_-_Neo_Geo",
+        // SNK Neo Geo CD. Separate thumbnails repo from the cart AES.
+        "neocd"     => "SNK_-_Neo_Geo_CD",
+        // SNK Neo Geo Pocket Color. The single thumbnails repo covers
+        // both NGP (mono) and NGPC (color) — same convention as the
+        // libretro-thumbnails Sega_-_Game_Gear repo covering JP+US sets.
+        "ngp"       => "SNK_-_Neo_Geo_Pocket_Color",
+        // Atari Jaguar. Single thumbnails repo covers the small library
+        // (~50 retail releases + homebrew).
+        "jaguar"    => "Atari_-_Jaguar",
+        // 3DO Interactive Multiplayer. libretro-thumbnails repo name
+        // matches "The 3DO Company" branding.
+        "3do"       => "The_3DO_Company_-_3DO",
+        // NEC PC-FX. Japan-only platform; small library (~62 retail
+        // releases). Single thumbnails repo.
+        "pcfx"      => "NEC_-_PC-FX",
+        // Nintendo 64. Single thumbnails repo covers the full retail
+        // library (~390 releases).
+        "n64"       => "Nintendo_-_Nintendo_64",
+        // Nintendo GameCube + Wii. Single thumbnails repo covers
+        // GameCube (operator-validated thumbnail set). Wii thumbnails
+        // live in a separate `Nintendo_-_Wii` repo on libretro-thumbnails;
+        // Phase 2.5 polish would split the slug + cover sync to point
+        // at the right repo per-game-region.
+        "gamecube"  => "Nintendo_-_GameCube",
+        // Sega Dreamcast. Single thumbnails repo covers the full retail
+        // library (~620 releases).
+        "dreamcast" => "Sega_-_Dreamcast",
+        // Sony PlayStation Portable. Single thumbnails repo covers
+        // the full UMD library.
+        "psp"       => "Sony_-_PlayStation_Portable",
+        // Sony PlayStation 2. Single thumbnails repo covers the
+        // ~2000-game library.
+        "ps2"       => "Sony_-_PlayStation_2",
+        // Nintendo DS. Single thumbnails repo covers both DS + DSi
+        // (the DSi extensions ship as separate ROMs but use the same
+        // base library).
+        "nds"       => "Nintendo_-_Nintendo_DS",
+        // First-wave systems waiting to be onboarded — mapping is ready
+        // so cover sync works the moment they land.
+        "sms"             => "Sega_-_Master_System_-_Mark_III",
+        "gamegear"        => "Sega_-_Game_Gear",
+        "msx"             => "Microsoft_-_MSX",
+        "msx2"            => "Microsoft_-_MSX2",
+        "coleco"          => "Coleco_-_ColecoVision",
+        "intv"            => "Mattel_-_Intellivision",
+        "o2"              => "Magnavox_-_Odyssey2",
+        "channelf"        => "Fairchild_-_Channel_F",
+        "vectrex"         => "GCE_-_Vectrex",
+        "virtualboy"      => "Nintendo_-_Virtual_Boy",
+        "wonderswan"      => "Bandai_-_WonderSwan",
+        "wonderswan-color" => "Bandai_-_WonderSwan_Color",
+        // Game Boy + Game Boy Color share a single slug; libretro-thumbnails
+        // keeps them in separate repos. Default to the DMG repo as primary —
+        // most users' GB libraries are DMG-era. GBC-specific cover coverage
+        // is a follow-up that needs the cover sync to consult both repos.
+        // Documented in docs/cores/gb/DECISIONS.md.
+        "gb" => "Nintendo_-_Game_Boy",
+        // Game Boy Advance — single thumbnails repo; no multi-region or
+        // hardware-variant split like `gb` had.
+        "gba" => "Nintendo_-_Game_Boy_Advance",
+        // Atari 2600 — single thumbnails repo covers the full library.
+        "2600" => "Atari_-_2600",
+        "5200" => "Atari_-_5200",
+        "pokemini" => "Nintendo_-_Pokemon_Mini",
+        _ => return None,
+    })
+}
+
+/// Back-compat alias around `repo_for_system_id` for the extension-only
+/// callers that pre-date the system_id field on `SyncRomEntry`. Looks
+/// at the few extensions that uniquely identify a system within the
+/// PC Engine family, then falls back to the TG-16 repo.
+#[allow(dead_code)]
 fn repo_for_extension(ext: &str) -> &'static str {
     match ext {
         "sgx" => "NEC_-_PC_Engine_SuperGrafx",
@@ -1162,19 +1315,23 @@ pub async fn sync_media_for_system(
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
 
-    // Group entries by their target repo.
+    // Group entries by their target libretro-thumbnails repo. Drop
+    // entries whose system_id has no repo mapping (unknown system →
+    // skip rather than fetch from the wrong repo).
     let mut by_repo: std::collections::HashMap<&'static str, Vec<SyncRomEntry>> =
         std::collections::HashMap::new();
+    let mut skipped_no_repo = 0usize;
     for e in entries.iter() {
-        let ext = std::path::Path::new(&e.file_path)
-            .extension()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_ascii_lowercase())
-            .unwrap_or_default();
-        by_repo
-            .entry(repo_for_extension(&ext))
-            .or_default()
-            .push(e.clone());
+        let Some(repo) = repo_for_system_id(&e.system_id) else {
+            skipped_no_repo += 1;
+            continue;
+        };
+        by_repo.entry(repo).or_default().push(e.clone());
+    }
+    if skipped_no_repo > 0 {
+        log::warn!(
+            "media sync: {skipped_no_repo} entries skipped (no libretro-thumbnails repo for their system_id)"
+        );
     }
 
     // Total work units = entries × enabled kinds (one download attempt per

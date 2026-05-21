@@ -37,7 +37,28 @@ impl PixelFormat {
 // ---------- device IDs ----------
 
 pub const RETRO_DEVICE_JOYPAD: u32 = 1;
+pub const RETRO_DEVICE_ANALOG: u32 = 5;
 pub const RETRO_DEVICE_KEYBOARD: u32 = 3;
+
+// Analog stick index — passed as the `index` arg to cb_input_state when
+// device == RETRO_DEVICE_ANALOG.
+pub const RETRO_DEVICE_INDEX_ANALOG_LEFT: u32   = 0;
+pub const RETRO_DEVICE_INDEX_ANALOG_RIGHT: u32  = 1;
+pub const RETRO_DEVICE_INDEX_ANALOG_BUTTON: u32 = 2;
+
+// Analog axis — passed as the `id` arg to cb_input_state.
+pub const RETRO_DEVICE_ID_ANALOG_X: u32 = 0;
+pub const RETRO_DEVICE_ID_ANALOG_Y: u32 = 1;
+
+// Pointer device — touch screen / light gun / mouse-as-touch input.
+// Used by Nintendo DS (stylus), Saturn light-gun games, Dreamcast House
+// of the Dead, etc. Cores poll `cb_input_state(port, RETRO_DEVICE_POINTER,
+// index, id)` per pointer; `id` selects which axis or the press state.
+pub const RETRO_DEVICE_POINTER: u32 = 6;
+pub const RETRO_DEVICE_ID_POINTER_X: u32       = 0;
+pub const RETRO_DEVICE_ID_POINTER_Y: u32       = 1;
+pub const RETRO_DEVICE_ID_POINTER_PRESSED: u32 = 2;
+pub const RETRO_DEVICE_ID_POINTER_COUNT: u32   = 3;
 
 pub const RETRO_DEVICE_ID_JOYPAD_B: u32       = 0;
 pub const RETRO_DEVICE_ID_JOYPAD_Y: u32       = 1;

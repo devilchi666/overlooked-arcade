@@ -1,7 +1,7 @@
-import { createMemo, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createMemo, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { LibraryStore } from "../library/store";
-import type { RomEntry } from "../library/types";
+import type { RomEntry, VariantInfo } from "../library/types";
 import { useMedia } from "../library/media";
 
 type Props = {
@@ -32,13 +32,58 @@ const ITEM_CLASS =
 const TileContextMenu: Component<Props> = (props) => {
   const media = useMedia();
 
-  const variants = createMemo(() => {
+  // Boxart variants (region / front / back image picks) — *distinct*
+  // from the multi-region game-file variants below.
+  const coverVariants = createMemo(() => {
     const e = props.entry;
     if (!e) return [];
     return media.media(e.id)?.boxart ?? [];
   });
-  const hasCover = createMemo(() => variants().length > 0);
-  const hasMultipleVariants = createMemo(() => variants().length >= 2);
+  const hasCover = createMemo(() => coverVariants().length > 0);
+  const hasMultipleVariants = createMemo(() => coverVariants().length >= 2);
+
+  // Multi-file game-version group (different regions / revisions of the
+  // same underlying title). Absent for single-file games.
+  const gameGroup = createMemo(() => {
+    const e = props.entry;
+    if (!e) return null;
+    return props.library.groupsByVariantId().get(e.id) ?? null;
+  });
+  const gameVariants = createMemo<VariantInfo[]>(() => gameGroup()?.variants ?? []);
+  const hasGameVariants = createMemo(() => gameVariants().length >= 2);
+  const entriesById = createMemo(() => {
+    const map = new Map<string, RomEntry>();
+    for (const e of props.library.state.entries) {
+      map.set(e.id, e);
+    }
+    return map;
+  });
+
+  function launchVariant(v: VariantInfo) {
+    const target = entriesById().get(v.id);
+    if (!target) return;
+    closeAfter(() => props.onLaunch(target));
+  }
+  async function pinAsDefault(v: VariantInfo) {
+    const group = gameGroup();
+    if (!group) return;
+    await props.library.setGroupDefault(group.systemId, group.displayBaseTitle, v.id);
+    props.onClose();
+  }
+  async function clearDefault() {
+    const group = gameGroup();
+    if (!group) return;
+    await props.library.clearGroupDefault(group.systemId, group.displayBaseTitle);
+    props.onClose();
+  }
+
+  function variantLabel(v: VariantInfo): string {
+    const parts: string[] = [];
+    if (v.region) parts.push(v.region);
+    if (v.revision > 0) parts.push(`Rev ${v.revision}`);
+    if (v.isPrerelease) parts.push("β");
+    return parts.length > 0 ? parts.join(" · ") : "Release";
+  }
 
   function closeAfter<T>(fn: () => T): T {
     const r = fn();
@@ -161,6 +206,46 @@ const TileContextMenu: Component<Props> = (props) => {
                   <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">Enter</span>
                 </button>
               </li>
+              <Show when={hasGameVariants()}>
+                <li class="my-1 h-px bg-white/5" aria-hidden="true" />
+                <li class="px-3 pt-2 pb-1 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Versions · {gameVariants().length}
+                </li>
+                <For each={gameVariants()}>
+                  {(v) => (
+                    <li class="flex items-center gap-1 px-1">
+                      <button
+                        type="button"
+                        class="flex flex-1 items-center justify-between gap-3 rounded px-2 py-1 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06]"
+                        onClick={() => launchVariant(v)}
+                        title={`Launch ${v.title}`}
+                      >
+                        <span class="truncate">
+                          {variantLabel(v)}
+                          <Show when={v.isDefault}>
+                            <span class="ml-2 text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
+                              default ✓
+                            </span>
+                          </Show>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded px-2 py-1 text-xs text-(--color-oa-ink-dim) hover:bg-white/[0.06] hover:text-(--color-system-accent)"
+                        onClick={() => (v.isDefault ? clearDefault() : pinAsDefault(v))}
+                        title={
+                          v.isDefault
+                            ? "Clear the user-pinned default (revert to priority rules)"
+                            : "Pin this version as the default for this group"
+                        }
+                        aria-label={v.isDefault ? "Clear pinned default" : "Pin as default"}
+                      >
+                        {v.isDefault ? "★" : "☆"}
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </Show>
               <li class="my-1 h-px bg-white/5" aria-hidden="true" />
               <li>
                 <button type="button" class={ITEM_CLASS} onClick={pickCoverFile}>
@@ -172,7 +257,7 @@ const TileContextMenu: Component<Props> = (props) => {
                   <button type="button" class={ITEM_CLASS} onClick={pickRegion}>
                     <span>Pick region…</span>
                     <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
-                      {variants().length} variants
+                      {coverVariants().length} variants
                     </span>
                   </button>
                 </li>

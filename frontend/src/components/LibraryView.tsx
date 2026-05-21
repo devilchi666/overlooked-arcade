@@ -3,7 +3,7 @@ import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
 import type { LayoutStore } from "../layout/state";
 import type { SidebarView } from "../layout/LeftSidebar";
-import { filterEntries, groupEntries, sortEntries } from "../library/filter";
+import { collapseVariantGroups, filterEntries, groupEntries, sortEntries } from "../library/filter";
 import { useMedia } from "../library/media";
 import { systemThemes, type SystemId } from "../themes/registry";
 import DetailListView from "./DetailListView";
@@ -46,8 +46,19 @@ const LibraryView: Component<Props> = (props) => {
   const sorted = createMemo(() =>
     sortEntries(filtered(), props.layout.sortKey(), getYear),
   );
+  // Collapse same-variant-group entries down to their default variant
+  // BEFORE bucketing so each multi-region game renders as one tile.
+  // The store keeps `groupsByVariantId` empty for single-file games, so
+  // unaffected libraries stay byte-identical to the pre-grouping
+  // behaviour.
+  const collapsed = createMemo(() => {
+    const groups = props.library.groupsByVariantId();
+    if (groups.size === 0) return sorted();
+    const entryById = new Map(props.library.state.entries.map((e) => [e.id, e]));
+    return collapseVariantGroups(sorted(), groups, entryById);
+  });
   const grouped = createMemo(() =>
-    groupEntries(sorted(), props.layout.groupBy(), systemDisplayName),
+    groupEntries(collapsed(), props.layout.groupBy(), systemDisplayName),
   );
 
   const title = (): string => {
@@ -65,16 +76,18 @@ const LibraryView: Component<Props> = (props) => {
     }
   };
 
-  const count = () => filtered().length;
+  // Count = number of tiles rendered = collapsed list length (groups + singletons),
+  // not raw file count. A library with 3 Castlevania variants + 1 Bonk = 2 tiles.
+  const count = () => collapsed().length;
   const hasAny = () => count() > 0;
 
   return (
     <div class="flex h-full flex-col" data-system={props.currentView.kind === "system" ? props.currentView.id : undefined}>
       <Show when={props.currentView.kind === "system"}>
-        {(_) => {
-          const id = (props.currentView as { kind: "system"; id: SystemId }).id;
-          return <SystemHeader systemId={id} gameCount={count()} />;
-        }}
+        <SystemHeader
+          systemId={(props.currentView as { kind: "system"; id: SystemId }).id}
+          gameCount={count()}
+        />
       </Show>
       <GridControls title={title()} count={count()} />
       <div class="min-h-0 flex-1">
@@ -98,6 +111,9 @@ const LibraryView: Component<Props> = (props) => {
                 onPickContext={props.onPickContext}
                 onFocus={props.onFocus}
                 selectedId={props.selectedId}
+                variantCountFor={(id) =>
+                  props.library.groupsByVariantId().get(id)?.variants.length
+                }
               />
             }
           >
@@ -108,6 +124,9 @@ const LibraryView: Component<Props> = (props) => {
               onPickContext={props.onPickContext}
               onFocus={props.onFocus}
               selectedId={props.selectedId}
+              variantCountFor={(id) =>
+                props.library.groupsByVariantId().get(id)?.variants.length
+              }
             />
           </Show>
         </Show>

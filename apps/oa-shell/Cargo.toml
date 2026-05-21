@@ -42,5 +42,6 @@ futures             = { workspace = true }
 rusqlite            = { workspace = true }
 zip                 = { workspace = true }
 sevenz-rust         = { workspace = true }
+chd                 = "0.3"
 notify              = { workspace = true }
 tokio               = { workspace = true }

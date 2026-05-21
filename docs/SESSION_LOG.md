@@ -6,6 +6,1093 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-20 — Sony+Nintendo handheld pass + POINTER infra (systems #34-36: psp + ps2 + nds)
+
+Seventh paired pass of the day. **Second cross-cutting input
+infrastructure** of the session — the POINTER device dispatch (mouse-
+as-touch) joins this morning's analog input infra to round out OA's
+modern-controller input model. NDS, the platform that requires it
+most, ships immediately playable. PS2 slots into the CD-launch BIOS
+dispatch arm as the 9th system; PSP is BIOS-free.
+
+- **Shipped (cross-cutting POINTER infra):**
+  - `oa_core::InputState` extended with `pointer: (i16, i16, bool)`
+    field — x, y normalized to libretro POINTER range
+    (-32768..32767), plus the pressed flag.
+  - `oa-libretro::ffi` — new RETRO_DEVICE_POINTER (6) constant +
+    RETRO_DEVICE_INDEX_ANALOG_POINTER_LEFT/RIGHT/BUTTON +
+    RETRO_DEVICE_ID_POINTER_X/Y/PRESSED/COUNT.
+  - `oa-libretro::state::State` — new `input_pointer: [(i16, i16, bool); 5]`
+    field (per-port pointer state).
+  - `cb_input_state` extended to dispatch RETRO_DEVICE_POINTER
+    queries to the stored pointer state per port/id (X/Y axes,
+    pressed flag, count).
+  - `LibretroCore::set_input` stores `input.pointer`.
+  - `oa-input::InputPoller::poll` — new `poll_pointer()` helper reads
+    mouse position via device_query (the same DeviceState the
+    keyboard polling uses) + left-button state. Normalizes screen
+    coordinates to libretro range (assumes 1920×1080 at Phase 0;
+    window-relative pixel-perfect mapping is Phase 2.5).
+  - Emu thread updated to plumb `polled.pointer` through to
+    `core.set_input`; TAS replay paths set pointer to defaults
+    (TAS pointer recording is Phase 2.5).
+- **Shipped (Rust core):** Three new `oa_core::SystemId` variants
+  (`Psp`, `Ps2`, `Nds`) + parse_system_id arms with aliases.
+- **Shipped (bindings):** Three new modules.
+  - `psp` — 12 digital buttons (PSX-shape: d-pad + 4 face diamond +
+    L/R + START + SELECT). **No L2/R2** — PSP hardware lacks them.
+    Single analog stick via shared infra.
+  - `ps2` — 16 digital buttons (DualShock 2: PSX-shape + L3/R3 stick
+    clicks). Dual analog sticks via shared infra. Pressure-sensitive
+    face buttons + analog L2/R2 = Phase 2.5.
+  - `nds` — 12 digital buttons (Nintendo diamond: A east PRIMARY,
+    B south secondary, X north, Y west; matches nes/snes/gb/gba
+    precedent). Touch screen via new POINTER infra.
+  Nine new tests lock the dispatch.
+- **Shipped (default cores):** psp → `ppsspp_libretro.dll` (BIOS-
+  free). ps2 → `pcsx2_libretro.dll` (LRPS2, BIOS-required). nds →
+  `melonds_libretro.dll`.
+- **Shipped (BIOS pre-checks):**
+  - `check_ps2_bios` + `PS2_BIOS_KNOWN_HASHES` (6 entries covering
+    JP launch / US fat / US-EU slim variants). Slotted into CD-launch
+    dispatch as 9th CD-shape system (pce-cd / segacd / saturn / psx /
+    neocd / 3do / pcfx / dreamcast / ps2).
+  - `check_nds_bios` + `NDS_BIOS_KNOWN_HASHES` (**new multi-file
+    BIOS shape** — requires ALL THREE files: bios7.bin + bios9.bin +
+    firmware.bin). Cart-shape pre-check arm in main.rs next to neogeo.
+    First multi-file BIOS check in OA's lineup.
+  - psp is BIOS-free.
+- **Shipped (media + rom_hashes):** Three new repo arms
+  (`Sony_-_PlayStation_Portable`, `Sony_-_PlayStation_2`,
+  `Nintendo_-_Nintendo_DS`). rom_hashes: psp + nds → single-file
+  no-intro dats (.iso/.cso/.pbp for psp; .nds for nds); ps2 → `&[]`
+  with NO_DAT_SYSTEMS entry (DVD images deferred).
+- **Shipped (frontend):** SystemId union extended. Three new
+  `systemThemes` entries. Three new CSS blocks (Plan A — Sony
+  cool cluster + Nintendo handheld pearl):
+  - **psp:** cool cyan `oklch(0.65 0.18 200)` — middle of the new
+    Sony cluster (psx 180° / psp 200° / ps2 215°).
+  - **ps2:** deep cobalt `oklch(0.45 0.22 215)` — bottom of the
+    cool cluster lightness ladder; period-correct to PS2 blue logo
+    + dark-hardware-era marketing.
+  - **nds:** pearl yellow-green `oklch(0.78 0.14 95)` — Nintendo
+    handheld pearl pattern (matches ngp 105° / WS 305°).
+- **Shipped (docs):** ACTIVE_CORE → `nds` (POINTER infra leadership).
+  Three full per-core docs sets at `docs/cores/{psp,ps2,nds}/` (15
+  doc files). Decisions captured: PPSSPP/LRPS2/melonDS defaults,
+  Sony cool cluster theme, Nintendo handheld pearl theme, NDS A is
+  PRIMARY per Nintendo convention, multi-file BIOS check pattern
+  (3-file NDS check) + 6-entry PS2 BIOS table + POINTER-infra
+  rationale.
+- **Plan:** Flipped 3 rows ⬜ → ✅; bumped count from 33 to 36.
+  **Wave 4 (Nintendo handhelds) COMPLETE + Wave 5 (Sony) COMPLETE.**
+  Order-of-attack reduced to 3 groups remaining (scummvm+dosbox,
+  5200, pokemini).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 269/269
+  green (was 260; +9 tests across 3 systems × 3 each). `cargo check`
+  on workspace clean (POINTER trait changes affect oa-core /
+  oa-libretro / oa-input cleanly). Frontend `npm run typecheck`
+  silent.
+- **Almost:** Phase 1 operator validation. **psp** — drop `ppsspp_libretro.dll`
+  + gamepad → God of War: Chains of Olympus. **ps2** — drop
+  `pcsx2_libretro.dll` + regional BIOS → Shadow of the Colossus.
+  **nds** — drop `melonds_libretro.dll` + 3 BIOS files → Phantom
+  Hourglass (canonical "POINTER infra works" test — mouse should
+  control Link's stylus).
+- **Next:** 36 systems shipped (over 100% of original 34-plan —
+  scope expansion landed faster than anticipated). Order-of-attack
+  next pick is **`scummvm` + `dosbox`** — engine cores that need a
+  folder-as-game scanner extension before they slot in cleanly.
+
+---
+
+## 2026-05-20 — Sega family completion (system #33: dreamcast)
+
+Sixth and final paired pass of the day (this one a solo). Completes
+the Sega family — OA now hosts all 7 Sega home/handheld platforms
+(SMS, Game Gear, Genesis, Sega CD, 32X, Saturn, Dreamcast). The
+CD-launch BIOS dispatch arm grows to its 8th system; the analog
+input infra from this morning carries the DC analog stick through
+without additional plumbing.
+
+- **Shipped (Rust core):** `oa_core::SystemId::Dreamcast` variant +
+  parse_system_id arm (`dreamcast | dc | sega-dreamcast`).
+- **Shipped (bindings):** `bindings::dreamcast` module — 11 digital
+  buttons (d-pad + A/B/X/Y face diamond + L/R analog triggers +
+  START). No SELECT (DC pad doesn't have one). Single analog stick
+  flows via shared analog infra (gamepad LeftStick → axes[0..2]).
+  Three new dispatch tests.
+- **Shipped (default core):** dreamcast → `flycast_libretro.dll`
+  (Flycast). Redream documented as per-system alternate.
+- **Shipped (BIOS pre-check):** `check_dreamcast_bios` +
+  `DREAMCAST_BIOS_KNOWN_HASHES` (4 entries: `dc_boot.bin` universal
+  + `dc_flash.bin` US/JP/EU regional variants). Slotted into the
+  CD-launch dispatch arm as the 8th CD-shape system (pce-cd / segacd
+  / saturn / psx / neocd / 3do / pcfx / dreamcast).
+- **Shipped (media + rom_hashes):** New repo arm
+  (`Sega_-_Dreamcast`). rom_hashes → `&[]` with NO_DAT_SYSTEMS entry
+  (GD-ROM CD images deferred to Phase 2 disc-id extraction via
+  IP.BIN signature).
+- **Shipped (frontend):** SystemId union extended with `"dreamcast"`.
+  systemThemes entry (extensions `.cdi`/`.gdi`/`.chd`, landscape 4/3,
+  crt-lite shader). New CSS block: **DC orange swirl
+  `oklch(0.55 0.27 32)`** — highest chroma in the warm zone,
+  period-correct to 9/9/99 launch marketing + iconic Dreamcast
+  spiral logo. The warm zone now hosts 12 systems in 73° (most-
+  crowded cluster in OA); each system stays visually distinct via
+  L+C profile.
+- **Shipped (docs):** ACTIVE_CORE → `dreamcast`. Full per-core docs
+  set at `docs/cores/dreamcast/` (5 files). Decisions: Flycast
+  default, 4-entry BIOS table (boot + 3 regional flash), period-
+  correct orange swirl theme, analog-stick-via-shared-infra,
+  no-SELECT-on-DC-pad.
+- **Plan:** Flipped 1 row ⬜ → ✅; bumped "Already wired" count from
+  32 to 33. **Wave 2 (Sega family completion) COMPLETE** — Sega's
+  full home/handheld lineup now wired in OA. Order-of-attack
+  reduced to 4 groups remaining (psp+ps2+nds, scummvm+dosbox,
+  5200, pokemini).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 260/260
+  green (was 257; +3 tests). Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. Drop
+  `flycast_libretro.dll` + `dc_boot.bin` + a regional `dc_flash.bin`
+  into `<exe_dir>/system/`, mark a DC folder via Import Wizard,
+  launch Sonic Adventure / Crazy Taxi / Jet Set Radio / Soulcalibur.
+  LeftStick should drive Sonic via the analog infra from earlier
+  today.
+- **Next:** 33 systems shipped (over 97% of original 34-plan; 82.5%
+  if counting scope-expanded remaining). Order-of-attack next pick
+  is **`psp` + `ps2` + `nds`** — Sony/Nintendo handheld + home
+  heavyweights. All three use analog input (now unblocked) and PS2
+  + DS slot CD-shape-style into the now-8-system BIOS dispatch arm.
+
+---
+
+## 2026-05-20 — Nintendo home heavyweights + analog input infra (systems #31-32: n64 + gamecube)
+
+Fifth paired pass of the day, and the **largest infrastructure
+investment** of any onboarding to date: the cross-cutting analog
+input infrastructure (RETRO_DEVICE_ANALOG dispatch in oa-libretro +
+gilrs analog axis polling in oa-input + `InputState.axes` flow
+through the emu thread) ships as part of this Phase 0. Without it,
+N64 and GameCube would be unplayable on gamepads (both systems use
+analog sticks as primary movement input). The infra unblocks N64 +
+GameCube immediately and is shared with PSX DualShock / Saturn 3D
+Pad / VB right D-pad / Intv 16-way disc for their Phase 2 polish.
+
+- **Shipped (cross-cutting analog infra):** Three crates touched.
+  - `oa-libretro::ffi` — new constants for RETRO_DEVICE_ANALOG (5)
+    + RETRO_DEVICE_INDEX_ANALOG_LEFT/RIGHT/BUTTON + RETRO_DEVICE_ID_ANALOG_X/Y.
+  - `oa-libretro::state::State` — new `input_axes: [[i16; 4]; 5]`
+    field (5 ports × 4 axes each: Left X, Left Y, Right X, Right Y).
+  - `oa-libretro::state::cb_input_state` — extended to dispatch
+    RETRO_DEVICE_ANALOG queries to the stored axes per port/index/id.
+  - `oa-libretro::core::set_input` — stores `input.axes` alongside
+    `input.buttons` on each frame.
+  - `oa-input::InputPoller::poll` — extended to sample gilrs
+    `Axis::LeftStickX/Y` + `Axis::RightStickX/Y`, scale to i16
+    libretro range, populate `InputState.axes`. Y axes inverted
+    (gilrs +Y up, libretro +Y down per convention).
+  - The emu thread's `set_input` call site at main.rs:3990 already
+    passed `polled.axes` through — no main.rs changes needed.
+  - Net result: gamepad analog stick → libretro RETRO_DEVICE_ANALOG
+    end-to-end, identity routing.
+- **Shipped (Rust core):** Two new `oa_core::SystemId` variants
+  (`N64`, `GameCube`). Single `gamecube` slug covers both Nintendo
+  GameCube + Wii via Dolphin's auto-detect (operator chose pair-not-
+  triple during onboarding).
+- **Shipped (bindings):** Two new modules.
+  - `n64` — 14 digital buttons (d-pad + A/B + L/R/Z + START + 4
+    C-buttons). Main analog stick is NOT in the bit-table; flows
+    via `InputState.axes[0..2]` (gamepad LeftStick).
+  - `gamecube` — 12 digital buttons (d-pad + A/B/X/Y + L/R + Z +
+    START). Both main stick AND C-stick flow via analog axes
+    (LeftStick → main, RightStick → C-stick). No digital C-stick
+    fallback at Phase 0 — Phase 2.5 polish adds per-axis keyboard
+    binding.
+  Six new tests lock the dispatch.
+- **Shipped (default cores):** n64 → `mupen64plus_next_libretro.dll`
+  (Mupen64Plus-Next with GLideN64 video plugin). gamecube →
+  `dolphin_libretro.dll`. Both BIOS-free.
+- **Shipped (media + rom_hashes):** New repo arms
+  (`Nintendo_-_Nintendo_64`, `Nintendo_-_GameCube`). rom_hashes: n64
+  → no-intro N64 dat (matches `.z64` directly; `.n64`/`.v64` need
+  byte-swap pass in Phase 2); gamecube → `&[]` with NO_DAT_SYSTEMS
+  (large multi-format disc images aren't single-file SHA-1 matched).
+- **Shipped (frontend):** SystemId union extended. Two new
+  `systemThemes` entries (n64 `.n64`/`.z64`/`.v64`; gamecube
+  `.iso`/`.gcm`/`.gcz`/`.rvz`/`.wbfs` union covering GC + Wii). Two
+  new CSS blocks (Plan A — Nintendo home cluster):
+  - **n64:** Atomic Purple `oklch(0.55 0.22 268)` — period-correct
+    to the iconic 1998 Atomic Purple transparent-shell N64; slots
+    between Intv 260° and SNES 270° in the violet cluster.
+  - **gamecube:** Indigo `oklch(0.48 0.22 280)` — period-correct to
+    the 2001 Indigo GameCube launch shell; slots between Saturn 275°
+    and GBA 285°.
+  - Forms a 4-system Nintendo home-console cluster (SNES 270° / n64
+    268° / gamecube 280° / GBA 285°) — operator accepted the
+    cluster crowding for visual coherence.
+- **Shipped (docs):** ACTIVE_CORE → `gamecube`. Two full per-core
+  docs sets at `docs/cores/{n64,gamecube}/` (10 doc files).
+  Decisions captured: Mupen64Plus-Next / Dolphin defaults, single-
+  slug-covers-GC+Wii rationale, analog-infra-shipped-as-part-of-N64
+  reasoning, Atomic-Purple / Indigo theme placements, GC C-stick is
+  analog-only (no digital fallback at Phase 0).
+- **Plan:** Flipped 2 rows ⬜ → ✅ in system-wiring-plan; bumped
+  "Already wired" count from 30 to 32. **Wave 3 (Nintendo home
+  post-SNES) COMPLETE.** Order-of-attack reduced to 5 groups
+  remaining (dreamcast / psp+ps2+nds / scummvm+dosbox / 5200 /
+  pokemini).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 257/257
+  green (was 251; +6 tests across 2 systems × 3 each).
+  `cargo check` on the workspace clean (analog trait changes
+  ripple through oa-core / oa-libretro / oa-input cleanly).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. n64: Mupen64Plus-Next .dll
+  + gamepad → Super Mario 64 (LeftStick should drive Mario through
+  Peach's Castle). gamecube: Dolphin .dll + gamepad → Super Smash
+  Bros. Melee (LeftStick + RightStick test). Wii .wbfs files load
+  via the same Dolphin .dll but motion-controls are unbound (Phase
+  2.5).
+- **Next:** 32 systems shipped (~94% of original 34-plan; 80% if
+  counting the 8 scope-expanded heavyweight remaining). Order-of-
+  attack next pick is **`dreamcast`** (Sega family completion;
+  heavyweight CD-shape, BIOS-required, slots into the now-8th CD
+  system in the launch-time BIOS dispatch arm).
+
+---
+
+## 2026-05-20 — Overlooked-console thesis triple-pair (systems #28-30: jaguar + 3do + pcfx)
+
+Fourth paired pass of the day. The "overlooked consoles" Overlooked
+Arcade was named for: Atari Jaguar (Atari Corp's last console), 3DO
+Multiplayer (5th-gen pioneer that didn't survive), NEC PC-FX (Japan-
+only anime-VN platform). Two new CD-shape systems slot into the
+table-shaped BIOS dispatch arm (3DO + PCFX now alongside pce-cd /
+segacd / saturn / psx / neocd); Jaguar is cart-shape with the largest
+controller bindings module in OA's lineup (21 buttons including full
+12-key numpad).
+
+- **Shipped (Rust core):** Three new `oa_core::SystemId` variants
+  (`Jaguar`, `ThreeDo`, `PcFx`) — variant names spell out the digit
+  in `ThreeDo` since Rust identifiers can't start with one.
+- **Shipped (bindings):** Three new modules with **largest variation
+  in OA's lineup**:
+  - `jaguar` — **21-button** (d-pad + A/B/C + OPTION + PAUSE + 12-key
+    numpad). KP1-KP7 map to spare RetroPad bits (libretro X / L / R /
+    L2 / R2 / L3 / R3); **KP8 / KP9 / KP_STAR / KP0 / KP_HASH live in
+    shell-reserved high bits (1<<16 through 1<<20)** — surfaced in the
+    per-system Bindings page for keyboard binding but require Phase 2
+    keyboard-passthrough dispatch to reach Virtual Jaguar. `jaguar_to_libretro_bits`
+    masks high bits off before reaching the core. Operator overrode
+    the recommended Phase 0 8-button option in favor of full numpad
+    coverage (Iron Soldier weapon select / AvP inventory / Cybermorph
+    radar all lean on the keypad heavily).
+  - `threedo` — 11-button (d-pad + A/B/C + L/R shoulders + STOP/PLAY +
+    START). No SELECT — the 3DO standard controller doesn't have one.
+  - `pcfx` — 12-button (d-pad + I-VI + RUN + SELECT). **Separate from
+    the existing `pce::*` module** which is 2-button only — sharing
+    would force tg16/pce-cd to either acknowledge the 6-button extras
+    incorrectly or skip them, wasting bits. Each system's defaults
+    stay clean.
+  Nine new tests lock the dispatch (3 per system) including a Jaguar
+  high-bit-masking test (`jaguar_remap_drops_high_bits`).
+- **Shipped (default cores):** jaguar → `virtualjaguar_libretro.dll`,
+  3do → `opera_libretro.dll` (Opera, formerly 4DO), pcfx →
+  `mednafen_pcfx_libretro.dll` (Beetle PC-FX, Mednafen lineage with
+  pce-cd / saturn / psx / vb / ws / lynx / ngp).
+- **Shipped (BIOS pre-checks):** `check_3do_bios` +
+  `THREEDO_BIOS_KNOWN_HASHES` (4 canonical regional/manufacturer
+  entries: Panasonic FZ-1, FZ-10, GoldStar GDO-101M, Sanyo Try IMP-21J).
+  `check_pcfx_bios` + `PCFX_BIOS_KNOWN_HASHES` (1 entry — single
+  canonical `pcfx.rom`; PC-FX was Japan-only with no regional
+  variants). Both slot into the CD-launch BIOS dispatch arm.
+  **CD-launch dispatch now covers 7 CD-shape systems** (pce-cd /
+  segacd / saturn / psx / neocd / 3do / pcfx) — table-shaped pattern
+  validated; future CD systems just add a single match arm.
+  Jaguar is BIOS-optional (`jagboot.rom` enables boot logo only) and
+  doesn't get a pre-check at Phase 0.
+- **Shipped (media + rom_hashes):** Three new repo arms
+  (`Atari_-_Jaguar`, `The_3DO_Company_-_3DO`, `NEC_-_PC-FX`).
+  rom_hashes: jaguar → no-intro Atari Jaguar dat; 3do + pcfx → `&[]`
+  with NO_DAT_SYSTEMS entries. ONBOARDED_SYSTEMS fixtures bumped.
+- **Shipped (frontend):** SystemId union extended. Three new
+  `systemThemes` entries (jaguar `.j64`/`.jag`, 3do CD container set,
+  pcfx CD container set). Three new CSS blocks (Plan A theme locked):
+  - **jaguar:** saturated gold `oklch(0.65 0.22 65)` — open 65-75°
+    band between 2600 wood-brown (60°) and A7800 gold (80°). Three
+    Atari-era systems now share the warm zone with distinct
+    lightness ladder: 2600 muted (L=0.60), Jaguar mid (L=0.65), A7800
+    bright (L=0.78). Period-correct to JAGUAR logotype + jaguar-cat-fur.
+  - **3do:** deep purple-magenta `oklch(0.55 0.22 297)` — tight
+    Lynx 290° / WS 305° gap. Period-correct to 3DO swirl logo.
+  - **pcfx:** saturated anime pink-magenta `oklch(0.62 0.24 320)` —
+    tight WS 305° / O2 325° gap. Period-correct to PC-FX's
+    anime-VN-platform identity (the marketing palette leaned heavily
+    into vivid pinks).
+- **Shipped (docs):** ACTIVE_CORE → `jaguar`. Three full per-core
+  docs sets at `docs/cores/{jaguar,3do,pcfx}/` (15 doc files).
+  Decisions captured: Virtual Jaguar / Opera / Beetle PCFX defaults,
+  jaguar 21-button rationale + high-bit keypad Phase 2 path, 3DO 4-entry
+  BIOS scope, PCFX single-canonical-BIOS scope, separate pcfx module
+  (no pce::* sharing), theme placements.
+- **Plan:** Flipped 3 rows ⬜ → ✅ in system-wiring-plan; bumped
+  "Already wired" count from 27 to 30. Wave 6 (Other consoles)
+  reduced to 5200 + pokemini. Order-of-attack reduced to 6 groups
+  remaining.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 251/251
+  green (was 242; +9 tests across 3 systems × 3 each, including
+  Jaguar's high-bit-masking lock).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. jaguar: Iron Soldier /
+  Tempest 2000 / Rayman / AvP / Doom Jaguar. 3do: Star Control II /
+  Road Rash / Need for Speed / Lemmings 3DO. pcfx: Battle Heat /
+  Tyoushin Heiki Zeroigar.
+- **Next:** 30 systems shipped (~88% of original 34-plan; 75% if
+  counting scope-expanded remaining). Order-of-attack next pick is
+  **`n64` + `gamecube`** (Nintendo home heavyweights — mupen64plus_next
+  for N64, dolphin for GC; both cart-shape but GPU-intensive).
+
+---
+
+## 2026-05-20 — SNK family triple-pair (systems #25-27: neogeo + neocd + ngp)
+
+Third paired pass of the day. **First content-peek classifier in the
+scanner** — Neo Geo `.zip` ROM-sets disambiguated against MAME zips via
+the `.p1+.s1` file signature. Two BIOS pre-checks added (existence-only
+for cart neogeo.zip; SHA-1-based for neocd_z/t.rom slotting into the
+CD-launch dispatch arm).
+
+- **Shipped (Rust core):** Three new `oa_core::SystemId` variants
+  (`NeoGeo`, `NeoGeoCd`, `NeoGeoPocket`). parse_system_id arms with
+  aliases (aes, mvs, ngpc, etc.).
+- **Shipped (bindings):** Two new modules. `bindings::neogeo` ships
+  the **10-button arcade pad** (A/B/C/D + START + COIN + d-pad,
+  COIN on Key5 matching MAME convention). neocd shares the controller
+  via `"neogeo" | "neocd" => ...` dispatch arms (same precedent
+  PCE-CD/TG-16 set, segacd/genesis set, sega32x/genesis set).
+  `bindings::ngp` ships the **7-button handheld** (d-pad + A + B +
+  OPTION) — simplest controller since channelf. Nine new tests lock
+  the dispatch (3 per system).
+- **Shipped (default cores):** neogeo → `fbneo_libretro.dll` (FBNeo).
+  neocd → `neocd_libretro.dll` (NeoCD Redux). ngp →
+  `mednafen_ngp_libretro.dll` (Beetle NeoPop, Mednafen lineage with
+  the other Beetle cores).
+- **Shipped (BIOS pre-checks):** Two new check functions in main.rs.
+  `check_neogeo_bios` is **existence-only at Phase 0** — Neo Geo's
+  multi-ROM `neogeo.zip` BIOS has too many legitimate variants
+  (Universe BIOS / Unibios, MAME-revision-specific zips) to lock down
+  a SHA-1 list. Phase 2 polish upgrades to zip-content peek. Cart
+  pre-check fires after the CD-launch BIOS dispatch when system_id
+  == "neogeo". `check_neocd_bios` + `NEOCD_BIOS_KNOWN_HASHES` (3
+  entries: CDZ top-loader, CD front-loader, front-loader alternate
+  naming) slots into the CD-launch dispatch arm next to pce-cd/segacd/
+  saturn/psx. ngp is BIOS-free (Beetle NeoPop synthesizes firmware).
+- **Shipped (content-peek scanner):** New `archive::peek_zip_for_neogeo`
+  function — scans a `.zip` archive for files matching the Neo Geo
+  ROM-set signature (`*.p1` AND `*.s1` extensions present). The
+  scanner's archive branch now runs this check first for `.zip`
+  files; matching zips emit a single ScannedRom for the whole zip
+  with `system_hint = "neogeo"`, MAME zips fall through to the
+  normal inner-file enumeration path. `ScannedRom` struct gained
+  optional `system_hint` field; frontend ingest paths (both
+  `ingestFolderPath` and `rescanFolders`) prefer the hint over
+  extension-based mapping when present. **First per-file content
+  classifier in OA's library scanner** — future systems with
+  similar disambiguation needs (CPS-1/2/3 arcade .zip, etc.) can
+  extend the `peek_zip_for_*` family.
+- **Shipped (media + rom_hashes):** Three new repo arms (`SNK_-_Neo_Geo`,
+  `SNK_-_Neo_Geo_CD`, `SNK_-_Neo_Geo_Pocket_Color`). rom_hashes:
+  neogeo → no-intro SNK Neo Geo dat (matches .neo single-file dumps;
+  .zip ROM-set hash matching is Phase 2). neocd → `&[]` with
+  NO_DAT_SYSTEMS entry. ngp → two no-intro dats merged (NGP mono +
+  NGPC color, same gb/wonderswan pattern). ONBOARDED_SYSTEMS fixtures
+  bumped.
+- **Shipped (frontend):** SystemId union extended with `neogeo | neocd
+  | ngp`. Three `systemThemes` entries — neogeo `["neo", "zip"]` with
+  content-peek disambiguation, neocd CD container set, ngp `["ngp",
+  "ngc"]` single-slug-two-hardware. Three new CSS blocks (Plan A
+  theme locked):
+  - **neogeo:** deepest+most-saturated red `oklch(0.50 0.27 18)` —
+    cluster bottom of VB 7° / MAME 12° / NES 28°, period-correct to
+    SNK arcade marketing.
+  - **neocd:** muted SNK gold `oklch(0.55 0.18 50)` — tight gap
+    between sega32x 42° and TG-16 55°, distinct via L/C profile.
+    Family-cousin to neogeo (red→gold warm zone preserves SNK
+    arcade family identity).
+  - **ngp:** pearl yellow-green `oklch(0.80 0.12 105)` — open
+    95-125° band, evokes NGPC translucent yellow shell. Deliberately
+    breaks free from the SNK arcade family to mark handheld as
+    outlier (same WonderSwan-pearl-lavender precedent).
+- **Shipped (docs):** ACTIVE_CORE → `neogeo`. Three full per-core
+  docs sets at `docs/cores/{neogeo,neocd,ngp}/` (15 doc files).
+  DECISIONS captured the FBNeo default, AES+MVS single-slug,
+  separate-neocd-slug, .zip content-peek pattern, Phase 0
+  existence-only BIOS check, deepest-red cluster placement,
+  family-cousin theme strategy.
+- **Plan:** Flipped 3 rows ⬜ → ✅ in system-wiring-plan; bumped
+  "Already wired" count from 24 to 27. Wave 6 (Other consoles)
+  reduced from 9 systems to 6 (jaguar/3do/pcfx/5200/pokemini remain).
+  Order-of-attack re-numbered to 7 groups remaining.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 245/245
+  green (was 236; +9 tests across 3 systems × 3 each).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation for all three systems.
+  neogeo: drop `fbneo_libretro.dll` + `neogeo.zip` BIOS, scan
+  Neo Geo folder, launch Metal Slug / KOF '97 / Samurai Shodown II.
+  neocd: drop `neocd_libretro.dll` + `neocd_z.rom`, launch Samurai
+  Shodown RPG / Metal Slug CD. ngp: drop `mednafen_ngp_libretro.dll`,
+  scan NGP/NGPC ROMs, launch SNK vs Capcom: Card Fighter's Clash /
+  Match of the Millennium / Sonic Pocket Adventure.
+- **Next:** 27 systems shipped (~79% of plan). Order-of-attack next
+  pick is **`jaguar` + `3do` + `pcfx`** (overlooked-console thesis
+  lineup — Jaguar is cart-shape BIOS-optional, 3DO is CD-shape
+  BIOS-required slotting into the CD-launch dispatch, PCFX is the
+  PC Engine's CD successor sharing Beetle PCE family lineage).
+
+---
+
+## 2026-05-20 — Heavyweight CD-shape pair (systems #23-24: saturn + psx)
+
+First heavyweight CD-shape onboarding pair post-segacd. Reused the
+BIOS-pre-check dispatch pattern check_sega_cd_bios just generalized.
+Each system adds a fresh ~13-button bindings module (Saturn 6-button
+face pad vs PSX digital DualPad — distinct layouts, no shared MD-style
+plumbing).
+
+- **Shipped (Rust core):** Two new `oa_core::SystemId` variants
+  (`Saturn`, `Playstation`). `parse_system_id` arms accepting regional
+  aliases (saturn: `saturn | sat | ss | sega-saturn`; psx: `psx | ps1 |
+  ps | playstation`).
+- **Shipped (bindings):** Two new modules. `bindings::saturn` ships
+  the **13-button Saturn 6-button face pad** (A/B/C bottom + X/Y/Z top
+  + L/R shoulders + START + d-pad). Saturn C and Z legitimately live
+  in libretro L2/R2 slots since the Xbox-diamond only holds 4 face
+  buttons — that's Beetle Saturn's libretro mapping convention.
+  `bindings::psx` ships the **14-button digital DualPad** (d-pad +
+  Triangle/Circle/Cross/Square + L1/R1/L2/R2 + START + SELECT).
+  DualShock analog sticks + L3/R3 deferred to Phase 2 alongside
+  shared analog-input infra (same gate as Saturn 3D Pad, Virtual Boy
+  right D-pad, Intv 16-way disc). Six new tests lock the dispatch
+  (3 per system).
+- **Shipped (default cores):** saturn →
+  `mednafen_saturn_libretro.dll` (Beetle Saturn). psx →
+  `mednafen_psx_hw_libretro.dll` (Beetle PSX HW). **First "catalog
+  peer" pattern:** Beetle PSX SW (`mednafen_psx_libretro.dll`)
+  pre-registered as a recommended alternate so operators hitting
+  Vulkan/OpenGL-from-DX12-handoff issues can swap to software-renderer
+  without manual .dll install. Documented in psx/DECISIONS.md.
+- **Shipped (BIOS pre-checks):** Two new functions + tables in main.rs.
+  `check_saturn_bios` + `SATURN_BIOS_KNOWN_HASHES` (5 canonical entries:
+  JP v1.00 + v1.01, US/EU v1.00, EU PAL v1.01, generic saturn_bios.bin
+  alias). `check_psx_bios` + `PSX_BIOS_KNOWN_HASHES` (6 canonical
+  entries: JP/US/EU v3.0, US v4.1, US v4.4, US v2.2/PSone alias).
+  The CD-launch path's BIOS dispatch arm extended with `saturn` and
+  `psx` branches — the dispatch is now table-shaped and easy to
+  extend (dreamcast / 3do / pcfx / neocd land in the same `match`).
+- **Shipped (CD container handling):** `.pbp` extension added to
+  `is_cd_extension` — the PSP-format PS1 EBOOT container needs the
+  BIOS pre-check + path-based loading like other CD images. PSX-unique
+  (no collision with other CD-shape systems). Standard CD container
+  set (`.cue / .chd / .iso / .m3u / .ccd / .toc`) now claimed by 4
+  systems (PCE-CD / segacd / saturn / psx); same per-folder Import
+  Wizard disambiguation pattern.
+- **Shipped (media + rom_hashes):** New repo arms — saturn →
+  `Sega_-_Saturn`, psx → `Sony_-_PlayStation`. Both go to
+  NO_DAT_SYSTEMS at Phase 0 (CD images aren't single-file SHA-1
+  matched; disc-id extraction deferred to Phase 2). Both onboarded-
+  systems test fixtures bumped.
+- **Shipped (frontend):** `SystemId` union extended with `saturn | psx`.
+  Two `systemThemes` entries — saturn uses landscape 4/3 + `crt-lite`,
+  psx uses landscape 4/3 + `crt-lite` + extra `.pbp` extension. Two
+  new `[data-system=…]` CSS blocks (Plan A theme locked):
+  - **Saturn:** deepest purple `oklch(0.45 0.18 275)` — bottom of the
+    SNES/Lynx/GBA violet cluster via lightness axis (L=0.45 vs SNES
+    L=0.62, Lynx L=0.65, GBA L=0.55). Period-accurate to 1994-1996
+    Saturn launch marketing palette. Operator accepted the cluster
+    crowding.
+  - **PSX:** teal cyan `oklch(0.65 0.16 180)` — open 175-185° band,
+    no hue crowding. Evokes PS1 launch palette's cool blue/cyan/silver
+    identity.
+- **Shipped (docs):** ACTIVE_CORE → `saturn`. Two full per-core docs
+  sets at `docs/cores/{saturn,psx}/` (10 doc files). Decisions
+  captured the per-system nuances: saturn's Mednafen-default rationale
+  + 6-button-face-with-trigger-spillover bindings + 3D Pad analog
+  deferral; psx's HW/SW catalog peer + Z=Cross primary breaking PSX
+  physical layout for cross-system consistency + DualShock deferral.
+- **Plan:** Flipped 2 rows ⬜ → ✅ in system-wiring-plan; bumped
+  "Already wired" count from 22 to 24. Wave 2 (Sega family) reduced
+  to 1 system (Dreamcast); Wave 5 (Sony) reduced to 2 (psp + ps2).
+  Order-of-attack re-numbered.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 236/236
+  green (was 230; +6 tests across 2 systems × 3 each).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. **Saturn** needs a real CD
+  image + matching regional BIOS — drop
+  `mednafen_saturn_libretro.dll` into `<exe_dir>/cores/` + one of
+  `sega_100.bin / sega_101.bin / mpr-17933.bin / mpr-19367b.bin` into
+  `<exe_dir>/system/`, mark a Saturn folder via Import Wizard,
+  confirm deepest-purple-themed tiles, launch a known-good disc.
+  Suggested: NiGHTS into Dreams, Guardian Heroes, Radiant Silvergun,
+  Saturn Bomberman. **PSX** needs the same — drop
+  `mednafen_psx_hw_libretro.dll` + a regional `scph*.bin`. Watch for
+  Vulkan/OpenGL surface obtainment from wgpu DX12 host; if HW fails,
+  swap to Beetle PSX SW via per-system Cores. Suggested: Castlevania:
+  Symphony of the Night, Final Fantasy VII (3-disc .m3u test), Metal
+  Gear Solid, Crash Bandicoot.
+- **Next:** Pace is 24 systems shipped. Order-of-attack next pick is
+  `neogeo + neocd + ngp` (SNK family — neogeo cart-shape leans on the
+  MAME-style .zip ROM-set handling, neocd is CD-shape, ngp is a small
+  handheld). 10 cores remaining on the plan; over 70% complete.
+
+---
+
+## 2026-05-20 — Sega family CD/32X pass (systems #21-22: segacd + sega32x)
+
+Two-system paired pass. **First post-PCE-CD CD-shape onboarding** —
+Sega CD adds BIOS pre-check + CD container disambiguation on top of
+the console-shape recipe. 32X is cart-shape but routes through the
+genesis 6-button MD controller. Both share the same dispatch arms in
+`bindings.rs` (`"genesis" | "segacd" | "sega32x" => ...`), mirroring
+the TG-16 / PCE-CD precedent.
+
+- **Shipped (Rust core):** Two new `oa_core::SystemId` variants
+  (`SegaCd`, `Sega32X`), each with parse_system_id arms accepting
+  multiple regional aliases (segacd: `segacd | sega-cd | mega-cd |
+  megacd | mcd`; sega32x: `sega32x | 32x | sega-32x`).
+- **Shipped (bindings):** Shared 6-button MD controller dispatch.
+  No new modules / no new BUTTONS tables — segacd + sega32x reuse
+  `GENESIS_BUTTONS` + `default_genesis_bindings()` + `genesis_to_libretro_bits`
+  via the dispatch arms in all four locations (`bit_for` /
+  `buttons_for` / `to_libretro_bits` / `defaults_for`). Same pattern
+  PCE-CD uses to share TG-16's controller. Six new tests lock the
+  dispatch (3 per system: defaults_cover, remap_identity,
+  dispatch_round_trips). Test fixtures bumped to include both slugs.
+- **Shipped (default cores):** segacd →
+  `genesis_plus_gx_libretro.dll` (same .dll already shipping for
+  SMS + Game Gear — install-once value: one .dll, four Sega systems).
+  sega32x → `picodrive_libretro.dll` (the only mainstream libretro
+  core with 32X support; no practical alternate).
+- **Shipped (BIOS pre-check):** New `check_sega_cd_bios` function +
+  `SEGA_CD_BIOS_KNOWN_HASHES` table in main.rs (6 canonical entries
+  spanning US Model 1 v1.10 / Model 2 v2.00 / Model 2 v2.00w, JP
+  Mega-CD v1.00p / v1.00s, EU Mega-CD v1.00). Refactored the CD-launch
+  path's BIOS dispatch — was hardcoded to `check_pce_cd_bios`; now
+  matches on `system_id` and routes pce-cd → check_pce_cd_bios,
+  segacd → check_sega_cd_bios. Other CD-shape systems (saturn /
+  dreamcast / psx / 3do / pcfx / neocd) drop in here as they onboard.
+  sega32x is BIOS-free (PicoDrive synthesizes the SH-2 boot vector).
+- **Shipped (media + rom_hashes):** New
+  `media::repo_for_system_id` arms — segacd →
+  `Sega_-_Mega-CD_-_Sega_CD`, sega32x → `Sega_-_32X`. New
+  `rom_hashes::libretro_dat_refs_for_system` arms — segacd → `&[]`
+  with NO_DAT_SYSTEMS entry (CD images aren't single-file SHA-1
+  matched; disc-id extraction via cd_id.rs Sega CD branch is Phase 2),
+  sega32x → metadat/no-intro/Sega - 32X. Both onboarded-systems test
+  fixtures bumped.
+- **Shipped (frontend):** `SystemId` union extended with `segacd |
+  sega32x`. Two `systemThemes` entries — segacd uses landscape 4/3
+  + `plain` shader (FMV-heavy library), sega32x uses landscape 4/3 +
+  `crt-lite` (period-correct CRT). Two new `[data-system=…]` CSS
+  blocks:
+  - **Sega CD:** sapphire blue 235°/L=0.55/C=0.20 — family-cousin to
+    Genesis cobalt (245°) but visually distinct via lightness axis.
+    Forms the Sega family cluster (PCE-CD 220° / segacd 235° /
+    Genesis 245°) where each system holds a distinct L/C profile.
+  - **Sega 32X:** neon orange 42°/L=0.68/C=0.22 — period-accurate to
+    the 1994 32X marketing palette. Lands in the previously-empty
+    35-50° hue band (13° from TG-16 55°; chroma + lightness separate
+    them in mixed library). Deliberate departure from the Sega family
+    cobalt cluster — 32X branding was orange-not-blue in the era.
+- **Shipped (CD extension disambiguation):** segacd registers
+  `.cue / .chd / .iso / .m3u / .ccd / .toc` — same set PCE-CD claims.
+  Disambiguation at scan time via per-folder hint in the Import
+  Wizard (same path PCE-CD navigated). Disc-id extraction via
+  `cd_id.rs` deferred to Phase 2 polish. Documented in segacd
+  DECISIONS.md.
+- **Shipped (docs):** ACTIVE_CORE switched from `vectrex` to
+  `segacd`. Two full per-core docs sets at
+  `docs/cores/{segacd,sega32x}/` (10 doc files). Decisions captured
+  the per-system nuances: segacd's Genesis Plus GX install-once
+  rationale, the 6-canonical-BIOS table breadth choice, CD extension
+  disambiguation via Import Wizard, disc-id deferral; sega32x's
+  PicoDrive-as-only-option, slug-separation-forces-right-core
+  rationale, .32x-only extension scope, BIOS-free cart-only path
+  with 32X-CD games queued for Phase 3+ via stacked segacd override.
+- **Plan:** Flipped 2 rows ⬜ → ✅ in system-wiring-plan; bumped
+  "Already wired" count from 20 to 22. Wave 2 (Sega family completion)
+  reduced from 3 systems to 2 (saturn + dreamcast remain).
+  Order-of-attack re-numbered (8 groups remaining; was 9).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 230/230
+  green (was 224; +6 tests across 2 systems × 3 each).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. **Sega CD** needs a real
+  CD image + matching regional BIOS — drop
+  `genesis_plus_gx_libretro.dll` into `<exe_dir>/cores/` + one of
+  `bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin` into
+  `<exe_dir>/system/`, mark a Sega CD folder via Import Wizard
+  (disambiguates against PCE-CD's claim on the same extensions),
+  confirm sapphire-themed tiles appear, launch a known-good disc.
+  Suggested: Sonic CD (US v2.00), Lunar: The Silver Star Complete,
+  Snatcher, Popful Mail. **Sega 32X** needs a real `.32x` cart
+  launched — drop `picodrive_libretro.dll` into `<exe_dir>/cores/`,
+  scan, confirm neon-orange tiles. Suggested: Knuckles' Chaotix,
+  Virtua Racing Deluxe, Doom 32X, Star Wars Arcade, Kolibri.
+- **Next:** Pace is now 22 systems shipped (was 20). Order-of-attack
+  next pick is `saturn` + `psx` (heavyweight CD-shaped; both need
+  BIOS validation passes — Sega CD's `check_sega_cd_bios` is the
+  precedent the table dispatch generalizes from). 14 cores remaining
+  on the plan; over 65% complete.
+
+---
+
+## 2026-05-20 — VISION first-wave remainder pass (systems #18-20: vectrex + virtualboy + wonderswan)
+
+Three systems in one pass. Completes the VISION-document first-wave
+lineup — the original "overlooked consoles" Overlooked Arcade was
+designed around. All three were pre-registered Phase 0 placeholders
+(SystemIds existed; parse_system_id arms wired; media repo arms
+wired) — needed default_core_dll arms, bindings modules, rom_hashes,
+frontend, and docs.
+
+- **Shipped (Rust):** Three new `bindings.rs` modules:
+  - `vectrex` — 8-button (D-pad + 4 face buttons B1/B2/B3/B4 in
+    horizontal row).
+  - `virtualboy` — 10-button (LEFT D-pad + A + B + L + R + START +
+    SELECT). The unique RIGHT D-pad deferred to Phase 2 (Beetle VB
+    routes it through libretro right analog stick by default; needs
+    both core-option config + shared analog-input infra).
+  - `wonderswan` — 7-button (D-pad + A + B + START). Single D-pad
+    because Beetle WS handles the dual-physical-D-pad rotation
+    (X-pad ↔ Y-pad) per-game-header automatically.
+  All identity remaps, dispatch arms updated. Three new
+  `default_core_dll_for_system` arms (vecx, mednafen_vb, mednafen_wswan).
+- **Shipped (media + rom_hashes):** All three media repo arms were
+  pre-wired from the Phase 0 placeholder seed. Three new rom_hashes
+  DatRef arms — note WonderSwan uses TWO refs (Bandai - WonderSwan
+  + Bandai - WonderSwan Color) merged into one corpus, same shape as
+  `gb` covering DMG + CGB. Both onboarded-systems test fixtures
+  bumped.
+- **Shipped (frontend):** `SystemId` union extended with `vectrex |
+  virtualboy | wonderswan`. Three `systemThemes` entries with
+  notable per-system shader picks:
+  - Vectrex: `crt-lite` as temporary compromise; dedicated
+    `vector-phosphor` shader is Phase 2 polish.
+  - **Virtual Boy: `plain` shader — first OA system to explicitly
+    opt OUT of `crt-lite`.** The VB's monochrome-red LED display
+    had no scanlines / no CRT artifacts; CRT shading would muddy
+    the crisp red-on-black aesthetic. Documented as the precedent
+    for future LED/VFD systems.
+  - WonderSwan: `crt-lite` per the cross-handheld convention.
+  Three new `[data-system=…]` CSS blocks:
+  - Vectrex: bright phosphor green 165°/L=0.80/C=0.16 (highest
+    lightness in the lineup — reads as "luminescent vector beam").
+  - Virtual Boy: deep VB red 7°/L=0.55/C=0.26 (highest chroma red in
+    the lineup; lightness-axis differentiates from MAME 12°/L=0.64
+    and NES 28°/L=0.62).
+  - WonderSwan: pearl lavender 305°/L=0.70/C=0.14 (open 295-320°
+    range; sherbet/pearl shell vibe).
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `coleco` to
+  `vectrex`. Three full per-core docs sets at
+  `docs/cores/{vectrex,virtualboy,wonderswan}/` (15 doc files).
+  Decisions captured the per-system nuances: Vectrex's deferred
+  vector-phosphor shader + overlay rendering, VB's `plain` shader
+  precedent + right-D-pad Phase 2 path, WS's single-slug-multi-
+  hardware pattern + core-managed rotation + multi-repo cover
+  follow-up (same gap as `gb` ↔ GBC).
+- **Plan:** Flipped 3 rows ⬜ → ✅; bumped "Already wired" count from
+  17 to 20. **Wave 1 (VISION first-wave remainder) now COMPLETE —
+  all six originally-flagged systems shipped.** Order-of-attack
+  re-numbered (9 groups remaining, was 10).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 224/224
+  green (was 215; +9 tests across 3 systems × 3 each).
+  Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation across all three. Per
+  system: drop the .dll into `<exe_dir>/cores/` (+ optional Vectrex
+  BIOS for Mine Storm pack-in), scan the system folder, confirm
+  themed tiles, launch a known-good ROM. Suggested test reels:
+  Vectrex — Mine Storm + Berzerk + Star Trek + Spike. VB — Mario's
+  Tennis + V-Tetris + Galactic Pinball (single-D-pad titles). WS —
+  Klonoa: Moonlight Museum + Final Fantasy I (color) + GunPey.
+- **Next:** Pace is now 12 systems shipped in 2 days — over half
+  the original 34-system plan. Order-of-attack next pick is
+  `segacd` + `sega32x` (Sega family completion; first CD-shape
+  onboarding pair since the early-2026 TG-CD work, will need BIOS
+  pre-check pass for Sega CD).
+
+---
+
+## 2026-05-19 — Obscure 70s/80s consoles pass (systems #14-17: coleco + intv + o2 + channelf)
+
+Big batched onboarding session — four systems in one pass, matching the
+order-of-attack's "obscure 70s/80s consoles" group. All four are
+shape-similar (small TV consoles from the 1976-1983 era, small ROM
+libraries, simple controllers in modern terms) but each has its own
+quirks. Followed the standard 6-step recipe + oa-core variants × 4,
+batched by step rather than per-system to keep moving.
+
+- **Shipped (Rust, oa-core):** Three new SystemId variants —
+  `Intellivision`, `Odyssey2`, `ChannelF`. Colecovision was already
+  registered from the Phase 0 placeholder seed.
+- **Shipped (Rust, main.rs):** Four `parse_system_id` arms (coleco
+  already existed; added intv/o2/channelf with aliases). Four
+  `default_core_dll_for_system` arms — `bluemsx` (coleco), `freeintv`
+  (intv), `o2em` (o2), `freechaf` (channelf).
+- **Shipped (Rust, bindings.rs):** Four modules with widely-varying
+  controller shapes:
+  - `coleco` — 16-button (D-pad + 2 fires + 10 keypad numbers KP0-KP9).
+    Full keypad coverage in Phase 0 since Coleco launch-era games
+    REQUIRE keypad input at game start.
+  - `intv` — 10-button (D-pad disc-as-8-way + 4 side action buttons
+    LOWER_L/R + UPPER_L/R + START/SELECT for keypad ENTER/CLEAR).
+    Full 12-keypad and 16-direction disc analog are Phase 2 polish.
+  - `o2` — 5-button (D-pad + single ACTION button). Second
+    single-action system after 2600; the 47-key alphanumeric keyboard
+    routes through libretro RETRO_DEVICE_KEYBOARD via OA's existing
+    keyboard passthrough.
+  - `channelf` — 9-button (4-axis plunger as D-pad + FIRE + 4 console
+    switches MODE/TIME/START/HOLD with hardware-label keyboard
+    bindings).
+  All four with identity remaps, dispatch arms, default bindings.
+  Documented two NEW single-action exceptions in the
+  `z_is_the_primary_action_button_on_every_system` test header:
+  o2 (true single-button) + channelf (effectively single-action;
+  MODE/TIME/START/HOLD are console switches with hardware-label
+  keyboards, not secondary game actions).
+- **Shipped (media + rom_hashes):** Four `media::repo_for_system_id`
+  arms (Coleco_-_ColecoVision, Mattel_-_Intellivision,
+  Magnavox_-_Odyssey2, Fairchild_-_Channel_F). Four
+  `rom_hashes::libretro_dat_refs_for_system` arms (one no-intro DatRef
+  per system). Both onboarded-systems test fixtures bumped to include
+  all four slugs.
+- **Shipped (frontend):** `SystemId` union extended with
+  `"coleco" | "intv" | "o2" | "channelf"`. Four `systemThemes` entries
+  with extension policy: Coleco `["col", "cv"]`, Intv `["int"]`, O2
+  `["o2"]` (synthetic — the .bin-dominant O2 community has no
+  widely-standardized non-bin extension), Channel F `["chf"]`. All
+  portrait 3/4, crt-lite shader. Four new `[data-system=…]` CSS
+  blocks with the theme colors operator picked:
+  - Coleco bright cyan 195°/L=0.72/C=0.16 (unclaimed teal-cyan range)
+  - Intv deep Mattel navy 260°/L=0.50/C=0.17 (period-correct;
+    lightness-axis separation from SNES violet + Genesis cobalt)
+  - O2 rose-fuchsia 325°/L=0.62/C=0.18 (unclaimed; 15° from SMS magenta)
+  - Channel F cedar-brown 25°/L=0.45/C=0.06 — sibling wood-grain
+    to 2600's yellow-pine (60°/L=0.60/C=0.07). The two pioneer
+    wood-grain consoles (1976 Channel F + 1977 2600 VCS) now read as
+    a deliberate family in mixed library tiles.
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `2600` to
+  `coleco`. Four full per-core docs sets at `docs/cores/{coleco,intv,o2,channelf}/`
+  (README + ROADMAP + SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS — 20
+  doc files total). KNOWN_GAME_BUGS pre-populated where the deferred-
+  input list is known up-front (Intv 16-direction disc games,
+  Intv keypad-required games, O2 keyboard-required games, Channel F
+  plunger-precision games). Flipped 4 rows ⬜ → ✅ in the plan;
+  bumped "Already wired" count from 13 to 17 (over HALF the
+  original 34-system plan now wired in one day).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 215/215
+  green (was 203; +12 tests: 3 per system × 4 systems). Frontend
+  `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation across all four. Per
+  system: drop the appropriate .dll into `<exe_dir>/cores/`, install
+  the BIOS file(s) for systems that need them (`coleco.rom` for
+  Coleco, `exec.bin` + `grom.bin` for Intv, `o2rom.bin` for O2,
+  none for Channel F), scan the system folder, confirm themed tiles,
+  launch a known-good ROM.
+- **Next:** With 17/34 systems wired (50%), next pick per the
+  order-of-attack is `vectrex` + `virtualboy` + `wonderswan` — the
+  VISION first-wave remainder (the systems originally identified in
+  `docs/VISION.md` as Overlooked Arcade's launch lineup that haven't
+  shipped yet).
+
+---
+
+## 2026-05-19 — Atari 2600 Phase 0 onboarding (system #13)
+
+Followed the standard 6-step recipe + oa-core SystemId variant. First
+system in OA's lineup that's legitimately single-button — required
+documenting an exception in the cross-system "Z is primary" test
+fixture and pinning the Z=FIRE assertion to a per-system test
+instead. Also first system in OA where the .bin extension question
+was non-trivial enough to need operator decision (resolved: `.a26`
+only at the global registry, `.bin` via per-folder rules).
+
+- **Shipped (Rust):** `oa_core::SystemId::Atari2600` variant (Rust
+  identifier can't start with a digit; string slug stays `"2600"`).
+  `bindings.rs::atari2600` module — 7-button layout (4-way d-pad +
+  FIRE + SELECT + RESET), identity libretro remap, `ATARI2600_BUTTONS`
+  table, `default_atari2600_bindings()`, all dispatch arms keyed by
+  string `"2600"`. `parse_system_id` arm covering `"2600" |
+  "atari2600" | "vcs" → SystemId::Atari2600`.
+  `default_core_dll_for_system("2600") → "stella_libretro.dll"`.
+- **Shipped (media + rom_hashes):** `media::repo_for_system_id("2600")
+  → "Atari_-_2600"`. `rom_hashes::libretro_dat_refs_for_system("2600")
+  → metadat/no-intro/Atari - 2600`. Both onboarded-systems test
+  fixtures bumped.
+- **Shipped (frontend):** `SystemId` union extended in `themes/registry.ts`
+  with `"2600"`; `systemThemes["2600"]` entry (extensions `["a26"]`
+  ONLY — `.bin` deliberately excluded), portrait 3/4 tile aspect,
+  `crt-lite` default shader preset. New `[data-system="2600"]` block
+  in `themes/systems.css` — muted wood-grain brown at hue 60° / chroma
+  0.07. Sits 5° from TG-16 orange (55°) but the chroma 0.07 vs 0.18
+  separates them on saturation: TG-16 = bright orange, 2600 = quiet
+  warm brown. Period-correct for the original wood-veneer VCS.
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `gba` to
+  `2600`. New per-core docs at `docs/cores/2600/` (README + ROADMAP +
+  SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS). DECISIONS captures:
+  Stella as default + no real alternate, `.a26`-only-with-per-folder-
+  rules rationale + full collision analysis, wood-grain hue choice +
+  why low-chroma separates it from TG-16, the 7-button single-button
+  exception, why Difficulty / Color switches route through Stella's
+  core options rather than bindings, paddle-controller deferral list.
+  KNOWN_GAME_BUGS pre-populated with the 8 paddle-required titles
+  (Breakout, Kaboom!, Warlords, Super Breakout, Night Driver, Indy
+  500, Casino, Backgammon) documented as unplayable until shared
+  analog-input infra lands. Flipped row ⬜ → ✅ in plan; bumped "Already
+  wired" count to 13.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 203/203
+  green (was 200; +3 atari2600 tests: defaults coverage incl. explicit
+  Z=FIRE assertion, identity remap, dispatch round-trip). Frontend
+  `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. Operator drops
+  `stella_libretro.dll` into `<exe_dir>/cores/` (or configures a
+  `*.bin → 2600` per-folder rule if their library is `.bin`-shaped),
+  scans an Atari 2600 ROMs folder, confirms wood-grain themed tiles,
+  launches a known-good joystick-only ROM (suggested: Adventure,
+  Pitfall!, Yars' Revenge, River Raid, Asteroids).
+- **Next:** Operator runs `Settings → Library → Identify ROMs` + `Sync
+  media for Atari 2600` and confirms canonical title + cover download.
+  Once Phase 1 ✅, next pick per the order-of-attack is the obscure
+  70s/80s consoles pass — `coleco` + `intv` + `o2` + `channelf` —
+  matching the Overlooked Arcade thesis perfectly.
+
+---
+
+## 2026-05-19 — Game Boy Advance Phase 0 onboarding (system #12)
+
+Followed the post-libretro-pivot 6-step recipe + oa-core SystemId
+variant. Fourth Phase-0 of the day; Wave 4 (Nintendo handhelds) now
+1-of-2 remaining (only `nds` left, which is deferred until the touch-
+screen input pass).
+
+- **Shipped (Rust):** `oa_core::SystemId::Gba` variant. `bindings.rs::gba`
+  module — 10-button layout (4-way d-pad + A + B + L + R + START +
+  SELECT), identity libretro remap, `GBA_BUTTONS` table,
+  `default_gba_bindings()`, all dispatch arms. `parse_system_id` arm
+  covering `"gba" | "game-boy-advance" | "gameboyadvance" → SystemId::Gba`.
+  `default_core_dll_for_system("gba") → "mgba_libretro.dll"`.
+- **Shipped (media + rom_hashes):** `media::repo_for_system_id("gba")
+  → "Nintendo_-_Game_Boy_Advance"`. `rom_hashes::libretro_dat_refs_for_system("gba")
+  → metadat/no-intro/Nintendo - Game Boy Advance`. Both onboarded-systems
+  test fixtures bumped.
+- **Shipped (frontend):** `SystemId` union extended in `themes/registry.ts`
+  with `"gba"`; `systemThemes.gba` entry (extensions `["gba"]`, portrait
+  3/4 tile aspect, `crt-lite` default shader preset per the handheld
+  convention). New `[data-system="gba"]` block in `themes/systems.css` —
+  deep indigo at hue 285°, lightness 0.55, chroma 0.20. Sits between
+  SNES violet (270°, L=0.62) and Lynx purple (290°, L=0.65) in hue —
+  operator accepted the 15° crowding for period-correctness; the
+  lightness axis separates the three purples (GBA = darkest, SNES =
+  mid, Lynx = brightest).
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `gb` to
+  `gba`. New per-core docs at `docs/cores/gba/` (README + ROADMAP +
+  SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS). DECISIONS captures:
+  mGBA as default (VBA-Next / VBA-M as alternates), separate slug
+  from `gb` rationale, indigo hue + lightness-axis separation
+  reasoning, `.gba` only extension, BIOS-optional + Phase-2 BIOS-
+  required pre-check plan. Flipped row ⬜ → ✅ in plan; bumped "Already
+  wired" count to 12; Wave 4 now 1-of-2 remaining.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 200/200
+  green (was 197; +3 gba tests: defaults coverage, identity remap,
+  dispatch round-trip). Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. Operator drops
+  `mgba_libretro.dll` into `<exe_dir>/cores/`, scans a GBA ROMs folder,
+  confirms indigo-themed tiles, launches a known-good ROM (suggested:
+  The Minish Cap, Pokémon FireRed / Emerald, Metroid Zero Mission,
+  Advance Wars, Castlevania Aria of Sorrow).
+- **Next:** Operator runs `Settings → Library → Identify ROMs` + `Sync
+  media for Game Boy Advance` and confirms canonical title + cover
+  download. Once Phase 1 ✅, next pick per the order-of-attack is
+  `2600` (Atari — Stella).
+
+---
+
+## 2026-05-19 — Game Boy / Game Boy Color Phase 0 onboarding (system #11)
+
+Followed the post-libretro-pivot 6-step recipe (plus the oa-core
+SystemId variant since GB was a fresh add — no pre-wiring like
+SMS+GG had). Single-slug-covers-both-hardware-variants — Gambatte
+auto-detects DMG vs CGB from the ROM header at load time.
+
+- **Shipped (Rust):** `oa_core::SystemId::Gb` variant.
+  `bindings.rs::gb` module — 8-button NES-shape layout (4-way d-pad +
+  A + B + START + SELECT), identity libretro remap, `GB_BUTTONS`
+  table, `default_gb_bindings()`, all dispatch arms. `parse_system_id`
+  arm covering `"gb" | "gbc" | "gameboy" | "game-boy" | "game-boy-color"
+  → SystemId::Gb`. `default_core_dll_for_system("gb") → "gambatte_libretro.dll"`.
+- **Shipped (media + rom_hashes):** `media::repo_for_system_id("gb")
+  → "Nintendo_-_Game_Boy"` as primary cover repo. GBC-specific cover
+  coverage (the parallel `Nintendo_-_Game_Boy_Color` repo) deferred as
+  a documented multi-repo follow-up. `rom_hashes::libretro_dat_refs_for_system("gb")`
+  returns TWO DatRefs — `metadat/no-intro/Nintendo - Game Boy` AND
+  `metadat/no-intro/Nintendo - Game Boy Color` — merged into one local
+  corpus by `fetch_and_parse_all`. Both onboarded-systems test fixtures
+  bumped.
+- **Shipped (frontend):** `SystemId` union extended in `themes/registry.ts`
+  with `"gb"`; `systemThemes.gb` entry (extensions `["gb", "gbc"]`,
+  portrait 3/4 tile aspect, `crt-lite` default shader preset per the
+  handheld convention). New `[data-system="gb"]` block in
+  `themes/systems.css` — muted DMG pea-green at hue 145°, chroma 0.13.
+  Decisively distinct from Game Gear's bright yellow-green (130°, 0.18)
+  by both hue (15° gap) and chroma (0.05 gap).
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `sms` to
+  `gb`. New per-core docs at `docs/cores/gb/` (README + ROADMAP +
+  SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS). DECISIONS captures:
+  Gambatte as default (SameBoy as accuracy-focused override), single
+  slug for DMG + CGB, default cover repo choice + multi-repo follow-up,
+  pea-green at hue 145° / chroma 0.13 with the cross-system hue map
+  reasoning, `.bin` / `.cgb` / `.sgb` exclusions. Flipped row ⬜ → ✅
+  in `docs/PLANS/system-wiring-plan.md`; bumped "Already wired" count
+  to 11; **fixed last session's "gb + gbc" typo** in the order-of-attack
+  list (single `gb` slug, not paired).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 197/197
+  green (was 194; +3 gb tests: defaults coverage, identity remap,
+  dispatch round-trip). Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. Operator drops
+  `gambatte_libretro.dll` into `<exe_dir>/cores/`, scans a GB/GBC ROMs
+  folder, confirms pea-green-themed tiles, launches known-good ROMs
+  (suggested DMG: Tetris, Super Mario Land, Link's Awakening, Pokémon
+  Red; suggested CGB: Pokémon Crystal, Link's Awakening DX, Wario
+  Land 3).
+- **Next:** Operator runs `Settings → Library → Identify ROMs` + `Sync
+  media for Game Boy` and confirms canonical title + DMG cover
+  download work. Once Phase 1 ✅, next pick per the order-of-attack
+  is `gba` (mGBA).
+
+---
+
+## 2026-05-19 — SMS + Game Gear Phase 0 onboarding (systems #9 + #10, paired)
+
+Operator picked Wave 1 item #1 from `docs/PLANS/system-wiring-plan.md` —
+SMS + Game Gear together, single Genesis Plus GX .dll services both.
+Followed the post-libretro-pivot 6-step recipe end to end, once per
+system. Theme decisions made up-front via AskUserQuestion (SMS neon
+magenta 340°, GG yellow-green 130°) so no hue collisions snuck in.
+
+- **Shipped (Rust):** New `bindings.rs::sms` + `bindings.rs::gamegear`
+  modules — 7-button SMS layout (4-way d-pad + B1 + B2 + PAUSE) and
+  identical-shape GG layout with the operator-facing label "START"
+  (matches hardware: SMS Pause sat on the console, GG Start sits on
+  the unit). Both identity-mapped to libretro RetroPad bits, both
+  follow the cross-system "Z is primary" rule. `SMS_BUTTONS` /
+  `GAMEGEAR_BUTTONS` tables, `default_sms_bindings()` /
+  `default_gamegear_bindings()`, `sms_to_libretro_bits` /
+  `gamegear_to_libretro_bits`, all dispatch arms updated. `parse_system_id`
+  already covered both slugs (`"gamegear" | "game-gear" → GameGear`).
+  `default_core_dll_for_system("sms" | "gamegear") → "genesis_plus_gx_libretro.dll"`.
+- **Shipped (media + rom_hashes):** `repo_for_system_id` arms for sms
+  + gamegear were already wired ahead of onboarding; bumped the media
+  + rom_hashes onboarded-systems test fixtures to include both slugs.
+  Also caught up: `rom_hashes::ONBOARDED_SYSTEMS` was missing `genesis`
+  from the prior session — added now alongside the new pair.
+  `rom_hashes::libretro_dat_refs_for_system("sms") → metadat/no-intro/Sega - Master System - Mark III`;
+  `("gamegear") → metadat/no-intro/Sega - Game Gear`.
+- **Shipped (frontend):** `SystemId` union extended in `themes/registry.ts`
+  with `"sms"` + `"gamegear"`; two new `systemThemes` entries (extensions
+  `["sms"]` / `["gg"]`, landscape 4/3 tiles, `crt-lite` default shader
+  preset for both). New `[data-system="sms"]` block — neon magenta at
+  hue 340°, chroma 0.22 (period-correct for the SMS Western Big Box
+  grid-floor era). New `[data-system="gamegear"]` block — yellow-green
+  at hue 130°, chroma 0.18 (GG launch packaging palette). Both
+  visually distinct from every prior hue.
+- **Shipped (docs):** Per-core docs at `docs/cores/sms/` and
+  `docs/cores/gamegear/` (README + ROADMAP + SESSION_LOG +
+  KNOWN_GAME_BUGS + DECISIONS — matched the genesis structure). DECISIONS
+  capture: Genesis Plus GX as the shared default (install-once value
+  with the other Sega slug), 7-button layouts with the "PAUSE" vs "START"
+  label diff matching hardware, the hue choices with rationale, and the
+  `.bin` exclusion consistent with every other system. `docs/ACTIVE_CORE.md`
+  switched from `genesis` to `sms`. Flipped both rows ⬜ → ✅ in
+  `docs/PLANS/system-wiring-plan.md`; bumped "Already wired" count to 10
+  and renumbered the order-of-attack list (now 14 items, 24 systems
+  remaining).
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 194/194
+  green (was 188; +6 tests: defaults coverage ×2, identity remap ×2,
+  dispatch round-trip ×2). Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation for both systems. Operator
+  drops `genesis_plus_gx_libretro.dll` into `<exe_dir>/cores/` (one
+  .dll services both slugs), scans SMS + GG ROMs folders, confirms
+  themed tiles appear, launches known-good ROMs (suggested SMS:
+  Alex Kidd in Miracle World, Phantasy Star, Wonder Boy III; suggested
+  GG: Sonic the Hedgehog (Game Gear), Shinobi, Tails Adventure).
+- **Next:** Operator runs `Settings → Library → Identify ROMs` +
+  `Sync media for SMS` + `Sync media for Game Gear` and confirms
+  canonical title + cover download work. Once Phase 1 ✅, next
+  Wave-1 pick per the order-of-attack is `gb` + `gba` (Gambatte + mGBA).
+
+---
+
+## 2026-05-19 — Genesis / Mega Drive Phase 0 onboarding (system #8)
+
+Operator installed ClownMDEmu v1.6.11 (`clownmdemu_libretro.dll`) and
+asked to wire it up. Followed the post-libretro-pivot 6-step recipe end
+to end (see `feedback_multi_core_architecture_ready` memory) in a single
+pass.
+
+- **Shipped (Rust):** `oa_core::SystemId::Genesis` variant. New
+  `bindings.rs::genesis` module — 12-button layout (4-way d-pad + 6
+  face buttons A/B/C + X/Y/Z + START + MODE) laid out as libretro
+  RetroPad bits so the remap is identity. `GENESIS_BUTTONS` table,
+  `default_genesis_bindings()`, `genesis_to_libretro_bits`, all
+  dispatch arms (`bit_for` / `buttons_for` / `to_libretro_bits` /
+  `defaults_for`). `parse_system_id("genesis" | "megadrive" |
+  "mega-drive") → SystemId::Genesis`. `default_core_dll_for_system("genesis") → "clownmdemu_libretro.dll"`.
+- **Shipped (media + rom_hashes):** `repo_for_system_id("genesis") → Sega_-_Mega_Drive_-_Genesis`
+  for libretro-thumbnails cover sync. `rom_hashes::libretro_dat_refs_for_system("genesis") → metadat/no-intro/Sega - Mega Drive - Genesis`
+  for hash-based ROM identification. Onboarded systems test list bumped to include genesis.
+- **Shipped (frontend):** `SystemId` union extended in `themes/registry.ts`;
+  `systemThemes.genesis` entry (extensions `["md", "smd", "gen", "68k"]`,
+  landscape 4/3 tile, `crt-lite` default shader preset). New `[data-system="genesis"]`
+  block in `themes/systems.css` — cobalt blue at hue 245°, chroma 0.22.
+  Deliberately distinct from PCE-CD's cyan-blue (220°, chroma 0.14) so
+  a mixed library reads at a glance.
+- **Shipped (docs):** `docs/ACTIVE_CORE.md` switched from `tg16` to
+  `genesis`. New per-core docs at `docs/cores/genesis/` (README +
+  ROADMAP + SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS). DECISIONS
+  captures: ClownMDEmu as default (operator pick), 6-button-MD layout
+  default with the "B → East per OA console-pad convention" twist,
+  cobalt blue at 245°-not-220°, `.md/.smd/.gen/.68k` registered with
+  `.bin` excluded.
+- **Validation:** `cargo test -p oa-shell --bin oa-shell` 188/188
+  green (was 185; +3 genesis tests: defaults coverage, identity remap,
+  dispatch round-trip). Frontend `npm run typecheck` silent.
+- **Almost:** Phase 1 operator validation. Operator drops
+  `clownmdemu_libretro.dll` into `<exe_dir>/cores/`, scans a Genesis
+  ROMs folder, confirms cobalt-themed tiles, launches a known-good ROM
+  (suggested: Sonic the Hedgehog, Streets of Rage 2, Phantasy Star IV,
+  Gunstar Heroes).
+- **Next:** Operator runs `Settings → Library → Identify ROMs` + `Sync
+  media for Genesis` and confirms canonical title + cover download work.
+  Once Phase 1 ✅, Phase 2 polish (3-button vs 6-button game map,
+  MD-specific glyphs) opens.
+
+---
+
+## 2026-05-19 — Library infra sweep: hashing, multi-region grouping, CD disc-ID, display/overscan overrides, bezel UI
+
+Cross-cutting library + media + per-system/per-game override work. Atari 7800 also onboarded as system #7 (separate per-core SESSION_LOG entry).
+
+- **Shipped (rom_hashes architecture overhaul):** Header-aware hashing in `apps/oa-shell/src/rom_hashes.rs` — iNES / SMC / LNX / A78 / TG16 headers stripped before SHA-1 so dumps match libretro-database. Path fix from `dat/` to `metadat/no-intro` + `metadat/redump` + `metadat/headered` matches upstream's actual layout. Sync semantics changed from "append" to "wipe-and-replace" so re-syncs don't accumulate stale rows. New `game_serials` table + `games.disc_id` column for CD identification.
+- **Shipped (multi-region grouping):** New `apps/oa-shell/src/title_parse.rs` extracts canonical title + region + revision tokens from filenames; `apps/oa-shell/src/library_groups.rs` aggregates rows that share a canonical title into a group. Schema v9→v10 adds `game_group_defaults` table. Per-system + per-game region/revision priority settings (`SystemSettings` + `GameOverrides`) feed a deterministic "preferred member" picker. UI: "Versions ·N" submenu in `TileContextMenu.tsx` + ▼N tile badge in `LibraryTile.tsx` + grouped tile shows the preferred member as primary.
+- **Shipped (CD disc-ID extractor):** New `apps/oa-shell/src/cd_id.rs` module — PCE-CD signature extractor + cue + iso + chd format support (chd via the `chd` crate). Archived CDs supported via a new partial-read helper in `apps/oa-shell/src/archive.rs` so disc-ID extraction works without full extraction. Output threads into the new `games.disc_id` column at ingest time.
+- **Shipped (display aspect override + overscan crop):** `SystemSettings.display_aspect_override: Option<f32>` + `SystemSettings.overscan_crop_override: Option<OverscanCropPrefs { top, bottom, left, right }>` (`apps/oa-shell/src/system_settings.rs`). Mirrored onto `GameOverrides` in `apps/oa-shell/src/library_db.rs`. Per-game → per-system → core-default resolution feeds the renderer viewport math via the existing Display launch-wiring chain. Closes both the 2026-05-15 PARKING_LOT "Per-system overscan / safe-area / aspect-correction quirks" entry and the tg16 ROADMAP "Pixel aspect ratio" / "Per-system aspect-ratio entry in the system registry" items.
+- **Shipped (solid-dnd drag-reorder):** Replaced the ad-hoc HTML5 drag handlers in region priority (library + media), library folders, and the widget customizer with `solid-dnd` for consistent keyboard accessibility + animation. Sidebar systems list audited against `themes/registry.ts` to ensure no orphaned ordering.
+- **Shipped (Auto-Identify after every ingest):** Every ingest path (folder pick, archive scan, watcher event, drag-drop fallback) now triggers `identify_roms` automatically against the new wipe-and-replace libretro-database sync — no operator step needed to populate canonical titles + publishers + years.
+- **Shipped (cover sync via libretro-thumbnails infra):** `repo_for_system_id` in `apps/oa-shell/src/media.rs` gained explicit mappings for all 7 onboarded systems + the 9 first-wave systems waiting (sms / gamegear / msx / msx2 / coleco / vectrex / virtualboy / wonderswan / wonderswan-color). Per-core ROADMAPs updated from "needs configuration" to "needs operator validation" for lynx / nes / snes / mame / atari7800 / pce-cd.
+- **Shipped (Bezel system UI):** File picker for bezel image per-system + per-game; new file-load Tauri command; new `EmuCommand` variant for bezel apply; launch-path wiring resolves per-game → per-system → none. Renderer-side bezel pipeline (Phase 3 slice B-2) already shipped — this slice is the missing UI half.
+- **Almost:** Operator validation of cover-sync against real libretro-thumbnails repos for the 7 onboarded systems. Operator validation of A7800 Phase 1 (real `.a78` launch).
+- **Next:** Phase 2 next-big-thing pick. Recommended: Curation Layer (VISION Pillar 4) — per-system welcome pages with era context, "recommended starts" lists, per-game curator notes. Alternates: HDR tone mapping (Phase 3 last item), rewind scrubber thumbnail strip, SMS/Game Gear onboarding as system #8, per-core cover-sync validation pass, MAME hardening continuation.
+
+---
+
 ## 2026-05-18 — RetroArch parity slice 8: Game Genie / GameShark / Action Replay via libretro
 
 The "raw memory poke" cheat path (slice 5) writes RAM bytes from our side, which doesn't work for codes that target ROM reads or rely on the core's internal cheat machinery (most published cheat codes for retro systems). This slice adds a SECOND cheat kind that pushes the raw user-entered code string through libretro's `retro_cheat_set(index, enabled, code)` callback and lets the CORE decode it per its system's conventions — Game Genie / GameShark / Pro Action Replay / Action Replay / raw `address:value`, whatever each core understands.

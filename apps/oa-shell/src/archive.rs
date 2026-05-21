@@ -46,6 +46,44 @@ impl ArchiveKind {
     }
 }
 
+/// Peek inside a .zip archive and decide whether its content matches the
+/// SNK Neo Geo ROM-set signature. Neo Geo cart-shape games (MAME-style
+/// .zip ROM-sets) have a very distinctive file layout — program ROMs
+/// named `<game>.p1` plus a sprite-font ROM named `<game>.s1`. Both
+/// extensions appearing together is essentially unique to Neo Geo
+/// among the libretro-supported systems (CPS-1 / CPS-2 / other Capcom
+/// arcade boards use different file naming).
+///
+/// Returns true when the zip is a Neo Geo ROM-set. Errors fall back to
+/// false (treat as non-Neo Geo / let the operator disambiguate via
+/// per-folder Import Wizard rule).
+pub fn peek_zip_for_neogeo(archive: &Path) -> bool {
+    let Ok(file) = File::open(archive) else { return false };
+    let Ok(mut zip) = zip::ZipArchive::new(file) else { return false };
+
+    let mut has_p1 = false;
+    let mut has_s1 = false;
+    for i in 0..zip.len() {
+        let Ok(entry) = zip.by_index(i) else { continue };
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().to_ascii_lowercase();
+        // Match by suffix so the per-game prefix doesn't matter.
+        // E.g., `kof97.p1` / `mslug.p1` / `samsho4.p1` all hit.
+        if name.ends_with(".p1") {
+            has_p1 = true;
+        }
+        if name.ends_with(".s1") {
+            has_s1 = true;
+        }
+        if has_p1 && has_s1 {
+            return true;
+        }
+    }
+    false
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveEntry {
@@ -134,6 +172,52 @@ fn list_sevenz(archive: &Path, accepted: &HashSet<String>) -> Result<Vec<Archive
     })
     .map_err(|e| format!("read 7z: {e}"))?;
     Ok(out)
+}
+
+/// Read at most `max_bytes` of a single inner file. Used by the CD
+/// disc-ID peek path so a 700 MB .bin inside a .zip doesn't have to
+/// stream the whole thing into memory just to read the IPL boot
+/// sector. Returns the actual bytes read (may be less than max_bytes
+/// if the entry is shorter).
+pub fn read_inner_partial_to_bytes(
+    archive: &Path,
+    inner: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let ext = extension_of(&archive.to_string_lossy());
+    let Some(kind) = ArchiveKind::from_extension(&ext) else {
+        return Err(format!("not an archive: {ext}"));
+    };
+    match kind {
+        ArchiveKind::Zip => {
+            let file = File::open(archive).map_err(|e| format!("open: {e}"))?;
+            let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("read zip: {e}"))?;
+            let entry = zip
+                .by_name(inner)
+                .map_err(|e| format!("zip inner {inner}: {e}"))?;
+            let cap = max_bytes.min(entry.size() as usize);
+            let mut buf = Vec::with_capacity(cap);
+            entry.take(max_bytes as u64).read_to_end(&mut buf)
+                .map_err(|e| format!("read inner: {e}"))?;
+            Ok(buf)
+        }
+        ArchiveKind::SevenZ => {
+            let mut bytes: Option<Vec<u8>> = None;
+            sevenz_rust::decompress_file_with_extract_fn(archive, std::env::temp_dir(), |entry, reader, _dest| {
+                if entry.is_directory() || entry.name() != inner {
+                    return Ok(true);
+                }
+                let mut buf = Vec::with_capacity(max_bytes.min(entry.size as usize));
+                std::io::copy(&mut reader.take(max_bytes as u64), &mut buf)
+                    .map_err(|e| std::io::Error::other(format!("read 7z inner: {e}")))?;
+                bytes = Some(buf);
+                Ok(false) // stop iterating
+            })
+            .map_err(|e| format!("walk 7z: {e}"))?;
+            bytes.ok_or_else(|| format!("inner not found in 7z: {inner}"))
+        }
+    }
 }
 
 /// Read a single inner file as bytes. Used by the cart-format launch path.

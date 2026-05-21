@@ -209,6 +209,12 @@ impl LibretroCore {
             self.rom_loaded = false;
         }
 
+        // Reset rotation to 0 BEFORE the new core's retro_load_game runs.
+        // Cores that need rotation set it via RETRO_ENVIRONMENT_SET_ROTATION
+        // during load; cores that don't never call the env, so the previous
+        // game's rotation would leak through without this reset.
+        state::with_state(|s| { s.rotation = 0; });
+
         let ext_cstr = CString::new(extension.as_bytes())
             .map_err(|_| CoreError::InvalidRom("extension contains NUL".into()))?;
         let name_cstr = CString::new(name.as_bytes())
@@ -222,11 +228,21 @@ impl LibretroCore {
                 if data.is_empty() {
                     return Err(CoreError::InvalidRom("empty ROM data".into()));
                 }
+                // Synthesize a logical "<name>.<ext>" path. Genesis
+                // Plus GX (and any libretro core that reads the last
+                // 3 bytes of full_path to detect the system) needs a
+                // string that ends with the real extension — an empty
+                // full_path makes its extension-extraction memcpy
+                // read out of bounds and SMS/GG/MD detection fails.
+                let synthetic_path = format!("{}.{}", name, extension);
+                let full_path_cstr = CString::new(synthetic_path.as_bytes())
+                    .map_err(|_| CoreError::InvalidRom("synthesized path contains NUL".into()))?;
                 state::with_state(|s| {
                     s.pending_rom_data = data.as_ptr();
                     s.pending_rom_size = data.len();
                     s.pending_ext = ext_cstr;
                     s.pending_name = name_cstr;
+                    s.pending_full_path = full_path_cstr;
                 });
                 path_cstr = None;
                 retro_game_info {
@@ -248,6 +264,12 @@ impl LibretroCore {
                     CString::new(path_str.as_bytes())
                         .map_err(|_| CoreError::InvalidRom("ROM path contains NUL".into()))?,
                 );
+                // Mirror the real path into pending_full_path so any
+                // core that prefers info_ext->full_path over info->path
+                // gets a sensible value (same shape as the Bytes
+                // branch's synthetic path).
+                let full_path_cstr = CString::new(path_str.as_bytes())
+                    .map_err(|_| CoreError::InvalidRom("ROM path contains NUL".into()))?;
                 // Clear data path so GET_GAME_INFO_EXT returns nothing — the
                 // core picks up the path from info.path and opens files itself.
                 state::with_state(|s| {
@@ -255,6 +277,7 @@ impl LibretroCore {
                     s.pending_rom_size = 0;
                     s.pending_ext = ext_cstr;
                     s.pending_name = name_cstr;
+                    s.pending_full_path = full_path_cstr;
                 });
                 retro_game_info {
                     path: path_cstr.as_ref().unwrap().as_ptr(),
@@ -314,6 +337,16 @@ impl LibretroCore {
     /// True once `load_rom` has returned Ok.
     pub fn has_rom(&self) -> bool {
         self.rom_loaded
+    }
+
+    /// Display rotation reported by the core via
+    /// `RETRO_ENVIRONMENT_SET_ROTATION`. Units of 90° clockwise (0..=3).
+    /// Vertical arcade boards (Pac-Man, Galaxian, Donkey Kong, Galaga,
+    /// Donkey Kong Jr.) set 1 or 3; non-rotated systems leave this at 0.
+    /// The shell reads this after `load_rom` returns and pushes to the
+    /// renderer's viewport math.
+    pub fn rotation(&self) -> u32 {
+        state::with_state(|s| s.rotation).unwrap_or(0)
     }
 
     /// Re-wire a controller port to the given libretro device type. Used to
@@ -494,7 +527,21 @@ impl Core for LibretroCore {
         if port_idx >= 5 {
             return;
         }
-        state::with_state(|s| s.input_bits[port_idx] = input.buttons as u16);
+        state::with_state(|s| {
+            s.input_bits[port_idx] = input.buttons as u16;
+            // Analog axes flow through the same set_input call. Cores
+            // that don't poll RETRO_DEVICE_ANALOG (most pre-N64 systems)
+            // simply ignore the stored values; cores that do (N64,
+            // GameCube, DualShock, Saturn 3D Pad, etc.) get the i16
+            // values back via cb_input_state's RETRO_DEVICE_ANALOG arm.
+            s.input_axes[port_idx] = input.axes;
+            // Pointer device state flows through the same path. Cores
+            // that don't poll RETRO_DEVICE_POINTER (most systems) ignore
+            // the stored values; NDS / light-gun games / DC HoTD get the
+            // (x, y, pressed) tuple back via cb_input_state's
+            // RETRO_DEVICE_POINTER arm.
+            s.input_pointer[port_idx] = input.pointer;
+        });
     }
 
     fn save_state(&self, writer: &mut dyn std::io::Write) -> Result<(), CoreError> {

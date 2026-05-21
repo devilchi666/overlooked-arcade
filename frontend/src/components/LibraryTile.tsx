@@ -21,6 +21,12 @@ type Props = {
   /// derives this from the current selection signal so virtualized tiles only
   /// re-render when their own selected-ness flips.
   selected?: boolean;
+  /// When this tile represents a multi-variant game group (e.g. multiple
+  /// regions / revisions of the same title), the count of variants in
+  /// that group. The tile renders a `▼N` badge so the user knows the
+  /// right-click menu offers "Run version ▸ ...". Single-file games
+  /// pass `undefined` (or 1) — no badge rendered.
+  variantCount?: number;
 };
 
 const Placeholder: Component = () => (
@@ -150,6 +156,14 @@ const LibraryTile: Component<Props> = (props) => {
             title={`Custom core: ${props.entry.coreOverride}`}
           >
             Core ◆
+          </span>
+        </Show>
+        <Show when={!props.entry.seed && (props.variantCount ?? 0) > 1}>
+          <span
+            class="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur"
+            title={`${props.variantCount} versions / regions — right-click to pick`}
+          >
+            ▼ {props.variantCount}
           </span>
         </Show>
         <Show when={!props.entry.seed && props.onShowSaves}>
