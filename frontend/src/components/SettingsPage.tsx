@@ -345,8 +345,11 @@ const SettingsPage: Component<Props> = (props) => {
   // Per-system metadata-clear loading state. No progress bar — the
   // server-side call is O(N) over library_db ids and completes in well
   // under a second even on large libraries; a binary "clearing…" pill
-  // is enough.
+  // is enough. metaClearStatus is the last-action line shown under the
+  // button row (same shape as the other Sync status lines); empty
+  // string = no status to show yet.
   const [metaClearing, setMetaClearing] = createSignal<Record<string, boolean>>({});
+  const [metaClearStatus, setMetaClearStatus] = createSignal<Record<string, string>>({});
   let unlistenSync: UnlistenFn | undefined;
   let unlistenSyncDone: UnlistenFn | undefined;
   let unlistenMeta: UnlistenFn | undefined;
@@ -610,9 +613,11 @@ const SettingsPage: Component<Props> = (props) => {
       (e) => e.systemId === systemId && !e.seed,
     ).length;
     if (count === 0) {
-      // Nothing to do — but tell the user that explicitly so they
-      // know the click registered.
-      window.alert(`No ${name} games in the library.`);
+      // No games for this system in the library yet — surface that as
+      // an inline status rather than an alert (Tauri 2's dialog plugin
+      // gates window.alert behind an ACL we don't always carry, and a
+      // status line matches the other Sync buttons' feedback style).
+      setMetaClearStatus((prev) => ({ ...prev, [systemId]: `no ${name} games in library` }));
       return;
     }
     if (
@@ -626,18 +631,20 @@ const SettingsPage: Component<Props> = (props) => {
       return;
     }
     setMetaClearing((prev) => ({ ...prev, [systemId]: true }));
+    setMetaClearStatus((prev) => ({ ...prev, [systemId]: "clearing…" }));
     try {
       const result = await invoke<{ systemId: string; scanned: number; cleared: number }>(
         "clear_metadata_for_system",
         { systemId },
       );
       await media.refreshAll();
-      window.alert(
-        `Cleared metadata on ${result.cleared} of ${result.scanned} ${name} game(s).`,
-      );
+      setMetaClearStatus((prev) => ({
+        ...prev,
+        [systemId]: `cleared ${result.cleared} of ${result.scanned} game(s)`,
+      }));
     } catch (e) {
       console.warn("clear_metadata_for_system failed:", e);
-      window.alert(`Clear metadata failed: ${String(e)}`);
+      setMetaClearStatus((prev) => ({ ...prev, [systemId]: `error: ${String(e)}` }));
     } finally {
       setMetaClearing((prev) => ({ ...prev, [systemId]: false }));
     }
@@ -976,6 +983,13 @@ const SettingsPage: Component<Props> = (props) => {
                               metadata · {p().done}/{p().total} · {p().currentRomTitle || p().lastAction}
                             </p>
                           </>
+                        )}
+                      </Show>
+                      <Show when={metaClearStatus()[id]}>
+                        {(s) => (
+                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            clear metadata · {s()}
+                          </p>
                         )}
                       </Show>
                       <Show when={hashSyncSummary()[id]}>
