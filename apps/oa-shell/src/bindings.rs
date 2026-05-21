@@ -260,8 +260,21 @@ pub mod coleco {
 /// a 16-direction analog disc (mapped to libretro D-pad as 8-way in
 /// Phase 0; full 16-direction is a Phase 2 analog-input dependency) +
 /// 4 side action buttons (upper-L, upper-R, lower-L, lower-R) + a
-/// 12-key keypad. FreeIntv libretro maps the action buttons to L/R/B/A
-/// and keypad numbers spread across the remaining bits.
+/// 12-key keypad (1, 2, 3 / 4, 5, 6 / 7, 8, 9 / CLEAR, 0, ENTER).
+/// FreeIntv libretro maps the action buttons to L/R/B/A and the
+/// keypad's CLEAR / ENTER to SELECT / START. The keypad's 10 number
+/// keys (KP0-KP9) spread across the remaining RetroPad bits in two
+/// tiers:
+///
+/// - **Core-readable** (libretro RetroPad bits 0-15): KP1 on Y, KP2
+///   on X, KP3-KP6 on L2/R2/L3/R3. Six keys reachable through the
+///   standard FreeIntv RetroPad dispatch.
+/// - **Shell-reserved** (bits 16-19, above RetroPad): KP7-KP9 + KP0.
+///   Surfaced in the per-system Bindings page so operators can
+///   assign keyboard keys, but pad-binding is unsupported for these
+///   four — same pattern as jaguar's KP8-KP_HASH. Keyboard-passthrough
+///   dispatch to FreeIntv for the high-bit keys is Phase 2 work
+///   (needs FreeIntv-specific keycode validation).
 pub mod intv {
     pub const LOWER_L: u32 = 1 << 0;  // libretro B — lower-left side button
     pub const KP1: u32     = 1 << 1;  // libretro Y — keypad 1
@@ -275,6 +288,17 @@ pub mod intv {
     pub const KP2: u32     = 1 << 9;  // libretro X — keypad 2
     pub const UPPER_L: u32 = 1 << 10; // libretro L — upper-left side button
     pub const UPPER_R: u32 = 1 << 11; // libretro R — upper-right side button
+    pub const KP3: u32     = 1 << 12; // libretro L2 — keypad 3
+    pub const KP4: u32     = 1 << 13; // libretro R2 — keypad 4
+    pub const KP5: u32     = 1 << 14; // libretro L3 — keypad 5
+    pub const KP6: u32     = 1 << 15; // libretro R3 — keypad 6
+    // Above-RetroPad keypad keys — surfaced in INTV_BUTTONS for the
+    // per-system Bindings page UI; Phase 2 work wires
+    // keyboard-passthrough dispatch to FreeIntv for these four keys.
+    pub const KP7: u32     = 1 << 16;
+    pub const KP8: u32     = 1 << 17;
+    pub const KP9: u32     = 1 << 18;
+    pub const KP0: u32     = 1 << 19;
 }
 
 /// Magnavox Odyssey² / Videopac button bit positions. Simplest
@@ -1399,12 +1423,14 @@ pub fn coleco_bit_for(button: &str) -> Option<u32> {
     COLECO_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
-/// Mattel Intellivision button bits in declaration order. 10 entries —
+/// Mattel Intellivision button bits in declaration order. 20 entries —
 /// D-pad (disc as 8-way) + 4 side action buttons (UPPER_L / UPPER_R /
-/// LOWER_L / LOWER_R) + SELECT (keypad CLEAR) + START (keypad ENTER).
-/// The remaining 10 keypad numbers (KP1-KP9 + KP0) are a Phase 2 polish
-/// item; full keypad coverage needs the same per-game core-options
-/// surface ColecoVision's keypad uses.
+/// LOWER_L / LOWER_R) + SELECT (keypad CLEAR) + START (keypad ENTER)
+/// + the 10 keypad numbers (KP0-KP9). KP1-KP6 fit on the remaining
+/// RetroPad bits (Y/X/L2/R2/L3/R3); KP7-KP9 + KP0 live above the
+/// RetroPad in shell-reserved bits 16-19 and are surfaced here for
+/// keyboard-only binding via the per-system Bindings page. See the
+/// `intv` mod doc-comment for the bit layout rationale.
 pub const INTV_BUTTONS: &[(&str, u32)] = &[
     ("UP",      intv::UP),
     ("DOWN",    intv::DOWN),
@@ -1416,6 +1442,16 @@ pub const INTV_BUTTONS: &[(&str, u32)] = &[
     ("LOWER_R", intv::LOWER_R),
     ("START",   intv::START),
     ("SELECT",  intv::SELECT),
+    ("KP0",     intv::KP0),
+    ("KP1",     intv::KP1),
+    ("KP2",     intv::KP2),
+    ("KP3",     intv::KP3),
+    ("KP4",     intv::KP4),
+    ("KP5",     intv::KP5),
+    ("KP6",     intv::KP6),
+    ("KP7",     intv::KP7),
+    ("KP8",     intv::KP8),
+    ("KP9",     intv::KP9),
 ];
 
 /// Resolve a system-button name to its Intellivision bit mask.
@@ -2064,11 +2100,19 @@ pub fn coleco_to_libretro_bits(b: u32) -> u32 {
         | coleco::UP | coleco::DOWN | coleco::LEFT | coleco::RIGHT)
 }
 
-/// Intellivision → libretro bit remap. Identity by construction.
+/// Intellivision → libretro bit remap. Identity by construction;
+/// the mask passes through every bit FreeIntv reads via the standard
+/// RetroPad dispatch (action buttons + d-pad + START/SELECT + the
+/// six keypad numbers KP1-KP6 on the remaining RetroPad bits). The
+/// shell-reserved bits 16-19 (KP7-KP9, KP0) are masked out here —
+/// they don't reach FreeIntv via RetroPad; the keyboard-passthrough
+/// dispatch is Phase 2 work.
 pub fn intv_to_libretro_bits(b: u32) -> u32 {
     b & (intv::UPPER_L | intv::UPPER_R | intv::LOWER_L | intv::LOWER_R
         | intv::START | intv::SELECT
-        | intv::UP | intv::DOWN | intv::LEFT | intv::RIGHT)
+        | intv::UP | intv::DOWN | intv::LEFT | intv::RIGHT
+        | intv::KP1 | intv::KP2 | intv::KP3 | intv::KP4
+        | intv::KP5 | intv::KP6)
 }
 
 /// Magnavox Odyssey² → libretro bit remap. Identity by construction.
@@ -3099,6 +3143,13 @@ pub fn default_coleco_bindings() -> Bindings {
 /// land on Q/W per the shoulder convention.
 pub fn default_intv_bindings() -> Bindings {
     let mut b = Bindings::new();
+    // Keypad numbers default to the matching keyboard digit keys —
+    // Key1 → KP1, Key0 → KP0, etc. — so the natural typing-position
+    // works for keypad-heavy titles (Astrosmash, Sea Battle, B-17
+    // Bomber, Utopia). Pad bindings are only set for the six keypad
+    // numbers that fit on RetroPad bits (KP1-KP6); KP7-KP9 + KP0 are
+    // keyboard-only at the binding-page level until the keyboard-
+    // passthrough dispatch lands.
     let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
         ("UP",      Some("Up"),     Some("DPadUp")),
         ("DOWN",    Some("Down"),   Some("DPadDown")),
@@ -3110,6 +3161,20 @@ pub fn default_intv_bindings() -> Bindings {
         ("UPPER_R", Some("W"),      Some("RightTrigger")),
         ("START",   Some("Enter"),  Some("Start")),   // libretro START — keypad ENTER
         ("SELECT",  Some("RShift"), Some("Select")),  // libretro SELECT — keypad CLEAR
+        // Keypad numbers — digit keys Key0..Key9 are the natural
+        // typing-position default. KP1-KP6 also get pad bindings on
+        // the libretro RetroPad bits; KP7-KP9 + KP0 are keyboard-only
+        // until shell-reserved-bit keyboard dispatch ships.
+        ("KP1",     Some("Key1"),   Some("North")),   // libretro Y (bit 1)
+        ("KP2",     Some("Key2"),   Some("West")),    // libretro X (bit 9)
+        ("KP3",     Some("Key3"),   Some("LeftTrigger2")),   // L2 (bit 12)
+        ("KP4",     Some("Key4"),   Some("RightTrigger2")),  // R2 (bit 13)
+        ("KP5",     Some("Key5"),   Some("LeftThumb")),  // L3 (bit 14)
+        ("KP6",     Some("Key6"),   Some("RightThumb")), // R3 (bit 15)
+        ("KP7",     Some("Key7"),   None),  // shell-reserved bit 16
+        ("KP8",     Some("Key8"),   None),  // shell-reserved bit 17
+        ("KP9",     Some("Key9"),   None),  // shell-reserved bit 18
+        ("KP0",     Some("Key0"),   None),  // shell-reserved bit 19
     ];
     for (name, kb, pad) in pairs {
         b.insert(
@@ -4712,15 +4777,24 @@ mod tests {
     }
 
     #[test]
-    fn intv_remap_is_identity() {
-        for (_, bit) in INTV_BUTTONS {
-            assert_eq!(intv_to_libretro_bits(*bit), *bit);
-        }
-        let all = intv::UPPER_L | intv::UPPER_R | intv::LOWER_L | intv::LOWER_R
-                | intv::START | intv::SELECT
-                | intv::UP | intv::DOWN | intv::LEFT | intv::RIGHT;
-        assert_eq!(intv_to_libretro_bits(all), all);
-        assert_eq!(intv_to_libretro_bits(all | (1 << 20)), all);
+    fn intv_remap_drops_high_bits() {
+        // Core buttons + KP1-KP6 are RetroPad bits — identity remap.
+        let core = intv::UPPER_L | intv::UPPER_R | intv::LOWER_L | intv::LOWER_R
+                 | intv::START | intv::SELECT
+                 | intv::UP | intv::DOWN | intv::LEFT | intv::RIGHT
+                 | intv::KP1 | intv::KP2 | intv::KP3 | intv::KP4
+                 | intv::KP5 | intv::KP6;
+        assert_eq!(intv_to_libretro_bits(core), core);
+        // KP7-KP9 + KP0 live above the 16-bit RetroPad range in
+        // shell-reserved bits 16-19 — must get masked off so FreeIntv
+        // only sees RetroPad bits. Phase 2 polish will route them
+        // through keyboard-passthrough dispatch.
+        let high_bit_keypad = intv::KP7 | intv::KP8 | intv::KP9 | intv::KP0;
+        assert_eq!(intv_to_libretro_bits(high_bit_keypad), 0);
+        // Combined: core stays, high bits drop.
+        assert_eq!(intv_to_libretro_bits(core | high_bit_keypad), core);
+        // Stray non-Intv high bits also get masked.
+        assert_eq!(intv_to_libretro_bits(core | (1 << 25)), core);
     }
 
     #[test]
