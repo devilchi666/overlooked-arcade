@@ -95,9 +95,20 @@ impl MetadatKind {
 /// `tg16` system_id but different metadat files), lifts non-PCE systems
 /// from 10% to ~95% match rate.
 fn metadat_system_name_for(system_id: &str, ext: &str) -> Option<&'static str> {
-    // TG-16 has three internal variants split by extension since they
-    // share the system_id but route to different upstream metadats.
-    if system_id == "tg16" || system_id == "pce-cd" {
+    // pce-cd is CD-shape by definition — even if an entry somehow has
+    // a non-CD extension (manifest editing, scan misclassification),
+    // route to the CD catalog rather than fall through to the PCE
+    // cart catalog. Pre-fix the system_id == "pce-cd" branch shared
+    // the same match arm as tg16 and the wildcard `_` arm routed to
+    // the PCE cart catalog — anomalous pce-cd entries silently
+    // matched against the wrong upstream.
+    if system_id == "pce-cd" {
+        return Some("NEC - PC Engine CD - TurboGrafx-CD");
+    }
+    // TG-16 cart-family — three variants split by extension since the
+    // PCE cart, PCE-CD, and SGX libraries share the same `tg16`
+    // system_id but route to different upstream metadats.
+    if system_id == "tg16" {
         return Some(match ext {
             "sgx" => "NEC - PC Engine SuperGrafx",
             "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso" => "NEC - PC Engine CD - TurboGrafx-CD",
