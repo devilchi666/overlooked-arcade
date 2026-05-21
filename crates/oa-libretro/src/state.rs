@@ -9,7 +9,7 @@
 //! the Mutex is theoretically uncontended — it's a safety net, not a hot path
 //! contention point.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
 use std::sync::{LazyLock, Mutex};
@@ -128,6 +128,23 @@ pub(crate) struct State {
     /// `true` is intentional — on the first poll cores expect to be told
     /// "yes, fetch your initial values now."
     pub variables_updated: bool,
+    /// Option keys the core has marked NOT visible via
+    /// `RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY`. Cores call this to
+    /// hide options that don't apply given the current values of other
+    /// options (e.g. "Lightgun crosshair color" is hidden when "Lightgun"
+    /// is off). Cleared whenever a fresh schema arrives; mutated each
+    /// time the core invokes the SET_CORE_OPTIONS_DISPLAY env (either
+    /// during init or from inside the update-display callback after a
+    /// value change).
+    pub hidden_options: HashSet<String>,
+    /// Callback the core registered via
+    /// `RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK`. The
+    /// frontend invokes this after writing a new option value so the
+    /// core can re-evaluate which options should be hidden and push the
+    /// updated set back through `SET_CORE_OPTIONS_DISPLAY`. `None` for
+    /// cores that don't support dynamic visibility (most do not — they
+    /// only push initial visibility once during load).
+    pub update_display_cb: Option<retro_core_options_update_display_callback_t>,
     /// Disc control v1 callbacks, registered via SET_DISK_CONTROL_INTERFACE.
     /// `None` until the core registers; cores without multi-disc support
     /// never call this env, in which case all the disc-control methods on
@@ -195,6 +212,8 @@ impl State {
             option_categories: Vec::new(),
             option_values: HashMap::new(),
             variables_updated: true,
+            hidden_options: HashSet::new(),
+            update_display_cb: None,
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
@@ -756,6 +775,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             with_state(|s| {
                 s.core_options = parsed;
                 s.option_categories.clear();
+                s.hidden_options.clear();
                 s.variables_updated = true;
             });
             true
@@ -768,6 +788,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             with_state(|s| {
                 s.core_options = parsed;
                 s.option_categories.clear();
+                s.hidden_options.clear();
                 s.variables_updated = true;
             });
             true
@@ -783,6 +804,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             with_state(|s| {
                 s.core_options = parsed;
                 s.option_categories.clear();
+                s.hidden_options.clear();
                 s.variables_updated = true;
             });
             true
@@ -795,6 +817,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             with_state(|s| {
                 s.core_options = definitions;
                 s.option_categories = categories;
+                s.hidden_options.clear();
                 s.variables_updated = true;
             });
             true
@@ -810,14 +833,53 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             with_state(|s| {
                 s.core_options = definitions;
                 s.option_categories = categories;
+                s.hidden_options.clear();
                 s.variables_updated = true;
             });
             true
         }
         // SET_CORE_OPTIONS_DISPLAY toggles individual option visibility.
-        // We accept-and-ignore for v1 (the option list always renders).
-        // A future polish: respect the visible bit per option.
-        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
+        // The core calls this once per (key, visible) pair — either during
+        // init when it first computes which options apply, or re-entrantly
+        // from inside the update-display callback after a value change. We
+        // mirror the visible bit into State.hidden_options so the per-system
+        // / per-game settings panel can filter accordingly. Unknown keys
+        // are silently inserted into the hidden set so a future schema-add
+        // doesn't briefly expose a flag the core already wanted hidden.
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => {
+            if data.is_null() { return true; }
+            let disp = unsafe { &*(data as *const retro_core_option_display) };
+            let Some(key) = (unsafe { cstr_to_string(disp.key) }) else {
+                return true;
+            };
+            with_state(|s| {
+                if disp.visible {
+                    s.hidden_options.remove(&key);
+                } else {
+                    s.hidden_options.insert(key);
+                }
+            });
+            true
+        }
+        // SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK lets the core register a
+        // "I want to re-evaluate visibility now" hook. The frontend calls
+        // it after writing a new option value; the core's implementation
+        // synchronously fires SET_CORE_OPTIONS_DISPLAY for each option
+        // whose visibility changed, then returns. Cores without dynamic
+        // visibility never call this env; their initial SET_CORE_OPTIONS_
+        // DISPLAY pass remains in effect for the session.
+        RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK => {
+            if data.is_null() {
+                // Spec: passing NULL un-registers any prior callback.
+                with_state(|s| s.update_display_cb = None);
+                return true;
+            }
+            let reg = unsafe {
+                &*(data as *const retro_core_options_update_display_callback)
+            };
+            with_state(|s| s.update_display_cb = reg.callback);
+            true
+        }
 
         // Frontend "I support core option API version N". Report v2 so modern
         // cores use SET_CORE_OPTIONS_V2 instead of the legacy path.

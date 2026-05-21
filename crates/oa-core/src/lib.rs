@@ -544,6 +544,27 @@ pub trait Core: Send {
     /// it cares; the shell does not validate.
     fn set_option(&mut self, _key: &str, _value: &str) {}
 
+    /// Option keys the core currently wants hidden — RetroArch parity
+    /// for libretro's `SET_CORE_OPTIONS_DISPLAY` env. Cores push this
+    /// set to hide options that don't apply given the current values
+    /// of other options (e.g. "Lightgun crosshair color" disappears
+    /// when "Lightgun" is off). The settings panel filters these out
+    /// at render time. Default empty for cores without a visibility
+    /// concept; they show every option.
+    fn hidden_option_keys(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Ask the core to re-evaluate which options should be hidden
+    /// given the current set of variable values — RetroArch parity
+    /// for libretro's `SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK` env.
+    /// Called by the shell after `set_option` mutates a value so any
+    /// downstream options the core wants to hide / reveal get updated
+    /// before the panel re-fetches. Default no-op for cores that
+    /// don't expose a visibility callback; their initial hidden set
+    /// remains in effect.
+    fn refresh_option_visibility(&mut self) {}
+
     /// Disc control snapshot for multi-disc games. Returns None for
     /// cores without disc support (HuCard, cartridge systems) AND for
     /// CD-capable cores when no disc-control callback has been
