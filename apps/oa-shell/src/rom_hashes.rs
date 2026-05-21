@@ -40,7 +40,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
-#[cfg(test)]
 use sha1::{Digest, Sha1};
 use tauri::Emitter;
 
@@ -997,7 +996,7 @@ fn sha1_of_rom(file_path: &str, archive_inner: Option<&str>) -> Result<String, S
 /// resolve loop as a fallback after disc-ID extraction misses — catches
 /// dumps the redump dat has SHA-1s for but where the disc-ID extraction
 /// returned no signature.
-fn stream_sha1_of_file(path: &std::path::Path) -> Result<String, String> {
+pub(crate) fn stream_sha1_of_file(path: &std::path::Path) -> Result<String, String> {
     use std::io::Read;
     let f = std::fs::File::open(path)
         .map_err(|e| format!("open {}: {e}", path.display()))?;

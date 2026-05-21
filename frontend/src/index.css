@@ -101,6 +101,19 @@
     background: transparent;
   }
 
+  /* Direct-launch mode: oa-shell was invoked with a ROM path (CLI / OA_ROM),
+     boots straight into the game, never renders the library grid. Force the
+     transparent background even before `data-shell` is hydrated so first
+     paint isn't a black flash, and hide any chrome that slips past the JSX
+     guards as belt-and-braces. */
+  body[data-direct-launch="true"] {
+    background: transparent !important;
+  }
+  body[data-direct-launch="true"] .oa-library-fade,
+  body[data-direct-launch="true"] .oa-library-overlay {
+    display: none !important;
+  }
+
   /* Game-mode idle: cursor hides while the header + library are auto-faded
      during gameplay. Mouse movement clears the class via App.tsx's idle timer. */
   body.oa-game-idle {

@@ -18,6 +18,7 @@ mod archive;
 mod bindings;
 mod cd_id;
 mod cheat_search;
+mod cli;
 mod core_installer;
 mod core_options;
 mod layout;
@@ -2190,6 +2191,11 @@ struct AppState {
     /// memory snapshot is already refreshed there every frame; the
     /// search command just reads from `memory_snapshot`.
     cheat_search: Arc<Mutex<Option<cheat_search::CheatSearchSession>>>,
+    /// Resolved direct-launch configuration from CLI args / OA_ROM env.
+    /// `None` = library mode (default zero-arg invocation). The frontend
+    /// reads this via `get_direct_launch_config` on boot to decide whether
+    /// to hide library chrome and auto-launch a ROM.
+    direct_launch: Option<cli::DirectLaunchConfig>,
 }
 
 /// Window label that drives input gating. Two-window mode wants the native
@@ -2206,10 +2212,59 @@ fn main() {
     let logger_handle = logger::init_early();
     log::info!("oa-shell starting");
 
-    let rom_path = std::env::var("OA_ROM").ok();
-    match &rom_path {
-        Some(p) => log::info!("oa-shell: OA_ROM startup ROM = {p}"),
-        None => log::info!("oa-shell: no OA_ROM set; waiting for library launch_rom commands"),
+    // Parse CLI args before any other startup work. clap exits with status
+    // 0 (for --help / --version) or 2 (for bad flags) on its own; our own
+    // validation errors get a multi-line banner and exit 2.
+    let direct_launch_cli = match cli::parse_and_resolve() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            e.emit_banner();
+            std::process::exit(2);
+        }
+    };
+
+    // OA_ROM is the legacy env-var fallback for the dev loop. When BOTH
+    // CLI args AND OA_ROM are set, CLI args win and we log the override.
+    let env_rom = std::env::var("OA_ROM").ok();
+    let direct_launch: Option<cli::DirectLaunchConfig> = match (direct_launch_cli, env_rom.as_deref()) {
+        (Some(cfg), Some(env_path)) => {
+            log::info!("oa-shell: OA_ROM={env_path} ignored — CLI args supplied");
+            Some(cfg)
+        }
+        (Some(cfg), None) => Some(cfg),
+        (None, Some(env_path)) => Some(cli::from_oa_rom_env(env_path)),
+        (None, None) => None,
+    };
+
+    // Startup-load path: the legacy "load a ROM at startup, no settings
+    // cascade" code in run_emu_render reads `rom_path` bytes directly off
+    // disk through the bootstrap PCE-CD core. That predates direct-launch
+    // and is wrong for any non-tg16 system + can't handle archives.
+    //
+    // Direct-launch (CLI args OR OA_ROM env) goes through the frontend
+    // auto-launch effect instead — it runs the same `handleLaunch`
+    // cascade a library tile click does: per-game / per-system / OA-wide
+    // settings resolution, the SHA-1-matched library row's overrides,
+    // archive::extract_for_launch for .zip/.7z, the right core swap, etc.
+    //
+    // Letting both paths race caused "black screen" on archive launches:
+    // startup-load tried to feed .zip bytes through PCE-CD and failed
+    // silently, leaving the core in an undefined state by the time the
+    // frontend cascade arrived.
+    //
+    // Hand the startup-load path nothing — let the frontend cascade own
+    // every direct-launch ROM, period. Library-mode (no direct_launch) is
+    // unchanged.
+    let rom_path: Option<String> = None;
+    match &direct_launch {
+        Some(cfg) => log::info!(
+            "oa-shell: direct-launch ROM = {} (system: {}, archive_inner: {:?}) \u{2014} \
+             frontend cascade will load (startup-load path bypassed)",
+            cfg.rom_path.display(),
+            cfg.system_id,
+            cfg.archive_inner_path,
+        ),
+        None => log::info!("oa-shell: no startup ROM set; waiting for library launch_rom commands"),
     }
 
     let running = Arc::new(AtomicBool::new(true));
@@ -2324,6 +2379,8 @@ fn main() {
             get_shell_mode,
             get_shell_mode_pref,
             set_shell_mode_pref,
+            get_direct_launch_config,
+            get_game,
             get_layout,
             set_layout,
             get_presentation_mode,
@@ -2429,6 +2486,7 @@ fn main() {
             let game_focus = game_focus.clone();
             let shell_mode_for_event = shell_mode_for_event.clone();
             let logger_handle = logger_handle.clone();
+            let mut direct_launch = direct_launch.clone();
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
@@ -2453,7 +2511,22 @@ fn main() {
                 // a hard crash skips the cleanup, so we mop up at startup.
                 archive::sweep_temp(&app_data_dir.join("temp"));
 
-                let shell_mode = ShellMode::resolve(&app_data_dir);
+                // Direct-launch mode unconditionally forces single-window —
+                // operator's `OA_SHELL_MODE` / `shell.json` preference stays
+                // intact on disk so the next library-mode launch honors it.
+                // See plan §2 / DECISIONS for the reasoning (one HWND, wgpu
+                // under transparent WebView, library chrome hidden by the
+                // frontend, close-window = exit).
+                let shell_mode = match &direct_launch {
+                    Some(_) => {
+                        log::info!(
+                            "oa-shell: direct-launch mode \u{2192} forcing single-window \
+                             (operator pref preserved on disk)"
+                        );
+                        ShellMode::SingleWindow
+                    }
+                    None => ShellMode::resolve(&app_data_dir),
+                };
                 // Stash for the WindowEvent handler — it needs to know which
                 // window label to filter on.
                 let _ = shell_mode_for_event.set(shell_mode);
@@ -2512,6 +2585,73 @@ fn main() {
                     Ok(db) => {
                         let count = db.count().unwrap_or(0);
                         log::info!("oa-shell: library_db open ({} games tracked)", count);
+
+                        // Direct-launch hash lookup: if a cart-shaped ROM was
+                        // supplied, hash it and see if the library has a row
+                        // with the same SHA-1. On hit, the frontend will pull
+                        // the matched RomEntry via get_game() and apply that
+                        // row's per-game overrides through the standard
+                        // launch cascade. CD images skip — their on-disk
+                        // hash isn't libretro-database-canonical (and is
+                        // expensive for multi-GB files at boot).
+                        //
+                        // For archive direct-launch (Phase H — single ROM
+                        // inside .zip/.7z) we hash the inner ROM bytes, not
+                        // the outer archive, so the SHA-1 matches the
+                        // library DB's convention (rom_hashes stamps the
+                        // inner bytes too — see rom_bytes_for).
+                        if let Some(cfg) = direct_launch.as_mut() {
+                            let extension_for_cd_check: String = match cfg.archive_inner_path.as_deref() {
+                                Some(inner) => std::path::Path::new(inner)
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_ascii_lowercase(),
+                                None => cfg
+                                    .rom_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_ascii_lowercase(),
+                            };
+                            if cfg.matched_entry_id.is_none()
+                                && !is_cd_extension(&extension_for_cd_check)
+                            {
+                                let hash_result = match cfg.archive_inner_path.as_deref() {
+                                    Some(inner) => archive::read_inner_to_bytes(&cfg.rom_path, inner)
+                                        .map(|bytes| {
+                                            use sha1::{Digest, Sha1};
+                                            let mut h = Sha1::new();
+                                            h.update(&bytes);
+                                            format!("{:x}", h.finalize())
+                                        }),
+                                    None => rom_hashes::stream_sha1_of_file(&cfg.rom_path),
+                                };
+                                match hash_result {
+                                    Ok(sha) => match db.find_game_by_sha1(&sha) {
+                                        Ok(Some(row)) => {
+                                            log::info!(
+                                                "oa-shell: direct-launch SHA-1 matched library row {} ({})",
+                                                row.id,
+                                                row.title,
+                                            );
+                                            cfg.matched_entry_id = Some(row.id);
+                                        }
+                                        Ok(None) => log::info!(
+                                            "oa-shell: direct-launch SHA-1 not in library; using ad-hoc settings"
+                                        ),
+                                        Err(e) => log::warn!(
+                                            "oa-shell: direct-launch find_game_by_sha1 failed: {e}"
+                                        ),
+                                    },
+                                    Err(e) => log::warn!(
+                                        "oa-shell: direct-launch SHA-1 of {} failed: {e}",
+                                        cfg.rom_path.display()
+                                    ),
+                                }
+                            }
+                        }
+
                         app.manage(db);
                     }
                     Err(e) => {
@@ -2557,6 +2697,7 @@ fn main() {
                     shader_presets_watcher,
                     disc_state,
                     cheat_search: Arc::new(Mutex::new(None)),
+                    direct_launch,
                 });
 
                 // Register the quit shortcut now that the plugin is initialized.
@@ -3841,6 +3982,14 @@ fn run_emu_render(
                     // STATUS_ACCESS_VIOLATION in retro_load_game on relaunch.
                     // The next LoadRom rebuilds the core fresh (~50 ms).
                     let _ = core.take();
+                    // Notify the frontend that the unload drain has completed.
+                    // Direct-launch listens and calls `quit_app` — no library
+                    // to return to, so the process exits cleanly after the
+                    // emu-thread state has fully reset (saves, temp dirs, etc.
+                    // already torn down by the handler above).
+                    if let Err(e) = app_handle.emit("oa://rom-unloaded", ()) {
+                        log::warn!("oa-shell: emit oa://rom-unloaded failed: {e:?}");
+                    }
                 }
                 Ok(EmuCommand::SetScalingMode(mode)) => {
                     renderer.set_scaling_mode(mode);
@@ -6399,6 +6548,30 @@ fn list_monitors(state: tauri::State<'_, AppState>) -> Result<Vec<MonitorInfo>, 
 #[tauri::command]
 fn get_shell_mode(state: tauri::State<'_, AppState>) -> String {
     state.shell_mode.as_str().to_string()
+}
+
+/// Direct-launch payload for the frontend. `None` = library mode (default
+/// zero-arg invocation). The frontend reads this on boot to decide whether
+/// to hide library chrome and auto-launch the supplied ROM.
+#[tauri::command]
+fn get_direct_launch_config(
+    state: tauri::State<'_, AppState>,
+) -> Option<cli::DirectLaunchConfigDto> {
+    state
+        .direct_launch
+        .as_ref()
+        .map(cli::DirectLaunchConfigDto::from)
+}
+
+/// Fetch a single game row by id. Mirrors the data shape of `list_games` so
+/// the frontend can hydrate a synthetic launch RomEntry when direct-launch
+/// matched a library entry by SHA-1.
+#[tauri::command]
+fn get_game(
+    id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<library_db::GameRow>, String> {
+    db.list_games().map(|games| games.into_iter().find(|g| g.id == id))
 }
 
 #[derive(serde::Serialize)]

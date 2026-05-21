@@ -503,3 +503,44 @@ The pattern's mechanical reliability across 5 implementations is the evidence it
 - Diff B ships Region priority as the reference implementation. If it feels right, Library Folders + Right Sidebar Widgets + Sidebar Systems audit land in the same diff.
 - Tier 2 items land as one-off follow-ups when the relevant context comes up (e.g., per-system core priority during the next core onboarding that has two cores).
 - Tier 4 items don't land standalone; they ship with the feature that builds the underlying data model.
+
+---
+
+## 2026-05-20 — Direct-launch CLI: forced single-window, hash-lookup, --system for ambiguous extensions
+
+**Context.** External frontends (LaunchBox, BigBox, EmulationStation) launch standalone emulators by spawning the .exe with a ROM path. OA only opened to its library, so it needed a wrapper to slot into these frontends. This entry covers the three load-bearing decisions in the direct-launch CLI mode that ship `feat/direct-launch-cli`.
+
+**Decision 1: Direct-launch forces single-window mode at runtime; operator's persisted preference (`OA_SHELL_MODE` env / `shell.json`) is left untouched on disk.**
+
+**Why:** Single-window mode already hosts both the wgpu game surface and the transparent WebView for QuickSettings / toasts in the same HWND. Closing the window cleanly exits the process via the existing `CloseRequested → graceful_exit` path. Two-window mode would require spawning a "ghost" library WebView (just to host overlays) on top of the native game window — extra plumbing for no win.
+
+**Considered and rejected:**
+- **Respect `OA_SHELL_MODE` in direct-launch.** Would require a second WebView in two-window mode, invisible-until-Esc, with input-routing and focus-handling complications. Not worth the flexibility nobody asked for.
+- **Persist single-window for the user.** Would surprise operators who deliberately set two-window mode for their library workflow. Runtime-only override keeps the dev experience right.
+
+**Decision 2: SHA-1 hash lookup against `library_db` only for cart-shaped ROMs; CD images skip.**
+
+**Why:** Hashing a .nes/.pce/.sfc cart is microseconds. Hashing a 4-8 GB CHD / ISO at boot is seconds-to-minutes — operator notices and the launch feels broken. And libretro-database doesn't canonicalize CD images by content hash (it uses disc IDs / track signatures); the lookup wouldn't match anything useful anyway. For carts, the lookup populates `matched_entry_id`, the frontend pulls the matched RomEntry, and the existing per-game-overrides cascade applies (patches, custom core options, shader, rewind config, analog routing, bezel).
+
+**Considered and rejected:**
+- **Skip the lookup entirely; always treat direct-launch as ad-hoc.** Loses per-game overrides — operators who carefully tuned a specific game in OA's library would see the wrong settings when launching from LaunchBox. Bad ergonomics.
+- **Hash all ROMs including CDs.** Pays multi-GB hash cost for ~0 hit-rate gain.
+- **Look up by file path instead of hash.** Fragile — operator moves a ROM, lookup misses. Hash is content-addressable; that's the point.
+
+**Decision 3: Ambiguous extensions (`.cue`, `.chd`, `.iso`, `.m3u`, `.pbp`, `.zip`, `.7z`) require explicit `--system`; the CLI errors with a candidate list rather than guessing.**
+
+**Why:** A `.cue` could be PCE-CD, Sega CD, Saturn, PSX, Neo Geo CD, 3DO, or PCFX. There's no reliable way to know from the filename alone, and guessing wrong loads the wrong core (no game, just a confusing error). Errors-up-front is the correct UX: LaunchBox / BigBox can configure `--system <slug>` per-platform emulator entry; EmulationStation users wrap with a shell snippet per platform. Cart extensions stay auto-inferred because they're unambiguous.
+
+**Considered and rejected:**
+- **Default to current `ACTIVE_CORE.md` system.** Surprising and silent. Operator launches a Saturn `.cue` while atari7800 is the active core, gets atari7800-flavored failure.
+- **Try library DB hash lookup for ambiguous extensions before failing.** Multi-GB hash cost just to disambiguate; not worth it given that launchers can configure `--system` once per-platform.
+- **Read CD-image headers to detect system.** Possible but fragile — Sega CD vs PSX vs Saturn header signatures vary across image formats (`.cue`/`.chd`/`.iso` each store sectors differently). Defer to v2 if real-world LaunchBox configs make `--system` annoying.
+
+**Why these three decisions sit together:**
+
+They form a coherent ergonomic contract:
+1. The shell window behavior is predictable and reversible (decision 1).
+2. Tuning carried into OA via the library applies automatically (decision 2).
+3. The CLI fails loudly when it can't be safe (decision 3).
+
+Operators who set OA up once via LaunchBox / BigBox / EmulationStation get the right system, the right core, the right per-game overrides, the right window behavior — without needing a wrapper script. That's the bar this feature had to clear.

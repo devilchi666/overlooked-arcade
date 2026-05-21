@@ -44,6 +44,12 @@ type Props = {
   /// Tools menu items to drop the user directly on the panel they asked
   /// for instead of forcing them through the action grid.
   requestedView?: QuickSettingsView | null;
+  /// "library" (default): exit action returns to the library grid.
+  /// "quit": exit action ends the process — set by direct-launch mode
+  /// where there's no library to return to. Both call `onExitToLibrary`;
+  /// the parent decides which side-effect it triggers (unload-and-quit
+  /// vs unload-only).
+  exitMode?: "library" | "quit";
 };
 
 const BTN_BASE =
@@ -610,7 +616,7 @@ const QuickSettings: Component<Props> = (props) => {
               <div class="my-1 border-t border-white/5" />
               <ActionRow
                 icon="🚪"
-                label="Exit to library"
+                label={props.exitMode === "quit" ? "Quit" : "Exit to library"}
                 hint="Ctrl+W"
                 destructive
                 onClick={() => {

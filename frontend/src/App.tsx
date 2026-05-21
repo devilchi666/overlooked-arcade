@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
@@ -96,10 +96,51 @@ function launchStatus(result: LaunchResult): string {
 const TOOLBAR_BTN =
   "rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[0.65rem] font-medium uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-wait disabled:opacity-60";
 
+/** Tauri-side `DirectLaunchConfig` mirror. None = library mode. */
+type DirectLaunchConfig = {
+  romPath: string;
+  systemId: string;
+  coreOverride: string | null;
+  slot: number | null;
+  stateFile: string | null;
+  tasReplay: string | null;
+  fullscreen: boolean;
+  matchedEntryId: string | null;
+  /// Phase H: when set, romPath points at a .zip/.7z and archiveInnerPath
+  /// is the posix-style path of the single cart ROM inside. The launch
+  /// path forwards both to launch_rom so archive::extract_for_launch
+  /// runs the same way it does for library-launched archived entries.
+  archiveInnerPath: string | null;
+};
+
 const App: Component = () => {
-  const library = createLibraryStore();
+  // Fire `get_direct_launch_config` once at mount; both the library store
+  // (to decide whether to bootstrap) and the resource below (to drive UI
+  // chrome hiding + auto-launch) subscribe to the same promise.
+  const directLaunchPromise: Promise<DirectLaunchConfig | null> = invoke<DirectLaunchConfig | null>(
+    "get_direct_launch_config",
+  ).catch((e) => {
+    console.warn("[oa-direct-launch] get_direct_launch_config failed:", e);
+    return null;
+  });
+
+  const library = createLibraryStore({
+    shouldBootstrap: directLaunchPromise.then((cfg) => cfg === null),
+  });
   const settings = createSettingsStore();
   const layout = createLayoutStore();
+
+  // Resource form drives reactive UI gating (chrome hide, auto-launch).
+  // While the resource is pending, `directLaunchConfig()` returns
+  // `undefined` — we treat that the same as "not direct-launch" for the
+  // chrome layer, so first-paint shows nothing rather than a library flash.
+  const [directLaunchConfig] = createResource<DirectLaunchConfig | null>(
+    () => directLaunchPromise,
+  );
+  const isDirectLaunch = createMemo(() => {
+    const cfg = directLaunchConfig();
+    return cfg !== undefined && cfg !== null;
+  });
   const [busy, setBusy] = createSignal<Busy>("idle");
   const [status, setStatus] = createSignal<string>("");
   const [shellMode, setShellMode] = createSignal<ShellMode>("two-window");
@@ -243,6 +284,92 @@ const App: Component = () => {
       document.body.dataset.shell = "two-window";
     }
   });
+
+  // Reflect direct-launch state on body so CSS rules (index.css) can hide
+  // any chrome that slips through the JSX-level Show guards. Stays in sync
+  // with the resource — sets the attribute when the resource resolves to a
+  // non-null payload, removes it otherwise.
+  createEffect(() => {
+    if (isDirectLaunch()) {
+      document.body.dataset.directLaunch = "true";
+    } else {
+      delete document.body.dataset.directLaunch;
+    }
+  });
+
+  // Emu thread emits `oa://rom-unloaded` after UnloadRom finishes draining.
+  // In direct-launch mode there's no library to return to — quit the process.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listen("oa://rom-unloaded", () => {
+      if (!isDirectLaunch()) return;
+      console.log("[oa-direct-launch] ROM unloaded → quitting process");
+      void invoke("quit_app");
+    }).then((un) => { unlisten = un; });
+    onCleanup(() => unlisten?.());
+  });
+
+  // Auto-launch the supplied ROM once the direct-launch payload arrives.
+  // Guard prevents re-launch on subsequent resource invalidations.
+  let autoLaunched = false;
+  createEffect(() => {
+    if (autoLaunched) return;
+    const cfg = directLaunchConfig();
+    if (!cfg) return; // undefined (pending) or null (library mode)
+    autoLaunched = true;
+    void autoLaunchDirect(cfg);
+  });
+
+  async function autoLaunchDirect(cfg: DirectLaunchConfig): Promise<void> {
+    let entry: RomEntry | null = null;
+    // If Phase D's hash-lookup matched a library row, fetch it so per-game
+    // overrides apply through the existing cascade in handleLaunch.
+    if (cfg.matchedEntryId) {
+      try {
+        entry = await invoke<RomEntry | null>("get_game", { id: cfg.matchedEntryId });
+      } catch (e) {
+        console.warn("[oa-direct-launch] get_game failed, falling back to synthesized entry:", e);
+      }
+    }
+    if (!entry) {
+      // Title heuristic: when the ROM is wrapped in an archive, the inner
+      // filename is the meaningful one. Otherwise use the outer path.
+      const titleSource = cfg.archiveInnerPath ?? cfg.romPath;
+      entry = {
+        id: cfg.matchedEntryId ?? romIdFromPath(cfg.romPath),
+        title: titleFromFileName(titleSource),
+        systemId: cfg.systemId as SystemId,
+        filePath: cfg.romPath,
+        addedAt: 0,
+        seed: false,
+        coreOverride: cfg.coreOverride ?? undefined,
+        archiveInnerPath: cfg.archiveInnerPath ?? undefined,
+      };
+    }
+    console.log("[oa-direct-launch] auto-launching:", entry);
+    await handleLaunch(entry, cfg.slot ?? undefined);
+
+    // After the launch cascade settles, apply CLI-only overrides that
+    // sit on top of per-game / per-system / OA-wide settings.
+    if (cfg.fullscreen) {
+      void invoke("set_window_mode", { mode: "fullscreen", monitorIndex: null }).catch((e) =>
+        console.warn("[oa-direct-launch] --fullscreen set_window_mode failed:", e),
+      );
+    }
+    if (cfg.tasReplay) {
+      void invoke("start_tas_replay", { filePath: cfg.tasReplay }).catch((e) =>
+        console.warn("[oa-direct-launch] --tas-replay start_tas_replay failed:", e),
+      );
+    }
+    if (cfg.stateFile) {
+      // --state-file is reserved for a future restore_state_file command;
+      // log so the operator sees the request didn't take effect rather
+      // than silently dropping it.
+      console.warn(
+        "[oa-direct-launch] --state-file is not wired in this build; use --slot for a per-game save slot.",
+      );
+    }
+  }
 
   // Slice C — populate the shader preset registry signal once, on app
   // mount. Dropdowns in PerSystem/PerGame settings pages render from
@@ -478,7 +605,7 @@ const App: Component = () => {
     setBusy("idle");
   }
 
-  async function handleLaunch(entry: RomEntry) {
+  async function handleLaunch(entry: RomEntry, slot?: number) {
     // Diagnostic — verify the click reached us + log the full entry shape
     // so we can confirm archiveInnerPath/coreOverride/etc. are populated.
     console.log("[oa-launch] handleLaunch called", {
@@ -489,6 +616,7 @@ const App: Component = () => {
       archiveInnerPath: entry.archiveInnerPath,
       coreOverride: entry.coreOverride,
       seed: entry.seed,
+      slot,
     });
     if (entry.seed) {
       console.log("[oa-launch] entry.seed=true → skipping");
@@ -633,7 +761,7 @@ const App: Component = () => {
       console.warn("[oa-launch] override resolution failed:", e);
     }
 
-    const result = await launchRom(entry);
+    const result = await launchRom(entry, slot);
     console.log("[oa-launch] launchRom result:", result);
     setStatus(launchStatus(result));
     setBusy("idle");
@@ -1287,6 +1415,7 @@ const App: Component = () => {
     <MediaProvider>
       <Shell
         layout={layout}
+        fullBleed={isDirectLaunch() || gameMode()}
         toolbar={
           <TopToolbar
             left={toolbarLeft}
@@ -1318,28 +1447,30 @@ const App: Component = () => {
         <main class="relative h-full">
           <Switch
             fallback={
-              <div
-                class="oa-library-fade h-full"
-                classList={{
-                  "is-hidden": !libraryVisible(),
-                  "oa-library-overlay":
-                    shellMode() === "single-window" && gameRunning(),
-                }}
-                aria-hidden={!libraryVisible()}
-              >
-                <LibraryView
-                  library={library}
-                  layout={layout}
-                  currentView={currentView()}
-                  searchQuery={searchQuery()}
-                  onLaunch={handleLaunch}
-                  onShowSaves={(entry) => setSavesEntry(entry)}
-                  onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
-                  onFocus={(entry) => setFocusedEntry(entry)}
-                  selectedId={() => focusedEntry()?.id ?? null}
-                  onPickFolder={handlePickFolder}
-                />
-              </div>
+              <Show when={!isDirectLaunch()}>
+                <div
+                  class="oa-library-fade h-full"
+                  classList={{
+                    "is-hidden": !libraryVisible(),
+                    "oa-library-overlay":
+                      shellMode() === "single-window" && gameRunning(),
+                  }}
+                  aria-hidden={!libraryVisible()}
+                >
+                  <LibraryView
+                    library={library}
+                    layout={layout}
+                    currentView={currentView()}
+                    searchQuery={searchQuery()}
+                    onLaunch={handleLaunch}
+                    onShowSaves={(entry) => setSavesEntry(entry)}
+                    onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
+                    onFocus={(entry) => setFocusedEntry(entry)}
+                    selectedId={() => focusedEntry()?.id ?? null}
+                    onPickFolder={handlePickFolder}
+                  />
+                </div>
+              </Show>
             }
           >
             <Match when={currentView().kind === "settings"}>
@@ -1404,6 +1535,7 @@ const App: Component = () => {
         onShowInfo={(entry) => setGameInfoFor(entry)}
         onExitToLibrary={() => void handleUnload()}
         requestedView={quickSettingsRequestedView()}
+        exitMode={isDirectLaunch() ? "quit" : "library"}
       />
       <SaveSlotsModal
         entry={savesEntry()}
