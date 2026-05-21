@@ -2236,15 +2236,35 @@ fn main() {
         (None, None) => None,
     };
 
-    // Bootstrap ROM path threaded through setup_two_window / setup_single_window
-    // into the emu thread. Library-mode (None) means "wait for launch_rom".
-    let rom_path: Option<String> = direct_launch
-        .as_ref()
-        .map(|c| c.rom_path.to_string_lossy().into_owned());
-    match (&direct_launch, &rom_path) {
-        (Some(_), Some(p)) => log::info!("oa-shell: direct-launch ROM = {p}"),
-        (None, _) => log::info!("oa-shell: no startup ROM set; waiting for library launch_rom commands"),
-        _ => {}
+    // Startup-load path: the legacy "load a ROM at startup, no settings
+    // cascade" code in run_emu_render reads `rom_path` bytes directly off
+    // disk through the bootstrap PCE-CD core. That predates direct-launch
+    // and is wrong for any non-tg16 system + can't handle archives.
+    //
+    // Direct-launch (CLI args OR OA_ROM env) goes through the frontend
+    // auto-launch effect instead — it runs the same `handleLaunch`
+    // cascade a library tile click does: per-game / per-system / OA-wide
+    // settings resolution, the SHA-1-matched library row's overrides,
+    // archive::extract_for_launch for .zip/.7z, the right core swap, etc.
+    //
+    // Letting both paths race caused "black screen" on archive launches:
+    // startup-load tried to feed .zip bytes through PCE-CD and failed
+    // silently, leaving the core in an undefined state by the time the
+    // frontend cascade arrived.
+    //
+    // Hand the startup-load path nothing — let the frontend cascade own
+    // every direct-launch ROM, period. Library-mode (no direct_launch) is
+    // unchanged.
+    let rom_path: Option<String> = None;
+    match &direct_launch {
+        Some(cfg) => log::info!(
+            "oa-shell: direct-launch ROM = {} (system: {}, archive_inner: {:?}) \u{2014} \
+             frontend cascade will load (startup-load path bypassed)",
+            cfg.rom_path.display(),
+            cfg.system_id,
+            cfg.archive_inner_path,
+        ),
+        None => log::info!("oa-shell: no startup ROM set; waiting for library launch_rom commands"),
     }
 
     let running = Arc::new(AtomicBool::new(true));
