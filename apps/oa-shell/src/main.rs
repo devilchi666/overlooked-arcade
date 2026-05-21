@@ -2466,7 +2466,7 @@ fn main() {
             let game_focus = game_focus.clone();
             let shell_mode_for_event = shell_mode_for_event.clone();
             let logger_handle = logger_handle.clone();
-            let direct_launch = direct_launch.clone();
+            let mut direct_launch = direct_launch.clone();
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
@@ -2565,6 +2565,42 @@ fn main() {
                     Ok(db) => {
                         let count = db.count().unwrap_or(0);
                         log::info!("oa-shell: library_db open ({} games tracked)", count);
+
+                        // Direct-launch hash lookup: if a cart-shaped ROM was
+                        // supplied, hash it and see if the library has a row
+                        // with the same SHA-1. On hit, the frontend will pull
+                        // the matched RomEntry via get_game() and apply that
+                        // row's per-game overrides through the standard
+                        // launch cascade. CD images skip — their on-disk
+                        // hash isn't libretro-database-canonical (and is
+                        // expensive for multi-GB files at boot).
+                        if let Some(cfg) = direct_launch.as_mut() {
+                            if cfg.matched_entry_id.is_none() && !is_cd_extension(&cfg.rom_path.to_string_lossy()) {
+                                match rom_hashes::stream_sha1_of_file(&cfg.rom_path) {
+                                    Ok(sha) => match db.find_game_by_sha1(&sha) {
+                                        Ok(Some(row)) => {
+                                            log::info!(
+                                                "oa-shell: direct-launch SHA-1 matched library row {} ({})",
+                                                row.id,
+                                                row.title,
+                                            );
+                                            cfg.matched_entry_id = Some(row.id);
+                                        }
+                                        Ok(None) => log::info!(
+                                            "oa-shell: direct-launch SHA-1 not in library; using ad-hoc settings"
+                                        ),
+                                        Err(e) => log::warn!(
+                                            "oa-shell: direct-launch find_game_by_sha1 failed: {e}"
+                                        ),
+                                    },
+                                    Err(e) => log::warn!(
+                                        "oa-shell: direct-launch SHA-1 of {} failed: {e}",
+                                        cfg.rom_path.display()
+                                    ),
+                                }
+                            }
+                        }
+
                         app.manage(db);
                     }
                     Err(e) => {
