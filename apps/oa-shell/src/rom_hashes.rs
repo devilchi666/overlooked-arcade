@@ -773,22 +773,14 @@ async fn fetch_libretro_dat(
         dat_ref.subdir,
         urlencoding::encode(dat_ref.basename),
     );
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .send()
-        .await
-        .map_err(|e| format!("fetch {url}: {e}"))?;
-    let status = resp.status();
-    if status == reqwest::StatusCode::NOT_FOUND {
+    // get_text_with_retry retries once on 5xx / network errors. A
+    // single 404 (no dat at this subdir for this system) returns
+    // Ok(None) and is logged at debug level.
+    let result = crate::http_retry::get_text_with_retry(client, &url, "OverlookedArcade").await;
+    if let Ok(None) = &result {
         log::debug!("rom_hashes: {url} 404 (no dat at this path)");
-        return Ok(None);
     }
-    if !status.is_success() {
-        return Err(format!("rom_hashes dat fetch {url} status {status}"));
-    }
-    let body = resp.text().await.map_err(|e| format!("dat body: {e}"))?;
-    Ok(Some(body))
+    result
 }
 
 /// Fetch + parse every DatRef registered for a system, merging the

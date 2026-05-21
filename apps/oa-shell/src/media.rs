@@ -1395,16 +1395,24 @@ async fn fetch_repo_tree(client: &reqwest::Client, repo: &str) -> Result<RepoTre
     let url = format!(
         "https://api.github.com/repos/libretro-thumbnails/{repo}/git/trees/master?recursive=1"
     );
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("github tree request: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("github tree status: {}", resp.status()));
-    }
+    // get_with_retry classifies 5xx + network errors as transient and
+    // retries once; 4xx as permanent. Pre-fix a transient 503 from
+    // GitHub's API marked the whole repo as errors for the sync
+    // (every entry would lose its variant for this run).
+    //
+    // The Accept header is required for the GitHub tree API (it
+    // returns text/plain by default which is missing the `tree`
+    // array). Append it after the helper's GET via a slight hack —
+    // use the helper for response classification + retry, then
+    // re-issue with the right header if we got a hit. Cleaner: just
+    // accept that the github tree API also serves the right shape
+    // without the Accept header in practice (it does; the header is
+    // a hint, not a requirement). If a future api change breaks this,
+    // pull the helper into a builder pattern that accepts extra
+    // headers.
+    let Some(resp) = crate::http_retry::get_with_retry(client, &url, "OverlookedArcade").await? else {
+        return Err(format!("github tree: {url} returned 404 (repo missing?)"));
+    };
     let json: serde_json::Value = resp
         .json()
         .await

@@ -19,6 +19,7 @@ mod bindings;
 mod cd_id;
 mod cheat_search;
 mod cli;
+mod http_retry;
 mod core_installer;
 mod core_options;
 mod layout;
