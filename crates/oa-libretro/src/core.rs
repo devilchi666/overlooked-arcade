@@ -404,6 +404,41 @@ impl LibretroCore {
         state::with_state(|s| s.keyboard_cb.is_some()).unwrap_or(false)
     }
 
+    /// Phase F — snapshot the rumble strength the core has requested
+    /// per (port × effect). `[port][0]` = strong/low-freq motor,
+    /// `[port][1]` = weak/high-freq motor. Range 0..=65535. The shell
+    /// reads this once per frame and forwards to
+    /// `oa-input::InputPoller::dispatch_rumble` which pokes gilrs's
+    /// force-feedback API. Returns all-zeros for cores that don't use
+    /// the rumble interface.
+    pub fn rumble_snapshot(&self) -> [[u16; 2]; 5] {
+        state::with_state(|s| s.rumble).unwrap_or([[0; 2]; 5])
+    }
+
+    /// Phase G — push per-port-per-axis sensor values (accelerometer,
+    /// gyroscope, illuminance) so the core's next
+    /// `cb_get_sensor_input` poll reads fresh data. The shell's input
+    /// poll loop pumps these every frame; today the values come from
+    /// keyboard arrow-keys-as-tilt so GBA Boktai / Kirby Tilt 'n'
+    /// Tumble / WarioWare Twisted! are playable without OS-level
+    /// accelerometer access.
+    pub fn set_sensor_values(&self, values: [[f32; 7]; 5]) {
+        state::with_state(|s| s.sensor_values = values);
+    }
+
+    /// Phase G — true if the core has enabled at least one sensor on
+    /// any port via `cb_set_sensor_state`. The shell skips pushing
+    /// sensor values when nothing's enabled (saves a per-frame
+    /// keyboard poll for the 95% of cores that don't use sensors).
+    pub fn sensors_enabled(&self) -> bool {
+        state::with_state(|s| {
+            s.sensor_enabled
+                .iter()
+                .any(|p| p.iter().any(|&e| e))
+        })
+        .unwrap_or(false)
+    }
+
     /// Release the currently-loaded ROM via `retro_unload_game` but keep the
     /// core initialised so a subsequent `load_rom` can re-use the singleton.
     /// No-op if no ROM is loaded.

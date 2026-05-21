@@ -21,6 +21,7 @@ use oa_core::{InputState, PortIndex};
 
 pub use device_query::Keycode;
 pub use gilrs::Button as GamepadButton;
+use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Ticks};
 
 use device_query::{DeviceQuery, DeviceState};
 use gilrs::{Event, EventType, GamepadId, Gilrs};
@@ -277,6 +278,22 @@ pub struct InputPoller {
     /// to the 1080p screen-relative approximation — functional but
     /// imprecise on other resolutions.
     pointer_viewport: Option<PointerViewport>,
+    /// Phase F — per-port-per-effect gilrs force-feedback handle.
+    /// `[port][0]` = strong (low-freq) motor effect, `[port][1]` = weak
+    /// (high-freq). Built lazily on first non-zero strength + the bound
+    /// gamepad id at build time so reconnects rebuild on next dispatch.
+    /// `[gain_q12]` caches the last set_gain Q12 value so we skip the
+    /// gilrs round-trip when the core's continuous-rumble polls
+    /// don't actually change magnitude.
+    rumble_effects: [[Option<RumbleHandle>; 2]; 5],
+}
+
+struct RumbleHandle {
+    pad: gilrs::GamepadId,
+    effect: Effect,
+    /// Last strength applied (0..=65535). 0 means stopped; non-zero
+    /// means playing at gain (strength / 65535).
+    last_strength: u16,
 }
 
 impl InputPoller {
@@ -310,6 +327,7 @@ impl InputPoller {
                 AnalogRouting::default(),
             ],
             pointer_viewport: None,
+            rumble_effects: Default::default(),
         };
 
         // Snapshot already-connected pads so they get a port without waiting
@@ -391,6 +409,115 @@ impl InputPoller {
     /// reported as not-pressed + at (0,0) when outside it.
     pub fn set_pointer_viewport(&mut self, viewport: Option<PointerViewport>) {
         self.pointer_viewport = viewport;
+    }
+
+    /// Phase F — dispatch per-port-per-effect rumble strengths to gilrs's
+    /// force-feedback API. Called by the shell each frame with the
+    /// libretro-spec strength layout: `[port][0]` = strong/low-freq,
+    /// `[port][1]` = weak/high-freq, each 0..=65535.
+    ///
+    /// Effects are built lazily on first non-zero strength + the
+    /// currently-bound gamepad. When strength drops to 0 we stop the
+    /// effect; when it rises again we rebuild if the gamepad has
+    /// rotated underneath us. Magnitude is varied via `Effect::set_gain`
+    /// rather than rebuilding so continuous-rumble polls (every-frame
+    /// strength updates) stay cheap.
+    pub fn dispatch_rumble(&mut self, strengths: [[u16; 2]; 5]) {
+        let Some(gilrs) = self.gilrs.as_mut() else { return; };
+        for port in 0..5 {
+            for effect_idx in 0..2 {
+                let strength = strengths[port][effect_idx];
+                let pad_id = self.port_pads[port];
+                let slot = &mut self.rumble_effects[port][effect_idx];
+
+                // No pad → drop any stale handle and skip.
+                let Some(pad_id) = pad_id else {
+                    *slot = None;
+                    continue;
+                };
+
+                // Pad rotated (reconnect or different assignment) →
+                // drop the stale handle so we rebuild against the
+                // current pad on the next non-zero strength.
+                if let Some(h) = slot.as_ref() {
+                    if h.pad != pad_id {
+                        *slot = None;
+                    }
+                }
+
+                if strength == 0 {
+                    if let Some(h) = slot.as_mut() {
+                        if h.last_strength != 0 {
+                            let _ = h.effect.stop();
+                            h.last_strength = 0;
+                        }
+                    }
+                    continue;
+                }
+
+                // strength > 0
+                if slot.is_none() {
+                    // Confirm the gamepad actually supports FF before
+                    // building. Skipping unsupported pads silently is
+                    // the same shape as "no pad" — caller doesn't
+                    // need to know.
+                    let pad_supports_ff = gilrs
+                        .connected_gamepad(pad_id)
+                        .map(|g| g.is_ff_supported())
+                        .unwrap_or(false);
+                    if !pad_supports_ff {
+                        continue;
+                    }
+                    let kind = if effect_idx == 0 {
+                        BaseEffectType::Strong { magnitude: u16::MAX }
+                    } else {
+                        BaseEffectType::Weak { magnitude: u16::MAX }
+                    };
+                    // Long-duration looping effect — set_gain controls
+                    // intensity per dispatch tick. Duration of ~5s
+                    // repeated forever keeps a continuous feel even
+                    // if a play() call somehow gets dropped.
+                    let build = EffectBuilder::new()
+                        .add_effect(BaseEffect {
+                            kind,
+                            scheduling: Default::default(),
+                            envelope: Default::default(),
+                        })
+                        .repeat(Repeat::Infinitely)
+                        .gamepads(&[pad_id])
+                        .finish(gilrs);
+                    match build {
+                        Ok(effect) => {
+                            *slot = Some(RumbleHandle {
+                                pad: pad_id,
+                                effect,
+                                last_strength: 0,
+                            });
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "oa-input: build rumble effect failed (port {port} effect {effect_idx}): {e:?}"
+                            );
+                            continue;
+                        }
+                    }
+                }
+
+                let h = slot.as_mut().expect("just built or pre-existing");
+                if h.last_strength != strength {
+                    let gain = strength as f32 / u16::MAX as f32;
+                    let _ = h.effect.set_gain(gain);
+                    if h.last_strength == 0 {
+                        let _ = h.effect.play();
+                    }
+                    h.last_strength = strength;
+                }
+            }
+        }
+        // Silence the unused-imports warning when no rumble dispatch
+        // happens during compile-time linting; Ticks isn't currently
+        // referenced but exists in the gilrs::ff re-exports.
+        let _ = Ticks::from_ms;
     }
 
     /// Immediate-mode keyboard check, bypassing the enabled gate. The shell

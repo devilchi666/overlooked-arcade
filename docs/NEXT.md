@@ -61,14 +61,14 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 
 These wait for a single, larger infrastructure pass that benefits many systems at once. Each line item below names what unlocks the deferred work.
 
-- **Phase 3 shared analog input infrastructure** (~1200 lines across `oa-input` + bindings schema + per-game profile UI). Blocks: 2600/5200/7800 paddle controllers, ChannelF 3-axis plunger, Intellivision 16-direction disc, GBA tilt sensor, GBA solar sensor, SMS Light Phaser, PSX/Saturn analog triggers, N64 Memory Pak + Rumble Pak, Dreamcast analog triggers, GameCube analog triggers, MAME Phase 3 (steering wheel + trackball + paddle).
 - **System-agnostic cheat code path** (~300 lines). Once Phase 4 milestone pattern is more established.
 - **GameCube Wii Remote / Nunchuk / Classic Controller dispatch** (~500 lines, new libretro device type, Phase 2.5).
 - **Dreamcast VMU peripheral** (~400 lines, secondary screen + device dispatch).
-- **Pressure-sensitive analog triggers** (~150 lines shared GC/PS2/DC).
+- **Real OS-level accelerometer access** (~250 lines, Windows Sensor API / Linux iio / macOS Core Motion). Phase G's keyboard-arrows-as-tilt fallback handles GBA Boktai / Kirby Tilt 'n' Tumble / WarioWare Twisted! today; a real accelerometer would let operators with tablet hardware or USB IMU devices play with native motion.
+- **Trackball / mouse delta semantics validation** (~80 lines + operator testing). Libretro `RETRO_DEVICE_MOUSE` is spec'd as delta-based; the existing pointer-as-mouse dispatch may need a small adjustment to feed delta-X/Y rather than absolute coords for MAME arcade trackball games (Marble Madness, Centipede). Verify-as-needed when an operator tests an actual trackball cabinet.
 - **Custom-built Vectrex vector renderer** (~500 lines, Phase 3+). Replace vecx raster with native wgpu vector-stroke rendering.
 - **Modern VR for Virtual Boy via OpenXR** (~800 lines, Phase 2+). Side-by-side dual-perspective to a headset.
-- **Right D-pad bindings for Virtual Boy** (~150 lines, OR wait for shared analog infra). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force.
+- **Right D-pad bindings for Virtual Boy** (~150 lines). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force. (Was gated on "shared analog infra"; that infra is shipped, so this is now ready — moved up to MEDIUM if operator wants to pick it up.)
 - **Jaguar CD support** (~300 lines, Phase 3). Separate load path + BIOS.
 - **32X-CD games** (~300 lines, Phase 3+). Shared between sega32x + segacd.
 - **ST-V arcade variant** of Saturn (~250 lines, Phase 3+). Separate `stv` slug.
@@ -99,6 +99,7 @@ What's already shipped that future work can lean on. Cite these in PRs that clos
 - **Per-game settings drawer** — slice 2.8.D. All of the above stack on top per-game; plus `core_options` map, `patch_path`, `keypad_layout_note`.
 - **Core-option dynamic visibility** — libretro `SET_CORE_OPTIONS_DISPLAY` + `SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK` honored end-to-end. Cores that hide dependent options (Beetle PSX "Lightgun crosshair color" when "Lightgun" off; PCSX2 "GS renderer" sub-options when "Software" selected; etc.) now filter correctly in the per-system + per-game panels. Visibility refreshes after each value change via `Core::refresh_option_visibility`.
 - **Library folders: SQLite-only** — SQLite `folders` table is the single source of truth. `list_folders` carries `display_order` (drag-reorder persists via `reorder_folders`), `folder_rules`, scan settings, watch flag. Settings store exposes `libraryFolders() / libraryFolderRows() / addLibraryFolderPath / removeLibraryFolderById / reorderLibraryFolderIds / refreshLibraryFolders`. One-shot `migrate_folders_from_local_storage` runs on settings-store init to absorb any legacy localStorage entries.
+- **Shared analog input infrastructure (Phases A–G)** — closes the entire Phase 3 input umbrella. Per-game libretro device-type override across all 5 ports (`GameOverrides.libretro_device` + `libretro_device_port1..4`, `arm_libretro_device` walks every port). Per-button analog pressure (`InputState.analog_buttons[16]`, gilrs L2/R2 trigger axes). Mouse-as-stick analog source (`MouseSource::{X, Y, Xy}`). Per-game device-type UI in `PerGameSettingsDrawer` Input tab with collapsible Additional ports (1–4). Rumble interface (`RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE` → gilrs force-feedback, lazy-built per (port × effect-kind) effect handles with `set_gain` for magnitude). Sensor interface (`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE` with keyboard-arrows-as-tilt fallback for GBA / NDS gyroscope titles). Closes ~12 per-core ⬜ bullets that previously cited "shared analog input infra" as their gate.
 - **Quick settings overlay** — slice 2.8.B. In-game pause menu.
 - **Window + scaling modes** — Phase 2.
 - **Aspect override** — `system_settings::default_display_aspect` + `SystemSettings.display_aspect_override` + `GameOverrides.display_aspect_override`. Per-system defaults: GBA → 1.5.

@@ -349,6 +349,76 @@ pub struct retro_core_options_update_display_callback {
     pub callback: Option<retro_core_options_update_display_callback_t>,
 }
 
+// ---------- rumble (env 23, GET_RUMBLE_INTERFACE) -------------------
+//
+// Cores call set_rumble_state(port, effect, strength) to drive controller
+// vibration. `strength` is 0..=65535 (max amplitude). `effect` is the
+// motor: 0 = strong/low-freq, 1 = weak/high-freq. Cores typically poke
+// both motors for a single rumble pulse so the controller buzzes with
+// both motors at once.
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetroRumbleEffect {
+    Strong = 0,
+    Weak = 1,
+}
+
+pub type retro_set_rumble_state_t = unsafe extern "C" fn(
+    port: u32,
+    effect: u32,
+    strength: u16,
+) -> bool;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_rumble_interface {
+    pub set_rumble_state: retro_set_rumble_state_t,
+}
+
+// ---------- sensor (env 25, GET_SENSOR_INTERFACE) -------------------
+//
+// Cores call set_sensor_state(port, action, rate) to enable/disable
+// the accelerometer + gyroscope on the given port, then poll values via
+// get_sensor_input(port, id). Used by GBA tilt games (Kirby Tilt 'n'
+// Tumble, WarioWare Twisted!), GBA solar games (Boktai), NDS gyroscope
+// (WarioWare D.I.Y. Showcase), 3DS-style motion. We ship a mock-zero
+// implementation today + keyboard arrow-key tilt fallback so games are
+// playable without OS-level accelerometer access.
+
+pub const RETRO_SENSOR_ACCELEROMETER_ENABLE: u32 = 0;
+pub const RETRO_SENSOR_ACCELEROMETER_DISABLE: u32 = 1;
+pub const RETRO_SENSOR_GYROSCOPE_ENABLE: u32 = 2;
+pub const RETRO_SENSOR_GYROSCOPE_DISABLE: u32 = 3;
+pub const RETRO_SENSOR_ILLUMINANCE_ENABLE: u32 = 4;
+pub const RETRO_SENSOR_ILLUMINANCE_DISABLE: u32 = 5;
+
+pub const RETRO_SENSOR_ACCELEROMETER_X: u32 = 0;
+pub const RETRO_SENSOR_ACCELEROMETER_Y: u32 = 1;
+pub const RETRO_SENSOR_ACCELEROMETER_Z: u32 = 2;
+pub const RETRO_SENSOR_GYROSCOPE_X: u32 = 3;
+pub const RETRO_SENSOR_GYROSCOPE_Y: u32 = 4;
+pub const RETRO_SENSOR_GYROSCOPE_Z: u32 = 5;
+pub const RETRO_SENSOR_ILLUMINANCE: u32 = 6;
+
+pub type retro_set_sensor_state_t = unsafe extern "C" fn(
+    port: u32,
+    action: u32,
+    rate: u32,
+) -> bool;
+
+pub type retro_sensor_get_input_t = unsafe extern "C" fn(
+    port: u32,
+    id: u32,
+) -> f32;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_sensor_interface {
+    pub set_sensor_state: retro_set_sensor_state_t,
+    pub get_sensor_input: retro_sensor_get_input_t,
+}
+
 // ---------- disc control callback structs ----------
 //
 // Cores with multi-disc support (PCE-CD with `.m3u`, PSX, Saturn, etc.)

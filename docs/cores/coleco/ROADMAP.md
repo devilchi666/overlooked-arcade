@@ -34,7 +34,7 @@ Per-core phase tracking for ColecoVision. Status: ⬜ not started · 🟨 in pro
 ## ⬜ Phase 2 — Polish
 
 - ⬜ Per-game keypad mode override — **partial**: per-game `keypad_layout_note` field + drawer UI shipped in `GameOverrides`; full per-game bindings override still gated on per-game keypad-bindings work.
-- ⬜ Super Action Controller (the Coleco's deluxe controller with spinner + extra buttons) — gated on shared analog-input infra.
+- ✅ Super Action Controller (the Coleco's deluxe controller with spinner + extra buttons) — closed by Phase A PADDLE / ANALOG device-type + Phase C mouse-as-stick X for the spinner. Operator playtest pending.
 - ⬜ Coleco Adam computer mode — deferred (separate `adam` slug if ever onboarded).
 
 ---
@@ -42,4 +42,4 @@ Per-core phase tracking for ColecoVision. Status: ⬜ not started · 🟨 in pro
 ## ⬜ Phase 3+ — Stretch
 
 - ⬜ Cheat support via libretro cheat path — operator-driven validation.
-- ⬜ Roller Controller / Coleco-specific peripherals — gated on shared analog-input infra.
+- ✅ Roller Controller / Coleco-specific peripherals — closed by the same PADDLE + mouse-as-stick path as Super Action Controller.

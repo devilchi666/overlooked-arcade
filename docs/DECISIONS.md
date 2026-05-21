@@ -614,3 +614,41 @@ A single source of truth removes the class entirely: ANY divergence between loca
 - **Move to a sidecar JSON file in `appData/.../library/folders.json`.** Better than localStorage (persistent + cross-window) but worse than SQLite because (a) we already have the SQLite table, (b) JSON loses the `folder_rules` FK relationship, and (c) two persistent stores is exactly what we're escaping.
 - **Keep localStorage as the source of truth.** Would mean migrating folder rules + scan settings OUT of SQLite. Strictly worse: localStorage doesn't survive WebView reprovisioning, doesn't have transactions, and doesn't enforce relational invariants.
 - **Make the migration a one-way "settings store calls SQLite on init, then keeps the localStorage mirror updated on writes."** Two writes per mutation = same divergence risk on partial failure.
+
+---
+
+## 2026-05-21 — Shared analog input infra: Phases E + F + G close the umbrella
+
+**Decision:** Wire libretro's three remaining input-infra envs — multi-port device-type (extension of Phase A from port-0-only to all 5 ports), rumble interface (env 23, `GET_RUMBLE_INTERFACE`), and sensor interface (env 25, `GET_SENSOR_INTERFACE`) — and flip the per-core ROADMAP bullets they close. The "Phase 3 shared analog input infrastructure" umbrella entry in NEXT.md DEFERRED is removed; ~12 specific items across 8 cores now ship.
+
+**Why:** Audit during the 2026-05-21 follow-up review (after the operator asked "I thought analog input infra was done") showed Phases A–D shipped substantively (per-game device-type override, per-button analog pressure, mouse-as-stick analog source, per-game UI) but the project's own NEXT.md still listed the umbrella as DEFERRED, and per-core ROADMAPs still had ⬜ bullets citing "gated on shared analog-input infra" for items that the shipped infra actually closes. Three genuinely-still-open siblings remained:
+- **Multi-port device-type** — `arm_libretro_device` only wrote port 0, so 7800 twin-stick / SNES Mouse on port 2 / arcade coop light-gun were still blocked.
+- **Rumble interface** — declined with `false` in `cb_environment` (state.rs:975), so cores requesting rumble silently got no haptic feedback even though gilrs already supports it.
+- **Sensor interface** — same `false` decline, so GBA tilt / solar / NDS gyroscope cores either ignored sensors or crashed reading null function pointers.
+
+**Phase E — multi-port device-type:**
+- `GameOverrides` gains `libretro_device_port1..4: Option<u32>` siblings to the existing `libretro_device` (port 0 kept for back-compat). `GameOverrides::libretro_device_ports()` returns the 5-element array.
+- `arm_libretro_device` walks ports 0..=4 and dispatches `SetPortDevice` for each.
+- `set_libretro_device_for_game` takes an optional `port: Option<u32>` so the same Tauri command writes to any port.
+- `PerGameSettingsDrawer` Input tab adds a collapsible "+ Additional ports (1–4)" section. Auto-expands when any port-1..4 override is non-null so an operator returning to a multi-port game sees their config without hunting.
+
+**Phase F — rumble interface:**
+- New FFI types in `oa-libretro/src/ffi.rs`: `retro_rumble_effect`, `retro_rumble_interface`, `retro_set_rumble_state_t`.
+- `State.rumble: [[u16; 2]; 5]` — per (port × strong/weak), 0..=65535.
+- `cb_set_rumble_state` trampoline writes the cell; env 23 hands the core our interface struct.
+- `LibretroCore::rumble_snapshot()` reads the array.
+- `InputPoller::dispatch_rumble(strengths)` builds long-lived gilrs `Effect` per (port × kind) lazily on first non-zero write, varies magnitude via `Effect::set_gain` (continuous-rumble polls don't rebuild), stops on strength=0, rebuilds on gamepad rotation.
+- Shell's emu thread calls `core.rumble_snapshot()` + `input.dispatch_rumble(...)` after each NORMAL forward-play `run_frame`. The all-zeros snapshot fast-paths to a no-op for cores that don't use the env.
+
+**Phase G — sensor interface:**
+- FFI types: `retro_sensor_interface`, `retro_set_sensor_state_t`, `retro_sensor_get_input_t`, RETRO_SENSOR_* enable/axis constants.
+- `State.sensor_enabled: [[bool; 3]; 5]` (accel/gyro/illum per port), `State.sensor_values: [[f32; 7]; 5]` (per axis).
+- Phase 1 fallback: arrow-keys-as-tilt feed `sensor_values[0][ACCEL_X|Y|Z]` so GBA Boktai / Kirby Tilt 'n' Tumble / WarioWare Twisted! are playable without OS-level accelerometer access. Real motion (Windows Sensor API / Linux iio / macOS Core Motion) is deferred until operator hardware demands it.
+- `core_ref.sensors_enabled()` guards the per-frame sensor pump so the 95% of cores that don't use sensors pay nothing.
+
+**Considered and rejected:**
+- **Trackball-delta dispatch.** Libretro spec says `RETRO_DEVICE_MOUSE` is delta-based; our existing pointer-as-mouse path may already produce delta values via the per-frame coordinate diff. Verify-as-needed when an operator tests an actual MAME arcade trackball game (Marble Madness, Centipede). Listed in NEXT.md DEFERRED rather than shipped because the verification + potential 80 LOC fix is operator-triggered.
+- **Real accelerometer access.** Windows Sensor API + Linux iio + macOS Core Motion. Postponed because (a) keyboard-tilt fallback covers the playable bar today, (b) the actual sensor hardware most users have isn't connected to their PC (tablet IMUs and phones aren't typically plumbed), and (c) the gesture vocabulary GBA tilt games use is binary-ish ("tilt left to roll Kirby left") which keyboard arrows model fine.
+- **Real solar-sensor input.** Same reasoning as accelerometer plus an additional concern: real ambient light readings during emulation are usually wrong anyway (operators play indoors at night; Boktai requires sunlight to recharge). The mock-zero illuminance the env returns is honest about "no sensor"; operators use mGBA's per-game core-options to fix illuminance to a target level instead.
+- **Effect rebuild per dispatch tick.** Simpler than `set_gain` + lazy build, but cores call set_rumble_state every frame for continuous rumble (RetroArch logs confirm); rebuilding 60×/sec per port-effect is wasteful when `set_gain` keeps the same effect alive.
+- **Fire-and-forget rumble channel (mpsc emu → input poller thread).** Adds latency + Send concerns for the gilrs Effect handle. The snapshot-pull pattern is simpler and the per-frame cost of `core_ref.rumble_snapshot()` is one mutex acquisition + a 5×2 u16 copy.

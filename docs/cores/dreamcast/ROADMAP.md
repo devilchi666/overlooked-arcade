@@ -33,7 +33,7 @@ with gamepad analog stick driving movement.
 
 - ⬜ Operator validation: Sonic Adventure / Crazy Taxi / Jet Set Radio / Power Stone / Soulcalibur — operator playtest.
 - ✅ Analog stick smoke-test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
-- ⬜ L/R analog trigger validation (Crazy Taxi, Daytona USA gas/brake) — gated on shared pressure-sensitive analog-trigger infra (Phase 2.5, shared with GC/PS2).
+- ✅ L/R analog trigger validation (Crazy Taxi, Daytona USA gas/brake) — closed by Phase B per-button analog pressure (`InputState.analog_buttons` slots 12/13, gilrs trigger axes flow through `cb_input_state` RETRO_DEVICE_INDEX_ANALOG_BUTTON). Operator playtest pending.
 - ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 - ⬜ Multi-region testing (US/JP/EU) — operator playtest.
 - ✅ Cover sync via libretro-thumbnails Sega_-_Dreamcast — closed by cross-system media sync (`media::sync_media_for_system`).
@@ -45,7 +45,8 @@ with gamepad analog stick driving movement.
 - ⬜ **VMU peripheral support** — the iconic memory-card-with-screen doubled as a peripheral for some titles — gated on Phase 2.5 secondary-screen plumbing.
 - ⬜ **Light gun support** (House of the Dead 2, Confidential Mission, Death Crimson 2) — POINTER device infra is shipped (`oa_core::InputState.pointer` + `cb_input_state` POINTER dispatch); per-game light-gun smoke-test still operator-driven.
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::dreamcast` (reads IP.BIN HDR serial); `rom_hashes` points at `metadat/redump/Sega - Dreamcast`.
-- ⬜ **L/R analog trigger pressure-sensitivity** — gated on shared pressure-sensitive analog-trigger infra (shared with GC/PS2).
+- ✅ **L/R analog trigger pressure-sensitivity** — closed by Phase B (see above). Same shared infra closed GC + PS2.
+- ✅ **DC Jump Pack rumble** — closed by Phase F rumble interface (`RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE` wired through to gilrs). Operator playtest pending.
 
 ---
 

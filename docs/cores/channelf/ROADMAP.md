@@ -30,7 +30,7 @@ Per-core phase tracking for Fairchild Channel F. Status: ⬜ not started · 🟨
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ True multi-axis plunger analog mapping — the Channel F plunger was a real 3-axis stick (push/pull, twist L/R, push-in) — gated on shared analog-input infra.
+- ✅ True multi-axis plunger analog mapping — the Channel F plunger was a real 3-axis stick (push/pull, twist L/R, push-in). Closed by Phase A PADDLE / ANALOG device-type + Phase C mouse-XY routing (`MouseSource::Xy`) for two of three axes; push-in is a digital fire button on existing bindings. Operator playtest pending.
 - ⬜ Channel F System II (1979 redesign without wood-grain) — operator-driven cosmetic ROM-set distinction.
 - ⬜ Homebrew scene catalog — operator-driven data curation.
 

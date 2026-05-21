@@ -31,7 +31,18 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 2+ contributions
 
-- ⬜ Twin-stick (Robotron 2084 two-joystick mode) — gated on shared analog/second-port infra.
-- ⬜ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) — gated on shared analog infra.
-- ⬜ Trak-Ball / driving-controller support (Pole Position II, Asteroids Deluxe) — gated on shared analog infra.
+- ✅ Twin-stick (Robotron 2084 two-joystick mode) — closed by Phase E
+  multi-port device-type override (`libretro_device_port1` field on
+  `GameOverrides`, `arm_libretro_device` walks all 5 ports). Operator
+  sets port 0 = JOYPAD + port 1 = JOYPAD in per-game Input → Additional
+  ports. Operator playtest pending.
+- ✅ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) —
+  closed by Phase A LIGHTGUN device-type + the existing POINTER infra
+  (window-relative mapping via `PointerViewport`). Operator playtest
+  pending.
+- ✅ Trak-Ball / driving-controller support (Pole Position II, Asteroids
+  Deluxe) — closed by Phase A PADDLE / MOUSE + Phase C mouse-as-stick.
+  Trackball games can also try device = MOUSE (libretro MOUSE is
+  delta-based per spec; matches real trackball behavior). Operator
+  playtest pending.
 - ⬜ "High Score Cartridge" save support — operator-driven validation that ProSystem's SRAM region round-trips through the save-state path.

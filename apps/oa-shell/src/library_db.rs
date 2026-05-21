@@ -133,6 +133,41 @@ pub struct GameOverrides {
     /// disconnects (see `reference_libretro_controller_after_load_game`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libretro_device: Option<u32>,
+    /// Phase E (2026-05-21) — per-game device-type override for port 1.
+    /// Same semantics as `libretro_device` (port 0). Multi-port use
+    /// cases: SNES Mouse plugged into port 2 (Mario Paint) alongside
+    /// JOYPAD on port 1; arcade coop light-gun games (LIGHTGUN on both
+    /// ports); 7800 twin-stick (Robotron mapping its second joystick
+    /// onto port 1). `None` falls through to the libretro default
+    /// (JOYPAD) — same as port 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libretro_device_port1: Option<u32>,
+    /// Per-game device-type override for port 2. See `libretro_device_port1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libretro_device_port2: Option<u32>,
+    /// Per-game device-type override for port 3. See `libretro_device_port1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libretro_device_port3: Option<u32>,
+    /// Per-game device-type override for port 4. See `libretro_device_port1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libretro_device_port4: Option<u32>,
+}
+
+impl GameOverrides {
+    /// Per-port device-type override array (port 0..=4). Combines the
+    /// `libretro_device` scalar (port 0, kept for back-compat) with the
+    /// new `libretro_device_port1..4` siblings. `None` at an index
+    /// means "inherit the libretro default" (JOYPAD); explicit
+    /// `Some(0)` means RETRO_DEVICE_NONE (disconnect).
+    pub fn libretro_device_ports(&self) -> [Option<u32>; 5] {
+        [
+            self.libretro_device,
+            self.libretro_device_port1,
+            self.libretro_device_port2,
+            self.libretro_device_port3,
+            self.libretro_device_port4,
+        ]
+    }
 }
 
 /// Phase 4 slice F — one memory-watching milestone for a game.
@@ -2925,6 +2960,10 @@ mod tests {
                 "Donkey Kong: KP1=climb-up, KP2=climb-down, KP3=jump".to_string(),
             ),
             libretro_device: Some(2), // RETRO_DEVICE_MOUSE
+            libretro_device_port1: Some(1), // Phase E — JOYPAD on port 1 alongside MOUSE on port 0
+            libretro_device_port2: None,
+            libretro_device_port3: None,
+            libretro_device_port4: None,
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

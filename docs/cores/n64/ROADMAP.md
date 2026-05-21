@@ -49,5 +49,6 @@ with a connected gamepad's analog stick driving Mario / Link.
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **N64 Memory Pak / Rumble Pak** UX — operator-driven Mupen64Plus-Next core-option curation.
+- ✅ **N64 Rumble Pak** — closed by Phase F rumble interface (`RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE` wired through to gilrs). Operator picks the Rumble Pak in Mupen64Plus-Next's per-game core options. Operator playtest pending (Star Fox 64 / Banjo-Kazooie / Goldeneye 007).
+- ⬜ **N64 Memory Pak** UX — operator-driven Mupen64Plus-Next core-option curation. Distinct concern from rumble (save-card management, not analog input).
 - ⬜ **Transfer Pak** (GB carts via N64 — Pokémon Stadium 1/2) — deferred (niche).
