@@ -15,8 +15,11 @@ oa-shell.exe "C:\ROMs\Mega Man 2.nes"            # positional ROM
 oa-shell.exe --rom "C:\ROMs\Mega Man 2.nes"      # equivalent
 oa-shell.exe --system snes --rom "Mario.sfc"     # explicit system
 oa-shell.exe "ActRaiser 2 (USA).zip"             # single-ROM .zip auto-extracts
+oa-shell.exe "GoodSNES.zip#Super Mario World.sfc"  # multi-ROM .zip via explicit inner
+oa-shell.exe --system psx "PSX.zip#FF7 Disc 1.cue" # CD-in-archive (extracted to temp)
 oa-shell.exe "FF7 (Disc 1).cue" --system psx     # ambiguous ext needs --system
 oa-shell.exe --rom Bonk.pce --slot 3 --fullscreen
+oa-shell.exe --state-file "C:\saves\snap.state" --rom "ActRaiser 2 (USA).zip"
 oa-shell.exe --core fceumm_libretro.dll --rom Mega Man 2.nes
 ```
 
@@ -32,11 +35,18 @@ Run `oa-shell.exe --help` for the full list of flags.
    (`.cue` / `.chd` / `.iso` / `.m3u` / `.pbp`) are **ambiguous** and require
    `--system <slug>`.
 3. **Archive auto-extract** — `.zip` / `.7z` archives are peeked inside.
-   Exactly one cart-ROM file inside → it's used transparently (system is
-   inferred from the inner extension if `--system` wasn't supplied). MAME /
-   Neo Geo passes the .zip through as-is when `--system mame` (or `neogeo`)
-   is supplied, or when the `.p1` + `.s1` Neo Geo signature is detected.
-   Empty / multi-ROM archives error out with a list.
+   Exactly one ROM (cart OR CD entry-point) inside → it's used transparently
+   (system inferred from the inner cart extension if `--system` wasn't
+   supplied; CD inners require `--system`). MAME / Neo Geo passes the .zip
+   through as-is when `--system mame` (or `neogeo`) is supplied, or when the
+   `.p1` + `.s1` Neo Geo signature is detected. Empty / multi-ROM archives
+   error out with a list.
+4. **Explicit `<path>#<inner>` syntax** — power-user form for multi-game
+   archives: `"GoodSNES.zip#Super Mario World (USA).sfc"` skips the
+   single-ROM requirement and addresses one ROM out of many. Cart inners
+   auto-infer the system; CD inners require `--system`. Inner path is
+   validated against the archive's table of contents — typos error with the
+   available inner list.
 3. **Forced single-window** — direct-launch overrides any `OA_SHELL_MODE` /
    `shell.json` preference to single-window for the duration of this launch.
    Your operator preference on disk is **not** changed.
@@ -61,22 +71,31 @@ Run `oa-shell.exe --help` for the full list of flags.
 | `--rom PATH` | ROM path (alternative to positional). Mutually exclusive with positional. |
 | `--core DLL` | Override the libretro core .dll filename (resolved against `<exe_dir>/cores/`). |
 | `--system SLUG` | Force the system. Required for ambiguous extensions. |
-| `--slot N` | Restore from per-game save slot N (0–9) after the ROM loads. |
+| `--slot N` | Restore from per-game save slot N (0–9) after the ROM loads. Mutually exclusive with `--state-file`. |
+| `--state-file PATH` | Restore an arbitrary save-state file (absolute path) after the ROM loads. Mutually exclusive with `--slot`. |
 | `--tas-replay PATH` | Play back a `.oatas` TAS recording at launch. |
 | `--fullscreen` | Switch to fullscreen window mode after launch. |
-| `--state-file PATH` | *Reserved for v2 — not wired in this build. Use `--slot` instead.* |
 
 ## Errors
 
 Errors print a multi-line banner to stderr and exit with status **2**:
 
 - **ROM file not found** — `--rom` / positional path doesn't exist.
+- **`--state-file` not found** — the state-file path doesn't exist.
 - **Unknown ROM extension** — the file extension isn't in the mapping table.
 - **Ambiguous ROM extension** — CD-shaped extension without `--system`; the
   message lists the candidate systems.
+- **Archive contains no ROMs** — `.zip` / `.7z` peek found zero ROM-shaped
+  entries; suggests `--system mame|neogeo` for romsets.
+- **Archive contains multiple ROMs** — peek found more than one; lists them and
+  suggests the explicit `<path>#<inner>` syntax or scanning via Import Wizard.
+- **Inner ROM not found in archive** — explicit `#inner` doesn't exist in the
+  archive's table of contents; lists available inners.
+- **Archive read failed** — `.zip` / `.7z` is corrupt or unsupported.
 - **Unknown system slug** — `--system` value isn't recognized; the message
   lists common slugs.
-- **Conflicting arguments** — positional path and `--rom` both supplied.
+- **Conflicting arguments** — positional path and `--rom` both supplied, OR
+  `--slot` and `--state-file` both supplied.
 
 ## Environment variables
 
@@ -111,17 +130,15 @@ These are explicitly out of scope for this version. Track in
 
 - **Multi-instance** — running two `oa-shell.exe` direct-launches in parallel
   isn't supported (log-file locking, single-singleton libretro state).
-- **`--state-file`** — restore-arbitrary-state-file isn't wired; use `--slot`.
-- **Archive inner-ROM addressing** — `oa-shell.exe "set.zip#inner.nes"` (explicit
-  inner-path syntax) not supported. Multi-ROM archives must be scanned via
-  the Import Wizard first. Single-ROM `.zip` / `.7z` archives **are** supported
-  via auto-extract (Phase H).
-- **CD images inside archives** — `oa-shell.exe "game.zip"` containing a
-  `.cue` + `.bin` set isn't supported; extract the CD set to a folder and
-  pass the `.cue` directly with `--system <psx|saturn|…>`.
 - **ARGV batch processing** — one ROM per process invocation.
 - **Persistent kiosk profiles** — OA always reverts to library mode after exit.
 - **Steam Big Picture controller-launch** — separate problem.
+- **Launcher-parity flags** — `--monitor N`, `--no-fullscreen`, `--scaling MODE`,
+  `--shader NAME` aren't wired; tune via per-system / per-game library settings.
+- **Kiosk / arcade flags** — `--kiosk`, `--auto-restart`, `--idle-timeout`,
+  `--no-overlays` for museum installs / dedicated cabinets aren't shipped.
+- **Diagnostics flags** — `--verbose`, `--probe` / `--dry-run`, `--list-systems`
+  would help debug launcher configs but aren't shipped.
 
 ## How it works internally
 

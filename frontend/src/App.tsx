@@ -335,11 +335,22 @@ const App: Component = () => {
       // Title heuristic: when the ROM is wrapped in an archive, the inner
       // filename is the meaningful one. Otherwise use the outer path.
       const titleSource = cfg.archiveInnerPath ?? cfg.romPath;
+      // For archive launches, fold the inner path into the id so two
+      // different inners inside the same archive get separate ids
+      // (matters for CD-in-archive temp-dir cleanup keyed off entryId).
+      // Library entries already encode `<archive>#<inner>` as filePath;
+      // mirror that for the synthesized RomEntry too.
+      const idSource = cfg.archiveInnerPath
+        ? `${cfg.romPath}#${cfg.archiveInnerPath}`
+        : cfg.romPath;
+      const filePath = cfg.archiveInnerPath
+        ? `${cfg.romPath}#${cfg.archiveInnerPath}`
+        : cfg.romPath;
       entry = {
-        id: cfg.matchedEntryId ?? romIdFromPath(cfg.romPath),
+        id: cfg.matchedEntryId ?? romIdFromPath(idSource),
         title: titleFromFileName(titleSource),
         systemId: cfg.systemId as SystemId,
-        filePath: cfg.romPath,
+        filePath,
         addedAt: 0,
         seed: false,
         coreOverride: cfg.coreOverride ?? undefined,
@@ -347,7 +358,7 @@ const App: Component = () => {
       };
     }
     console.log("[oa-direct-launch] auto-launching:", entry);
-    await handleLaunch(entry, cfg.slot ?? undefined);
+    await handleLaunch(entry, cfg.slot ?? undefined, cfg.stateFile ?? undefined);
 
     // After the launch cascade settles, apply CLI-only overrides that
     // sit on top of per-game / per-system / OA-wide settings.
@@ -359,14 +370,6 @@ const App: Component = () => {
     if (cfg.tasReplay) {
       void invoke("start_tas_replay", { filePath: cfg.tasReplay }).catch((e) =>
         console.warn("[oa-direct-launch] --tas-replay start_tas_replay failed:", e),
-      );
-    }
-    if (cfg.stateFile) {
-      // --state-file is reserved for a future restore_state_file command;
-      // log so the operator sees the request didn't take effect rather
-      // than silently dropping it.
-      console.warn(
-        "[oa-direct-launch] --state-file is not wired in this build; use --slot for a per-game save slot.",
       );
     }
   }
@@ -605,7 +608,7 @@ const App: Component = () => {
     setBusy("idle");
   }
 
-  async function handleLaunch(entry: RomEntry, slot?: number) {
+  async function handleLaunch(entry: RomEntry, slot?: number, stateFile?: string) {
     // Diagnostic — verify the click reached us + log the full entry shape
     // so we can confirm archiveInnerPath/coreOverride/etc. are populated.
     console.log("[oa-launch] handleLaunch called", {
@@ -761,7 +764,7 @@ const App: Component = () => {
       console.warn("[oa-launch] override resolution failed:", e);
     }
 
-    const result = await launchRom(entry, slot);
+    const result = await launchRom(entry, slot, stateFile);
     console.log("[oa-launch] launchRom result:", result);
     setStatus(launchStatus(result));
     setBusy("idle");

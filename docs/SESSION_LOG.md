@@ -6,6 +6,49 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-21 — Direct-launch Phase I — explicit #inner, CD-in-archive, --state-file restore
+
+Three follow-ups to direct-launch shipped on top of `main`. Closes
+out the load-bearing PARKING_LOT items for the CLI feature.
+
+- **Shipped (explicit `<archive>#<inner>` syntax):**
+  - `resolve_explicit_archive_inner` in cli.rs — bypasses Phase H's
+    single-ROM requirement; the operator can address one ROM out of a
+    multi-game archive without scanning the library first.
+  - Inner is validated against `archive::list_rom_contents`; typos
+    error with the available-inner list (new
+    `CliError::ArchiveInnerNotFound`).
+  - Cart inners auto-infer the system via `slug_for_ext`; CD inners
+    require `--system`.
+- **Shipped (CD-in-archive auto-extract):**
+  - `resolve_archive` peek filter extended to accept .cue / .ccd /
+    .toc / .m3u in the accepted-extensions set.
+  - Single CD inner with `--system` → `archive_inner_path` set;
+    `launch_rom`'s existing `is_cd_entry_extension` branch fires
+    `archive::extract_to_temp` to `appData/temp/<entryId>/`.
+  - Synthesized RomEntry's id + filePath fold the inner path in
+    (`<archive>#<inner>` encoding) so different CDs in the same
+    archive get distinct entryIds and reuse-then-clean their own
+    temp dirs.
+- **Shipped (`--state-file PATH` actual restore):**
+  - `EmuCommand::LoadRom.restore_state_path: Option<PathBuf>` added.
+  - `launch_rom` Tauri command takes `stateFile: Option<String>`,
+    threaded through `launchRom` JS → `handleLaunch` → cascade.
+  - Emu thread's LoadRom handler reads + `core.load_state` from the
+    absolute path after the rom load completes, atomically. Toast on
+    read/deserialize failure.
+  - CLI parse: `--slot` and `--state-file` mutually exclusive
+    (RetroArch convention). State-file existence validated upfront
+    so a missing file errors before any subprocess work
+    (new `CliError::StateFileMissing`).
+- **PARKING_LOT swept:** five direct-launch items closed (Phase H
+  + Phase I); three new deferrals added for the CLI v2 batches the
+  operator chose to skip (launcher-parity flags, kiosk / arcade,
+  diagnostics).
+- 309/309 tests green. tsc --noEmit clean.
+
+---
+
 ## 2026-05-21 — Direct-launch Phase H — archive auto-extract + Windows-release error visibility
 
 Two same-week fast follow-ups on the direct-launch branch driven by
