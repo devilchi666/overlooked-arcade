@@ -12,20 +12,27 @@
 // Phosphor composite needs (`mix(source, blur, bloom_amount)`).
 //
 // Presets:
-//   0 = Plain      — pass-through (Phase 1 baseline). Samples slot 0 only.
-//   1 = Scanlines  — alternate-row darken at the source-pixel rate. The
-//                    scanline period locks to fb_height so it stays crisp at
-//                    any output resolution (the rasterizer's UV interp gives
-//                    us a continuous coordinate we round to source rows).
-//   2 = CrtLite    — Scanlines + radial vignette + a small saturation lift
-//                    to recover the perceived dimming. Not physically
-//                    accurate — just visually distinct from Plain.
-//   3 = Phosphor   — Slice B-2 composite. Slot 0 is the source framebuffer,
-//                    slot 3 is the blurred chain output (H-blur then V-blur
-//                    from blur.wgsl). Returns `mix(src, blur, bloom_amount)`.
-//                    For other presets slot 3 is bound to the same source
-//                    framebuffer as slot 0 so the binding is always valid
-//                    even when unused.
+//   0 = Plain        — pass-through (Phase 1 baseline). Samples slot 0 only.
+//   1 = Scanlines    — alternate-row darken at the source-pixel rate. The
+//                      scanline period locks to fb_height so it stays crisp at
+//                      any output resolution (the rasterizer's UV interp gives
+//                      us a continuous coordinate we round to source rows).
+//   2 = CrtLite      — Scanlines + radial vignette + a small saturation lift
+//                      to recover the perceived dimming. Not physically
+//                      accurate — just visually distinct from Plain.
+//   3 = Phosphor     — Slice B-2 composite. Slot 0 is the source framebuffer,
+//                      slot 3 is the blurred chain output (H-blur then V-blur
+//                      from blur.wgsl). Returns `mix(src, blur, bloom_amount)`.
+//                      For other presets slot 3 is bound to the same source
+//                      framebuffer as slot 0 so the binding is always valid
+//                      even when unused.
+//   4 = LcdHandheld  — Slice E. Simulates an LCD's R/G/B subpixel triplet by
+//                      tinting horizontal sub-stripes of each source pixel
+//                      (3 stripes per source pixel: red column zeroes G/B
+//                      partly, green keeps G, etc.). Adds a faint inter-pixel
+//                      grid to hint at the matrix gap. NO scanlines — LCDs
+//                      don't have them. Designed for gb (160x144), gba
+//                      (240x160), gg (160x144), ngp (160x152), ws (224x144).
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -156,6 +163,37 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let bloom = textureSample(secondary, secondary_sampler, sample_uv);
         let amt = clamp(u.bloom_amount, 0.0, 1.0);
         return vec4<f32>(mix(base.rgb, bloom.rgb, amt), base.a);
+    }
+    if (u.preset_id == 4u) {
+        // LCD-handheld (slice E). Per-source-pixel RGB subpixel triplet
+        // tint + faint inter-pixel grid. The subpixel layout is the
+        // simplest stripe arrangement: each source pixel × 3 horizontal
+        // sub-stripes (R / G / B). Each fragment falls in one sub-stripe
+        // determined by fract(src_x) * 3. The mask multiplies the source
+        // color so the R stripe shows the R channel strongly and dims
+        // G + B partially — what an LCD's actual subpixel does.
+        //
+        // A small brightness lift compensates for the dimming the
+        // subpixel mask introduces; clamping at 1 keeps highlights from
+        // blooming past white.
+        let src_w = f32(textureDimensions(framebuffer).x);
+        let src_x = sample_uv.x * src_w;
+        let src_y = sample_uv.y * fb_h;
+        let sub_idx = u32(fract(src_x) * 3.0);
+        let masks: array<vec3<f32>, 3> = array<vec3<f32>, 3>(
+            vec3<f32>(1.0, 0.5, 0.5),
+            vec3<f32>(0.5, 1.0, 0.5),
+            vec3<f32>(0.5, 0.5, 1.0),
+        );
+        let tinted = base.rgb * masks[sub_idx];
+        // Inter-pixel grid: thin darker lines at every source-pixel
+        // boundary. step(0.92, fract(x)) returns 1 in the rightmost ~8%
+        // of each source pixel, 0 elsewhere.
+        let grid_x = step(0.92, fract(src_x));
+        let grid_y = step(0.92, fract(src_y));
+        let grid = 1.0 - 0.25 * max(grid_x, grid_y);
+        let lifted = min(tinted * grid * 1.3, vec3<f32>(1.0));
+        return vec4<f32>(lifted, base.a);
     }
     return base;
 }

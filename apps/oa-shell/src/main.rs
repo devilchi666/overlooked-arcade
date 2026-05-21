@@ -4121,7 +4121,17 @@ fn run_emu_render(
                     renderer.set_bloom_amount(amt);
                 }
                 Ok(EmuCommand::SetDisplayAspectOverride(aspect)) => {
-                    renderer.set_display_aspect_override(aspect);
+                    // Resolution: explicit user value (per-game or
+                    // per-system override) wins; otherwise fall through
+                    // to the compiled-in per-system default (today:
+                    // GBA gets 3:2). `None` after that resolution
+                    // means "trust the core's reported aspect" — the
+                    // typical case for systems whose libretro core
+                    // reports its physical aspect correctly.
+                    let resolved = aspect.or_else(|| {
+                        system_settings::default_display_aspect(&current_system_id)
+                    });
+                    renderer.set_display_aspect_override(resolved);
                 }
                 Ok(EmuCommand::SetOverscanCrop(crop)) => {
                     renderer.set_overscan_crop(crop);

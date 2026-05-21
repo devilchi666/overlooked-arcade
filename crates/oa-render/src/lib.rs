@@ -152,6 +152,13 @@ pub enum ShaderPreset {
     /// recognizable "soft CRT" look without paying for a full 2D kernel
     /// per fragment. Multi-pass — exercises the EffectPass chain.
     Phosphor,
+    /// Phase 3 slice E — LCD-handheld preset for the small-panel
+    /// systems (gb, gba, gg, ngp, ws). Simulates the R/G/B subpixel
+    /// triplet of an LCD by tinting horizontal sub-stripes of each
+    /// source pixel + adds a faint inter-pixel grid. No scanlines —
+    /// LCDs don't have them. Single-pass — effect lives in the
+    /// final-blit shader's preset branch.
+    LcdHandheld,
 }
 
 impl Default for ShaderPreset {
@@ -172,6 +179,7 @@ impl ShaderPreset {
             Self::Scanlines => 1,
             Self::CrtLite => 2,
             Self::Phosphor => 3,
+            Self::LcdHandheld => 4,
         }
     }
 
@@ -182,6 +190,7 @@ impl ShaderPreset {
             "scanlines" => Self::Scanlines,
             "crt-lite" => Self::CrtLite,
             "phosphor" => Self::Phosphor,
+            "lcd-handheld" => Self::LcdHandheld,
             _ => Self::Plain,
         }
     }
@@ -193,6 +202,7 @@ impl ShaderPreset {
             Self::Scanlines => "scanlines",
             Self::CrtLite => "crt-lite",
             Self::Phosphor => "phosphor",
+            Self::LcdHandheld => "lcd-handheld",
         }
     }
 
@@ -796,7 +806,10 @@ impl Renderer {
             }
             // Single-pass presets — effects apply in the final-blit shader's
             // preset branch via the uniform_buffer's preset_id field.
-            ShaderPreset::Plain | ShaderPreset::Scanlines | ShaderPreset::CrtLite => Vec::new(),
+            ShaderPreset::Plain
+            | ShaderPreset::Scanlines
+            | ShaderPreset::CrtLite
+            | ShaderPreset::LcdHandheld => Vec::new(),
         }
     }
 
@@ -1556,8 +1569,15 @@ mod tests {
         // can't crash the renderer.
         assert_eq!(ShaderPreset::parse("nope"), ShaderPreset::Plain);
         assert_eq!(ShaderPreset::parse(""), ShaderPreset::Plain);
-        // Round-trip via as_str().
-        for p in [ShaderPreset::Plain, ShaderPreset::Scanlines, ShaderPreset::CrtLite] {
+        // Round-trip via as_str() — every shipped preset survives a
+        // serialize → deserialize cycle through the canonical string.
+        for p in [
+            ShaderPreset::Plain,
+            ShaderPreset::Scanlines,
+            ShaderPreset::CrtLite,
+            ShaderPreset::Phosphor,
+            ShaderPreset::LcdHandheld,
+        ] {
             assert_eq!(ShaderPreset::parse(p.as_str()), p);
         }
     }
@@ -1573,6 +1593,9 @@ mod tests {
         // it samples the source (slot 0) AND the blur output (slot 3) and
         // returns `mix(src, blur, bloom_amount)`. Id 3 is the WGSL branch.
         assert_eq!(ShaderPreset::Phosphor.id(), 3);
+        // LcdHandheld — single-pass subpixel-triplet preset (slice E).
+        // Branches inside blit.wgsl's fs_main at preset_id == 4.
+        assert_eq!(ShaderPreset::LcdHandheld.id(), 4);
     }
 
     #[test]
@@ -1581,6 +1604,7 @@ mod tests {
         assert!(!ShaderPreset::Plain.is_multipass());
         assert!(!ShaderPreset::Scanlines.is_multipass());
         assert!(!ShaderPreset::CrtLite.is_multipass());
+        assert!(!ShaderPreset::LcdHandheld.is_multipass());
         // Multi-pass: needs intermediate render targets.
         assert!(ShaderPreset::Phosphor.is_multipass());
     }
@@ -1589,6 +1613,12 @@ mod tests {
     fn phosphor_string_round_trips() {
         assert_eq!(ShaderPreset::parse("phosphor"), ShaderPreset::Phosphor);
         assert_eq!(ShaderPreset::Phosphor.as_str(), "phosphor");
+    }
+
+    #[test]
+    fn lcd_handheld_string_round_trips() {
+        assert_eq!(ShaderPreset::parse("lcd-handheld"), ShaderPreset::LcdHandheld);
+        assert_eq!(ShaderPreset::LcdHandheld.as_str(), "lcd-handheld");
     }
 
     // --- Rotation viewport math -----------------------------------------
