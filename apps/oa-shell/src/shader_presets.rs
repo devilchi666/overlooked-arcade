@@ -96,15 +96,19 @@ pub struct ResolvedBezel {
 }
 
 /// Compiled-in built-in presets. Ships with every build; user files in
-/// `<exe_dir>/shaders/presets/` can override by name. The four built-ins
-/// match the renderer's `ShaderPreset` enum 1:1 today — adding a fifth
-/// renderer pipeline means adding a matching .preset.toml file here AND
+/// `<exe_dir>/shaders/presets/` can override by name. The built-ins
+/// match the renderer's `ShaderPreset` enum 1:1 — adding a new renderer
+/// pipeline means adding a matching .preset.toml file here AND
 /// shipping it as an asset, since `include_str!` is compile-time.
 const BUILTIN_PRESETS: &[(&str, &str)] = &[
-    ("plain",     include_str!("../../../shaders/presets/plain.preset.toml")),
-    ("scanlines", include_str!("../../../shaders/presets/scanlines.preset.toml")),
-    ("crt-lite",  include_str!("../../../shaders/presets/crt-lite.preset.toml")),
-    ("phosphor",  include_str!("../../../shaders/presets/phosphor.preset.toml")),
+    ("plain",        include_str!("../../../shaders/presets/plain.preset.toml")),
+    ("scanlines",    include_str!("../../../shaders/presets/scanlines.preset.toml")),
+    ("crt-lite",     include_str!("../../../shaders/presets/crt-lite.preset.toml")),
+    ("phosphor",     include_str!("../../../shaders/presets/phosphor.preset.toml")),
+    // LcdHandheld — slice E. Subpixel triplet + matrix grid. Default
+    // for the handheld panels (gb / gba / gg / ngp / ws); also
+    // selectable globally via the Presets dropdown.
+    ("lcd-handheld", include_str!("../../../shaders/presets/lcd-handheld.preset.toml")),
 ];
 
 /// Built-ins only — used by tests + as the fallback path if exe_dir
@@ -226,9 +230,9 @@ mod tests {
     #[test]
     fn builtins_parse_and_have_unique_names() {
         let defs = builtins();
-        assert_eq!(defs.len(), 4, "shipping 4 built-in presets");
+        assert_eq!(defs.len(), 5, "shipping 5 built-in presets (incl. lcd-handheld)");
         let names: std::collections::HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names.len(), 4, "built-in names must be unique");
+        assert_eq!(names.len(), 5, "built-in names must be unique");
         // Every built-in base must be a valid renderer preset string (round-
         // trip through `ShaderPreset::parse` returns the same value as
         // re-parsing the .as_str() output).
@@ -288,7 +292,7 @@ mod tests {
         assert_eq!(phos.display_name, "Phosphor (custom)");
         assert_eq!(phos.params.bloom_amount, Some(0.3));
         // Other built-ins still appear.
-        assert_eq!(defs.len(), 4, "user override doesn't add or drop entries");
+        assert_eq!(defs.len(), 5, "user override doesn't add or drop entries");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -314,7 +318,7 @@ mod tests {
         let defs = load_all(&tmp);
         // Built-ins still load; broken file is dropped silently (with a
         // warning logged — not asserted here).
-        assert_eq!(defs.len(), 4);
+        assert_eq!(defs.len(), 5);
         assert!(defs.iter().all(|d| d.name != "broken"));
         let _ = std::fs::remove_dir_all(&tmp);
     }

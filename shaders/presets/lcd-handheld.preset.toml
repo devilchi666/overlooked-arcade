@@ -1,0 +1,19 @@
+# LCD-Handheld — subpixel triplet + inter-pixel grid. Simulates the
+# R/G/B subpixel stripes of an LCD panel by tinting horizontal
+# sub-stripes of each source pixel + adds a faint grid hint at
+# source-pixel boundaries. No scanlines — LCDs don't have them.
+#
+# Designed for the small handheld panels:
+#   gb       160 × 144
+#   gba      240 × 160
+#   gamegear 160 × 144
+#   ngp      160 × 152
+#   wonderswan 224 × 144
+#
+# Operators can pick this as a per-system default via Settings → Display
+# → Per-system, or apply globally via the Presets dropdown.
+
+display_name = "LCD Handheld"
+description = "RGB subpixel triplet + matrix grid. No scanlines — for handheld LCDs."
+
+base = "lcd-handheld"
