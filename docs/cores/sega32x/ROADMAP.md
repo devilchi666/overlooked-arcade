@@ -120,3 +120,9 @@ agnostic and lights up automatically once the engine work ships.
   32X mode, not ClownMDEmu with cart-only mode).
 - **32X-CD games route through `segacd`** with a stacked core override
   pointing at PicoDrive. Phase 3+ work.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

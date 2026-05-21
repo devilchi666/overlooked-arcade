@@ -60,3 +60,9 @@ with a connected gamepad's analog stick driving Mario / Link.
 - ⬜ **N64 Memory Pak / Rumble Pak** UX. Mupen64Plus-Next handles
   these via core options; per-game surface needed.
 - ⬜ **Transfer Pak** (GB carts via N64 — Pokémon Stadium 1/2). Niche.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

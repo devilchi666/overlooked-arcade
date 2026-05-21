@@ -130,3 +130,9 @@ items:
   entry to avoid collision with PCE-CD track files. Users with `.bin`
   MD dumps rename to `.md` — same as the Atari 7800 `.bin` → `.a78`
   rename convention.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

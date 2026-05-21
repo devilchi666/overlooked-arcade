@@ -35,3 +35,9 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ⬜ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) — needs analog-input infrastructure from the Phase 6 Phase 3 deferred-until-forced analog work.
 - ⬜ Trak-Ball / driving-controller support (Pole Position II, Asteroids Deluxe) — similar analog dependency.
 - ⬜ "High Score Cartridge" save support — the original 7800 HSC stored leaderboards in a separate cart's RAM; the ProSystem core emulates this via a small SRAM region. Verify the save state path captures it.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

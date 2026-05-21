@@ -28,3 +28,9 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ⬜ Mesen swap validation — the higher-accuracy alternative should drop in as a per-system Cores override without further wiring.
 - ⬜ Per-system shader tweaks: NES's 256×224 visible area is similar to NTSC TV resolution; the default scanline preset reads cleanly. CrtLite is the natural per-system default once shader presets persist.
 - ⬜ Light gun support — Zapper games need a special input device; libretro exposes this and OA's input layer can wire it once a per-game device-type setting lands.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

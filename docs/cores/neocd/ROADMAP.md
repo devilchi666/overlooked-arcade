@@ -55,3 +55,9 @@ a known-good disc.
 
 - ⬜ Multi-disc Neo Geo CD titles via `.m3u` (rare — most Neo Geo CD
   titles fit on a single disc).
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

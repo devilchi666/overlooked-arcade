@@ -64,3 +64,9 @@ Triggered by a real game demanding it: OutRun (steering wheel), Marble Madness (
 - ⬜ MAME-specific button glyphs for the bindings UI (LP/MP/HP/LK/MK/HK overlay icons).
 - ⬜ Per-game ROM-set metadata (year, manufacturer, hardware) via MAME's listxml output or libretro thumbnails — **libretro-thumbnails half ready 2026-05-19, needs operator validation.** Mapping `mame → MAME` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. listxml metadata still needs a separate pass. Operator: run `Settings → Library → Sync media for MAME` and confirm covers/screenshots download.
 - ⬜ Multi-game-per-zip handling — some MAME sets are bundles (clones, alternate versions); decide whether to surface clones in the library or hide them.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

@@ -54,3 +54,9 @@ Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM export, memory
 
 - **No PCE-style vendoring for Lynx today.** The libretro pivot means we ship the upstream nightly .dll alongside our binary and tell operators to drop it into `<exe_dir>/cores/`. If we ever modify the core, we maintain a separate libretro-frontend build of our patched source and ship that .dll instead — see project `DECISIONS.md` 2026-05-16 entry.
 - **BIOS responsibility is the operator's.** OA refuses to bundle `lynxboot.img` (copyright-distinct from the homebrew ROMs the user might own). The operator drops it into `<exe_dir>/system/` themselves.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

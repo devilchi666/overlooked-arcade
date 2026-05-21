@@ -40,3 +40,9 @@ Per-core phase tracking for GCE Vectrex. Status: ⬜ not started · 🟨 in prog
 
 - ⬜ Cheat support (uncertain if vecx exposes useful `retro_cheat_set`).
 - ⬜ Custom-built vector renderer at OA-engine level — eventually replacing vecx's raster output with native vector-stroke rendering on the OA wgpu pipeline.
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

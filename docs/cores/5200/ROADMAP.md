@@ -37,3 +37,9 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ✅ **12-key keypad via libretro KEYBOARD device (2026-05-20).** `system_settings::default_keyboard_passthrough("5200") = true` flips the keyboard-passthrough infra on by default — operators press numeric / symbol keys directly while the game window is focused and Atari800 receives them through `retro_keyboard_event`. Same routing infrastructure MAME / MSX use. Missile Command coord-shooting and RealSports Football play selection now work.
 - ⬜ Full analog routing via the shared analog-input infra. The self-centering joystick was genuinely analog (each axis 0-228 native value); games like Pole Position II read continuous values for steering. Phase 0 ships digital d-pad fallback; per-game analog routing covers the rest via the existing per-system Analog Bindings UI.
 - ⬜ Per-game core option templates for the dual-controller "PROLINE" titles (Robotron 2084 on 5200 used both controllers stacked).
+
+---
+
+## 2026-05-21 — Stale-cleanup audit
+
+The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
