@@ -652,3 +652,32 @@ A single source of truth removes the class entirely: ANY divergence between loca
 - **Real solar-sensor input.** Same reasoning as accelerometer plus an additional concern: real ambient light readings during emulation are usually wrong anyway (operators play indoors at night; Boktai requires sunlight to recharge). The mock-zero illuminance the env returns is honest about "no sensor"; operators use mGBA's per-game core-options to fix illuminance to a target level instead.
 - **Effect rebuild per dispatch tick.** Simpler than `set_gain` + lazy build, but cores call set_rumble_state every frame for continuous rumble (RetroArch logs confirm); rebuilding 60×/sec per port-effect is wasteful when `set_gain` keeps the same effect alive.
 - **Fire-and-forget rumble channel (mpsc emu → input poller thread).** Adds latency + Send concerns for the gilrs Effect handle. The snapshot-pull pattern is simpler and the per-frame cost of `core_ref.rumble_snapshot()` is one mutex acquisition + a 5×2 u16 copy.
+
+---
+
+## 2026-05-21 — Multi-core CPU awareness (rayon + tokio blocking + parallel boot)
+
+**Decision:** Adopt rayon as the workspace work-stealing pool for embarrassingly-parallel CPU work, and use it (plus tokio::task::spawn_blocking, plus std::thread::spawn for boot-time loaders) to parallelize the four cold-path bottlenecks in OA: media sync, ROM hashing, rewind buffer compression, and boot-time I/O.
+
+**Why:** Pre-survey of the codebase confirmed there was zero rayon, zero `par_iter`, and zero work-stealing pool anywhere. Long-running workers (emu thread, audio callback, renderer present, video capture) each had their own dedicated `std::thread::spawn`, which is correct for their hot-path latency requirements — but **none of the cold paths used parallelism at all**. Library scan, media sync, image decode/resize/encode, ROM hashing were all single-threaded. On modern desktops with 8–16 cores, OA was leaving 70–90% of CPU on the table during ingest.
+
+**Why these four specifically:** They're the load-bearing UX moments where parallelism is most felt:
+1. **Media sync** — first-scan-of-a-large-library is the moment a new user judges the product. Decode + resize + WebP-encode is pure CPU.
+2. **ROM hashing** — reads + SHA-1s thousands of files; the bottleneck of library identification.
+3. **Rewind buffer** — bounded by RAM; compression lifts the rewind-depth ceiling by 5–10× for free.
+4. **Boot-time I/O** — felt as "the wait between double-click and first paint." Four independent loads ran sequentially.
+
+**Mechanism choices (different tool for each phase):**
+- **rayon** for the ROM hash pre-pass: `par_iter().filter_map(...).collect()` over a deduped vec is the natural shape; rayon's stealing pool is ideal for variable-cost CPU work. Called inside `tokio::task::spawn_blocking` because the surrounding `resolve_rom_hashes_for_system` is async — keeps the rayon work off the async runtime threads.
+- **tokio::task::spawn_blocking** for media-sync per-image work: the call site is inside an `async fn` running under `futures::stream::iter().buffer_unordered(8)`. spawn_blocking is the idiomatic bridge from a single async task to a CPU pool; equivalent multi-core utilization to rayon here, but cleaner integration with the existing async control flow.
+- **std::thread::spawn** for boot-time loaders: four genuinely independent disk-bound jobs (sweep_temp, read_media_db, read_media_prefs, library_db::open) where we want each to run to completion on its own thread and join at point-of-use. No work stealing needed; no async runtime spun up yet at this point in setup.
+- **In-place zstd** for the rewind ring: per-snapshot synchronous compression at zstd level 1 (fast preset, 300–600 MB/s). No worker thread because the per-call cost on the emu thread is acceptable (sub-1ms for PCE/Lynx states; ~30–50ms on PS2 once every 100ms of wall clock under default settings). A future revision can move compression to a worker if PS2/Saturn rewind sees real-world stutter complaints.
+
+**Considered and rejected:**
+- **Wholesale tokio runtime for everything.** OA's existing model is async-on-demand (only the Tauri commands and a few async I/O paths). Forcing the whole app into tokio just to get the blocking pool would balloon the dep tree and inject latency everywhere. Mixed-mode is fine — rayon for sync CPU bursts, spawn_blocking for async-bound CPU bursts, std::thread::spawn for one-shot independent boot work.
+- **Two-instance run-ahead (related context: see the latency feature survey).** Mednafen-derived cores have global C state. Loading the same `.dll` twice in one process is not survivable for ~95% of OA's lineup. Single-instance run-ahead (a future Phase) is fine; multi-process parallelism for run-ahead is out of scope for this slice.
+- **Rayon's global pool with no thread limit.** rayon's default pool spawns ~num_cpus threads. Fine for our cold-path bursts. Considered capping it to leave headroom for the emu thread, but the cold paths and the emu thread never run concurrently (no game is running during ingest), so the cap would only hurt.
+- **Per-image worker thread pool managed by OA itself.** Tokio's blocking pool already exists, already has ~512 threads, already integrates with the async runtime. Reinventing it would be ceremony with no upside.
+- **Async file I/O via tokio::fs for the boot loaders.** Mixing async with `tauri::Builder::default().setup()` (which is sync) requires a runtime handle to block_on. std::thread::spawn is simpler and the I/O cost is wall-clock-bounded by the disk, not by thread count.
+- **Background compression for the rewind ring on a dedicated worker.** Cleaner long-term, but adds Send + Arc<Mutex> + mpsc bookkeeping for marginal benefit at current state sizes. Defer until real-world PS2/Saturn rewind playtest surfaces stutter.
+
