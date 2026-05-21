@@ -147,6 +147,16 @@ pub struct AnalogStickRouting {
     /// Keyboard fallback is OR-ed with gamepad output — if both are
     /// active, the larger magnitude wins per-axis.
     pub keyboard: [Option<Keycode>; 4],
+    /// Mouse-position routing. When `Some(X)` the mouse's screen-X
+    /// position drives this stick's X axis (paddle / spinner games:
+    /// 2600 Breakout, Coleco Super Action, Arkanoid in MAME). When
+    /// `Some(Y)` the mouse's Y drives the stick's Y axis (rare —
+    /// flight-stick yoke pitch). When `Some(Xy)` both axes follow
+    /// the mouse (true mouse-as-stick for SNES Mouse-aware titles
+    /// like Mario Paint when the operator wants stick semantics).
+    /// `None` = mouse position doesn't affect this stick. OR-merges
+    /// with gamepad + keyboard — the largest magnitude per axis wins.
+    pub mouse_source: Option<MouseSource>,
     /// Radial deadzone, normalized 0.0..=0.5. Stick magnitudes below
     /// this threshold are clamped to zero; magnitudes above are
     /// rescaled to span [0, 1] so the usable range stays full.
@@ -163,13 +173,30 @@ pub struct AnalogStickRouting {
     pub invert_y: bool,
 }
 
+/// Which mouse axes (if any) feed an analog stick. See
+/// [`AnalogStickRouting::mouse_source`] for the resolution rules. Mouse
+/// position is sampled in the same screen coordinates the POINTER
+/// pipeline uses; the value is normalized against the primary screen
+/// dimensions (-1.0 = left/top edge, +1.0 = right/bottom edge) before
+/// being merged with the gamepad + keyboard sources.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseSource {
+    /// Mouse X → stick X axis. Standard paddle / spinner mapping.
+    X,
+    /// Mouse Y → stick Y axis. Rare — flight-stick yoke pitch.
+    Y,
+    /// Both axes follow the mouse — true mouse-as-stick semantics.
+    Xy,
+}
+
 impl Default for AnalogStickRouting {
     /// Identity routing: Left → Left, Right → Right, no deadzone, 1.0
-    /// sensitivity, no inversion, no keyboard fallback.
+    /// sensitivity, no inversion, no keyboard fallback, no mouse source.
     fn default() -> Self {
         Self {
             gamepad_source: GamepadStick::Left,
             keyboard: [None; 4],
+            mouse_source: None,
             deadzone: 0.0,
             sensitivity: 1.0,
             invert_x: false,
@@ -664,6 +691,38 @@ fn compute_stick_output(
     if key_held(routing.keyboard[3]) { x = 1.0; }
     if key_held(routing.keyboard[0]) { y = 1.0; }   // up in gilrs convention
     if key_held(routing.keyboard[1]) { y = -1.0; }  // down
+
+    // Mouse-position routing — OR-merge if the routing opts in.
+    // Mouse position is sampled in physical screen coordinates and
+    // normalized against the primary monitor's dimensions. This is the
+    // same screen-relative coordinate space the Phase 0 pointer code
+    // uses; for paddle / spinner games the absolute mapping is the
+    // intuitive default (mouse at center = stick at rest). Gilrs's +Y
+    // convention is "up = positive", so we negate the screen Y (which
+    // is "down = positive" in OS coords) before merging — keeps the
+    // sign convention identical between the three input sources.
+    //
+    // OR-merge rule: the source with the larger absolute magnitude
+    // wins per-axis. Same behavior the keyboard fallback uses.
+    if let Some(src) = routing.mouse_source {
+        let mouse = device_state.get_mouse();
+        const ASSUMED_SCREEN_W: f32 = 1920.0;
+        const ASSUMED_SCREEN_H: f32 = 1080.0;
+        let mx = (mouse.coords.0 as f32 / ASSUMED_SCREEN_W * 2.0 - 1.0).clamp(-1.0, 1.0);
+        let my = -(mouse.coords.1 as f32 / ASSUMED_SCREEN_H * 2.0 - 1.0).clamp(-1.0, 1.0);
+        match src {
+            MouseSource::X => {
+                if mx.abs() > x.abs() { x = mx; }
+            }
+            MouseSource::Y => {
+                if my.abs() > y.abs() { y = my; }
+            }
+            MouseSource::Xy => {
+                if mx.abs() > x.abs() { x = mx; }
+                if my.abs() > y.abs() { y = my; }
+            }
+        }
+    }
 
     // Radial deadzone in 2D — magnitudes below threshold zero out,
     // magnitudes above get rescaled to [0, 1]. Pure-axis deadzones
