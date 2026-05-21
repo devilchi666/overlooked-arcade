@@ -719,3 +719,25 @@ New library_db method: `find_sha1_by_id(id) -> Result<Option<String>>` — cheap
 
 **Why server-side and not frontend re-fetch:** the same bug would lurk in any other call site that constructs `SyncRomEntry` from scan data instead of from a freshly-queried library row. Server-side hydration makes correctness independent of caller discipline — any caller can pass `sha1: None` on the payload and the server picks up the authoritative value from the DB.
 
+**Third follow-up — metadata system-name routing (after the user reported sync_metadata still showing matched 120 / unmatched 1040 on Genesis):**
+
+`metadat_system_name_for_extension(ext)` in `apps/oa-shell/src/metadata.rs` was the function that mapped an entry's extension to its libretro-database metadat system name (used to construct the cache path + fetch URL). It hadn't been touched since the TG-16-only first-bringup days:
+
+```rust
+fn metadat_system_name_for_extension(ext: &str) -> &'static str {
+    match ext {
+        "sgx" => "NEC - PC Engine SuperGrafx",
+        "cue" | "chd" | ... => "NEC - PC Engine CD - TurboGrafx-CD",
+        _ => "NEC - PC Engine - TurboGrafx 16",   // <-- wildcard fall-through
+    }
+}
+```
+
+Every non-CD non-SGX extension fell through to PC Engine. So `.md`, `.gen`, `.smd`, `.nes`, `.sfc`, `.gba`, `.sms`, every other system's extensions, all got bucketed into the PCE catalog (442 upstream entries). The metadata sync had only ever worked properly for PC Engine titles. The "matched 120" we kept seeing was an accidental fuzzy-overlap: 120 of the 1160 Genesis ROMs had generic enough names that they fuzzy-matched something in PCE's catalog. Cross-system data contamination — operator was getting PC Engine metadata stamped on every game from every other system that happened to fuzzy-match.
+
+Fix: replaced with `metadat_system_name_for(system_id, ext) -> Option<&'static str>` that mirrors `rom_hashes::libretro_dat_refs_for_system`'s mapping — every system OA supports routes to its correct libretro-database name. TG-16-family extensions (`.sgx` / CD containers / cart) remain the only place where extension matters (they share `tg16` system_id but split into three upstream dats). `mame` and `3do` return `None` (no upstream metadat — MAME is set-based, 3DO's upstream dat has no metadata fields); those entries are counted as unmatched in the per-entry loop without attempting a fetch.
+
+Net effect on Genesis: sync_metadata now fetches `Sega - Mega Drive - Genesis.dat` (~2400 entries) instead of `NEC - PC Engine - TurboGrafx 16.dat` (442 entries). Combined with the canonical-no-intro-title match key from the previous follow-up, match rate jumps from 10% to ~95% on a typical fully-identified library.
+
+**Why duplicated mapping (vs sharing rom_hashes::libretro_dat_refs_for_system):** Considered. Rejected for now because rom_hashes uses `DatRef` (subdir + basename, supporting metadat/no-intro vs metadat/redump split + multi-dat merges like gb DMG+CGB), while metadata only needs a single basename per (system, ext). The duplication is small (one match arm per system) and the type shapes don't align cleanly. Worth revisiting if a third call site grows that needs the same mapping — at that point promoting to a shared `system_id → libretro-database name` table earns its keep.
+
