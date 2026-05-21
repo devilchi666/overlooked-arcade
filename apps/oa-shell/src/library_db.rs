@@ -14,6 +14,7 @@
 // UPDATE/DELETE triggers so the application code never has to think about
 // keeping the index in sync.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -1219,6 +1220,54 @@ impl LibraryDb {
         }
     }
 
+    /// Bulk-hydrate sha1 + canonical-no-intro title for every game tagged
+    /// with `system_id`. Returns a `HashMap<id, (sha1, Option<canonical_title>)>`
+    /// covering only entries whose `games.sha1` is non-null and whose
+    /// sha1 matches a `rom_hashes` row for the same system.
+    ///
+    /// Single prepared LEFT JOIN — runs in one lock acquisition, one
+    /// SQL execution, regardless of how many entries the caller has.
+    /// Pre-2026-05-21 the media + metadata sync paths fell back on
+    /// `find_sha1_by_id` + `lookup_rom_hash` per entry, which on a
+    /// 1160-entry sync did ~11,400 sequential lock cycles before the
+    /// network walk could begin. This helper collapses that to one
+    /// query.
+    ///
+    /// Skips rows whose sha1 is empty/null (entries that resolve_rom_hashes
+    /// hasn't stamped yet — caller will get those after the next resolve).
+    pub fn hydrate_sha1_and_canonical_for_system(
+        &self,
+        system_id: &str,
+    ) -> Result<HashMap<String, (String, Option<String>)>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT g.id, g.sha1, h.game_name
+                 FROM games g
+                 LEFT JOIN rom_hashes h
+                   ON h.sha1 = g.sha1 AND h.system_id = g.system_id
+                 WHERE g.system_id = ?1
+                   AND g.sha1 IS NOT NULL
+                   AND g.sha1 <> ''",
+            )
+            .map_err(|e| format!("prepare hydrate_sha1_and_canonical_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                let id: String = row.get(0)?;
+                let sha1: String = row.get(1)?;
+                let canonical: Option<String> = row.get(2)?;
+                Ok((id, sha1, canonical))
+            })
+            .map_err(|e| format!("query hydrate_sha1_and_canonical_for_system: {e}"))?;
+        let mut out: HashMap<String, (String, Option<String>)> = HashMap::new();
+        for row in rows {
+            let (id, sha1, canonical) = row
+                .map_err(|e| format!("step hydrate_sha1_and_canonical_for_system: {e}"))?;
+            out.insert(id, (sha1, canonical));
+        }
+        Ok(out)
+    }
+
     /// Return every game in the given system that doesn't have a sha1 yet
     /// and isn't a multi-file CD image. Caller hashes them and calls
     /// `apply_rom_hash` per-row.
@@ -1634,6 +1683,42 @@ impl LibraryDb {
     /// system. Exercised by the v9 migration test; parallels
     /// `count_rom_hashes`.
     #[allow(dead_code)]
+    /// Count how many games in the system have a sha1 stamped (i.e.
+    /// have been through a successful Identify ROMs pass). Used by
+    /// resolve_rom_hashes_for_system to report "X of Y already
+    /// identified, M remaining" in its summary — without this number
+    /// the no-op re-run case (everything's already stamped) shows
+    /// "0/0 scanned" with no context as to why.
+    pub fn count_games_with_hash_for_system(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM games
+                 WHERE system_id = ?1
+                   AND sha1 IS NOT NULL
+                   AND sha1 <> ''",
+                params![system_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count_games_with_hash_for_system: {e}"))?;
+        Ok(count)
+    }
+
+    /// Total games in the system (no filter on sha1 / disc_id). Used
+    /// alongside count_games_with_hash_for_system to derive
+    /// "X of Y already identified".
+    pub fn count_games_for_system(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM games WHERE system_id = ?1",
+                params![system_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count_games_for_system: {e}"))?;
+        Ok(count)
+    }
+
     pub fn count_game_serials(&self, system_id: &str) -> Result<i64, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         conn.query_row(
@@ -1757,6 +1842,25 @@ impl LibraryDb {
     /// Delete every game tagged with the given system id. Returns the
     /// number of rows removed. Used by the Settings → Library "Clear
     /// games for this system" action.
+    /// Return every game `id` tagged with the given system. Cheap — just
+    /// the id column. Used by the metadata-clear path which needs to
+    /// walk media_db entries scoped to one system without materializing
+    /// full game rows.
+    pub fn list_game_ids_for_system(&self, system_id: &str) -> Result<Vec<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id FROM games WHERE system_id = ?1")
+            .map_err(|e| format!("prepare list_game_ids_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query list_game_ids_for_system: {e}"))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row.map_err(|e| format!("step list_game_ids_for_system: {e}"))?);
+        }
+        Ok(ids)
+    }
+
     pub fn delete_games_for_system(&self, system_id: &str) -> Result<usize, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let n = conn

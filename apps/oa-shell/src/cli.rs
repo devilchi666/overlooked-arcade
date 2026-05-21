@@ -61,6 +61,16 @@ pub struct Cli {
     /// Force fullscreen window mode at launch.
     #[arg(long)]
     pub fullscreen: bool,
+
+    /// Headless maintenance: clear the `metadata` slot on every media
+    /// entry whose game is tagged with this system_id, then exit.
+    /// Use after the 2026-05-21 metadata-routing fix to scrub
+    /// cross-system contamination from libraries that synced under
+    /// the old PCE-only wildcard. Does not touch cover-art / snap /
+    /// title variants — only the metadata payload (genre / developer
+    /// / publisher / year / players).
+    #[arg(long, value_name = "SYSTEM_ID")]
+    pub clear_metadata: Option<String>,
 }
 
 /// Resolved direct-launch configuration. `None` on AppState means library mode.
@@ -551,6 +561,88 @@ fn is_known_system(slug: &str) -> bool {
     )
 }
 
+/// Tauri 2 bundle identifier — must match `tauri.conf.json` `identifier`.
+/// Used to derive `app_data_dir` in headless maintenance mode (when no
+/// Tauri runtime is spun up, so the usual `app.path().app_data_dir()`
+/// path resolver isn't available).
+const TAURI_IDENTIFIER: &str = "dev.overlookedarcade.shell";
+
+/// Resolve the Tauri-managed app_data_dir without spinning up a Tauri
+/// runtime. Mirrors `dirs`/Tauri's per-platform convention.
+///
+/// - Windows: `%APPDATA%\<identifier>`
+/// - macOS:   `~/Library/Application Support/<identifier>`
+/// - Linux:   `${XDG_DATA_HOME:-~/.local/share}/<identifier>`
+fn resolve_app_data_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var("APPDATA")
+            .map_err(|e| format!("APPDATA env not set: {e}"))?;
+        Ok(PathBuf::from(appdata).join(TAURI_IDENTIFIER))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME")
+            .map_err(|e| format!("HOME env not set: {e}"))?;
+        Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join(TAURI_IDENTIFIER))
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            return Ok(PathBuf::from(xdg).join(TAURI_IDENTIFIER));
+        }
+        let home = std::env::var("HOME")
+            .map_err(|e| format!("HOME env not set: {e}"))?;
+        Ok(PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join(TAURI_IDENTIFIER))
+    }
+}
+
+/// Headless --clear-metadata <SYSTEM_ID> entry point. Opens library_db
+/// to enumerate game ids for the system, mutates media.json's
+/// `metadata` slot to None for matching entries, writes back, prints
+/// a summary, and returns. Caller (main) exits 0 / 1 based on Ok / Err.
+///
+/// Runs without a Tauri runtime — no window, no emu thread, no
+/// settings store. Single-purpose maintenance mode.
+pub fn run_clear_metadata_headless(system_id: &str) -> Result<(), String> {
+    let app_data_dir = resolve_app_data_dir()?;
+    eprintln!("oa-shell: clear-metadata {system_id}");
+    eprintln!("oa-shell: app_data_dir = {}", app_data_dir.display());
+
+    let library = crate::library_db::LibraryDb::open(&app_data_dir)
+        .map_err(|e| format!("library_db open: {e}"))?;
+    let ids = library.list_game_ids_for_system(system_id)?;
+    if ids.is_empty() {
+        eprintln!("oa-shell: no games tagged with system_id={system_id}");
+        return Ok(());
+    }
+    let mut media_db = crate::media::read_media_db(&app_data_dir);
+    let mut cleared = 0usize;
+    for id in &ids {
+        if let Some(gm) = media_db.get_mut(id) {
+            if gm.metadata.is_some() {
+                gm.metadata = None;
+                cleared += 1;
+            }
+        }
+    }
+    if cleared > 0 {
+        crate::media::write_media_db(&app_data_dir, &media_db)
+            .map_err(|e| format!("write media.json: {e}"))?;
+    }
+    eprintln!(
+        "oa-shell: cleared metadata on {cleared} of {} game id(s) for {system_id}",
+        ids.len()
+    );
+    Ok(())
+}
+
 /// Parse argv via clap and resolve a direct-launch config when a ROM is
 /// supplied. `Ok(None)` = library mode. Validation errors are surfaced to
 /// the caller, which banner-prints them and exits with status 2.
@@ -564,7 +656,29 @@ pub fn parse_and_resolve() -> Result<Option<DirectLaunchConfig>, CliError> {
     use clap::error::ErrorKind;
 
     match Cli::try_parse() {
-        Ok(cli) => resolve(cli),
+        Ok(cli) => {
+            // Headless maintenance mode short-circuits before any
+            // direct-launch resolution. The --clear-metadata flag is
+            // mutually exclusive with --rom in the sense that a
+            // headless run never spins up a window — passing both is
+            // a user error but we tolerate it by giving --clear-metadata
+            // precedence and exiting after the maintenance runs.
+            if let Some(sys) = cli.clear_metadata.as_deref() {
+                match run_clear_metadata_headless(sys) {
+                    Ok(()) => std::process::exit(0),
+                    Err(e) => {
+                        eprintln!("oa-shell: clear-metadata failed: {e}");
+                        #[cfg(all(target_os = "windows", not(debug_assertions)))]
+                        win_msgbox::error(
+                            "oa-shell — clear-metadata failed",
+                            &format!("Could not clear metadata for {sys}:\n\n{e}"),
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            resolve(cli)
+        }
         Err(err) => match err.kind() {
             ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
                 let text = err.render().to_string();
@@ -821,6 +935,7 @@ mod tests {
             state_file: None,
             tas_replay: None,
             fullscreen: false,
+            clear_metadata: None,
         };
         assert!(resolve(cli).unwrap().is_none());
     }
@@ -836,6 +951,7 @@ mod tests {
             state_file: None,
             tas_replay: None,
             fullscreen: false,
+            clear_metadata: None,
         };
         assert!(matches!(resolve(cli).unwrap_err(), CliError::Conflict(_)));
     }
@@ -851,6 +967,7 @@ mod tests {
             state_file: None,
             tas_replay: None,
             fullscreen: false,
+            clear_metadata: None,
         };
         assert!(matches!(
             resolve(cli).unwrap_err(),
@@ -869,6 +986,7 @@ mod tests {
             state_file: None,
             tas_replay: None,
             fullscreen: false,
+            clear_metadata: None,
         };
         assert!(matches!(
             resolve(cli).unwrap_err(),

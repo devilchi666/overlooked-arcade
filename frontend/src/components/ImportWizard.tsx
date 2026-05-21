@@ -530,9 +530,44 @@ const ImportWizard: Component<Props> = (props) => {
       // source of truth".)
       await props.settings.refreshLibraryFolders();
 
-      // 4) Post-import media + metadata sync. Best-effort — failures here
-      // don't block the wizard from completing. Each system that got at
-      // least one entry triggers its own sync.
+      // 4) Auto-identify FIRST so subsequent media + metadata syncs see
+      // hash-matched entries. The `only_identified` filter inside
+      // sync_media_for_system is evaluated once at function start;
+      // without sha1s stamped on the library rows, every cart game is
+      // filtered out and the sync no-ops with "matched 0". Awaiting
+      // resolve_rom_hashes_for_system before the syncs fire fixes the
+      // race that previously left covers + metadata empty after a fresh
+      // Import + sync (see DECISIONS.md 2026-05-21 "Post-import sync
+      // ordering" entry).
+      //
+      // The resolve is awaited per system rather than fired in parallel
+      // because resolve_rom_hashes_for_system holds the LibraryDb write
+      // lock for the duration of its DB applies; parallelizing across
+      // systems would just queue them up behind each other anyway. For
+      // a typical single-system import this is a single await; for a
+      // mixed-system import it's a sequence in order of touched
+      // systems.
+      if (added > 0) {
+        const touchedSystems = Array.from(new Set(entries.map((e) => e.systemId))) as SystemId[];
+        for (const systemId of touchedSystems) {
+          try {
+            await invoke("resolve_rom_hashes_for_system", { systemId });
+          } catch (err) {
+            console.warn(`[oa-wizard] auto-identify ${systemId} failed:`, err);
+            // Best-effort: even if one system's resolve fails we still
+            // fire the media/metadata syncs for the others. The failed
+            // system's syncs will just see 0 hash-matched entries —
+            // same as the pre-fix behaviour for everyone, so no
+            // regression on the failure path.
+          }
+        }
+      }
+
+      // 5) Post-import media + metadata sync. Best-effort — failures
+      // here don't block the wizard from completing. Each system that
+      // got at least one entry triggers its own sync. Media + metadata
+      // are independent of each other; both safely run in parallel now
+      // that sha1s are stamped.
       if (withSync && entries.length > 0) {
         const systemEntries = new Map<SystemId, RomEntry[]>();
         for (const e of entries) {
@@ -543,45 +578,28 @@ const ImportWizard: Component<Props> = (props) => {
         // Fire-and-forget — the actual sync emits its own progress events
         // and we don't want the wizard to block on a long network walk.
         for (const [systemId, sysEntries] of systemEntries) {
+          const syncEntries = sysEntries.map((e) => ({
+            id: e.id,
+            title: e.title,
+            filePath: e.filePath,
+            systemId: e.systemId,
+          }));
           if (syncCovers() || syncSnaps() || syncTitles()) {
-            invoke("sync_media_for_system", {
+            void invoke("sync_media_for_system", {
               systemId,
-              entries: sysEntries.map((e) => ({
-                id: e.id,
-                title: e.title,
-                filePath: e.filePath,
-                systemId: e.systemId,
-              })),
+              entries: syncEntries,
             }).catch((err) =>
               console.warn(`[oa-wizard] sync_media_for_system(${systemId}) failed:`, err),
             );
           }
           if (syncMetadata()) {
-            invoke("sync_metadata_for_system", {
+            void invoke("sync_metadata_for_system", {
               systemId,
-              entries: sysEntries.map((e) => ({
-                id: e.id,
-                title: e.title,
-                filePath: e.filePath,
-                systemId: e.systemId,
-              })),
+              entries: syncEntries,
             }).catch((err) =>
               console.warn(`[oa-wizard] sync_metadata_for_system(${systemId}) failed:`, err),
             );
           }
-        }
-      }
-
-      // 5) Auto-identify each system that received games. Fire-and-
-      // forget — the resolve flow emits its own progress events + the
-      // library auto-refreshes via `oa://rom-hash-resolve-complete`.
-      // Idempotent: re-running on already-stamped games is a no-op.
-      if (added > 0) {
-        const touchedSystems = Array.from(new Set(entries.map((e) => e.systemId))) as SystemId[];
-        for (const systemId of touchedSystems) {
-          void invoke("resolve_rom_hashes_for_system", { systemId }).catch((err) =>
-            console.warn(`[oa-wizard] auto-identify ${systemId} failed:`, err),
-          );
         }
       }
 

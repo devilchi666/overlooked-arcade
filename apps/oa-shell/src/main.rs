@@ -2518,6 +2518,7 @@ fn main() {
             media::set_only_sync_identified,
             media::set_manual_cover,
             media::clear_media,
+            media::clear_metadata_for_system,
             media::set_selected_variant,
             media::sync_media_for_system,
             metadata::sync_metadata_for_system,
@@ -2665,6 +2666,9 @@ fn main() {
                     db: media_db.clone(),
                     prefs: media_prefs.clone(),
                     app_data_dir: app_data_dir.clone(),
+                    system_op_gates: Arc::new(std::sync::Mutex::new(
+                        std::collections::HashMap::new(),
+                    )),
                 });
 
                 // Background scan service state — tracks in-flight scan jobs

@@ -158,6 +158,37 @@ pub struct MediaState {
     pub db: Arc<RwLock<MediaDb>>,
     pub prefs: Arc<RwLock<MediaPrefs>>,
     pub app_data_dir: PathBuf,
+    /// Per-system operation gate. sync_media / sync_metadata /
+    /// resolve_rom_hashes / sync_rom_hashes / clear_metadata all
+    /// acquire the per-system Mutex at function entry so two
+    /// concurrent ops on the same system serialize naturally. Pre-
+    /// 2026-05-21 the buttons in Settings → Library were independently
+    /// gated per-button, so an operator could click "Sync media" then
+    /// "Identify ROMs" and both ran in parallel — the mid-sync
+    /// apply_rom_hash writes weren't visible to the in-flight
+    /// sync_media's `only_identified` filter, causing the wrong-art
+    /// bug.
+    ///
+    /// `tokio::sync::Mutex` (not std::sync::Mutex) because the gate
+    /// is held across `.await` boundaries inside the sync functions.
+    /// The outer Mutex is `std::sync::Mutex` for lazy slot creation —
+    /// the lookup is O(1) and never held across an await.
+    pub system_op_gates: Arc<std::sync::Mutex<
+        std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    >>,
+}
+
+impl MediaState {
+    /// Get-or-create the per-system gate Mutex. Holds the outer
+    /// std::sync::Mutex briefly (no await inside) to populate the
+    /// slot, then returns the inner tokio Mutex Arc which the caller
+    /// awaits.
+    pub fn gate_for(&self, system_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut map = self.system_op_gates.lock().expect("system_op_gates poisoned");
+        map.entry(system_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
 }
 
 // ---- persistence ----
@@ -481,6 +512,77 @@ mod tests {
     fn iso_unreachable_falls_back_to_gc_repo() {
         let e = gc_entry_with_path("/this/path/genuinely/does/not/exist.iso");
         assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+    }
+
+    /// `.rvz` with a Wii disc header (game-ID byte at offset 40 = 'R')
+    /// routes to the Wii repo. Pre-fix this test would have failed
+    /// because every RVZ was misclassified as Wii regardless of disc
+    /// contents (RVZ container magic starts with 'R', so the old
+    /// byte-0 peek always matched the Wii heuristic).
+    #[test]
+    fn rvz_with_wii_disc_header_routes_to_wii_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-wii-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // 48-byte synthetic RVZ header:
+        //   bytes 0..4   = "RVZ\x01" magic
+        //   bytes 4..40  = filler (version, sizes, offsets — not parsed)
+        //   bytes 40..48 = embedded disc header; byte 40 is the game
+        //                  ID's first character. 'R' = Wii.
+        let mut header = [0u8; 48];
+        header[..4].copy_from_slice(b"RVZ\x01");
+        header[40] = b'R';
+        std::fs::write(&tmp, header).expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_Wii"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// `.rvz` with a GameCube disc header (byte 40 = 'G') routes to
+    /// the GameCube repo. Confirms the RVZ container header is being
+    /// parsed correctly rather than the bug where every RVZ matched
+    /// the Wii heuristic.
+    #[test]
+    fn rvz_with_gc_disc_header_routes_to_gc_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-gc-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let mut header = [0u8; 48];
+        header[..4].copy_from_slice(b"RVZ\x01");
+        header[40] = b'G';
+        std::fs::write(&tmp, header).expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// Truncated `.rvz` (header missing) → falls back to GameCube.
+    /// Mirrors the iso_unreachable_falls_back_to_gc_repo case.
+    #[test]
+    fn rvz_truncated_falls_back_to_gc_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-short-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // Only 8 bytes — too short for the 48-byte RVZ header read.
+        std::fs::write(&tmp, b"RVZ\x01abcd").expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+        let _ = std::fs::remove_file(&tmp);
     }
 
     /// Entry for a non-gamecube system_id flows through the original
@@ -1091,23 +1193,66 @@ fn is_wii_dump(file_path: &str) -> bool {
         Some("wbfs") | Some("wad") => true,
         // GameCube-exclusive containers.
         Some("gcm") | Some("gcz") | Some("ciso") => false,
-        // Shared containers — peek byte 0 to discriminate.
-        Some("iso") | Some("rvz") => peek_dolphin_console_byte(path)
+        // Raw ISO: byte 0 of a GameCube/Wii disc image is the first
+        // character of the 6-byte game ID. Dolphin's convention reserves
+        // 'R' (Revolution = Wii) and 'S' (later Wii titles) as Wii
+        // prefixes; everything else (G/D/P/etc.) routes to GameCube.
+        Some("iso") => peek_dolphin_console_byte(path)
+            .map(|b| matches!(b, b'R' | b'S'))
+            .unwrap_or(false),
+        // RVZ: Dolphin's compressed container. Byte 0 of the FILE is
+        // always 'R' (from the "RVZ\x01" magic), which would
+        // accidentally trip the Wii heuristic above for every RVZ
+        // dump. Parse the RVZ header far enough to find the embedded
+        // disc header's game-ID byte; if we can't (truncated file /
+        // unknown future RVZ revision), default to GameCube — RVZ is
+        // most commonly used for GameCube preservation (Wii dumps
+        // overwhelmingly ship as WBFS, which is auto-routed above).
+        Some("rvz") => peek_rvz_console_byte(path)
             .map(|b| matches!(b, b'R' | b'S'))
             .unwrap_or(false),
         _ => false,
     }
 }
 
-/// Read the first byte of a Dolphin-loadable disc dump. Returns
-/// `None` on I/O failure (file gone, permission denied, etc.) — the
-/// caller treats that as "assume GameCube" rather than erroring out.
+/// Read the first byte of a raw GameCube/Wii ISO dump (i.e. byte 0
+/// of the disc image, which is the game ID's leading character).
+/// Returns `None` on I/O failure — the caller treats that as "assume
+/// GameCube" rather than erroring out.
 fn peek_dolphin_console_byte(path: &std::path::Path) -> Option<u8> {
     use std::io::Read;
     let mut f = std::fs::File::open(path).ok()?;
     let mut buf = [0u8; 1];
     f.read_exact(&mut buf).ok()?;
     Some(buf[0])
+}
+
+/// Peek the embedded disc-image game-ID byte inside an RVZ container.
+///
+/// RVZ layout (from the Dolphin RVZ format spec):
+/// - bytes 0..4   : magic "RVZ\x01"
+/// - bytes 4..8   : version (u32 LE)
+/// - bytes 8..16  : reserved
+/// - bytes 16..24 : data_size (u64 LE)
+/// - bytes 24..32 : raw data offset
+/// - bytes 32..40 : raw data size
+/// - bytes 40..48 : disc header — first 8 bytes of the underlying
+///                  GameCube/Wii disc image (per Dolphin's
+///                  DiscIO/WIABlob.cpp WIAHeader2 layout). Byte 40
+///                  is the disc game-ID's first character.
+///
+/// Returns `None` if the file is too short to be a valid RVZ, doesn't
+/// have the magic, or if the read fails — the caller treats that as
+/// "assume GameCube" which is the more common case for RVZ dumps.
+fn peek_rvz_console_byte(path: &std::path::Path) -> Option<u8> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 48];
+    f.read_exact(&mut buf).ok()?;
+    if &buf[0..4] != b"RVZ\x01" {
+        return None;
+    }
+    Some(buf[40])
 }
 
 /// Back-compat alias around `repos_for_system_id` for the extension-only
@@ -1530,17 +1675,44 @@ pub async fn sync_media_for_system(
     use futures::stream::{self, StreamExt};
     use tauri::Emitter;
 
+    // Per-system op gate (H11) — serializes concurrent sync/resolve
+    // operations on the same system_id so the "click Sync media then
+    // Identify ROMs" race can't produce stale-sha1 filtering. The
+    // gate is held for the lifetime of this function call.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     let enabled_kinds = enabled_sync_kinds(&state.prefs);
     let only_identified = state.prefs.read().ok()
         .map(|p| p.only_sync_identified)
         .unwrap_or(true);
 
-    // Resolve canonical names server-side: for every entry with a
-    // sha1, look it up in rom_hashes and remember the canonical name.
-    // The hash-identified subset becomes the "trusted match" set.
+    // Resolve canonical names server-side: bulk-hydrate sha1 +
+    // canonical title from library_db in one SQL statement. Pre-2026-
+    // 05-21 this was N×2 sequential SQLite lookups per entry; for
+    // a 1160-entry sync that was ~11,400 lock cycles before any
+    // network walk began, serializing against any concurrent
+    // resolve_rom_hashes_for_system writes. The bulk LEFT JOIN
+    // collapses that to one query + one lock acquisition.
+    //
+    // Entries whose game.sha1 is null (resolve hasn't stamped them
+    // yet) drop out of `hydrated` and won't pass the
+    // `only_identified` filter below — same behaviour as before, just
+    // arrived at much faster.
+    let hydrated = library
+        .hydrate_sha1_and_canonical_for_system(&systemId)
+        .map_err(|e| format!("hydrate sha1+canonical: {e}"))?;
     let mut canonical_by_id: std::collections::HashMap<String, String> = Default::default();
     for e in entries.iter() {
-        if let Some(sha) = e.sha1.as_deref() {
+        if let Some((_sha, Some(game_name))) = hydrated.get(&e.id) {
+            canonical_by_id.insert(e.id.clone(), game_name.clone());
+        } else if let Some(sha) = e.sha1.as_deref() {
+            // Fallback for callers that explicitly hydrated entry.sha1
+            // before invoking (e.g. the store-level syncSystem path).
+            // The bulk JOIN already covers the common case (entry.id is
+            // in the library); this branch catches the rare ad-hoc
+            // direct-launch path that might pass an entry not yet in
+            // library_db.
             if !sha.is_empty() {
                 if let Ok(Some(row)) = library.lookup_rom_hash(sha) {
                     canonical_by_id.insert(e.id.clone(), row.game_name);
@@ -1597,8 +1769,15 @@ pub async fn sync_media_for_system(
     // the dump (extension + first-byte header for ambiguous .iso/.rvz)
     // and routes Wii titles to the Wii repo while GC titles stay on
     // the GameCube repo.
-    let mut by_repo: std::collections::HashMap<&'static str, Vec<SyncRomEntry>> =
-        std::collections::HashMap::new();
+    // BTreeMap (not HashMap) — iteration order is deterministic
+    // (alphabetical by repo name) so for multi-repo systems (gb
+    // DMG+CGB, wonderswan WS+WSC) the order variants land in
+    // `GameMedia.boxart` is reproducible run-to-run. Pre-2026-05-21
+    // a HashMap caused the default-displayed cover to flip between
+    // runs when no region pin was active and multiple repos
+    // contributed variants to the same game.
+    let mut by_repo: std::collections::BTreeMap<&'static str, Vec<SyncRomEntry>> =
+        std::collections::BTreeMap::new();
     let mut skipped_no_repo = 0usize;
     for e in entries.iter() {
         let repos = repos_for_entry(e);
@@ -1702,6 +1881,12 @@ pub async fn sync_media_for_system(
             let subdir_owned = subdir.to_string();
             let entries_for_kind = repo_entries.clone();
 
+            // Per-kind dirty flag — set by any successful Downloaded
+            // outcome inside the buffer_unordered stream below, then
+            // checked once after the stream drains so we flush
+            // media.json at most once per (repo × kind) batch.
+            let kind_dirty = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let kind_dirty2 = kind_dirty.clone();
             stream::iter(entries_for_kind)
                 .map(|entry| {
                     let client = client2.clone();
@@ -1714,6 +1899,7 @@ pub async fn sync_media_for_system(
                     let system_id = system_id2.clone();
                     let subdir = subdir_owned.clone();
                     let canonical_by_id = canonical_by_id.clone();
+                    let kind_dirty = kind_dirty2.clone();
                     async move {
                         let canonical = canonical_by_id.get(&entry.id).map(|s| s.as_str());
                         let outcome = sync_single_rom(
@@ -1733,21 +1919,29 @@ pub async fn sync_media_for_system(
                         );
                         let action: String = match &outcome {
                             Ok(SyncOutcome::Downloaded { variant }) => {
+                                // Apply the variant under the write lock, but
+                                // DON'T flush media.json here — the per-kind
+                                // batch flush at end of buffer_unordered (line
+                                // ~1930) writes once per kind, not once per
+                                // ROM. Pre-2026-05-21 every successful download
+                                // wrote the full media.json (multi-MB on a 5K+
+                                // library) under contention from 8 concurrent
+                                // tasks. Now: 1 write per (repo × kind), ~10-30
+                                // writes total per sync vs ~1000s before.
                                 let updated = {
                                     let mut db_w = match db.write() {
                                         Ok(g) => g,
                                         Err(_) => return,
                                     };
-                                    let updated = apply_synced_variant(
+                                    apply_synced_variant(
                                         &mut db_w, &entry.id, kind, variant.clone(),
-                                    );
-                                    let _ = write_media_db(&app_data_dir, &db_w);
-                                    updated
+                                    )
                                 };
                                 let _ = app.emit(
                                     "oa://media-updated",
                                     serde_json::json!({ "romId": &entry.id, "media": &updated }),
                                 );
+                                kind_dirty.store(true, std::sync::atomic::Ordering::Release);
                                 let mut s = summary.lock().expect("summary lock");
                                 s.matched += 1;
                                 s.downloaded += 1;
@@ -1792,6 +1986,32 @@ pub async fn sync_media_for_system(
                 .buffer_unordered(8)
                 .for_each(|_| async {})
                 .await;
+
+            // Per-kind batch flush — write media.json once per
+            // (repo × kind) batch IF any successful download set the
+            // dirty flag inside the stream. Cuts media.json writes
+            // from ~1 per ROM (multi-MB write × 1000s) down to ~1
+            // per kind per repo (~10-30 total per sync).
+            if kind_dirty.load(std::sync::atomic::Ordering::Acquire) {
+                if let Ok(db_r) = db.read() {
+                    if let Err(e) = write_media_db(&app_data_dir, &db_r) {
+                        log::warn!(
+                            "oa-shell: media.json flush failed after {repo}/{kind_label}: {e}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Final flush — also runs the no-downloads case (the dirty flag
+    // gates per-kind writes, so a sync that only hits cached entries
+    // doesn't touch the disk; this safety-net write captures any
+    // accounting state we might have missed and keeps the on-disk
+    // file fresh at end-of-sync regardless.
+    if let Ok(db_r) = db.read() {
+        if let Err(e) = write_media_db(&app_data_dir, &db_r) {
+            log::warn!("oa-shell: final media.json flush failed: {e}");
         }
     }
 
@@ -1857,6 +2077,83 @@ pub fn clear_media(
     let _ = app.emit("oa://media-updated", serde_json::json!({ "romId": &romId }));
     log::info!("oa-shell: media cleared for {romId}");
     Ok(())
+}
+
+/// Clear the `metadata` slot on every media_db entry whose game is
+/// tagged with `systemId` in library_db. Cover-art / snap / title
+/// variants are *not* touched — only the metadata payload (genre /
+/// developer / publisher / year / players). Used after the 2026-05-21
+/// metadata-routing fix to scrub the cross-system data contamination
+/// that the old wildcard-to-PCE routing left behind: a Genesis game
+/// that accidentally fuzzy-matched a PCE catalog entry got stamped
+/// with PCE metadata; this command nulls those stamps so a follow-up
+/// sync against the correct upstream catalog refills them cleanly.
+///
+/// Returns the count of entries actually cleared (skips entries that
+/// already had metadata = None). Emits one oa://media-updated per
+/// cleared entry so the UI re-renders.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn clear_metadata_for_system(
+    systemId: String,
+    state: tauri::State<'_, MediaState>,
+    library: tauri::State<'_, crate::library_db::LibraryDb>,
+    app: tauri::AppHandle,
+) -> Result<MetadataClearSummary, String> {
+    // Per-system op gate (H11) — serializes against any in-flight
+    // sync_media / sync_metadata / resolve_rom_hashes / sync_rom_hashes
+    // for the same system. Without the gate a "Clear metadata" mid-sync
+    // could null entries the sync was about to update, causing
+    // misleading "updated 0" summary numbers.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
+    let ids = library.list_game_ids_for_system(&systemId)?;
+    let mut cleared = 0usize;
+    let mut updated_payloads: Vec<(String, GameMedia)> = Vec::new();
+    {
+        let mut db = state.db.write().map_err(|_| "media db lock poisoned".to_string())?;
+        for id in &ids {
+            if let Some(gm) = db.get_mut(id) {
+                if gm.metadata.is_some() {
+                    gm.metadata = None;
+                    cleared += 1;
+                    updated_payloads.push((id.clone(), gm.clone()));
+                }
+            }
+        }
+        if cleared > 0 {
+            write_media_db(&state.app_data_dir, &db)
+                .map_err(|e| format!("write media.json: {e}"))?;
+        }
+    }
+    use tauri::Emitter;
+    for (rom_id, gm) in &updated_payloads {
+        let _ = app.emit(
+            "oa://media-updated",
+            serde_json::json!({ "romId": rom_id, "media": gm }),
+        );
+    }
+    log::info!(
+        "oa-shell: clear_metadata_for_system({systemId}) — cleared {cleared} of {} game ids in library",
+        ids.len()
+    );
+    Ok(MetadataClearSummary {
+        system_id: systemId,
+        scanned: ids.len(),
+        cleared,
+    })
+}
+
+/// Summary returned by `clear_metadata_for_system`. `scanned` is the
+/// number of library game ids inspected for the system; `cleared` is
+/// the subset whose `metadata` slot was set to `None`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataClearSummary {
+    pub system_id: String,
+    pub scanned: usize,
+    pub cleared: usize,
 }
 
 #[tauri::command]

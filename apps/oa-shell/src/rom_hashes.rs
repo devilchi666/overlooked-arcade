@@ -832,6 +832,10 @@ pub async fn sync_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomHashSyncSummary, String> {
+    // Per-system op gate (H11) — see sync_media_for_system in media.rs.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     let app_data_dir = state.app_data_dir.clone();
     let refs = libretro_dat_refs_for_system(&systemId);
     if refs.is_empty() {
@@ -1042,6 +1046,16 @@ pub struct RomResolveSummary {
     /// system shows up as "unknown" — the UI uses this to surface
     /// "no hash DB available" rather than "we tried 1904 and found 0."
     pub canonical_entries: i64,
+    /// Library row count for this system at resolve time. Compared
+    /// against `already_identified` so the UI can show "all N games
+    /// already identified, nothing to do" when a re-run is a no-op.
+    pub library_total: i64,
+    /// Subset of `library_total` whose `games.sha1` is already
+    /// stamped (i.e. were resolved in a previous Identify pass).
+    /// `library_total - already_identified` is roughly the work the
+    /// current run will attempt (CD-shaped games further subtract
+    /// out at the CD-skip path).
+    pub already_identified: i64,
 }
 
 /// Hash every ROM in `system_id` that doesn't have a sha1 yet, look it
@@ -1061,6 +1075,16 @@ pub async fn resolve_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomResolveSummary, String> {
+    // Per-system op gate (H11) — held for the lifetime of this call.
+    // resolve_rom_hashes_for_system also calls sync_rom_hashes_for_system
+    // inline (auto-sync block below) — but that's a function inlined
+    // here, not a separate Tauri command invocation, so it doesn't try
+    // to re-acquire the gate. The auto-sync block bypasses the wrapper
+    // function's own gate acquisition by inlining only the fetch +
+    // parse + apply steps.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     // Auto-sync if our local rom_hashes table is empty for this system.
     // Without this, "Identify ROMs" against an unsynced system returns
     // N unknown / 0 matched with no obvious cause; auto-syncing turns
@@ -1138,6 +1162,8 @@ pub async fn resolve_rom_hashes_for_system(
     }
 
     let canonical_entries = db.count_rom_hashes(&systemId)?;
+    let library_total = db.count_games_for_system(&systemId)?;
+    let already_identified = db.count_games_with_hash_for_system(&systemId)?;
     let games = db.list_games_missing_hash(&systemId)?;
     let total = games.len();
     let mut summary = RomResolveSummary {
@@ -1148,7 +1174,24 @@ pub async fn resolve_rom_hashes_for_system(
         skipped_cd: 0,
         errors: 0,
         canonical_entries,
+        library_total,
+        already_identified,
     };
+
+    // Log the re-run no-op case explicitly. Without this, the operator
+    // sees "0/0 scanned, 0 matched" in the UI and assumes Identify is
+    // broken when in fact every game has been identified already and a
+    // re-run has nothing to do. The matching frontend status line
+    // also shows "N already identified" via the new summary fields.
+    if total == 0 && library_total > 0 && already_identified == library_total {
+        log::info!(
+            "rom_hashes: resolve {systemId} — all {library_total} game(s) already identified; nothing to do",
+        );
+    } else if total == 0 && library_total == 0 {
+        log::info!(
+            "rom_hashes: resolve {systemId} — no games in library for this system",
+        );
+    }
 
     // Short-circuit: nothing to match against. Skip the per-game hash
     // pass entirely — better to stamp 0 sha1s than to burn cycles on a
@@ -1307,16 +1350,38 @@ pub async fn resolve_rom_hashes_for_system(
                         && g.archive_inner_path.is_none()
                         && matches!(systemId.as_str(), "ps2" | "gamecube" | "dreamcast")
                     {
-                        match stream_sha1_of_file(std::path::Path::new(&g.file_path)) {
+                        // PS2/GameCube/Dreamcast .iso dumps are 1.4–8 GB.
+                        // Streaming SHA-1 reads + hashes the entire file
+                        // sequentially — multi-second to multi-minute
+                        // work that would block this async task's runtime
+                        // worker for the whole duration. spawn_blocking
+                        // moves it to Tokio's blocking pool so the rest
+                        // of the async runtime stays responsive.
+                        let path_for_task = g.file_path.clone();
+                        let sha_result = tokio::task::spawn_blocking(move || {
+                            stream_sha1_of_file(std::path::Path::new(&path_for_task))
+                        })
+                        .await
+                        .map_err(|e| format!("stream_sha1 join: {e}"))?;
+                        match sha_result {
                             Ok(sha) => {
                                 match db.lookup_rom_hash(&sha)? {
                                     Some(row) if row.system_id == systemId => {
                                         summary.matched += 1;
+                                        // apply_rom_hash signature is
+                                        // (id, sha1, canonical_title, serial).
+                                        // Pre-fix this call swapped the two
+                                        // tail args — stored serial as title
+                                        // and title as serial, corrupting
+                                        // both columns on every PS2/GC/DC
+                                        // .iso match via this fallback. Cart
+                                        // loop below (line ~1431) was always
+                                        // correct.
                                         if let Err(e) = db.apply_rom_hash(
                                             &g.id,
                                             &sha,
-                                            row.serial.as_deref(),
                                             Some(&row.game_name),
+                                            row.serial.as_deref(),
                                         ) {
                                             log::warn!("rom_hashes: apply_rom_hash {} failed: {e}", g.id);
                                             summary.errors += 1;

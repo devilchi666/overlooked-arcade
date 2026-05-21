@@ -342,6 +342,14 @@ const SettingsPage: Component<Props> = (props) => {
   // the two buttons can run independently and don't share progress state.
   const [metaProgress, setMetaProgress] = createSignal<Record<string, SyncProgressPayload>>({});
   const [metaSyncing, setMetaSyncing] = createSignal<Record<string, boolean>>({});
+  // Per-system metadata-clear loading state. No progress bar — the
+  // server-side call is O(N) over library_db ids and completes in well
+  // under a second even on large libraries; a binary "clearing…" pill
+  // is enough. metaClearStatus is the last-action line shown under the
+  // button row (same shape as the other Sync status lines); empty
+  // string = no status to show yet.
+  const [metaClearing, setMetaClearing] = createSignal<Record<string, boolean>>({});
+  const [metaClearStatus, setMetaClearStatus] = createSignal<Record<string, string>>({});
   let unlistenSync: UnlistenFn | undefined;
   let unlistenSyncDone: UnlistenFn | undefined;
   let unlistenMeta: UnlistenFn | undefined;
@@ -430,11 +438,17 @@ const SettingsPage: Component<Props> = (props) => {
       await media.refreshAll();
     } catch (e) {
       console.warn("sync_media_for_system failed:", e);
-      setSyncing((prev) => ({ ...prev, [systemId]: false }));
       setSyncProgress((prev) => ({
         ...prev,
         [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: `error: ${e}` },
       }));
+    } finally {
+      // H10 belt-and-braces — clear the loading state regardless of
+      // outcome and regardless of whether the oa://library-sync-complete
+      // event listener actually fires. Pre-fix, an early-return on the
+      // Rust side (e.g. entries.len()=0 before the emit) or a dropped
+      // event left the button stuck on "Syncing…" forever.
+      setSyncing((prev) => ({ ...prev, [systemId]: false }));
     }
   }
 
@@ -470,6 +484,14 @@ const SettingsPage: Component<Props> = (props) => {
     /// system → the UI shows a "no hash DB available" message rather
     /// than "X unknown."
     canonicalEntries: number;
+    /// Library row count for this system at resolve time. Compared
+    /// against `alreadyIdentified` to disambiguate the "0/0" no-op
+    /// case (re-run on already-identified library → "all N identified")
+    /// from "no games in library."
+    libraryTotal: number;
+    /// Subset of `libraryTotal` whose sha1 is already stamped from a
+    /// prior successful Identify pass.
+    alreadyIdentified: number;
   };
   const [hashSyncing, setHashSyncing] = createSignal<Record<string, boolean>>({});
   const [hashSyncSummary, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
@@ -478,6 +500,23 @@ const SettingsPage: Component<Props> = (props) => {
     createSignal<Record<string, HashResolveProgressPayload>>({});
   const [hashResolveSummary, setHashResolveSummary] =
     createSignal<Record<string, HashResolveSummaryPayload>>({});
+
+  /// Cross-button gating (H9). Any per-system sync op in flight
+  /// disables ALL of that system's buttons (Sync media, Sync metadata,
+  /// Clear metadata, Sync hashes, Identify ROMs). The server-side
+  /// per-system mutex (H11) already serializes concurrent ops, but
+  /// disabling the UI prevents the operator from queuing up confusing
+  /// button-mash sequences and stops fast-fingers from hitting the
+  /// same op twice while the first is still in flight.
+  function isSystemBusy(id: SystemId): boolean {
+    return (
+      syncing()[id] === true ||
+      metaSyncing()[id] === true ||
+      metaClearing()[id] === true ||
+      hashSyncing()[id] === true ||
+      hashResolving()[id] === true
+    );
+  }
 
   onMount(() => {
     let un1: UnlistenFn | undefined;
@@ -513,6 +552,11 @@ const SettingsPage: Component<Props> = (props) => {
       await invoke("sync_rom_hashes_for_system", { systemId });
     } catch (e) {
       console.warn("sync_rom_hashes_for_system failed:", e);
+    } finally {
+      // H10 belt-and-braces — see startSync. The
+      // oa://rom-hashes-synced listener also clears this signal on the
+      // happy path (line ~498), so this is just the safety net for
+      // missed-event cases.
       setHashSyncing((p) => ({ ...p, [systemId]: false }));
     }
   }
@@ -548,6 +592,23 @@ const SettingsPage: Component<Props> = (props) => {
       await props.library.refresh();
     } catch (e) {
       console.warn("resolve_rom_hashes_for_system failed:", e);
+      // H10 — surface the error in the status line so the operator
+      // sees that something went wrong, not just a button that
+      // suddenly reverted to "Identify ROMs".
+      setHashResolveProgress((p) => ({
+        ...p,
+        [systemId]: {
+          systemId,
+          done: 0,
+          total: 0,
+          currentTitle: "",
+          lastAction: `error: ${e}`,
+        },
+      }));
+    } finally {
+      // H10 belt-and-braces — see startSync. The
+      // oa://rom-hash-resolve-complete listener also clears this on
+      // the happy path.
       setHashResolving((p) => ({ ...p, [systemId]: false }));
     }
   }
@@ -585,11 +646,62 @@ const SettingsPage: Component<Props> = (props) => {
       await media.refreshAll();
     } catch (e) {
       console.warn("sync_metadata_for_system failed:", e);
-      setMetaSyncing((prev) => ({ ...prev, [systemId]: false }));
       setMetaProgress((prev) => ({
         ...prev,
         [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: `error: ${e}` },
       }));
+    } finally {
+      // H10 belt-and-braces — see startSync.
+      setMetaSyncing((prev) => ({ ...prev, [systemId]: false }));
+    }
+  }
+
+  /// Wipe the `metadata` slot on every media_db entry whose game is
+  /// tagged with `systemId`. Used to scrub the cross-system data
+  /// contamination from the pre-2026-05-21 metadata-routing bug
+  /// (Genesis games were getting PC Engine metadata stamped onto them).
+  /// Cover-art / snap / title variants are NOT touched.
+  async function startClearMetadata(systemId: SystemId) {
+    const theme = systemThemes[systemId];
+    const name = theme.displayName;
+    const count = props.library.state.entries.filter(
+      (e) => e.systemId === systemId && !e.seed,
+    ).length;
+    if (count === 0) {
+      // No games for this system in the library yet — surface that as
+      // an inline status rather than an alert (Tauri 2's dialog plugin
+      // gates window.alert behind an ACL we don't always carry, and a
+      // status line matches the other Sync buttons' feedback style).
+      setMetaClearStatus((prev) => ({ ...prev, [systemId]: `no ${name} games in library` }));
+      return;
+    }
+    if (
+      !window.confirm(
+        `Clear metadata (genre / developer / publisher / year / players) for ${count} ${name} game(s)?\n\n` +
+          `Cover art, snapshots, and title screens will NOT be touched. ` +
+          `Use this after the 2026-05-21 metadata-routing fix to scrub stale cross-system data; ` +
+          `re-run "Sync metadata" afterwards to repopulate against the correct upstream catalog.`,
+      )
+    ) {
+      return;
+    }
+    setMetaClearing((prev) => ({ ...prev, [systemId]: true }));
+    setMetaClearStatus((prev) => ({ ...prev, [systemId]: "clearing…" }));
+    try {
+      const result = await invoke<{ systemId: string; scanned: number; cleared: number }>(
+        "clear_metadata_for_system",
+        { systemId },
+      );
+      await media.refreshAll();
+      setMetaClearStatus((prev) => ({
+        ...prev,
+        [systemId]: `cleared ${result.cleared} of ${result.scanned} game(s)`,
+      }));
+    } catch (e) {
+      console.warn("clear_metadata_for_system failed:", e);
+      setMetaClearStatus((prev) => ({ ...prev, [systemId]: `error: ${String(e)}` }));
+    } finally {
+      setMetaClearing((prev) => ({ ...prev, [systemId]: false }));
     }
   }
 
@@ -840,7 +952,7 @@ const SettingsPage: Component<Props> = (props) => {
                         <span class="flex gap-1.5">
                           <button
                             type="button"
-                            disabled={isSyncing()}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startSync(id);
@@ -851,7 +963,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={isMetaSyncing()}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startMetadataSync(id);
@@ -862,7 +974,19 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={hashSyncing()[id] === true}
+                            disabled={isSystemBusy(id)}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void startClearMetadata(id);
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Clear metadata (genre / developer / publisher / year / players) for every game in this system. Cover art is NOT touched. Use after the 2026-05-21 metadata-routing fix to scrub stale cross-system data."
+                          >
+                            {metaClearing()[id] ? "Clearing…" : "Clear metadata"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startHashSync(id);
@@ -874,7 +998,7 @@ const SettingsPage: Component<Props> = (props) => {
                           </button>
                           <button
                             type="button"
-                            disabled={hashResolving()[id] === true}
+                            disabled={isSystemBusy(id)}
                             onClick={(e) => {
                               e.currentTarget.blur();
                               void startHashResolve(id);
@@ -916,6 +1040,13 @@ const SettingsPage: Component<Props> = (props) => {
                           </>
                         )}
                       </Show>
+                      <Show when={metaClearStatus()[id]}>
+                        {(s) => (
+                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            clear metadata · {s()}
+                          </p>
+                        )}
+                      </Show>
                       <Show when={hashSyncSummary()[id]}>
                         {(s) => (
                           <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
@@ -950,9 +1081,19 @@ const SettingsPage: Component<Props> = (props) => {
                       <Show when={hashResolveSummary()[id]}>
                         {(s) => (
                           <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            {s().canonicalEntries === 0
-                              ? "identify · libretro-database has no hash DB for this system"
-                              : `identify done · ${s().matched} matched · ${s().unmatched} unknown · ${s().skippedCd} CD-skipped · ${s().errors} errors (${s().canonicalEntries} canonical entries in DB)`}
+                            {(() => {
+                              const v = s();
+                              if (v.canonicalEntries === 0) {
+                                return "identify · libretro-database has no hash DB for this system";
+                              }
+                              if (v.libraryTotal === 0) {
+                                return `identify · no games in library for this system (${v.canonicalEntries} canonical entries in DB)`;
+                              }
+                              if (v.scanned === 0 && v.alreadyIdentified === v.libraryTotal) {
+                                return `identify · all ${v.libraryTotal} games already identified (re-runs are no-ops)`;
+                              }
+                              return `identify done · ${v.matched} matched · ${v.unmatched} unknown · ${v.skippedCd} CD-skipped · ${v.errors} errors · ${v.alreadyIdentified} of ${v.libraryTotal} stamped (${v.canonicalEntries} canonical entries in DB)`;
+                            })()}
                           </p>
                         )}
                       </Show>

@@ -554,7 +554,7 @@ const App: Component = () => {
       await settings.addLibraryFolderPath(result.folder);
     }
     if (result.kind === "ingested" && result.added > 0) {
-      autoIdentifyAfterIngest(result.systemIds);
+      void autoSyncAfterIngest(result.systemIds, result.entries);
     }
     setBusy("idle");
     setOverflowOpen(false);
@@ -582,7 +582,7 @@ const App: Component = () => {
     const summary = await rescanFolders(library, [picked], scanProgressReporter);
     setStatus(`Added ${summary.totalAdded} from ${picked}.`);
     if (summary.totalAdded > 0) {
-      autoIdentifyAfterIngest(summary.systemIds);
+      void autoSyncAfterIngest(summary.systemIds, summary.entries);
     }
     setBusy("idle");
   }
@@ -597,7 +597,7 @@ const App: Component = () => {
     setStatus(`Rescan: added ${summary.totalAdded} new ROMs across ${summary.folders} folders${errSuffix}.`);
     if (summary.errors.length > 0) console.warn("rescan errors:", summary.errors);
     if (summary.totalAdded > 0) {
-      autoIdentifyAfterIngest(summary.systemIds);
+      void autoSyncAfterIngest(summary.systemIds, summary.entries);
     }
     setBusy("idle");
   }
@@ -1302,10 +1302,68 @@ const App: Component = () => {
   /// Settings page. Calling more than once for the same system in
   /// quick succession is idempotent (no-op when no entries are
   /// missing a sha1).
-  function autoIdentifyAfterIngest(systemIds: readonly SystemId[]) {
+  /// Post-ingest auto-sync hook. Used by every non-wizard ingest path
+  /// (drag-drop, "Add library folder", "Rescan tracked folders",
+  /// "Import folder…" from the toolbar). Mirrors the wizard's commit()
+  /// flow at frontend/src/components/ImportWizard.tsx:550-630:
+  ///
+  ///   1. AWAIT resolve_rom_hashes_for_system per system, sequentially.
+  ///      Parallel resolves would contend on the LibraryDb write lock
+  ///      (each resolve holds the lock during DB writes); the wizard
+  ///      explicitly serialized this for the same reason. The
+  ///      server-side H11 per-system gate would also serialize them
+  ///      regardless, but doing it on the client surfaces useful
+  ///      sequential progress events to the user.
+  ///
+  ///   2. THEN fire sync_media_for_system + sync_metadata_for_system
+  ///      per touched system. These can fire in parallel — different
+  ///      systems don't contend (each holds its own per-system gate),
+  ///      and within a system the two operations are independent
+  ///      (media and metadata DBs are separate slots on the same
+  ///      MediaDb row). Fire-and-forget — the per-ROM progress events
+  ///      drive the visible UI.
+  ///
+  /// Pre-2026-05-21 this function only invoked resolve and skipped
+  /// media/metadata entirely — drag-drop ingest never got cover art
+  /// without the user also running the wizard. Fixed in the H8 audit
+  /// follow-up.
+  async function autoSyncAfterIngest(
+    systemIds: readonly SystemId[],
+    entries: readonly RomEntry[],
+  ) {
+    // Step 1: per-system resolve, awaited sequentially.
     for (const id of systemIds) {
-      void invoke("resolve_rom_hashes_for_system", { systemId: id }).catch((e) =>
-        console.warn(`[oa-ingest] auto-identify ${id} failed:`, e),
+      try {
+        await invoke("resolve_rom_hashes_for_system", { systemId: id });
+      } catch (e) {
+        console.warn(`[oa-ingest] auto-identify ${id} failed:`, e);
+        // Continue with the next system + still fire the syncs below.
+        // Failed resolve means stale-sha1 entries, but sync_media will
+        // simply filter them out via only_identified rather than
+        // crashing.
+      }
+    }
+    // Step 2: media + metadata sync per system, fire-and-forget.
+    const entriesBySystem = new Map<SystemId, RomEntry[]>();
+    for (const e of entries) {
+      const arr = entriesBySystem.get(e.systemId) ?? [];
+      arr.push(e);
+      entriesBySystem.set(e.systemId, arr);
+    }
+    for (const id of systemIds) {
+      const sysEntries = entriesBySystem.get(id) ?? [];
+      if (sysEntries.length === 0) continue;
+      const payload = sysEntries.map((e) => ({
+        id: e.id,
+        title: e.title,
+        filePath: e.filePath,
+        systemId: e.systemId,
+      }));
+      void invoke("sync_media_for_system", { systemId: id, entries: payload }).catch(
+        (e) => console.warn(`[oa-ingest] sync_media ${id} failed:`, e),
+      );
+      void invoke("sync_metadata_for_system", { systemId: id, entries: payload }).catch(
+        (e) => console.warn(`[oa-ingest] sync_metadata ${id} failed:`, e),
       );
     }
   }
@@ -1319,7 +1377,7 @@ const App: Component = () => {
       await settings.addLibraryFolderPath(result.folder);
     }
     if (result.kind === "ingested" && result.added > 0) {
-      autoIdentifyAfterIngest(result.systemIds);
+      void autoSyncAfterIngest(result.systemIds, result.entries);
     }
     setBusy("idle");
   }

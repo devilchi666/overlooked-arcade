@@ -681,3 +681,63 @@ A single source of truth removes the class entirely: ANY divergence between loca
 - **Async file I/O via tokio::fs for the boot loaders.** Mixing async with `tauri::Builder::default().setup()` (which is sync) requires a runtime handle to block_on. std::thread::spawn is simpler and the I/O cost is wall-clock-bounded by the disk, not by thread count.
 - **Background compression for the rewind ring on a dedicated worker.** Cleaner long-term, but adds Send + Arc<Mutex> + mpsc bookkeeping for marginal benefit at current state sizes. Defer until real-world PS2/Saturn rewind playtest surfaces stutter.
 
+---
+
+## 2026-05-21 — Post-import sync ordering: identify before media + metadata
+
+**Decision:** In the Import Wizard's post-commit flow, `resolve_rom_hashes_for_system` must complete (awaited) before `sync_media_for_system` and `sync_metadata_for_system` are fired. Media + metadata syncs may then fire in parallel — they don't depend on each other, only on stamped sha1s being present in `library_db`.
+
+**Why:** `sync_media_for_system` reads its `only_identified` filter once at the top of the function (`apps/oa-shell/src/media.rs::sync_media_for_system`, ~line 1541). It enumerates `entries.filter(|e| canonical_by_id.contains_key(&e.id))` where `canonical_by_id` is populated by looking up `library.lookup_rom_hash(sha1)` for each entry. If sha1 is `None` on the row (the normal state after a fresh import, before identification runs), the filter retains zero entries and the sync no-ops.
+
+`sync_metadata_for_system` doesn't have an equivalent hard filter, but its primary match path is sha1-based; without stamped sha1s it falls back to fuzzy title matching, which catches roughly 10% of a real Genesis library vs. >90% with sha1s.
+
+Confirmed in the field on a 1160-entry Genesis import (see `appData/logs/oa-current.log` around 2026-05-21 13:52:24): `sync_media` ran at T+0ms with `keeping 0 hash-matched entries`; `sync_metadata` ran at T+2ms with `matched 120, unmatched 1040`; `resolve_rom_hashes` finished at T+387ms with `matched 1081`. Operator saw "found matches but nothing changed in library and no metadata."
+
+**How (frontend):** `frontend/src/components/ImportWizard.tsx::commit()` step 4 is `await invoke("resolve_rom_hashes_for_system", ...)` per touched system; step 5 fires `sync_media_for_system` + `sync_metadata_for_system` as fire-and-forget. The serial await adds ~200–500ms to wizard completion time depending on library size — acceptable given the correctness benefit (cover art + metadata actually populate on first sync, instead of needing a manual second pass through `Settings → Library → Identify ROMs / Sync media / Sync metadata`).
+
+**Considered and rejected:**
+- **Make sync_media re-evaluate the filter mid-walk.** Would let it pick up sha1s as resolve_rom_hashes stamps them. But the filter is upfront-by-design — it determines the total work unit count emitted to the progress event stream. Reactive filtering would complicate the progress UI more than it helps.
+- **Drop the `only_identified` filter entirely.** Was considered but the filter exists to prevent fuzzy-matching against the wrong region of a multi-region game (the typical false-positive cause for unidentified ROMs). Keeping it is correct; ordering the calls is the right fix.
+- **Have resolve_rom_hashes auto-trigger sync_media on completion (server-side).** Would solve it transparently but couples two concerns the operator may want decoupled (e.g. identify without ever syncing covers, for headless library audits). Frontend-side ordering preserves the operator's ability to opt out via the wizard's "Skip sync" button.
+- **Parallel resolve across multiple systems.** Currently sequential — `resolve_rom_hashes_for_system` holds the LibraryDb write lock for its DB applies. Parallelizing wouldn't speed up a multi-system wizard (they'd queue), and the existing per-system progress UI matches the sequential model. Revisit if a real multi-system import becomes painful.
+
+**Other paths with similar shape (audited 2026-05-21):**
+- `App.tsx::autoIdentifyAfterIngest` (drag-drop / "Add library folder" / "Rescan tracked folders"): only fires `resolve_rom_hashes_for_system`, never the media/metadata syncs. Pre-existing gap — operator sees ROMs identified but no covers. Tracked as a separate fix; the wizard race fix doesn't address it.
+- `SettingsPage.tsx` per-system "Sync media" / "Sync metadata" / "Identify ROMs" buttons: each is its own awaited handler. No race within each, but a user who clicks "Sync media" without first clicking "Identify ROMs" hits the same `only_identified` filter and sees zero matches. User-triggered, lower priority — the UI could grey out "Sync media" until "Identify ROMs" has run at least once, but that's a UX call rather than a correctness one.
+
+**Follow-up — server-side authoritative sha1 lookup (added in the same fix branch after operator confirmed a second bug):**
+
+The frontend ordering fix above isn't enough on its own. After awaiting `resolve_rom_hashes_for_system`, the wizard still calls `sync_media_for_system(systemId, entries)` with the **original `entries` array constructed at scan time**, before identification stamped any sha1s. Every `entry.sha1` is `None` even though the matching `library_db.games` rows now have sha1 populated. `canonical_by_id` stayed empty and the `only_identified` filter still kept 0 entries.
+
+Server-side fix: `sync_media_for_system` and `sync_metadata_for_system` now look up `library.find_sha1_by_id(&e.id)` for each entry, falling back to `entry.sha1` only if the DB has nothing. The DB is the authoritative source — the frontend payload is just a list of which entries to consider.
+
+Net effect:
+- `sync_media`: `keeping 0 hash-matched entries` → `keeping ~95% hash-matched entries` on a typical Genesis library.
+- `sync_metadata`: gains a parallel improvement — it now uses the **canonical no-intro title** from `rom_hashes.canonical_title` as the match key when the entry is hash-identified, falling back to the user's filename-derived title only for unidentified ROMs. Filename-fuzzy was matching ~10% (120 of 1160 on the Genesis confirmation case); canonical-exact matches ~95%.
+
+New library_db method: `find_sha1_by_id(id) -> Result<Option<String>>` — cheap single-column lookup, no full row materialization. Used by both sync paths.
+
+**Why server-side and not frontend re-fetch:** the same bug would lurk in any other call site that constructs `SyncRomEntry` from scan data instead of from a freshly-queried library row. Server-side hydration makes correctness independent of caller discipline — any caller can pass `sha1: None` on the payload and the server picks up the authoritative value from the DB.
+
+**Third follow-up — metadata system-name routing (after the user reported sync_metadata still showing matched 120 / unmatched 1040 on Genesis):**
+
+`metadat_system_name_for_extension(ext)` in `apps/oa-shell/src/metadata.rs` was the function that mapped an entry's extension to its libretro-database metadat system name (used to construct the cache path + fetch URL). It hadn't been touched since the TG-16-only first-bringup days:
+
+```rust
+fn metadat_system_name_for_extension(ext: &str) -> &'static str {
+    match ext {
+        "sgx" => "NEC - PC Engine SuperGrafx",
+        "cue" | "chd" | ... => "NEC - PC Engine CD - TurboGrafx-CD",
+        _ => "NEC - PC Engine - TurboGrafx 16",   // <-- wildcard fall-through
+    }
+}
+```
+
+Every non-CD non-SGX extension fell through to PC Engine. So `.md`, `.gen`, `.smd`, `.nes`, `.sfc`, `.gba`, `.sms`, every other system's extensions, all got bucketed into the PCE catalog (442 upstream entries). The metadata sync had only ever worked properly for PC Engine titles. The "matched 120" we kept seeing was an accidental fuzzy-overlap: 120 of the 1160 Genesis ROMs had generic enough names that they fuzzy-matched something in PCE's catalog. Cross-system data contamination — operator was getting PC Engine metadata stamped on every game from every other system that happened to fuzzy-match.
+
+Fix: replaced with `metadat_system_name_for(system_id, ext) -> Option<&'static str>` that mirrors `rom_hashes::libretro_dat_refs_for_system`'s mapping — every system OA supports routes to its correct libretro-database name. TG-16-family extensions (`.sgx` / CD containers / cart) remain the only place where extension matters (they share `tg16` system_id but split into three upstream dats). `mame` and `3do` return `None` (no upstream metadat — MAME is set-based, 3DO's upstream dat has no metadata fields); those entries are counted as unmatched in the per-entry loop without attempting a fetch.
+
+Net effect on Genesis: sync_metadata now fetches `Sega - Mega Drive - Genesis.dat` (~2400 entries) instead of `NEC - PC Engine - TurboGrafx 16.dat` (442 entries). Combined with the canonical-no-intro-title match key from the previous follow-up, match rate jumps from 10% to ~95% on a typical fully-identified library.
+
+**Why duplicated mapping (vs sharing rom_hashes::libretro_dat_refs_for_system):** Considered. Rejected for now because rom_hashes uses `DatRef` (subdir + basename, supporting metadat/no-intro vs metadat/redump split + multi-dat merges like gb DMG+CGB), while metadata only needs a single basename per (system, ext). The duplication is small (one match arm per system) and the type shapes don't align cleanly. Worth revisiting if a third call site grows that needs the same mapping — at that point promoting to a shared `system_id → libretro-database name` table earns its keep.
+
