@@ -1438,7 +1438,22 @@ async fn sync_single_rom(
     let (w, h) = if thumb_abs.exists() {
         (None, None)
     } else {
-        let (w, h) = generate_thumbnail(&bytes_vec, &thumb_abs)?;
+        // Move the decode → resize → WebP-encode pass onto Tokio's blocking
+        // pool. Without this, every concurrent sync_single_rom holds an
+        // async-runtime worker for 50-200ms per image while it does pure
+        // CPU work — the upstream `buffer_unordered(8)` then can't actually
+        // run 8 simultaneously and the decode step is the bottleneck of
+        // first-scan-of-a-large-library. spawn_blocking moves it to the
+        // blocking pool (~cpu_count threads), so CPU work parallelizes
+        // across cores while runtime threads stay free for the next
+        // batch of network fetches.
+        let bytes_for_thumb = bytes_vec.clone();
+        let thumb_abs_for_task = thumb_abs.clone();
+        let (w, h) = tokio::task::spawn_blocking(move || {
+            generate_thumbnail(&bytes_for_thumb, &thumb_abs_for_task)
+        })
+        .await
+        .map_err(|e| format!("thumbnail join: {e}"))??;
         (Some(w), Some(h))
     };
 
