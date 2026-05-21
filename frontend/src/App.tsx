@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
@@ -96,10 +96,46 @@ function launchStatus(result: LaunchResult): string {
 const TOOLBAR_BTN =
   "rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[0.65rem] font-medium uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-wait disabled:opacity-60";
 
+/** Tauri-side `DirectLaunchConfig` mirror. None = library mode. */
+type DirectLaunchConfig = {
+  romPath: string;
+  systemId: string;
+  coreOverride: string | null;
+  slot: number | null;
+  stateFile: string | null;
+  tasReplay: string | null;
+  fullscreen: boolean;
+  matchedEntryId: string | null;
+};
+
 const App: Component = () => {
-  const library = createLibraryStore();
+  // Fire `get_direct_launch_config` once at mount; both the library store
+  // (to decide whether to bootstrap) and the resource below (to drive UI
+  // chrome hiding + auto-launch) subscribe to the same promise.
+  const directLaunchPromise: Promise<DirectLaunchConfig | null> = invoke<DirectLaunchConfig | null>(
+    "get_direct_launch_config",
+  ).catch((e) => {
+    console.warn("[oa-direct-launch] get_direct_launch_config failed:", e);
+    return null;
+  });
+
+  const library = createLibraryStore({
+    shouldBootstrap: directLaunchPromise.then((cfg) => cfg === null),
+  });
   const settings = createSettingsStore();
   const layout = createLayoutStore();
+
+  // Resource form drives reactive UI gating (chrome hide, auto-launch).
+  // While the resource is pending, `directLaunchConfig()` returns
+  // `undefined` — we treat that the same as "not direct-launch" for the
+  // chrome layer, so first-paint shows nothing rather than a library flash.
+  const [directLaunchConfig] = createResource<DirectLaunchConfig | null>(
+    () => directLaunchPromise,
+  );
+  const isDirectLaunch = createMemo(() => {
+    const cfg = directLaunchConfig();
+    return cfg !== undefined && cfg !== null;
+  });
   const [busy, setBusy] = createSignal<Busy>("idle");
   const [status, setStatus] = createSignal<string>("");
   const [shellMode, setShellMode] = createSignal<ShellMode>("two-window");
@@ -243,6 +279,56 @@ const App: Component = () => {
       document.body.dataset.shell = "two-window";
     }
   });
+
+  // Reflect direct-launch state on body so CSS rules (index.css) can hide
+  // any chrome that slips through the JSX-level Show guards. Stays in sync
+  // with the resource — sets the attribute when the resource resolves to a
+  // non-null payload, removes it otherwise.
+  createEffect(() => {
+    if (isDirectLaunch()) {
+      document.body.dataset.directLaunch = "true";
+    } else {
+      delete document.body.dataset.directLaunch;
+    }
+  });
+
+  // Auto-launch the supplied ROM once the direct-launch payload arrives.
+  // Guard prevents re-launch on subsequent resource invalidations.
+  let autoLaunched = false;
+  createEffect(() => {
+    if (autoLaunched) return;
+    const cfg = directLaunchConfig();
+    if (!cfg) return; // undefined (pending) or null (library mode)
+    autoLaunched = true;
+    void autoLaunchDirect(cfg);
+  });
+
+  async function autoLaunchDirect(cfg: DirectLaunchConfig): Promise<void> {
+    let entry: RomEntry | null = null;
+    // If Phase D's hash-lookup matched a library row, fetch it so per-game
+    // overrides apply through the existing cascade in handleLaunch.
+    if (cfg.matchedEntryId) {
+      try {
+        entry = await invoke<RomEntry | null>("get_game", { id: cfg.matchedEntryId });
+      } catch (e) {
+        console.warn("[oa-direct-launch] get_game failed, falling back to synthesized entry:", e);
+      }
+    }
+    if (!entry) {
+      entry = {
+        id: cfg.matchedEntryId ?? romIdFromPath(cfg.romPath),
+        title: titleFromFileName(cfg.romPath),
+        systemId: cfg.systemId as SystemId,
+        filePath: cfg.romPath,
+        addedAt: 0,
+        seed: false,
+        coreOverride: cfg.coreOverride ?? undefined,
+        archiveInnerPath: undefined,
+      };
+    }
+    console.log("[oa-direct-launch] auto-launching:", entry);
+    await handleLaunch(entry);
+  }
 
   // Slice C — populate the shader preset registry signal once, on app
   // mount. Dropdowns in PerSystem/PerGame settings pages render from
@@ -1287,6 +1373,7 @@ const App: Component = () => {
     <MediaProvider>
       <Shell
         layout={layout}
+        fullBleed={isDirectLaunch() || gameMode()}
         toolbar={
           <TopToolbar
             left={toolbarLeft}
@@ -1318,28 +1405,30 @@ const App: Component = () => {
         <main class="relative h-full">
           <Switch
             fallback={
-              <div
-                class="oa-library-fade h-full"
-                classList={{
-                  "is-hidden": !libraryVisible(),
-                  "oa-library-overlay":
-                    shellMode() === "single-window" && gameRunning(),
-                }}
-                aria-hidden={!libraryVisible()}
-              >
-                <LibraryView
-                  library={library}
-                  layout={layout}
-                  currentView={currentView()}
-                  searchQuery={searchQuery()}
-                  onLaunch={handleLaunch}
-                  onShowSaves={(entry) => setSavesEntry(entry)}
-                  onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
-                  onFocus={(entry) => setFocusedEntry(entry)}
-                  selectedId={() => focusedEntry()?.id ?? null}
-                  onPickFolder={handlePickFolder}
-                />
-              </div>
+              <Show when={!isDirectLaunch()}>
+                <div
+                  class="oa-library-fade h-full"
+                  classList={{
+                    "is-hidden": !libraryVisible(),
+                    "oa-library-overlay":
+                      shellMode() === "single-window" && gameRunning(),
+                  }}
+                  aria-hidden={!libraryVisible()}
+                >
+                  <LibraryView
+                    library={library}
+                    layout={layout}
+                    currentView={currentView()}
+                    searchQuery={searchQuery()}
+                    onLaunch={handleLaunch}
+                    onShowSaves={(entry) => setSavesEntry(entry)}
+                    onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
+                    onFocus={(entry) => setFocusedEntry(entry)}
+                    selectedId={() => focusedEntry()?.id ?? null}
+                    onPickFolder={handlePickFolder}
+                  />
+                </div>
+              </Show>
             }
           >
             <Match when={currentView().kind === "settings"}>

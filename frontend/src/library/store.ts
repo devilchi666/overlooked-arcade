@@ -68,7 +68,16 @@ function clearLegacyLocalStorage(): void {
   }
 }
 
-export function createLibraryStore() {
+export type CreateLibraryStoreOptions = {
+  /** Resolves to `true` to run the normal bootstrap (default), or `false`
+   *  to skip it entirely. Used by direct-launch mode: the frontend boots
+   *  straight into a game and never renders the library grid, so the
+   *  `list_games` / `list_game_groups` / seed-insertion / migration work
+   *  is pure waste. If omitted, bootstrap runs immediately. */
+  shouldBootstrap?: Promise<boolean>;
+};
+
+export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
   // Start empty; hydrate inside the async bootstrap below. The store proxy
   // is alive immediately so consumers can subscribe before hydration lands.
   const [state, setState] = createStore<LibraryState>({ entries: [] });
@@ -102,6 +111,19 @@ export function createLibraryStore() {
   void bootstrap();
 
   async function bootstrap() {
+    // Direct-launch short-circuit: caller awaits a Tauri command to decide
+    // whether to bootstrap, and resolves the promise with false to skip.
+    // Mark hydrated so any consumers gating on `hydrated()` don't wait
+    // forever for a bootstrap that isn't coming.
+    if (options.shouldBootstrap) {
+      const proceed = await options.shouldBootstrap;
+      if (!proceed) {
+        console.log("[oa-library] bootstrap skipped (direct-launch mode)");
+        setHydrated(true);
+        return;
+      }
+    }
+
     // Step 1: try the one-shot migration if legacy localStorage has data.
     const legacy = readLegacyLocalStorage();
     if (legacy && legacy.length > 0) {
