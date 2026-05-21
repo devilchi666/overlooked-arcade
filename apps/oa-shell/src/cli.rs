@@ -264,8 +264,9 @@ mod win_msgbox {
 
     const MB_OK: u32 = 0x0000_0000;
     const MB_ICONERROR: u32 = 0x0000_0010;
+    const MB_ICONINFORMATION: u32 = 0x0000_0040;
 
-    pub fn error(title: &str, message: &str) {
+    fn show(title: &str, message: &str, type_: u32) {
         let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
         let msg_w: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
         unsafe {
@@ -273,9 +274,17 @@ mod win_msgbox {
                 std::ptr::null_mut(),
                 msg_w.as_ptr(),
                 title_w.as_ptr(),
-                MB_OK | MB_ICONERROR,
+                MB_OK | type_,
             );
         }
+    }
+
+    pub fn error(title: &str, message: &str) {
+        show(title, message, MB_ICONERROR);
+    }
+
+    pub fn info(title: &str, message: &str) {
+        show(title, message, MB_ICONINFORMATION);
     }
 }
 
@@ -499,11 +508,46 @@ fn is_known_system(slug: &str) -> bool {
 }
 
 /// Parse argv via clap and resolve a direct-launch config when a ROM is
-/// supplied. `Ok(None)` = library mode. Errors should be banner-printed by
-/// the caller and exit with status 2.
+/// supplied. `Ok(None)` = library mode. Validation errors are surfaced to
+/// the caller, which banner-prints them and exits with status 2.
+///
+/// `--help` / `--version` are intercepted here: clap renders them as
+/// special "errors" that this function catches and displays via stderr
+/// (debug / console-inheritable) AND via a Windows MessageBox on release
+/// builds (where `windows_subsystem = "windows"` detaches stdout/stderr).
+/// On success the process exits 0 directly — never returns to main().
 pub fn parse_and_resolve() -> Result<Option<DirectLaunchConfig>, CliError> {
-    let cli = Cli::parse();
-    resolve(cli)
+    use clap::error::ErrorKind;
+
+    match Cli::try_parse() {
+        Ok(cli) => resolve(cli),
+        Err(err) => match err.kind() {
+            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                let text = err.render().to_string();
+                eprintln!("{text}");
+                #[cfg(all(target_os = "windows", not(debug_assertions)))]
+                {
+                    let title = if matches!(err.kind(), ErrorKind::DisplayVersion) {
+                        "oa-shell — version"
+                    } else {
+                        "oa-shell — help"
+                    };
+                    win_msgbox::info(title, &text);
+                }
+                std::process::exit(0);
+            }
+            _ => {
+                // clap validation errors (unknown flag, bad value, etc.).
+                // Render in clap's standard form, surface via stderr +
+                // MessageBox, and exit 2 — never reach `resolve`.
+                let text = err.render().to_string();
+                eprintln!("{text}");
+                #[cfg(all(target_os = "windows", not(debug_assertions)))]
+                win_msgbox::error("oa-shell — invalid arguments", &text);
+                std::process::exit(2);
+            }
+        },
+    }
 }
 
 fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
