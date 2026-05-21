@@ -340,6 +340,32 @@ pub fn effective_keyboard_passthrough(system_id: &str, settings: &SystemSettings
         .unwrap_or_else(|| default_keyboard_passthrough(system_id))
 }
 
+/// Compiled-in default display aspect ratio per system, used when the
+/// resolution chain (per-game override → per-system user override → core
+/// reported value) doesn't already supply one. Returns `Some(x)` only
+/// for systems whose libretro core's reported aspect disagrees with the
+/// physical hardware — `None` everywhere else means "trust the core".
+///
+/// Today this is GBA-only: the Game Boy Advance's panel is 240×160 =
+/// 3:2 (1.5), but mGBA reports 4:3 by libretro convention which
+/// letterboxes the actual 3:2 panel. Set the default to 1.5 so a
+/// fresh-install GBA library renders authentically without the user
+/// having to discover the per-system aspect setting.
+///
+/// **New core onboarding checklist item:** if the core's reported
+/// aspect via `retro_get_system_av_info` is canonically wrong for the
+/// hardware (rare — most cores get this right), add an arm here.
+pub fn default_display_aspect(system_id: &str) -> Option<f32> {
+    match system_id {
+        // GBA — 240×160 panel = 3:2 (1.5). mGBA reports 4:3 per the
+        // libretro convention which adds a black bar above and below
+        // the actual screen content. The hardware was 3:2; that's the
+        // authentic default.
+        "gba" => Some(1.5),
+        _ => None,
+    }
+}
+
 fn system_settings_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("systems")
 }
@@ -405,6 +431,33 @@ mod tests {
         for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "sms", "gamegear", "atari7800"] {
             assert!(!default_keyboard_passthrough(sys), "{sys}: expected off");
         }
+    }
+
+    #[test]
+    fn default_display_aspect_gba_is_three_halves() {
+        // GBA panel is 240x160 = 3:2 (1.5). mGBA reports 4:3 by libretro
+        // convention; the default overrides so the panel renders at its
+        // physical aspect out of the box.
+        assert_eq!(default_display_aspect("gba"), Some(1.5));
+    }
+
+    #[test]
+    fn default_display_aspect_returns_none_for_systems_with_correct_core_reporting() {
+        // Systems whose libretro core reports physical aspect correctly
+        // (the typical case) → None = trust the core.
+        for sys in &[
+            "tg16", "pce-cd", "nes", "snes", "n64", "psx", "saturn",
+            "dreamcast", "gb", "lynx", "atari7800", "2600", "5200",
+            "vectrex", "virtualboy", "wonderswan", "mame",
+        ] {
+            assert_eq!(
+                default_display_aspect(sys),
+                None,
+                "{sys}: expected None (core reports correctly), got {:?}",
+                default_display_aspect(sys)
+            );
+        }
+        assert_eq!(default_display_aspect("not-a-real-system"), None);
     }
 
     #[test]
