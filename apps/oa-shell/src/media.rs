@@ -1999,16 +1999,34 @@ pub async fn sync_media_for_system(
                             canonical,
                         ).await;
                         let d = done_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        log::info!(
-                            "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
-                            entry.title,
-                            match &outcome {
-                                Ok(SyncOutcome::Downloaded { .. }) => "downloaded".to_string(),
-                                Ok(SyncOutcome::Cached) => "cached".to_string(),
-                                Ok(SyncOutcome::NoMatch) => "no match".to_string(),
-                                Err(e) => format!("ERROR: {e}"),
+                        // Per-ROM log line. Pre-fix every outcome was
+                        // info-level — a 1160-game Genesis sync × 3
+                        // kinds = ~3500 info lines in oa-current.log
+                        // per sync. Now: only Downloaded and Err
+                        // surface at info (the operator-interesting
+                        // events); Cached and NoMatch drop to debug
+                        // (still recoverable with RUST_LOG=debug but
+                        // not cluttering normal logs).
+                        let outcome_str = match &outcome {
+                            Ok(SyncOutcome::Downloaded { .. }) => "downloaded".to_string(),
+                            Ok(SyncOutcome::Cached) => "cached".to_string(),
+                            Ok(SyncOutcome::NoMatch) => "no match".to_string(),
+                            Err(e) => format!("ERROR: {e}"),
+                        };
+                        match &outcome {
+                            Ok(SyncOutcome::Downloaded { .. }) | Err(_) => {
+                                log::info!(
+                                    "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
+                                    entry.title, outcome_str,
+                                );
                             }
-                        );
+                            _ => {
+                                log::debug!(
+                                    "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
+                                    entry.title, outcome_str,
+                                );
+                            }
+                        }
                         let action: String = match &outcome {
                             Ok(SyncOutcome::Downloaded { variant }) => {
                                 // Apply the variant under the write lock, but

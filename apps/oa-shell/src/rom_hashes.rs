@@ -636,8 +636,22 @@ pub fn parse_mame_dat(content: &str) -> Vec<crate::library_db::MameTitleRow> {
     out
 }
 
+/// Strip at most one leading and one trailing `"` from a trimmed
+/// string. Pre-fix this used `trim_matches('"')` which strips ALL
+/// leading + trailing quotes — a value like `""` becomes `""`
+/// (correct) but `"Foo\"bar\""` with naïvely-escaped inner quotes
+/// would round-trip to `Foo\"bar\"` rather than the intended
+/// `Foo"bar"`. clrmamepro dats are well-formed in practice and
+/// this is a defensive tightening rather than a bug fix — but the
+/// stricter form matches the intent (treat the outer quotes as
+/// delimiters, leave inner bytes alone).
 fn unquote(s: &str) -> String {
-    s.trim().trim_matches('"').to_string()
+    let trimmed = s.trim();
+    if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+        trimmed[1..trimmed.len() - 1].to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Tiny `key value [key value]…` tokenizer with quote-aware values. The
