@@ -292,6 +292,18 @@ const App: Component = () => {
     }
   });
 
+  // Emu thread emits `oa://rom-unloaded` after UnloadRom finishes draining.
+  // In direct-launch mode there's no library to return to — quit the process.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listen("oa://rom-unloaded", () => {
+      if (!isDirectLaunch()) return;
+      console.log("[oa-direct-launch] ROM unloaded → quitting process");
+      void invoke("quit_app");
+    }).then((un) => { unlisten = un; });
+    onCleanup(() => unlisten?.());
+  });
+
   // Auto-launch the supplied ROM once the direct-launch payload arrives.
   // Guard prevents re-launch on subsequent resource invalidations.
   let autoLaunched = false;
@@ -1493,6 +1505,7 @@ const App: Component = () => {
         onShowInfo={(entry) => setGameInfoFor(entry)}
         onExitToLibrary={() => void handleUnload()}
         requestedView={quickSettingsRequestedView()}
+        exitMode={isDirectLaunch() ? "quit" : "library"}
       />
       <SaveSlotsModal
         entry={savesEntry()}

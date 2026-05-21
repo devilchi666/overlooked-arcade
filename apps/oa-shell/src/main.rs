@@ -3931,6 +3931,14 @@ fn run_emu_render(
                     // STATUS_ACCESS_VIOLATION in retro_load_game on relaunch.
                     // The next LoadRom rebuilds the core fresh (~50 ms).
                     let _ = core.take();
+                    // Notify the frontend that the unload drain has completed.
+                    // Direct-launch listens and calls `quit_app` — no library
+                    // to return to, so the process exits cleanly after the
+                    // emu-thread state has fully reset (saves, temp dirs, etc.
+                    // already torn down by the handler above).
+                    if let Err(e) = app_handle.emit("oa://rom-unloaded", ()) {
+                        log::warn!("oa-shell: emit oa://rom-unloaded failed: {e:?}");
+                    }
                 }
                 Ok(EmuCommand::SetScalingMode(mode)) => {
                     renderer.set_scaling_mode(mode);
