@@ -1219,6 +1219,28 @@ impl LibraryDb {
         }
     }
 
+    /// Fetch just the `sha1` column for a single game row by id. Cheaper
+    /// than `find_game_by_sha1` (no full row materialization) and used by
+    /// the media + metadata sync paths to hydrate the authoritative sha1
+    /// for the rows being synced — the frontend sends `SyncRomEntry`s
+    /// constructed before `resolve_rom_hashes_for_system` runs, so the
+    /// payload's `sha1` field is often `None` even when the DB row has
+    /// been freshly stamped.
+    pub fn find_sha1_by_id(&self, id: &str) -> Result<Option<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT sha1 FROM games WHERE id = ?1 LIMIT 1")
+            .map_err(|e| format!("prepare find_sha1_by_id: {e}"))?;
+        let mut rows = stmt
+            .query(params![id])
+            .map_err(|e| format!("query find_sha1_by_id: {e}"))?;
+        if let Some(row) = rows.next().map_err(|e| format!("step find_sha1_by_id: {e}"))? {
+            Ok(row.get(0).map_err(|e| format!("col sha1: {e}"))?)
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Return every game in the given system that doesn't have a sha1 yet
     /// and isn't a multi-file CD image. Caller hashes them and calls
     /// `apply_rom_hash` per-row.

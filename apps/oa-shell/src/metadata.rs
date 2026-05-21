@@ -359,6 +359,7 @@ pub async fn sync_metadata_for_system(
     systemId: String,
     entries: Vec<SyncRomEntry>,
     state: tauri::State<'_, MediaState>,
+    library: tauri::State<'_, crate::library_db::LibraryDb>,
     app: tauri::AppHandle,
 ) -> Result<MetadataSyncSummary, String> {
     use tauri::Emitter;
@@ -373,6 +374,25 @@ pub async fn sync_metadata_for_system(
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
+
+    // Hydrate canonical no-intro titles for entries with a stamped
+    // sha1 — these match upstream metadat by exact (post-normalize)
+    // title, jumping match rate from ~10% (filename fuzzy) to ~95%
+    // (canonical) on a typical library. Filename-derived title is
+    // the fallback for entries the rom_hashes resolve couldn't
+    // identify (homebrew, hacks, unstamped). Same lookup pattern as
+    // sync_media_for_system's canonical_by_id.
+    let mut canonical_title_by_id: std::collections::HashMap<String, String> =
+        Default::default();
+    for e in entries.iter() {
+        if let Some(sha) = library.find_sha1_by_id(&e.id).ok().flatten() {
+            if !sha.is_empty() {
+                if let Ok(Some(row)) = library.lookup_rom_hash(&sha) {
+                    canonical_title_by_id.insert(e.id.clone(), row.game_name);
+                }
+            }
+        }
+    }
 
     // Group by libretro-database system name (cart / CD / SGX use distinct
     // .dat files, exactly like the libretro-thumbnails repos).
@@ -446,7 +466,14 @@ pub async fn sync_metadata_for_system(
 
         for entry in system_entries {
             done += 1;
-            let rom_norm = crate::normalize::normalize_title(&entry.title);
+            // Prefer the canonical no-intro title for matching when the
+            // entry has been identified via sha1; fall back to the
+            // user's filename-derived title otherwise.
+            let match_title = canonical_title_by_id
+                .get(&entry.id)
+                .map(|s| s.as_str())
+                .unwrap_or(&entry.title);
+            let rom_norm = crate::normalize::normalize_title(match_title);
             let action: String = if rom_norm.is_empty() {
                 summary.unmatched += 1;
                 "no match".into()

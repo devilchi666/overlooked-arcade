@@ -1535,14 +1535,25 @@ pub async fn sync_media_for_system(
         .map(|p| p.only_sync_identified)
         .unwrap_or(true);
 
-    // Resolve canonical names server-side: for every entry with a
-    // sha1, look it up in rom_hashes and remember the canonical name.
-    // The hash-identified subset becomes the "trusted match" set.
+    // Resolve canonical names server-side: for every entry, look up
+    // the authoritative sha1 from library_db (the frontend sends
+    // SyncRomEntry payloads constructed before resolve_rom_hashes had
+    // a chance to stamp the rows — entry.sha1 is typically None even
+    // when the DB row has a fresh sha1). Falls back to the entry's
+    // own sha1 field for callers that explicitly hydrate it (the
+    // store-level syncSystem path does this; the ImportWizard path
+    // doesn't). The hash-identified subset becomes the "trusted match"
+    // set.
     let mut canonical_by_id: std::collections::HashMap<String, String> = Default::default();
     for e in entries.iter() {
-        if let Some(sha) = e.sha1.as_deref() {
+        let sha = library
+            .find_sha1_by_id(&e.id)
+            .ok()
+            .flatten()
+            .or_else(|| e.sha1.clone());
+        if let Some(sha) = sha {
             if !sha.is_empty() {
-                if let Ok(Some(row)) = library.lookup_rom_hash(sha) {
+                if let Ok(Some(row)) = library.lookup_rom_hash(&sha) {
                     canonical_by_id.insert(e.id.clone(), row.game_name);
                 }
             }

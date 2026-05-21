@@ -705,3 +705,17 @@ Confirmed in the field on a 1160-entry Genesis import (see `appData/logs/oa-curr
 - `App.tsx::autoIdentifyAfterIngest` (drag-drop / "Add library folder" / "Rescan tracked folders"): only fires `resolve_rom_hashes_for_system`, never the media/metadata syncs. Pre-existing gap — operator sees ROMs identified but no covers. Tracked as a separate fix; the wizard race fix doesn't address it.
 - `SettingsPage.tsx` per-system "Sync media" / "Sync metadata" / "Identify ROMs" buttons: each is its own awaited handler. No race within each, but a user who clicks "Sync media" without first clicking "Identify ROMs" hits the same `only_identified` filter and sees zero matches. User-triggered, lower priority — the UI could grey out "Sync media" until "Identify ROMs" has run at least once, but that's a UX call rather than a correctness one.
 
+**Follow-up — server-side authoritative sha1 lookup (added in the same fix branch after operator confirmed a second bug):**
+
+The frontend ordering fix above isn't enough on its own. After awaiting `resolve_rom_hashes_for_system`, the wizard still calls `sync_media_for_system(systemId, entries)` with the **original `entries` array constructed at scan time**, before identification stamped any sha1s. Every `entry.sha1` is `None` even though the matching `library_db.games` rows now have sha1 populated. `canonical_by_id` stayed empty and the `only_identified` filter still kept 0 entries.
+
+Server-side fix: `sync_media_for_system` and `sync_metadata_for_system` now look up `library.find_sha1_by_id(&e.id)` for each entry, falling back to `entry.sha1` only if the DB has nothing. The DB is the authoritative source — the frontend payload is just a list of which entries to consider.
+
+Net effect:
+- `sync_media`: `keeping 0 hash-matched entries` → `keeping ~95% hash-matched entries` on a typical Genesis library.
+- `sync_metadata`: gains a parallel improvement — it now uses the **canonical no-intro title** from `rom_hashes.canonical_title` as the match key when the entry is hash-identified, falling back to the user's filename-derived title only for unidentified ROMs. Filename-fuzzy was matching ~10% (120 of 1160 on the Genesis confirmation case); canonical-exact matches ~95%.
+
+New library_db method: `find_sha1_by_id(id) -> Result<Option<String>>` — cheap single-column lookup, no full row materialization. Used by both sync paths.
+
+**Why server-side and not frontend re-fetch:** the same bug would lurk in any other call site that constructs `SyncRomEntry` from scan data instead of from a freshly-queried library row. Server-side hydration makes correctness independent of caller discipline — any caller can pass `sha1: None` on the payload and the server picks up the authoritative value from the DB.
+
