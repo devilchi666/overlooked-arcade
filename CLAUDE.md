@@ -86,7 +86,12 @@ Concrete checklist when wrapping up a code change:
 3. If the work surfaced a NEW item that wasn't on the ROADMAP, add it as a fresh `⬜` bullet rather than carrying it in your head.
 4. If the work is partial (e.g. "shipped detection but not dispatch"), keep the bullet `⬜` and append a status note: `⬜ Light gun support — detection in place (in cd_id.rs); dispatch pending operator validation`.
 
-The audit doc (`docs/cores/AUDIT_<date>.md`) is for one-shot cross-system sweeps when ROADMAPs drift far enough that a re-derivation is needed. It's NOT the source of truth — per-core ROADMAPs are. If you find yourself updating the audit instead of the per-core ROADMAP, stop and update the ROADMAP first.
+Two surfaces sit beside the per-core ROADMAPs:
+
+- `docs/NEXT.md` — cross-system priority queue (HIGH / MEDIUM / LOWER / DEFERRED / DATA bands + a cross-system infrastructure inventory). Updated when items move between bands or land. Read this when picking up a fresh session without a specific assignment.
+- `docs/cores/AUDIT_<date>.md` — one-shot cross-system sweep, only created when ROADMAPs drift far enough that a full re-derivation is needed. The 2026-05-21 audit was the first; its findings have been migrated back into the per-core ROADMAPs and the audit doc removed.
+
+Per-core ROADMAPs are the source of truth for per-system status. If you find yourself updating `NEXT.md` or an audit doc instead of the per-core ROADMAP, stop and update the ROADMAP first.
 
 ## Debugging — where the logs live
 
