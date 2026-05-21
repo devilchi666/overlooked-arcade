@@ -74,6 +74,20 @@ See `docs/PARKING_LOT.md`. If something comes up that isn't current-phase work f
 - Frontend is NOT a Cargo crate. Lives at `frontend/` with `package.json`, built by Vite.
 - Shaders in `crates/oa-render/shaders/*.wgsl` (engine-level) and `shaders/presets/*.preset.toml` (shipped presets).
 
+## ROADMAP hygiene — close items with their PR
+
+The per-core `docs/cores/<id>/ROADMAP.md` files are the authoritative status surface for what's shipped vs open per system. Earlier audits found them drifting weeks behind reality because nobody had a clear "when do these get updated?" policy. The rule going forward:
+
+**If a PR ships work that closes a ROADMAP bullet, the same PR flips that bullet from `⬜` to `✅` in the corresponding `docs/cores/<id>/ROADMAP.md` — in the same commit.**
+
+Concrete checklist when wrapping up a code change:
+1. Did this PR close any ⬜ items in `docs/cores/<active>/ROADMAP.md`? Flip them to ✅ and add a short citation: `✅ Feature (in apps/oa-shell/src/foo.rs::bar)`.
+2. If the PR touched code shared across systems, check the other affected systems' ROADMAPs too. Cross-system features (the shader pipeline, save states, the libretro loader) commonly close items on multiple ROADMAPs at once.
+3. If the work surfaced a NEW item that wasn't on the ROADMAP, add it as a fresh `⬜` bullet rather than carrying it in your head.
+4. If the work is partial (e.g. "shipped detection but not dispatch"), keep the bullet `⬜` and append a status note: `⬜ Light gun support — detection in place (in cd_id.rs); dispatch pending operator validation`.
+
+The audit doc (`docs/cores/AUDIT_<date>.md`) is for one-shot cross-system sweeps when ROADMAPs drift far enough that a re-derivation is needed. It's NOT the source of truth — per-core ROADMAPs are. If you find yourself updating the audit instead of the per-core ROADMAP, stop and update the ROADMAP first.
+
 ## Debugging — where the logs live
 
 A unified Rust + frontend log stream lands in three places at runtime (see `docs/DECISIONS.md` 2026-05-18 "Three-output logger" entry for the full design):
