@@ -94,6 +94,21 @@ pub struct GameOverrides {
     /// `arm_analog_routing` command does the resolution at launch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analog_routing: Option<crate::system_settings::AnalogRoutingPrefs>,
+    /// Free-form per-game keypad layout note. Coleco + Intellivision +
+    /// O2 (and others with non-game-specific keypads) shipped paper
+    /// overlays that told the player what each number meant in the
+    /// active game (Donkey Kong: KP1=jump, KP2=climb-up, …). Operators
+    /// record those mappings here for the frontend's per-game drawer
+    /// to surface as a reference panel — the actual key-to-keypad
+    /// bindings still live in the per-system Bindings page; this is
+    /// the "what does pressing KP3 in this game DO?" doc string.
+    ///
+    /// `None` / empty string = no per-game note. Displayed verbatim
+    /// in the per-game drawer; no markdown, no structured fields —
+    /// freeform so operators can use whichever shorthand they like
+    /// ("KP1=climb-up, KP2=climb-down, KP3=jump, KP4=duck").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keypad_layout_note: Option<String>,
 }
 
 /// Phase 4 slice F — one memory-watching milestone for a game.
@@ -2694,6 +2709,9 @@ mod tests {
                     stick_swap: false,
                 }],
             }),
+            keypad_layout_note: Some(
+                "Donkey Kong: KP1=climb-up, KP2=climb-down, KP3=jump".to_string(),
+            ),
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

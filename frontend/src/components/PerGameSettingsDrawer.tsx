@@ -81,6 +81,12 @@ type GameOverrides = {
   /// Per-game bezel image override. Wins over per-system and over the
   /// active shader preset's TOML default.
   bezelImagePath?: string | null;
+  /// Free-form per-game keypad layout note. Coleco / Intv / O2 shipped
+  /// paper overlays that told the player what each number meant in the
+  /// active game ("KP1=climb, KP2=duck"). Operators record those
+  /// mappings here as a reference panel; bindings still live in the
+  /// per-system Bindings page. Null / empty string = no note.
+  keypadLayoutNote?: string | null;
 };
 
 type SystemSettings = {
@@ -345,6 +351,12 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
     }
     if (next.bezelImagePath != null && next.bezelImagePath !== "") {
       cleaned.bezelImagePath = next.bezelImagePath;
+    }
+    // Keypad layout note — empty string collapses to "no note" so an
+    // operator who blanks the textarea clears the override rather than
+    // persisting an empty entry.
+    if (next.keypadLayoutNote != null && next.keypadLayoutNote.trim() !== "") {
+      cleaned.keypadLayoutNote = next.keypadLayoutNote;
     }
     setOverrides(cleaned);
     try {
@@ -798,6 +810,35 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                   mode="game"
                   gameId={props.entry!.id}
                 />
+                {/* Keypad layout note — surface for systems whose canonical
+                    controller had a non-game-specific keypad shipped with
+                    paper overlays. Coleco / Intv / O2 are the canonical
+                    examples; the note carries through cleanly for any
+                    system the operator wants to leave a free-form
+                    reference on. */}
+                <Show when={["coleco", "intv", "o2"].includes(props.entry!.systemId)}>
+                  <div class="rounded border border-(--color-oa-bg) bg-(--color-oa-bg)/40 p-3">
+                    <div class="mb-1 text-xs font-medium text-(--color-oa-ink)">
+                      Keypad layout note
+                    </div>
+                    <div class="mb-2 text-[11px] leading-snug text-(--color-oa-ink-dim)">
+                      This system shipped paper overlays so the keypad meant
+                      something different in each game. Record what KP1–KP9 do
+                      in this title; the per-system Bindings page still owns
+                      which keyboard key triggers which KP.
+                    </div>
+                    <textarea
+                      class="w-full resize-y rounded border border-(--color-oa-bg-deep) bg-(--color-oa-bg-deep) px-2 py-1.5 text-xs text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim)/60 focus:border-(--color-system-accent) focus:outline-none"
+                      rows="3"
+                      placeholder="KP1=climb-up, KP2=climb-down, KP3=jump, KP4=duck…"
+                      value={overrides().keypadLayoutNote ?? ""}
+                      onChange={(e) => {
+                        const v = e.currentTarget.value;
+                        void patch({ keypadLayoutNote: v.trim() === "" ? null : v });
+                      }}
+                    />
+                  </div>
+                </Show>
               </div>
             </Show>
 
