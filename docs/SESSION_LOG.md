@@ -6,6 +6,60 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-20 — Direct-launch CLI mode (LaunchBox / BigBox / EmulationStation compat)
+
+External-frontend integration ships. `oa-shell.exe "C:\ROMs\game.nes"`
+boots straight into the game with no library UI, the way standalone
+emulators do. Default zero-arg behavior unchanged.
+
+- **Shipped:**
+  - New `apps/oa-shell/src/cli.rs` module (clap derive) parsing
+    positional ROM / `--rom` / `--core` / `--system` / `--slot` /
+    `--state-file` / `--tas-replay` / `--fullscreen`. Unambiguous
+    cart extensions auto-infer the system; CD-shaped extensions
+    require `--system`. Error banners + `process::exit(2)` on
+    validation failures.
+  - `DirectLaunchConfig` on `AppState`; new Tauri commands
+    `get_direct_launch_config` + `get_game(id)`.
+  - Forced single-window at runtime when direct-launch is set;
+    operator's `OA_SHELL_MODE` / `shell.json` preference preserved
+    on disk.
+  - `library_db::find_game_by_sha1` (uses existing `idx_games_sha1`)
+    + boot-time SHA-1 lookup for cart-shaped ROMs. Matched library
+    rows carry their per-game overrides (patches, custom core options,
+    shader, rewind config, analog routing, bezel) through the
+    standard launch cascade.
+  - Frontend: `directLaunchConfig` resource + `isDirectLaunch` memo
+    + `Shell.fullBleed` wiring + JSX `<Show>` guards collapse chrome
+    to game surface + Quick Settings / Save Slots / Game Info /
+    Performance HUD / Toast Stack.
+  - `createLibraryStore({ shouldBootstrap })` short-circuits
+    `list_games` / `list_game_groups` / migration / seed insertion
+    in direct-launch.
+  - Auto-launch effect re-uses existing `handleLaunch` cascade so
+    per-game / per-system / OA-wide settings, milestones, cheats,
+    analog routing all arm normally.
+  - Exit-on-unload: emu thread emits `oa://rom-unloaded` after the
+    UnloadRom drain; frontend listener calls `quit_app` in
+    direct-launch. Quick Settings "Exit to library" relabels to
+    "Quit".
+  - `OA_ROM` env-var still honored as silent fallback; CLI args win
+    when both set.
+  - Pre-existing build blocker fixed: removed stale `#[cfg(test)]`
+    gate on `sha1::Sha1` import in `rom_hashes.rs`.
+  - `docs/direct-launch.md` operator usage doc.
+  - 9 new cli.rs unit tests; `cargo test -p oa-shell` 309/309 green.
+- **Almost:** `--state-file PATH` accepted by clap but not wired
+  yet (frontend logs a warning; operators should use `--slot`).
+  Future work: a `restore_state_file` Tauri command, then plumb.
+- **Next:** Operator play-tests the branch (`feat/direct-launch-cli`)
+  end-to-end — positional launch, --system + CD launch, hash-matched
+  per-game overrides applying, Quick Settings overlays working,
+  close-window-exits, LaunchBox / EmulationStation real-world
+  invocation. Merge to main after thumbs-up.
+
+---
+
 ## 2026-05-20 — Sony+Nintendo handheld pass + POINTER infra (systems #34-36: psp + ps2 + nds)
 
 Seventh paired pass of the day. **Second cross-cutting input
