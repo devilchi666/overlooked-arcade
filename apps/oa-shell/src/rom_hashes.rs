@@ -219,8 +219,10 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
         // Nintendo 64. Cart-shape; single no-intro dat. .n64/.z64/.v64
         // are different byte-order conventions for the same canonical
         // content; the dat keys against the canonical Big-Endian (.z64)
-        // sha1 so .n64 and .v64 dumps will miss until rom_header.rs
-        // grows a byte-order normalization pass (Phase 2 polish).
+        // sha1. `rom_header::header_rules_for("n64")` adds two
+        // `HeaderRule::ByteSwap` candidates (Pairs16 for .v64, Words32
+        // for .n64) so dumps in either non-canonical byte order match
+        // the dat by normalizing to the .z64 BE SHA-1 at hash time.
         "n64" => &[DatRef {
             subdir: "metadat/no-intro",
             basename: "Nintendo - Nintendo 64",
