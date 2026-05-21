@@ -323,6 +323,32 @@ pub struct retro_core_options_v2_intl {
     pub local: *mut retro_core_options_v2,
 }
 
+/// Per-option visibility hint passed by cores via
+/// `RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY`. Cores call this to hide
+/// options that don't apply given the current values of other options
+/// (e.g. "Lightgun crosshair color" is meaningless when "Lightgun" is off).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_option_display {
+    pub key: *const c_char,
+    pub visible: bool,
+}
+
+/// Core-registered callback the frontend invokes whenever a core option
+/// value changes (via `RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK`).
+/// On invocation the core re-evaluates which options should be hidden and
+/// pushes the new visibility set back through `SET_CORE_OPTIONS_DISPLAY`.
+/// Returns true on the FIRST call if any visibility was updated, and on
+/// later calls if anything changed since the previous invocation.
+pub type retro_core_options_update_display_callback_t =
+    unsafe extern "C" fn() -> bool;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_core_options_update_display_callback {
+    pub callback: Option<retro_core_options_update_display_callback_t>,
+}
+
 // ---------- disc control callback structs ----------
 //
 // Cores with multi-disc support (PCE-CD with `.m3u`, PSX, Saturn, etc.)

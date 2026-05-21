@@ -598,6 +598,21 @@ impl Core for LibretroCore {
         state::with_state(|s| s.set_option_value(key, value));
     }
 
+    fn hidden_option_keys(&self) -> Vec<String> {
+        state::with_state(|s| s.hidden_options.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn refresh_option_visibility(&mut self) {
+        // Lift the callback pointer out of State so we don't hold the
+        // singleton mutex while the core re-enters cb_environment via
+        // SET_CORE_OPTIONS_DISPLAY (which would deadlock).
+        let cb = state::with_state(|s| s.update_display_cb).flatten();
+        if let Some(f) = cb {
+            unsafe { f() };
+        }
+    }
+
     fn disc_state(&self) -> Option<oa_core::DiscInfo> {
         state::with_state(|s| {
             // Prefer v2 (carries labels). Fall back to v1.

@@ -26,6 +26,12 @@ type CoreOptionsSnapshot = {
   categories: CoreOptionCategory[];
   systemValues: Record<string, string>;
   gameValues: Record<string, string>;
+  /// Option keys the core wants hidden — libretro
+  /// SET_CORE_OPTIONS_DISPLAY parity. Filtered out at render time so
+  /// the user only sees options that actually apply given the current
+  /// configuration (e.g. "Lightgun crosshair color" disappears when
+  /// "Lightgun" is off). Cores without dynamic visibility return [].
+  hiddenKeys: string[];
 };
 
 type Props = {
@@ -115,9 +121,11 @@ const CoreOptionsPanel: Component<Props> = (props) => {
   const filteredOptions = (): CoreOption[] => {
     const snap = snapshot();
     if (!snap) return [];
+    const hidden = new Set(snap.hiddenKeys);
+    const visible = snap.schema.filter((o) => !hidden.has(o.key));
     const q = filter().trim().toLowerCase();
-    if (!q) return snap.schema;
-    return snap.schema.filter((o) =>
+    if (!q) return visible;
+    return visible.filter((o) =>
       o.desc.toLowerCase().includes(q) || o.key.toLowerCase().includes(q),
     );
   };
@@ -144,7 +152,7 @@ const CoreOptionsPanel: Component<Props> = (props) => {
                   class="flex-1 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-(--color-oa-ink) focus-visible:border-(--color-system-accent) focus-visible:outline-none"
                 />
                 <span class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim) tabular-nums">
-                  {filteredOptions().length} / {snap().schema.length}
+                  {filteredOptions().length} / {snap().schema.length - snap().hiddenKeys.length}
                 </span>
               </div>
               <div class="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1">

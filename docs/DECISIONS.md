@@ -568,3 +568,23 @@ Operators who set OA up once via LaunchBox / BigBox / EmulationStation get the r
 - When iterating with `cargo tauri build`, the developer manually copies the same cores into `target/release/cores/` once.
 
 **Implication for future PRs:** Don't add cores-bundling automation. If a contributor (or a future Claude session) suggests it as a quality-of-life dev convenience, point them at this entry — the licensing rationale survives the convenience argument.
+
+---
+
+## 2026-05-21 — Honor libretro `SET_CORE_OPTIONS_DISPLAY` + `UPDATE_DISPLAY_CALLBACK`
+
+**Decision:** Implement libretro's option-visibility envs (55 + 69). Cores that hide options based on the current values of other options (e.g. Beetle PSX's "Lightgun crosshair color" disappearing when "Lightgun" is off) now get their wish: the per-system / per-game settings panel filters those keys out at render time and re-runs the visibility check whenever a value changes.
+
+**Why:** The accept-and-ignore stub at `state.rs:820` predates the per-system core-options surface shipping. Once that surface existed, ignoring the visibility hint meant users would see options that wouldn't take effect (because the dependent flag was off) — a worse UX than RetroArch parity. The marginal complexity is small: a `HashSet<String>` on `State`, one extra trait method (`refresh_option_visibility`) called after `set_option`, and a frontend `.filter()`.
+
+**How it works:**
+- `cb_environment::SET_CORE_OPTIONS_DISPLAY` flips `State.hidden_options` per (key, visible) pair the core pushes.
+- `SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK` stores the core's `update_display_t` function pointer in `State.update_display_cb`.
+- The emu thread calls `core.refresh_option_visibility()` after every `SetCoreOption` / `ApplyCoreOptions`, which invokes the stored callback. The core synchronously fires `SET_CORE_OPTIONS_DISPLAY` re-entrantly for every key whose visibility changed.
+- `State.hidden_options` is snapshotted into `CoreOptionsFile.hidden_keys` on disk (alongside schema + values) and surfaced via `CoreOptionsSnapshot.hiddenKeys` to the frontend.
+- The mutex on `State` is released BEFORE calling the core's callback to dodge the obvious deadlock — the core's re-entry into `cb_environment` needs to acquire that same lock.
+
+**Considered and rejected:**
+- **Store `visible: bool` on `CoreOption` itself.** Cleaner shape but the schema captured to disk is then mutated per session (visibility is dynamic; schema definitions are not). Keeping the visibility set as a sibling field of the schema preserves the "schema is the immutable core declaration" invariant.
+- **Emit a Tauri event when visibility changes, instead of having the frontend re-fetch.** The frontend already calls `refetch()` after `set_system_core_option` / `set_game_core_option`. An event would let the panel update if visibility changed because of an emu-thread side-effect (e.g. core flipped visibility mid-frame from a game-state predicate), but no shipped core does that — every UPDATE_DISPLAY_CALLBACK invocation is frontend-initiated. Adding the event surface for hypothetical cores is YAGNI.
+- **Don't bother with the UPDATE_DISPLAY_CALLBACK env (just honor the initial visibility set during load).** Tempting given the complexity delta, but the whole point of dynamic visibility is dependent options — e.g. "Lightgun crosshair color" should appear the moment the user flips "Lightgun" on, not on next core reload. Without env 69 we'd ship a stale visibility set.

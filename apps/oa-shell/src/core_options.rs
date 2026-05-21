@@ -30,6 +30,14 @@ pub struct CoreOptionsFile {
     /// fall back to the schema's `default_value`.
     #[serde(default)]
     pub values: HashMap<String, String>,
+    /// Option keys the core marked NOT visible via libretro's
+    /// `SET_CORE_OPTIONS_DISPLAY` env. The settings panel filters
+    /// these out so the user only sees options that actually apply
+    /// given the current configuration. Snapshotted from State each
+    /// time the schema is refreshed AND whenever a value change
+    /// triggers the core's update-display callback.
+    #[serde(default)]
+    pub hidden_keys: Vec<String>,
 }
 
 fn core_options_dir(app_data_dir: &Path) -> PathBuf {
@@ -64,12 +72,15 @@ pub fn write(
 /// Refresh the schema half of the per-system file from a freshly-loaded
 /// core's option list. Preserves any user-set values whose keys still
 /// exist in the new schema; drops values whose keys no longer exist (a
-/// core update can remove options).
+/// core update can remove options). `hidden_keys` is the visibility set
+/// the core pushed during load via libretro's `SET_CORE_OPTIONS_DISPLAY`
+/// env (empty for cores that don't bother with dynamic visibility).
 pub fn refresh_schema(
     app_data_dir: &Path,
     system_id: &str,
     schema: Vec<CoreOption>,
     categories: Vec<CoreOptionCategory>,
+    hidden_keys: Vec<String>,
 ) -> std::io::Result<()> {
     let mut file = read(app_data_dir, system_id);
     let new_keys: std::collections::HashSet<&str> =
@@ -77,6 +88,20 @@ pub fn refresh_schema(
     file.values.retain(|k, _| new_keys.contains(k.as_str()));
     file.schema = schema;
     file.categories = categories;
+    file.hidden_keys = hidden_keys;
+    write(app_data_dir, system_id, &file)
+}
+
+/// Update just the visibility set without touching schema/values. Called
+/// from the emu thread after a `SetCoreOption` triggers the core's
+/// update-display callback, which re-evaluates which options apply.
+pub fn refresh_visibility(
+    app_data_dir: &Path,
+    system_id: &str,
+    hidden_keys: Vec<String>,
+) -> std::io::Result<()> {
+    let mut file = read(app_data_dir, system_id);
+    file.hidden_keys = hidden_keys;
     write(app_data_dir, system_id, &file)
 }
 
@@ -132,6 +157,12 @@ pub struct CoreOptionsSnapshot {
     pub categories: Vec<CoreOptionCategory>,
     pub system_values: HashMap<String, String>,
     pub game_values: HashMap<String, String>,
+    /// Option keys the core has marked NOT visible. Frontend filters
+    /// these out at render time. Empty for cores without dynamic
+    /// visibility (every option is always visible) and for systems the
+    /// user hasn't launched yet (no schema captured → no visibility
+    /// captured either).
+    pub hidden_keys: Vec<String>,
 }
 
 // Re-export so `serde(default)` round-trips with the same shape oa_core uses.
@@ -194,16 +225,50 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            hidden_keys: Vec::new(),
         };
         write(&tmp, "tg16", &initial).expect("seed write");
 
         // New schema drops "old".
-        refresh_schema(&tmp, "tg16", vec![opt("a", "1", &["1", "2"])], Vec::new())
-            .expect("refresh");
+        refresh_schema(
+            &tmp,
+            "tg16",
+            vec![opt("a", "1", &["1", "2"])],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("refresh");
         let after = read(&tmp, "tg16");
         assert_eq!(after.schema.len(), 1);
         assert_eq!(after.values.get("a"), Some(&"2".to_string()));
         assert!(after.values.get("old").is_none(), "stale key dropped");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn refresh_visibility_replaces_hidden_keys_only() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-core-options-vis-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        refresh_schema(
+            &tmp,
+            "tg16",
+            vec![opt("a", "1", &["1", "2"]), opt("b", "x", &["x", "y"])],
+            Vec::new(),
+            vec!["b".into()],
+        )
+        .expect("seed");
+        // Mutate visibility; schema + values untouched.
+        refresh_visibility(&tmp, "tg16", vec!["a".into()]).expect("refresh");
+        let after = read(&tmp, "tg16");
+        assert_eq!(after.schema.len(), 2);
+        assert_eq!(after.hidden_keys, vec!["a".to_string()]);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

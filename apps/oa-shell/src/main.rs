@@ -3942,20 +3942,12 @@ fn run_emu_render(
                             let schema = core_ref.options();
                             let categories = core_ref.option_categories();
                             if !schema.is_empty() {
-                                if let Err(e) = core_options::refresh_schema(
-                                    &app_data_dir,
-                                    &current_system_id,
-                                    schema.clone(),
-                                    categories,
-                                ) {
-                                    log::warn!("oa-shell: core_options refresh_schema failed: {e}");
-                                }
                                 // Apply the effective per-system + per-game
-                                // overrides immediately so the core sees them
-                                // on its first GET_VARIABLE poll. The
-                                // emu-thread `ApplyCoreOptions` handler also
-                                // does this, but inlining here means we don't
-                                // pay an extra channel hop.
+                                // overrides BEFORE asking the core which
+                                // options it wants hidden — the visibility
+                                // hints depend on the current values, and
+                                // overrides on disk may differ from the
+                                // schema defaults the core saw during init.
                                 let file = core_options::read(&app_data_dir, &current_system_id);
                                 let merged = core_options::build_effective_values(
                                     &schema,
@@ -3965,10 +3957,27 @@ fn run_emu_render(
                                 for (k, v) in &merged {
                                     core_ref.set_option(k, v);
                                 }
+                                // Now poke the core to re-evaluate visibility
+                                // against the overridden values; cores that
+                                // registered the update-display callback
+                                // fire SET_CORE_OPTIONS_DISPLAY re-entrantly
+                                // here, populating State.hidden_options.
+                                core_ref.refresh_option_visibility();
+                                let hidden_keys = core_ref.hidden_option_keys();
+                                if let Err(e) = core_options::refresh_schema(
+                                    &app_data_dir,
+                                    &current_system_id,
+                                    schema.clone(),
+                                    categories,
+                                    hidden_keys.clone(),
+                                ) {
+                                    log::warn!("oa-shell: core_options refresh_schema failed: {e}");
+                                }
                                 log::info!(
-                                    "oa-shell: captured {} core option(s) for {} + applied",
+                                    "oa-shell: captured {} core option(s) for {} ({} hidden) + applied",
                                     schema.len(),
                                     current_system_id,
+                                    hidden_keys.len(),
                                 );
                             }
                             current_slot = restore_slot.unwrap_or(0);
@@ -4197,12 +4206,35 @@ fn run_emu_render(
                 Ok(EmuCommand::SetCoreOption { key, value }) => {
                     if let Some(c) = core.as_mut() {
                         c.set_option(&key, &value);
+                        // Cores with dynamic visibility (libretro
+                        // SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK) want
+                        // a re-evaluation after each value change so
+                        // dependent options can show/hide; no-op for
+                        // cores without a callback.
+                        c.refresh_option_visibility();
+                        let hidden = c.hidden_option_keys();
+                        if let Err(e) = core_options::refresh_visibility(
+                            &app_data_dir,
+                            &current_system_id,
+                            hidden,
+                        ) {
+                            log::warn!("oa-shell: refresh_visibility failed: {e}");
+                        }
                     }
                 }
                 Ok(EmuCommand::ApplyCoreOptions(values)) => {
                     if let Some(c) = core.as_mut() {
                         for (k, v) in values.iter() {
                             c.set_option(k, v);
+                        }
+                        c.refresh_option_visibility();
+                        let hidden = c.hidden_option_keys();
+                        if let Err(e) = core_options::refresh_visibility(
+                            &app_data_dir,
+                            &current_system_id,
+                            hidden,
+                        ) {
+                            log::warn!("oa-shell: refresh_visibility failed: {e}");
                         }
                         log::info!(
                             "oa-shell: applied {} core option(s) to {}",
@@ -7473,6 +7505,7 @@ fn list_core_options(
         categories: file.categories,
         system_values: file.values,
         game_values,
+        hidden_keys: file.hidden_keys,
     })
 }
 
