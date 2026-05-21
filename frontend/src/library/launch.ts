@@ -8,12 +8,20 @@ export type LaunchResult =
 
 /// Launch a ROM. If `slot` is provided, the emu loads the ROM and then
 /// immediately restores from that per-game save slot — used by the save-slots
-/// modal's slot click.
-export async function launchRom(entry: RomEntry, slot?: number): Promise<LaunchResult> {
+/// modal's slot click. If `stateFile` is provided, the emu loads the ROM and
+/// then restores from that absolute state-file path — used by direct-launch
+/// `--state-file PATH`. Mutually exclusive with `slot` (Rust ignores the
+/// second when both are set; CLI parser rejects both upfront).
+export async function launchRom(
+  entry: RomEntry,
+  slot?: number,
+  stateFile?: string,
+): Promise<LaunchResult> {
   if (entry.seed) return { kind: "skipped-seed", entry };
   const args = {
     path: entry.filePath,
     slot: slot ?? null,
+    stateFile: stateFile ?? null,
     coreOverride: entry.coreOverride ?? null,
     // Drives the launch path through archive::extract_for_launch when set.
     // Rust derives the temp subdir from `entryId` so cleanup_temp matches

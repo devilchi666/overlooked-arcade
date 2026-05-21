@@ -108,6 +108,11 @@ enum EmuCommand {
         path: String,
         bytes: Vec<u8>,
         restore_slot: Option<u32>,
+        /// Direct-launch `--state-file PATH`: after the core accepts the ROM,
+        /// read this state file (full absolute path, bypasses the per-game
+        /// slot directory convention) and load it. Mutually exclusive with
+        /// `restore_slot` — clap rejects both at parse time.
+        restore_state_path: Option<PathBuf>,
         /// Per-game core override (filename of a .dll/.so/.dylib in `<exe_dir>/cores/`).
         /// `None` = fall back to the per-system pref → hardcoded default. If the
         /// resolved core differs from what's currently loaded, the emu thread drops
@@ -3356,8 +3361,8 @@ fn run_emu_render(
         // to-back swaps are safe.
         loop {
             match cmd_rx.try_recv() {
-                Ok(EmuCommand::LoadRom { path, bytes, restore_slot, core_override, system_id }) => {
-                    log::info!("oa-shell: launch_rom -> {} ({} bytes, restore_slot={:?}, override={:?}, system={})", path, bytes.len(), restore_slot, core_override, system_id);
+                Ok(EmuCommand::LoadRom { path, bytes, restore_slot, restore_state_path, core_override, system_id }) => {
+                    log::info!("oa-shell: launch_rom -> {} ({} bytes, restore_slot={:?}, restore_state_path={:?}, override={:?}, system={})", path, bytes.len(), restore_slot, restore_state_path, core_override, system_id);
                     let system_changed = current_system_id != system_id;
                     current_system_id = system_id.clone();
 
@@ -3921,6 +3926,39 @@ fn run_emu_render(
                                         log::warn!("oa-shell: post-load restore — slot {} not present ({})", slot, p.display());
                                     }
                                     Err(e) => log::warn!("oa-shell: post-load restore read {} failed: {e:?}", p.display()),
+                                }
+                            } else if let Some(p) = restore_state_path.as_ref() {
+                                // Direct-launch --state-file: load an arbitrary
+                                // state file (full path, not slot-directory).
+                                // CLI parsing already validated the path exists
+                                // + that --slot isn't also set, so this branch
+                                // only fires when the operator explicitly asked.
+                                match std::fs::read(p) {
+                                    Ok(buf) => match core_ref.load_state(&mut &buf[..]) {
+                                        Ok(()) => log::info!(
+                                            "oa-shell: post-load restore — state file {} ({} bytes)",
+                                            p.display(), buf.len()
+                                        ),
+                                        Err(e) => {
+                                            log::warn!("oa-shell: post-load state-file deserialize failed: {e:?}");
+                                            toast(
+                                                &app_handle,
+                                                ToastLevel::Warn,
+                                                format!("state-file restore failed: {e}"),
+                                            );
+                                        }
+                                    },
+                                    Err(e) => {
+                                        log::warn!(
+                                            "oa-shell: post-load state-file read {} failed: {e:?}",
+                                            p.display()
+                                        );
+                                        toast(
+                                            &app_handle,
+                                            ToastLevel::Warn,
+                                            format!("state-file read failed: {e}"),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -7927,9 +7965,13 @@ fn unload_rom(title: Option<String>, state: tauri::State<'_, AppState>) -> Resul
 
 #[tauri::command]
 #[allow(non_snake_case)]
+// Direct-launch `--state-file PATH` (the `stateFile` arg below) restores an
+// arbitrary state file after the ROM loads, bypassing the per-game slot
+// directory. Library launches leave it None. Mutually exclusive with `slot`.
 fn launch_rom(
     path: String,
     slot: Option<u32>,
+    stateFile: Option<String>,
     coreOverride: Option<String>,
     archiveInnerPath: Option<String>,
     entryId: Option<String>,
@@ -8065,9 +8107,10 @@ fn launch_rom(
         }
     }
 
+    let restore_state_path: Option<PathBuf> = stateFile.as_deref().map(PathBuf::from);
     log::info!(
-        "oa-shell: launch_rom dispatch ({}, {} bytes, slot={:?}, coreOverride={:?}, archived={})",
-        resolved_path, resolved_bytes.len(), slot, coreOverride, is_archived
+        "oa-shell: launch_rom dispatch ({}, {} bytes, slot={:?}, stateFile={:?}, coreOverride={:?}, archived={})",
+        resolved_path, resolved_bytes.len(), slot, restore_state_path, coreOverride, is_archived
     );
 
     let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
@@ -8075,6 +8118,7 @@ fn launch_rom(
         path: resolved_path,
         bytes: resolved_bytes,
         restore_slot: slot,
+        restore_state_path,
         core_override: coreOverride,
         system_id,
     })

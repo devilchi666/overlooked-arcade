@@ -124,6 +124,8 @@ pub enum CliError {
     ArchiveEmpty { archive: PathBuf },
     ArchiveMultipleRoms { archive: PathBuf, paths: Vec<String> },
     ArchiveReadFailed { archive: PathBuf, error: String },
+    ArchiveInnerNotFound { archive: PathBuf, inner: String, available: Vec<String> },
+    StateFileMissing(PathBuf),
 }
 
 impl CliError {
@@ -241,6 +243,30 @@ impl CliError {
             Self::ArchiveReadFailed { archive, error } => (
                 "oa-shell: archive read failed".to_string(),
                 format!("Archive: {}\n\nError: {error}", archive.display()),
+            ),
+            Self::ArchiveInnerNotFound { archive, inner, available } => {
+                let listed: String = available
+                    .iter()
+                    .take(8)
+                    .map(|p| format!("  - {p}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let more = if available.len() > 8 {
+                    format!("\n  \u{2026} and {} more", available.len() - 8)
+                } else {
+                    String::new()
+                };
+                (
+                    "oa-shell: inner ROM not found in archive".to_string(),
+                    format!(
+                        "Archive: {}\nRequested inner: {inner}\n\nAvailable:\n{listed}{more}",
+                        archive.display()
+                    ),
+                )
+            }
+            Self::StateFileMissing(p) => (
+                "oa-shell: --state-file not found".to_string(),
+                format!("Path: {}\n\nCheck the file path and try again.", p.display()),
             ),
         }
     }
@@ -423,7 +449,13 @@ fn resolve_archive(
         return Ok(("neogeo".to_string(), None));
     }
 
-    let accepted = accepted_rom_extensions();
+    // Accept both cart-shaped + CD-entry-point extensions when peeking.
+    // Cart inners auto-infer the system; CD inners require --system because
+    // their formats are ambiguous (.cue could be PCE-CD / segacd / saturn / psx / …).
+    let mut accepted = accepted_rom_extensions();
+    for ext in ["cue", "ccd", "toc", "m3u"] {
+        accepted.insert(ext.to_string());
+    }
     let entries =
         crate::archive::list_rom_contents(rom_path, &accepted).map_err(|e| CliError::ArchiveReadFailed {
             archive: rom_path.to_path_buf(),
@@ -436,15 +468,27 @@ fn resolve_archive(
         }),
         1 => {
             let entry = &entries[0];
+            let is_cd = matches!(entry.extension.as_str(), "cue" | "ccd" | "toc" | "m3u");
             let system_id = match explicit_system {
                 Some(s) => s.to_string(),
-                None => slug_for_ext(&entry.extension)
-                    .ok_or_else(|| CliError::UnknownExtension(entry.extension.clone()))?
-                    .to_string(),
+                None => {
+                    if is_cd {
+                        return Err(CliError::AmbiguousExtension {
+                            ext: entry.extension.clone(),
+                            candidates: vec![
+                                "pce-cd", "segacd", "saturn", "psx", "neocd", "3do", "pcfx",
+                            ],
+                        });
+                    }
+                    slug_for_ext(&entry.extension)
+                        .ok_or_else(|| CliError::UnknownExtension(entry.extension.clone()))?
+                        .to_string()
+                }
             };
             log::info!(
-                "oa-shell: direct-launch archive {} contains 1 ROM: {} (system={})",
+                "oa-shell: direct-launch archive {} contains 1 {} ROM: {} (system={})",
                 rom_path.display(),
+                if is_cd { "CD" } else { "cart" },
                 entry.inner_path,
                 system_id,
             );
@@ -551,7 +595,7 @@ pub fn parse_and_resolve() -> Result<Option<DirectLaunchConfig>, CliError> {
 }
 
 fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
-    let rom_path = match (cli.rom_positional.clone(), cli.rom.clone()) {
+    let raw_rom = match (cli.rom_positional.clone(), cli.rom.clone()) {
         (Some(_), Some(_)) => {
             return Err(CliError::Conflict(
                 "Specify either a positional ROM path or --rom, not both.",
@@ -562,23 +606,48 @@ fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
         (None, None) => return Ok(None),
     };
 
-    // Validate user-supplied --system upfront (cheap string match) before
-    // touching the filesystem. The slug error is more upstream than
-    // file-missing — fix the typo first.
+    // --slot and --state-file are mutually exclusive (RetroArch convention:
+    // --load-state PATH overrides --state-slot N; we error early instead of
+    // silently picking one).
+    if cli.slot.is_some() && cli.state_file.is_some() {
+        return Err(CliError::Conflict(
+            "Specify either --slot or --state-file, not both.",
+        ));
+    }
+    if let Some(p) = cli.state_file.as_deref() {
+        if !p.exists() {
+            return Err(CliError::StateFileMissing(p.to_path_buf()));
+        }
+    }
+
     if let Some(slug) = cli.system.as_deref() {
         if !is_known_system(slug) {
             return Err(CliError::UnknownSystem(slug.to_string()));
         }
     }
 
+    // Decode explicit `<archive>#<inner>` syntax. Power-user form for
+    // multi-game archives — `oa-shell.exe "GoodSNES.zip#Super Mario World.sfc"`
+    // — bypasses the Phase H single-ROM auto-extract requirement.
+    let raw_rom_str = raw_rom.to_string_lossy().into_owned();
+    let (rom_path, explicit_inner) = if raw_rom_str.contains('#') {
+        let (archive, inner) = crate::archive::decode_file_path(&raw_rom_str);
+        if inner.is_empty() {
+            (raw_rom, None)
+        } else {
+            (archive, Some(inner))
+        }
+    } else {
+        (raw_rom, None)
+    };
+
     if !rom_path.exists() {
         return Err(CliError::RomFileMissing(rom_path));
     }
 
-    // Archive (.zip / .7z): peek inside. Single cart ROM → transparently
-    // use it. MAME / Neo Geo → passthrough. Otherwise error with guidance.
-    // Non-archive: inherit the existing extension-inference path.
-    let (system_id, archive_inner_path) = if is_archive_extension(&rom_path) {
+    let (system_id, archive_inner_path) = if let Some(inner) = explicit_inner.as_deref() {
+        resolve_explicit_archive_inner(&rom_path, inner, cli.system.as_deref())?
+    } else if is_archive_extension(&rom_path) {
         resolve_archive(&rom_path, cli.system.as_deref())?
     } else {
         let system_id = match cli.system.as_deref() {
@@ -599,6 +668,75 @@ fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
         matched_entry_id: None,
         archive_inner_path,
     }))
+}
+
+/// Resolve an explicit `<archive>#<inner>` invocation. The inner extension
+/// determines the system (cart shape via `slug_for_ext`, CD shape requires
+/// `--system`). The inner is validated against the archive's table of
+/// contents so a typo errors before launch instead of at extract time.
+fn resolve_explicit_archive_inner(
+    archive_path: &Path,
+    inner: &str,
+    explicit_system: Option<&str>,
+) -> Result<(String, Option<String>), CliError> {
+    if !is_archive_extension(archive_path) {
+        return Err(CliError::ArchiveReadFailed {
+            archive: archive_path.to_path_buf(),
+            error: format!(
+                "explicit `#{inner}` inner-path syntax requires an archive outer (.zip / .7z)"
+            ),
+        });
+    }
+
+    let mut accepted = accepted_rom_extensions();
+    // Allow CD entry-points too for the explicit form — caller supplies
+    // --system for those (validated below).
+    for ext in ["cue", "ccd", "toc", "m3u"] {
+        accepted.insert(ext.to_string());
+    }
+    let entries = crate::archive::list_rom_contents(archive_path, &accepted).map_err(|e| {
+        CliError::ArchiveReadFailed {
+            archive: archive_path.to_path_buf(),
+            error: e,
+        }
+    })?;
+    if !entries.iter().any(|e| e.inner_path == inner) {
+        return Err(CliError::ArchiveInnerNotFound {
+            archive: archive_path.to_path_buf(),
+            inner: inner.to_string(),
+            available: entries.iter().map(|e| e.inner_path.clone()).collect(),
+        });
+    }
+
+    let inner_ext = Path::new(inner)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    let is_cd = matches!(inner_ext.as_str(), "cue" | "ccd" | "toc" | "m3u");
+
+    let system_id = match explicit_system {
+        Some(s) => s.to_string(),
+        None => {
+            if is_cd {
+                return Err(CliError::AmbiguousExtension {
+                    ext: inner_ext.clone(),
+                    candidates: vec!["pce-cd", "segacd", "saturn", "psx", "neocd", "3do", "pcfx"],
+                });
+            }
+            slug_for_ext(&inner_ext)
+                .ok_or_else(|| CliError::UnknownExtension(inner_ext.clone()))?
+                .to_string()
+        }
+    };
+
+    log::info!(
+        "oa-shell: direct-launch explicit inner {}#{} (system={})",
+        archive_path.display(),
+        inner,
+        system_id,
+    );
+    Ok((system_id, Some(inner.to_string())))
 }
 
 /// Legacy `OA_ROM` env-var fallback. Permissive — an unknown / ambiguous
