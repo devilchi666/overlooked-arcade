@@ -2491,7 +2491,22 @@ fn main() {
                 // a hard crash skips the cleanup, so we mop up at startup.
                 archive::sweep_temp(&app_data_dir.join("temp"));
 
-                let shell_mode = ShellMode::resolve(&app_data_dir);
+                // Direct-launch mode unconditionally forces single-window —
+                // operator's `OA_SHELL_MODE` / `shell.json` preference stays
+                // intact on disk so the next library-mode launch honors it.
+                // See plan §2 / DECISIONS for the reasoning (one HWND, wgpu
+                // under transparent WebView, library chrome hidden by the
+                // frontend, close-window = exit).
+                let shell_mode = match &direct_launch {
+                    Some(_) => {
+                        log::info!(
+                            "oa-shell: direct-launch mode \u{2192} forcing single-window \
+                             (operator pref preserved on disk)"
+                        );
+                        ShellMode::SingleWindow
+                    }
+                    None => ShellMode::resolve(&app_data_dir),
+                };
                 // Stash for the WindowEvent handler — it needs to know which
                 // window label to filter on.
                 let _ = shell_mode_for_event.set(shell_mode);
