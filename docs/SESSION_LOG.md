@@ -6,6 +6,44 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-21 — Direct-launch Phase H — archive auto-extract + Windows-release error visibility
+
+Two same-week fast follow-ups on the direct-launch branch driven by
+operator real-world testing.
+
+- **Shipped (Windows release error visibility):**
+  - `windows_subsystem = "windows"` (release builds) means stderr is
+    silently dropped — operators spawning the .exe from cmd / LaunchBox
+    / a double-click saw "nothing happens" on CLI validation errors.
+  - New `win_msgbox::error` Windows-FFI shim (linked against user32) +
+    `CliError::emit_banner` always pops a native MessageBox on Windows
+    release. Debug builds keep using the stderr banner.
+- **Shipped (Phase H — single-ROM archive auto-extract):**
+  - `.zip` / `.7z` direct-launch now peeks inside. Exactly one cart-ROM
+    file → transparently used; system inferred from inner extension
+    (or honored from `--system`). MAME / Neo Geo pass the archive
+    through as-is via `--system mame` (or `neogeo`) or the `.p1+.s1`
+    Neo Geo signature auto-detection.
+  - Empty / multi-ROM archives error out with a list (and remediation
+    hint pointing at the Import Wizard).
+  - `DirectLaunchConfig.archive_inner_path` + DTO mirror flow through
+    to the frontend's synthesized RomEntry, which forwards it to
+    `launch_rom` so the existing `archive::extract_for_launch`
+    plumbing runs identically to a library launch.
+  - Hash-lookup hashes the inner ROM bytes (via
+    `archive::read_inner_to_bytes`) to match the library DB's sha1
+    convention — per-game overrides apply for scanned archived games.
+  - `accepted_rom_extensions()` restricted to cart shapes only —
+    CD-in-archive support is a separate v2 enhancement.
+- **Almost:** Multi-ROM-archive launching via explicit
+  `<path>#<inner>` syntax. CD images inside archives.
+- **Next:** Operator plays through end-to-end on
+  `feat/direct-launch-cli` (positional .nes, positional .zip wrapping
+  a .sfc, --system mame on a MAME romset, explicit-error paths). Merge
+  to main after thumbs-up.
+
+---
+
 ## 2026-05-20 — Direct-launch CLI mode (LaunchBox / BigBox / EmulationStation compat)
 
 External-frontend integration ships. `oa-shell.exe "C:\ROMs\game.nes"`

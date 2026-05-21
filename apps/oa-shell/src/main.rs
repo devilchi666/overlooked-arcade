@@ -2574,9 +2574,40 @@ fn main() {
                         // launch cascade. CD images skip — their on-disk
                         // hash isn't libretro-database-canonical (and is
                         // expensive for multi-GB files at boot).
+                        //
+                        // For archive direct-launch (Phase H — single ROM
+                        // inside .zip/.7z) we hash the inner ROM bytes, not
+                        // the outer archive, so the SHA-1 matches the
+                        // library DB's convention (rom_hashes stamps the
+                        // inner bytes too — see rom_bytes_for).
                         if let Some(cfg) = direct_launch.as_mut() {
-                            if cfg.matched_entry_id.is_none() && !is_cd_extension(&cfg.rom_path.to_string_lossy()) {
-                                match rom_hashes::stream_sha1_of_file(&cfg.rom_path) {
+                            let extension_for_cd_check: String = match cfg.archive_inner_path.as_deref() {
+                                Some(inner) => std::path::Path::new(inner)
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_ascii_lowercase(),
+                                None => cfg
+                                    .rom_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_ascii_lowercase(),
+                            };
+                            if cfg.matched_entry_id.is_none()
+                                && !is_cd_extension(&extension_for_cd_check)
+                            {
+                                let hash_result = match cfg.archive_inner_path.as_deref() {
+                                    Some(inner) => archive::read_inner_to_bytes(&cfg.rom_path, inner)
+                                        .map(|bytes| {
+                                            use sha1::{Digest, Sha1};
+                                            let mut h = Sha1::new();
+                                            h.update(&bytes);
+                                            format!("{:x}", h.finalize())
+                                        }),
+                                    None => rom_hashes::stream_sha1_of_file(&cfg.rom_path),
+                                };
+                                match hash_result {
                                     Ok(sha) => match db.find_game_by_sha1(&sha) {
                                         Ok(Some(row)) => {
                                             log::info!(

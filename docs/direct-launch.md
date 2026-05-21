@@ -14,6 +14,7 @@ arguments still opens the library.
 oa-shell.exe "C:\ROMs\Mega Man 2.nes"            # positional ROM
 oa-shell.exe --rom "C:\ROMs\Mega Man 2.nes"      # equivalent
 oa-shell.exe --system snes --rom "Mario.sfc"     # explicit system
+oa-shell.exe "ActRaiser 2 (USA).zip"             # single-ROM .zip auto-extracts
 oa-shell.exe "FF7 (Disc 1).cue" --system psx     # ambiguous ext needs --system
 oa-shell.exe --rom Bonk.pce --slot 3 --fullscreen
 oa-shell.exe --core fceumm_libretro.dll --rom Mega Man 2.nes
@@ -28,8 +29,14 @@ Run `oa-shell.exe --help` for the full list of flags.
 2. **System inference** — if `--system` is not supplied, the file extension
    determines the system. Cart extensions are unambiguous (`.nes`→`nes`,
    `.pce`→`tg16`, `.sfc`→`snes`, `.a78`→`atari7800`, …). CD-shaped extensions
-   (`.cue` / `.chd` / `.iso` / `.m3u` / `.pbp` / `.zip` / `.7z`) are
-   **ambiguous** and require `--system <slug>`.
+   (`.cue` / `.chd` / `.iso` / `.m3u` / `.pbp`) are **ambiguous** and require
+   `--system <slug>`.
+3. **Archive auto-extract** — `.zip` / `.7z` archives are peeked inside.
+   Exactly one cart-ROM file inside → it's used transparently (system is
+   inferred from the inner extension if `--system` wasn't supplied). MAME /
+   Neo Geo passes the .zip through as-is when `--system mame` (or `neogeo`)
+   is supplied, or when the `.p1` + `.s1` Neo Geo signature is detected.
+   Empty / multi-ROM archives error out with a list.
 3. **Forced single-window** — direct-launch overrides any `OA_SHELL_MODE` /
    `shell.json` preference to single-window for the duration of this launch.
    Your operator preference on disk is **not** changed.
@@ -105,8 +112,13 @@ These are explicitly out of scope for this version. Track in
 - **Multi-instance** — running two `oa-shell.exe` direct-launches in parallel
   isn't supported (log-file locking, single-singleton libretro state).
 - **`--state-file`** — restore-arbitrary-state-file isn't wired; use `--slot`.
-- **Archive inner ROM addressing** — `oa-shell.exe "set.zip#inner.nes"` not
-  supported; pre-extract or scan the archive into the library first.
+- **Archive inner-ROM addressing** — `oa-shell.exe "set.zip#inner.nes"` (explicit
+  inner-path syntax) not supported. Multi-ROM archives must be scanned via
+  the Import Wizard first. Single-ROM `.zip` / `.7z` archives **are** supported
+  via auto-extract (Phase H).
+- **CD images inside archives** — `oa-shell.exe "game.zip"` containing a
+  `.cue` + `.bin` set isn't supported; extract the CD set to a folder and
+  pass the `.cue` directly with `--system <psx|saturn|…>`.
 - **ARGV batch processing** — one ROM per process invocation.
 - **Persistent kiosk profiles** — OA always reverts to library mode after exit.
 - **Steam Big Picture controller-launch** — separate problem.

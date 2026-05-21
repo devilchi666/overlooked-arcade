@@ -13,6 +13,7 @@
 //!      preserving the existing dev loop).
 //!   3. No ROM → library mode (default).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -73,8 +74,13 @@ pub struct DirectLaunchConfig {
     pub tas_replay: Option<PathBuf>,
     pub fullscreen: bool,
     /// Library-DB row id when the ROM's SHA-1 matched an existing entry.
-    /// Populated by Phase D hash-lookup; None in Phase A.
+    /// Populated by Phase D hash-lookup.
     pub matched_entry_id: Option<String>,
+    /// Posix-style path inside the archive at `rom_path` when the outer
+    /// file is a .zip/.7z that wraps a single cart ROM. `None` means
+    /// `rom_path` is the ROM (raw cart / CD image / MAME romset).
+    /// Populated by Phase H archive resolution.
+    pub archive_inner_path: Option<String>,
 }
 
 /// camelCase mirror sent to the frontend by `get_direct_launch_config`.
@@ -89,6 +95,7 @@ pub struct DirectLaunchConfigDto {
     pub tas_replay: Option<String>,
     pub fullscreen: bool,
     pub matched_entry_id: Option<String>,
+    pub archive_inner_path: Option<String>,
 }
 
 impl From<&DirectLaunchConfig> for DirectLaunchConfigDto {
@@ -102,6 +109,7 @@ impl From<&DirectLaunchConfig> for DirectLaunchConfigDto {
             tas_replay: c.tas_replay.as_ref().map(|p| p.to_string_lossy().to_string()),
             fullscreen: c.fullscreen,
             matched_entry_id: c.matched_entry_id.clone(),
+            archive_inner_path: c.archive_inner_path.clone(),
         }
     }
 }
@@ -113,6 +121,9 @@ pub enum CliError {
     UnknownExtension(String),
     AmbiguousExtension { ext: String, candidates: Vec<&'static str> },
     UnknownSystem(String),
+    ArchiveEmpty { archive: PathBuf },
+    ArchiveMultipleRoms { archive: PathBuf, paths: Vec<String> },
+    ArchiveReadFailed { archive: PathBuf, error: String },
 }
 
 impl CliError {
@@ -191,6 +202,46 @@ impl CliError {
                      gba, gb, lynx, atari7800, mame, neogeo, dreamcast, ps2, psp."
                 ),
             ),
+            Self::ArchiveEmpty { archive } => (
+                "oa-shell: archive contains no ROMs".to_string(),
+                format!(
+                    "Archive: {}\n\n\
+                     No files with recognized cart-ROM extensions inside. \
+                     If this is a MAME or Neo Geo romset, pass\n  \
+                     --system mame  (or --system neogeo)\n\
+                     to launch the archive directly.",
+                    archive.display()
+                ),
+            ),
+            Self::ArchiveMultipleRoms { archive, paths } => {
+                let listed: String = paths
+                    .iter()
+                    .take(8)
+                    .map(|p| format!("  - {p}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let more = if paths.len() > 8 {
+                    format!("\n  \u{2026} and {} more", paths.len() - 8)
+                } else {
+                    String::new()
+                };
+                (
+                    "oa-shell: archive contains multiple ROMs".to_string(),
+                    format!(
+                        "Archive: {}\n\nFound {} ROM files:\n{listed}{more}\n\n\
+                         Direct-launch picks single-ROM archives transparently; \
+                         multi-ROM archives need to be scanned into the library \
+                         first (each inner file gets its own entry — then OA \
+                         hash-matches at launch).",
+                        archive.display(),
+                        paths.len(),
+                    ),
+                )
+            }
+            Self::ArchiveReadFailed { archive, error } => (
+                "oa-shell: archive read failed".to_string(),
+                format!("Archive: {}\n\nError: {error}", archive.display()),
+            ),
         }
     }
 }
@@ -228,18 +279,14 @@ mod win_msgbox {
     }
 }
 
-/// Extension → unambiguous system slug. Mirrors `frontend/src/themes/registry.ts`
-/// (`SystemTheme.extensions`). CD-shaped extensions (.cue/.chd/.iso/.m3u/.pbp/
-/// .zip/.7z) intentionally return `AmbiguousExtension` and require the caller
-/// to pass `--system`.
+/// Unambiguous extension → system slug. Mirrors `frontend/src/themes/registry.ts`
+/// (`SystemTheme.extensions`). CD-shaped and archive extensions return None —
+/// the caller is expected to disambiguate (CD via `--system`; archive via
+/// `resolve_archive` which peeks inside).
 ///
 /// **Keep in sync with `frontend/src/themes/registry.ts`.**
-pub fn infer_system_from_extension(path: &Path) -> Result<&'static str, CliError> {
-    let Some(ext_os) = path.extension() else {
-        return Err(CliError::UnknownExtension(String::new()));
-    };
-    let ext = ext_os.to_string_lossy().to_lowercase();
-    let slug: Option<&'static str> = match ext.as_str() {
+fn slug_for_ext(ext: &str) -> Option<&'static str> {
+    match ext {
         "pce" => Some("tg16"),
         "lnx" | "lyx" => Some("lynx"),
         "nes" | "fds" | "unf" | "unif" => Some("nes"),
@@ -270,11 +317,47 @@ pub fn infer_system_from_extension(path: &Path) -> Result<&'static str, CliError
         "cso" => Some("psp"),
         "neo" => Some("neogeo"),
         _ => None,
+    }
+}
+
+/// Set of cart-ROM extensions used by `resolve_archive` to filter the
+/// contents of a .zip/.7z. Restricted to single-file cart shapes — CD
+/// images inside archives need multi-file extract-to-temp handling and
+/// are out of scope for direct-launch v1 (Phase H).
+pub(crate) fn accepted_rom_extensions() -> HashSet<String> {
+    [
+        "pce", "lnx", "lyx", "nes", "fds", "unf", "unif", "sfc", "smc", "fig", "swc", "a78", "md",
+        "smd", "gen", "68k", "32x", "n64", "z64", "v64", "nds", "j64", "jag", "gb", "gbc", "vec",
+        "gam", "vb", "ws", "wsc", "col", "cv", "int", "o2", "chf", "a26", "a52", "min", "gba",
+        "sms", "gg", "ngp", "ngc", "neo",
+    ]
+    .iter()
+    .map(|s| (*s).to_string())
+    .collect()
+}
+
+fn is_archive_extension(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref(),
+        Some("zip") | Some("7z")
+    )
+}
+
+/// Public wrapper retained for tests + future callers. Takes a path,
+/// returns the resolved slug or an `AmbiguousExtension` / `UnknownExtension`
+/// error. `resolve()` no longer calls this on archive extensions — the
+/// archive path is `resolve_archive`.
+pub fn infer_system_from_extension(path: &Path) -> Result<&'static str, CliError> {
+    let Some(ext_os) = path.extension() else {
+        return Err(CliError::UnknownExtension(String::new()));
     };
-    if let Some(s) = slug {
+    let ext = ext_os.to_string_lossy().to_lowercase();
+    if let Some(s) = slug_for_ext(&ext) {
         return Ok(s);
     }
-
     let ambiguous: Option<Vec<&'static str>> = match ext.as_str() {
         "cue" | "ccd" | "toc" | "m3u" => Some(vec![
             "pce-cd", "segacd", "saturn", "psx", "neocd", "3do", "pcfx",
@@ -293,6 +376,76 @@ pub fn infer_system_from_extension(path: &Path) -> Result<&'static str, CliError
         return Err(CliError::AmbiguousExtension { ext, candidates });
     }
     Err(CliError::UnknownExtension(ext))
+}
+
+/// Peek inside a .zip/.7z archive and decide what direct-launch should do.
+///
+/// Three paths, in priority order:
+/// 1. **MAME / Neo Geo passthrough.** If `--system mame` (or `neogeo`) was
+///    supplied, treat the archive as the romset itself — no inner extraction.
+/// 2. **Neo Geo auto-detection.** If `--system` wasn't supplied AND the
+///    archive contains the `.p1` + `.s1` Neo Geo signature, pick `neogeo`
+///    automatically.
+/// 3. **Single-ROM extraction.** Peek the archive's contents filtered to
+///    cart-ROM extensions. Exactly one match → use it (system inferred from
+///    the inner extension, or honored from `--system` if supplied). Zero
+///    or multiple matches → error.
+///
+/// Returns `(system_id, archive_inner_path)`. `archive_inner_path` is `None`
+/// for MAME / Neo Geo passthrough; `Some(inner)` for single-ROM extraction.
+fn resolve_archive(
+    rom_path: &Path,
+    explicit_system: Option<&str>,
+) -> Result<(String, Option<String>), CliError> {
+    if matches!(explicit_system, Some("mame") | Some("neogeo")) {
+        log::info!(
+            "oa-shell: direct-launch archive {} \u{2192} --system {} passthrough",
+            rom_path.display(),
+            explicit_system.unwrap()
+        );
+        return Ok((explicit_system.unwrap().to_string(), None));
+    }
+
+    if explicit_system.is_none() && crate::archive::peek_zip_for_neogeo(rom_path) {
+        log::info!(
+            "oa-shell: direct-launch archive {} \u{2192} Neo Geo (p1+s1 signature)",
+            rom_path.display()
+        );
+        return Ok(("neogeo".to_string(), None));
+    }
+
+    let accepted = accepted_rom_extensions();
+    let entries =
+        crate::archive::list_rom_contents(rom_path, &accepted).map_err(|e| CliError::ArchiveReadFailed {
+            archive: rom_path.to_path_buf(),
+            error: e,
+        })?;
+
+    match entries.len() {
+        0 => Err(CliError::ArchiveEmpty {
+            archive: rom_path.to_path_buf(),
+        }),
+        1 => {
+            let entry = &entries[0];
+            let system_id = match explicit_system {
+                Some(s) => s.to_string(),
+                None => slug_for_ext(&entry.extension)
+                    .ok_or_else(|| CliError::UnknownExtension(entry.extension.clone()))?
+                    .to_string(),
+            };
+            log::info!(
+                "oa-shell: direct-launch archive {} contains 1 ROM: {} (system={})",
+                rom_path.display(),
+                entry.inner_path,
+                system_id,
+            );
+            Ok((system_id, Some(entry.inner_path.clone())))
+        }
+        _ => Err(CliError::ArchiveMultipleRoms {
+            archive: rom_path.to_path_buf(),
+            paths: entries.iter().map(|e| e.inner_path.clone()).collect(),
+        }),
+    }
 }
 
 /// Permissive check for a user-supplied `--system` slug. Mirrors the slug set
@@ -365,21 +518,31 @@ fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
         (None, None) => return Ok(None),
     };
 
-    // Validate user-supplied --system BEFORE touching the filesystem. The
-    // slug error is more upstream than file-missing — fix the typo first.
-    let system_id = match cli.system.as_deref() {
-        Some(slug) => {
-            if !is_known_system(slug) {
-                return Err(CliError::UnknownSystem(slug.to_string()));
-            }
-            slug.to_string()
+    // Validate user-supplied --system upfront (cheap string match) before
+    // touching the filesystem. The slug error is more upstream than
+    // file-missing — fix the typo first.
+    if let Some(slug) = cli.system.as_deref() {
+        if !is_known_system(slug) {
+            return Err(CliError::UnknownSystem(slug.to_string()));
         }
-        None => infer_system_from_extension(&rom_path)?.to_string(),
-    };
+    }
 
     if !rom_path.exists() {
         return Err(CliError::RomFileMissing(rom_path));
     }
+
+    // Archive (.zip / .7z): peek inside. Single cart ROM → transparently
+    // use it. MAME / Neo Geo → passthrough. Otherwise error with guidance.
+    // Non-archive: inherit the existing extension-inference path.
+    let (system_id, archive_inner_path) = if is_archive_extension(&rom_path) {
+        resolve_archive(&rom_path, cli.system.as_deref())?
+    } else {
+        let system_id = match cli.system.as_deref() {
+            Some(slug) => slug.to_string(),
+            None => infer_system_from_extension(&rom_path)?.to_string(),
+        };
+        (system_id, None)
+    };
 
     Ok(Some(DirectLaunchConfig {
         rom_path,
@@ -390,6 +553,7 @@ fn resolve(cli: Cli) -> Result<Option<DirectLaunchConfig>, CliError> {
         tas_replay: cli.tas_replay,
         fullscreen: cli.fullscreen,
         matched_entry_id: None,
+        archive_inner_path,
     }))
 }
 
@@ -417,6 +581,7 @@ pub fn from_oa_rom_env(rom: &str) -> DirectLaunchConfig {
         tas_replay: None,
         fullscreen: false,
         matched_entry_id: None,
+        archive_inner_path: None,
     }
 }
 

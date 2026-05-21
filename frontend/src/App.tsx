@@ -106,6 +106,11 @@ type DirectLaunchConfig = {
   tasReplay: string | null;
   fullscreen: boolean;
   matchedEntryId: string | null;
+  /// Phase H: when set, romPath points at a .zip/.7z and archiveInnerPath
+  /// is the posix-style path of the single cart ROM inside. The launch
+  /// path forwards both to launch_rom so archive::extract_for_launch
+  /// runs the same way it does for library-launched archived entries.
+  archiveInnerPath: string | null;
 };
 
 const App: Component = () => {
@@ -327,15 +332,18 @@ const App: Component = () => {
       }
     }
     if (!entry) {
+      // Title heuristic: when the ROM is wrapped in an archive, the inner
+      // filename is the meaningful one. Otherwise use the outer path.
+      const titleSource = cfg.archiveInnerPath ?? cfg.romPath;
       entry = {
         id: cfg.matchedEntryId ?? romIdFromPath(cfg.romPath),
-        title: titleFromFileName(cfg.romPath),
+        title: titleFromFileName(titleSource),
         systemId: cfg.systemId as SystemId,
         filePath: cfg.romPath,
         addedAt: 0,
         seed: false,
         coreOverride: cfg.coreOverride ?? undefined,
-        archiveInnerPath: undefined,
+        archiveInnerPath: cfg.archiveInnerPath ?? undefined,
       };
     }
     console.log("[oa-direct-launch] auto-launching:", entry);
