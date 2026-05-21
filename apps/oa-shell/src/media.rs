@@ -1870,6 +1870,75 @@ pub fn clear_media(
     Ok(())
 }
 
+/// Clear the `metadata` slot on every media_db entry whose game is
+/// tagged with `systemId` in library_db. Cover-art / snap / title
+/// variants are *not* touched — only the metadata payload (genre /
+/// developer / publisher / year / players). Used after the 2026-05-21
+/// metadata-routing fix to scrub the cross-system data contamination
+/// that the old wildcard-to-PCE routing left behind: a Genesis game
+/// that accidentally fuzzy-matched a PCE catalog entry got stamped
+/// with PCE metadata; this command nulls those stamps so a follow-up
+/// sync against the correct upstream catalog refills them cleanly.
+///
+/// Returns the count of entries actually cleared (skips entries that
+/// already had metadata = None). Emits one oa://media-updated per
+/// cleared entry so the UI re-renders.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn clear_metadata_for_system(
+    systemId: String,
+    state: tauri::State<'_, MediaState>,
+    library: tauri::State<'_, crate::library_db::LibraryDb>,
+    app: tauri::AppHandle,
+) -> Result<MetadataClearSummary, String> {
+    let ids = library.list_game_ids_for_system(&systemId)?;
+    let mut cleared = 0usize;
+    let mut updated_payloads: Vec<(String, GameMedia)> = Vec::new();
+    {
+        let mut db = state.db.write().map_err(|_| "media db lock poisoned".to_string())?;
+        for id in &ids {
+            if let Some(gm) = db.get_mut(id) {
+                if gm.metadata.is_some() {
+                    gm.metadata = None;
+                    cleared += 1;
+                    updated_payloads.push((id.clone(), gm.clone()));
+                }
+            }
+        }
+        if cleared > 0 {
+            write_media_db(&state.app_data_dir, &db)
+                .map_err(|e| format!("write media.json: {e}"))?;
+        }
+    }
+    use tauri::Emitter;
+    for (rom_id, gm) in &updated_payloads {
+        let _ = app.emit(
+            "oa://media-updated",
+            serde_json::json!({ "romId": rom_id, "media": gm }),
+        );
+    }
+    log::info!(
+        "oa-shell: clear_metadata_for_system({systemId}) — cleared {cleared} of {} game ids in library",
+        ids.len()
+    );
+    Ok(MetadataClearSummary {
+        system_id: systemId,
+        scanned: ids.len(),
+        cleared,
+    })
+}
+
+/// Summary returned by `clear_metadata_for_system`. `scanned` is the
+/// number of library game ids inspected for the system; `cleared` is
+/// the subset whose `metadata` slot was set to `None`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataClearSummary {
+    pub system_id: String,
+    pub scanned: usize,
+    pub cleared: usize,
+}
+
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn set_selected_variant(

@@ -342,6 +342,11 @@ const SettingsPage: Component<Props> = (props) => {
   // the two buttons can run independently and don't share progress state.
   const [metaProgress, setMetaProgress] = createSignal<Record<string, SyncProgressPayload>>({});
   const [metaSyncing, setMetaSyncing] = createSignal<Record<string, boolean>>({});
+  // Per-system metadata-clear loading state. No progress bar — the
+  // server-side call is O(N) over library_db ids and completes in well
+  // under a second even on large libraries; a binary "clearing…" pill
+  // is enough.
+  const [metaClearing, setMetaClearing] = createSignal<Record<string, boolean>>({});
   let unlistenSync: UnlistenFn | undefined;
   let unlistenSyncDone: UnlistenFn | undefined;
   let unlistenMeta: UnlistenFn | undefined;
@@ -590,6 +595,51 @@ const SettingsPage: Component<Props> = (props) => {
         ...prev,
         [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: `error: ${e}` },
       }));
+    }
+  }
+
+  /// Wipe the `metadata` slot on every media_db entry whose game is
+  /// tagged with `systemId`. Used to scrub the cross-system data
+  /// contamination from the pre-2026-05-21 metadata-routing bug
+  /// (Genesis games were getting PC Engine metadata stamped onto them).
+  /// Cover-art / snap / title variants are NOT touched.
+  async function startClearMetadata(systemId: SystemId) {
+    const theme = systemThemes[systemId];
+    const name = theme.displayName;
+    const count = props.library.state.entries.filter(
+      (e) => e.systemId === systemId && !e.seed,
+    ).length;
+    if (count === 0) {
+      // Nothing to do — but tell the user that explicitly so they
+      // know the click registered.
+      window.alert(`No ${name} games in the library.`);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Clear metadata (genre / developer / publisher / year / players) for ${count} ${name} game(s)?\n\n` +
+          `Cover art, snapshots, and title screens will NOT be touched. ` +
+          `Use this after the 2026-05-21 metadata-routing fix to scrub stale cross-system data; ` +
+          `re-run "Sync metadata" afterwards to repopulate against the correct upstream catalog.`,
+      )
+    ) {
+      return;
+    }
+    setMetaClearing((prev) => ({ ...prev, [systemId]: true }));
+    try {
+      const result = await invoke<{ systemId: string; scanned: number; cleared: number }>(
+        "clear_metadata_for_system",
+        { systemId },
+      );
+      await media.refreshAll();
+      window.alert(
+        `Cleared metadata on ${result.cleared} of ${result.scanned} ${name} game(s).`,
+      );
+    } catch (e) {
+      console.warn("clear_metadata_for_system failed:", e);
+      window.alert(`Clear metadata failed: ${String(e)}`);
+    } finally {
+      setMetaClearing((prev) => ({ ...prev, [systemId]: false }));
     }
   }
 
@@ -859,6 +909,18 @@ const SettingsPage: Component<Props> = (props) => {
                             class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {isMetaSyncing() ? "Syncing…" : "Sync metadata"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={metaClearing()[id] === true}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void startClearMetadata(id);
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Clear metadata (genre / developer / publisher / year / players) for every game in this system. Cover art is NOT touched. Use after the 2026-05-21 metadata-routing fix to scrub stale cross-system data."
+                          >
+                            {metaClearing()[id] ? "Clearing…" : "Clear metadata"}
                           </button>
                           <button
                             type="button"

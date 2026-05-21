@@ -1779,6 +1779,25 @@ impl LibraryDb {
     /// Delete every game tagged with the given system id. Returns the
     /// number of rows removed. Used by the Settings → Library "Clear
     /// games for this system" action.
+    /// Return every game `id` tagged with the given system. Cheap — just
+    /// the id column. Used by the metadata-clear path which needs to
+    /// walk media_db entries scoped to one system without materializing
+    /// full game rows.
+    pub fn list_game_ids_for_system(&self, system_id: &str) -> Result<Vec<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id FROM games WHERE system_id = ?1")
+            .map_err(|e| format!("prepare list_game_ids_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query list_game_ids_for_system: {e}"))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row.map_err(|e| format!("step list_game_ids_for_system: {e}"))?);
+        }
+        Ok(ids)
+    }
+
     pub fn delete_games_for_system(&self, system_id: &str) -> Result<usize, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let n = conn

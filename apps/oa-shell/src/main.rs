@@ -2518,6 +2518,7 @@ fn main() {
             media::set_only_sync_identified,
             media::set_manual_cover,
             media::clear_media,
+            media::clear_metadata_for_system,
             media::set_selected_variant,
             media::sync_media_for_system,
             metadata::sync_metadata_for_system,
