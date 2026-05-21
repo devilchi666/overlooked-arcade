@@ -393,6 +393,115 @@ mod tests {
         // canonical `wonderswan` id should resolve.
         assert_eq!(super::repos_for_system_id("wonderswan-color"), &[] as &[&str]);
     }
+
+    /// Helper: make a minimal `SyncRomEntry` for the GC/Wii classifier
+    /// tests. Only `system_id` + `file_path` matter to `repos_for_entry`.
+    fn gc_entry_with_path(path: &str) -> super::SyncRomEntry {
+        super::SyncRomEntry {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            file_path: path.to_string(),
+            system_id: "gamecube".to_string(),
+            sha1: None,
+        }
+    }
+
+    /// `.wbfs` is Wii-exclusive → repos_for_entry routes to Wii repo
+    /// without any file I/O.
+    #[test]
+    fn wbfs_extension_routes_to_wii_repo() {
+        // Note: file doesn't exist; extension is the signal.
+        let e = gc_entry_with_path("/nope/SuperMarioGalaxy.wbfs");
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_Wii"]);
+    }
+
+    /// `.wad` is Wii-exclusive (channel format) → Wii repo.
+    #[test]
+    fn wad_extension_routes_to_wii_repo() {
+        let e = gc_entry_with_path("/nope/MyWiiChannel.wad");
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_Wii"]);
+    }
+
+    /// `.gcm` / `.gcz` / `.ciso` are GC-exclusive containers → GC repo
+    /// without any file peek.
+    #[test]
+    fn gc_exclusive_extensions_route_to_gc_repo() {
+        for ext in &["gcm", "gcz", "ciso"] {
+            let e = gc_entry_with_path(&format!("/nope/Zelda.{ext}"));
+            assert_eq!(
+                super::repos_for_entry(&e),
+                &["Nintendo_-_GameCube"],
+                ".{ext} should route to GC"
+            );
+        }
+    }
+
+    /// `.iso` with a Wii console byte at offset 0 → Wii repo. The
+    /// classifier peeks the first byte of the file; 'R' is Wii per
+    /// Dolphin convention.
+    #[test]
+    fn iso_with_wii_console_byte_routes_to_wii_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-gcwii-iso-wii-{}-{}.iso",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // First byte 'R' = Wii (Wii retail disc).
+        std::fs::write(&tmp, b"R\x4E\x01\x45TEST WII GAME").expect("write tmp iso");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_Wii"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// `.iso` with a GameCube console byte at offset 0 → GC repo.
+    /// 'G' = GameCube retail; 'D' = GameCube demo.
+    #[test]
+    fn iso_with_gc_console_byte_routes_to_gc_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-gcwii-iso-gc-{}-{}.iso",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::write(&tmp, b"GW7E\x01\x08TEST GC GAME").expect("write tmp iso");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// Unreachable file (path doesn't exist, can't open) → falls back
+    /// to GameCube. Defensive — the sync will no-match and the
+    /// operator can re-sync after the dump becomes available.
+    #[test]
+    fn iso_unreachable_falls_back_to_gc_repo() {
+        let e = gc_entry_with_path("/this/path/genuinely/does/not/exist.iso");
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+    }
+
+    /// Entry for a non-gamecube system_id flows through the original
+    /// `repos_for_system_id` path unchanged.
+    #[test]
+    fn non_gamecube_entry_uses_repos_for_system_id() {
+        let mut e = gc_entry_with_path("/nope/some.nes");
+        e.system_id = "nes".to_string();
+        assert_eq!(
+            super::repos_for_entry(&e),
+            &["Nintendo_-_Nintendo_Entertainment_System"]
+        );
+
+        // Multi-repo systems still return both repos via the fallback.
+        e.system_id = "gb".to_string();
+        e.file_path = "/nope/some.gb".to_string();
+        assert_eq!(
+            super::repos_for_entry(&e),
+            &["Nintendo_-_Game_Boy", "Nintendo_-_Game_Boy_Color"]
+        );
+    }
 }
 
 // ---- oa-media:// protocol handler ----
@@ -930,7 +1039,78 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
     }
 }
 
-/// Back-compat alias around `repo_for_system_id` for the extension-only
+/// Resolve a `SyncRomEntry` to the libretro-thumbnails repos that
+/// hold its cover art. Wrapper around `repos_for_system_id` that adds
+/// per-entry discrimination for systems where one OA `system_id`
+/// covers multiple thumbnails-repo targets — currently just GameCube
+/// vs Wii (both ride `system_id = "gamecube"` on Dolphin, but
+/// libretro-thumbnails keeps Wii art in a separate repo).
+///
+/// Adding a new same-system-id split: extend the match here with the
+/// per-entry classifier. Default falls through to `repos_for_system_id`.
+fn repos_for_entry(entry: &SyncRomEntry) -> &'static [&'static str] {
+    match entry.system_id.as_str() {
+        "gamecube" => {
+            if is_wii_dump(&entry.file_path) {
+                &["Nintendo_-_Wii"]
+            } else {
+                &["Nintendo_-_GameCube"]
+            }
+        }
+        _ => repos_for_system_id(&entry.system_id),
+    }
+}
+
+/// Classify a Dolphin-loadable file as a Wii dump (true) or a
+/// GameCube dump (false). Three tiers:
+///
+/// 1. Extension-only signal — `.wbfs` and `.wad` are Wii-exclusive
+///    container formats. `.gcm` and `.gcz` and `.ciso` are
+///    GameCube-only.
+/// 2. Header peek for `.iso` and `.rvz` — both extensions cover
+///    GameCube AND Wii dumps. The disc header's byte 0 is the
+///    console-ID per Dolphin convention: `'G'` / `'D'` = GameCube,
+///    `'R'` / `'S'` = Wii. Reads the first byte of the file only;
+///    nothing else.
+/// 3. Fallback when the file can't be read (deleted, permissions,
+///    network mount offline): assume GameCube. The cover sync will
+///    no-match Wii titles whose dumps are unreachable and the
+///    operator can refresh once the dump is back.
+///
+/// The audit's "GC + Wii cover sync split" item is the entry point
+/// for this classifier — gives Wii titles their own thumbnail set
+/// without surfacing Wii as a separate OA `system_id`.
+fn is_wii_dump(file_path: &str) -> bool {
+    let path = std::path::Path::new(file_path);
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        // Wii-exclusive containers.
+        Some("wbfs") | Some("wad") => true,
+        // GameCube-exclusive containers.
+        Some("gcm") | Some("gcz") | Some("ciso") => false,
+        // Shared containers — peek byte 0 to discriminate.
+        Some("iso") | Some("rvz") => peek_dolphin_console_byte(path)
+            .map(|b| matches!(b, b'R' | b'S'))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Read the first byte of a Dolphin-loadable disc dump. Returns
+/// `None` on I/O failure (file gone, permission denied, etc.) — the
+/// caller treats that as "assume GameCube" rather than erroring out.
+fn peek_dolphin_console_byte(path: &std::path::Path) -> Option<u8> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 1];
+    f.read_exact(&mut buf).ok()?;
+    Some(buf[0])
+}
+
+/// Back-compat alias around `repos_for_system_id` for the extension-only
 /// callers that pre-date the system_id field on `SyncRomEntry`. Looks
 /// at the few extensions that uniquely identify a system within the
 /// PC Engine family, then falls back to the TG-16 repo.
@@ -1395,11 +1575,18 @@ pub async fn sync_media_for_system(
     // as separate variants on the same library entry. Entries whose
     // system_id maps to the empty slice (unknown system) are skipped
     // rather than fetched from the wrong repo.
+    //
+    // GameCube + Wii special case: both run on Dolphin under
+    // `system_id = "gamecube"`, but libretro-thumbnails keeps Wii art
+    // in a separate `Nintendo_-_Wii` repo. `repos_for_entry` peeks
+    // the dump (extension + first-byte header for ambiguous .iso/.rvz)
+    // and routes Wii titles to the Wii repo while GC titles stay on
+    // the GameCube repo.
     let mut by_repo: std::collections::HashMap<&'static str, Vec<SyncRomEntry>> =
         std::collections::HashMap::new();
     let mut skipped_no_repo = 0usize;
     for e in entries.iter() {
-        let repos = repos_for_system_id(&e.system_id);
+        let repos = repos_for_entry(e);
         if repos.is_empty() {
             skipped_no_repo += 1;
             continue;
