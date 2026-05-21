@@ -202,6 +202,18 @@ enum EmuCommand {
     /// per-game → per-system → identity at the shell layer; this is the
     /// resolved value the emu thread applies. `port` is 0..=4.
     SetAnalogRouting { port: u32, routing: oa_input::AnalogRouting },
+    /// Wire a controller port to a specific libretro device type. Used
+    /// to switch a game from the default RetroPad to Mouse (Mario Paint),
+    /// Light Gun (Zapper / Time Crisis), Paddle (Breakout / Arkanoid),
+    /// or back to None / Disconnected. `device` is one of
+    /// `oa_libretro::ffi::RETRO_DEVICE_*` (NONE / JOYPAD / MOUSE /
+    /// KEYBOARD / LIGHTGUN / ANALOG / POINTER). Must run AFTER
+    /// `retro_load_game` per the
+    /// `reference_libretro_controller_after_load_game` note — emu thread
+    /// already orders LoadRom → ApplyCoreOptions → … so this is
+    /// dispatched the same way (frontend's `arm_libretro_device` fires
+    /// it after launch_rom completes).
+    SetPortDevice { port: u32, device: u32 },
     /// `None` = system default device. The emu thread rebuilds the cpal stream
     /// against the new selection; failure is logged but doesn't kill the thread.
     SetAudioDevice(Option<String>),
@@ -2431,6 +2443,8 @@ fn main() {
             set_analog_routing,
             set_analog_routing_for_game,
             arm_analog_routing,
+            set_libretro_device_for_game,
+            arm_libretro_device,
             list_games,
             add_games,
             drop_seed_games,
@@ -4229,6 +4243,26 @@ fn run_emu_render(
                     };
                     input.set_analog_routing(p, routing);
                     log::debug!("oa-shell: analog routing hot-reloaded for port {} ({})", port, current_system_id);
+                }
+                Ok(EmuCommand::SetPortDevice { port, device }) => {
+                    // Forward to the loaded core's set_port_device. The
+                    // libretro layer no-ops + logs a warning when no ROM is
+                    // currently loaded; we let it absorb the call rather
+                    // than gating here, because the frontend pipeline can
+                    // race (the user can clear an override before a game
+                    // is loaded, and the no-op behaviour is correct).
+                    if let Some(core_ref) = core.as_mut() {
+                        core_ref.set_port_device(port, device);
+                        log::info!(
+                            "oa-shell: set_port_device({}, {}) for {}",
+                            port, device, current_system_id
+                        );
+                    } else {
+                        log::debug!(
+                            "oa-shell: SetPortDevice({}, {}) with no core loaded — ignored",
+                            port, device
+                        );
+                    }
                 }
                 Ok(EmuCommand::SetRewindConfig(cfg)) => {
                     let prev_enabled = rewind_config.enabled;
@@ -7054,6 +7088,66 @@ fn set_analog_routing_for_game(
         let _ = tx.send(EmuCommand::SetAnalogRouting {
             port,
             routing: routing.to_runtime(),
+        });
+    }
+    Ok(())
+}
+
+/// Resolve per-game libretro device type and push to the emu thread.
+/// Same shape as `arm_analog_routing` — frontend calls this after every
+/// successful launch. Today the resolution is just per-game override →
+/// JOYPAD default (no per-system layer; most systems run JOYPAD by
+/// default and only specific games request Mouse / Light Gun / etc).
+/// Future polish: per-system default for systems where the canonical
+/// peripheral isn't JOYPAD.
+///
+/// The dispatch happens AFTER `retro_load_game` per the
+/// `reference_libretro_controller_after_load_game` memory — Mednafen
+/// cores clobber `data_ptr[]` during load. Frontend's launch flow
+/// awaits launch_rom and only then fires `arm_libretro_device`.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn arm_libretro_device(
+    gameId: String,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let _ = db.list_games()?
+        .into_iter()
+        .find(|g| g.id == gameId)
+        .ok_or_else(|| format!("game id not found: {gameId}"))?;
+    let game_overrides = db.get_game_overrides(&gameId)?;
+    // RETRO_DEVICE_JOYPAD = 1 is the universal default. Per-game
+    // override wins.
+    let device = game_overrides.libretro_device.unwrap_or(1);
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    let _ = tx.send(EmuCommand::SetPortDevice { port: 0, device });
+    Ok(())
+}
+
+/// Persist a per-game libretro device-type override (port 0) and push
+/// to the running emu. Stores into `GameOverrides::libretro_device`
+/// so the value re-applies on every future launch of this game.
+///
+/// `device = None` clears the override (game falls back to the system
+/// default JOYPAD); `device = Some(0)` explicitly disconnects port 0
+/// (RETRO_DEVICE_NONE).
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_libretro_device_for_game(
+    gameId: String,
+    device: Option<u32>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let mut overrides = db.get_game_overrides(&gameId)?;
+    overrides.libretro_device = device;
+    db.set_game_overrides(&gameId, &overrides)?;
+    // Push to the running emu (no-op if game isn't currently loaded).
+    if let Ok(tx) = state.emu_tx.lock() {
+        let _ = tx.send(EmuCommand::SetPortDevice {
+            port: 0,
+            device: device.unwrap_or(1), // RETRO_DEVICE_JOYPAD default
         });
     }
     Ok(())

@@ -36,9 +36,23 @@ impl PixelFormat {
 
 // ---------- device IDs ----------
 
-pub const RETRO_DEVICE_JOYPAD: u32 = 1;
-pub const RETRO_DEVICE_ANALOG: u32 = 5;
+pub const RETRO_DEVICE_NONE: u32     = 0;
+pub const RETRO_DEVICE_JOYPAD: u32   = 1;
+pub const RETRO_DEVICE_MOUSE: u32    = 2;
 pub const RETRO_DEVICE_KEYBOARD: u32 = 3;
+pub const RETRO_DEVICE_LIGHTGUN: u32 = 4;
+pub const RETRO_DEVICE_ANALOG: u32   = 5;
+// RETRO_DEVICE_POINTER = 6 (declared below alongside its ID constants).
+
+/// Number of bits reserved for the base device id when subclassing. A
+/// "subclassed" device is `base | (subclass << 8)` — e.g. a Super NES
+/// Mouse is conceptually `RETRO_DEVICE_MOUSE` but cores can declare a
+/// specific subclass so per-game device-type pickers surface the right
+/// option name. Today our shell doesn't synthesize subclasses (we use
+/// the bare device types); kept here for the libretro callers that
+/// may receive subclassed values back from cores.
+pub const RETRO_DEVICE_TYPE_SHIFT: u32 = 8;
+pub const RETRO_DEVICE_MASK: u32 = (1 << RETRO_DEVICE_TYPE_SHIFT) - 1;
 
 // Analog stick index — passed as the `index` arg to cb_input_state when
 // device == RETRO_DEVICE_ANALOG.
