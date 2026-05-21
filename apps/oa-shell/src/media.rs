@@ -1731,8 +1731,15 @@ pub async fn sync_media_for_system(
     // the dump (extension + first-byte header for ambiguous .iso/.rvz)
     // and routes Wii titles to the Wii repo while GC titles stay on
     // the GameCube repo.
-    let mut by_repo: std::collections::HashMap<&'static str, Vec<SyncRomEntry>> =
-        std::collections::HashMap::new();
+    // BTreeMap (not HashMap) — iteration order is deterministic
+    // (alphabetical by repo name) so for multi-repo systems (gb
+    // DMG+CGB, wonderswan WS+WSC) the order variants land in
+    // `GameMedia.boxart` is reproducible run-to-run. Pre-2026-05-21
+    // a HashMap caused the default-displayed cover to flip between
+    // runs when no region pin was active and multiple repos
+    // contributed variants to the same game.
+    let mut by_repo: std::collections::BTreeMap<&'static str, Vec<SyncRomEntry>> =
+        std::collections::BTreeMap::new();
     let mut skipped_no_repo = 0usize;
     for e in entries.iter() {
         let repos = repos_for_entry(e);
@@ -1836,6 +1843,12 @@ pub async fn sync_media_for_system(
             let subdir_owned = subdir.to_string();
             let entries_for_kind = repo_entries.clone();
 
+            // Per-kind dirty flag — set by any successful Downloaded
+            // outcome inside the buffer_unordered stream below, then
+            // checked once after the stream drains so we flush
+            // media.json at most once per (repo × kind) batch.
+            let kind_dirty = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let kind_dirty2 = kind_dirty.clone();
             stream::iter(entries_for_kind)
                 .map(|entry| {
                     let client = client2.clone();
@@ -1848,6 +1861,7 @@ pub async fn sync_media_for_system(
                     let system_id = system_id2.clone();
                     let subdir = subdir_owned.clone();
                     let canonical_by_id = canonical_by_id.clone();
+                    let kind_dirty = kind_dirty2.clone();
                     async move {
                         let canonical = canonical_by_id.get(&entry.id).map(|s| s.as_str());
                         let outcome = sync_single_rom(
@@ -1867,21 +1881,29 @@ pub async fn sync_media_for_system(
                         );
                         let action: String = match &outcome {
                             Ok(SyncOutcome::Downloaded { variant }) => {
+                                // Apply the variant under the write lock, but
+                                // DON'T flush media.json here — the per-kind
+                                // batch flush at end of buffer_unordered (line
+                                // ~1930) writes once per kind, not once per
+                                // ROM. Pre-2026-05-21 every successful download
+                                // wrote the full media.json (multi-MB on a 5K+
+                                // library) under contention from 8 concurrent
+                                // tasks. Now: 1 write per (repo × kind), ~10-30
+                                // writes total per sync vs ~1000s before.
                                 let updated = {
                                     let mut db_w = match db.write() {
                                         Ok(g) => g,
                                         Err(_) => return,
                                     };
-                                    let updated = apply_synced_variant(
+                                    apply_synced_variant(
                                         &mut db_w, &entry.id, kind, variant.clone(),
-                                    );
-                                    let _ = write_media_db(&app_data_dir, &db_w);
-                                    updated
+                                    )
                                 };
                                 let _ = app.emit(
                                     "oa://media-updated",
                                     serde_json::json!({ "romId": &entry.id, "media": &updated }),
                                 );
+                                kind_dirty.store(true, std::sync::atomic::Ordering::Release);
                                 let mut s = summary.lock().expect("summary lock");
                                 s.matched += 1;
                                 s.downloaded += 1;
@@ -1926,6 +1948,32 @@ pub async fn sync_media_for_system(
                 .buffer_unordered(8)
                 .for_each(|_| async {})
                 .await;
+
+            // Per-kind batch flush — write media.json once per
+            // (repo × kind) batch IF any successful download set the
+            // dirty flag inside the stream. Cuts media.json writes
+            // from ~1 per ROM (multi-MB write × 1000s) down to ~1
+            // per kind per repo (~10-30 total per sync).
+            if kind_dirty.load(std::sync::atomic::Ordering::Acquire) {
+                if let Ok(db_r) = db.read() {
+                    if let Err(e) = write_media_db(&app_data_dir, &db_r) {
+                        log::warn!(
+                            "oa-shell: media.json flush failed after {repo}/{kind_label}: {e}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Final flush — also runs the no-downloads case (the dirty flag
+    // gates per-kind writes, so a sync that only hits cached entries
+    // doesn't touch the disk; this safety-net write captures any
+    // accounting state we might have missed and keeps the on-disk
+    // file fresh at end-of-sync regardless.
+    if let Ok(db_r) = db.read() {
+        if let Err(e) = write_media_db(&app_data_dir, &db_r) {
+            log::warn!("oa-shell: final media.json flush failed: {e}");
         }
     }
 
