@@ -139,9 +139,17 @@ fn metadat_system_name_for(system_id: &str, ext: &str) -> Option<&'static str> {
         "channelf" => "Fairchild - Channel F",
         "vectrex" => "GCE - Vectrex",
         "wonderswan" => "Bandai - WonderSwan", // WSC titles merge upstream-side
+        "msx" => "Microsoft - MSX",
+        "msx2" => "Microsoft - MSX2",
         // MAME / 3DO: no metadat (set-based identification for MAME;
         // 3DO upstream dat has no metadata fields).
-        "mame" | "3do" => return None,
+        // ScummVM / DOSBox / native PC platforms: not in libretro-
+        // database's metadat coverage either (those catalogs key by
+        // sha1 of cart-shaped dumps; PC titles don't fit that model).
+        // Listing them explicitly so the unsupported-entries drain
+        // emits a coherent "no upstream metadat for system" status
+        // rather than silently filtering them.
+        "mame" | "3do" | "scummvm" | "dosbox" => return None,
         _ => return None,
     })
 }

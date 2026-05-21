@@ -28,12 +28,23 @@ pub fn normalize_title(s: &str) -> String {
             other => other,
         })
         .collect();
-    // 5. Drop everything that isn't ASCII alphanumeric or whitespace. This
-    //    silently strips `'`, `"`, `!`, `?`, `&`, `*`, etc. — they collapse
-    //    rather than insert spaces, preserving "bonks" / "rtype".
+    // 5. Drop everything that isn't alphanumeric or whitespace. This
+    //    silently strips `'`, `"`, `!`, `?`, `&`, `*`, etc. — they
+    //    collapse rather than insert spaces, preserving "bonks" /
+    //    "rtype".
+    //
+    //    Uses the Unicode-aware `is_alphanumeric` (not the
+    //    `is_ascii_alphanumeric` of pre-2026-05-21 code) so kana / CJK /
+    //    accented Latin characters survive: "ポケモン" → "ポケモン"
+    //    (not empty), "Pokémon" → "pokémon" (not "pokmon"). Match
+    //    matching is still ASCII-folded de-facto for most upstream
+    //    libretro-database catalogs which carry the romaji form, but
+    //    Japan-heavy libraries (PCE, MSX, SFC, WSC) where the
+    //    filename and the canonical name share kana now stand a chance
+    //    via exact-equality + Jaro-Winkler.
     let s: String = s
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect();
     // 6. Collapse runs of whitespace.
     let s = collapse_whitespace(&s);
@@ -134,10 +145,23 @@ pub fn extract_region(s: &str) -> Option<&'static str> {
 }
 
 /// 0.0..=1.0 match score. Strategies, highest wins:
-///   exact equality       → 1.00
-///   prefix relationship  → 0.95
-///   substring (≥6 chars) → 0.88
-///   jaro_winkler         → 0.00..=1.00
+///   exact equality                              → 1.00
+///   prefix relationship  (both sides ≥ 4 char)  → 0.95
+///   substring relationship (both sides ≥ 6 char) → 0.88
+///   jaro_winkler                                 → 0.00..=1.00
+///
+/// Both shortcut strategies require BOTH operands to meet a minimum
+/// length — pre-2026-05-21 the prefix branch only checked emptiness on
+/// `rom`, so `"go"` matched `"goku adventure"` at 0.95 (false
+/// positive) and `"a"` matched `"alex kidd..."` at 0.95 (worse). With
+/// the canonical-no-intro title hydration shipping at the same time,
+/// most hash-identified entries now hit the exact-equality branch and
+/// the prefix/substring shortcuts are reserved for the homebrew /
+/// hacks / unidentified path — where false positives are still
+/// costly, so tightening is correct.
+const PREFIX_SHORTCUT_MIN_LEN: usize = 4;
+const SUBSTRING_SHORTCUT_MIN_LEN: usize = 6;
+
 pub fn match_score(rom: &str, upstream: &str) -> f64 {
     if rom.is_empty() || upstream.is_empty() {
         return 0.0;
@@ -145,13 +169,16 @@ pub fn match_score(rom: &str, upstream: &str) -> f64 {
     if rom == upstream {
         return 1.0;
     }
-    if upstream.starts_with(rom) || rom.starts_with(upstream) {
+    if rom.len() >= PREFIX_SHORTCUT_MIN_LEN
+        && upstream.len() >= PREFIX_SHORTCUT_MIN_LEN
+        && (upstream.starts_with(rom) || rom.starts_with(upstream))
+    {
         return 0.95;
     }
-    if rom.len() >= 6 && upstream.contains(rom) {
-        return 0.88;
-    }
-    if upstream.len() >= 6 && rom.contains(upstream) {
+    if rom.len() >= SUBSTRING_SHORTCUT_MIN_LEN
+        && upstream.len() >= SUBSTRING_SHORTCUT_MIN_LEN
+        && (upstream.contains(rom) || rom.contains(upstream))
+    {
         return 0.88;
     }
     strsim::jaro_winkler(rom, upstream)
@@ -243,5 +270,65 @@ mod tests {
         let p = parse_upstream("Bonk's Adventure (USA).png".to_string());
         assert_eq!(p.normalized, "bonks adventure");
         assert_eq!(p.region, Some("USA"));
+    }
+
+    /// Pre-2026-05-21 the ASCII-only filter dropped kana to empty,
+    /// which made every Japan-only ROM unmatchable via the canonical-
+    /// title path. The Unicode-aware filter preserves them.
+    #[test]
+    fn normalize_preserves_cjk_kana() {
+        assert_eq!(normalize_title("ポケモン.gb"), "ポケモン");
+        // Mixed kana + ASCII titles, kana OUTSIDE parens so
+        // strip_brackets doesn't drop them. Region tag in brackets
+        // is removed first, then normalization preserves both halves.
+        assert_eq!(
+            normalize_title("Dragon Quest ドラゴンクエスト (Japan).nes"),
+            "dragon quest ドラゴンクエスト",
+        );
+    }
+
+    /// Accented Latin (é, ü, ñ, ç…) survives normalization rather than
+    /// being silently dropped to a half-stripped word.
+    #[test]
+    fn normalize_preserves_accented_latin() {
+        assert_eq!(normalize_title("Pokémon.gb"), "pokémon");
+        assert_eq!(normalize_title("Pokémon Red.gba"), "pokémon red");
+    }
+
+    /// The prefix-shortcut now requires both operands ≥ 4 characters.
+    /// Pre-fix this returned 0.95 because `upstream.starts_with(rom)`
+    /// was true for any non-empty `rom`. Now short-rom + long-upstream
+    /// falls through to Jaro-Winkler which scores below the 0.85
+    /// match threshold.
+    #[test]
+    fn match_score_short_prefix_no_longer_false_positive() {
+        // Pre-fix: "go" vs "goku adventure" returned 0.95 via prefix.
+        // Post-fix: falls through to jaro_winkler which scores below
+        // the 0.85 metadata-match threshold for unrelated titles.
+        let s_short_prefix = match_score("go", "goku adventure");
+        assert!(
+            s_short_prefix < 0.95,
+            "short-prefix shortcut should not fire, got {}",
+            s_short_prefix,
+        );
+        // Real prefix (both ≥ 4) still fires.
+        let s_legit_prefix = match_score("bonk", "bonks adventure");
+        assert!(
+            s_legit_prefix >= 0.95,
+            "legit prefix shortcut should fire, got {}",
+            s_legit_prefix,
+        );
+    }
+
+    /// Substring shortcut symmetric on both sides ≥ 6.
+    #[test]
+    fn match_score_substring_requires_both_sides_long_enough() {
+        // Pre-fix asymmetric: "super" (5 chars) contained in "super mario"
+        // would have hit the substring branch since `upstream.contains(rom)`
+        // + `rom.len() >= 6` had been the original gate — actually rom is
+        // 5 here so neither branch fired in the original either; this
+        // checks the symmetric tightening doesn't change accepted cases.
+        let s = match_score("bonks big adventure", "bonk 3 bonks big adventure");
+        assert!(s >= 0.88, "long substring should still hit, got {}", s);
     }
 }
