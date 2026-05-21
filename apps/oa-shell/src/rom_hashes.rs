@@ -40,7 +40,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
-#[cfg(test)]
 use sha1::{Digest, Sha1};
 use tauri::Emitter;
 

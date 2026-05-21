@@ -1061,6 +1061,46 @@ impl LibraryDb {
         }
     }
 
+    /// Find a library row by SHA-1 hash. Used by direct-launch to discover
+    /// an existing library entry (and its per-game overrides) when the
+    /// user spawns oa-shell with a ROM path from an external frontend.
+    /// Uses the `idx_games_sha1` index. Matches case-insensitively — sha1
+    /// is normalized to lowercase on both sides.
+    pub fn find_game_by_sha1(&self, sha1: &str) -> Result<Option<GameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial, disc_id
+                 FROM games
+                 WHERE sha1 = ?1
+                 LIMIT 1",
+            )
+            .map_err(|e| format!("prepare find_game_by_sha1: {e}"))?;
+        let mut rows = stmt
+            .query(params![sha1.to_ascii_lowercase()])
+            .map_err(|e| format!("query find_game_by_sha1: {e}"))?;
+        if let Some(row) = rows.next().map_err(|e| format!("step find_game_by_sha1: {e}"))? {
+            Ok(Some(GameRow {
+                id: row.get(0).map_err(|e| format!("col id: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col system_id: {e}"))?,
+                file_path: row.get(2).map_err(|e| format!("col file_path: {e}"))?,
+                title: row.get(3).map_err(|e| format!("col title: {e}"))?,
+                added_at: row.get(4).map_err(|e| format!("col added_at: {e}"))?,
+                core_override: row.get(5).map_err(|e| format!("col core_override: {e}"))?,
+                cover_path: row.get(6).map_err(|e| format!("col cover_path: {e}"))?,
+                seed: row.get::<_, i64>(7).map_err(|e| format!("col seed: {e}"))? != 0,
+                archive_inner_path: row.get(8).map_err(|e| format!("col archive_inner_path: {e}"))?,
+                sha1: row.get(9).map_err(|e| format!("col sha1: {e}"))?,
+                serial: row.get(10).map_err(|e| format!("col serial: {e}"))?,
+                disc_id: row.get(11).map_err(|e| format!("col disc_id: {e}"))?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Return every game in the given system that doesn't have a sha1 yet
     /// and isn't a multi-file CD image. Caller hashes them and calls
     /// `apply_rom_hash` per-row.

@@ -18,6 +18,7 @@ mod archive;
 mod bindings;
 mod cd_id;
 mod cheat_search;
+mod cli;
 mod core_installer;
 mod core_options;
 mod layout;
@@ -2190,6 +2191,11 @@ struct AppState {
     /// memory snapshot is already refreshed there every frame; the
     /// search command just reads from `memory_snapshot`.
     cheat_search: Arc<Mutex<Option<cheat_search::CheatSearchSession>>>,
+    /// Resolved direct-launch configuration from CLI args / OA_ROM env.
+    /// `None` = library mode (default zero-arg invocation). The frontend
+    /// reads this via `get_direct_launch_config` on boot to decide whether
+    /// to hide library chrome and auto-launch a ROM.
+    direct_launch: Option<cli::DirectLaunchConfig>,
 }
 
 /// Window label that drives input gating. Two-window mode wants the native
@@ -2206,10 +2212,39 @@ fn main() {
     let logger_handle = logger::init_early();
     log::info!("oa-shell starting");
 
-    let rom_path = std::env::var("OA_ROM").ok();
-    match &rom_path {
-        Some(p) => log::info!("oa-shell: OA_ROM startup ROM = {p}"),
-        None => log::info!("oa-shell: no OA_ROM set; waiting for library launch_rom commands"),
+    // Parse CLI args before any other startup work. clap exits with status
+    // 0 (for --help / --version) or 2 (for bad flags) on its own; our own
+    // validation errors get a multi-line banner and exit 2.
+    let direct_launch_cli = match cli::parse_and_resolve() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            e.emit_banner();
+            std::process::exit(2);
+        }
+    };
+
+    // OA_ROM is the legacy env-var fallback for the dev loop. When BOTH
+    // CLI args AND OA_ROM are set, CLI args win and we log the override.
+    let env_rom = std::env::var("OA_ROM").ok();
+    let direct_launch: Option<cli::DirectLaunchConfig> = match (direct_launch_cli, env_rom.as_deref()) {
+        (Some(cfg), Some(env_path)) => {
+            log::info!("oa-shell: OA_ROM={env_path} ignored — CLI args supplied");
+            Some(cfg)
+        }
+        (Some(cfg), None) => Some(cfg),
+        (None, Some(env_path)) => Some(cli::from_oa_rom_env(env_path)),
+        (None, None) => None,
+    };
+
+    // Bootstrap ROM path threaded through setup_two_window / setup_single_window
+    // into the emu thread. Library-mode (None) means "wait for launch_rom".
+    let rom_path: Option<String> = direct_launch
+        .as_ref()
+        .map(|c| c.rom_path.to_string_lossy().into_owned());
+    match (&direct_launch, &rom_path) {
+        (Some(_), Some(p)) => log::info!("oa-shell: direct-launch ROM = {p}"),
+        (None, _) => log::info!("oa-shell: no startup ROM set; waiting for library launch_rom commands"),
+        _ => {}
     }
 
     let running = Arc::new(AtomicBool::new(true));
@@ -2324,6 +2359,8 @@ fn main() {
             get_shell_mode,
             get_shell_mode_pref,
             set_shell_mode_pref,
+            get_direct_launch_config,
+            get_game,
             get_layout,
             set_layout,
             get_presentation_mode,
@@ -2429,6 +2466,7 @@ fn main() {
             let game_focus = game_focus.clone();
             let shell_mode_for_event = shell_mode_for_event.clone();
             let logger_handle = logger_handle.clone();
+            let direct_launch = direct_launch.clone();
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
@@ -2557,6 +2595,7 @@ fn main() {
                     shader_presets_watcher,
                     disc_state,
                     cheat_search: Arc::new(Mutex::new(None)),
+                    direct_launch,
                 });
 
                 // Register the quit shortcut now that the plugin is initialized.
@@ -6399,6 +6438,30 @@ fn list_monitors(state: tauri::State<'_, AppState>) -> Result<Vec<MonitorInfo>, 
 #[tauri::command]
 fn get_shell_mode(state: tauri::State<'_, AppState>) -> String {
     state.shell_mode.as_str().to_string()
+}
+
+/// Direct-launch payload for the frontend. `None` = library mode (default
+/// zero-arg invocation). The frontend reads this on boot to decide whether
+/// to hide library chrome and auto-launch the supplied ROM.
+#[tauri::command]
+fn get_direct_launch_config(
+    state: tauri::State<'_, AppState>,
+) -> Option<cli::DirectLaunchConfigDto> {
+    state
+        .direct_launch
+        .as_ref()
+        .map(cli::DirectLaunchConfigDto::from)
+}
+
+/// Fetch a single game row by id. Mirrors the data shape of `list_games` so
+/// the frontend can hydrate a synthetic launch RomEntry when direct-launch
+/// matched a library entry by SHA-1.
+#[tauri::command]
+fn get_game(
+    id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<library_db::GameRow>, String> {
+    db.list_games().map(|games| games.into_iter().find(|g| g.id == id))
 }
 
 #[derive(serde::Serialize)]
