@@ -87,6 +87,20 @@ type GameOverrides = {
   /// mappings here as a reference panel; bindings still live in the
   /// per-system Bindings page. Null / empty string = no note.
   keypadLayoutNote?: string | null;
+  /// Per-game libretro device-type override (port 0). Maps to one of
+  /// `RETRO_DEVICE_*` integer constants:
+  ///   0 = None (port disconnected)
+  ///   1 = JOYPAD (standard RetroPad — default when null)
+  ///   2 = MOUSE (Mario Paint, ACME Animation Factory)
+  ///   3 = KEYBOARD (MAME / MSX — usually system-level, not per-game)
+  ///   4 = LIGHTGUN (Zapper, Light Phaser, Saturn Stunner, Time Crisis)
+  ///   5 = ANALOG (DualShock-aware PSX, Saturn 3D Pad, paddle / spinner)
+  ///   6 = POINTER (DS stylus, House of the Dead pointer-of-doom)
+  /// Null = inherit the system default (today: every system runs
+  /// JOYPAD at LoadRom time). Dispatched via `arm_libretro_device`
+  /// after `retro_load_game` completes per the controller-after-load
+  /// rule.
+  libretroDevice?: number | null;
 };
 
 type SystemSettings = {
@@ -357,6 +371,12 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
     // persisting an empty entry.
     if (next.keypadLayoutNote != null && next.keypadLayoutNote.trim() !== "") {
       cleaned.keypadLayoutNote = next.keypadLayoutNote;
+    }
+    // libretro device type — null = inherit system default (JOYPAD).
+    // Any explicit numeric value (including 0 = NONE / disconnect)
+    // persists.
+    if (next.libretroDevice != null) {
+      cleaned.libretroDevice = next.libretroDevice;
     }
     setOverrides(cleaned);
     try {
@@ -798,6 +818,43 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
             {/* --- Input (analog routing per-game override) ---------------- */}
             <Show when={activeTab() === "input"}>
               <div class="flex flex-col gap-3">
+                {/* Per-game libretro device type. The picker spans every
+                    system because operator may want to swap to Mouse /
+                    Light Gun / Paddle for any game (the device-type
+                    dispatch is core-side: a JOYPAD-only core will ignore
+                    Light Gun, etc.). Inherited value is JOYPAD across
+                    the board today. */}
+                <div class="rounded border border-(--color-oa-bg) bg-(--color-oa-bg)/40 p-3">
+                  <div class="mb-1 text-xs font-medium text-(--color-oa-ink)">
+                    libretro device type (port 0)
+                  </div>
+                  <div class="mb-2 text-[11px] leading-snug text-(--color-oa-ink-dim)">
+                    What kind of controller this game thinks is plugged in.
+                    The core has to support the chosen device for it to do
+                    anything — most JOYPAD cores ignore Mouse / Light Gun;
+                    Stella supports Paddle (Analog) for Breakout; FCEUmm +
+                    Beetle PSX support Light Gun for Zapper / Time Crisis.
+                  </div>
+                  <select
+                    class={SELECT_CLASS}
+                    value={overrides().libretroDevice == null ? "" : String(overrides().libretroDevice)}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      void patch({
+                        libretroDevice: v === "" ? null : Number(v),
+                      });
+                    }}
+                  >
+                    <option value="">— Inherit (Standard Pad) —</option>
+                    <option value="1">Standard Pad (RetroPad)</option>
+                    <option value="5">Analog Pad / Paddle</option>
+                    <option value="2">Mouse</option>
+                    <option value="4">Light Gun</option>
+                    <option value="6">Pointer / Stylus</option>
+                    <option value="3">Keyboard</option>
+                    <option value="0">Disconnected (no controller)</option>
+                  </select>
+                </div>
                 <p class="text-xs text-(--color-oa-ink-dim)">
                   Per-game analog routing overrides. When set, these values
                   layer on top of the per-system Analog input settings — at
