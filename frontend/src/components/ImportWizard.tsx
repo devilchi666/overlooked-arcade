@@ -522,13 +522,13 @@ const ImportWizard: Component<Props> = (props) => {
       const { entries } = bucketScanned();
       const added = entries.length > 0 ? await props.library.addScannedRoms(entries) : 0;
 
-      // 3) Mirror to settings.libraryFolders so the existing watcher +
-      // Rescan-all flows keep working. Slice C leaves both stores live; a
-      // future slice can migrate the watcher to read from SQLite.
-      const tracked = props.settings.libraryFolders();
-      if (!tracked.includes(f)) {
-        props.settings.setLibraryFolders([...tracked, f]);
-      }
+      // 3) Refresh the settings store's SQLite-backed folder signal so the
+      // Settings → Library tab + watcher effect + Rescan-all menu pick up
+      // the new row immediately. (Before 2026-05-21 we mirrored the path
+      // into a localStorage list; SQLite is now the single source of
+      // truth — see DECISIONS.md "Library folders: SQLite is the single
+      // source of truth".)
+      await props.settings.refreshLibraryFolders();
 
       // 4) Post-import media + metadata sync. Best-effort — failures here
       // don't block the wizard from completing. Each system that got at

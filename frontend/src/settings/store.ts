@@ -110,7 +110,6 @@ type Persisted = {
   scalingMode: ScalingMode;
   windowMode: WindowMode;
   monitorIndex: number | null;
-  libraryFolders: string[];
   shaderPreset: ShaderPreset;
   bloomAmount: number;
   runAheadFrames: number;
@@ -118,6 +117,19 @@ type Persisted = {
   rewindEnabled: boolean;
   rewindCaptureIntervalFrames: number;
   rewindBufferMegabytes: number;
+};
+
+/// Library folder row as returned by the Rust `list_folders` Tauri command.
+/// Mirrors `library_db::Folder` (camelCase). Only the fields the settings
+/// store actually uses are typed here — rules etc. live in ImportWizard's
+/// local copy of the type.
+export type LibraryFolderRow = {
+  id: string;
+  path: string;
+  scanSubfolders: boolean;
+  subfoldersAreSystems: boolean;
+  watchEnabled: boolean;
+  lastScannedAt?: number | null;
 };
 
 function isScalingMode(v: unknown): v is ScalingMode {
@@ -141,12 +153,28 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === "string");
 }
 
+/// Pulls the legacy `libraryFolders` array out of `oa.settings.v1` (if it
+/// was written before the 2026-05-21 SQLite-folders unification). The
+/// settings store calls this once on init, hands the paths to the Rust
+/// `migrate_folders_from_local_storage` Tauri command, then rewrites the
+/// persisted settings WITHOUT the field. Returns an empty list when the
+/// payload is missing, malformed, or already migrated.
+function legacyLibraryFoldersFromLocalStorage(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return isStringArray(parsed.libraryFolders) ? parsed.libraryFolders : [];
+  } catch {
+    return [];
+  }
+}
+
 function load(): Persisted {
   const fallback: Persisted = {
     scalingMode: DEFAULT_SCALING,
     windowMode: DEFAULT_WINDOW,
     monitorIndex: null,
-    libraryFolders: [],
     shaderPreset: DEFAULT_SHADER_PRESET,
     bloomAmount: DEFAULT_BLOOM_AMOUNT,
     runAheadFrames: DEFAULT_RUN_AHEAD_FRAMES,
@@ -166,7 +194,6 @@ function load(): Persisted {
         typeof parsed.monitorIndex === "number" && Number.isInteger(parsed.monitorIndex)
           ? parsed.monitorIndex
           : null,
-      libraryFolders: isStringArray(parsed.libraryFolders) ? parsed.libraryFolders : [],
       shaderPreset: isShaderPreset(parsed.shaderPreset) ? parsed.shaderPreset : DEFAULT_SHADER_PRESET,
       bloomAmount:
         typeof parsed.bloomAmount === "number" && Number.isFinite(parsed.bloomAmount)
@@ -215,7 +242,80 @@ export function createSettingsStore() {
   const [scalingMode, setScalingMode] = createSignal<ScalingMode>(initial.scalingMode);
   const [windowMode, setWindowMode] = createSignal<WindowMode>(initial.windowMode);
   const [monitorIndex, setMonitorIndex] = createSignal<number | null>(initial.monitorIndex);
-  const [libraryFolders, setLibraryFolders] = createSignal<string[]>(initial.libraryFolders);
+  // Library folders moved out of localStorage into SQLite as of 2026-05-21
+  // — see DECISIONS.md "Library folders: SQLite is the single source of
+  // truth". The signal below is hydrated from `list_folders` on init +
+  // refreshed after every mutation. Empty array until the first fetch
+  // resolves; the watcher effect handles the transient empty state fine
+  // (it re-fires when the real list lands).
+  const [libraryFolderRows, setLibraryFolderRows] = createSignal<LibraryFolderRow[]>([]);
+  const libraryFolders = (): string[] => libraryFolderRows().map((r) => r.path);
+
+  async function refreshLibraryFolders(): Promise<void> {
+    try {
+      const rows = await invoke<LibraryFolderRow[]>("list_folders", { includeRules: false });
+      setLibraryFolderRows(rows);
+    } catch (e) {
+      console.warn("[oa-settings] list_folders failed:", e);
+    }
+  }
+
+  async function addLibraryFolderPath(path: string): Promise<void> {
+    try {
+      await invoke<LibraryFolderRow>("add_folder", {
+        path,
+        scanSubfolders: true,
+        subfoldersAreSystems: false,
+        watchEnabled: true,
+      });
+    } catch (e) {
+      // Most likely the path is already tracked — log and refresh anyway
+      // so the caller sees the existing row appear.
+      console.warn("[oa-settings] add_folder failed (already tracked?):", e);
+    }
+    await refreshLibraryFolders();
+  }
+
+  async function removeLibraryFolderById(id: string): Promise<void> {
+    try {
+      await invoke("remove_folder", { id });
+    } catch (e) {
+      console.warn("[oa-settings] remove_folder failed:", e);
+    }
+    await refreshLibraryFolders();
+  }
+
+  async function reorderLibraryFolderIds(orderedIds: string[]): Promise<void> {
+    try {
+      await invoke("reorder_folders", { orderedIds });
+    } catch (e) {
+      console.warn("[oa-settings] reorder_folders failed:", e);
+    }
+    await refreshLibraryFolders();
+  }
+
+  // One-shot migration: if the legacy localStorage payload had a
+  // `libraryFolders` array, hand it to the Rust migration command then
+  // re-save the settings WITHOUT that field so we never run again. The
+  // command is idempotent at the SQLite level (paths already present are
+  // skipped), so even if the strip-and-save races a crash we're safe.
+  const legacy = legacyLibraryFoldersFromLocalStorage();
+  void (async () => {
+    if (legacy.length > 0) {
+      try {
+        const inserted = await invoke<number>("migrate_folders_from_local_storage", {
+          paths: legacy,
+        });
+        if (inserted > 0) {
+          console.info(`[oa-settings] migrated ${inserted} library folder(s) to SQLite`);
+        }
+      } catch (e) {
+        console.warn("[oa-settings] folder migration failed:", e);
+      }
+    }
+    await refreshLibraryFolders();
+  })();
+
   const [shaderPreset, setShaderPreset] = createSignal<ShaderPreset>(initial.shaderPreset);
   const [bloomAmount, setBloomAmount] = createSignal<number>(initial.bloomAmount);
   const [runAheadFrames, setRunAheadFrames] = createSignal<number>(initial.runAheadFrames);
@@ -244,7 +344,6 @@ export function createSettingsStore() {
       scalingMode: scalingMode(),
       windowMode: windowMode(),
       monitorIndex: monitorIndex(),
-      libraryFolders: libraryFolders(),
       shaderPreset: shaderPreset(),
       bloomAmount: bloomAmount(),
       runAheadFrames: runAheadFrames(),
@@ -339,7 +438,12 @@ export function createSettingsStore() {
     scalingMode, setScalingMode,
     windowMode, setWindowMode,
     monitorIndex, setMonitorIndex,
-    libraryFolders, setLibraryFolders,
+    libraryFolders,
+    libraryFolderRows,
+    addLibraryFolderPath,
+    removeLibraryFolderById,
+    reorderLibraryFolderIds,
+    refreshLibraryFolders,
     shellModePref, setShellModePref,
     activeShellMode,
     audioDevice, setAudioDevice,

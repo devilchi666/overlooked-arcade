@@ -551,10 +551,7 @@ const App: Component = () => {
     const result = await pickFolderAndIngest(library, scanProgressReporter);
     setStatus(ingestStatus(result));
     if (result.kind === "ingested" || result.kind === "empty") {
-      const existing = settings.libraryFolders();
-      if (!existing.includes(result.folder)) {
-        settings.setLibraryFolders([...existing, result.folder]);
-      }
+      await settings.addLibraryFolderPath(result.folder);
     }
     if (result.kind === "ingested" && result.added > 0) {
       autoIdentifyAfterIngest(result.systemIds);
@@ -568,7 +565,7 @@ const App: Component = () => {
     if (!picked || Array.isArray(picked)) return;
     // Pre-flight: refuse to add an empty directory. Same check the
     // ImportWizard uses on its Step 1; keeps the quick-add path from
-    // polluting libraryFolders with a directory that has nothing in it.
+    // polluting the library with a directory that has nothing in it.
     try {
       const empty = await invoke<boolean>("directory_is_empty", { path: picked });
       if (empty) {
@@ -579,10 +576,7 @@ const App: Component = () => {
       setStatus(`Couldn't read ${picked}: ${String(e)}`);
       return;
     }
-    const existing = settings.libraryFolders();
-    if (!existing.includes(picked)) {
-      settings.setLibraryFolders([...existing, picked]);
-    }
+    await settings.addLibraryFolderPath(picked);
     setBusy("scanning");
     setStatus(`Scanning ${picked}…`);
     const summary = await rescanFolders(library, [picked], scanProgressReporter);
@@ -1322,10 +1316,7 @@ const App: Component = () => {
     const result = await ingestFolderPath(library, path, scanProgressReporter);
     setStatus(ingestStatus(result));
     if (result.kind === "ingested" || result.kind === "empty") {
-      const existing = settings.libraryFolders();
-      if (!existing.includes(result.folder)) {
-        settings.setLibraryFolders([...existing, result.folder]);
-      }
+      await settings.addLibraryFolderPath(result.folder);
     }
     if (result.kind === "ingested" && result.added > 0) {
       autoIdentifyAfterIngest(result.systemIds);
