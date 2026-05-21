@@ -544,3 +544,27 @@ They form a coherent ergonomic contract:
 3. The CLI fails loudly when it can't be safe (decision 3).
 
 Operators who set OA up once via LaunchBox / BigBox / EmulationStation get the right system, the right core, the right per-game overrides, the right window behavior — without needing a wrapper script. That's the bar this feature had to clear.
+
+---
+
+## 2026-05-21 — `cargo tauri build` does NOT bundle `cores/` or `system/`
+
+**Decision:** The release build emits `oa-shell.exe` with empty `cores/` and `system/` folders next to it. Operators populate both folders themselves from libretro buildbot nightlies (https://buildbot.libretro.com/) for cores and from their own legally-acquired BIOS dumps for `system/`. We never ship cores or BIOS bundled with the installer, and we won't add a build script that copies them from a developer's local `target/debug/` over.
+
+**Why:** Both folders may contain copyrighted material that we have no right to redistribute.
+
+- **Cores** are GPL-2.0 (libretro-frontend builds of Mednafen / MAME / etc.). Redistributing the .dll bundled with our installer means our installer becomes a GPL-2.0 derivative bundle, which forces the GPL on parts of the shell that don't need it. The 2026-05-16 libretro pivot (see "Architecture pivot: libretro frontend") was specifically driven by this concern — dynamic loading via `libloading` severs GPL propagation, but that severance only holds if we DON'T ship the cores in the installer.
+- **BIOS files** (PCE-CD `syscard3.pce`, PSX `scph5500.bin`, Saturn `sega_100.bin`, NDS `bios7.bin`/`bios9.bin`/`firmware.bin`, etc.) are all proprietary console firmware. Operators acquire them legally from their own hardware / legitimate dump archives; shipping any of them is straightforwardly copyright infringement.
+
+**Considered and rejected:**
+- **`build.rs` script that copies `target/debug/cores/` → `target/release/cores/`.** Convenient for the dev loop but the .exe would still ship empty to end users (different machine, no local cores folder). And in CI it'd silently package whatever cores the build machine happened to have.
+- **Bundle empty cores/system folders with a README pointing at the buildbot.** Acceptable in principle but the operator still has to do the work, so the README + folders add little vs. a single docs page.
+- **Bundle a "stock cores pack" via Tauri's resources mechanism.** Same GPL + BIOS-copyright problems.
+- **Ship a downloader UI that fetches cores at first run.** Already exists (`apps/oa-shell/src/core_installer.rs` + the buildbot catalog UI from commit `3f22eac`). That's the right delivery vector — operator-initiated, opt-in download, no installer-bundled cores.
+
+**How it manifests in practice:**
+- New installs see "no libretro core found" in `oa-current.log` on first launch until the operator opens the in-app Cores page and installs cores via the buildbot catalog UI.
+- The dev loop works because the developer manually populates `target/debug/cores/` once and the .exe-relative `cores/` resolution picks them up. `cargo tauri dev` runs against `target/debug/` so cores live there.
+- When iterating with `cargo tauri build`, the developer manually copies the same cores into `target/release/cores/` once.
+
+**Implication for future PRs:** Don't add cores-bundling automation. If a contributor (or a future Claude session) suggests it as a quality-of-life dev convenience, point them at this entry — the licensing rationale survives the convenience argument.

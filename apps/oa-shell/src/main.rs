@@ -2203,6 +2203,17 @@ struct AppState {
     direct_launch: Option<cli::DirectLaunchConfig>,
 }
 
+/// Hint for the emu thread's startup core load. When `Some`, run_emu_render
+/// bootstraps with the target system's core instead of the historical tg16
+/// default — direct-launch knows the target system upfront so we can skip
+/// the wasted load-PCE-CD-then-drop-and-reload-for-real-system dance.
+/// `None` = library mode (no target known, bootstrap with tg16).
+#[derive(Clone, Debug)]
+struct BootstrapHint {
+    system_id: String,
+    core_override: Option<String>,
+}
+
 /// Window label that drives input gating. Two-window mode wants the native
 /// game window's focus; single-window mode wants the main WebView's focus
 /// (it IS the game window). Matches the labels passed to the builders.
@@ -2551,9 +2562,19 @@ fn main() {
                 // Cached disc-control snapshot (RetroArch parity). Refreshed
                 // on LoadRom + after each disc swap; read by Tauri commands.
                 let disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>> = Arc::new(Mutex::new(None));
+                // Direct-launch knows the target system upfront — hand the
+                // emu thread a bootstrap hint so it loads the right libretro
+                // .dll on first launch instead of loading the tg16 default
+                // and then immediately swapping. Library mode leaves it None
+                // → tg16 bootstrap (the historical default; cheap because
+                // tg16 is also the active dev core).
+                let bootstrap_hint: Option<BootstrapHint> = direct_launch.as_ref().map(|c| BootstrapHint {
+                    system_id: c.system_id.clone(),
+                    core_override: c.core_override.clone(),
+                });
                 let shell_window = match shell_mode {
-                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
-                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle)?,
+                    ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle, bootstrap_hint.clone())?,
+                    ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle, bootstrap_hint.clone())?,
                 };
 
                 // MediaState: shared in-memory MediaDb + region prefs, hydrated
@@ -2765,6 +2786,7 @@ fn setup_two_window(
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
+    bootstrap_hint: Option<BootstrapHint>,
 ) -> tauri::Result<ShellWindow> {
     let _library = tauri::WebviewWindowBuilder::new(
         app,
@@ -2810,7 +2832,7 @@ fn setup_two_window(
                     let game = game.clone();
                     Box::new(move || game.inner_position().ok().map(|p| (p.x, p.y)))
                 };
-                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle, bootstrap_hint);
             }
         })?;
 
@@ -2833,6 +2855,7 @@ fn setup_single_window(
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
+    bootstrap_hint: Option<BootstrapHint>,
 ) -> tauri::Result<ShellWindow> {
     // Single-window mode = one transparent WebviewWindow whose
     // underlying HWND hosts both the WebView UI and the wgpu game
@@ -2875,7 +2898,7 @@ fn setup_single_window(
                     let window = window.clone();
                     Box::new(move || window.inner_position().ok().map(|p| (p.x, p.y)))
                 };
-                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle);
+                run_emu_render(running, inner_size_fn, window_position_fn, raw_window, raw_display, initial_size, rom_path, cmd_rx, app_data_dir, game_focused, ui_intercepting, game_focus, rewind_state, tas_state, video_state, memory_snapshot, disc_state, perf_stats, app_handle, bootstrap_hint);
             }
         })?;
 
@@ -2907,6 +2930,7 @@ fn run_emu_render(
     disc_state: Arc<Mutex<Option<oa_core::DiscInfo>>>,
     perf_stats: Arc<Mutex<SharedPerfStats>>,
     app_handle: tauri::AppHandle,
+    bootstrap_hint: Option<BootstrapHint>,
 ) {
     use oa_core::Core;
     use oa_libretro::LibretroCore;
@@ -2916,6 +2940,15 @@ fn run_emu_render(
     // remap inline at the dispatch site (Phase 4 slice C records the
     // libretro-shape bits into TAS files, so we want them in a local
     // we can both dispatch + log without computing twice).
+
+    // Active system id, mutable so LoadRom can swap it. Initial value
+    // matches the bootstrap hint (direct-launch target) or tg16 in
+    // library mode. Drives bindings load, keyboard-passthrough init,
+    // and the per-system core resolution below.
+    let mut current_system_id: String = bootstrap_hint
+        .as_ref()
+        .map(|h| h.system_id.clone())
+        .unwrap_or_else(|| "tg16".to_string());
 
     let mut renderer = match unsafe { oa_render::Renderer::new(raw_window, raw_display, initial_size) } {
         Ok(r) => r,
@@ -2929,13 +2962,17 @@ fn run_emu_render(
         oa_input::KeyboardMapping::empty(),
         oa_input::GamepadMapping::empty(),
     );
-    // Load PCE bindings from disk (or defaults if the file is missing) and
-    // apply them to the freshly-built poller. The bootstrap system is tg16;
-    // the active set swaps on every LoadRom that carries a different system.
-    let initial_bindings = bindings::load(&app_data_dir, "tg16");
-    apply_bindings_to_poller(&mut input, "tg16", &initial_bindings);
+    // Load bindings for the bootstrap system from disk (or defaults if
+    // the file is missing) and apply them to the freshly-built poller.
+    // Bootstrap system is tg16 in library mode, the direct-launch
+    // target in direct-launch mode (BootstrapHint determined upstream).
+    // The active set swaps on every LoadRom that carries a different
+    // system_id.
+    let initial_bindings = bindings::load(&app_data_dir, &current_system_id);
+    apply_bindings_to_poller(&mut input, &current_system_id, &initial_bindings);
     log::info!(
-        "oa-shell: emu+render thread up; bindings loaded for tg16 ({} buttons); hotkeys: F1 = reset, F5 = save state, F8 = restore",
+        "oa-shell: emu+render thread up; bindings loaded for {} ({} buttons); hotkeys: F1 = reset, F5 = save state, F8 = restore",
+        current_system_id,
         initial_bindings.len()
     );
 
@@ -2957,24 +2994,49 @@ fn run_emu_render(
     let _ = std::fs::create_dir_all(&cores_dir);
     let _ = std::fs::create_dir_all(&system_dir);
 
-    let default_dll_name = if cfg!(windows) {
-        "mednafen_pce_fast_libretro.dll"
-    } else if cfg!(target_os = "macos") {
-        "mednafen_pce_fast_libretro.dylib"
-    } else {
-        "mednafen_pce_fast_libretro.so"
-    };
+    // Bootstrap-core resolution. Direct-launch supplies a hint so we
+    // load the *target* system's core upfront instead of the tg16
+    // default-then-swap path. Library mode (None hint) keeps the tg16
+    // default — historical behavior, harmless because tg16 is also the
+    // active dev core.
+    //
+    // Priority within either branch: `OA_LIBRETRO_CORE` env (dev override,
+    // wins) → `--core` per-launch override (direct-launch only) →
+    // `cores.json` per-system pref → hardcoded default-for-system.
     let cores_pref = read_cores_pref(&app_data_dir);
-    let pref_for_tg16 = cores_pref.get("tg16").cloned();
-    let dll_name = pref_for_tg16.unwrap_or_else(|| default_dll_name.to_string());
-    if dll_name != default_dll_name {
-        log::info!("oa-shell: cores.json pref for tg16 = {dll_name}");
-    }
+    let (bootstrap_dll_name, bootstrap_system_enum): (String, oa_core::SystemId) =
+        match bootstrap_hint.as_ref() {
+            Some(hint) => {
+                let dll = hint.core_override.clone()
+                    .or_else(|| cores_pref.get(&hint.system_id).cloned())
+                    .unwrap_or_else(|| default_core_dll_for_system(&hint.system_id).to_string());
+                log::info!(
+                    "oa-shell: direct-launch bootstrap \u{2192} system={} dll={} (skipping tg16 default)",
+                    hint.system_id, dll
+                );
+                (dll, parse_system_id(&hint.system_id))
+            }
+            None => {
+                let default_dll = if cfg!(windows) {
+                    "mednafen_pce_fast_libretro.dll"
+                } else if cfg!(target_os = "macos") {
+                    "mednafen_pce_fast_libretro.dylib"
+                } else {
+                    "mednafen_pce_fast_libretro.so"
+                };
+                let dll = cores_pref.get("tg16").cloned().unwrap_or_else(|| default_dll.to_string());
+                if dll != default_dll {
+                    log::info!("oa-shell: cores.json pref for tg16 = {dll}");
+                }
+                (dll, oa_core::SystemId::PcEngine)
+            }
+        };
+
     let detected_core: Option<PathBuf> = std::env::var("OA_LIBRETRO_CORE")
         .ok()
         .map(PathBuf::from)
         .or_else(|| {
-            let p = cores_dir.join(&dll_name);
+            let p = cores_dir.join(&bootstrap_dll_name);
             if p.exists() { Some(p) } else { None }
         });
 
@@ -2990,20 +3052,21 @@ fn run_emu_render(
                  Drop a libretro core into:\n  {}\n\
                  Or set the OA_LIBRETRO_CORE env var to point at a .dll directly.\n\
                  \n\
-                 For the default (Beetle PCE Fast), download:\n\
-                   https://buildbot.libretro.com/nightly/windows/x86_64/latest/{}.zip\n\
+                 Looking for: {}\n\
+                 Download from: https://buildbot.libretro.com/nightly/windows/x86_64/latest/{}.zip\n\
                  unzip, and place {} into the cores folder above.\n\
                  ─────────────────────────────────────────────────────────────────",
                 cores_dir.display(),
-                dll_name,
-                dll_name,
+                bootstrap_dll_name,
+                bootstrap_dll_name,
+                bootstrap_dll_name,
             );
             return;
         }
     };
 
     log::info!("oa-shell: loading libretro core from {}", dll_path.display());
-    let initial_core = match LibretroCore::load(&dll_path, oa_core::SystemId::PcEngine, &system_dir, &save_dir) {
+    let initial_core = match LibretroCore::load(&dll_path, bootstrap_system_enum, &system_dir, &save_dir) {
         Ok(c) => {
             log::info!("oa-shell: libretro core loaded successfully");
             c
@@ -3014,12 +3077,9 @@ fn run_emu_render(
         }
     };
     let mut timing = initial_core.timing();
-    let mut current_core_dll: String = dll_name.clone();
-    // Active system id ("tg16" / "lynx" / …). Updated on every LoadRom.
-    // Drives the input remap dispatch + per-system cores.json lookup.
-    // Defaults to tg16 — the bootstrapping system — until the first launch
-    // supplies an explicit id.
-    let mut current_system_id: String = "tg16".to_string();
+    let mut current_core_dll: String = bootstrap_dll_name.clone();
+    // `current_system_id` was initialized at the top of run_emu_render from
+    // the bootstrap hint; LoadRom updates it on each launch.
     // `core` is Option so we can drop + reload it on a per-game core swap
     // (libretro singleton constraint: only one LibretroCore alive per process).
     // A failed swap leaves `core = None` and the frame body skips emulation
@@ -3126,11 +3186,13 @@ fn run_emu_render(
     // per-system `SystemSettings::keyboard_passthrough` override with the
     // system's compiled-in default — refreshed on every successful
     // LoadRom so a system change re-resolves the flag. Initial value
-    // matches the bootstrap system (tg16 → keyboard passthrough off).
+    // matches the bootstrap system (tg16 by default; the direct-launch
+    // target in direct-launch mode — matters for systems like mame / msx
+    // that want keyboard passthrough on from frame zero).
     let mut keyboard_passthrough_active: bool =
         system_settings::effective_keyboard_passthrough(
-            "tg16",
-            &system_settings::read_system_settings(&app_data_dir, "tg16"),
+            &current_system_id,
+            &system_settings::read_system_settings(&app_data_dir, &current_system_id),
         );
     let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
 
