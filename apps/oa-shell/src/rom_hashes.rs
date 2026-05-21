@@ -1046,6 +1046,16 @@ pub struct RomResolveSummary {
     /// system shows up as "unknown" — the UI uses this to surface
     /// "no hash DB available" rather than "we tried 1904 and found 0."
     pub canonical_entries: i64,
+    /// Library row count for this system at resolve time. Compared
+    /// against `already_identified` so the UI can show "all N games
+    /// already identified, nothing to do" when a re-run is a no-op.
+    pub library_total: i64,
+    /// Subset of `library_total` whose `games.sha1` is already
+    /// stamped (i.e. were resolved in a previous Identify pass).
+    /// `library_total - already_identified` is roughly the work the
+    /// current run will attempt (CD-shaped games further subtract
+    /// out at the CD-skip path).
+    pub already_identified: i64,
 }
 
 /// Hash every ROM in `system_id` that doesn't have a sha1 yet, look it
@@ -1152,6 +1162,8 @@ pub async fn resolve_rom_hashes_for_system(
     }
 
     let canonical_entries = db.count_rom_hashes(&systemId)?;
+    let library_total = db.count_games_for_system(&systemId)?;
+    let already_identified = db.count_games_with_hash_for_system(&systemId)?;
     let games = db.list_games_missing_hash(&systemId)?;
     let total = games.len();
     let mut summary = RomResolveSummary {
@@ -1162,7 +1174,24 @@ pub async fn resolve_rom_hashes_for_system(
         skipped_cd: 0,
         errors: 0,
         canonical_entries,
+        library_total,
+        already_identified,
     };
+
+    // Log the re-run no-op case explicitly. Without this, the operator
+    // sees "0/0 scanned, 0 matched" in the UI and assumes Identify is
+    // broken when in fact every game has been identified already and a
+    // re-run has nothing to do. The matching frontend status line
+    // also shows "N already identified" via the new summary fields.
+    if total == 0 && library_total > 0 && already_identified == library_total {
+        log::info!(
+            "rom_hashes: resolve {systemId} — all {library_total} game(s) already identified; nothing to do",
+        );
+    } else if total == 0 && library_total == 0 {
+        log::info!(
+            "rom_hashes: resolve {systemId} — no games in library for this system",
+        );
+    }
 
     // Short-circuit: nothing to match against. Skip the per-game hash
     // pass entirely — better to stamp 0 sha1s than to burn cycles on a

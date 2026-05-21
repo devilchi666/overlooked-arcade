@@ -1683,6 +1683,42 @@ impl LibraryDb {
     /// system. Exercised by the v9 migration test; parallels
     /// `count_rom_hashes`.
     #[allow(dead_code)]
+    /// Count how many games in the system have a sha1 stamped (i.e.
+    /// have been through a successful Identify ROMs pass). Used by
+    /// resolve_rom_hashes_for_system to report "X of Y already
+    /// identified, M remaining" in its summary — without this number
+    /// the no-op re-run case (everything's already stamped) shows
+    /// "0/0 scanned" with no context as to why.
+    pub fn count_games_with_hash_for_system(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM games
+                 WHERE system_id = ?1
+                   AND sha1 IS NOT NULL
+                   AND sha1 <> ''",
+                params![system_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count_games_with_hash_for_system: {e}"))?;
+        Ok(count)
+    }
+
+    /// Total games in the system (no filter on sha1 / disc_id). Used
+    /// alongside count_games_with_hash_for_system to derive
+    /// "X of Y already identified".
+    pub fn count_games_for_system(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM games WHERE system_id = ?1",
+                params![system_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count_games_for_system: {e}"))?;
+        Ok(count)
+    }
+
     pub fn count_game_serials(&self, system_id: &str) -> Result<i64, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         conn.query_row(

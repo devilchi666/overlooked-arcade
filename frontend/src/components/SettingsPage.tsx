@@ -484,6 +484,14 @@ const SettingsPage: Component<Props> = (props) => {
     /// system → the UI shows a "no hash DB available" message rather
     /// than "X unknown."
     canonicalEntries: number;
+    /// Library row count for this system at resolve time. Compared
+    /// against `alreadyIdentified` to disambiguate the "0/0" no-op
+    /// case (re-run on already-identified library → "all N identified")
+    /// from "no games in library."
+    libraryTotal: number;
+    /// Subset of `libraryTotal` whose sha1 is already stamped from a
+    /// prior successful Identify pass.
+    alreadyIdentified: number;
   };
   const [hashSyncing, setHashSyncing] = createSignal<Record<string, boolean>>({});
   const [hashSyncSummary, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
@@ -1073,9 +1081,19 @@ const SettingsPage: Component<Props> = (props) => {
                       <Show when={hashResolveSummary()[id]}>
                         {(s) => (
                           <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            {s().canonicalEntries === 0
-                              ? "identify · libretro-database has no hash DB for this system"
-                              : `identify done · ${s().matched} matched · ${s().unmatched} unknown · ${s().skippedCd} CD-skipped · ${s().errors} errors (${s().canonicalEntries} canonical entries in DB)`}
+                            {(() => {
+                              const v = s();
+                              if (v.canonicalEntries === 0) {
+                                return "identify · libretro-database has no hash DB for this system";
+                              }
+                              if (v.libraryTotal === 0) {
+                                return `identify · no games in library for this system (${v.canonicalEntries} canonical entries in DB)`;
+                              }
+                              if (v.scanned === 0 && v.alreadyIdentified === v.libraryTotal) {
+                                return `identify · all ${v.libraryTotal} games already identified (re-runs are no-ops)`;
+                              }
+                              return `identify done · ${v.matched} matched · ${v.unmatched} unknown · ${v.skippedCd} CD-skipped · ${v.errors} errors · ${v.alreadyIdentified} of ${v.libraryTotal} stamped (${v.canonicalEntries} canonical entries in DB)`;
+                            })()}
                           </p>
                         )}
                       </Show>
