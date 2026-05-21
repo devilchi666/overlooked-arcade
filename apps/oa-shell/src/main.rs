@@ -1528,9 +1528,15 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
     let has_lo = inner_names.contains("000-lo.lo");
 
     if let (Some(sys), true, true) = (system_bios, has_sm1, has_lo) {
+        // Tag the active BIOS variant in the diagnostic so the operator
+        // can confirm at a glance which flavour is loaded (stock AES/MVS
+        // vs. Universe BIOS). Helps debugging "why isn't this game
+        // booting?" — Unibios skips region locks + adds a CD-mode toggle,
+        // so behaviour differs from stock.
+        let flavour = neogeo_bios_flavour(sys);
         Ok(BiosCheck::OkCanonical {
             name: "neogeo.zip".to_string(),
-            sha1: format!("CONTENT PEEK: {sys} + sm1.sm1 + 000-lo.lo present"),
+            sha1: format!("CONTENT PEEK: {sys} [{flavour}] + sm1.sm1 + 000-lo.lo present"),
         })
     } else {
         // Zip exists but content is incomplete — surface what's missing
@@ -1547,6 +1553,24 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
             name: "neogeo.zip".to_string(),
             sha1: format!("CONTENT PEEK: missing {}", missing.join(" + ")),
         })
+    }
+}
+
+/// Classify a Neo Geo system-BIOS filename as either stock factory BIOS
+/// (Asia / USA / Japan AES + MVS variants) or community-developed
+/// Universe BIOS (Unibios). FBNeo accepts both shapes; the difference
+/// matters at runtime — Unibios adds a built-in soft-reset / region /
+/// CD-mode menu and skips region locks, so behaviour can diverge from
+/// stock for the same game.
+///
+/// Returned tag lands in the `OkCanonical` diagnostic so operators
+/// can see at a glance which BIOS flavour is active without grepping
+/// filenames against documentation.
+fn neogeo_bios_flavour(filename: &str) -> &'static str {
+    if filename.starts_with("uni-bios") || filename.starts_with("sp1-1v1") || filename.starts_with("sp-1v1") {
+        "Universe BIOS"
+    } else {
+        "stock AES/MVS"
     }
 }
 
