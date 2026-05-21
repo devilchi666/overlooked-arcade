@@ -116,8 +116,13 @@ pub enum CliError {
 }
 
 impl CliError {
-    /// Print a multi-line banner to stderr, mirroring the shell's existing
-    /// "no libretro core found" formatting in main.rs.
+    /// Display the error to the user. Always writes a multi-line banner to
+    /// stderr (visible in debug builds, in `cargo tauri dev`, and when the
+    /// release binary is launched from a console that managed to inherit
+    /// stderr). On Windows release builds the binary uses `windows_subsystem
+    /// = "windows"` so stderr is silently dropped — fall back to a native
+    /// MessageBox so the operator gets visible feedback regardless of how
+    /// they spawned the process (cmd, PowerShell, LaunchBox, double-click).
     pub fn emit_banner(&self) {
         let (heading, body) = self.banner_body();
         let width = heading.len().max(40);
@@ -131,6 +136,9 @@ impl CliError {
         eprintln!("└─{line}─┘");
         eprintln!("{body}");
         eprintln!();
+
+        #[cfg(all(target_os = "windows", not(debug_assertions)))]
+        win_msgbox::error(&heading, &format!("{heading}\n\n{body}"));
     }
 
     fn banner_body(&self) -> (String, String) {
@@ -153,14 +161,28 @@ impl CliError {
                      explicitly to override (e.g. --system tg16)."
                 ),
             ),
-            Self::AmbiguousExtension { ext, candidates } => (
-                "oa-shell: ambiguous ROM extension".to_string(),
-                format!(
+            Self::AmbiguousExtension { ext, candidates } => {
+                let mut body = format!(
                     ".{ext} matches multiple systems. Supply --system to choose.\n\
                      Candidates: {}",
                     candidates.join(", ")
-                ),
-            ),
+                );
+                // .zip / .7z are also the wrapper around extract-and-launch
+                // cart games for systems that don't open archives natively
+                // (SNES / NES / GBA / Genesis / etc.). Direct-launch v1
+                // doesn't unpack — flag this explicitly so the user knows
+                // "--system snes foo.zip" wouldn't work either.
+                if ext == "zip" || ext == "7z" {
+                    body.push_str(
+                        "\n\nNote: direct-launch v1 does NOT auto-extract archives.\n\
+                         - For MAME / Neo Geo romsets, --system mame (or neogeo) launches the .zip as-is.\n\
+                         - For cart ROMs (SNES / NES / Genesis / etc.) packaged inside .zip,\n  \
+                           extract the inner ROM file first and launch that.\n\
+                         - Or scan the archive via the Import Wizard; OA hash-matches at launch."
+                    );
+                }
+                ("oa-shell: ambiguous ROM extension".to_string(), body)
+            }
             Self::UnknownSystem(s) => (
                 "oa-shell: unknown system slug".to_string(),
                 format!(
@@ -169,6 +191,39 @@ impl CliError {
                      gba, gb, lynx, atari7800, mame, neogeo, dreamcast, ps2, psp."
                 ),
             ),
+        }
+    }
+}
+
+/// Native Windows MessageBox for CLI errors on release builds. main.rs sets
+/// `windows_subsystem = "windows"` for release, which detaches stderr — any
+/// `eprintln!` is silently dropped, so launcher-spawned and double-click
+/// invocations would see "nothing happens" on error without this fallback.
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+mod win_msgbox {
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            type_: u32,
+        ) -> i32;
+    }
+
+    const MB_OK: u32 = 0x0000_0000;
+    const MB_ICONERROR: u32 = 0x0000_0010;
+
+    pub fn error(title: &str, message: &str) {
+        let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let msg_w: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                msg_w.as_ptr(),
+                title_w.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
         }
     }
 }
