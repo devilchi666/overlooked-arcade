@@ -242,7 +242,22 @@ pub fn read_media_db(app_data_dir: &Path) -> MediaDb {
         Ok(bytes) => match serde_json::from_slice::<MediaDb>(&bytes) {
             Ok(db) => db,
             Err(e) => {
+                // Preserve the bad file as .corrupt — pre-fix the
+                // operator's media.json was silently wiped on parse
+                // failure and the bad bytes (potentially recoverable)
+                // were lost. Now they can grep the .corrupt file or
+                // hand it back for analysis.
                 log::warn!("oa-shell: media.json malformed ({e:?}); starting empty");
+                let mut backup = p.as_os_str().to_owned();
+                backup.push(".corrupt");
+                if let Err(e) = std::fs::rename(&p, std::path::Path::new(&backup)) {
+                    log::warn!("oa-shell: media.json backup-rename failed: {e}");
+                } else {
+                    log::warn!(
+                        "oa-shell: media.json saved as {} for recovery",
+                        std::path::Path::new(&backup).display()
+                    );
+                }
                 MediaDb::new()
             }
         },
@@ -264,8 +279,37 @@ pub fn write_media_db(app_data_dir: &Path, db: &MediaDb) -> std::io::Result<()> 
 pub fn read_media_prefs(app_data_dir: &Path) -> MediaPrefs {
     let p = media_prefs_path(app_data_dir);
     match std::fs::read(&p) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-        Err(_) => MediaPrefs::default(),
+        Ok(bytes) => match serde_json::from_slice::<MediaPrefs>(&bytes) {
+            Ok(prefs) => prefs,
+            Err(e) => {
+                // Loud warning + preserve the bad file as .corrupt so the
+                // operator can recover their custom region priority /
+                // kinds_to_fetch / only_sync_identified settings.
+                // Pre-fix this was a silent unwrap_or_default — a
+                // mid-write crash silently wiped the operator's
+                // customizations and the only signal was "wait, my
+                // region priority is back to defaults?"
+                log::warn!(
+                    "oa-shell: media-prefs.json malformed ({e}); starting with defaults"
+                );
+                let mut backup = p.as_os_str().to_owned();
+                backup.push(".corrupt");
+                if let Err(e) = std::fs::rename(&p, std::path::Path::new(&backup)) {
+                    log::warn!("oa-shell: media-prefs.json backup-rename failed: {e}");
+                } else {
+                    log::warn!(
+                        "oa-shell: media-prefs.json saved as {} for recovery",
+                        std::path::Path::new(&backup).display()
+                    );
+                }
+                MediaPrefs::default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => MediaPrefs::default(),
+        Err(e) => {
+            log::warn!("oa-shell: media-prefs.json read failed ({e}); starting with defaults");
+            MediaPrefs::default()
+        }
     }
 }
 
