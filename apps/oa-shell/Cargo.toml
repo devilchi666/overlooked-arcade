@@ -5,6 +5,22 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+# Standard Tauri 2 feature wiring. `custom-protocol` MUST be enabled for
+# production builds — tauri-2.x's build.rs sets `cfg(dev)` whenever
+# `custom-protocol` is OFF, and the runtime's `get_app_url` uses that
+# cfg to choose between devUrl and frontendDist. Without this feature,
+# `cargo build --release` produces a binary that still tries to load
+# from the dev server URL (typically `http://127.0.0.1:5173`), which
+# fails in production with `ERR_CONNECTION_REFUSED` because no Vite
+# server is running.
+#
+# The Tauri CLI (`cargo tauri build`) adds `--features custom-protocol`
+# automatically. With the explicit feature declared here, plain
+# `cargo build --release` also works correctly.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { workspace = true }
 
