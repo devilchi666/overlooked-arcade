@@ -51,24 +51,12 @@ Rust.
 
 ## ⬜ Phase 1 — First Genesis ROM running
 
-- ⬜ Operator validation: launch a real `.md` ROM end-to-end (pixels +
-  audio + controller). Suggested reference set: **Sonic the Hedgehog**,
-  **Streets of Rage 2**, **Phantasy Star IV**, **Gunstar Heroes**.
-- ⬜ Save state F5/F8 round-trip confirmation. ClownMDEmu supports
-  `retro_serialize`; should work via the existing path but needs live
-  validation.
-- ⬜ Multi-region testing: load USA + Europe + Japan ROM dumps to confirm
-  region auto-detect works (NTSC 59.92 Hz vs PAL 49.70 Hz timing).
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19,
-  needs operator validation.** Mapping `genesis → Sega_-_Mega_Drive_-_Genesis`
-  shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator:
-  run `Settings → Library → Sync media for Genesis` and confirm covers
-  download.
-- ⬜ Libretro-database hash matching — same — operator runs
-  `Settings → Library → Identify ROMs` to confirm No-Intro SHA-1 lookup
-  populates canonical titles + publishers + years.
-- ⬜ SMD-format dump validation — drop a `.smd` file (interleaved Super
-  Magic Drive format), confirm ClownMDEmu deinterleaves it transparently.
+- ⬜ Operator validation: **Sonic the Hedgehog**, **Streets of Rage 2**, **Phantasy Star IV**, **Gunstar Heroes** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing — operator playtest (NTSC US/JP + PAL EU).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ✅ Libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ⬜ SMD-format dump validation — operator spot-check that ClownMDEmu deinterleaves `.smd` transparently.
 
 **Acceptance gate:** A reference set of Genesis games run with pixels +
 audio + working controller at native 59.92 Hz NTSC.
@@ -77,42 +65,21 @@ audio + working controller at native 59.92 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-system shader tweaks: MD games shipped on CRTs with visible
-  scanlines; `crt-lite` is the registered default but operator may want
-  to confirm it reads correctly against the saturated MD palette
-  (Sonic's hyper-blue, Streets of Rage's neon).
-- ⬜ 3-button vs 6-button game compatibility map. A handful of titles
-  (Sonic 3D Blast, World of Illusion, Mortal Kombat 3 Ultimate's MD
-  port) misbehave with 6-button pad announce — when found, document in
-  `KNOWN_GAME_BUGS.md` with per-game pad-mode override via the per-game
-  settings drawer's Input tab.
-- ⬜ MD-specific glyphs for the bindings UI (A/B/C diamond + 6-button
-  shoulder triplet visualization).
-- ⬜ ClownMDEmu vs Genesis Plus GX vs PicoDrive comparison: validate
-  swapping cores via the per-system Cores override works without binding
-  drift. Document the practical differences in `DECISIONS.md`.
+- ⬜ Per-system shader tweaks — operator-driven MD-palette vs crt-lite validation (shader pipeline + per-system override shipped cross-system).
+- ⬜ 3-button vs 6-button game compatibility map — operator-driven KNOWN_GAME_BUGS curation.
+- ⬜ MD-specific glyphs for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system).
+- ⬜ ClownMDEmu vs Genesis Plus GX vs PicoDrive comparison — operator-driven DECISIONS doc.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM export,
-memory inspector, cheats, milestones, run-ahead) is system-agnostic and
-lights up automatically once the engine work ships. Genesis-specific
-items:
+Genesis-specific items:
 
-- ⬜ Sega CD path as separate `segacd` slug. Different libretro core
-  (`genesis_plus_gx_libretro` or `picodrive_libretro`), BIOS-required,
-  shares the MD controller convention. Out of scope until MD itself is
-  validated.
-- ⬜ 32X path as separate `sega32x` slug. Same considerations as Sega CD.
-- ⬜ Game Genie / Pro Action Replay code support — runs through the
-  libretro cheat path (project RetroArch parity slice 8); needs validation
-  that ClownMDEmu's `retro_cheat_set` accepts Genesis Game Genie format.
-- ⬜ Custom forked Mega Drive core — only if upstream regresses or we
-  want OA-specific extensions. Recipe mirrors the Beetle PCE Fast plan:
-  separate libretro-frontend build of our patched source that emits a
-  .dll we ship in the installer.
+- ✅ Sega CD path as separate `segacd` slug — shipped (segacd onboarded with own ROADMAP).
+- ✅ 32X path as separate `sega32x` slug — shipped (sega32x onboarded with own ROADMAP).
+- ⬜ Game Genie / Pro Action Replay code support — operator-driven validation of ClownMDEmu's `retro_cheat_set`.
+- ⬜ Custom forked Mega Drive core — deferred.
 
 ---
 
@@ -130,9 +97,3 @@ items:
   entry to avoid collision with PCE-CD track files. Users with `.bin`
   MD dumps rename to `.md` — same as the Atari 7800 `.bin` → `.a78`
   rename convention.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

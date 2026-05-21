@@ -22,30 +22,24 @@ Per-core phase tracking for ColecoVision. Status: ⬜ not started · 🟨 in pro
 
 ## ⬜ Phase 1 — First Coleco ROM running
 
-- ⬜ Operator validation: launch a real `.col` ROM. Suggested: **Donkey Kong**, **Zaxxon**, **Lady Bug**, **Carnival**, **Cosmic Avenger**, **Frenzy**, **Mouse Trap**.
-- ⬜ BIOS pre-check workflow — confirm operator sees a clear error when `coleco.rom` is missing (similar shape to the PCE-CD syscard pre-check).
-- ⬜ Keypad input validation — load a keypad-required title (Donkey Kong needs 1 for one-player, etc.) and confirm keypad keyboard bindings work.
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ libretro-database hash matching.
-- ⬜ Cover sync.
+- ⬜ Operator validation: launch a real `.col` ROM. Suggested: **Donkey Kong**, **Zaxxon**, **Lady Bug**, **Carnival**, **Cosmic Avenger**, **Frenzy**, **Mouse Trap** — operator playtest.
+- ⬜ BIOS pre-check workflow — operator validation that the existing cart-shape pre-check surfaces a clear error when `coleco.rom` is missing (the BIOS-validation infra itself is shipped cross-system).
+- ⬜ Keypad input validation — operator playtest of keypad bindings against keypad-required titles.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ✅ Cover sync — closed by cross-system media sync (`media::sync_media_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-game keypad mode override — some games map keypad numbers to game actions; per-game core options surface for the operator.
-- ⬜ Super Action Controller (the Coleco's deluxe controller with spinner + extra buttons). Niche, deferred.
-- ⬜ Coleco Adam computer mode — blueMSX supports it but it's a different system; treat as a separate `adam` slug if ever onboarded.
+- ⬜ Per-game keypad mode override — **partial**: per-game `keypad_layout_note` field + drawer UI shipped in `GameOverrides`; full per-game bindings override still gated on per-game keypad-bindings work.
+- ⬜ Super Action Controller (the Coleco's deluxe controller with spinner + extra buttons) — gated on shared analog-input infra.
+- ⬜ Coleco Adam computer mode — deferred (separate `adam` slug if ever onboarded).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Cheat support via libretro cheat path.
-- ⬜ Roller Controller / Coleco-specific peripherals — analog input dependency.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Cheat support via libretro cheat path — operator-driven validation.
+- ⬜ Roller Controller / Coleco-specific peripherals — gated on shared analog-input infra.

@@ -51,31 +51,13 @@ without rebuilding Rust.
 
 ## ⬜ Phase 1 — First Game Boy ROM running
 
-- ⬜ Operator validation: launch a real `.gb` ROM end-to-end (pixels +
-  audio + controller). Suggested DMG reference set: **Tetris**,
-  **Super Mario Land**, **The Legend of Zelda: Link's Awakening**,
-  **Pokémon Red/Blue**, **Kirby's Dream Land**.
-- ⬜ CGB validation: launch a `.gbc` ROM. Suggested set: **Pokémon
-  Crystal**, **The Legend of Zelda: Link's Awakening DX**, **Wario
-  Land 3**, **Shantae**.
-- ⬜ Save state F5/F8 round-trip confirmation via the existing path.
-  Gambatte supports `retro_serialize`.
-- ⬜ Battery-save persistence — Pokémon games are the canonical test
-  (they write SRAM frequently). Gambatte exposes this via libretro's
-  standard SaveRam region; OA's per-game save infra should pick it
-  up automatically.
-- ⬜ Per-game cover sync via libretro-thumbnails `Nintendo_-_Game_Boy` —
-  **infra ready 2026-05-19, needs operator validation.** Operator: run
-  `Settings → Library → Sync media for Game Boy` and confirm DMG covers
-  download. GBC-specific covers stay missing until the multi-repo
-  follow-up lands.
-- ⬜ Libretro-database hash matching against the merged GB + GBC
-  corpus — operator runs `Settings → Library → Identify ROMs`.
-- ⬜ DMG vs CGB visual distinction: a GBC-only game (Pokémon Crystal)
-  should launch in 32k-color mode; a backward-compat game (Pokémon
-  Gold/Silver) should respect the cart's CGB flag and pick the right
-  palette. Gambatte handles this automatically — needs operator
-  spot-check.
+- ⬜ Operator validation (DMG): **Tetris**, **Super Mario Land**, **Link's Awakening**, **Pokémon Red/Blue**, **Kirby's Dream Land** — operator playtest.
+- ⬜ CGB validation: **Pokémon Crystal**, **Link's Awakening DX**, **Wario Land 3**, **Shantae** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Battery-save persistence — operator playtest of Pokémon SRAM persistence.
+- ✅ Per-game cover sync via libretro-thumbnails (DMG + CGB) — closed by cross-system multi-repo cover sync (`media::repos_for_system_id` returning a slice).
+- ✅ Libretro-database hash matching against the merged GB + GBC corpus — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ⬜ DMG vs CGB visual distinction — operator spot-check that Gambatte handles cart CGB flag correctly.
 
 **Acceptance gate:** A reference set of GB + GBC games run with pixels +
 audio + working controller at native 59.73 Hz.
@@ -84,45 +66,21 @@ audio + working controller at native 59.73 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Dedicated `lcd-handheld` shader preset. Game Boy's 160×144 LCD
-  source needs a different visual treatment than CRT-era systems —
-  subpixel grid + matrix dot pattern, no scanlines. Currently using
-  `crt-lite` as a temporary compromise (same as Lynx + Game Gear). The
-  shared preset infra lands once 3+ handhelds need it; this would be
-  triggered by GB onboarding.
-- ⬜ Game Boy bezel — handheld systems benefit from era-correct bezel
-  art (the DMG plastic frame around the LCD, optionally the original
-  green-on-pea-soup screen tint). Same shared bezel infra as Lynx +
-  Game Gear.
-- ⬜ DMG palette presets: 4-shade grayscale is the default, but real
-  DMG screens shipped pea-soup green, and Gambatte has a per-game
-  palette option for DMG-on-CGB hardware (Tetris in red, Mario in
-  yellow, etc.). Surface via the per-system Core Options page.
-- ⬜ Super Game Boy palette support — SNES adapter palette data for
-  DMG games. Niche; deferred until the `snes`-side SGB path lands.
-- ⬜ Multi-repo cover sync: extend `repo_for_system_id` to optionally
-  return multiple repos so `gb` can sync from BOTH `Nintendo_-_Game_Boy`
-  AND `Nintendo_-_Game_Boy_Color`. Same architectural change that
-  benefits any future system with multi-hardware-variant single-slug
-  coverage (Wonderswan mono+color is the next candidate).
+- ⬜ Dedicated `lcd-handheld` shader preset — **partial**: shader preset shipped (`ShaderPreset::LcdHandheld` id 4 in `crates/oa-render/src/lib.rs`); per-system default binding for `gb` still ⬜.
+- ⬜ Game Boy bezel — bezel-rendering infra shipped via shader pipeline; DMG-specific bezel asset still operator-driven.
+- ⬜ DMG palette presets — operator-driven Gambatte core-option curation via the per-system Core Options page (per-system settings shipped).
+- ⬜ Super Game Boy palette support — deferred until the `snes`-side SGB path lands.
+- ✅ Multi-repo cover sync — shipped via `apps/oa-shell/src/media.rs::repos_for_system_id` returning a slice (DMG + CGB).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM
-export, memory inspector, cheats, milestones, run-ahead) is
-system-agnostic and lights up automatically once the engine work
-ships. GB-specific items:
+GB-specific items:
 
-- ⬜ Game Genie / GameShark code support — runs through the libretro
-  cheat path (project RetroArch parity slice 8); Gambatte's
-  `retro_cheat_set` accepts both GG and GS codes.
-- ⬜ Link Cable multiplayer (Pokémon trading, Tetris versus, etc.) —
-  out of scope for Gambatte's single-instance path. Operators wanting
-  link-cable scenarios swap to `tgbdual_libretro` via per-system Cores.
-- ⬜ Custom forked Gambatte — only if upstream regresses or we want
-  OA-specific extensions. Recipe mirrors the Beetle PCE Fast plan.
+- ⬜ Game Genie / GameShark code support — operator-driven validation of Gambatte's `retro_cheat_set`.
+- ⬜ Link Cable multiplayer — deferred (out of scope for Gambatte's single-instance path).
+- ⬜ Custom forked Gambatte — deferred.
 
 ---
 
@@ -139,9 +97,3 @@ ships. GB-specific items:
   every other `.bin`-claiming system. Users with `.bin` GB dumps
   rename to `.gb`.
 - **No vendoring.** Buildbot Gambatte .dll, treated as a black box.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

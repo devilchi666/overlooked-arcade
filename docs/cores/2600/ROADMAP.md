@@ -46,31 +46,27 @@ Rust.
 
 ---
 
-## ⬜ Phase 1 — First 2600 ROM running
+## 🟨 Phase 1 — First 2600 ROM running
 
 - ⬜ Operator validation: launch a real `.a26` ROM end-to-end. Suggested
   joystick-only reference set: **Adventure**, **Pitfall!**, **Yars'
   Revenge**, **River Raid**, **Asteroids**, **Combat** (1977 pack-in),
   **Space Invaders**, **Centipede**, **Missile Command**.
-- ⬜ Save state F5/F8 round-trip. Stella supports `retro_serialize`;
-  state size is tiny (~150 bytes) since the 2600 has 128 bytes of RAM
-  total.
+- ✅ Save state F5/F8 round-trip — shipped via the cross-system save-state
+  infra (Phase 1.5 + Phase 4 multi-slot UI + thumbnails).
 - ⬜ Console-switch behavior: launch a multi-game cart and confirm
   Game Select (RShift) cycles through game variations. Confirm Game
-  Reset (Enter) restarts cleanly.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready
-  2026-05-19, needs operator validation.** Run
-  `Settings → Library → Sync media for Atari 2600` and confirm covers
-  download.
-- ⬜ Libretro-database hash matching — run
-  `Settings → Library → Identify ROMs`.
+  Reset (Enter) restarts cleanly — operator validation.
+- ✅ Per-game cover sync via libretro-thumbnails — `2600 → Atari_-_2600`
+  shipped in `apps/oa-shell/src/media.rs::repos_for_system_id`.
+- ✅ Libretro-database hash matching — shipped via cross-system
+  `rom_hashes::resolve_rom_hashes_for_system`; 2600 dat ref lives in
+  `apps/oa-shell/src/rom_hashes.rs`.
 - ⬜ Region auto-detect: launch one US-NTSC, one EU-PAL ROM and
-  confirm Stella switches timing (59.92 Hz vs 49.86 Hz) without
-  manual override.
-- ⬜ Per-folder `*.bin → 2600` rule demo — operator with a `.bin`-
-  shaped library configures the rule in the Import Wizard's Step 2
-  Mapping and confirms scans pick up the `.bin` files. Documents
-  the workflow for future users.
+  confirm Stella switches timing (59.92 Hz vs 49.86 Hz) — operator
+  validation.
+- ⬜ Per-folder `*.bin → 2600` rule demo — operator workflow
+  documentation, not code.
 
 **Acceptance gate:** A reference set of joystick-controlled 2600 games
 run with pixels + audio + working FIRE / Game Select / Game Reset
@@ -78,39 +74,32 @@ controls at native 59.92 Hz NTSC.
 
 ---
 
-## ⬜ Phase 2 — Polish
+## Phase 2 — Polish
 
 - ⬜ Paddle controller support — Breakout, Kaboom!, Warlords, Night
-  Driver, Super Breakout, Indy 500, Casino, Backgammon. Analog input
-  (rotary dial), same deferred infrastructure as Atari 7800 Trak-Ball
-  and Robotron 2084 twin-stick. When the shared analog input pass
-  lands, surface paddle-required games here as a per-game input
-  override.
-- ⬜ Driving controller (Indy 500 specifically — a hybrid
-  paddle/spinner). Same gating as paddle.
-- ⬜ Keypad / "Star Raiders" controller (overlay-based games like
-  Star Raiders, Basic Programming). Niche; deferred indefinitely.
-- ⬜ Light gun (Sentinel, Shooting Arcade). Same shared light-gun
-  infrastructure that SMS Light Phaser + NES Zapper need.
-- ⬜ Per-game difficulty / TV-type / phosphor preset surface — Stella
-  has rich per-game tunables (difficulty A/B switches, phosphor
-  emulation for "FX games" like Pole Position, TIA palette presets).
-  Surface via the per-game settings drawer.
-- ⬜ Supercharger / multicart bankswitching header-strip pass — if
-  operator validation shows misses on Supercharger dumps, add a
-  header-aware sha1 candidate to `rom_header.rs`.
+  Driver, Super Breakout, Indy 500. Analog input (rotary dial),
+  deferred until shared analog-input infrastructure ships.
+- ⬜ Driving controller (Indy 500 hybrid paddle/spinner) — same gate.
+- ⬜ Keypad / "Star Raiders" controller (overlay-based games) — niche;
+  deferred indefinitely.
+- ⬜ Light gun (Sentinel, Shooting Arcade) — shared light-gun infra
+  (POINTER device shipped); operator validation pending.
+- ✅ Per-game difficulty / TV-type / phosphor preset surface — Stella's
+  RETRO_VARIABLEs flow through `core_options::refresh_schema` into the
+  per-system / per-game core-options surface automatically.
+- ⬜ Supercharger / multicart bankswitching header-strip pass — only
+  add a header-aware sha1 candidate to `rom_header.rs` if operator
+  validation shows misses on Supercharger dumps.
 
 ---
 
-## ⬜ Phase 3+ — Stretch
+## Phase 3+ — Stretch
 
 - ⬜ Cheat support — Stella's `retro_cheat_set` accepts cheat formats;
   needs validation via the project RetroArch parity slice 8.
-- ⬜ Homebrew / hack tile distinction — the 2600 has the largest
-  homebrew + reproduction scene of any OA-supported system. A
-  per-game source-of-origin tag (No-Intro / homebrew / reproduction
-  / hack) would help operators organize. Out of scope for core
-  onboarding; project-level enhancement.
+- ⬜ Homebrew / hack tile distinction — DATA work; per-game
+  source-of-origin tag (No-Intro / homebrew / reproduction / hack).
+  Project-level enhancement.
 
 ---
 
@@ -129,8 +118,3 @@ controls at native 59.92 Hz NTSC.
   reality — joystick games are the supported corpus; paddle games
   wait for shared analog-input infra.
 
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

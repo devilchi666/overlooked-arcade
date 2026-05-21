@@ -22,10 +22,10 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1 — Operator validation
 
-- ⬜ Drop `pokemini_libretro.dll` (from buildbot) into `<exe_dir>/cores/`.
-- ⬜ Drop `bios.min` (SHA-1 `DAAD4113713ED776FBD47727762BCA81BA74915F`) into `<exe_dir>/system/`.
-- ⬜ Mark a `.min` folder via the Import Wizard.
-- ⬜ Launch:
+- ⬜ Drop `pokemini_libretro.dll` (from buildbot) into `<exe_dir>/cores/` — operator-driven.
+- ⬜ Drop `bios.min` (SHA-1 `DAAD4113713ED776FBD47727762BCA81BA74915F`) into `<exe_dir>/system/` — operator-driven.
+- ⬜ Mark a `.min` folder via the Import Wizard — operator-driven.
+- ⬜ Launch (operator playtest):
   - Pokémon Pinball Mini — flagship pack-in (uses shake sensor; shipping fine without it on Phase 0)
   - Pokémon Party Mini — minigame collection
   - Pichu Bros. Mini — first-party puzzle/minigame
@@ -34,11 +34,5 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 2 — Hardening
 
-- ⬜ Shake sensor mapping via gamepad rumble / dedicated key (Phase 2.5). Some games use it for paddle force / dice rolls; most are playable without.
-- ⬜ Per-game core options templates (LCD ghosting, color overlays, etc.).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Shake sensor mapping via gamepad rumble / dedicated key — gated on rumble/motion infra (most games playable without).
+- ⬜ Per-game core options templates (LCD ghosting, color overlays, etc.) — operator-driven curation.

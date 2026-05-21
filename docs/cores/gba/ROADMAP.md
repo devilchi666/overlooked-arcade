@@ -47,29 +47,12 @@ Rust.
 
 ## ⬜ Phase 1 — First GBA ROM running
 
-- ⬜ Operator validation: launch a real `.gba` ROM end-to-end (pixels +
-  audio + controller). Suggested reference set: **The Legend of Zelda:
-  The Minish Cap**, **Pokémon FireRed / LeafGreen / Emerald**,
-  **Metroid: Zero Mission**, **Advance Wars**, **Castlevania: Aria of
-  Sorrow**, **Final Fantasy Tactics Advance**, **Mario Kart: Super
-  Circuit**, **Mother 3**.
-- ⬜ Save state F5/F8 round-trip confirmation. mGBA supports
-  `retro_serialize`.
-- ⬜ Battery-save persistence — Pokémon games are the canonical test
-  (frequent SRAM writes); GBA also has Flash-based saves on some
-  cartridges that mGBA handles transparently via libretro's SaveRam
-  region.
-- ⬜ Per-game cover sync via libretro-thumbnails — operator runs
-  `Settings → Library → Sync media for Game Boy Advance` and confirms
-  covers download.
-- ⬜ Libretro-database hash matching — operator runs
-  `Settings → Library → Identify ROMs` to confirm No-Intro SHA-1 lookup
-  populates canonical titles + publishers + years.
-- ⬜ BIOS-optional vs BIOS-required behavior: launch a BIOS-required
-  title (Splinter Cell etc.) WITHOUT `gba_bios.bin` present and confirm
-  the failure mode is informative (mGBA's BIOS-less path emulates most
-  but not all functions, and some titles hang silently rather than
-  surfacing an error).
+- ⬜ Operator validation: **Minish Cap**, **Pokémon FR/LG/Emerald**, **Metroid: Zero Mission**, **Advance Wars**, **Aria of Sorrow**, **FFTA**, **MK Super Circuit**, **Mother 3** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Battery-save persistence — operator playtest.
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ✅ Libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ⬜ BIOS-optional vs BIOS-required behavior — operator-driven; GBA-specific BIOS pre-check still ⬜ (mGBA's BIOS-less path silently hangs on some titles).
 
 **Acceptance gate:** A reference set of GBA games run with pixels +
 audio + working controller at native 59.73 Hz.
@@ -78,44 +61,23 @@ audio + working controller at native 59.73 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Dedicated `lcd-handheld` shader preset — same temporary `crt-lite`
-  compromise as Lynx / GG / GB.
-- ⬜ Per-system aspect override — GBA's 240×160 is a 3:2 ratio (not the
-  4:3 default). Either ship a per-system override (`display_aspect_override = 1.5`)
-  or document the manual setting.
-- ⬜ BIOS auto-detection / pre-launch check — when the operator launches
-  a known-BIOS-required title and `gba_bios.bin` is absent, surface a
-  banner in the per-game launch flow. Same shape as the PCE-CD BIOS
-  pre-check.
-- ⬜ Game-tilt sensor support (Kirby Tilt 'n' Tumble GBA port, Yoshi
-  Topsy-Turvy, WarioWare Twisted!) — mGBA supports this via libretro's
-  pointer-sensor extension, but OA's input layer doesn't yet route
-  motion. Deferred to the same analog-input pass as Atari 7800 Trak-Ball.
-- ⬜ Solar-sensor support (Boktai 1/2/3) — same gating as tilt sensor.
-- ⬜ Rumble support — some GBA Pokémon titles + Drill Dozer used
-  cartridge-side rumble packs. mGBA surfaces this via libretro's
-  rumble extension; needs operator-side test.
+- ⬜ Dedicated `lcd-handheld` shader preset — **partial**: shader preset shipped (`ShaderPreset::LcdHandheld` id 4); per-system default binding for `gba` still ⬜.
+- ✅ Per-system aspect override — GBA is 3:2 — shipped via `system_settings::default_display_aspect("gba") = Some(1.5)`.
+- ⬜ BIOS auto-detection / pre-launch check — GBA-specific cart-shape pre-check still ⬜ (cart-shape BIOS-check infra is shipped cross-system).
+- ⬜ Game-tilt sensor support (Kirby Tilt 'n' Tumble, Yoshi Topsy-Turvy, WarioWare Twisted!) — gated on motion-sensor infra.
+- ⬜ Solar-sensor support (Boktai 1/2/3) — gated on motion-sensor infra.
+- ⬜ Rumble support — operator-driven validation of mGBA rumble extension.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM
-export, memory inspector, cheats, milestones, run-ahead) is
-system-agnostic and lights up automatically once the engine work
-ships. GBA-specific items:
+GBA-specific items:
 
-- ⬜ Game Genie / Action Replay / CodeBreaker code support — runs
-  through the libretro cheat path (project RetroArch parity slice 8);
-  mGBA's `retro_cheat_set` accepts the GBA cheat formats.
-- ⬜ Game Link Cable multiplayer (Pokémon trading / battles, Four
-  Swords, Mario Kart Super Circuit lap-sharing) — out of scope for
-  single-instance playback. mGBA has experimental link-cable support
-  via libretro extensions but it's deferred.
-- ⬜ GBA Wireless Adapter (Pokémon FRLG / Emerald wireless trading) —
-  same deferral as Link Cable.
-- ⬜ Custom forked mGBA — only if upstream regresses or we want
-  OA-specific extensions.
+- ⬜ Game Genie / Action Replay / CodeBreaker code support — operator-driven validation of mGBA's `retro_cheat_set`.
+- ⬜ Game Link Cable multiplayer — deferred (out of scope for single-instance playback).
+- ⬜ GBA Wireless Adapter — deferred.
+- ⬜ Custom forked mGBA — deferred.
 
 ---
 
@@ -135,9 +97,3 @@ ships. GBA-specific items:
 - **`.bin` extension intentionally excluded** to avoid collision.
   Users with `.bin` GBA dumps rename to `.gba`.
 - **No vendoring.** Buildbot mGBA .dll, treated as a black box.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

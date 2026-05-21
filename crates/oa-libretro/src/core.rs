@@ -541,6 +541,13 @@ impl Core for LibretroCore {
             // (x, y, pressed) tuple back via cb_input_state's
             // RETRO_DEVICE_POINTER arm.
             s.input_pointer[port_idx] = input.pointer;
+            // Per-button analog pressure flows through the same path.
+            // Cores that don't poll RETRO_DEVICE_INDEX_ANALOG_BUTTON
+            // (most systems) ignore the stored values; PSX/Saturn/GC/DC
+            // pressure-sensitive trigger or face-button reads get the
+            // per-button i16 values back via cb_input_state's
+            // ANALOG_BUTTON arm.
+            s.input_analog_buttons[port_idx] = input.analog_buttons;
         });
     }
 

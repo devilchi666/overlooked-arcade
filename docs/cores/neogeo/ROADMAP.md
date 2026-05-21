@@ -41,45 +41,30 @@ known-good ROM-set.
 
 ## ⬜ Phase 1 — First Neo Geo game running
 
-- ⬜ Operator validation against known-good ROM-sets. Suggested
-  reference: **Metal Slug 1/2/3/X**, **KOF '97/'98**, **Samurai
-  Shodown II**, **Garou: Mark of the Wolves**, **Magician Lord**.
-- ⬜ `.neo` single-file launch validation.
-- ⬜ `.zip` ROM-set launch validation (content-peek classified).
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ Per-game cover sync via libretro-thumbnails — needs operator pass.
+- ⬜ Operator validation against known-good ROM-sets — operator playtest.
+- ⬜ `.neo` single-file launch validation — operator playtest.
+- ⬜ `.zip` ROM-set launch validation (content-peek classified) — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
 
 **Acceptance gate:** A reference set of Neo Geo games runs with
 pixels + audio + working 4-button arcade pad.
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ **Universe BIOS (Unibios) support.** Community-modified BIOS
-  adding region toggle + cheat menu + soft-dip switch UX. Drop-in
-  replacement for `neogeo.zip`. Document operator instructions in
-  KNOWN_GAME_BUGS / DECISIONS.
-- ⬜ **AES vs MVS mode toggle** — per-system core option. FBNeo
-  exposes this via `RETRO_VARIABLE`; surface it in OA's per-system
-  page.
-- ⬜ **ROM-set content validation in `check_neogeo_bios`** — replace
-  existence-only check with a peek into `neogeo.zip` confirming
-  canonical BIOS ROM files (`sp-s2.sp1`, `sm1.sm1`, `lo-s.s2`, etc.)
-  are present. Phase 2 upgrade from the Phase 0 existence-only check.
-- ⬜ **ROM-set hash matching** — extend `rom_hashes` to match `.zip`
-  ROM-sets against the no-intro Neo Geo dat at the set level (multi-
-  file ROM-set, not single-file sha1). Same gap MAME has.
+- ✅ **Universe BIOS (Unibios) support.** Shipped via `check_neogeo_bios` + `neogeo_bios_flavour(filename)` (recognizes `uni-bios_2_3.rom` through `uni-bios_4_0.rom` + `sp1-1v1.bin` + `sp-1v1_3db8c.bin`); diagnostic message tags the active variant via `neogeo_bios_flavour`.
+- ✅ **AES vs MVS mode toggle** — closed by FBNeo's RETRO_VARIABLEs flowing into the per-system core options page automatically via `core_options::refresh_schema`.
+- ⬜ **ROM-set content validation in `check_neogeo_bios`** — Phase 2 upgrade beyond existence-only check; still operator-driven.
+- ⬜ **ROM-set hash matching** — extend `rom_hashes` to match `.zip` ROM-sets at the set level (multi-file ROM-set, not single-file sha1) — same gap MAME has, deferred-until-forced.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **Neo Geo CD lineage cross-link** — UI surfaces showing "this
-  title also released on Neo Geo CD" (and vice versa) since many
-  titles cross-pollinated between the formats.
-- ⬜ **Light-pen / mahjong stick support** — niche peripherals used
-  by a small subset of Neo Geo titles (rare arcade-only).
+- ⬜ **Neo Geo CD lineage cross-link** — operator-driven UI polish.
+- ⬜ **Light-pen / mahjong stick support** — deferred (niche).
 
 ---
 
@@ -92,9 +77,3 @@ pixels + audio + working 4-button arcade pad.
   arcade, etc.) can extend `peek_zip_for_*` family.
 - **BIOS REQUIRED** — `neogeo.zip` in `<exe_dir>/system/`. FBNeo
   cannot boot without it.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

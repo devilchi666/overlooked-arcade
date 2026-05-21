@@ -202,6 +202,18 @@ enum EmuCommand {
     /// per-game → per-system → identity at the shell layer; this is the
     /// resolved value the emu thread applies. `port` is 0..=4.
     SetAnalogRouting { port: u32, routing: oa_input::AnalogRouting },
+    /// Wire a controller port to a specific libretro device type. Used
+    /// to switch a game from the default RetroPad to Mouse (Mario Paint),
+    /// Light Gun (Zapper / Time Crisis), Paddle (Breakout / Arkanoid),
+    /// or back to None / Disconnected. `device` is one of
+    /// `oa_libretro::ffi::RETRO_DEVICE_*` (NONE / JOYPAD / MOUSE /
+    /// KEYBOARD / LIGHTGUN / ANALOG / POINTER). Must run AFTER
+    /// `retro_load_game` per the
+    /// `reference_libretro_controller_after_load_game` note — emu thread
+    /// already orders LoadRom → ApplyCoreOptions → … so this is
+    /// dispatched the same way (frontend's `arm_libretro_device` fires
+    /// it after launch_rom completes).
+    SetPortDevice { port: u32, device: u32 },
     /// `None` = system default device. The emu thread rebuilds the cpal stream
     /// against the new selection; failure is logged but doesn't kill the thread.
     SetAudioDevice(Option<String>),
@@ -1528,9 +1540,15 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
     let has_lo = inner_names.contains("000-lo.lo");
 
     if let (Some(sys), true, true) = (system_bios, has_sm1, has_lo) {
+        // Tag the active BIOS variant in the diagnostic so the operator
+        // can confirm at a glance which flavour is loaded (stock AES/MVS
+        // vs. Universe BIOS). Helps debugging "why isn't this game
+        // booting?" — Unibios skips region locks + adds a CD-mode toggle,
+        // so behaviour differs from stock.
+        let flavour = neogeo_bios_flavour(sys);
         Ok(BiosCheck::OkCanonical {
             name: "neogeo.zip".to_string(),
-            sha1: format!("CONTENT PEEK: {sys} + sm1.sm1 + 000-lo.lo present"),
+            sha1: format!("CONTENT PEEK: {sys} [{flavour}] + sm1.sm1 + 000-lo.lo present"),
         })
     } else {
         // Zip exists but content is incomplete — surface what's missing
@@ -1547,6 +1565,24 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
             name: "neogeo.zip".to_string(),
             sha1: format!("CONTENT PEEK: missing {}", missing.join(" + ")),
         })
+    }
+}
+
+/// Classify a Neo Geo system-BIOS filename as either stock factory BIOS
+/// (Asia / USA / Japan AES + MVS variants) or community-developed
+/// Universe BIOS (Unibios). FBNeo accepts both shapes; the difference
+/// matters at runtime — Unibios adds a built-in soft-reset / region /
+/// CD-mode menu and skips region locks, so behaviour can diverge from
+/// stock for the same game.
+///
+/// Returned tag lands in the `OkCanonical` diagnostic so operators
+/// can see at a glance which BIOS flavour is active without grepping
+/// filenames against documentation.
+fn neogeo_bios_flavour(filename: &str) -> &'static str {
+    if filename.starts_with("uni-bios") || filename.starts_with("sp1-1v1") || filename.starts_with("sp-1v1") {
+        "Universe BIOS"
+    } else {
+        "stock AES/MVS"
     }
 }
 
@@ -2407,6 +2443,8 @@ fn main() {
             set_analog_routing,
             set_analog_routing_for_game,
             arm_analog_routing,
+            set_libretro_device_for_game,
+            arm_libretro_device,
             list_games,
             add_games,
             drop_seed_games,
@@ -4206,6 +4244,26 @@ fn run_emu_render(
                     input.set_analog_routing(p, routing);
                     log::debug!("oa-shell: analog routing hot-reloaded for port {} ({})", port, current_system_id);
                 }
+                Ok(EmuCommand::SetPortDevice { port, device }) => {
+                    // Forward to the loaded core's set_port_device. The
+                    // libretro layer no-ops + logs a warning when no ROM is
+                    // currently loaded; we let it absorb the call rather
+                    // than gating here, because the frontend pipeline can
+                    // race (the user can clear an override before a game
+                    // is loaded, and the no-op behaviour is correct).
+                    if let Some(core_ref) = core.as_mut() {
+                        core_ref.set_port_device(port, device);
+                        log::info!(
+                            "oa-shell: set_port_device({}, {}) for {}",
+                            port, device, current_system_id
+                        );
+                    } else {
+                        log::debug!(
+                            "oa-shell: SetPortDevice({}, {}) with no core loaded — ignored",
+                            port, device
+                        );
+                    }
+                }
                 Ok(EmuCommand::SetRewindConfig(cfg)) => {
                     let prev_enabled = rewind_config.enabled;
                     rewind_config = cfg;
@@ -5022,20 +5080,49 @@ fn run_emu_render(
                     // the touch/aim coordinate. v1 recordings load with
                     // pointer zeroed (covered by TasInputFrame::default).
                     let pointer = (f.pointer_x, f.pointer_y, f.pointer_pressed);
-                    let state = oa_core::InputState { buttons: f.port0, axes: [0; 4], pointer };
+                    // TAS frames don't carry per-button analog pressure
+                    // today (the recording format predates the analog-
+                    // button field); zero-fill so the replay matches the
+                    // recorded digital state. Future TAS format bump
+                    // could capture analog_buttons for pressure-sensitive
+                    // titles, mirroring how pointer fields got added.
+                    let state = oa_core::InputState {
+                        buttons: f.port0,
+                        axes: [0; 4],
+                        pointer,
+                        analog_buttons: [0; 16],
+                    };
                     // Recorded input bits are ALREADY libretro-shape
                     // (we record what the core received). Set directly
                     // — bypass the per-system remap that's only for
                     // device_query/gilrs poll output.
                     core_ref.set_input(oa_core::PortIndex::Port0, state);
                     if f.port1 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port1, oa_core::InputState { buttons: f.port1, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port1,
+                            oa_core::InputState {
+                                buttons: f.port1, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     if f.port2 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port2, oa_core::InputState { buttons: f.port2, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port2,
+                            oa_core::InputState {
+                                buttons: f.port2, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     if f.port3 != 0 {
-                        core_ref.set_input(oa_core::PortIndex::Port3, oa_core::InputState { buttons: f.port3, axes: [0; 4], pointer: (0, 0, false) });
+                        core_ref.set_input(
+                            oa_core::PortIndex::Port3,
+                            oa_core::InputState {
+                                buttons: f.port3, axes: [0; 4],
+                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                            },
+                        );
                     }
                     core_ref.run_frame();
                     // Phase 4 slice D — submit framebuffer to the video
@@ -5114,7 +5201,10 @@ fn run_emu_render(
                 let polled = input.poll(PortIndex::Port0);
                 let libretro_bits = bindings::to_libretro_bits(&current_system_id, polled.buttons);
                 core_ref.set_input(PortIndex::Port0, oa_core::InputState {
-                    buttons: libretro_bits, axes: polled.axes, pointer: polled.pointer,
+                    buttons: libretro_bits,
+                    axes: polled.axes,
+                    pointer: polled.pointer,
+                    analog_buttons: polled.analog_buttons,
                 });
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
@@ -7030,6 +7120,66 @@ fn set_analog_routing_for_game(
         let _ = tx.send(EmuCommand::SetAnalogRouting {
             port,
             routing: routing.to_runtime(),
+        });
+    }
+    Ok(())
+}
+
+/// Resolve per-game libretro device type and push to the emu thread.
+/// Same shape as `arm_analog_routing` — frontend calls this after every
+/// successful launch. Today the resolution is just per-game override →
+/// JOYPAD default (no per-system layer; most systems run JOYPAD by
+/// default and only specific games request Mouse / Light Gun / etc).
+/// Future polish: per-system default for systems where the canonical
+/// peripheral isn't JOYPAD.
+///
+/// The dispatch happens AFTER `retro_load_game` per the
+/// `reference_libretro_controller_after_load_game` memory — Mednafen
+/// cores clobber `data_ptr[]` during load. Frontend's launch flow
+/// awaits launch_rom and only then fires `arm_libretro_device`.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn arm_libretro_device(
+    gameId: String,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let _ = db.list_games()?
+        .into_iter()
+        .find(|g| g.id == gameId)
+        .ok_or_else(|| format!("game id not found: {gameId}"))?;
+    let game_overrides = db.get_game_overrides(&gameId)?;
+    // RETRO_DEVICE_JOYPAD = 1 is the universal default. Per-game
+    // override wins.
+    let device = game_overrides.libretro_device.unwrap_or(1);
+    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
+    let _ = tx.send(EmuCommand::SetPortDevice { port: 0, device });
+    Ok(())
+}
+
+/// Persist a per-game libretro device-type override (port 0) and push
+/// to the running emu. Stores into `GameOverrides::libretro_device`
+/// so the value re-applies on every future launch of this game.
+///
+/// `device = None` clears the override (game falls back to the system
+/// default JOYPAD); `device = Some(0)` explicitly disconnects port 0
+/// (RETRO_DEVICE_NONE).
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_libretro_device_for_game(
+    gameId: String,
+    device: Option<u32>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let mut overrides = db.get_game_overrides(&gameId)?;
+    overrides.libretro_device = device;
+    db.set_game_overrides(&gameId, &overrides)?;
+    // Push to the running emu (no-op if game isn't currently loaded).
+    if let Ok(tx) = state.emu_tx.lock() {
+        let _ = tx.send(EmuCommand::SetPortDevice {
+            port: 0,
+            device: device.unwrap_or(1), // RETRO_DEVICE_JOYPAD default
         });
     }
     Ok(())

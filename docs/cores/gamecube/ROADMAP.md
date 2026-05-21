@@ -31,47 +31,24 @@ game with gamepad analog sticks driving movement + C-stick aim.
 
 ## ⬜ Phase 1 — First GC game running
 
-- ⬜ Operator validation: Super Smash Bros. Melee (analog C-stick for
-  smash attacks — the canonical "is C-stick working" test), Wind
-  Waker, Resident Evil 4 (analog L/R triggers test), Metroid Prime
-  (free-aim via C-stick), Pikmin.
-- ⬜ Analog L/R trigger sensitivity test (RE4's aim is famously
-  trigger-pressure-sensitive on real hardware; Dolphin handles via
-  digital-press → analog-pressure synthesis).
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ Wii ISO smoke-test (Wii Sports / Mario Kart Wii via classic-
-  controller input — motion controls deferred).
+- ⬜ Operator validation: Smash Melee (C-stick), Wind Waker, RE4 (analog L/R triggers), Metroid Prime, Pikmin — operator playtest.
+- ⬜ Analog L/R trigger sensitivity test — gated on shared pressure-sensitive analog-trigger infra (shared with PS2/DC).
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Wii ISO smoke-test (Wii Sports / Mario Kart Wii via classic-controller input — motion controls deferred) — operator playtest.
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Wii Remote / Nunchuk / Classic Controller** dispatch. Phase
-  2.5 — needs new libretro device-type plumbing (Wii Remote isn't a
-  standard RetroPad; it's a separate libretro device class with IR
-  pointer + accelerometer + 3-axis gyro).
-- ⬜ **Per-axis keyboard binding** for main stick and C-stick (Phase
-  2.5).
-- ⬜ **Disc-id extraction** — GC discs key on 6-byte game ID at
-  offset 0 of the disc header. cd_id.rs extension.
-- ⬜ **GC + Wii cover sync split** — Wii thumbnails live in a
-  separate libretro-thumbnails repo; need per-game-region cover sync
-  routing.
+- ⬜ **Wii Remote / Nunchuk / Classic Controller** dispatch — gated on new libretro device-type plumbing.
+- ✅ **Per-axis keyboard binding** for main stick and C-stick — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback).
+- ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::gamecube` (6-byte DOL game ID at offset 0); `rom_hashes` points at `metadat/redump/Nintendo - GameCube`.
+- ✅ **GC + Wii cover sync split** — shipped via `apps/oa-shell/src/media.rs::repos_for_entry` + `is_wii_dump` (per-game-region routing).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **GameCube memory card** UX — Dolphin handles .raw memory cards;
-  per-game surface needed.
-- ⬜ **Wii motion-controls** beyond basic Wii Remote dispatch.
-  Pointer-based games (RE4 Wii Edition, Metroid Prime 3) need IR
-  cursor support.
-- ⬜ **Triforce arcade hardware** — F-Zero AX, Mario Kart Arcade GP
-  1+2. Niche.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ **GameCube memory card** UX — operator-driven validation of Dolphin .raw cards.
+- ⬜ **Wii motion-controls** beyond basic Wii Remote dispatch — gated on motion-sensor + IR-pointer infra.
+- ⬜ **Triforce arcade hardware** — F-Zero AX, Mario Kart Arcade GP 1+2 — deferred (niche).

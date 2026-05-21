@@ -32,37 +32,22 @@ with a connected gamepad's analog stick driving Mario / Link.
 
 ## ⬜ Phase 1 — First N64 game running
 
-- ⬜ Operator validation: Super Mario 64 (analog stick test), GoldenEye
-  (C-buttons for camera), Ocarina of Time, Mario Kart 64, Smash Bros 64.
-- ⬜ Analog stick smoke-test — gamepad LeftStick should drive Mario's
-  full movement range; deadzone at ~10% to filter stick drift.
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ Multi-region testing (NTSC US + NTSC JP + PAL EU).
+- ⬜ Operator validation: SM64 / GoldenEye / Ocarina of Time / MK64 / Smash 64 — operator playtest.
+- ✅ Analog stick smoke-test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing (NTSC US + NTSC JP + PAL EU) — operator playtest.
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ **Byte-swap pass** for `.n64` + `.v64` dumps to enable
-  libretro-database hash matching. `rom_header.rs` extension that
-  detects byte order and normalizes to `.z64` Big-Endian sha1
-  candidate before lookup.
-- ⬜ **Analog stick deadzone + sensitivity** per-system Core Options
-  surface — Mupen64Plus-Next exposes these.
-- ⬜ **Per-axis keyboard binding** — Phase 2.5 polish would let
-  keyboard-only users bind WASD to analog stick directions (instead
-  of using the core's d-pad-to-analog hack).
+- ✅ **Byte-swap pass** for `.n64` + `.v64` dumps — shipped via `apps/oa-shell/src/rom_header.rs::HeaderRule::ByteSwap` (normalizes to `.z64` BE sha1 candidate before lookup).
+- ⬜ **Analog stick deadzone + sensitivity** per-system Core Options surface — operator-driven Core Options curation (per-system Core Options page shipped cross-system).
+- ✅ **Per-axis keyboard binding** — shipped via `system_settings::default_analog_routing("n64")` (WASD → analog stick default).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **N64 Memory Pak / Rumble Pak** UX. Mupen64Plus-Next handles
-  these via core options; per-game surface needed.
-- ⬜ **Transfer Pak** (GB carts via N64 — Pokémon Stadium 1/2). Niche.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ **N64 Memory Pak / Rumble Pak** UX — operator-driven Mupen64Plus-Next core-option curation.
+- ⬜ **Transfer Pak** (GB carts via N64 — Pokémon Stadium 1/2) — deferred (niche).

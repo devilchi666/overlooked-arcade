@@ -20,24 +20,18 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1.5 — Hardening (post-Phase-1)
 
-- ⬜ Validate launch against the no-BIOS suggested set (Asteroids, Centipede, Ms. Pac-Man) — confirms the cart path works without a BIOS dependency.
-- ⬜ Validate launch against a BIOS-recommended title (Choplifter / Robotron 2084) — confirms BIOS lookup wires through to `<exe_dir>/system/` correctly.
-- ⬜ Probe PAL compatibility — drop a PAL .a78 dump and check the European BIOS lookup. Some core versions also accept `7800 BIOS (E).rom` alongside the US ROM.
-- ⬜ Per-game ROM-set name resolution. Today's library tile shows the filename; per-game metadata sync would surface the human title (e.g. `Ms. Pac-Man (USA) (Proto)` → `Ms. Pac-Man`).
-- ⬜ POKEY audio sanity-check — Ballblazer / Commando / Centipede use POKEY for music; cores sometimes drop POKEY output on the buildbot path. If output is silent, the recommended-BIOS path is implicated.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-19, needs operator validation.** Mapping `atari7800 → Atari_-_7800` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator: run `Settings → Library → Sync media for Atari 7800` and confirm covers download.
+- ⬜ Validate launch against the no-BIOS suggested set (Asteroids, Centipede, Ms. Pac-Man) — operator playtest.
+- ⬜ Validate launch against a BIOS-recommended title (Choplifter / Robotron 2084) — operator playtest.
+- ⬜ Probe PAL compatibility — drop a PAL .a78 dump and check the European BIOS lookup — operator playtest.
+- ✅ Per-game ROM-set name resolution — closed by cross-system hash ROM identification (`apps/oa-shell/src/rom_hashes.rs::resolve_rom_hashes_for_system`).
+- ⬜ POKEY audio sanity-check — Ballblazer / Commando / Centipede use POKEY for music — operator playtest.
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`apps/oa-shell/src/media.rs::sync_media_for_system`); `atari7800 → Atari_-_7800` shipped in `media::repo_for_system_id`.
 
 ---
 
 ## ⬜ Phase 2+ contributions
 
-- ⬜ Twin-stick (Robotron 2084 two-joystick mode) — needs the shell's second-port input wiring, which the broader Phase 6 cross-system port-handling pass will pick up.
-- ⬜ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) — needs analog-input infrastructure from the Phase 6 Phase 3 deferred-until-forced analog work.
-- ⬜ Trak-Ball / driving-controller support (Pole Position II, Asteroids Deluxe) — similar analog dependency.
-- ⬜ "High Score Cartridge" save support — the original 7800 HSC stored leaderboards in a separate cart's RAM; the ProSystem core emulates this via a small SRAM region. Verify the save state path captures it.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Twin-stick (Robotron 2084 two-joystick mode) — gated on shared analog/second-port infra.
+- ⬜ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) — gated on shared analog infra.
+- ⬜ Trak-Ball / driving-controller support (Pole Position II, Asteroids Deluxe) — gated on shared analog infra.
+- ⬜ "High Score Cartridge" save support — operator-driven validation that ProSystem's SRAM region round-trips through the save-state path.

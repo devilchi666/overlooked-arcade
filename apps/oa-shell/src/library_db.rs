@@ -94,6 +94,45 @@ pub struct GameOverrides {
     /// `arm_analog_routing` command does the resolution at launch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analog_routing: Option<crate::system_settings::AnalogRoutingPrefs>,
+    /// Free-form per-game keypad layout note. Coleco + Intellivision +
+    /// O2 (and others with non-game-specific keypads) shipped paper
+    /// overlays that told the player what each number meant in the
+    /// active game (Donkey Kong: KP1=jump, KP2=climb-up, …). Operators
+    /// record those mappings here for the frontend's per-game drawer
+    /// to surface as a reference panel — the actual key-to-keypad
+    /// bindings still live in the per-system Bindings page; this is
+    /// the "what does pressing KP3 in this game DO?" doc string.
+    ///
+    /// `None` / empty string = no per-game note. Displayed verbatim
+    /// in the per-game drawer; no markdown, no structured fields —
+    /// freeform so operators can use whichever shorthand they like
+    /// ("KP1=climb-up, KP2=climb-down, KP3=jump, KP4=duck").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keypad_layout_note: Option<String>,
+    /// Per-game libretro device-type override for port 0. Maps to one
+    /// of `oa_libretro::ffi::RETRO_DEVICE_*` values:
+    ///
+    /// - `Some(1)` (RETRO_DEVICE_JOYPAD) — standard RetroPad (default).
+    /// - `Some(2)` (RETRO_DEVICE_MOUSE) — SNES Mouse (Mario Paint),
+    ///   GC USB Mouse, generic mouse-as-pointer titles.
+    /// - `Some(4)` (RETRO_DEVICE_LIGHTGUN) — NES Zapper, SMS Light
+    ///   Phaser, Saturn Stunner, House of the Dead, Time Crisis.
+    /// - `Some(5)` (RETRO_DEVICE_ANALOG) — DualShock-shape pad on
+    ///   PSX / Saturn 3D Pad / N64 (already polled by some cores
+    ///   without an explicit set_port_device).
+    /// - `Some(6)` (RETRO_DEVICE_POINTER) — touch / stylus games
+    ///   (NDS, Dreamcast pointer-of-the-dead).
+    /// - `Some(0)` (RETRO_DEVICE_NONE) — disconnect port 0 entirely.
+    /// - `None` — fall through to the system default (JOYPAD at load
+    ///   time per `LibretroCore::load_rom`).
+    ///
+    /// Frontend's `arm_libretro_device(gameId)` command reads this on
+    /// every launch and dispatches a `SetPortDevice` to the emu thread
+    /// AFTER `retro_load_game` completes. Mednafen-derived cores
+    /// clobber `data_ptr[]` during load, so a pre-load wiring silently
+    /// disconnects (see `reference_libretro_controller_after_load_game`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libretro_device: Option<u32>,
 }
 
 /// Phase 4 slice F — one memory-watching milestone for a game.
@@ -2694,6 +2733,10 @@ mod tests {
                     stick_swap: false,
                 }],
             }),
+            keypad_layout_note: Some(
+                "Donkey Kong: KP1=climb-up, KP2=climb-down, KP3=jump".to_string(),
+            ),
+            libretro_device: Some(2), // RETRO_DEVICE_MOUSE
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

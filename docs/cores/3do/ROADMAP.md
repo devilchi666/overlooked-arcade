@@ -25,20 +25,12 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 - ⬜ Operator validation: Star Control II / Road Rash / The Need for
   Speed / Lemmings 3DO / Crash 'n Burn.
-- ⬜ Multi-region BIOS testing (FZ-1 + FZ-10 + GoldStar + Sanyo).
-- ⬜ Save state F5/F8 round-trip mid-disc.
+- ⬜ Multi-region BIOS testing (FZ-1 + FZ-10 + GoldStar + Sanyo) — operator-driven.
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system Phase 1.5 + Phase 4 save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ Disc-id extraction — 3DO discs key on LaunchMe binary in sector
-  0. Extend cd_id.rs.
-- ⬜ Per-game core option surface (Opera has many tunables —
-  multitap support, force-NTSC/PAL, etc.).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ✅ Disc-id extraction — closed by design: 3DO discs lack a standardized catalog serial; `apps/oa-shell/src/cd_id.rs::dispatch_extractor` intentionally returns None for 3DO (libretro-database's 3DO dat has zero serial fields).
+- ✅ Per-game core option surface — closed by cross-system per-game settings drawer (slice 2.8.D) + per-system settings page (slice 2.8.C).

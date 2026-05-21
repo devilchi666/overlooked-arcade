@@ -31,48 +31,25 @@ with gamepad analog stick driving movement.
 
 ## ⬜ Phase 1 — First Dreamcast game running
 
-- ⬜ Operator validation: Sonic Adventure / Crazy Taxi / Jet Set
-  Radio / Power Stone / Soulcalibur. Pick a disc matching the BIOS
-  region.
-- ⬜ Analog stick smoke-test (Sonic's full 3D platforming needs
-  smooth LeftStick → analog axis).
-- ⬜ L/R analog trigger validation (most racing games — Crazy Taxi,
-  Daytona USA — use them as gas/brake).
-- ⬜ Save state F5/F8 round-trip mid-disc.
-- ⬜ Multi-region testing (US/JP/EU).
-- ⬜ Cover sync via libretro-thumbnails Sega_-_Dreamcast.
+- ⬜ Operator validation: Sonic Adventure / Crazy Taxi / Jet Set Radio / Power Stone / Soulcalibur — operator playtest.
+- ✅ Analog stick smoke-test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
+- ⬜ L/R analog trigger validation (Crazy Taxi, Daytona USA gas/brake) — gated on shared pressure-sensitive analog-trigger infra (Phase 2.5, shared with GC/PS2).
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing (US/JP/EU) — operator playtest.
+- ✅ Cover sync via libretro-thumbnails Sega_-_Dreamcast — closed by cross-system media sync (`media::sync_media_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **VMU peripheral support** — the iconic memory-card-with-screen
-  doubled as a peripheral for some titles (Sonic Chao raising,
-  Skies of Arcadia, Sonic Adventure mini-games). Phase 2.5 work
-  alongside per-system Bindings UI for the VMU's secondary screen.
-- ⬜ **Light gun support** (House of the Dead 2, Confidential Mission,
-  Death Crimson 2). Flycast supports the DC light gun via libretro
-  pointer device.
-- ⬜ **Disc-id extraction** — DC discs key on IP.BIN signature in
-  the data track header. Extend cd_id.rs.
-- ⬜ **L/R analog trigger pressure-sensitivity** — Phase 2.5 polish.
-  Flycast supports analog triggers via RETRO_DEVICE_INDEX_ANALOG_BUTTON
-  which OA's cb_input_state currently returns 0 for (deferred along
-  with GC's analog L/R).
+- ⬜ **VMU peripheral support** — the iconic memory-card-with-screen doubled as a peripheral for some titles — gated on Phase 2.5 secondary-screen plumbing.
+- ⬜ **Light gun support** (House of the Dead 2, Confidential Mission, Death Crimson 2) — POINTER device infra is shipped (`oa_core::InputState.pointer` + `cb_input_state` POINTER dispatch); per-game light-gun smoke-test still operator-driven.
+- ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::dreamcast` (reads IP.BIN HDR serial); `rom_hashes` points at `metadat/redump/Sega - Dreamcast`.
+- ⬜ **L/R analog trigger pressure-sensitivity** — gated on shared pressure-sensitive analog-trigger infra (shared with GC/PS2).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **Naomi arcade hardware** — DC's arcade sibling running the
-  same hardware. Flycast handles Naomi via core options; potential
-  separate `naomi` slug if shipped.
-- ⬜ **DC keyboard/mouse peripherals** (Phantasy Star Online text
-  chat, Quake III Arena DC mouse aim). Phase 2.5 polish via
-  libretro KEYBOARD/MOUSE device dispatch.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ **Naomi arcade hardware** — deferred (potential separate `naomi` slug).
+- ⬜ **DC keyboard/mouse peripherals** (Phantasy Star Online text chat, Quake III DC mouse aim) — keyboard passthrough infra shipped cross-system; libretro KEYBOARD/MOUSE device dispatch for DC peripherals still ⬜.

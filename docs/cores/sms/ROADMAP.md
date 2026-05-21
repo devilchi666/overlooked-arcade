@@ -46,26 +46,12 @@ Rust.
 
 ## ⬜ Phase 1 — First SMS ROM running
 
-- ⬜ Operator validation: launch a real `.sms` ROM end-to-end (pixels +
-  audio + controller). Suggested reference set: **Alex Kidd in Miracle
-  World**, **Phantasy Star**, **Wonder Boy III: The Dragon's Trap**,
-  **Sonic the Hedgehog (SMS)**, **Shinobi**.
-- ⬜ Save state F5/F8 round-trip confirmation via the existing path —
-  Genesis Plus GX supports `retro_serialize` for SMS state.
-- ⬜ Multi-region testing: load USA + Europe + Japan (Mark III) dumps to
-  confirm region auto-detect drives the right NTSC 59.92 Hz vs PAL
-  49.70 Hz timing.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready
-  2026-05-19, needs operator validation.** Operator: run
-  `Settings → Library → Sync media for SMS` and confirm covers download.
-- ⬜ Libretro-database hash matching — same — operator runs
-  `Settings → Library → Identify ROMs` to confirm No-Intro SHA-1 lookup
-  populates canonical titles + publishers + years.
-- ⬜ Japan-region FM sound (YM2413) compatibility — Japanese SMS / Mark
-  III games (some Sega titles, Wonder Boy III JP) gain extra FM tracks
-  when the optional FM Sound Unit is enabled. GPGX surfaces this via a
-  core option; needs operator validation that the per-system Core
-  Options surface exposes it cleanly.
+- ⬜ Operator validation: **Alex Kidd in Miracle World**, **Phantasy Star**, **Wonder Boy III: The Dragon's Trap**, **Sonic the Hedgehog (SMS)**, **Shinobi** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing — operator playtest (USA + Europe + Japan/Mark III dumps).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ✅ Libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ⬜ Japan-region FM sound (YM2413) compatibility — operator-driven Core-Option curation (per-system Core Options surface shipped cross-system).
 
 **Acceptance gate:** A reference set of SMS games run with pixels +
 audio + working controller at native 59.92 Hz NTSC.
@@ -74,36 +60,19 @@ audio + working controller at native 59.92 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-system shader tweaks: SMS games shipped on CRTs; `crt-lite` is
-  the registered default but operator may want to confirm it reads
-  correctly against the SMS palette (Phantasy Star's spritework,
-  Wonder Boy III's saturated parallax).
-- ⬜ Optional BIOS handling — surface `bios.sms` presence / absence in
-  the per-system Settings page so operators understand the "skip boot
-  splash" behavior is opt-in.
-- ⬜ Light Phaser (SMS's light-gun peripheral) — deferred. Same analog-
-  input dependency as Atari 7800 Trak-Ball / Robotron twin-stick;
-  picks up once shared light-gun infra lands.
-- ⬜ 3D glasses (SMS SegaScope add-on) — deferred. Genesis Plus GX
-  supports the 3D mode via anaglyph fallback, but the OA frontend
-  doesn't surface the toggle yet.
+- ⬜ Per-system shader tweaks — operator-driven shader-preset choice (per-system shader override shipped cross-system).
+- ⬜ Optional BIOS handling — operator-driven UI polish (per-system settings page shipped cross-system).
+- ⬜ Light Phaser (SMS's light-gun peripheral) — POINTER device infra shipped cross-system; per-game Light Phaser smoke-test still ⬜.
+- ⬜ 3D glasses (SMS SegaScope add-on) — operator-driven Genesis Plus GX anaglyph fallback toggle (deferred).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM export,
-memory inspector, cheats, milestones, run-ahead) is system-agnostic and
-lights up automatically once the engine work ships. SMS-specific items:
+SMS-specific items:
 
-- ⬜ Game Genie / Pro Action Replay code support — runs through the
-  libretro cheat path (project RetroArch parity slice 8); needs
-  validation that Genesis Plus GX's `retro_cheat_set` accepts SMS
-  Game Genie format.
-- ⬜ Custom forked Genesis Plus GX — only if upstream regresses or we
-  want OA-specific SMS extensions. Recipe mirrors the Beetle PCE Fast
-  plan: separate libretro-frontend build of our patched source that
-  emits a .dll we ship in the installer.
+- ⬜ Game Genie / Pro Action Replay code support — operator-driven validation of Genesis Plus GX's `retro_cheat_set`.
+- ⬜ Custom forked Genesis Plus GX — deferred.
 
 ---
 
@@ -120,9 +89,3 @@ lights up automatically once the engine work ships. SMS-specific items:
   2600 dumps. Users with `.bin` SMS dumps rename to `.sms`.
 - **Shared .dll with Game Gear.** One Genesis Plus GX install services
   both slugs — operators installing for one get the other for free.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

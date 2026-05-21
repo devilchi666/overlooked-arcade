@@ -22,30 +22,24 @@ Per-core phase tracking for Mattel Intellivision. Status: ⬜ not started · �
 
 ## ⬜ Phase 1 — First Intv ROM running
 
-- ⬜ Operator validation: launch `.int` ROMs. Suggested: **Astrosmash**, **Utopia**, **Snafu**, **Star Strike**, **Major League Baseball**, **B-17 Bomber** (uses Intellivoice — Phase 2 polish).
-- ⬜ BIOS pre-check workflow — confirm clear error when `exec.bin` or `grom.bin` missing.
-- ⬜ 4 side-button bindings — confirm UPPER vs LOWER mapping reads correctly per-game (most games use lower buttons for primary action).
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ libretro-database hash matching + cover sync.
+- ⬜ Operator validation: **Astrosmash**, **Utopia**, **Snafu**, **Star Strike**, **Major League Baseball**, **B-17 Bomber** — operator playtest.
+- ⬜ BIOS pre-check workflow — operator validation (cart-shape BIOS-check infra shipped cross-system).
+- ⬜ 4 side-button bindings — operator playtest of UPPER vs LOWER mapping per-game.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ libretro-database hash matching + cover sync — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`) + media sync (`media::sync_media_for_system`).
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ Full 12-button keypad coverage — same shape as Coleco's keypad. Keypad numbers spread across the remaining libretro RetroPad bits (Y/X/L2/R2/L3/R3 + the unused face buttons).
-- ⬜ 16-direction disc analog input — shared analog-input infrastructure dependency. Until that lands, D-pad-as-8-way is the only option.
-- ⬜ Intellivoice voice-synthesis module support — FreeIntv's voice-module emulation is core-side; needs operator validation that B-17 Bomber + Bomb Squad + Space Spartans speak correctly out of the box.
-- ⬜ Intellivision Computer Module / ECS expansion — niche; deferred.
+- ✅ Full 12-button keypad coverage — shipped via `bindings.rs::intv` (KP0-KP9 occupy bits 1-19); `INTV_BUTTONS` surfaces all 20 entries; `default_intv_bindings` binds KP0-KP9 to Key0-Key9.
+- ⬜ 16-direction disc analog input — gated on shared analog-input infra.
+- ⬜ Intellivoice voice-synthesis module support — operator validation of FreeIntv's voice module.
+- ⬜ Intellivision Computer Module / ECS expansion — deferred (niche).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Cheat support via libretro cheat path.
-- ⬜ INTV Music Synthesizer (the ECS music synthesizer peripheral). Defer.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Cheat support via libretro cheat path — operator-driven validation.
+- ⬜ INTV Music Synthesizer (the ECS music synthesizer peripheral) — deferred.

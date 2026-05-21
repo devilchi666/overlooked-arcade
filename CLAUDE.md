@@ -74,6 +74,25 @@ See `docs/PARKING_LOT.md`. If something comes up that isn't current-phase work f
 - Frontend is NOT a Cargo crate. Lives at `frontend/` with `package.json`, built by Vite.
 - Shaders in `crates/oa-render/shaders/*.wgsl` (engine-level) and `shaders/presets/*.preset.toml` (shipped presets).
 
+## ROADMAP hygiene — close items with their PR
+
+The per-core `docs/cores/<id>/ROADMAP.md` files are the authoritative status surface for what's shipped vs open per system. Earlier audits found them drifting weeks behind reality because nobody had a clear "when do these get updated?" policy. The rule going forward:
+
+**If a PR ships work that closes a ROADMAP bullet, the same PR flips that bullet from `⬜` to `✅` in the corresponding `docs/cores/<id>/ROADMAP.md` — in the same commit.**
+
+Concrete checklist when wrapping up a code change:
+1. Did this PR close any ⬜ items in `docs/cores/<active>/ROADMAP.md`? Flip them to ✅ and add a short citation: `✅ Feature (in apps/oa-shell/src/foo.rs::bar)`.
+2. If the PR touched code shared across systems, check the other affected systems' ROADMAPs too. Cross-system features (the shader pipeline, save states, the libretro loader) commonly close items on multiple ROADMAPs at once.
+3. If the work surfaced a NEW item that wasn't on the ROADMAP, add it as a fresh `⬜` bullet rather than carrying it in your head.
+4. If the work is partial (e.g. "shipped detection but not dispatch"), keep the bullet `⬜` and append a status note: `⬜ Light gun support — detection in place (in cd_id.rs); dispatch pending operator validation`.
+
+Two surfaces sit beside the per-core ROADMAPs:
+
+- `docs/NEXT.md` — cross-system priority queue (HIGH / MEDIUM / LOWER / DEFERRED / DATA bands + a cross-system infrastructure inventory). Updated when items move between bands or land. Read this when picking up a fresh session without a specific assignment.
+- `docs/cores/AUDIT_<date>.md` — one-shot cross-system sweep, only created when ROADMAPs drift far enough that a full re-derivation is needed. The 2026-05-21 audit was the first; its findings have been migrated back into the per-core ROADMAPs and the audit doc removed.
+
+Per-core ROADMAPs are the source of truth for per-system status. If you find yourself updating `NEXT.md` or an audit doc instead of the per-core ROADMAP, stop and update the ROADMAP first.
+
 ## Debugging — where the logs live
 
 A unified Rust + frontend log stream lands in three places at runtime (see `docs/DECISIONS.md` 2026-05-18 "Three-output logger" entry for the full design):

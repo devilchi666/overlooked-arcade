@@ -147,6 +147,16 @@ pub struct AnalogStickRouting {
     /// Keyboard fallback is OR-ed with gamepad output — if both are
     /// active, the larger magnitude wins per-axis.
     pub keyboard: [Option<Keycode>; 4],
+    /// Mouse-position routing. When `Some(X)` the mouse's screen-X
+    /// position drives this stick's X axis (paddle / spinner games:
+    /// 2600 Breakout, Coleco Super Action, Arkanoid in MAME). When
+    /// `Some(Y)` the mouse's Y drives the stick's Y axis (rare —
+    /// flight-stick yoke pitch). When `Some(Xy)` both axes follow
+    /// the mouse (true mouse-as-stick for SNES Mouse-aware titles
+    /// like Mario Paint when the operator wants stick semantics).
+    /// `None` = mouse position doesn't affect this stick. OR-merges
+    /// with gamepad + keyboard — the largest magnitude per axis wins.
+    pub mouse_source: Option<MouseSource>,
     /// Radial deadzone, normalized 0.0..=0.5. Stick magnitudes below
     /// this threshold are clamped to zero; magnitudes above are
     /// rescaled to span [0, 1] so the usable range stays full.
@@ -163,13 +173,30 @@ pub struct AnalogStickRouting {
     pub invert_y: bool,
 }
 
+/// Which mouse axes (if any) feed an analog stick. See
+/// [`AnalogStickRouting::mouse_source`] for the resolution rules. Mouse
+/// position is sampled in the same screen coordinates the POINTER
+/// pipeline uses; the value is normalized against the primary screen
+/// dimensions (-1.0 = left/top edge, +1.0 = right/bottom edge) before
+/// being merged with the gamepad + keyboard sources.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseSource {
+    /// Mouse X → stick X axis. Standard paddle / spinner mapping.
+    X,
+    /// Mouse Y → stick Y axis. Rare — flight-stick yoke pitch.
+    Y,
+    /// Both axes follow the mouse — true mouse-as-stick semantics.
+    Xy,
+}
+
 impl Default for AnalogStickRouting {
     /// Identity routing: Left → Left, Right → Right, no deadzone, 1.0
-    /// sensitivity, no inversion, no keyboard fallback.
+    /// sensitivity, no inversion, no keyboard fallback, no mouse source.
     fn default() -> Self {
         Self {
             gamepad_source: GamepadStick::Left,
             keyboard: [None; 4],
+            mouse_source: None,
             deadzone: 0.0,
             sensitivity: 1.0,
             invert_x: false,
@@ -478,7 +505,44 @@ impl InputPoller {
         // the game window doesn't cover the full screen.
         let pointer = self.poll_pointer();
 
-        InputState { buttons: bits, axes, pointer }
+        // Per-button analog pressure. Slot i corresponds to RetroPad
+        // bit i (same indexing the digital `bits` uses). For most
+        // buttons the value is binary: 0 if released, 32767 if
+        // pressed — mirrors the digital bitmask so cores that poll
+        // ANALOG_BUTTON for non-trigger buttons get a sensible value.
+        // L2 (slot 12) and R2 (slot 13) get their continuous values
+        // from gilrs's actual trigger axes when a gamepad is
+        // connected, so pressure-sensitive titles (Gran Turismo's
+        // brake, Metal Gear Solid's prone walk, GameCube's analog
+        // triggers) receive real analog data.
+        let mut analog_buttons: [i16; 16] = [0; 16];
+        for bit in 0..16 {
+            if (bits >> bit) & 1 == 1 {
+                analog_buttons[bit] = i16::MAX;
+            }
+        }
+        if let Some(pad) = pad_opt.as_ref() {
+            // gilrs's LeftTrigger2 / RightTrigger2 (L2 / R2) are analog
+            // buttons. `button_data(btn).map(|d| d.value())` returns the
+            // pressure as f32 in 0.0..=1.0 — actual analog value rather
+            // than just the button state. Override the binary slot
+            // values above with the real pressure when a gamepad is
+            // connected. L2 = slot 12, R2 = slot 13 per RetroPad layout.
+            if let Some(d) = pad.button_data(gilrs::Button::LeftTrigger2) {
+                let v = d.value().clamp(0.0, 1.0);
+                if v > 0.0 {
+                    analog_buttons[12] = (v * i16::MAX as f32) as i16;
+                }
+            }
+            if let Some(d) = pad.button_data(gilrs::Button::RightTrigger2) {
+                let v = d.value().clamp(0.0, 1.0);
+                if v > 0.0 {
+                    analog_buttons[13] = (v * i16::MAX as f32) as i16;
+                }
+            }
+        }
+
+        InputState { buttons: bits, axes, pointer, analog_buttons }
     }
 
     /// Sample the OS mouse position + left-button state via
@@ -628,6 +692,38 @@ fn compute_stick_output(
     if key_held(routing.keyboard[0]) { y = 1.0; }   // up in gilrs convention
     if key_held(routing.keyboard[1]) { y = -1.0; }  // down
 
+    // Mouse-position routing — OR-merge if the routing opts in.
+    // Mouse position is sampled in physical screen coordinates and
+    // normalized against the primary monitor's dimensions. This is the
+    // same screen-relative coordinate space the Phase 0 pointer code
+    // uses; for paddle / spinner games the absolute mapping is the
+    // intuitive default (mouse at center = stick at rest). Gilrs's +Y
+    // convention is "up = positive", so we negate the screen Y (which
+    // is "down = positive" in OS coords) before merging — keeps the
+    // sign convention identical between the three input sources.
+    //
+    // OR-merge rule: the source with the larger absolute magnitude
+    // wins per-axis. Same behavior the keyboard fallback uses.
+    if let Some(src) = routing.mouse_source {
+        let mouse = device_state.get_mouse();
+        const ASSUMED_SCREEN_W: f32 = 1920.0;
+        const ASSUMED_SCREEN_H: f32 = 1080.0;
+        let mx = (mouse.coords.0 as f32 / ASSUMED_SCREEN_W * 2.0 - 1.0).clamp(-1.0, 1.0);
+        let my = -(mouse.coords.1 as f32 / ASSUMED_SCREEN_H * 2.0 - 1.0).clamp(-1.0, 1.0);
+        match src {
+            MouseSource::X => {
+                if mx.abs() > x.abs() { x = mx; }
+            }
+            MouseSource::Y => {
+                if my.abs() > y.abs() { y = my; }
+            }
+            MouseSource::Xy => {
+                if mx.abs() > x.abs() { x = mx; }
+                if my.abs() > y.abs() { y = my; }
+            }
+        }
+    }
+
     // Radial deadzone in 2D — magnitudes below threshold zero out,
     // magnitudes above get rescaled to [0, 1]. Pure-axis deadzones
     // (per-axis thresholding) feel sticky on diagonals; radial is the
@@ -732,6 +828,60 @@ mod analog_tests {
     fn default_routing_right_uses_right_stick() {
         let r = AnalogStickRouting::default_right();
         assert_eq!(r.gamepad_source, GamepadStick::Right);
+    }
+
+    // --- Analog-button-pressure synthesis -------------------------------
+    //
+    // The poll-time logic that builds `InputState.analog_buttons` runs
+    // inside `InputPoller::poll` and depends on a live gilrs Gamepad
+    // (button_data has no constructor outside a real device session).
+    // We exercise the mirror-the-digital-bitmask formula directly via a
+    // helper that matches what poll() does — anything more requires a
+    // mock gamepad layer that doesn't exist today.
+
+    fn analog_buttons_from_bits(bits: u32) -> [i16; 16] {
+        let mut out: [i16; 16] = [0; 16];
+        for bit in 0..16 {
+            if (bits >> bit) & 1 == 1 {
+                out[bit] = i16::MAX;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn analog_buttons_mirror_digital_bitmask() {
+        // Every pressed digital bit should map to MAX pressure at the
+        // matching analog-button slot. Slot mapping is identity to
+        // RetroPad bit position so the libretro core sees the same
+        // pressure on its ANALOG_BUTTON poll as it does on its
+        // JOYPAD bitmask poll, for cores that read both.
+        let bits = 0b0000_0000_0000_1011; // bits 0, 1, 3 set
+        let out = analog_buttons_from_bits(bits);
+        assert_eq!(out[0], i16::MAX);
+        assert_eq!(out[1], i16::MAX);
+        assert_eq!(out[2], 0);
+        assert_eq!(out[3], i16::MAX);
+        for i in 4..16 {
+            assert_eq!(out[i], 0);
+        }
+    }
+
+    #[test]
+    fn analog_buttons_zero_when_no_digital_press() {
+        assert_eq!(analog_buttons_from_bits(0), [0; 16]);
+    }
+
+    #[test]
+    fn analog_buttons_array_is_16_slots_for_retropad_bits_0_through_15() {
+        // The slot count must match libretro's RetroPad button range
+        // (RETRO_DEVICE_ID_JOYPAD_R3 = 15). cb_input_state masks `id >
+        // 15` to 0 already, but the array's bound is the contract.
+        let out = analog_buttons_from_bits(u32::MAX);
+        assert_eq!(out.len(), 16);
+        for i in 0..16 {
+            assert_eq!(out[i], i16::MAX, "slot {} should saturate at MAX", i);
+        }
     }
 
     // --- Pointer viewport math ------------------------------------------

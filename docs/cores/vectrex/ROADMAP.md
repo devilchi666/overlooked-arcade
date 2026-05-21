@@ -20,29 +20,23 @@ Per-core phase tracking for GCE Vectrex. Status: ⬜ not started · 🟨 in prog
 
 ## ⬜ Phase 1 — First Vectrex ROM running
 
-- ⬜ Operator validation: launch `.vec` ROMs. Suggested: **Mine Storm** (the built-in pack-in — needs BIOS), **Berzerk**, **Star Trek: The Motion Picture**, **Spike**, **Bedlam**, **Pole Position**, **Solar Quest**, **Scramble**, **Web Wars**.
-- ⬜ Optional BIOS install (`vectrex.bin`) — confirm Mine Storm launches via the BIOS pack-in path.
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ Cover sync + libretro-database hashing.
+- ⬜ Operator validation: launch `.vec` ROMs. Suggested: **Mine Storm**, **Berzerk**, **Star Trek: The Motion Picture**, **Spike**, **Bedlam**, **Pole Position**, **Solar Quest**, **Scramble**, **Web Wars** — operator playtest.
+- ⬜ Optional BIOS install (`vectrex.bin`) — operator-driven.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ Cover sync + libretro-database hashing — closed by cross-system media sync (`media::sync_media_for_system`) + hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Dedicated `vector-phosphor` shader preset — Gaussian glow on vector lines, no scanlines, optional persistence trail to mimic the CRT phosphor afterimage.
-- ⬜ Translucent overlay rendering — per-game PNG overlay composited over the framebuffer to recreate the plastic-color-strip feature.
-- ⬜ Aspect ratio override — Vectrex CRT was portrait (3:4 ish); per-system aspect tweak.
-- ⬜ The Vectrex 3D Imager — period-correct stereoscopic accessory; niche, deferred.
+- ⬜ Dedicated `vector-phosphor` shader preset — Gaussian glow on vector lines, no scanlines, optional persistence trail. Not yet shipped (separate from generic `LcdHandheld` preset).
+- ⬜ Translucent overlay rendering — per-game PNG overlay composited over the framebuffer to recreate the plastic-color-strip feature. Not yet shipped.
+- ⬜ Aspect ratio override — Vectrex CRT was portrait (3:4); per-system aspect override infra is shipped cross-system (`system_settings::default_display_aspect`) but Vectrex-specific portrait default still ⬜.
+- ⬜ The Vectrex 3D Imager — deferred (niche).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Cheat support (uncertain if vecx exposes useful `retro_cheat_set`).
-- ⬜ Custom-built vector renderer at OA-engine level — eventually replacing vecx's raster output with native vector-stroke rendering on the OA wgpu pipeline.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Cheat support — operator-driven validation that vecx exposes useful `retro_cheat_set`.
+- ⬜ Custom-built vector renderer at OA-engine level — not yet shipped (Phase 3+, ~500 lines).

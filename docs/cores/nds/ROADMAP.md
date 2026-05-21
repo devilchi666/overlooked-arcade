@@ -33,41 +33,23 @@ a stylus-driven game (Phantom Hourglass works with mouse-as-touch).
 
 ## ⬜ Phase 1 — First NDS game running
 
-- ⬜ Operator validation (button-only): NSMB DS, Mario Kart DS.
-- ⬜ Operator validation (stylus): Phantom Hourglass, Brain Age,
-  Picross DS. Mouse should translate to touch input cleanly.
-- ⬜ Save state F5/F8 round-trip.
+- ⬜ Operator validation (button-only): NSMB DS, Mario Kart DS — operator playtest.
+- ⬜ Operator validation (stylus): Phantom Hourglass, Brain Age, Picross DS — operator playtest of mouse-as-touch.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Window-relative pointer coordinates** — Phase 0 uses screen-
-  relative mouse via device_query with assumed 1920×1080. Phase 2.5
-  polish wires Tauri window context for pixel-perfect mapping to the
-  game-output rectangle within the OA window.
-- ⬜ **Microphone input** for blow-puzzles + voice puzzles + spoken-
-  word minigames (Phantom Hourglass / Brain Age / Hotel Dusk).
-- ⬜ **Per-game touch overlay UI** — visual stylus cursor + touch-
-  area indicator overlay so operators see where their pointer is
-  on the DS bottom screen.
-- ⬜ **DSi enhancements** for games with DSi-exclusive features
-  (camera, DSiWare). Phase 3+ work — melonDS supports DSi via
-  separate firmware files.
-- ⬜ **Multi-touch support** — POINTER device's index parameter
-  selects between touches; Phase 0 only handles index 0. Niche
-  (DS only has single-touch).
+- ✅ **Window-relative pointer coordinates** — shipped via `InputPoller::set_pointer_viewport` + `Renderer::last_viewport()` + per-frame wiring in `apps/oa-shell/src/main.rs:5382-5393`.
+- ⬜ **Microphone input** for blow-puzzles + voice puzzles — gated on libretro mic device dispatch (deferred-until-forced).
+- ⬜ **Per-game touch overlay UI** — visual stylus cursor + touch-area indicator overlay — operator-driven polish.
+- ⬜ **DSi enhancements** for games with DSi-exclusive features (camera, DSiWare) — deferred (Phase 3+).
+- ⬜ **Multi-touch support** — POINTER device's index parameter (Phase 0 only handles index 0) — deferred (niche).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ DS rumble pak peripheral.
-- ⬜ GBA slot peripheral (some DS games — Pokémon, Castlevania
-  Portrait of Ruin — use the GBA slot for cart-detection).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ DS rumble pak peripheral — gated on rumble infra.
+- ⬜ GBA slot peripheral — deferred.

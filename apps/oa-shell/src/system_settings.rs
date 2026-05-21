@@ -175,6 +175,12 @@ pub struct AnalogStickPrefs {
     /// [up, down, left, right] keyboard bindings. Each `None` = unbound.
     #[serde(default)]
     pub keyboard: [Option<String>; 4],
+    /// Mouse-position routing — `"x"` / `"y"` / `"xy"` / unset. When
+    /// set, the mouse's screen coordinates feed the stick's axes
+    /// (paddle / spinner games; rare flight-yoke pitch). OR-merges
+    /// with gamepad + keyboard at the runtime layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mouse_source: Option<String>,
     #[serde(default)]
     pub deadzone: f32,
     #[serde(default = "default_sensitivity")]
@@ -193,6 +199,7 @@ impl Default for AnalogStickPrefs {
         Self {
             gamepad_source: "left".into(),
             keyboard: [None, None, None, None],
+            mouse_source: None,
             deadzone: 0.0,
             sensitivity: 1.0,
             invert_x: false,
@@ -211,7 +218,8 @@ impl AnalogStickPrefs {
 
     /// Convert to runtime `oa_input::AnalogStickRouting`. Resolves the
     /// keyboard string slots via `crate::bindings::keycode_from_name` —
-    /// unmapped or malformed names quietly drop to `None`.
+    /// unmapped or malformed names quietly drop to `None`. Unknown
+    /// `mouse_source` strings collapse to `None` the same way.
     pub fn to_runtime(&self) -> oa_input::AnalogStickRouting {
         let keyboard = [
             self.keyboard[0].as_deref().and_then(crate::bindings::keycode_from_name),
@@ -219,9 +227,16 @@ impl AnalogStickPrefs {
             self.keyboard[2].as_deref().and_then(crate::bindings::keycode_from_name),
             self.keyboard[3].as_deref().and_then(crate::bindings::keycode_from_name),
         ];
+        let mouse_source = self.mouse_source.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+            "x"  => Some(oa_input::MouseSource::X),
+            "y"  => Some(oa_input::MouseSource::Y),
+            "xy" => Some(oa_input::MouseSource::Xy),
+            _ => None,
+        });
         oa_input::AnalogStickRouting {
             gamepad_source: oa_input::GamepadStick::parse(&self.gamepad_source),
             keyboard,
+            mouse_source,
             deadzone: self.deadzone.clamp(0.0, 0.5),
             sensitivity: self.sensitivity.clamp(0.1, 4.0),
             invert_x: self.invert_x,
@@ -379,6 +394,7 @@ pub fn default_analog_routing(system_id: &str) -> Option<AnalogRoutingPrefs> {
                         Some("A".into()), // left
                         Some("D".into()), // right
                     ],
+                    mouse_source: None,
                     deadzone: 0.0,
                     sensitivity: 1.0,
                     invert_x: false,
@@ -547,6 +563,38 @@ mod tests {
         // All four WASD slots must have resolved to Some(Keycode).
         assert!(runtime.left.keyboard.iter().all(|k| k.is_some()),
             "n64 WASD default must resolve every slot to a real Keycode");
+    }
+
+    #[test]
+    fn mouse_source_round_trips_through_to_runtime() {
+        // The string-form `mouse_source` should resolve to the
+        // matching `oa_input::MouseSource` variant via `to_runtime`.
+        for (s, expected) in &[
+            ("x",  Some(oa_input::MouseSource::X)),
+            ("y",  Some(oa_input::MouseSource::Y)),
+            ("xy", Some(oa_input::MouseSource::Xy)),
+            ("X",  Some(oa_input::MouseSource::X)),   // case-insensitive
+            ("XY", Some(oa_input::MouseSource::Xy)),
+        ] {
+            let prefs = AnalogStickPrefs {
+                mouse_source: Some(s.to_string()),
+                ..AnalogStickPrefs::default()
+            };
+            assert_eq!(prefs.to_runtime().mouse_source, *expected, "case {s:?}");
+        }
+        // Unknown / empty / unset → None at runtime.
+        for s in &["", "left", "garbage", "z"] {
+            let prefs = AnalogStickPrefs {
+                mouse_source: Some(s.to_string()),
+                ..AnalogStickPrefs::default()
+            };
+            assert!(
+                prefs.to_runtime().mouse_source.is_none(),
+                "unknown mouse_source {s:?} must resolve to None"
+            );
+        }
+        // Default prefs (None) → None at runtime.
+        assert!(AnalogStickPrefs::default().to_runtime().mouse_source.is_none());
     }
 
     #[test]

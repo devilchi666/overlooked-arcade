@@ -783,6 +783,15 @@ const App: Component = () => {
       // the game uses per-system-only routing until restart.
       void invoke<void>("arm_analog_routing", { gameId: entry.id })
         .catch((e) => console.warn("[oa-launch] arm_analog_routing failed:", e));
+      // Shared analog input infra — resolve per-game libretro device
+      // type (Mouse / Light Gun / Paddle / etc.) and dispatch to the
+      // emu thread AFTER retro_load_game. Mednafen cores clobber
+      // data_ptr[] during load, so this must run post-launch_rom;
+      // we're already inside the launch-completed branch so the
+      // ordering is correct. Soft failure: at worst the game runs
+      // with the default JOYPAD device.
+      void invoke<void>("arm_libretro_device", { gameId: entry.id })
+        .catch((e) => console.warn("[oa-launch] arm_libretro_device failed:", e));
       // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
       // story as milestones (SQLite is source of truth; emu-thread
       // runtime is the live evaluator that runs on next launch otherwise).

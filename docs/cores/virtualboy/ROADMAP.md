@@ -20,29 +20,23 @@ Per-core phase tracking for Nintendo Virtual Boy. Status: ⬜ not started · �
 
 ## ⬜ Phase 1 — First VB ROM running
 
-- ⬜ Operator validation: launch `.vb` ROMs. Single-D-pad-friendly: **Mario's Tennis** (the pack-in), **V-Tetris**, **Wario Cruise** (Japan), **Jack Bros**, **Galactic Pinball**, **Virtual Boy Wario Land**.
-- ⬜ 3D mode validation: try anaglyph (default), confirm red/cyan glasses produce the depth effect. Then try side-by-side mode if the operator has VR hardware.
-- ⬜ Save state F5/F8 round-trip — Beetle VB supports `retro_serialize`.
-- ⬜ Cover sync + libretro-database hashing.
+- ⬜ Operator validation: **Mario's Tennis** (pack-in), **V-Tetris**, **Wario Cruise** (Japan), **Jack Bros**, **Galactic Pinball**, **Virtual Boy Wario Land** — operator playtest.
+- ⬜ 3D mode validation — operator playtest (anaglyph + side-by-side).
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ Cover sync + libretro-database hashing — closed by cross-system media sync (`media::sync_media_for_system`) + hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Right D-pad bindings — currently deferred (see DECISIONS). Two paths: bind to libretro L2/R2/L3/R3 + Beetle VB core option, OR wait for shared analog-input infra. Either way unlocks: **Mario Clash** (jump-platforming with right D-pad for jump), **Virtual Boy Wario Land** (right D-pad for special moves), **Teleroboxer** (left/right punches independently), **Red Alarm**, **Vertical Force**.
-- ⬜ Modern VR support via OpenXR — render the side-by-side dual-perspective directly to a VR headset rather than anaglyph fallback. Significant engineering work; far-out polish.
-- ⬜ Color-tinting palette options — Beetle VB has core options to tint the red LEDs with different palettes (red-on-black is canonical, but green-on-black / amber-on-black appeal to some operators). Surface in per-system Core Options page.
-- ⬜ Dedicated `vb-monochrome` shader — the OA `plain` default is correct for VB, but a custom shader could add subtle LED-grain noise + the 1995-era curve of the visor's reflection.
+- ⬜ Right D-pad bindings — not yet shipped (deferred; see DECISIONS). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force.
+- ⬜ Modern VR support via OpenXR — deferred (Phase 2+, ~800 lines).
+- ⬜ Color-tinting palette options — operator-driven Beetle VB Core-Option curation (per-system Core Options page shipped cross-system).
+- ⬜ Dedicated `vb-monochrome` shader — not yet shipped (~120 lines WGSL).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Cheat support.
-- ⬜ Eyestrain / break-reminder warning — the real Virtual Boy famously caused headaches after extended play; a polite reminder UI could be quaint period homage.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Cheat support — operator-driven validation.
+- ⬜ Eyestrain / break-reminder warning — operator-driven UI polish.
