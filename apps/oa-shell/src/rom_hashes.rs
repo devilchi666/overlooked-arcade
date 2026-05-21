@@ -367,8 +367,41 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
 /// Extensions we deliberately skip when computing hashes — CD-container
 /// formats whose content hash means something different from "the
 /// canonical ROM bytes." See module docs.
-fn is_cd_container_ext(ext: &str) -> bool {
-    matches!(ext, "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso" | "bin")
+///
+/// `.bin` and `.iso` are special: they're CD-container extensions ONLY
+/// on systems that use disc-based media. On cart systems (Atari 2600,
+/// ColecoVision, Intellivision, Odyssey², Channel F, etc.) a `.bin`
+/// file is the raw cart dump and SHOULD be hashed normally. Pre-fix
+/// the function treated `.bin` as CD universally, silently routing
+/// 2600/Coleco/Intv/O2 `.bin` ROMs to the disc-id peek (which
+/// returns "no signature" → skipped_cd) instead of hashing them
+/// against the no-intro DAT.
+fn is_cd_container_ext(ext: &str, system_id: &str) -> bool {
+    // Universal CD-container extensions — these only ever appear on
+    // disc-based systems and always mean "skip the hash, do disc-id".
+    if matches!(ext, "cue" | "chd" | "ccd" | "toc" | "m3u") {
+        return true;
+    }
+    // `.bin` and `.iso` only count as CD on systems that actually use
+    // disc media. Cart systems' `.bin` dumps go through the normal
+    // hash path.
+    if matches!(ext, "bin" | "iso") {
+        return matches!(
+            system_id,
+            "pce-cd"
+                | "segacd"
+                | "saturn"
+                | "psx"
+                | "ps2"
+                | "neocd"
+                | "pcfx"
+                | "gamecube"
+                | "dreamcast"
+                | "3do"
+                | "psp"
+        );
+    }
+    false
 }
 
 fn hash_cache_path(app_data_dir: &Path, system_id: &str) -> PathBuf {
@@ -1230,7 +1263,7 @@ pub async fn resolve_rom_hashes_for_system(
                 .and_then(|s| s.to_str())
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
-            if is_cd_container_ext(&ext) {
+            if is_cd_container_ext(&ext, &systemId) {
                 continue;
             }
             let key = (g.file_path.clone(), g.archive_inner_path.clone());
@@ -1244,27 +1277,49 @@ pub async fn resolve_rom_hashes_for_system(
             let system_for_hash = systemId.clone();
             // Run on Tokio's blocking pool so the async runtime isn't
             // blocked for the duration. rayon::par_iter inside the
-            // closure spreads the work across rayon's CPU pool —
-            // effectively saturating all cores for the duration.
+            // closure spreads the work across a bounded CPU pool.
+            //
+            // Pool size is capped at min(4, num_cpus) to bound transient
+            // memory. Each worker may transiently hold up to ~2× the ROM
+            // bytes during header-rule candidate generation (N64 ByteSwap
+            // rule allocates a swapped copy of the 64 MB ROM before
+            // hashing). On a 16-core machine, unbounded rayon would
+            // spawn 16 workers × ~128 MB each = ~2 GB transient — fine
+            // on a desktop with 32+ GB RAM, painful on a Steam Deck or
+            // laptop. The 4-worker cap keeps peak transient at ~512 MB
+            // for N64 and far less for everything else, at minimal cost
+            // to wall-clock time (the hash work is mostly memcpy + sha1
+            // which doesn't scale past memory bandwidth on most CPUs).
+            let cpu_count = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4);
+            let pool_size = cpu_count.min(4).max(1);
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(pool_size)
+                .thread_name(|i| format!("oa-hash-{i}"))
+                .build()
+                .map_err(|e| format!("rayon pool build: {e}"))?;
             let results: Vec<((String, Option<String>), Vec<Sha1Candidate>)> =
                 tokio::task::spawn_blocking(move || {
-                    cart_keys
-                        .into_par_iter()
-                        .filter_map(|key| {
-                            let (file_path, inner) = &key;
-                            match rom_bytes_for(file_path, inner.as_deref()) {
-                                Ok(bytes) => {
-                                    let candidates = candidate_sha1s(&bytes, &system_for_hash);
-                                    Some((key, candidates))
+                    pool.install(|| {
+                        cart_keys
+                            .into_par_iter()
+                            .filter_map(|key| {
+                                let (file_path, inner) = &key;
+                                match rom_bytes_for(file_path, inner.as_deref()) {
+                                    Ok(bytes) => {
+                                        let candidates = candidate_sha1s(&bytes, &system_for_hash);
+                                        Some((key, candidates))
+                                    }
+                                    // Skip failures here — the for-loop's
+                                    // cache-miss path will retry and surface
+                                    // the error through its existing
+                                    // progress-emission flow.
+                                    Err(_) => None,
                                 }
-                                // Skip failures here — the for-loop's
-                                // cache-miss path will retry and surface
-                                // the error through its existing
-                                // progress-emission flow.
-                                Err(_) => None,
-                            }
-                        })
-                        .collect()
+                            })
+                            .collect()
+                    })
                 })
                 .await
                 .map_err(|e| format!("parallel hash join: {e}"))?;
@@ -1286,7 +1341,7 @@ pub async fn resolve_rom_hashes_for_system(
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
-        if is_cd_container_ext(&ext) {
+        if is_cd_container_ext(&ext, &systemId) {
             // CD path: peek the disc-id from the data track, look it up
             // in `game_serials`, stamp `games.disc_id` so re-scans skip
             // the peek. Archived CDs use `peek_disc_id_archived` which
@@ -1425,11 +1480,21 @@ pub async fn resolve_rom_hashes_for_system(
                     });
                 }
                 Err(e) => {
-                    // Unsupported format (.chd today) or read failure.
-                    // Counts as skipped — don't surface as an error since
-                    // the operator's library may be predominantly CHDs
-                    // and that's not a setup mistake.
-                    summary.skipped_cd += 1;
+                    // Distinct from `Ok(None)` (no signature found) —
+                    // this is a hard read failure: corrupt CHD, missing
+                    // .bin sidecar for a .cue, permission error, etc.
+                    // Pre-fix all of these silently fell into
+                    // `skipped_cd` alongside the legitimate
+                    // no-signature case, masking real setup mistakes
+                    // the operator could fix (e.g., a half-downloaded
+                    // multi-disc set with one .bin missing). Now they
+                    // count as `errors` and the verbose message in the
+                    // progress emit + log surfaces what went wrong.
+                    log::warn!(
+                        "rom_hashes: peek_disc_id {} failed: {e}",
+                        g.file_path
+                    );
+                    summary.errors += 1;
                     let _ = app.emit("oa://rom-hash-resolve-progress", &RomResolveProgress {
                         system_id: systemId.clone(),
                         done,
@@ -1728,11 +1793,55 @@ game (
 
     #[test]
     fn cd_container_extensions_are_filtered() {
-        for ext in ["cue", "chd", "ccd", "toc", "m3u", "iso", "bin"] {
-            assert!(is_cd_container_ext(ext), "{ext} should be a CD container");
+        // Universal CD extensions are CD on EVERY system.
+        for ext in ["cue", "chd", "ccd", "toc", "m3u"] {
+            assert!(
+                is_cd_container_ext(ext, "psx"),
+                "{ext} should be a CD container on psx",
+            );
+            assert!(
+                is_cd_container_ext(ext, "2600"),
+                "{ext} is always a CD container even on cart systems (universal arm)",
+            );
         }
+        // Cart-system extensions are never CD.
         for ext in ["pce", "nes", "smc", "sfc", "lnx"] {
-            assert!(!is_cd_container_ext(ext), "{ext} should NOT be a CD container");
+            assert!(
+                !is_cd_container_ext(ext, "psx"),
+                "{ext} should NOT be a CD container",
+            );
+        }
+    }
+
+    /// `.bin` and `.iso` only count as CD on disc systems. Pre-fix
+    /// `is_cd_container_ext("bin")` returned true universally, causing
+    /// 2600/Coleco/Intv/O2 `.bin` cart dumps to be routed to
+    /// peek_disc_id (which fails) instead of getting hashed normally.
+    #[test]
+    fn bin_and_iso_only_cd_on_disc_systems() {
+        // Disc systems — .bin and .iso are CD containers.
+        for system in ["pce-cd", "segacd", "saturn", "psx", "ps2", "neocd", "pcfx",
+                       "gamecube", "dreamcast", "3do", "psp"] {
+            assert!(
+                is_cd_container_ext("bin", system),
+                ".bin should be CD on {system}",
+            );
+            assert!(
+                is_cd_container_ext("iso", system),
+                ".iso should be CD on {system}",
+            );
+        }
+        // Cart systems — .bin is the raw cart dump, must hash normally.
+        for system in ["2600", "coleco", "intv", "o2", "channelf", "vectrex",
+                       "virtualboy", "nes", "snes", "genesis"] {
+            assert!(
+                !is_cd_container_ext("bin", system),
+                ".bin should NOT be a CD container on cart system {system}",
+            );
+            assert!(
+                !is_cd_container_ext("iso", system),
+                ".iso should NOT be a CD container on cart system {system}",
+            );
         }
     }
 
