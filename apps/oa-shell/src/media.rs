@@ -483,6 +483,77 @@ mod tests {
         assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
     }
 
+    /// `.rvz` with a Wii disc header (game-ID byte at offset 40 = 'R')
+    /// routes to the Wii repo. Pre-fix this test would have failed
+    /// because every RVZ was misclassified as Wii regardless of disc
+    /// contents (RVZ container magic starts with 'R', so the old
+    /// byte-0 peek always matched the Wii heuristic).
+    #[test]
+    fn rvz_with_wii_disc_header_routes_to_wii_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-wii-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // 48-byte synthetic RVZ header:
+        //   bytes 0..4   = "RVZ\x01" magic
+        //   bytes 4..40  = filler (version, sizes, offsets — not parsed)
+        //   bytes 40..48 = embedded disc header; byte 40 is the game
+        //                  ID's first character. 'R' = Wii.
+        let mut header = [0u8; 48];
+        header[..4].copy_from_slice(b"RVZ\x01");
+        header[40] = b'R';
+        std::fs::write(&tmp, header).expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_Wii"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// `.rvz` with a GameCube disc header (byte 40 = 'G') routes to
+    /// the GameCube repo. Confirms the RVZ container header is being
+    /// parsed correctly rather than the bug where every RVZ matched
+    /// the Wii heuristic.
+    #[test]
+    fn rvz_with_gc_disc_header_routes_to_gc_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-gc-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let mut header = [0u8; 48];
+        header[..4].copy_from_slice(b"RVZ\x01");
+        header[40] = b'G';
+        std::fs::write(&tmp, header).expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// Truncated `.rvz` (header missing) → falls back to GameCube.
+    /// Mirrors the iso_unreachable_falls_back_to_gc_repo case.
+    #[test]
+    fn rvz_truncated_falls_back_to_gc_repo() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-rvz-short-{}-{}.rvz",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // Only 8 bytes — too short for the 48-byte RVZ header read.
+        std::fs::write(&tmp, b"RVZ\x01abcd").expect("write tmp rvz");
+        let e = gc_entry_with_path(tmp.to_str().unwrap());
+        assert_eq!(super::repos_for_entry(&e), &["Nintendo_-_GameCube"]);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
     /// Entry for a non-gamecube system_id flows through the original
     /// `repos_for_system_id` path unchanged.
     #[test]
@@ -1091,23 +1162,66 @@ fn is_wii_dump(file_path: &str) -> bool {
         Some("wbfs") | Some("wad") => true,
         // GameCube-exclusive containers.
         Some("gcm") | Some("gcz") | Some("ciso") => false,
-        // Shared containers — peek byte 0 to discriminate.
-        Some("iso") | Some("rvz") => peek_dolphin_console_byte(path)
+        // Raw ISO: byte 0 of a GameCube/Wii disc image is the first
+        // character of the 6-byte game ID. Dolphin's convention reserves
+        // 'R' (Revolution = Wii) and 'S' (later Wii titles) as Wii
+        // prefixes; everything else (G/D/P/etc.) routes to GameCube.
+        Some("iso") => peek_dolphin_console_byte(path)
+            .map(|b| matches!(b, b'R' | b'S'))
+            .unwrap_or(false),
+        // RVZ: Dolphin's compressed container. Byte 0 of the FILE is
+        // always 'R' (from the "RVZ\x01" magic), which would
+        // accidentally trip the Wii heuristic above for every RVZ
+        // dump. Parse the RVZ header far enough to find the embedded
+        // disc header's game-ID byte; if we can't (truncated file /
+        // unknown future RVZ revision), default to GameCube — RVZ is
+        // most commonly used for GameCube preservation (Wii dumps
+        // overwhelmingly ship as WBFS, which is auto-routed above).
+        Some("rvz") => peek_rvz_console_byte(path)
             .map(|b| matches!(b, b'R' | b'S'))
             .unwrap_or(false),
         _ => false,
     }
 }
 
-/// Read the first byte of a Dolphin-loadable disc dump. Returns
-/// `None` on I/O failure (file gone, permission denied, etc.) — the
-/// caller treats that as "assume GameCube" rather than erroring out.
+/// Read the first byte of a raw GameCube/Wii ISO dump (i.e. byte 0
+/// of the disc image, which is the game ID's leading character).
+/// Returns `None` on I/O failure — the caller treats that as "assume
+/// GameCube" rather than erroring out.
 fn peek_dolphin_console_byte(path: &std::path::Path) -> Option<u8> {
     use std::io::Read;
     let mut f = std::fs::File::open(path).ok()?;
     let mut buf = [0u8; 1];
     f.read_exact(&mut buf).ok()?;
     Some(buf[0])
+}
+
+/// Peek the embedded disc-image game-ID byte inside an RVZ container.
+///
+/// RVZ layout (from the Dolphin RVZ format spec):
+/// - bytes 0..4   : magic "RVZ\x01"
+/// - bytes 4..8   : version (u32 LE)
+/// - bytes 8..16  : reserved
+/// - bytes 16..24 : data_size (u64 LE)
+/// - bytes 24..32 : raw data offset
+/// - bytes 32..40 : raw data size
+/// - bytes 40..48 : disc header — first 8 bytes of the underlying
+///                  GameCube/Wii disc image (per Dolphin's
+///                  DiscIO/WIABlob.cpp WIAHeader2 layout). Byte 40
+///                  is the disc game-ID's first character.
+///
+/// Returns `None` if the file is too short to be a valid RVZ, doesn't
+/// have the magic, or if the read fails — the caller treats that as
+/// "assume GameCube" which is the more common case for RVZ dumps.
+fn peek_rvz_console_byte(path: &std::path::Path) -> Option<u8> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 48];
+    f.read_exact(&mut buf).ok()?;
+    if &buf[0..4] != b"RVZ\x01" {
+        return None;
+    }
+    Some(buf[40])
 }
 
 /// Back-compat alias around `repos_for_system_id` for the extension-only
