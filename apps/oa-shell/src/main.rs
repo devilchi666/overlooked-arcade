@@ -4681,12 +4681,12 @@ fn run_emu_render(
                             } else {
                                 // User cancelled — restore the live edge so
                                 // no history is lost. Use peek_back so the
-                                // ring stays intact for next time.
+                                // ring stays intact for next time. peek_back
+                                // now returns owned decompressed bytes
+                                // (Phase D — rewind ring zstd-compresses
+                                // internally), so no extra clone is needed.
                                 if let Some(snap) = rewind_ring.peek_back() {
-                                    // Copy bytes before calling load_state
-                                    // to release the borrow on rewind_ring.
-                                    let buf: Vec<u8> = snap.to_vec();
-                                    if let Err(e) = core_ref.load_state(&mut &buf[..]) {
+                                    if let Err(e) = core_ref.load_state(&mut &snap[..]) {
                                         log::warn!("oa-shell: scrub cancel — load_state(newest) failed: {e:?}");
                                     } else {
                                         core_ref.run_frame();
@@ -5088,10 +5088,9 @@ fn run_emu_render(
             if scrubbing && core_ref.has_rom() {
                 if scrub_dirty {
                     if let Some(snap) = rewind_ring.peek_at(scrub_position as usize) {
-                        // Copy bytes before calling load_state to release
-                        // the borrow on rewind_ring.
-                        let buf: Vec<u8> = snap.to_vec();
-                        if let Err(e) = core_ref.load_state(&mut &buf[..]) {
+                        // peek_at returns owned decompressed bytes since
+                        // Phase D — no extra clone needed.
+                        if let Err(e) = core_ref.load_state(&mut &snap[..]) {
                             log::warn!("oa-shell: scrub — load_state failed: {e:?}");
                         } else {
                             // One forward frame to repaint. Input is NOT
