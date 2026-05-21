@@ -430,6 +430,11 @@ pub async fn sync_metadata_for_system(
     app: tauri::AppHandle,
 ) -> Result<MetadataSyncSummary, String> {
     use tauri::Emitter;
+
+    // Per-system op gate (H11) — see sync_media_for_system.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     log::info!(
         "oa-shell: sync_metadata_for_system({systemId}) — {} entries",
         entries.len()

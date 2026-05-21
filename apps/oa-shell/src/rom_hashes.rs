@@ -832,6 +832,10 @@ pub async fn sync_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomHashSyncSummary, String> {
+    // Per-system op gate (H11) — see sync_media_for_system in media.rs.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     let app_data_dir = state.app_data_dir.clone();
     let refs = libretro_dat_refs_for_system(&systemId);
     if refs.is_empty() {
@@ -1061,6 +1065,16 @@ pub async fn resolve_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomResolveSummary, String> {
+    // Per-system op gate (H11) — held for the lifetime of this call.
+    // resolve_rom_hashes_for_system also calls sync_rom_hashes_for_system
+    // inline (auto-sync block below) — but that's a function inlined
+    // here, not a separate Tauri command invocation, so it doesn't try
+    // to re-acquire the gate. The auto-sync block bypasses the wrapper
+    // function's own gate acquisition by inlining only the fetch +
+    // parse + apply steps.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     // Auto-sync if our local rom_hashes table is empty for this system.
     // Without this, "Identify ROMs" against an unsynced system returns
     // N unknown / 0 matched with no obvious cause; auto-syncing turns

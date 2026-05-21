@@ -158,6 +158,37 @@ pub struct MediaState {
     pub db: Arc<RwLock<MediaDb>>,
     pub prefs: Arc<RwLock<MediaPrefs>>,
     pub app_data_dir: PathBuf,
+    /// Per-system operation gate. sync_media / sync_metadata /
+    /// resolve_rom_hashes / sync_rom_hashes / clear_metadata all
+    /// acquire the per-system Mutex at function entry so two
+    /// concurrent ops on the same system serialize naturally. Pre-
+    /// 2026-05-21 the buttons in Settings → Library were independently
+    /// gated per-button, so an operator could click "Sync media" then
+    /// "Identify ROMs" and both ran in parallel — the mid-sync
+    /// apply_rom_hash writes weren't visible to the in-flight
+    /// sync_media's `only_identified` filter, causing the wrong-art
+    /// bug.
+    ///
+    /// `tokio::sync::Mutex` (not std::sync::Mutex) because the gate
+    /// is held across `.await` boundaries inside the sync functions.
+    /// The outer Mutex is `std::sync::Mutex` for lazy slot creation —
+    /// the lookup is O(1) and never held across an await.
+    pub system_op_gates: Arc<std::sync::Mutex<
+        std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    >>,
+}
+
+impl MediaState {
+    /// Get-or-create the per-system gate Mutex. Holds the outer
+    /// std::sync::Mutex briefly (no await inside) to populate the
+    /// slot, then returns the inner tokio Mutex Arc which the caller
+    /// awaits.
+    pub fn gate_for(&self, system_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut map = self.system_op_gates.lock().expect("system_op_gates poisoned");
+        map.entry(system_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
 }
 
 // ---- persistence ----
@@ -1644,6 +1675,13 @@ pub async fn sync_media_for_system(
     use futures::stream::{self, StreamExt};
     use tauri::Emitter;
 
+    // Per-system op gate (H11) — serializes concurrent sync/resolve
+    // operations on the same system_id so the "click Sync media then
+    // Identify ROMs" race can't produce stale-sha1 filtering. The
+    // gate is held for the lifetime of this function call.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     let enabled_kinds = enabled_sync_kinds(&state.prefs);
     let only_identified = state.prefs.read().ok()
         .map(|p| p.only_sync_identified)
@@ -2056,12 +2094,20 @@ pub fn clear_media(
 /// cleared entry so the UI re-renders.
 #[tauri::command]
 #[allow(non_snake_case)]
-pub fn clear_metadata_for_system(
+pub async fn clear_metadata_for_system(
     systemId: String,
     state: tauri::State<'_, MediaState>,
     library: tauri::State<'_, crate::library_db::LibraryDb>,
     app: tauri::AppHandle,
 ) -> Result<MetadataClearSummary, String> {
+    // Per-system op gate (H11) — serializes against any in-flight
+    // sync_media / sync_metadata / resolve_rom_hashes / sync_rom_hashes
+    // for the same system. Without the gate a "Clear metadata" mid-sync
+    // could null entries the sync was about to update, causing
+    // misleading "updated 0" summary numbers.
+    let gate = state.gate_for(&systemId);
+    let _gate_guard = gate.lock().await;
+
     let ids = library.list_game_ids_for_system(&systemId)?;
     let mut cleared = 0usize;
     let mut updated_payloads: Vec<(String, GameMedia)> = Vec::new();

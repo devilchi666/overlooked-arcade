@@ -2666,6 +2666,9 @@ fn main() {
                     db: media_db.clone(),
                     prefs: media_prefs.clone(),
                     app_data_dir: app_data_dir.clone(),
+                    system_op_gates: Arc::new(std::sync::Mutex::new(
+                        std::collections::HashMap::new(),
+                    )),
                 });
 
                 // Background scan service state — tracks in-flight scan jobs
