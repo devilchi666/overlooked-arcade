@@ -681,3 +681,27 @@ A single source of truth removes the class entirely: ANY divergence between loca
 - **Async file I/O via tokio::fs for the boot loaders.** Mixing async with `tauri::Builder::default().setup()` (which is sync) requires a runtime handle to block_on. std::thread::spawn is simpler and the I/O cost is wall-clock-bounded by the disk, not by thread count.
 - **Background compression for the rewind ring on a dedicated worker.** Cleaner long-term, but adds Send + Arc<Mutex> + mpsc bookkeeping for marginal benefit at current state sizes. Defer until real-world PS2/Saturn rewind playtest surfaces stutter.
 
+---
+
+## 2026-05-21 — Post-import sync ordering: identify before media + metadata
+
+**Decision:** In the Import Wizard's post-commit flow, `resolve_rom_hashes_for_system` must complete (awaited) before `sync_media_for_system` and `sync_metadata_for_system` are fired. Media + metadata syncs may then fire in parallel — they don't depend on each other, only on stamped sha1s being present in `library_db`.
+
+**Why:** `sync_media_for_system` reads its `only_identified` filter once at the top of the function (`apps/oa-shell/src/media.rs::sync_media_for_system`, ~line 1541). It enumerates `entries.filter(|e| canonical_by_id.contains_key(&e.id))` where `canonical_by_id` is populated by looking up `library.lookup_rom_hash(sha1)` for each entry. If sha1 is `None` on the row (the normal state after a fresh import, before identification runs), the filter retains zero entries and the sync no-ops.
+
+`sync_metadata_for_system` doesn't have an equivalent hard filter, but its primary match path is sha1-based; without stamped sha1s it falls back to fuzzy title matching, which catches roughly 10% of a real Genesis library vs. >90% with sha1s.
+
+Confirmed in the field on a 1160-entry Genesis import (see `appData/logs/oa-current.log` around 2026-05-21 13:52:24): `sync_media` ran at T+0ms with `keeping 0 hash-matched entries`; `sync_metadata` ran at T+2ms with `matched 120, unmatched 1040`; `resolve_rom_hashes` finished at T+387ms with `matched 1081`. Operator saw "found matches but nothing changed in library and no metadata."
+
+**How (frontend):** `frontend/src/components/ImportWizard.tsx::commit()` step 4 is `await invoke("resolve_rom_hashes_for_system", ...)` per touched system; step 5 fires `sync_media_for_system` + `sync_metadata_for_system` as fire-and-forget. The serial await adds ~200–500ms to wizard completion time depending on library size — acceptable given the correctness benefit (cover art + metadata actually populate on first sync, instead of needing a manual second pass through `Settings → Library → Identify ROMs / Sync media / Sync metadata`).
+
+**Considered and rejected:**
+- **Make sync_media re-evaluate the filter mid-walk.** Would let it pick up sha1s as resolve_rom_hashes stamps them. But the filter is upfront-by-design — it determines the total work unit count emitted to the progress event stream. Reactive filtering would complicate the progress UI more than it helps.
+- **Drop the `only_identified` filter entirely.** Was considered but the filter exists to prevent fuzzy-matching against the wrong region of a multi-region game (the typical false-positive cause for unidentified ROMs). Keeping it is correct; ordering the calls is the right fix.
+- **Have resolve_rom_hashes auto-trigger sync_media on completion (server-side).** Would solve it transparently but couples two concerns the operator may want decoupled (e.g. identify without ever syncing covers, for headless library audits). Frontend-side ordering preserves the operator's ability to opt out via the wizard's "Skip sync" button.
+- **Parallel resolve across multiple systems.** Currently sequential — `resolve_rom_hashes_for_system` holds the LibraryDb write lock for its DB applies. Parallelizing wouldn't speed up a multi-system wizard (they'd queue), and the existing per-system progress UI matches the sequential model. Revisit if a real multi-system import becomes painful.
+
+**Other paths with similar shape (audited 2026-05-21):**
+- `App.tsx::autoIdentifyAfterIngest` (drag-drop / "Add library folder" / "Rescan tracked folders"): only fires `resolve_rom_hashes_for_system`, never the media/metadata syncs. Pre-existing gap — operator sees ROMs identified but no covers. Tracked as a separate fix; the wizard race fix doesn't address it.
+- `SettingsPage.tsx` per-system "Sync media" / "Sync metadata" / "Identify ROMs" buttons: each is its own awaited handler. No race within each, but a user who clicks "Sync media" without first clicking "Identify ROMs" hits the same `only_identified` filter and sees zero matches. User-triggered, lower priority — the UI could grey out "Sync media" until "Identify ROMs" has run at least once, but that's a UX call rather than a correctness one.
+
