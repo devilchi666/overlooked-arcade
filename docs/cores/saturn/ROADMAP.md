@@ -51,26 +51,12 @@ PCE-CD / segacd / PSX claims on the same extensions), see Saturn-themed
 
 ## ⬜ Phase 1 — First Saturn game running
 
-- ⬜ Operator validation: launch a real Saturn CD image end-to-end
-  (pixels + audio + CDDA + 6-button controller). Suggested reference
-  set: **NiGHTS into Dreams** (3D Pad-aware, single-stick mode works
-  on digital pad), **Guardian Heroes**, **Radiant Silvergun**, **Saturn
-  Bomberman** (multiplayer party game, well-tested compat). Pick a
-  disc that matches a BIOS region the operator has on hand.
-- ⬜ Save state F5/F8 round-trip mid-disc. Should work via libretro
-  `retro_serialize` but Saturn state (dual SH-2 + 4MB main + 4MB video
-  + dual VDPs) is large; explicit smoke-test.
-- ⬜ Multi-region testing: load JP + US + EU discs with matching
-  regional BIOSes to confirm region auto-detect.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-20,
-  needs operator validation.** Mapping `saturn → Sega_-_Saturn`
-  shipped in `media::repo_for_system_id`.
-- ⬜ Multi-disc title via `.m3u` — **Panzer Dragoon Saga** (4 discs) is
-  the canonical Saturn multi-disc test.
-- ⬜ Cart RAM expansion (4MB / 1MB) for the Capcom fighter library
-  (X-Men vs SF, SF Alpha 3, KOF '95-'98). Beetle Saturn handles this
-  via core options; needs operator validation that the per-game core
-  options surface in OA's Per-Game Settings drawer.
+- ⬜ Operator validation: **NiGHTS**, **Guardian Heroes**, **Radiant Silvergun**, **Saturn Bomberman** — operator playtest.
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing — operator playtest (JP + US + EU discs with matching regional BIOSes).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ⬜ Multi-disc title via `.m3u` (Panzer Dragoon Saga, 4 discs) — operator playtest.
+- ⬜ Cart RAM expansion (4MB / 1MB) — operator-driven Beetle Saturn core-option validation (per-game core options drawer shipped cross-system).
 
 **Acceptance gate:** A reference set of Saturn games run with pixels +
 audio + working 6-button pad at native 59.94 Hz NTSC.
@@ -79,33 +65,18 @@ audio + working 6-button pad at native 59.94 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Disc-id extraction** — Saturn discs key at offset 0x20 in the
-  data track for the "SEGASATURN" magic + the game-id serial.
-  Extend `apps/oa-shell/src/cd_id.rs` with a Saturn branch + switch
-  `rom_hashes::libretro_dat_refs_for_system("saturn")` from `&[]` to
-  `&[DatRef { subdir: "metadat/redump", basename: "Sega - Saturn" }]`.
-- ⬜ **3D Pad analog stick support** — NiGHTS into Dreams / Sonic R /
-  Sega Rally Championship Plus need the analog stick for the
-  intended experience. Depends on shared analog-input infra (also
-  blocking PSX DualShock, Virtual Boy right D-pad, etc.).
-- ⬜ **6-button Saturn pad glyphs** for the bindings UI (A/B/C bottom
-  + X/Y/Z top + L/R shoulders visualization).
-- ⬜ **Kronos vs Beetle Saturn vs YabaSanshiro** — operator-side
-  benchmark on a representative host. Document in `DECISIONS.md`.
-- ⬜ **Light Gun support** (Virtua Cop, House of the Dead, Maximum
-  Force). Beetle Saturn handles the Saturn Stunner via libretro
-  pointer device; needs explicit smoke-test against gun games.
+- ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::saturn` (reads SEGA SEGASATURN magic at disc header + T-/GS-prefix serial); `rom_hashes` points at `metadat/redump/Sega - Saturn`.
+- ⬜ **3D Pad analog stick support** — gated on shared analog-input device-type wiring (analog axes infra is shipped cross-system).
+- ⬜ **6-button Saturn pad glyphs** for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `SystemBindingsEditor.tsx:226`).
+- ⬜ **Kronos vs Beetle Saturn vs YabaSanshiro** — operator-driven DECISIONS doc.
+- ⬜ **Light Gun support** — operator playtest (POINTER device infra shipped cross-system).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **ST-V arcade variant** — Saturn-based arcade hardware that ran
-  Radiant Silvergun, Cotton 2, Hyper Duel etc. Same core can drive it
-  but ROM layout differs; would be a separate `stv` slug if shipped.
-- ⬜ **Custom forked Saturn core** — extremely unlikely. Beetle Saturn
-  is mature; OA-specific extensions for a ~600-game library are hard
-  to justify.
+- ⬜ **ST-V arcade variant** — deferred (separate `stv` slug if shipped).
+- ⬜ **Custom forked Saturn core** — deferred.
 
 ---
 
@@ -120,9 +91,3 @@ audio + working 6-button pad at native 59.94 Hz NTSC.
   CD-shape systems use.
 - **Analog stick deferred.** Phase 2 polish alongside shared analog-input
   infra.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

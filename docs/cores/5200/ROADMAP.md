@@ -22,10 +22,10 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1 — Operator validation
 
-- ⬜ Drop `atari800_libretro.dll v3.1` (from buildbot) into `<exe_dir>/cores/`.
-- ⬜ Drop `5200.rom` (SHA-1 `6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530`) into `<exe_dir>/system/`.
-- ⬜ Mark a `.a52` folder via the Import Wizard.
-- ⬜ Launch:
+- ⬜ Drop `atari800_libretro.dll v3.1` (from buildbot) into `<exe_dir>/cores/` — operator-driven.
+- ⬜ Drop `5200.rom` (SHA-1 `6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530`) into `<exe_dir>/system/` — operator-driven.
+- ⬜ Mark a `.a52` folder via the Import Wizard — operator-driven.
+- ⬜ Launch (operator playtest):
   - Star Raiders (5200) — flagship pack-in title
   - Missile Command — high-scoring trackball candidate (5200 used keypad)
   - Pac-Man — Atari's 5200 port (improved over the infamous 2600 version)
@@ -35,11 +35,5 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 ## ⬜ Phase 2 — Hardening
 
 - ✅ **12-key keypad via libretro KEYBOARD device (2026-05-20).** `system_settings::default_keyboard_passthrough("5200") = true` flips the keyboard-passthrough infra on by default — operators press numeric / symbol keys directly while the game window is focused and Atari800 receives them through `retro_keyboard_event`. Same routing infrastructure MAME / MSX use. Missile Command coord-shooting and RealSports Football play selection now work.
-- ⬜ Full analog routing via the shared analog-input infra. The self-centering joystick was genuinely analog (each axis 0-228 native value); games like Pole Position II read continuous values for steering. Phase 0 ships digital d-pad fallback; per-game analog routing covers the rest via the existing per-system Analog Bindings UI.
-- ⬜ Per-game core option templates for the dual-controller "PROLINE" titles (Robotron 2084 on 5200 used both controllers stacked).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Full analog routing via the shared analog-input infra. The self-centering joystick was genuinely analog (each axis 0-228 native value); games like Pole Position II read continuous values for steering. Phase 0 ships digital d-pad fallback; per-game analog routing covers the rest via the existing per-system Analog Bindings UI — gated on shared analog-input infra.
+- ⬜ Per-game core option templates for the dual-controller "PROLINE" titles (Robotron 2084 on 5200 used both controllers stacked) — operator-driven curation.

@@ -32,37 +32,15 @@ infrastructure, CDDA plays, gameplay starts. **Met.**
 Small follow-ups that don't gate the next core but should land before
 PCE-CD is considered "shipped" quality.
 
-- ⬜ **Save-state round-trip mid-disc.** Verify save_state taken during
-  gameplay reloads cleanly with the CD read-pointer intact. Should work
-  via libretro `retro_serialize` / `retro_unserialize` (same path as
-  HuCard save states), but CD adds disc-state machinery that's worth
-  explicit smoke-testing.
-- ⬜ **Multi-disc title via .m3u.** Pick a real multi-disc release
-  (Cosmic Fantasy 4, Tengai Makyō II, etc.), confirm disc swap works
-  through the libretro disc-control extension.
-- ⬜ **`oa-cdrom` build-out — only if validation surfaces real gaps.**
-  Plausible API surface if needed: CHD/CUE metadata parser for track
-  count + disc count (library tile metadata); audio-track name surface
-  for the right sidebar widgets. Don't pre-build — let real validation
-  drive the API.
-- ⬜ **TG-CD-specific theming polish.** The cyan-blue palette ships
-  v1; per-system page header art / sidebar icon / cover-art frame may
-  need TG-CD-specific tweaks once we have a few titles in the library.
-- ⬜ **Per-game cover sync via libretro-thumbnails — infra ready 2026-05-19, needs operator validation.** Mapping `pce-cd → NEC_-_PC_Engine_CD_-_TurboGrafx-CD` shipped in `apps/oa-shell/src/media.rs::repo_for_system_id`. Operator: run `Settings → Library → Sync media for PC Engine CD` and confirm covers download.
+- ⬜ **Save-state round-trip mid-disc** — operator smoke-test (Castlevania Rondo); save-state infra itself is shipped cross-system.
+- ⬜ **Multi-disc title via .m3u** — operator playtest (Cosmic Fantasy 4, Tengai Makyō II).
+- ⬜ **`oa-cdrom` build-out** — deferred-until-forced; only if validation surfaces real gaps.
+- ⬜ **TG-CD-specific theming polish** — operator-driven UI polish (per-system theming infra shipped cross-system).
+- ✅ **Per-game cover sync via libretro-thumbnails** — closed by cross-system media sync (`media::sync_media_for_system`).
 
 ---
 
 ## ⬜ Phase 6+ contributions
 
-- ⬜ Per-game shader preset overrides for CD-FMV-heavy titles (some
-  CDDA-era games have specific palette quirks the default Phosphor
-  preset doesn't flatter).
-- ⬜ KNOWN_GAME_BUGS triage as the library grows. Expected hotspots:
-  CDDA timing edge cases, FMV stutter on slower CHDs, region-specific
-  BIOS mismatches.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Per-game shader preset overrides for CD-FMV-heavy titles — operator-driven curation (per-game shader override infra shipped cross-system).
+- ⬜ KNOWN_GAME_BUGS triage as the library grows — operator-driven data curation.

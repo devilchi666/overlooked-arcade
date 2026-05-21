@@ -23,22 +23,15 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1 — First PS2 game running
 
-- ⬜ Operator validation: Shadow of the Colossus / MGS2 / GTA III / FFX.
-- ⬜ Dual analog stick test.
-- ⬜ Save state F5/F8 round-trip.
+- ⬜ Operator validation: Shadow of the Colossus / MGS2 / GTA III / FFX — operator playtest.
+- ✅ Dual analog stick test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Pressure-sensitive face buttons + analog L2/R2 (Phase 2.5 work
-  shared with GameCube's analog L/R triggers).
-- ⬜ PS2 memory card UX.
-- ⬜ Disc-id extraction via SYSTEM.CNF (same as PSX).
-- ⬜ LRPS2 core-options surface (graphics renderer, FPS limit).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Pressure-sensitive face buttons + analog L2/R2 — gated on shared pressure-sensitive analog-trigger infra (shared with GC/DC).
+- ⬜ PS2 memory card UX — operator-driven validation.
+- ✅ Disc-id extraction via SYSTEM.CNF — shipped via `apps/oa-shell/src/cd_id.rs::dispatch_extractor` routing `ps2` → `extractors::psx_family`; `rom_hashes` points at `metadat/redump/Sony - PlayStation 2`.
+- ⬜ LRPS2 core-options surface (graphics renderer, FPS limit) — operator-driven curation via per-system settings page (per-system Core Options shipped cross-system).

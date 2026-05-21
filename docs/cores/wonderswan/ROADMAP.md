@@ -20,33 +20,27 @@ Per-core phase tracking for Bandai WonderSwan + WonderSwan Color. Status: ⬜ no
 
 ## ⬜ Phase 1 — First WS ROM running
 
-- ⬜ Operator validation: launch `.ws` and `.wsc` ROMs. Suggested mono: **Klonoa: Moonlight Museum**, **GunPey**, **Rockman + Forte**, **Frontier Story**. Suggested Color: **Final Fantasy I**, **Final Fantasy II**, **Riviera: The Promised Land** (prototype), **Hunter X Hunter: Greed Adventure**.
-- ⬜ Mono vs Color auto-detect — Beetle WS reads the ROM header; confirm `.ws` files render mono and `.wsc` files render color without operator intervention.
-- ⬜ Vertical-rotation auto-handling — load a vertical-mode title (Riviera or any GunPey-family) and confirm Beetle WS rotates the framebuffer + active D-pad swap works correctly.
-- ⬜ Save state F5/F8 round-trip.
-- ⬜ Optional BIOS install — confirm WS boot splash + name-entry screen appears.
-- ⬜ Cover sync — confirm primary `Bandai_-_WonderSwan` repo works; WSC-specific gaps documented for Phase 2.
-- ⬜ libretro-database hashing — confirm merged WS + WS Color corpus matches both extensions.
+- ⬜ Operator validation (mono + color) — operator playtest.
+- ⬜ Mono vs Color auto-detect — operator spot-check.
+- ⬜ Vertical-rotation auto-handling — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Optional BIOS install — operator-driven.
+- ✅ Cover sync (WS + WSC) — closed by cross-system multi-repo cover sync (`media::repos_for_system_id` returning a slice).
+- ✅ libretro-database hashing — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Multi-repo cover sync — extend `repo_for_system_id` (or add a parallel function) to allow returning multiple thumbnails repos per slug. Unlocks WSC-specific covers AND solves the same gap for `gb` (Game Boy + Game Boy Color).
-- ⬜ Per-game framebuffer rotation override — operator preference for handling vertical-mode games (auto-rotate framebuffer vs keep monitor orientation fixed + render rotated).
-- ⬜ Sound-volume button binding — the hardware Sound button currently lives in Beetle WS core options; could surface as a per-system input if anyone wants it.
-- ⬜ Cable Link multiplayer — niche; no current libretro support.
-- ⬜ SwanCrystal screen-improvement modeling — the 2002 SwanCrystal had a sharper LCD vs the original WS; per-game shader option could simulate the differences.
+- ✅ Multi-repo cover sync — shipped via `apps/oa-shell/src/media.rs::repos_for_system_id` returning a slice (WS + WSC).
+- ⬜ Per-game framebuffer rotation override — operator-driven preference.
+- ⬜ Sound-volume button binding — operator-driven binding decision.
+- ⬜ Cable Link multiplayer — deferred (no current libretro support).
+- ⬜ SwanCrystal screen-improvement modeling — operator-driven per-game shader option.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Cheat support.
-- ⬜ Pocket Challenge V2 / Pocket Challenge V1 — Bandai's earlier mono handhelds that share architectural lineage with the WS; uncertain whether Beetle WS handles them.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Cheat support — operator-driven validation.
+- ⬜ Pocket Challenge V2 / Pocket Challenge V1 — operator-driven validation of Beetle WS support.

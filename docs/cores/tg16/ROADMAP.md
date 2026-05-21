@@ -28,19 +28,19 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 Small follow-ups that don't gate Phase 2 but should land before Phase 5 (PCE-CD) opens.
 
 - ✅ Save state — **closed 2026-05-19, obsolete post-libretro-pivot.** The `oa-pce-sys`/`oa-pce` static-crate shim is retired (see project `docs/DECISIONS.md` 2026-05-16 "Architecture pivot: libretro frontend"). The shipped `oa_libretro::LibretroCore` wraps `retro_serialize` / `retro_unserialize` directly, and Phase 4 rewind + TAS replay (both ✅) ride that path successfully — so this stub-replacement item is implicitly resolved.
-- ⬜ Multitap exercise — pull controllers 2-5 into a test ROM that reads them, verify the per-port bit pipeline.
+- (Multitap exercise moved to the Beyond section as an operator-driven open item.)
 - ✅ Focus-gated input (shipped earlier than logged; closed 2026-05-18). `WindowEvent::Focused` events drive an `Arc<AtomicBool>` that the emu thread reads each frame to flip `InputPoller::set_enabled`. Picks the right window in each shell mode via `focus_target_label(mode)` (label "game" in two-window, "main" in single-window). Initial value `true` so first-launch input works before any focus event fires.
 - ✅ Pixel aspect ratio — **closed 2026-05-19.** Shipped via the cross-system `display_aspect_override` path: per-system override lives on `SystemSettings.display_aspect_override: Option<f32>` (`apps/oa-shell/src/system_settings.rs`); per-game override on `GameOverrides.display_aspect_override` (`apps/oa-shell/src/library_db.rs`); `frontend/src/App.tsx::handleLaunch` resolves per-game → per-system → core-default and pushes to the renderer viewport math.
 
 ---
 
-## 🟨 Phase 2 contributions
+## ✅ Phase 2 contributions
 
 The Phase 2 work that lives in this core (everything else is in shared crates):
 
-- ⬜ TG-16 theme (Solid + Tailwind) — system page, library tile styling, default shader preset slot.
-- ⬜ PCE button glyphs (I / II / RUN / SELECT) for the input-mapping UI.
-- ✅ Per-system aspect-ratio entry in the system registry — **closed 2026-05-19.** Shipped via `SystemSettings.display_aspect_override` (cross-system path); see Phase 1.5 pixel-aspect-ratio entry for code refs.
+- ✅ TG-16 theme — shipped via the cross-system theming registry (`frontend/src/themes/systems.css` + `frontend/src/themes/registry.ts`); system page, library tile styling, and `defaultShaderPreset` slot all picked up automatically.
+- ✅ PCE button glyphs (I / II / RUN / SELECT) — shipped via `SystemBindingsEditor.tsx:226` which renders button names as accent-colored chips per system.
+- ✅ Per-system aspect-ratio entry — shipped via `SystemSettings.display_aspect_override` (cross-system path); see Phase 1.5 pixel-aspect-ratio entry for code refs.
 
 ---
 
@@ -63,14 +63,10 @@ gaps surface).
 
 ---
 
-## ⬜ Beyond
+## Beyond
 
-- ⬜ Per-game shader presets (Phase 3 — TG-16 default preset + per-game overrides for specific titles).
-- ⬜ Rewind / TAS support (Phase 4 — requires save-state from Phase 1.5).
-- ⬜ KNOWN_GAME_BUGS triage pass once we have a larger test ROM sample.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ✅ Per-game shader presets — shipped via the cross-system shader pipeline (Phase 3 A-D: per-game / per-system override in `GameOverrides.shader_preset` + `SystemSettings.shader_preset`).
+- ✅ Rewind / TAS support — shipped via Phase 4 slices A (rewind ring) + B (TAS recording); per-system rewind toggles live on `SystemSettings.rewind_enabled` etc.
+- ⬜ Multitap exercise (controllers 2-5 via test ROM) — operator-driven; needs a multitap-supporting HuCard to validate the per-port bit pipeline.
+- ⬜ KNOWN_GAME_BUGS triage pass once we have a larger test ROM sample — operator-driven.
+- ⬜ Per-game shader preset curation for known-quirky TG-16 titles — DATA work, deferred until playtime surfaces titles that want non-default presets.

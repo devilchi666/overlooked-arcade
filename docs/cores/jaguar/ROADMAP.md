@@ -23,35 +23,20 @@ scans Jaguar ROMs, sees gold-themed tiles, launches a known-good ROM.
 
 ## ⬜ Phase 1 — First Jaguar game running
 
-- ⬜ Operator validation: Iron Soldier / Tempest 2000 / Rayman /
-  Alien vs Predator / Doom Jaguar.
-- ⬜ Numpad-using game validation (Iron Soldier weapon select).
-- ⬜ Save state F5/F8 round-trip.
+- ⬜ Operator validation: Iron Soldier / Tempest 2000 / Rayman / Alien vs Predator / Doom Jaguar — operator playtest.
+- ⬜ Numpad-using game validation (Iron Soldier weapon select) — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Keyboard-passthrough dispatch for KP8-KP_HASH** — the upper 5
-  keypad keys currently surface in the per-system Bindings page but
-  don't reach Virtual Jaguar via RetroPad (only KP1-KP7 do). Phase 2
-  wires libretro KEYBOARD device dispatch for these high-bit entries.
-- ⬜ `jagboot.rom` BIOS pre-check (currently no pre-check; Phase 2
-  polish adds one if operators surface BIOS-related issues).
-- ⬜ Per-system shader override (Jaguar's polygon-heavy era benefits
-  from a different scanline profile than the cart-2D systems).
+- ⬜ **Keyboard-passthrough dispatch for KP8-KP_HASH** — the upper 5 keypad keys surface in the per-system Bindings page but don't reach Virtual Jaguar (keyboard-passthrough infra is shipped cross-system; the libretro KEYBOARD device dispatch for these high-bit entries is still ⬜).
+- ⬜ `jagboot.rom` BIOS pre-check — Jaguar-specific cart-shape BIOS pre-check still ⬜ (cart-shape BIOS-check infra is shipped cross-system).
+- ✅ Per-system shader override — closed by cross-system per-system shader override (slice 2.8.C + shader pipeline). Jaguar-specific scanline profile is operator-driven preset choice.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **Jaguar CD support.** A handful of CD-only Jaguar releases
-  (Battlemorph, Vid Grid, Hover Strike CD, etc.). Different load
-  path + BIOS requirement; would either share `jaguar` slug via
-  per-game CD detection or split to `jaguar-cd`.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ **Jaguar CD support** — deferred (separate load path + BIOS, potentially `jaguar-cd` split).

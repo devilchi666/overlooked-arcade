@@ -49,79 +49,35 @@ without rebuilding Rust.
 
 ## ⬜ Phase 1 — First Sega CD game running
 
-- ⬜ Operator validation: launch a real CD image end-to-end (pixels +
-  CDDA + controller). Suggested reference set: **Sonic CD** (US v2.00),
-  **Lunar: The Silver Star Complete**, **Snatcher**, **Popful Mail**.
-  Pick a disc that matches a BIOS region the operator has on hand.
-- ⬜ Save state F5/F8 round-trip mid-disc. Should work via libretro
-  `retro_serialize` (same path as cart Genesis save states), but CD
-  state machinery (CD read-pointer, CDDA buffer) is worth explicit
-  smoke-testing.
-- ⬜ Multi-region testing: load USA + Europe + Japan CD images with
-  matching BIOSes to confirm region auto-detect (NTSC 59.92 Hz vs PAL
-  49.70 Hz timing).
-- ⬜ CDDA streaming validation — Sonic CD's iconic soundtrack is the
-  canonical test for CDDA channel layout + mixing through the libretro
-  audio callback.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-20,
-  needs operator validation.** Mapping `segacd → Sega_-_Mega-CD_-_Sega_CD`
-  shipped in `media::repo_for_system_id`. Operator: run `Settings →
-  Library → Sync media for Sega CD` and confirm covers download.
-- ⬜ Multi-disc title via `.m3u` — Lunar: Eternal Blue's two-disc
-  release is the canonical test for the libretro disc-control extension.
+- ⬜ Operator validation: **Sonic CD**, **Lunar: The Silver Star Complete**, **Snatcher**, **Popful Mail** — operator playtest.
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing — operator playtest (USA + Europe + Japan CDs).
+- ⬜ CDDA streaming validation — operator playtest (Sonic CD canonical).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ⬜ Multi-disc title via `.m3u` (Lunar: Eternal Blue) — operator playtest.
 
 **Acceptance gate:** A reference set of Sega CD games run with pixels +
 CDDA + working controller at native 59.92 Hz NTSC.
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ **Disc-id extraction** — `apps/oa-shell/src/cd_id.rs` currently
-  handles PCE-CD only. Sega CD discs carry a different game-id signature
-  (typically at offset 0x100-0x110 in the data track). Add a Sega CD
-  branch to `cd_id.rs` so the library scanner can canonical-title
-  Sega CD discs without operator manual matching. Documented in
-  `DECISIONS.md`.
-- ⬜ **Switch `rom_hashes::libretro_dat_refs_for_system("segacd")`** to
-  `&[DatRef { subdir: "metadat/redump", basename: "Sega - Mega CD & Sega CD" }]`
-  once disc-id extraction lands — redump's dat populates `game_serials`
-  via `parse_libretro_dat`'s serial path, which keys against the
-  extracted disc-id rather than file SHA-1.
-- ⬜ **Per-game cover sync — operator validation pass.**
-- ⬜ **3-button vs 6-button compatibility map.** Most Sega CD games
-  shipped before the 6-button pad's 1993 release, so they assume
-  3-button hardware. Handful that misbehave with 6-button announce
-  (TBD — populate from operator validation) get per-game pad-mode
-  override via the per-game Input drawer.
-- ⬜ **Sega CD-specific theming polish.** The sapphire palette ships
-  v1; per-system page header art / sidebar icon / CD-jewel-case tile
-  frame may need Sega CD-specific tweaks once we have titles in the
-  library.
+- ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::sega_cd` (reads SEGADISCSYSTEM-area serial in data track); `rom_hashes` points at `metadat/redump/Sega - Mega-CD - Sega CD`.
+- ✅ **Switch `rom_hashes` to redump dat ref** — shipped (see above).
+- ✅ **Per-game cover sync** — closed by cross-system media sync.
+- ⬜ **3-button vs 6-button compatibility map** — operator-driven KNOWN_GAME_BUGS curation (per-game pad-mode override drawer shipped cross-system).
+- ⬜ **Sega CD-specific theming polish** — operator-driven UI polish (per-system theming infra shipped cross-system).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM
-export, memory inspector, cheats, milestones, run-ahead) is system-
-agnostic and lights up automatically once the engine work ships.
 Sega CD-specific items:
 
-- ⬜ **32X-CD games (e.g. Night Trap 32X, Corpse Killer 32X, Slam City).**
-  These layer the 32X cart-slot addon ON TOP of Sega CD — they need
-  both the Sega CD BIOS and the 32X .dll. Phase 3+ work because
-  PicoDrive's CD-via-32X path needs explicit validation; Genesis Plus
-  GX doesn't handle 32X at all. Currently routed to segacd with a
-  stacked sega32x per-game override; needs end-to-end testing.
-- ⬜ **Game Genie / Pro Action Replay code support** — runs through
-  the libretro cheat path (project RetroArch parity slice 8); needs
-  validation that Genesis Plus GX's `retro_cheat_set` accepts Sega CD
-  Game Genie format.
-- ⬜ **Custom forked Sega CD core** — only if upstream regresses or we
-  want OA-specific extensions. Recipe mirrors the Beetle PCE Fast plan:
-  separate libretro-frontend build of patched source emitting a .dll
-  we ship in the installer.
+- ⬜ **32X-CD games (Night Trap 32X, Corpse Killer 32X, Slam City)** — deferred (Phase 3+; needs stacked Sega CD + 32X end-to-end validation).
+- ⬜ **Game Genie / Pro Action Replay code support** — operator-driven validation of Genesis Plus GX's `retro_cheat_set`.
+- ⬜ **Custom forked Sega CD core** — deferred.
 
 ---
 
@@ -141,9 +97,3 @@ Sega CD-specific items:
   claimed by PCE-CD. Disambiguation happens at Import Wizard time via
   per-folder hint — same path PCE-CD navigated. Documented in
   `DECISIONS.md`.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

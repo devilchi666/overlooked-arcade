@@ -53,28 +53,13 @@ appear in the library, and click one to launch.
 
 ## ⬜ Phase 1 — First PSX game running
 
-- ⬜ Operator validation: launch a real PSX CD image end-to-end
-  (pixels + audio + CDDA + 14-button controller). Suggested reference
-  set: **Castlevania: Symphony of the Night** (single-disc, broad
-  compat), **Final Fantasy VII** (3-disc — also tests .m3u),
-  **Metal Gear Solid** (2-disc), **Crash Bandicoot** (US),
-  **Resident Evil** (US/EU). Pick a disc that matches a BIOS region
-  the operator has on hand.
-- ⬜ Save state F5/F8 round-trip mid-disc.
-- ⬜ HW renderer surface validation — confirm Beetle PSX HW can
-  obtain a Vulkan/OpenGL surface from our wgpu DX12 host. If it fails,
-  operator swaps to Beetle PSX SW via the per-system Cores dialog (no
-  manual .dll install needed since SW is a pre-registered catalog
-  peer).
-- ⬜ Multi-region testing: load JP + US + EU discs with matching
-  regional BIOSes to confirm region auto-detect.
-- ⬜ Multi-disc title via `.m3u` — **Final Fantasy VII** (3 discs) is
-  the canonical PSX multi-disc test.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-20,
-  needs operator validation.** Mapping `psx → Sony_-_PlayStation`
-  shipped in `media::repo_for_system_id`.
-- ⬜ `.pbp` launch validation — try a known-good PSone Classics .pbp
-  to confirm the PSP-format container path works through Beetle PSX HW.
+- ⬜ Operator validation: **SotN**, **FF7** (3-disc — also tests .m3u), **MGS** (2-disc), **Crash Bandicoot**, **Resident Evil** — operator playtest.
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ HW renderer surface validation — operator-side confirmation that Beetle PSX HW obtains a Vulkan/OpenGL surface from our wgpu DX12 host.
+- ⬜ Multi-region testing — operator playtest (JP + US + EU discs with matching regional BIOSes).
+- ⬜ Multi-disc title via `.m3u` (Final Fantasy VII) — operator playtest.
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ⬜ `.pbp` launch validation — operator playtest of a known-good PSone Classics .pbp.
 
 **Acceptance gate:** A reference set of PSX games run with pixels +
 audio + working digital DualPad at native 59.94 Hz NTSC.
@@ -83,38 +68,19 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **DualShock analog stick support** — Phase 2 polish alongside
-  shared analog-input infra. Blocks Ape Escape (the only PSX game
-  requiring DualShock to play at all) and many later PSX titles
-  (Tony Hawk 2/3/4, Crash 3, MGS) that use the right stick.
-- ⬜ **Disc-id extraction** — PSX discs key against SYSTEM.CNF off the
-  data track for the boot binary filename (e.g.
-  "BOOT = cdrom:\\SLUS_007.06;1"). Extend `apps/oa-shell/src/cd_id.rs`
-  with a PSX branch + switch `rom_hashes::libretro_dat_refs_for_system("psx")`
-  from `&[]` to `&[DatRef { subdir: "metadat/redump", basename: "Sony - PlayStation" }]`.
-- ⬜ **HW vs SW perf benchmarks** — operator-side comparison on
-  representative hosts (low-end laptop, mid-range desktop, high-end
-  gaming PC). Document in `DECISIONS.md` so operators know what to
-  expect.
-- ⬜ **PGXP geometry correction** — Beetle PSX HW's PGXP feature
-  smooths the famously-shaky PSX 3D geometry. Operator surfaces it
-  via core options; per-game override should expose a one-click toggle.
-- ⬜ **Light gun support** (Time Crisis, Point Blank, Die Hard Trilogy).
-  Beetle PSX HW supports the GunCon via libretro pointer device.
+- ⬜ **DualShock analog stick support** — gated on shared analog-input infra; analog axes infra is shipped cross-system but PSX-side device-type wiring still ⬜. Blocks Ape Escape + later analog-required PSX titles.
+- ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::psx_family` (reads SLUS_/SCUS_/SLES_/SCES_/SLPS_/SLPM_/SCPS_ prefixes from SYSTEM.CNF); `rom_hashes` points at `metadat/redump/Sony - PlayStation`.
+- ⬜ **HW vs SW perf benchmarks** — operator-driven DECISIONS doc.
+- ⬜ **PGXP geometry correction** — operator-driven per-game core-option curation (per-game core-options drawer shipped cross-system).
+- ⬜ **Light gun support** — operator playtest (POINTER device infra shipped cross-system; per-game light-gun smoke-test still ⬜).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ **PSP-via-PSX backwards-compat polish** — `.pbp` containers may
-  carry additional metadata (icon, save data) the PSP exposed; Beetle
-  PSX HW handles the game data correctly but additional metadata
-  surface in the library tile is a polish item.
-- ⬜ **Memory card UX** — PSX memory cards live in
-  `appDataDir/saves/psx/<game-stem>.mcr` per Beetle PSX convention.
-  OA's library shows save state slots (F5/F8); per-game memory card
-  visibility is a polish item.
-- ⬜ **NetYaroze / dev BIOS variants** — extremely niche.
+- ⬜ **PSP-via-PSX backwards-compat polish** — `.pbp` metadata surface in library tile is operator-driven polish.
+- ⬜ **Memory card UX** — operator-driven polish.
+- ⬜ **NetYaroze / dev BIOS variants** — deferred (extremely niche).
 
 ---
 
@@ -132,9 +98,3 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
   fallback.
 - **DualShock analog sticks deferred.** Phase 2 polish — shared
   analog-input infra.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

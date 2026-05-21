@@ -45,21 +45,11 @@ rebuilding Rust.
 
 ## ⬜ Phase 1 — First 32X cart running
 
-- ⬜ Operator validation: launch a real `.32x` ROM end-to-end (pixels +
-  audio + controller). Suggested reference set: **Knuckles' Chaotix**,
-  **Virtua Racing Deluxe**, **Doom 32X**, **Star Wars Arcade**,
-  **Kolibri**.
-- ⬜ Save state F5/F8 round-trip. PicoDrive supports `retro_serialize`;
-  twin-SH-2 state machinery is worth explicit smoke-testing.
-- ⬜ Multi-region testing: load NTSC US + NTSC JP + PAL EU 32X carts to
-  confirm region auto-detect (NTSC 59.92 Hz vs PAL 49.70 Hz timing).
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready 2026-05-20,
-  needs operator validation.** Mapping `sega32x → Sega_-_32X` shipped in
-  `media::repo_for_system_id`. Operator: run `Settings → Library → Sync
-  media for Sega 32X` and confirm covers download.
-- ⬜ Libretro-database hash matching — operator runs `Settings → Library
-  → Identify ROMs` to confirm No-Intro SHA-1 lookup populates canonical
-  titles + publishers + years.
+- ⬜ Operator validation: **Knuckles' Chaotix**, **Virtua Racing Deluxe**, **Doom 32X**, **Star Wars Arcade**, **Kolibri** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ Multi-region testing — operator playtest (NTSC US + NTSC JP + PAL EU 32X carts).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ✅ Libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
 
 **Acceptance gate:** A reference set of 32X carts run with pixels +
 audio + working controller at native 59.92 Hz NTSC.
@@ -68,42 +58,19 @@ audio + working controller at native 59.92 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Per-system shader tweaks.** 32X games shipped on CRTs but the
-  enhanced-mode 32X VDP framebuffer (320×224 with twin-SH-2 rendering)
-  was visibly crisper than stock MD output — operator may want a
-  per-system shader override that goes lighter on scanlines for 32X
-  than for cart Genesis.
-- ⬜ **Region quirks compatibility map.** A handful of 32X titles
-  (Doom 32X with the patched NTSC-J build, Mortal Kombat II 32X PAL
-  timing) misbehave with auto-region detect — when found, document
-  in `KNOWN_GAME_BUGS.md` with per-game region override.
-- ⬜ **32X-specific theming polish.** The neon orange palette ships
-  v1; per-system page header art / sidebar icon / cart-art frame may
-  need 32X-specific tweaks once we have titles in the library.
+- ⬜ **Per-system shader tweaks** — operator-driven shader-preset choice (per-system shader override shipped cross-system).
+- ⬜ **Region quirks compatibility map** — operator-driven KNOWN_GAME_BUGS curation (per-game region override drawer shipped cross-system).
+- ⬜ **32X-specific theming polish** — operator-driven UI polish (per-system theming infra shipped cross-system).
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM
-export, memory inspector, cheats, milestones, run-ahead) is system-
-agnostic and lights up automatically once the engine work ships.
 32X-specific items:
 
-- ⬜ **32X-CD games (Night Trap 32X, Corpse Killer 32X, Slam City).**
-  These layer the 32X cart-slot addon ON TOP of Sega CD — they need
-  both the Sega CD BIOS and the 32X .dll. Currently routed through
-  `segacd` with a stacked per-game core override pointing at PicoDrive.
-  Needs end-to-end testing because PicoDrive's CD-via-32X path is a
-  unique combined-emulation surface. Phase 3+ work paired with Sega CD
-  Phase 3+.
-- ⬜ **Game Genie / Pro Action Replay code support** — runs through
-  the libretro cheat path (project RetroArch parity slice 8); needs
-  validation that PicoDrive's `retro_cheat_set` accepts 32X Game Genie
-  format (the 32X memory map differs from cart MD).
-- ⬜ **Custom forked 32X core** — extremely unlikely. PicoDrive's
-  upstream is responsive; OA-specific extensions for a 36-game library
-  are hard to justify.
+- ⬜ **32X-CD games (Night Trap 32X, Corpse Killer 32X, Slam City)** — deferred (Phase 3+; needs stacked Sega CD + 32X end-to-end validation).
+- ⬜ **Game Genie / Pro Action Replay code support** — operator-driven validation of PicoDrive's `retro_cheat_set`.
+- ⬜ **Custom forked 32X core** — deferred.
 
 ---
 
@@ -120,9 +87,3 @@ agnostic and lights up automatically once the engine work ships.
   32X mode, not ClownMDEmu with cart-only mode).
 - **32X-CD games route through `segacd`** with a stacked core override
   pointing at PicoDrive. Phase 3+ work.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

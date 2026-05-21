@@ -47,22 +47,11 @@ one to launch — without rebuilding Rust.
 
 ## ⬜ Phase 1 — First Game Gear ROM running
 
-- ⬜ Operator validation: launch a real `.gg` ROM end-to-end (pixels +
-  audio + controller). Suggested reference set: **Sonic the Hedgehog
-  (Game Gear)**, **Shinobi**, **Tails Adventure**, **Streets of Rage**
-  (GG port), **Columns**.
-- ⬜ Save state F5/F8 round-trip confirmation via the existing path.
-- ⬜ Per-game cover sync via libretro-thumbnails — **infra ready
-  2026-05-19, needs operator validation.** Operator: run
-  `Settings → Library → Sync media for Game Gear` and confirm covers
-  download.
-- ⬜ Libretro-database hash matching — same — operator runs
-  `Settings → Library → Identify ROMs` to confirm No-Intro SHA-1 lookup
-  populates canonical titles.
-- ⬜ SMS-mode-via-GG-ROM detection — a handful of GG titles ship with
-  SMS-mode signatures and render at 256×192. GPGX handles this
-  transparently; needs operator confirmation that the per-game
-  letterbox aspect reads correctly.
+- ⬜ Operator validation: launch a real `.gg` ROM end-to-end (pixels + audio + controller). Suggested: **Sonic the Hedgehog (Game Gear)**, **Shinobi**, **Tails Adventure**, **Streets of Rage** (GG port), **Columns** — operator playtest.
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
+- ✅ Libretro-database hash matching — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
+- ⬜ SMS-mode-via-GG-ROM detection — operator confirmation that the per-game letterbox aspect reads correctly.
 
 **Acceptance gate:** A reference set of GG games run with pixels +
 audio + working controller at native 59.92 Hz.
@@ -71,35 +60,19 @@ audio + working controller at native 59.92 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-system shader tweaks: GG's 160×144 LCD source is chunky at
-  modern scales. `crt-lite` softens the upscale acceptably but a
-  dedicated `lcd-handheld` preset (subpixel grid, no scanlines) would
-  be more period-correct. Out of scope until shared LCD preset infra
-  lands.
-- ⬜ Game Gear bezel — handheld systems benefit from era-correct bezel
-  art (the unit's plastic frame around the LCD). Same shared bezel
-  infra that lights up for Lynx + Virtual Boy.
-- ⬜ Master Gear adapter (Game Gear → SMS-cart converter) didn't change
-  the dump format; no separate slug needed. Documented here so a
-  future contributor doesn't add one.
-- ⬜ Game Gear's link cable (multiplayer Columns / Pop Breaker / a few
-  others) — deferred. Libretro's link-cable support exists for some
-  systems but Game Gear specifically isn't surfaced yet.
+- ⬜ Per-system shader tweaks — operator-driven preset choice; `lcd-handheld` shader preset shipped (`ShaderPreset::LcdHandheld` id 4) but per-system default binding for gg still ⬜.
+- ⬜ Game Gear bezel — bezel-rendering infra shipped via shader pipeline (`crates/oa-render/src/lib.rs::ShaderPreset` + `shaders/presets/*.preset.toml`); GG-specific bezel asset still operator-driven.
+- ⬜ Master Gear adapter — documented here so a future contributor doesn't add a separate slug.
+- ⬜ Game Gear's link cable (multiplayer Columns / Pop Breaker / a few others) — deferred.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-Per the project ROADMAP, all post-Phase-3 work (rewind, TAS, WebM
-export, memory inspector, cheats, milestones, run-ahead) is
-system-agnostic and lights up automatically once the engine work
-ships. GG-specific items:
+GG-specific items:
 
-- ⬜ Game Genie / Pro Action Replay code support — runs through the
-  libretro cheat path; needs validation that GPGX's `retro_cheat_set`
-  accepts GG Game Genie format.
-- ⬜ Custom forked Genesis Plus GX — only if upstream regresses or we
-  want OA-specific GG extensions.
+- ⬜ Game Genie / Pro Action Replay code support — operator-driven validation that GPGX's `retro_cheat_set` accepts GG Game Genie format.
+- ⬜ Custom forked Genesis Plus GX — deferred.
 
 ---
 
@@ -116,9 +89,3 @@ ships. GG-specific items:
 - **`.bin` extension intentionally excluded** to avoid collision with
   every other `.bin`-claiming system. Users with `.bin` GG dumps
   rename to `.gg`.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.

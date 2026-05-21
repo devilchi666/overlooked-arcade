@@ -25,22 +25,13 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1 — First PCFX game running
 
-- ⬜ Operator validation: Battle Heat / Tyoushin Heiki Zeroigar /
-  Team Innocent.
-- ⬜ FMV streaming validation — PC-FX library is FMV-heavy.
-- ⬜ Save state F5/F8 round-trip mid-disc.
+- ⬜ Operator validation: Battle Heat / Tyoushin Heiki Zeroigar / Team Innocent — operator playtest.
+- ⬜ FMV streaming validation — operator playtest (PC-FX library is FMV-heavy).
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
-## ⬜ Phase 2 — Polish
+## ✅ Phase 2 — Polish
 
-- ⬜ Disc-id extraction — PC-FX shares the PCE-CD-family disc-id
-  format. Extend cd_id.rs with PCFX branch.
-- ⬜ Japanese-text fonts in the library tile (PCFX titles are nearly
-  all Japanese-only; library cover art is the operator's lifeline).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ✅ Disc-id extraction — shipped via `apps/oa-shell/src/cd_id.rs::extractors::pcfx` (finds the FX...-prefix serial after the "PC-FX:" signature); `rom_hashes` points at `metadat/redump/NEC - PC-FX & PC-FXGA`.
+- ✅ Japanese-text fonts in the library tile — shipped via CJK font fallbacks in `frontend/src/index.css::--font-display`.

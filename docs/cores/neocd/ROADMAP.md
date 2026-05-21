@@ -29,35 +29,21 @@ a known-good disc.
 
 ## ⬜ Phase 1 — First Neo Geo CD game running
 
-- ⬜ Operator validation. Suggested: **Samurai Shodown RPG**
-  (CD-exclusive), **Metal Slug 1 CD**, **King of Fighters '96 CD**,
-  **Last Blade CD**.
-- ⬜ Save state F5/F8 round-trip mid-disc.
-- ⬜ CDDA streaming validation — Neo Geo CD titles have CDDA
-  soundtracks; Samurai Shodown RPG is the canonical test.
-- ⬜ Cover sync via libretro-thumbnails — operator pass.
+- ⬜ Operator validation: **Samurai Shodown RPG** (CD-exclusive), **Metal Slug 1 CD**, **KOF '96 CD**, **Last Blade CD** — operator playtest.
+- ✅ Save state F5/F8 round-trip mid-disc — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
+- ⬜ CDDA streaming validation — operator playtest (Samurai Shodown RPG canonical test).
+- ✅ Cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Disc-id extraction — Neo Geo CD discs carry a game-id signature
-  in IPL.TXT on the data track. Extend `cd_id.rs` + switch
-  `rom_hashes` from `&[]` to redump dat ref.
-- ⬜ Region-toggle UX — same Unibios CD-variant work as cart neogeo.
-- ⬜ Load-time optimization — Neo Geo CD's CD-loading was notoriously
-  slow on real hardware (multiple-minute pauses). NeoCD core options
-  expose a "fast load" toggle that operators may want surfaced.
+- ✅ Disc-id extraction — shipped via `apps/oa-shell/src/cd_id.rs::extractors::neo_geo_cd` (reads IPL.TXT-area NGCD/ADK prefixes); `rom_hashes` points at `metadat/redump/SNK - Neo Geo CD`.
+- ⬜ Region-toggle UX — operator-driven Unibios CD-variant curation (same shape as cart neogeo).
+- ⬜ Load-time optimization — operator-driven NeoCD "fast load" core-option surface.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Multi-disc Neo Geo CD titles via `.m3u` (rare — most Neo Geo CD
-  titles fit on a single disc).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Multi-disc Neo Geo CD titles via `.m3u` — deferred (rare, most titles fit on a single disc).

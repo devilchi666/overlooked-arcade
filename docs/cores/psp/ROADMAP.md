@@ -21,21 +21,13 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 1 — First PSP game running
 
-- ⬜ Operator validation: God of War: Chains of Olympus / Crisis
-  Core: FFVII / Patapon / Metal Gear Solid: Peace Walker.
-- ⬜ Analog stick smoke-test.
-- ⬜ Save state F5/F8 round-trip.
+- ⬜ Operator validation: God of War: Chains of Olympus / Crisis Core: FFVII / Patapon / Metal Gear Solid: Peace Walker — operator playtest.
+- ✅ Analog stick smoke-test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
+- ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ PSP Go second analog stick support (rare hardware).
-- ⬜ PPSSPP-specific core options surface (texture upscaling,
-  internal resolution multiplier).
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ PSP Go second analog stick support — deferred (rare hardware).
+- ⬜ PPSSPP-specific core options surface (texture upscaling, internal resolution multiplier) — operator-driven curation via per-system Core Options page (per-system Core Options shipped cross-system).

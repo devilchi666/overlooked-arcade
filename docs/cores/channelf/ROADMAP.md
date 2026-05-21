@@ -20,28 +20,22 @@ Per-core phase tracking for Fairchild Channel F. Status: ⬜ not started · 🟨
 
 ## ⬜ Phase 1 — First Channel F ROM running
 
-- ⬜ Operator validation: launch a `.chf` ROM. Suggested: **Video Whizball**, **Spitfire**, **Dodge It**, **Memory Match**, **Tic-Tac-Toe** (the pack-in).
-- ⬜ Plunger controller mapping — confirm UP/DOWN/LEFT/RIGHT D-pad bindings feel correct for pull/push/twist axes.
-- ⬜ Console-switch bindings — MODE / TIME / START / HOLD on M / T / Enter / H. Confirm Game Select cycling works.
-- ⬜ Optional BIOS install (`sl31253.bin` + `sl31254.bin` + `sl90025.bin`) — confirm boot menu appears.
-- ⬜ libretro-database hash matching + cover sync.
+- ⬜ Operator validation: launch a `.chf` ROM. Suggested: **Video Whizball**, **Spitfire**, **Dodge It**, **Memory Match**, **Tic-Tac-Toe** (the pack-in) — operator playtest.
+- ⬜ Plunger controller mapping — operator playtest of D-pad bindings against pull/push/twist axes.
+- ⬜ Console-switch bindings — MODE / TIME / START / HOLD on M / T / Enter / H — operator playtest.
+- ⬜ Optional BIOS install (`sl31253.bin` + `sl31254.bin` + `sl90025.bin`) — operator-driven.
+- ✅ libretro-database hash matching + cover sync — closed by cross-system hash ID (`rom_hashes::resolve_rom_hashes_for_system`) + media sync (`media::sync_media_for_system`).
 
 ---
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ True multi-axis plunger analog mapping — the Channel F plunger was a real 3-axis stick (push/pull, twist L/R, push-in). The D-pad mapping is a 4-direction approximation; full analog support waits on shared analog-input infra.
-- ⬜ Channel F System II (1979 redesign without wood-grain) — single core handles both; mostly relevant for cosmetic ROM-set distinction (the System II's BIOS differs slightly).
-- ⬜ Homebrew scene catalog — the Channel F has an active modern homebrew community (Chaforces, recent indie releases); first-class scanning support.
+- ⬜ True multi-axis plunger analog mapping — the Channel F plunger was a real 3-axis stick (push/pull, twist L/R, push-in) — gated on shared analog-input infra.
+- ⬜ Channel F System II (1979 redesign without wood-grain) — operator-driven cosmetic ROM-set distinction.
+- ⬜ Homebrew scene catalog — operator-driven data curation.
 
 ---
 
 ## ⬜ Phase 3+ — Stretch
 
-- ⬜ Custom BIOS rebuild — there are open-source Channel F BIOS clones that the operator could ship if licensing requires.
-
----
-
-## 2026-05-21 — Stale-cleanup audit
-
-The Phase 1+ items above were written when this system onboarded, before cross-system infrastructure (Phases 1.5 / 2.5–2.8 / 3 / 4 + direct-launch CLI) landed. Many `⬜` items are actually shipped — see `docs/cores/AUDIT_2026-05-21.md` for the per-item breakdown (stale vs open-code vs open-operator) for this system.
+- ⬜ Custom BIOS rebuild — there are open-source Channel F BIOS clones that the operator could ship if licensing requires — deferred.
