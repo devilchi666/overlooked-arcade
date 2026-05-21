@@ -269,22 +269,14 @@ async fn fetch_metadat_dat(
         kind.subdir(),
         urlencoding::encode(system_name),
     );
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .send()
-        .await
-        .map_err(|e| format!("fetch {url}: {e}"))?;
-    let status = resp.status();
-    if status == reqwest::StatusCode::NOT_FOUND {
+    // get_text_with_retry retries once on 5xx / network errors. A
+    // single 404 (kind genuinely absent for this system) returns
+    // Ok(None) and is logged at debug level rather than warning.
+    let result = crate::http_retry::get_text_with_retry(client, &url, "OverlookedArcade").await;
+    if let Ok(None) = &result {
         log::debug!("oa-shell: metadat {url} 404 (kind absent for system)");
-        return Ok(None);
     }
-    if !status.is_success() {
-        return Err(format!("metadat fetch {url} status {status}"));
-    }
-    let text = resp.text().await.map_err(|e| format!("metadat body: {e}"))?;
-    Ok(Some(text))
+    result
 }
 
 /// Fetch + merge all metadat kinds for a system into one `Vec<UpstreamMetadat>`.

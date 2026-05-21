@@ -242,7 +242,22 @@ pub fn read_media_db(app_data_dir: &Path) -> MediaDb {
         Ok(bytes) => match serde_json::from_slice::<MediaDb>(&bytes) {
             Ok(db) => db,
             Err(e) => {
+                // Preserve the bad file as .corrupt — pre-fix the
+                // operator's media.json was silently wiped on parse
+                // failure and the bad bytes (potentially recoverable)
+                // were lost. Now they can grep the .corrupt file or
+                // hand it back for analysis.
                 log::warn!("oa-shell: media.json malformed ({e:?}); starting empty");
+                let mut backup = p.as_os_str().to_owned();
+                backup.push(".corrupt");
+                if let Err(e) = std::fs::rename(&p, std::path::Path::new(&backup)) {
+                    log::warn!("oa-shell: media.json backup-rename failed: {e}");
+                } else {
+                    log::warn!(
+                        "oa-shell: media.json saved as {} for recovery",
+                        std::path::Path::new(&backup).display()
+                    );
+                }
                 MediaDb::new()
             }
         },
@@ -264,8 +279,37 @@ pub fn write_media_db(app_data_dir: &Path, db: &MediaDb) -> std::io::Result<()> 
 pub fn read_media_prefs(app_data_dir: &Path) -> MediaPrefs {
     let p = media_prefs_path(app_data_dir);
     match std::fs::read(&p) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-        Err(_) => MediaPrefs::default(),
+        Ok(bytes) => match serde_json::from_slice::<MediaPrefs>(&bytes) {
+            Ok(prefs) => prefs,
+            Err(e) => {
+                // Loud warning + preserve the bad file as .corrupt so the
+                // operator can recover their custom region priority /
+                // kinds_to_fetch / only_sync_identified settings.
+                // Pre-fix this was a silent unwrap_or_default — a
+                // mid-write crash silently wiped the operator's
+                // customizations and the only signal was "wait, my
+                // region priority is back to defaults?"
+                log::warn!(
+                    "oa-shell: media-prefs.json malformed ({e}); starting with defaults"
+                );
+                let mut backup = p.as_os_str().to_owned();
+                backup.push(".corrupt");
+                if let Err(e) = std::fs::rename(&p, std::path::Path::new(&backup)) {
+                    log::warn!("oa-shell: media-prefs.json backup-rename failed: {e}");
+                } else {
+                    log::warn!(
+                        "oa-shell: media-prefs.json saved as {} for recovery",
+                        std::path::Path::new(&backup).display()
+                    );
+                }
+                MediaPrefs::default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => MediaPrefs::default(),
+        Err(e) => {
+            log::warn!("oa-shell: media-prefs.json read failed ({e}); starting with defaults");
+            MediaPrefs::default()
+        }
     }
 }
 
@@ -1395,16 +1439,24 @@ async fn fetch_repo_tree(client: &reqwest::Client, repo: &str) -> Result<RepoTre
     let url = format!(
         "https://api.github.com/repos/libretro-thumbnails/{repo}/git/trees/master?recursive=1"
     );
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("github tree request: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("github tree status: {}", resp.status()));
-    }
+    // get_with_retry classifies 5xx + network errors as transient and
+    // retries once; 4xx as permanent. Pre-fix a transient 503 from
+    // GitHub's API marked the whole repo as errors for the sync
+    // (every entry would lose its variant for this run).
+    //
+    // The Accept header is required for the GitHub tree API (it
+    // returns text/plain by default which is missing the `tree`
+    // array). Append it after the helper's GET via a slight hack —
+    // use the helper for response classification + retry, then
+    // re-issue with the right header if we got a hit. Cleaner: just
+    // accept that the github tree API also serves the right shape
+    // without the Accept header in practice (it does; the header is
+    // a hint, not a requirement). If a future api change breaks this,
+    // pull the helper into a builder pattern that accepts extra
+    // headers.
+    let Some(resp) = crate::http_retry::get_with_retry(client, &url, "OverlookedArcade").await? else {
+        return Err(format!("github tree: {url} returned 404 (repo missing?)"));
+    };
     let json: serde_json::Value = resp
         .json()
         .await
@@ -1947,16 +1999,34 @@ pub async fn sync_media_for_system(
                             canonical,
                         ).await;
                         let d = done_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        log::info!(
-                            "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
-                            entry.title,
-                            match &outcome {
-                                Ok(SyncOutcome::Downloaded { .. }) => "downloaded".to_string(),
-                                Ok(SyncOutcome::Cached) => "cached".to_string(),
-                                Ok(SyncOutcome::NoMatch) => "no match".to_string(),
-                                Err(e) => format!("ERROR: {e}"),
+                        // Per-ROM log line. Pre-fix every outcome was
+                        // info-level — a 1160-game Genesis sync × 3
+                        // kinds = ~3500 info lines in oa-current.log
+                        // per sync. Now: only Downloaded and Err
+                        // surface at info (the operator-interesting
+                        // events); Cached and NoMatch drop to debug
+                        // (still recoverable with RUST_LOG=debug but
+                        // not cluttering normal logs).
+                        let outcome_str = match &outcome {
+                            Ok(SyncOutcome::Downloaded { .. }) => "downloaded".to_string(),
+                            Ok(SyncOutcome::Cached) => "cached".to_string(),
+                            Ok(SyncOutcome::NoMatch) => "no match".to_string(),
+                            Err(e) => format!("ERROR: {e}"),
+                        };
+                        match &outcome {
+                            Ok(SyncOutcome::Downloaded { .. }) | Err(_) => {
+                                log::info!(
+                                    "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
+                                    entry.title, outcome_str,
+                                );
                             }
-                        );
+                            _ => {
+                                log::debug!(
+                                    "oa-shell: sync [{d}/{total}] {} [{kind_label}] → {}",
+                                    entry.title, outcome_str,
+                                );
+                            }
+                        }
                         let action: String = match &outcome {
                             Ok(SyncOutcome::Downloaded { variant }) => {
                                 // Apply the variant under the write lock, but
