@@ -5240,6 +5240,42 @@ fn run_emu_render(
                     pointer: polled.pointer,
                     analog_buttons: polled.analog_buttons,
                 });
+                // Phase G — pump sensor values for cores that enabled
+                // accelerometer / gyroscope / illuminance via the
+                // sensor interface. Today the values come from the
+                // keyboard arrow keys (tilt fallback) so GBA Boktai
+                // / Kirby Tilt 'n' Tumble / WarioWare Twisted! are
+                // playable without OS-level accelerometer access. The
+                // sensors_enabled check skips the work for the 95% of
+                // cores that don't use sensors.
+                if core_ref.sensors_enabled() {
+                    let mut sensors = [[0.0f32; 7]; 5];
+                    // Phase G v1: arrow keys → accelerometer tilt on
+                    // port 0 only. Up/Down drive the Y axis, Left/
+                    // Right drive X. Magnitude ~9.8 m/s² (1g) at full
+                    // deflection so games see a "tilt to 45°" gesture.
+                    let left = input.is_pressed(Keycode::Left);
+                    let right = input.is_pressed(Keycode::Right);
+                    let up = input.is_pressed(Keycode::Up);
+                    let down = input.is_pressed(Keycode::Down);
+                    let tilt_x: f32 = match (left, right) {
+                        (true, false) => -9.8,
+                        (false, true) => 9.8,
+                        _ => 0.0,
+                    };
+                    let tilt_y: f32 = match (up, down) {
+                        (true, false) => 9.8,
+                        (false, true) => -9.8,
+                        _ => 0.0,
+                    };
+                    sensors[0][oa_libretro::ffi::RETRO_SENSOR_ACCELEROMETER_X as usize] = tilt_x;
+                    sensors[0][oa_libretro::ffi::RETRO_SENSOR_ACCELEROMETER_Y as usize] = tilt_y;
+                    // Z stays at 9.8 (gravity) — flat-on-table baseline
+                    // so games that read all three axes don't see a
+                    // free-falling controller.
+                    sensors[0][oa_libretro::ffi::RETRO_SENSOR_ACCELEROMETER_Z as usize] = 9.8;
+                    core_ref.set_sensor_values(sensors);
+                }
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
                         port0: libretro_bits,
@@ -5371,6 +5407,14 @@ fn run_emu_render(
                     // refreshing. Reasonable proxy: keep refreshing
                     // whenever there's anything to refresh (post-load
                     // first call seeds it; on UnloadRom we'll reset).
+                    // Phase F — forward whatever rumble strength the core
+                    // requested during this run_frame to gilrs's
+                    // force-feedback API. Cores that don't use rumble
+                    // return all-zeros from rumble_snapshot(); the
+                    // dispatch_rumble fast-paths the zero case so the
+                    // per-frame cost is negligible.
+                    let rumble = core_ref.rumble_snapshot();
+                    input.dispatch_rumble(rumble);
                     let need_snapshot =
                         !milestone_runtime.is_empty()
                         || memory_snapshot
@@ -7183,36 +7227,58 @@ fn arm_libretro_device(
         .find(|g| g.id == gameId)
         .ok_or_else(|| format!("game id not found: {gameId}"))?;
     let game_overrides = db.get_game_overrides(&gameId)?;
-    // RETRO_DEVICE_JOYPAD = 1 is the universal default. Per-game
-    // override wins.
-    let device = game_overrides.libretro_device.unwrap_or(1);
     let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
-    let _ = tx.send(EmuCommand::SetPortDevice { port: 0, device });
+    // RETRO_DEVICE_JOYPAD = 1 is the universal default at every port.
+    // Per-game overrides win per-port. Phase E (2026-05-21) extended
+    // this from port-0-only to all five ports — closes SNES Mouse on
+    // port 2, arcade coop light-gun, 7800 twin-stick scenarios.
+    for (port, device_override) in
+        game_overrides.libretro_device_ports().iter().enumerate()
+    {
+        let device = device_override.unwrap_or(1);
+        let _ = tx.send(EmuCommand::SetPortDevice {
+            port: port as u32,
+            device,
+        });
+    }
     Ok(())
 }
 
-/// Persist a per-game libretro device-type override (port 0) and push
-/// to the running emu. Stores into `GameOverrides::libretro_device`
-/// so the value re-applies on every future launch of this game.
+/// Persist a per-game libretro device-type override and push to the
+/// running emu. `port` selects which RetroPad port (0..=4); the
+/// matching field on `GameOverrides` (`libretro_device` for port 0,
+/// `libretro_device_portN` for 1..=4) gets the new value.
 ///
-/// `device = None` clears the override (game falls back to the system
-/// default JOYPAD); `device = Some(0)` explicitly disconnects port 0
-/// (RETRO_DEVICE_NONE).
+/// `device = None` clears the override at that port (falls back to the
+/// libretro default JOYPAD); `device = Some(0)` explicitly disconnects
+/// the port (RETRO_DEVICE_NONE).
 #[tauri::command]
 #[allow(non_snake_case)]
 fn set_libretro_device_for_game(
     gameId: String,
     device: Option<u32>,
+    port: Option<u32>,
     state: tauri::State<'_, AppState>,
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
+    let port = port.unwrap_or(0);
+    if port >= 5 {
+        return Err(format!("libretro port out of range: {port} (max 4)"));
+    }
     let mut overrides = db.get_game_overrides(&gameId)?;
-    overrides.libretro_device = device;
+    match port {
+        0 => overrides.libretro_device = device,
+        1 => overrides.libretro_device_port1 = device,
+        2 => overrides.libretro_device_port2 = device,
+        3 => overrides.libretro_device_port3 = device,
+        4 => overrides.libretro_device_port4 = device,
+        _ => unreachable!("range checked above"),
+    }
     db.set_game_overrides(&gameId, &overrides)?;
     // Push to the running emu (no-op if game isn't currently loaded).
     if let Ok(tx) = state.emu_tx.lock() {
         let _ = tx.send(EmuCommand::SetPortDevice {
-            port: 0,
+            port,
             device: device.unwrap_or(1), // RETRO_DEVICE_JOYPAD default
         });
     }

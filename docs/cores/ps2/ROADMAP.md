@@ -31,7 +31,8 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Pressure-sensitive face buttons + analog L2/R2 — gated on shared pressure-sensitive analog-trigger infra (shared with GC/DC).
+- ✅ Pressure-sensitive face buttons + analog L2/R2 — closed by Phase B per-button analog pressure. Same shared infra closed GC + DC. Operator playtest pending (Gran Turismo 3/4 brake-feel, Metal Gear Solid 2/3 prone-walk).
+- ✅ DualShock 2 rumble — closed by Phase F rumble interface.
 - ⬜ PS2 memory card UX — operator-driven validation.
 - ✅ Disc-id extraction via SYSTEM.CNF — shipped via `apps/oa-shell/src/cd_id.rs::dispatch_extractor` routing `ps2` → `extractors::psx_family`; `rom_hashes` points at `metadat/redump/Sony - PlayStation 2`.
 - ⬜ LRPS2 core-options surface (graphics renderer, FPS limit) — operator-driven curation via per-system settings page (per-system Core Options shipped cross-system).

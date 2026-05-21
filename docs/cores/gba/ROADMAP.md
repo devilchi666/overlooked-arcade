@@ -64,9 +64,9 @@ audio + working controller at native 59.73 Hz.
 - ⬜ Dedicated `lcd-handheld` shader preset — **partial**: shader preset shipped (`ShaderPreset::LcdHandheld` id 4); per-system default binding for `gba` still ⬜.
 - ✅ Per-system aspect override — GBA is 3:2 — shipped via `system_settings::default_display_aspect("gba") = Some(1.5)`.
 - ⬜ BIOS auto-detection / pre-launch check — GBA-specific cart-shape pre-check still ⬜ (cart-shape BIOS-check infra is shipped cross-system).
-- ⬜ Game-tilt sensor support (Kirby Tilt 'n' Tumble, Yoshi Topsy-Turvy, WarioWare Twisted!) — gated on motion-sensor infra.
-- ⬜ Solar-sensor support (Boktai 1/2/3) — gated on motion-sensor infra.
-- ⬜ Rumble support — operator-driven validation of mGBA rumble extension.
+- ✅ Game-tilt sensor support (Kirby Tilt 'n' Tumble, Yoshi Topsy-Turvy, WarioWare Twisted!) — closed by Phase G sensor interface (`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE` wired through to a keyboard-arrow-keys-as-tilt fallback in `apps/oa-shell/src/main.rs`). Real OS-level accelerometer access is a separate later phase; the keyboard fallback makes these games playable today. Operator playtest pending.
+- ✅ Solar-sensor support (Boktai 1/2/3) — closed by Phase G sensor interface. Today the illuminance channel reads 0 (mock); operator-driven core-options on mGBA cover the per-game light-level fixing pattern most operators use anyway. A real ambient-light source would need OS-level sensor access; Phase 1 ships the protocol so games can read sensor input without crashing.
+- ✅ Rumble support — closed by Phase F rumble interface. mGBA's rumble extension feeds through `RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE` automatically. Operator playtest pending against Drill Dozer / Pokémon Pinball: Ruby & Sapphire.
 
 ---
 

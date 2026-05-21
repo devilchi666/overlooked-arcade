@@ -163,6 +163,27 @@ pub(crate) struct State {
     /// SET_KEYBOARD_CALLBACK env leave this unset and the frontend's
     /// `send_keyboard_event` becomes a no-op.
     pub keyboard_cb: Option<retro_keyboard_event_t>,
+    /// Latest rumble strength the core requested, per (port × effect).
+    /// `rumble[port][0]` is strong/low-freq, `rumble[port][1]` is weak/
+    /// high-freq. Range 0..=65535. Updated by `cb_set_rumble_state`;
+    /// the shell polls `LibretroCore::rumble_snapshot()` once per frame
+    /// and forwards to `oa-input::InputPoller::dispatch_rumble` which
+    /// pokes gilrs's force-feedback API.
+    pub rumble: [[u16; 2]; 5],
+    /// Per-port-per-sensor enable bits set by the core via
+    /// `cb_set_sensor_state`. Index by `[port][sensor_class]` where
+    /// class 0 = accelerometer, 1 = gyroscope, 2 = illuminance. The
+    /// frontend only writes non-zero into `cb_get_sensor_input` when
+    /// the matching class is enabled, so disabled sensors read 0.
+    pub sensor_enabled: [[bool; 3]; 5],
+    /// Per-port-per-axis sensor value populated by the shell each
+    /// frame for whatever sensor classes are enabled. Index by
+    /// `[port][RETRO_SENSOR_* axis id]` (0..=6). The Phase G
+    /// implementation feeds these from keyboard arrow keys as a
+    /// tilt fallback so GBA Boktai / Kirby Tilt 'n' Tumble /
+    /// WarioWare Twisted! are playable without an OS-level
+    /// accelerometer. Real motion is a separate later phase.
+    pub sensor_values: [[f32; 7]; 5],
     /// Display rotation set by the core via
     /// `RETRO_ENVIRONMENT_SET_ROTATION`. Units of 90° clockwise:
     ///   0 = no rotation (default)
@@ -214,6 +235,9 @@ impl State {
             variables_updated: true,
             hidden_options: HashSet::new(),
             update_display_cb: None,
+            rumble: [[0; 2]; 5],
+            sensor_enabled: [[false; 3]; 5],
+            sensor_values: [[0.0; 7]; 5],
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
@@ -502,6 +526,84 @@ pub(crate) unsafe extern "C" fn cb_audio_sample_batch(data: *const i16, frames: 
 
 pub(crate) unsafe extern "C" fn cb_input_poll() {
     // We push input via LibretroCore::set_input; no fetch needed here.
+}
+
+/// Phase F — `retro_rumble_interface::set_rumble_state` trampoline.
+/// Cores call this whenever they want to drive controller vibration
+/// (per (port, effect-kind, strength) tuple, libretro spec env 23).
+/// We stash the strength into `State.rumble[port][effect]`; the shell
+/// reads the snapshot once per frame and dispatches via gilrs.
+pub(crate) unsafe extern "C" fn cb_set_rumble_state(
+    port: u32,
+    effect: u32,
+    strength: u16,
+) -> bool {
+    if port >= 5 || effect >= 2 {
+        return false;
+    }
+    with_state(|s| {
+        s.rumble[port as usize][effect as usize] = strength;
+    });
+    true
+}
+
+/// Phase G — `retro_sensor_interface::set_sensor_state` trampoline.
+/// Cores call this to enable/disable per-port accelerometer / gyro /
+/// illuminance polling at a target sample `rate`. We honor the
+/// enable/disable bit but ignore `rate` (the shell pumps sensor values
+/// every frame regardless; cores get freshness without polling cadence
+/// negotiation).
+pub(crate) unsafe extern "C" fn cb_set_sensor_state(
+    port: u32,
+    action: u32,
+    _rate: u32,
+) -> bool {
+    if port >= 5 {
+        return false;
+    }
+    let (class_idx, enable) = match action {
+        RETRO_SENSOR_ACCELEROMETER_ENABLE => (0usize, true),
+        RETRO_SENSOR_ACCELEROMETER_DISABLE => (0usize, false),
+        RETRO_SENSOR_GYROSCOPE_ENABLE => (1usize, true),
+        RETRO_SENSOR_GYROSCOPE_DISABLE => (1usize, false),
+        RETRO_SENSOR_ILLUMINANCE_ENABLE => (2usize, true),
+        RETRO_SENSOR_ILLUMINANCE_DISABLE => (2usize, false),
+        _ => return false,
+    };
+    with_state(|s| {
+        s.sensor_enabled[port as usize][class_idx] = enable;
+        // Zero the matching value slots on disable so a re-enable
+        // doesn't read stale data from a previous session.
+        if !enable {
+            let axis_range: &[usize] = match class_idx {
+                0 => &[RETRO_SENSOR_ACCELEROMETER_X as usize,
+                       RETRO_SENSOR_ACCELEROMETER_Y as usize,
+                       RETRO_SENSOR_ACCELEROMETER_Z as usize],
+                1 => &[RETRO_SENSOR_GYROSCOPE_X as usize,
+                       RETRO_SENSOR_GYROSCOPE_Y as usize,
+                       RETRO_SENSOR_GYROSCOPE_Z as usize],
+                2 => &[RETRO_SENSOR_ILLUMINANCE as usize],
+                _ => &[],
+            };
+            for axis in axis_range {
+                s.sensor_values[port as usize][*axis] = 0.0;
+            }
+        }
+    });
+    true
+}
+
+/// Phase G — `retro_sensor_interface::get_sensor_input` trampoline.
+/// Cores call this every frame for each sensor axis they care about.
+/// We return `State.sensor_values[port][id]` for the enabled classes;
+/// disabled classes always read 0 (the disable side cleared the
+/// matching slots).
+pub(crate) unsafe extern "C" fn cb_get_sensor_input(port: u32, id: u32) -> f32 {
+    if port >= 5 || id > RETRO_SENSOR_ILLUMINANCE {
+        return 0.0;
+    }
+    with_state(|s| s.sensor_values[port as usize][id as usize])
+        .unwrap_or(0.0)
 }
 
 pub(crate) unsafe extern "C" fn cb_input_state(
@@ -969,12 +1071,37 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             true
         }
 
-        // Decline these — we don't have rumble / sensors / camera / location
-        // / HW render interfaces, and lying about them risks the core calling
-        // a null function pointer.
-        RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE
-        | RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE
-        | RETRO_ENVIRONMENT_GET_CAMERA_INTERFACE
+        // Phase F (2026-05-21) — hand the core a rumble interface
+        // pointing at our cb_set_rumble_state trampoline. The trampoline
+        // writes per-port-per-effect strength into State.rumble; the
+        // shell polls `LibretroCore::rumble_snapshot()` each frame and
+        // dispatches via gilrs's force-feedback API.
+        RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE => {
+            if data.is_null() { return false; }
+            let iface = retro_rumble_interface {
+                set_rumble_state: cb_set_rumble_state,
+            };
+            unsafe { *(data as *mut retro_rumble_interface) = iface; }
+            true
+        }
+        // Phase G (2026-05-21) — hand the core a sensor interface so
+        // GBA tilt / solar / NDS gyroscope games can read sensor input.
+        // Today the shell pumps keyboard arrow-keys-as-tilt into
+        // State.sensor_values so games are playable without OS-level
+        // accelerometer access; real motion is a separate later phase.
+        RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE => {
+            if data.is_null() { return false; }
+            let iface = retro_sensor_interface {
+                set_sensor_state: cb_set_sensor_state,
+                get_sensor_input: cb_get_sensor_input,
+            };
+            unsafe { *(data as *mut retro_sensor_interface) = iface; }
+            true
+        }
+        // Decline these — we don't have camera / location / HW render
+        // interfaces, and lying about them risks the core calling a
+        // null function pointer.
+        RETRO_ENVIRONMENT_GET_CAMERA_INTERFACE
         | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE
         | RETRO_ENVIRONMENT_SET_HW_RENDER => false,
 

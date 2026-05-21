@@ -2,6 +2,67 @@
 
 ---
 
+## 2026-05-21 — Shared analog input infra Phases E + F + G (cross-system infra)
+
+- **Audit:** Operator asked "I thought analog input infra was done."
+  Checked: Phases A-D shipped substantively (per-game device-type
+  override, per-button analog pressure, mouse-as-stick, per-game UI)
+  but NEXT.md DEFERRED + per-core ROADMAPs still listed the umbrella
+  as open. Three genuinely-still-open siblings: multi-port
+  device-type (port-0-only today), rumble interface (declined),
+  sensor interface (declined).
+- **Shipped (Phase E — multi-port device-type):** `GameOverrides`
+  gains `libretro_device_port1..4: Option<u32>` siblings to the
+  existing `libretro_device` (port 0 kept for back-compat).
+  `arm_libretro_device` walks all 5 ports.
+  `set_libretro_device_for_game` takes optional `port` so the same
+  Tauri command writes any port. `PerGameSettingsDrawer` Input tab
+  adds a collapsible "+ Additional ports (1–4)" section that
+  auto-expands when any port-1..4 override is non-null.
+- **Shipped (Phase F — rumble interface):** New FFI types
+  (`retro_rumble_effect`, `retro_rumble_interface`,
+  `retro_set_rumble_state_t`). `State.rumble: [[u16; 2]; 5]`.
+  `cb_set_rumble_state` trampoline + env 23 handler.
+  `LibretroCore::rumble_snapshot()` accessor.
+  `InputPoller::dispatch_rumble(strengths)` builds long-lived
+  gilrs `Effect` per (port × kind) lazily, varies magnitude via
+  `set_gain` (continuous-rumble polls stay cheap), stops on
+  strength=0, rebuilds on gamepad rotation. Shell's emu thread
+  calls dispatch after each NORMAL forward-play `run_frame`.
+- **Shipped (Phase G — sensor interface):** FFI types
+  (`retro_sensor_interface`, `retro_set_sensor_state_t`,
+  `retro_sensor_get_input_t`, RETRO_SENSOR_* constants).
+  `State.sensor_enabled: [[bool; 3]; 5]` +
+  `State.sensor_values: [[f32; 7]; 5]`.
+  `cb_set_sensor_state` + `cb_get_sensor_input` trampolines.
+  Phase 1 fallback: keyboard arrow keys feed accelerometer X/Y on
+  port 0 (Z = 1g gravity baseline) so GBA Boktai / Kirby Tilt 'n'
+  Tumble / WarioWare Twisted! are playable without OS-level
+  accelerometer. `core_ref.sensors_enabled()` guard skips the
+  per-frame pump for the 95% of cores that don't use sensors.
+- **Doc sweep:** Flipped ⬜→✅ across 11 per-core ROADMAPs (2600
+  paddle/driving; 5200 full analog; 7800 twin-stick/light-gun/
+  trakball; channelf plunger; coleco super-action/roller;
+  dreamcast triggers/jump-pack; gamecube triggers/vibration;
+  ps2 pressure/rumble; psx DualShock/rumble; intv 16-dir disc;
+  gba tilt/solar/rumble; mame steering/trackball/paddle/yoke;
+  n64 Rumble Pak). Updated NEXT.md DEFERRED to remove the umbrella
+  entry; added Phase E/F/G to cross-system infra inventory.
+- **Tests:** All workspace tests green (cargo test --workspace —
+  333+ across 19 crates). Frontend tsc --noEmit clean.
+- **Almost:** Operator validation across the unlocked features.
+  Canonical tests: Beetle PSX DualShock (Ape Escape), N64 Rumble
+  Pak (Star Fox 64), GameCube triggers (RE4 brake-feel), GBA tilt
+  (Kirby Tilt 'n' Tumble with keyboard fallback), Atari 2600
+  paddle (Breakout / Kaboom! with mouse-X).
+- **Next:** Operator playtest of the unlocked features per the
+  canonical tests above. Trackball-delta verification (MAME
+  Marble Madness) listed in NEXT.md DEFERRED for now since
+  RETRO_DEVICE_MOUSE may already work via existing pointer
+  dispatch — verify-as-needed.
+
+---
+
 ## 2026-05-21 — Library folders: SQLite single source of truth (cross-system infra)
 
 - **Diagnosis:** Operator reported "no folders tracked" in Settings →

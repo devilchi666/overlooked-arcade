@@ -76,10 +76,15 @@ controls at native 59.92 Hz NTSC.
 
 ## Phase 2 — Polish
 
-- ⬜ Paddle controller support — Breakout, Kaboom!, Warlords, Night
-  Driver, Super Breakout, Indy 500. Analog input (rotary dial),
-  deferred until shared analog-input infrastructure ships.
-- ⬜ Driving controller (Indy 500 hybrid paddle/spinner) — same gate.
+- ✅ Paddle controller support — Breakout, Kaboom!, Warlords, Night
+  Driver, Super Breakout, Indy 500. Closed by shared analog input
+  infra Phase A (PADDLE device-type in `apps/oa-shell/src/main.rs::arm_libretro_device`)
+  + Phase C (mouse-as-stick analog source via
+  `crates/oa-input/src/lib.rs::MouseSource::X`). Operator workflow:
+  per-game Input → device = "Analog / Paddle", left-stick mouse
+  source = X. Operator playtest pending against Stella.
+- ✅ Driving controller (Indy 500 hybrid paddle/spinner) — same
+  PADDLE + mouse-X path as paddle games.
 - ⬜ Keypad / "Star Raiders" controller (overlay-based games) — niche;
   deferred indefinitely.
 - ⬜ Light gun (Sentinel, Shooting Arcade) — shared light-gun infra

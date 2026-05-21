@@ -101,6 +101,18 @@ type GameOverrides = {
   /// after `retro_load_game` completes per the controller-after-load
   /// rule.
   libretroDevice?: number | null;
+  /// Phase E — per-game device-type override for port 1. Same
+  /// RETRO_DEVICE_* values as `libretroDevice`. Used for multi-port
+  /// multi-device configs: SNES Mouse on port 2 + JOYPAD on port 1,
+  /// arcade coop light-gun (LIGHTGUN×2), 7800 twin-stick. Null
+  /// inherits (JOYPAD).
+  libretroDevicePort1?: number | null;
+  /// Port 2 device-type override. See `libretroDevicePort1`.
+  libretroDevicePort2?: number | null;
+  /// Port 3 device-type override. See `libretroDevicePort1`.
+  libretroDevicePort3?: number | null;
+  /// Port 4 device-type override. See `libretroDevicePort1`.
+  libretroDevicePort4?: number | null;
 };
 
 type SystemSettings = {
@@ -202,6 +214,22 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
   const [systemCorePref, setSystemCorePref] = createSignal<string | null>(null);
   const [milestones, setMilestones] = createSignal<Milestone[]>([]);
   const [draftMilestone, setDraftMilestone] = createSignal<Milestone | null>(null);
+  // Phase E — additional libretro ports (1..=4) collapsed by default so
+  // the 95% case (port 0 only) stays tidy. Auto-expands when any of the
+  // four already has a non-null override, so an operator returning to a
+  // multi-port game sees their config without hunting.
+  const [showExtraPorts, setShowExtraPorts] = createSignal(false);
+  createEffect(() => {
+    const o = overrides();
+    if (
+      o.libretroDevicePort1 != null
+      || o.libretroDevicePort2 != null
+      || o.libretroDevicePort3 != null
+      || o.libretroDevicePort4 != null
+    ) {
+      setShowExtraPorts(true);
+    }
+  });
 
   // Hydrate on each open. Per-game overrides + per-system settings + cores +
   // monitors all refresh together so the inheritance display is consistent.
@@ -374,9 +402,21 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
     }
     // libretro device type — null = inherit system default (JOYPAD).
     // Any explicit numeric value (including 0 = NONE / disconnect)
-    // persists.
+    // persists. Phase E added ports 1..=4 with the same semantics.
     if (next.libretroDevice != null) {
       cleaned.libretroDevice = next.libretroDevice;
+    }
+    if (next.libretroDevicePort1 != null) {
+      cleaned.libretroDevicePort1 = next.libretroDevicePort1;
+    }
+    if (next.libretroDevicePort2 != null) {
+      cleaned.libretroDevicePort2 = next.libretroDevicePort2;
+    }
+    if (next.libretroDevicePort3 != null) {
+      cleaned.libretroDevicePort3 = next.libretroDevicePort3;
+    }
+    if (next.libretroDevicePort4 != null) {
+      cleaned.libretroDevicePort4 = next.libretroDevicePort4;
     }
     setOverrides(cleaned);
     try {
@@ -854,6 +894,66 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                     <option value="3">Keyboard</option>
                     <option value="0">Disconnected (no controller)</option>
                   </select>
+                  {/* Phase E — additional ports collapsed by default. Most
+                      games only need port 0 (single controller); multi-port
+                      multi-device scenarios (SNES Mouse on port 2 alongside
+                      JOYPAD on port 1, arcade coop light-gun, 7800 twin-stick)
+                      get the expanded surface. */}
+                  <Show
+                    when={showExtraPorts()}
+                    fallback={
+                      <button
+                        type="button"
+                        class="mt-2 rounded border border-(--color-oa-bg-deep) bg-(--color-oa-bg-deep)/40 px-2 py-1 text-[11px] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-oa-bg-deep)/80 hover:text-(--color-oa-ink)"
+                        onClick={() => setShowExtraPorts(true)}
+                      >
+                        + Additional ports (1–4)
+                      </button>
+                    }
+                  >
+                    <div class="mt-3 flex flex-col gap-2 border-t border-(--color-oa-bg-deep) pt-3">
+                      <For each={[1, 2, 3, 4] as const}>
+                        {(portIdx) => {
+                          const key =
+                            (`libretroDevicePort${portIdx}` as
+                              | "libretroDevicePort1"
+                              | "libretroDevicePort2"
+                              | "libretroDevicePort3"
+                              | "libretroDevicePort4");
+                          return (
+                            <div class="flex items-center gap-2 text-xs">
+                              <span class="w-14 shrink-0 text-(--color-oa-ink-dim)">
+                                Port {portIdx}
+                              </span>
+                              <select
+                                class={SELECT_CLASS + " flex-1"}
+                                value={
+                                  overrides()[key] == null
+                                    ? ""
+                                    : String(overrides()[key])
+                                }
+                                onChange={(e) => {
+                                  const v = e.currentTarget.value;
+                                  void patch({
+                                    [key]: v === "" ? null : Number(v),
+                                  });
+                                }}
+                              >
+                                <option value="">— Inherit (Standard Pad) —</option>
+                                <option value="1">Standard Pad (RetroPad)</option>
+                                <option value="5">Analog Pad / Paddle</option>
+                                <option value="2">Mouse</option>
+                                <option value="4">Light Gun</option>
+                                <option value="6">Pointer / Stylus</option>
+                                <option value="3">Keyboard</option>
+                                <option value="0">Disconnected</option>
+                              </select>
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  </Show>
                 </div>
                 <p class="text-xs text-(--color-oa-ink-dim)">
                   Per-game analog routing overrides. When set, these values

@@ -68,7 +68,8 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **DualShock analog stick support** — gated on shared analog-input infra; analog axes infra is shipped cross-system but PSX-side device-type wiring still ⬜. Blocks Ape Escape + later analog-required PSX titles.
+- ✅ **DualShock analog stick support** — closed by Phase A device-type override (operator picks "Analog / Paddle" = `RETRO_DEVICE_ANALOG` in per-game Input for Ape Escape / Spyro / later analog-required PSX titles). Analog axes infra was already shipped cross-system. Operator playtest pending.
+- ✅ **DualShock rumble** — closed by Phase F rumble interface.
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::psx_family` (reads SLUS_/SCUS_/SLES_/SCES_/SLPS_/SLPM_/SCPS_ prefixes from SYSTEM.CNF); `rom_hashes` points at `metadat/redump/Sony - PlayStation`.
 - ⬜ **HW vs SW perf benchmarks** — operator-driven DECISIONS doc.
 - ⬜ **PGXP geometry correction** — operator-driven per-game core-option curation (per-game core-options drawer shipped cross-system).
@@ -96,5 +97,8 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
   BIOS file set, same compatibility profile, different rendering
   paths. HW is the visually-premium default; SW is the bulletproof
   fallback.
-- **DualShock analog sticks deferred.** Phase 2 polish — shared
-  analog-input infra.
+- **DualShock analog sticks shipped (2026-05-21).** Closed by shared
+  analog input infra Phase A (PSX device-type override = ANALOG) +
+  the already-shipped cross-system analog axes infra. Operator picks
+  "Analog / Paddle" in per-game Input for Ape Escape and later
+  analog-required titles.

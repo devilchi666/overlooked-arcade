@@ -40,14 +40,14 @@ Lives in `oa-libretro`, NOT under MAME. Benefits MSX + every future computer-sha
 - ✅ `Tools → Game focus` MenuCheckbox + Ctrl+G hotkey. (Scroll Lock isn't queryable via `device_query` so the proposal's primary binding was downgraded to its fallback.) Status chip in `toolbarRight` visible only when active. Rising-edge detector in the emu thread runs unconditionally so the user can always toggle out; `oa://game-focus-changed` Tauri event syncs the frontend signal. Game-focus ON gates `hotkeys_enabled = enable && !game_focus`; F1/F2/F3/F5/F6/F7/F8/F12/Esc/digit/Backspace-rewind reads all use `hotkeys_enabled`.
 - ⬜ Wiring `RETRO_DEVICE_KEYBOARD` via `LibretroCore::set_port_device` for MAME — **deliberately skipped.** MAME's libretro core expects JOYPAD on port 0 (arcade controls) with the keyboard callback running in parallel; rebinding port 0 to KEYBOARD would remove the 6-button arcade input. `set_port_device` stays available for the MSX onboarding which DOES need port-as-keyboard.
 
-### ⬜ Input — Phase 3 (analog, deferred until forced)
+### ✅ Input — Phase 3 (analog)
 
-Triggered by a real game demanding it: OutRun (steering wheel), Marble Madness (trackball), Arkanoid (Vaus paddle), After Burner II (yoke).
+Closed by shared analog input infra Phases A-D (2026-05-21).
 
-- ⬜ Extend `oa-input::InputPoller` to surface gilrs analog axes alongside button bits.
-- ⬜ Design a parallel axis-binding schema in `bindings.rs` (bitmask wrong shape for 0-65535 axis values). Likely a sibling `AnalogBinding` map keyed by libretro analog-axis IDs.
-- ⬜ Wire `RETRO_DEVICE_ANALOG` for ports that want it.
-- ⬜ Per-game profile selection (steering uses analog X for wheel + analog Y for pedals; trackball uses analog X/Y for ball movement; paddle uses analog X only).
+- ✅ gilrs analog axes flowing through `cb_input_state` (shipped cross-system).
+- ✅ Per-port analog routing schema lives in `system_settings::AnalogRoutingPrefs` + `oa_input::AnalogRouting` — deadzone, sensitivity, invert, keyboard fallback, mouse-as-stick.
+- ✅ `RETRO_DEVICE_ANALOG` wired per-port via `arm_libretro_device` (per-game device-type override).
+- ✅ Per-game profile selection — operator picks device-type "Analog / Paddle" in per-game Input + mouse-as-stick source (X for steering wheel + paddle, XY for trackball, Y for yoke pitch). Operator playtest pending against OutRun (wheel), Marble Madness (trackball), Arkanoid (Vaus paddle), After Burner II (yoke).
 
 ### Other Phase 1.5 items
 

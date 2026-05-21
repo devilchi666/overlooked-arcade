@@ -33,7 +33,7 @@ Per-core phase tracking for Mattel Intellivision. Status: ⬜ not started · �
 ## ✅ Phase 2 — Polish
 
 - ✅ Full 12-button keypad coverage — shipped via `bindings.rs::intv` (KP0-KP9 occupy bits 1-19); `INTV_BUTTONS` surfaces all 20 entries; `default_intv_bindings` binds KP0-KP9 to Key0-Key9.
-- ⬜ 16-direction disc analog input — gated on shared analog-input infra.
+- ✅ 16-direction disc analog input — closed by Phase A PADDLE / ANALOG device-type + Phase C mouse-as-stick XY routing (`MouseSource::Xy`). Operator picks "Analog / Paddle" + mouse XY in per-game Input. Operator playtest pending.
 - ⬜ Intellivoice voice-synthesis module support — operator validation of FreeIntv's voice module.
 - ⬜ Intellivision Computer Module / ECS expansion — deferred (niche).
 
