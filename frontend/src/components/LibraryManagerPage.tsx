@@ -15,6 +15,7 @@ import { useMedia } from "../library/media";
 import type { LayoutStore } from "../layout/state";
 import type { SettingsStore } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
+import SettingRow, { selectClass } from "./SettingRow";
 
 type Props = {
   /// Navigate back to the previous view. Used by the header Back button
@@ -71,9 +72,6 @@ function humanBytes(b: number): string {
   if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
   return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
-
-const SELECT_CLASS =
-  "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-oa-ink-dim)";
 
 /// One row in the region-priority sortable list. Lives at module scope
 /// so each row only re-creates its own `createSortable` registration on
@@ -852,23 +850,17 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   get their art synced. Turn it off to fall back to
                   fuzzy filename matching against ALL library entries
                   at the strict 0.95 threshold. */}
-              <label class="flex cursor-pointer items-start gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-(--color-oa-ink)">
-                <input
-                  type="checkbox"
-                  checked={onlySyncIdentified()}
-                  onChange={(e) => void setOnlySyncIdentifiedPref(e.currentTarget.checked)}
-                  class="mt-0.5 h-3.5 w-3.5 accent-(--color-system-accent)"
-                />
-                <span class="flex-1">
-                  <span class="block font-medium">
-                    Only sync media for identified ROMs (recommended)
-                  </span>
-                  <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                    Skip ROMs that haven't been hash-identified via Identify ROMs. Stops the fuzzy
-                    filename matcher from producing wrong-art mismatches on repacked or renamed sets.
-                  </span>
-                </span>
-              </label>
+              <SettingRow
+                label="Only sync identified ROMs"
+                hint="Recommended"
+                inherited={null}
+                overridden={false}
+                toggle={{
+                  checked: onlySyncIdentified(),
+                  onChange: (v) => void setOnlySyncIdentifiedPref(v),
+                }}
+                description="Skip ROMs that haven't been hash-identified via Identify ROMs. Stops the fuzzy filename matcher from producing wrong-art mismatches on repacked or renamed sets."
+              />
 
               {/* Kinds to fetch — controls which libretro-thumbnails subdirs
                   the sync pulls per ROM. Defaults to all three; users on
@@ -1117,7 +1109,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
                     if (v) addRegion(v);
                     e.currentTarget.value = "";
                   }}
-                  class={SELECT_CLASS}
+                  class={selectClass("oa")}
                 >
                   <option value="">+ Add region…</option>
                   <Show when={!regionDraft().includes("USA")}><option value="USA">USA</option></Show>
@@ -1283,19 +1275,24 @@ const LibraryManagerPage: Component<Props> = (props) => {
                     </ul>
                   </SortableProvider>
                 </DragDropProvider>
-                <div class="mt-3 flex flex-wrap items-center gap-2">
-                  <span class="text-xs text-(--color-oa-ink-dim)">Revision tiebreaker:</span>
-                  <select
-                    class={SELECT_CLASS}
-                    value={libraryPrefs().revisionPriority}
-                    onChange={(e) => {
-                      const v = e.currentTarget.value as RevisionPriority;
-                      void persistLibraryPrefs({ ...libraryPrefs(), revisionPriority: v });
+                <div class="mt-3">
+                  <SettingRow
+                    label="Revision tiebreaker"
+                    inherited={null}
+                    overridden={false}
+                    select={{
+                      value: libraryPrefs().revisionPriority,
+                      options: [
+                        { value: "newest", label: "Newest revision wins" },
+                        { value: "oldest", label: "Oldest revision wins" },
+                      ],
+                      onChange: (v) =>
+                        void persistLibraryPrefs({
+                          ...libraryPrefs(),
+                          revisionPriority: v as RevisionPriority,
+                        }),
                     }}
-                  >
-                    <option value="newest">Newest revision wins</option>
-                    <option value="oldest">Oldest revision wins</option>
-                  </select>
+                  />
                 </div>
               </div>
 
@@ -1304,23 +1301,21 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
                   Cleanup
                 </h3>
-                <label class="flex items-center gap-2 text-xs text-(--color-oa-ink)">
-                  <input
-                    type="checkbox"
-                    checked={props.settings.autoRemoveOnDelete()}
-                    onChange={(e) => props.settings.setAutoRemoveOnDelete(e.currentTarget.checked)}
-                  />
-                  <span>Auto-remove from library when the file is deleted</span>
-                </label>
-                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Off (default) keeps library entries when files vanish — useful for moves /
-                  renames. On removes the matching row when the watcher reports the file gone.
-                </p>
+                <SettingRow
+                  label="Auto-remove on delete"
+                  inherited={null}
+                  overridden={false}
+                  toggle={{
+                    checked: props.settings.autoRemoveOnDelete(),
+                    onChange: (v) => props.settings.setAutoRemoveOnDelete(v),
+                  }}
+                  description="Off (default) keeps library entries when files vanish — useful for moves / renames. On removes the matching row when the watcher reports the file gone."
+                />
 
                 <div class="mt-3 flex flex-wrap items-center gap-2">
                   <span class="text-xs text-(--color-oa-ink-dim)">Clear games for:</span>
                   <select
-                    class={SELECT_CLASS}
+                    class={selectClass("oa")}
                     value=""
                     onChange={async (e) => {
                       const id = e.currentTarget.value as SystemId;

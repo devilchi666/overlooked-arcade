@@ -3,18 +3,23 @@
 // item launches a focused configuration surface that wants more room than
 // a popover affords.
 //
-// Width sizes: "sm" ~ 24rem (single-field dialogs), "md" ~ 32rem (default,
-// most settings), "lg" ~ 48rem (denser forms or two-column layouts).
+// Width sizes (UI_POLISH_PLAN.md §B.1):
+//   sm  ~448px — single-field / confirm dialogs
+//   md  ~576px — default; most settings dialogs
+//   lg  ~768px — sectioned forms
+//   xl  ~896px — content-rich (Display, Bindings, Properties)
+//   2xl ~1024px — multi-column Properties surface
 
 import {
   Show,
+  createSignal,
   onCleanup,
   onMount,
   type Component,
   type JSX,
 } from "solid-js";
 
-export type DialogSize = "sm" | "md" | "lg";
+export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
 type Props = {
   open: boolean;
@@ -32,9 +37,11 @@ type Props = {
 };
 
 const WIDTH_CLASS: Record<DialogSize, string> = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-2xl",
+  sm: "max-w-md",
+  md: "max-w-xl",
+  lg: "max-w-3xl",
+  xl: "max-w-4xl",
+  "2xl": "max-w-5xl",
 };
 
 export const Dialog: Component<Props> = (props) => {
@@ -71,13 +78,13 @@ export const Dialog: Component<Props> = (props) => {
             WIDTH_CLASS[props.size ?? "md"]
           }
         >
-          <header class="flex items-start justify-between border-b border-white/5 bg-(--color-system-accent)/10 px-5 py-3">
+          <header class="flex items-start justify-between border-b border-white/10 bg-(--color-system-accent)/15 px-6 py-4">
             <div class="min-w-0">
-              <h2 class="truncate text-base font-semibold text-(--color-oa-ink)">
+              <h2 class="truncate text-lg font-semibold text-(--color-oa-ink)">
                 {props.title}
               </h2>
               <Show when={props.subtitle}>
-                <p class="mt-0.5 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+                <p class="mt-0.5 text-xs text-(--color-oa-ink-dim)">
                   {props.subtitle}
                 </p>
               </Show>
@@ -88,16 +95,84 @@ export const Dialog: Component<Props> = (props) => {
                 e.currentTarget.blur();
                 props.onClose();
               }}
-              class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-xs text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+              class="rounded-md border border-white/10 bg-white/[0.04] p-1.5 text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
               title="Close (Esc)"
               aria-label="Close"
             >
-              ✕
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M3 3l8 8M11 3l-8 8" />
+              </svg>
             </button>
           </header>
-          <div class="max-h-[70vh] overflow-y-auto px-5 py-4">{props.children}</div>
+          <div class="max-h-[70vh] overflow-y-auto px-6 py-5">{props.children}</div>
         </div>
       </div>
     </Show>
+  );
+};
+
+// --- DialogSection ------------------------------------------------------
+//
+// Groups related rows inside a dialog body. Sibling sections get a top
+// border separator; the first one has no border (first:border-0). Optional
+// collapsibility via the `collapsible` prop; `id` is the anchor target for
+// the future <DialogNavRail> (UI_POLISH_PLAN.md §B.4 — deferred).
+
+type DialogSectionProps = {
+  title: string;
+  description?: string;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
+  /// Anchor id for future nav-rail scroll-spy.
+  id?: string;
+  children: JSX.Element;
+};
+
+export const DialogSection: Component<DialogSectionProps> = (props) => {
+  const [collapsed, setCollapsed] = createSignal(props.defaultCollapsed ?? false);
+  return (
+    <section
+      id={props.id}
+      class="border-t border-white/5 pt-5 first:border-0 first:pt-0"
+    >
+      <header class="mb-3 flex items-baseline justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-(--color-oa-ink)">
+            {props.title}
+          </h3>
+          <Show when={props.description}>
+            <p class="mt-1 text-xs leading-relaxed text-(--color-oa-ink-dim)">
+              {props.description}
+            </p>
+          </Show>
+        </div>
+        <Show when={props.collapsible}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setCollapsed((v) => !v);
+            }}
+            class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
+            aria-expanded={!collapsed()}
+          >
+            {collapsed() ? "Show" : "Hide"}
+          </button>
+        </Show>
+      </header>
+      <Show when={!collapsed()}>
+        <div class="flex flex-col gap-4">{props.children}</div>
+      </Show>
+    </section>
   );
 };

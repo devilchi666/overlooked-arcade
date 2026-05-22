@@ -1111,39 +1111,21 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                       : "Preset default"
                   }
                   overridden={overrides().bloomAmount != null}
-                >
-                  <div class="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={overrides().bloomAmount ?? systemSettings().bloomAmount ?? 0.6}
-                      onInput={(e) => {
-                        const v = Number(e.currentTarget.value);
-                        if (!Number.isFinite(v)) return;
-                        void patch({ bloomAmount: v });
-                        // Live preview during drag — mirrors the
-                        // SystemDialogs bloom slider. Launch-path resolution
-                        // still runs, this is the interactive overlay.
-                        void invoke("set_bloom_amount", { amount: v }).catch(() => {});
-                      }}
-                      class="flex-1"
-                    />
-                    <span class="font-mono text-sm w-12 text-right tabular-nums">
-                      {(overrides().bloomAmount ?? systemSettings().bloomAmount ?? 0.6).toFixed(2)}
-                    </span>
-                    <Show when={overrides().bloomAmount != null}>
-                      <button
-                        type="button"
-                        onClick={() => void patch({ bloomAmount: null })}
-                        class="text-xs px-2 py-1 rounded bg-(--color-oa-surface-2) hover:bg-(--color-oa-surface-3)"
-                      >
-                        Reset
-                      </button>
-                    </Show>
-                  </div>
-                </SettingRow>
+                  slider={{
+                    min: 0,
+                    max: 1,
+                    step: 0.05,
+                    value: overrides().bloomAmount ?? systemSettings().bloomAmount ?? 0.6,
+                    onInput: (v) => {
+                      void patch({ bloomAmount: v });
+                      // Live preview during drag — mirrors the SystemDialogs
+                      // bloom slider. Launch-path resolution still runs,
+                      // this is the interactive overlay.
+                      void invoke("set_bloom_amount", { amount: v }).catch(() => {});
+                    },
+                  }}
+                  onReset={() => void patch({ bloomAmount: null })}
+                />
                 <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
                   Presets come from <code>shaders/presets/*.preset.toml</code> (slice C —
                   built-ins shipped in-binary; user files in <code>&lt;exe_dir&gt;/shaders/presets/</code>

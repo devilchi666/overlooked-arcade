@@ -34,7 +34,7 @@ import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
 import { systemThemes, type SystemId } from "../themes/registry";
 import SystemBindingsEditor from "./SystemBindingsEditor";
 import CoreOptionsPanel from "./CoreOptionsPanel";
-import SettingRow from "./SettingRow";
+import SettingRow, { selectClass } from "./SettingRow";
 
 export type SystemDialogSection =
   | "bindings"
@@ -97,9 +97,6 @@ const DISPLAY_ASPECT_PRESETS: readonly { value: string; label: string }[] = [
   { value: "1.185", label: "32:27 (PCE 256 authentic)" },
   { value: "1.306", label: "64:49 (PCE 352 authentic)" },
 ];
-
-const SELECT_CLASS =
-  "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-system-accent) disabled:opacity-50";
 
 const REWIND_INTERVAL_OPTIONS: readonly number[] = [1, 2, 3, 6, 10, 15, 30];
 const REWIND_BUFFER_OPTIONS: readonly number[] = [8, 16, 32, 64, 128, 256, 512];
@@ -258,7 +255,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.scalingOverride != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.scalingOverride ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -279,7 +276,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.windowModeOverride != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.windowModeOverride ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -300,7 +297,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.monitorIndexOverride != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.monitorIndexOverride?.toString() ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -325,7 +322,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.displayAspectOverride != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.displayAspectOverride?.toString() ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -380,7 +377,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.rewindEnabled != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={
                 overrides()?.rewindEnabled == null
                   ? ""
@@ -406,7 +403,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.rewindCaptureIntervalFrames != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.rewindCaptureIntervalFrames?.toString() ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -431,7 +428,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.rewindBufferMegabytes != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.rewindBufferMegabytes?.toString() ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -457,7 +454,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={overrides()?.shaderPreset != null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={overrides()?.shaderPreset ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
@@ -476,36 +473,18 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             hint="Overrides the Phosphor preset's bloom weight. 0 = pure source, 1 = pure blur."
             inheritedValue="Preset default"
             overridden={overrides()?.bloomAmount != null}
-          >
-            <div class="flex items-center gap-3">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={overrides()?.bloomAmount ?? 0.6}
-                onInput={(e) => {
-                  const v = Number(e.currentTarget.value);
-                  if (!Number.isFinite(v)) return;
-                  void patch({ bloomAmount: v });
-                  void invoke("set_bloom_amount", { amount: v }).catch(() => {});
-                }}
-                class="flex-1"
-              />
-              <span class="font-mono text-sm w-12 text-right tabular-nums">
-                {(overrides()?.bloomAmount ?? 0.6).toFixed(2)}
-              </span>
-              <Show when={overrides()?.bloomAmount != null}>
-                <button
-                  type="button"
-                  onClick={() => void patch({ bloomAmount: null })}
-                  class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-xs text-(--color-oa-ink) hover:bg-white/[0.08]"
-                >
-                  Reset
-                </button>
-              </Show>
-            </div>
-          </SettingRow>
+            slider={{
+              min: 0,
+              max: 1,
+              step: 0.05,
+              value: overrides()?.bloomAmount ?? 0.6,
+              onInput: (v) => {
+                void patch({ bloomAmount: v });
+                void invoke("set_bloom_amount", { amount: v }).catch(() => {});
+              },
+            }}
+            onReset={() => void patch({ bloomAmount: null })}
+          />
         </div>
       </Show>
 
@@ -520,7 +499,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
             overridden={corePref() !== null}
           >
             <select
-              class={SELECT_CLASS}
+              class={selectClass("system")}
               value={corePref() ?? ""}
               onChange={(e) => {
                 const v = e.currentTarget.value;
