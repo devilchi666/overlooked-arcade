@@ -1,4 +1,12 @@
 import { For, Show, createMemo, type Component } from "solid-js";
+import {
+  closestCenter,
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  type DragEventHandler,
+} from "@thisbeyond/solid-dnd";
+
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { LayoutStore } from "./state";
@@ -6,7 +14,11 @@ import type { ContainerNode, PlatformNode, ViewNode } from "../views/types";
 import { parsePlatformNodeId, platformNodeIdFor } from "../views/defaults";
 import { flattenLeaves } from "../views/resolver";
 import type { ViewsStore } from "../views/store";
-import SidebarTreeNode, { type SidebarTreeContext } from "./SidebarTreeNode";
+import {
+  SortableContainerNode,
+  SortableLeafNode,
+  type SidebarTreeContext,
+} from "./SidebarTreeNode";
 
 /// Which top-level surface the main pane is showing. `all` and `view-node`
 /// are library views (filtered or not); `library-manager` and `cores` are
@@ -114,6 +126,53 @@ const LeftSidebar: Component<Props> = (props) => {
   });
 
   const activeViewId = createMemo(() => props.views.activeView()?.id ?? "");
+
+  /// Lookup of node id → parent container id used by the drag-end
+  /// handler to gate cross-scope drops. Built from the FILTERED tree
+  /// (matches what's visually present in the sortable scopes). Top-
+  /// level children are mapped to the sentinel `"__root__"` so we can
+  /// distinguish "top-level" from "inside a particular container."
+  const parentOfId = createMemo(() => {
+    const map = new Map<string, string>();
+    const root = filteredRoot();
+    if (!root) return map;
+    for (const child of root.children) {
+      map.set(child.id, "__root__");
+      if (child.kind === "container") {
+        for (const grand of child.children) {
+          map.set(grand.id, child.id);
+        }
+      }
+    }
+    return map;
+  });
+
+  /// solid-dnd onDragEnd. Computes the new order in the UNFILTERED
+  /// view tree (so hidden / auto-hide-empty siblings keep their
+  /// positions) and writes via `ViewsStore.reorderChildren`. Same-
+  /// parent drops only: cross-container drag-reorder is deferred to a
+  /// post-v1 PR per SIDEBAR_TIER_PLAN.md §0.
+  const handleSidebarDragEnd: DragEventHandler = ({ draggable, droppable }) => {
+    if (!droppable || draggable.id === droppable.id) return;
+    const dragId = String(draggable.id);
+    const dropId = String(droppable.id);
+    const dragParent = parentOfId().get(dragId);
+    const dropParent = parentOfId().get(dropId);
+    if (!dragParent || dragParent !== dropParent) return;
+
+    const view = props.views.activeView();
+    if (!view) return;
+
+    if (dragParent === "__root__") {
+      reorderSiblingsInPlace(view.root.id, view.root.children, dragId, dropId, props.views);
+    } else {
+      const parent = findContainerById(view.root, dragParent);
+      if (!parent) return;
+      reorderSiblingsInPlace(parent.id, parent.children, dragId, dropId, props.views);
+    }
+  };
+
+  const topLevelIds = createMemo(() => filteredRoot()?.children.map((c) => c.id) ?? []);
 
   const treeContext: SidebarTreeContext = {
     get entries() {
@@ -226,11 +285,33 @@ const LeftSidebar: Component<Props> = (props) => {
         >
           <Show when={filteredRoot()}>
             {(root) => (
-              <ul class="space-y-0.5">
-                <For each={root().children}>
-                  {(child) => <SidebarTreeNode node={child} depth={0} ctx={treeContext} />}
-                </For>
-              </ul>
+              <DragDropProvider
+                onDragEnd={handleSidebarDragEnd}
+                collisionDetector={closestCenter}
+              >
+                <DragDropSensors />
+                <SortableProvider ids={topLevelIds()}>
+                  <ul class="space-y-0.5">
+                    <For each={root().children}>
+                      {(child) =>
+                        child.kind === "container" ? (
+                          <SortableContainerNode
+                            container={child as ContainerNode}
+                            depth={0}
+                            ctx={treeContext}
+                          />
+                        ) : (
+                          <SortableLeafNode
+                            leaf={child as PlatformNode}
+                            depth={0}
+                            ctx={treeContext}
+                          />
+                        )
+                      }
+                    </For>
+                  </ul>
+                </SortableProvider>
+              </DragDropProvider>
             )}
           </Show>
         </Show>
@@ -361,6 +442,35 @@ function findNode(node: ContainerNode | ViewNode, nodeId: string): ContainerNode
     if (inner) return inner;
   }
   return null;
+}
+
+/// Variant of findNode that only returns the node if it's a container
+/// — used by the drag-end handler when looking up a parent by id.
+function findContainerById(root: ContainerNode, id: string): ContainerNode | null {
+  const found = findNode(root, id);
+  if (!found || !("children" in found)) return null;
+  return found as ContainerNode;
+}
+
+/// Apply a drag-end reorder against a parent's UNFILTERED children
+/// list — splice the dragged node out of its source position and
+/// insert it at the drop target's position. Hidden / auto-hide-empty
+/// siblings naturally keep their positions because we operate on the
+/// full child set.
+function reorderSiblingsInPlace(
+  parentId: string,
+  fullChildren: ViewNode[],
+  dragId: string,
+  dropId: string,
+  views: ViewsStore,
+): void {
+  const fromIdx = fullChildren.findIndex((c) => c.id === dragId);
+  const toIdx = fullChildren.findIndex((c) => c.id === dropId);
+  if (fromIdx < 0 || toIdx < 0) return;
+  const ids = fullChildren.map((c) => c.id);
+  const [moved] = ids.splice(fromIdx, 1);
+  ids.splice(toIdx, 0, moved);
+  views.reorderChildren(parentId, ids);
 }
 
 // Re-export so App.tsx + other callers can build view-node SidebarViews
