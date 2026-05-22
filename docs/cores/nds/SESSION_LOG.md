@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-05-22 — Sidebar tier PR-α: registry tagging + gb/gbc split + msx/msx2 stubs (cross-system)
+
+First PR of the sidebar hierarchy execution sheet
+(`docs/SIDEBAR_TIER_PLAN.md`). Frontend registry now carries the
+`formFactor` + `manufacturer` tags the upcoming default Platforms view
+consumes, plus the three system splits/adds the plan's bucket lists
+call for. Logged under `nds` (still ACTIVE_CORE) because the work is
+cross-system UI infra, same pattern the UI polish PRs followed.
+
+- **Shipped:** PR-α of 3 from `docs/SIDEBAR_TIER_PLAN.md`.
+  - **Type plumbing:** `FormFactorTag` + `ManufacturerTag` union types
+    added to `frontend/src/themes/registry.ts`; `SystemTheme` extended
+    with required `formFactor` + `manufacturer` fields.
+  - **Registry audit:** all 38 existing entries tagged per the plan
+    §1.2 tables (28 console / 9 handheld pre-split / 1 arcade; MAME →
+    manufacturer `other` per operator confirmation pending MAME-import
+    metadata work).
+  - **gb/gbc split:** existing combined `gb` entry split into
+    `gb` (.gb, DMG only, displayName "Nintendo Game Boy") and the new
+    `gbc` (.gbc, CGB only, displayName "Nintendo Game Boy Color").
+    Both share the Gambatte core via `oa_core::SystemId::Gb`. New
+    `[data-system="gbc"]` block in `systems.css` (translucent-cart
+    magenta at hue 320°, distinct from gb pea-green / Lynx purple
+    290° / SNES violet 270°). Rust dispatch arms in `bindings.rs`
+    (bit_for, buttons_for, to_libretro_bits, defaults_for) all extend
+    `"gb" =>` to `"gb" | "gbc" =>` since gbc reuses gb's hardware
+    layout. Thumbnail-repo split in `media.rs` + libretro-database
+    split in `rom_hashes.rs` + metadata-source split in `metadata.rs`
+    so each slug resolves to its own dat / repo. `cli.rs`
+    `slug_for_ext` no longer aliases `.gbc → "gb"`; each extension
+    routes to its own slug.
+  - **MSX / MSX2 stubs:** new `msx` + `msx2` entries in
+    `frontend/src/themes/registry.ts` with `formFactor: "computer"`
+    + `manufacturer: "microsoft"`. Extensions list empty by design
+    so the library scanner produces no entries for them today.
+    `[data-system="msx"]` + `[data-system="msx2"]` CSS blocks (royal
+    blue at hue 250°, MSX2 brighter at L=0.65 vs MSX L=0.55).
+    `main.rs` `parse_system_id` already had `"msx" | "msx2" → SystemId::Msx`;
+    `default_core_dll_for_system` extended with the same arm pointing
+    at `bluemsx_libretro.dll`. Bindings / BIOS pre-check / per-folder
+    `.rom` disambiguation **deferred to a dedicated "MSX system add"
+    follow-up PR** — declared-but-not-yet-runnable in the spirit of
+    the plan's PR scope discipline.
+  - Frontend roster: 41 systems (28 console + 11 handheld with the
+    gbc split + 2 computer + 1 arcade). `npm run typecheck` clean.
+  - Rust: 405 tests passing across the workspace (oa-shell 342 +
+    other crates 63), including the bindings test loops which now
+    iterate gbc as well.
+- **Almost:** PR-β (views infrastructure + SidebarView fold) — depends
+  on operator validation of PR-α first.
+- **Next:** After operator thumbs-up + merge, branch `feat/sidebar-tier-beta`
+  and start §2 of the plan (views.json schema, Rust commands, ViewsStore,
+  default + legacy view construction, migration seeding logic,
+  SidebarView discriminant rewrite, library filter extension). Sidebar
+  still renders flat in PR-β; PR-γ does the tree UI.
+
+Follow-ups noted for future PRs (filed here so they're not lost):
+- **Full MSX/MSX2 wiring** — pick canonical extensions (likely .mx1
+  / .mx2 / .dsk + per-folder rule for .rom), populate `MSX_BUTTONS`
+  + remap + `default_msx_bindings`, plumb through bindings.rs test
+  arrays, add BIOS pre-check shape, document in
+  `docs/cores/msx/README.md`. Probably a single dedicated branch
+  rather than rolling into PR-β.
+- **Library Manager visibility** — the system-visibility checkboxes
+  in `LibraryManagerPage.tsx` don't yet know about msx/msx2. Will be
+  handled by PR-γ's wholesale Settings reconciliation against the
+  active view's leaves.
+
+---
+
 ## 2026-05-22 — UI polish PR 3 + PR 4 (Phases D + E, cross-system)
 
 Final two PRs of the polish-plan execution, bundled per operator request.

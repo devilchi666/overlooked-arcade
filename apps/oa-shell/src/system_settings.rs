@@ -611,7 +611,7 @@ mod tests {
         // (the typical case) → None = trust the core.
         for sys in &[
             "tg16", "pce-cd", "nes", "snes", "n64", "psx", "saturn",
-            "dreamcast", "gb", "lynx", "atari7800", "2600", "5200",
+            "dreamcast", "gb", "gbc", "lynx", "atari7800", "2600", "5200",
             "vectrex", "virtualboy", "wonderswan", "mame",
         ] {
             assert_eq!(

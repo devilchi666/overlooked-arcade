@@ -517,10 +517,12 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "psp" | "playstation-portable" => oa_core::SystemId::Psp,
         "ps2" | "playstation-2" | "playstation2" => oa_core::SystemId::Ps2,
         "nds" | "ds" | "nintendo-ds" => oa_core::SystemId::Nds,
-        // Single slug covers DMG + CGB — Gambatte auto-detects from the
-        // ROM header. Accept the standard slug + common aliases users
-        // might pass in from URLs or saved configs.
-        "gb" | "gbc" | "gameboy" | "game-boy" | "game-boy-color" => oa_core::SystemId::Gb,
+        // gb (DMG) + gbc (CGB) are separate frontend slugs (one sidebar
+        // entry each per SIDEBAR_TIER_PLAN §0) but share the Rust SystemId
+        // because Gambatte covers both via ROM-header auto-detect. Accept
+        // canonical slug + common aliases users might pass in.
+        "gb" | "gameboy" | "game-boy" => oa_core::SystemId::Gb,
+        "gbc" | "game-boy-color" | "gameboycolor" => oa_core::SystemId::Gb,
         // Game Boy Advance — separate SystemId from `Gb` since the
         // hardware is a different generation (32-bit ARM7TDMI vs Sharp
         // LR35902) and the libretro cores don't overlap.
@@ -639,7 +641,17 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // BIOS optional (`dmg_boot.bin` / `cgb_boot.bin` in
         // `<exe_dir>/system/`) — without it Gambatte just skips the
         // boot logo.
-        "gb" => "gambatte_libretro.dll",
+        // gb (DMG) + gbc (CGB) — same Gambatte .dll handles both via
+        // ROM-header auto-detect.
+        "gb" | "gbc" => "gambatte_libretro.dll",
+        // MSX + MSX2 declared in the frontend registry but not yet runnable
+        // (extensions list empty there). Mapped to blueMSX — the long-
+        // standing libretro multi-MSX core that also covers ColecoVision +
+        // SVI-3x8. Full integration (BIOS pre-check, per-folder .rom
+        // disambiguation, bindings table) lands in a dedicated follow-up
+        // PR — this arm prevents launches from falling through if a
+        // future scanner update ever produces msx-tagged entries.
+        "msx" | "msx2" => "bluemsx_libretro.dll",
         // Genesis Plus GX — long-standing libretro multi-Sega core that
         // covers SMS + Game Gear + Mega Drive + Sega CD behind one .dll.
         // Picked over PicoDrive for SMS/GG because GPGX is the de-facto

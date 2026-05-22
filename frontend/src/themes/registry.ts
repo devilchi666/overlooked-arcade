@@ -1,10 +1,33 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2";
+
+/// Form-factor bucket — consumed by the sidebar's default Platforms view
+/// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
+/// §0 for the locked per-system assignments. "other" is the auto-fallback
+/// for any future system that lands without an explicit tag.
+export type FormFactorTag = "console" | "handheld" | "computer" | "arcade" | "other";
+
+/// Hardware-manufacturer bucket — pre-emptive groundwork for v2's
+/// Manufacturer-grouped sidebar view. Unused in v1 but tagged across every
+/// SystemTheme so v2 is a pure UI change. "other" is the catch-all for
+/// multi-vendor umbrellas (MAME = many arcade boards, no single manufacturer)
+/// and future systems without a clean hardware-vendor pedigree.
+export type ManufacturerTag =
+  | "nintendo" | "sega" | "sony" | "nec" | "atari" | "snk" | "bandai"
+  | "microsoft" | "coleco" | "mattel" | "magnavox" | "fairchild" | "gce"
+  | "panasonic" | "other";
 
 export type SystemTheme = {
   id: SystemId;
   displayName: string;
   shortName: string;
   extensions: string[];
+  /// Form-factor bucket for the sidebar's default Platforms view. Every
+  /// shipped system carries one — see SIDEBAR_TIER_PLAN §0 for the locked
+  /// per-system assignments.
+  formFactor: FormFactorTag;
+  /// Hardware manufacturer. Unused in v1; lights up v2's Manufacturer view
+  /// without a schema change.
+  manufacturer: ManufacturerTag;
   /// CSS aspect-ratio for library + region-picker tiles ("4/3", "3/4", "1/1").
   /// Defaults to "3/4" (portrait) when unset. TG-16 box scans are landscape so
   /// "4/3" fits the whole cover without letterboxing.
@@ -24,6 +47,8 @@ export type SystemTheme = {
 export const systemThemes: Record<SystemId, SystemTheme> = {
   tg16: {
     id: "tg16",
+    formFactor: "console",
+    manufacturer: "nec",
     displayName: "TurboGrafx-16 / PC Engine",
     shortName: "TG-16",
     // .pce = HuCard cart. CD images live under the separate `pce-cd` system —
@@ -38,6 +63,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   "pce-cd": {
     id: "pce-cd",
+    formFactor: "console",
+    manufacturer: "nec",
     displayName: "TurboGrafx-CD / PC Engine CD-ROM²",
     shortName: "TG-CD",
     // CD image containers. cue/chd/ccd/toc/m3u/iso. Needs a PCE-CD BIOS
@@ -52,6 +79,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   lynx: {
     id: "lynx",
+    formFactor: "handheld",
+    manufacturer: "atari",
     displayName: "Atari Lynx",
     shortName: "Lynx",
     // .lnx is the canonical Handy-style dump. .lyx is a less common variant
@@ -68,6 +97,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   nes: {
     id: "nes",
+    formFactor: "console",
+    manufacturer: "nintendo",
     displayName: "Nintendo Entertainment System",
     shortName: "NES",
     // .nes  = iNES (the standard headered NES dump).
@@ -87,6 +118,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   snes: {
     id: "snes",
+    formFactor: "console",
+    manufacturer: "nintendo",
     displayName: "Super Nintendo Entertainment System",
     shortName: "SNES",
     // .sfc  = canonical Super Famicom/SNES dump.
@@ -102,6 +135,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   atari7800: {
     id: "atari7800",
+    formFactor: "console",
+    manufacturer: "atari",
     displayName: "Atari 7800 ProSystem",
     shortName: "Atari 7800",
     // .a78 is the canonical Atari 7800 dump — 128-byte header carries
@@ -120,6 +155,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   genesis: {
     id: "genesis",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega Mega Drive / Genesis",
     shortName: "Genesis",
     // .md  = canonical raw MD dump (most modern dump sets ship this).
@@ -143,6 +180,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   segacd: {
     id: "segacd",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega CD / Mega-CD",
     shortName: "Sega CD",
     // CD image containers — same shape as PCE-CD. Disambiguation against
@@ -165,6 +204,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   sega32x: {
     id: "sega32x",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega 32X",
     shortName: "32X",
     // .32x = canonical headerless 32X cart dump (No-Intro standard).
@@ -182,6 +223,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   saturn: {
     id: "saturn",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega Saturn",
     shortName: "Saturn",
     // CD image containers — same shape as segacd/pce-cd. Disambiguation
@@ -198,6 +241,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   neogeo: {
     id: "neogeo",
+    formFactor: "console",
+    manufacturer: "snk",
     displayName: "SNK Neo Geo",
     shortName: "Neo Geo",
     // .neo = No-Intro Neo Geo single-file dump (modern canonical format).
@@ -217,6 +262,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   neocd: {
     id: "neocd",
+    formFactor: "console",
+    manufacturer: "snk",
     displayName: "SNK Neo Geo CD",
     shortName: "Neo Geo CD",
     // CD image containers — same shape as segacd/saturn/psx/pce-cd.
@@ -229,6 +276,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   n64: {
     id: "n64",
+    formFactor: "console",
+    manufacturer: "nintendo",
     displayName: "Nintendo 64",
     shortName: "N64",
     // .n64 / .z64 / .v64 are different byte-order conventions for the
@@ -240,6 +289,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   psp: {
     id: "psp",
+    formFactor: "handheld",
+    manufacturer: "sony",
     displayName: "Sony PlayStation Portable",
     shortName: "PSP",
     // .iso / .cso (compressed ISO) / .pbp (PSN-format EBOOT). PPSSPP
@@ -255,6 +306,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   ps2: {
     id: "ps2",
+    formFactor: "console",
+    manufacturer: "sony",
     displayName: "Sony PlayStation 2",
     shortName: "PS2",
     // DVD-shape (most PS2 games shipped on DVD; some used CD). .iso
@@ -269,6 +322,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   nds: {
     id: "nds",
+    formFactor: "handheld",
+    manufacturer: "nintendo",
     displayName: "Nintendo DS",
     shortName: "NDS",
     // .nds = headerless raw NDS dump (No-Intro standard).
@@ -285,6 +340,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   dreamcast: {
     id: "dreamcast",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega Dreamcast",
     shortName: "Dreamcast",
     // .cdi + .gdi are Dreamcast-unique GD-ROM container formats.
@@ -302,6 +359,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   gamecube: {
     id: "gamecube",
+    formFactor: "console",
+    manufacturer: "nintendo",
     displayName: "Nintendo GameCube + Wii",
     shortName: "GC / Wii",
     // Single slug covers both GameCube + Wii via Dolphin's runtime
@@ -319,6 +378,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   jaguar: {
     id: "jaguar",
+    formFactor: "console",
+    manufacturer: "atari",
     displayName: "Atari Jaguar",
     shortName: "Jaguar",
     // .j64 = canonical Atari Jaguar dump (No-Intro standard).
@@ -332,6 +393,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   "3do": {
     id: "3do",
+    formFactor: "console",
+    manufacturer: "panasonic",
     displayName: "3DO Interactive Multiplayer",
     shortName: "3DO",
     // CD image containers — same shape as other CD-shape systems.
@@ -345,6 +408,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   pcfx: {
     id: "pcfx",
+    formFactor: "console",
+    manufacturer: "nec",
     displayName: "NEC PC-FX",
     shortName: "PC-FX",
     // CD image containers. PC-FX was Japan-only (1994-1998); single
@@ -358,6 +423,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   ngp: {
     id: "ngp",
+    formFactor: "handheld",
+    manufacturer: "snk",
     displayName: "SNK Neo Geo Pocket Color",
     shortName: "NGP/C",
     // .ngp = mono Neo Geo Pocket (1998); .ngc = Neo Geo Pocket Color
@@ -376,6 +443,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   psx: {
     id: "psx",
+    formFactor: "console",
+    manufacturer: "sony",
     displayName: "Sony PlayStation",
     shortName: "PS1",
     // CD image containers + .pbp (PSP-format PS1 EBOOT — common on
@@ -395,13 +464,18 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   gb: {
     id: "gb",
-    displayName: "Nintendo Game Boy / Game Boy Color",
+    formFactor: "handheld",
+    manufacturer: "nintendo",
+    displayName: "Nintendo Game Boy",
     shortName: "Game Boy",
-    // Single slug covers both DMG (.gb) and CGB (.gbc) — Gambatte
-    // auto-detects from the ROM header. No BIOS required for either
-    // (optional `dmg_boot.bin` / `cgb_boot.bin` in <exe_dir>/system/
-    // just enables the era-correct boot logo).
-    extensions: ["gb", "gbc"],
+    // DMG-only slug. Game Boy Color lives under the separate `gbc` slug
+    // — they share the libretro core (Gambatte auto-detects DMG vs CGB
+    // from the ROM header) but split into distinct sidebar entries so
+    // the library reads "Game Boy" + "Game Boy Color" as separate
+    // platforms (matches how players think about them + matches the
+    // tier plan's handheld bucket). Optional `dmg_boot.bin` in
+    // <exe_dir>/system/ enables the era-correct boot logo.
+    extensions: ["gb"],
     // Game Boy pack-in boxes were vertical clamshell sleeves — the
     // iconic Nintendo Big Box era for handhelds. 3/4 fits the whole
     // scan without letterboxing.
@@ -413,8 +487,30 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // grid, no scanlines) is the follow-up.
     defaultShaderPreset: "crt-lite",
   },
+  gbc: {
+    id: "gbc",
+    formFactor: "handheld",
+    manufacturer: "nintendo",
+    displayName: "Nintendo Game Boy Color",
+    shortName: "Game Boy Color",
+    // CGB-only slug — companion to `gb` (DMG-only). Same Gambatte core
+    // handles both via ROM-header auto-detect; the split is purely a
+    // sidebar/presentation concern (matches the kiosk tier plan's
+    // handheld bucket where players expect Game Boy and Game Boy Color
+    // as distinct entries). Optional `cgb_boot.bin` in <exe_dir>/system/
+    // enables the era-correct boot logo.
+    extensions: ["gbc"],
+    // GBC pack-in boxes were vertical clamshell sleeves (matches GB / GBA
+    // handheld family convention).
+    tileAspect: "3/4",
+    // 160×144 CGB LCD source — same handheld defaults as gb / gba / gg
+    // until the dedicated `lcd-handheld` preset lands.
+    defaultShaderPreset: "crt-lite",
+  },
   vectrex: {
     id: "vectrex",
+    formFactor: "console",
+    manufacturer: "gce",
     displayName: "GCE Vectrex",
     shortName: "Vectrex",
     // .vec = canonical Vectrex dump extension. .gam = alternate used by
@@ -430,6 +526,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   virtualboy: {
     id: "virtualboy",
+    formFactor: "console",
+    manufacturer: "nintendo",
     displayName: "Nintendo Virtual Boy",
     shortName: "VB",
     // .vb = canonical Virtual Boy dump (No-Intro standard). Headerless.
@@ -445,6 +543,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   wonderswan: {
     id: "wonderswan",
+    formFactor: "handheld",
+    manufacturer: "bandai",
     displayName: "Bandai WonderSwan",
     shortName: "WonderSwan",
     // .ws = WonderSwan; .wsc = WonderSwan Color. Both routed to one slug
@@ -461,6 +561,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   coleco: {
     id: "coleco",
+    formFactor: "console",
+    manufacturer: "coleco",
     displayName: "ColecoVision",
     shortName: "Coleco",
     // .col + .cv are both canonical ColecoVision dump extensions; some
@@ -474,6 +576,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   intv: {
     id: "intv",
+    formFactor: "console",
+    manufacturer: "mattel",
     displayName: "Mattel Intellivision",
     shortName: "Intv",
     // .int = canonical Intellivision dump (No-Intro standard).
@@ -484,6 +588,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   o2: {
     id: "o2",
+    formFactor: "console",
+    manufacturer: "magnavox",
     displayName: "Magnavox Odyssey²",
     shortName: "Odyssey²",
     // .o2 = synthetic extension (no widely-standardized extension
@@ -497,6 +603,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   channelf: {
     id: "channelf",
+    formFactor: "console",
+    manufacturer: "fairchild",
     displayName: "Fairchild Channel F",
     shortName: "Channel F",
     // .chf = the Channel F community / FreeChaF homebrew extension.
@@ -509,6 +617,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   "2600": {
     id: "2600",
+    formFactor: "console",
+    manufacturer: "atari",
     displayName: "Atari 2600",
     shortName: "2600",
     // .a26 = canonical headerless raw 2600 dump. The 2600 community
@@ -529,6 +639,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   "5200": {
     id: "5200",
+    formFactor: "console",
+    manufacturer: "atari",
     displayName: "Atari 5200 SuperSystem",
     shortName: "5200",
     // .a52 = canonical Atari 5200 dump (.bin clashes with too many
@@ -546,6 +658,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   pokemini: {
     id: "pokemini",
+    formFactor: "handheld",
+    manufacturer: "nintendo",
     displayName: "Nintendo Pokémon Mini",
     shortName: "PokeMini",
     // .min = canonical Pokémon Mini cart dump. Single canonical
@@ -561,6 +675,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   gba: {
     id: "gba",
+    formFactor: "handheld",
+    manufacturer: "nintendo",
     displayName: "Nintendo Game Boy Advance",
     shortName: "GBA",
     // .gba = headerless raw GBA dump. mGBA reads this directly. No
@@ -579,6 +695,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   sms: {
     id: "sms",
+    formFactor: "console",
+    manufacturer: "sega",
     displayName: "Sega Master System",
     shortName: "SMS",
     // .sms = headerless raw SMS dump. Genesis Plus GX and PicoDrive both
@@ -596,6 +714,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   gamegear: {
     id: "gamegear",
+    formFactor: "handheld",
+    manufacturer: "sega",
     displayName: "Sega Game Gear",
     shortName: "Game Gear",
     // .gg = headerless raw GG dump. Same Genesis Plus GX core covers
@@ -612,6 +732,8 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
   },
   mame: {
     id: "mame",
+    formFactor: "arcade",
+    manufacturer: "other",
     displayName: "Arcade (MAME)",
     shortName: "MAME",
     // MAME ROM-sets are .zip archives keyed by short game name (e.g.
@@ -628,6 +750,41 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     tileAspect: "4/3",
     // CRT-lite reads as period-correct for late-'80s / '90s arcade
     // hardware (15 kHz CRT monitors with visible scanlines on tubes).
+    defaultShaderPreset: "crt-lite",
+  },
+  // ── Home computers ────────────────────────────────────────────────
+  // MSX + MSX2 are declared here so the sidebar tier plan's Computers
+  // bucket has its members; their extensions list is intentionally empty
+  // for now so the library scanner doesn't produce any entries claiming
+  // these systems. Full integration (libretro core mapping → blueMSX,
+  // BIOS pre-check, bindings table, per-folder ext disambiguation since
+  // MSX libraries are dominated by .rom which collides with other
+  // systems) lands in a dedicated follow-up "MSX system add" PR.
+  msx: {
+    id: "msx",
+    formFactor: "computer",
+    manufacturer: "microsoft",
+    displayName: "Microsoft MSX",
+    shortName: "MSX",
+    // EMPTY — extensions wiring deferred; see header comment above.
+    extensions: [],
+    // MSX boxes shipped landscape in both Japan (the dominant market)
+    // and Europe — wide sleeves with the keyboard / cart art.
+    tileAspect: "4/3",
+    // 256×192 CRT-era source. crt-lite is the period-correct default.
+    defaultShaderPreset: "crt-lite",
+  },
+  msx2: {
+    id: "msx2",
+    formFactor: "computer",
+    manufacturer: "microsoft",
+    displayName: "Microsoft MSX2",
+    shortName: "MSX2",
+    // EMPTY — extensions wiring deferred; see msx header comment.
+    extensions: [],
+    // MSX2 boxes shipped landscape, same convention as MSX1.
+    tileAspect: "4/3",
+    // 512×212 enhanced CRT-era source.
     defaultShaderPreset: "crt-lite",
   },
 };

@@ -362,7 +362,8 @@ fn slug_for_ext(ext: &str) -> Option<&'static str> {
         "n64" | "z64" | "v64" => Some("n64"),
         "nds" => Some("nds"),
         "j64" | "jag" => Some("jaguar"),
-        "gb" | "gbc" => Some("gb"),
+        "gb" => Some("gb"),
+        "gbc" => Some("gbc"),
         "vec" | "gam" => Some("vectrex"),
         "vb" => Some("virtualboy"),
         "ws" | "wsc" => Some("wonderswan"),
@@ -553,6 +554,8 @@ fn is_known_system(slug: &str) -> bool {
             | "jaguar"
             | "gb"
             | "gbc"
+            | "msx"
+            | "msx2"
             | "vectrex"
             | "virtualboy"
             | "wonderswan"
