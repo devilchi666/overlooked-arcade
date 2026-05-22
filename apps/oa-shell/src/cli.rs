@@ -71,6 +71,26 @@ pub struct Cli {
     /// / publisher / year / players).
     #[arg(long, value_name = "SYSTEM_ID")]
     pub clear_metadata: Option<String>,
+
+    /// Force the frontend's presentation mode to Cabinet at startup. Pure
+    /// runtime override — the operator's `presentation.json` on disk is
+    /// preserved so the next library-mode launch honors it.
+    ///
+    /// Phase 0 hook for the kiosk shell (UI_POLISH_PLAN.md §E.1 +
+    /// KIOSK_PLAN.md). Stand-alone today; pairs cleanly with `--rom` for
+    /// the museum / arcade-cabinet boot-into-game flow.
+    #[arg(long)]
+    pub kiosk: bool,
+}
+
+/// Top-level CLI result. Bundles the resolved direct-launch config (if any)
+/// with global flags that aren't tied to a specific ROM. `--kiosk` is the
+/// first global of this shape — it can be combined with `--rom` or used
+/// alone to force the frontend into Cabinet presentation for testing.
+#[derive(Debug, Clone)]
+pub struct CliConfig {
+    pub direct_launch: Option<DirectLaunchConfig>,
+    pub kiosk: bool,
 }
 
 /// Resolved direct-launch configuration. `None` on AppState means library mode.
@@ -652,7 +672,7 @@ pub fn run_clear_metadata_headless(system_id: &str) -> Result<(), String> {
 /// (debug / console-inheritable) AND via a Windows MessageBox on release
 /// builds (where `windows_subsystem = "windows"` detaches stdout/stderr).
 /// On success the process exits 0 directly — never returns to main().
-pub fn parse_and_resolve() -> Result<Option<DirectLaunchConfig>, CliError> {
+pub fn parse_and_resolve() -> Result<CliConfig, CliError> {
     use clap::error::ErrorKind;
 
     match Cli::try_parse() {
@@ -677,7 +697,9 @@ pub fn parse_and_resolve() -> Result<Option<DirectLaunchConfig>, CliError> {
                     }
                 }
             }
-            resolve(cli)
+            let kiosk = cli.kiosk;
+            let direct_launch = resolve(cli)?;
+            Ok(CliConfig { direct_launch, kiosk })
         }
         Err(err) => match err.kind() {
             ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
@@ -936,6 +958,7 @@ mod tests {
             tas_replay: None,
             fullscreen: false,
             clear_metadata: None,
+            kiosk: false,
         };
         assert!(resolve(cli).unwrap().is_none());
     }
@@ -952,6 +975,7 @@ mod tests {
             tas_replay: None,
             fullscreen: false,
             clear_metadata: None,
+            kiosk: false,
         };
         assert!(matches!(resolve(cli).unwrap_err(), CliError::Conflict(_)));
     }
@@ -968,6 +992,7 @@ mod tests {
             tas_replay: None,
             fullscreen: false,
             clear_metadata: None,
+            kiosk: false,
         };
         assert!(matches!(
             resolve(cli).unwrap_err(),
@@ -987,6 +1012,7 @@ mod tests {
             tas_replay: None,
             fullscreen: false,
             clear_metadata: None,
+            kiosk: false,
         };
         assert!(matches!(
             resolve(cli).unwrap_err(),

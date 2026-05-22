@@ -138,6 +138,17 @@ export function createLayoutStore() {
     } catch (e) {
       console.warn("LayoutStore: get_presentation_mode failed:", e);
     }
+    // --kiosk CLI override (UI_POLISH_PLAN.md §E.1). Force Cabinet for the
+    // session AFTER reading disk state, BEFORE setHydrated(true) — so the
+    // override applies but the write-through effect doesn't persist it
+    // back to presentation.json. The operator's on-disk preference stays
+    // intact for the next library-mode launch.
+    try {
+      const kiosk = await invoke<boolean>("get_kiosk_mode");
+      if (kiosk) setPresentationMode("cabinet");
+    } catch (e) {
+      console.warn("LayoutStore: get_kiosk_mode failed:", e);
+    }
     try {
       const prefs = await invoke<LayoutPrefs>("get_layout");
       setLeftSidebarWidth(clamp(prefs.leftSidebarWidth, 200, 360));

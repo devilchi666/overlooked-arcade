@@ -2238,6 +2238,10 @@ struct AppState {
     /// reads this via `get_direct_launch_config` on boot to decide whether
     /// to hide library chrome and auto-launch a ROM.
     direct_launch: Option<cli::DirectLaunchConfig>,
+    /// `--kiosk` CLI flag. Frontend reads via `get_kiosk_mode` on boot and
+    /// forces the presentation cascade to Cabinet for the session. Disk
+    /// state (`presentation.json`) is preserved — pure runtime override.
+    kiosk: bool,
 }
 
 /// Hint for the emu thread's startup core load. When `Some`, run_emu_render
@@ -2268,18 +2272,19 @@ fn main() {
     // Parse CLI args before any other startup work. clap exits with status
     // 0 (for --help / --version) or 2 (for bad flags) on its own; our own
     // validation errors get a multi-line banner and exit 2.
-    let direct_launch_cli = match cli::parse_and_resolve() {
+    let cli_config = match cli::parse_and_resolve() {
         Ok(cfg) => cfg,
         Err(e) => {
             e.emit_banner();
             std::process::exit(2);
         }
     };
+    let kiosk = cli_config.kiosk;
 
     // OA_ROM is the legacy env-var fallback for the dev loop. When BOTH
     // CLI args AND OA_ROM are set, CLI args win and we log the override.
     let env_rom = std::env::var("OA_ROM").ok();
-    let direct_launch: Option<cli::DirectLaunchConfig> = match (direct_launch_cli, env_rom.as_deref()) {
+    let direct_launch: Option<cli::DirectLaunchConfig> = match (cli_config.direct_launch, env_rom.as_deref()) {
         (Some(cfg), Some(env_path)) => {
             log::info!("oa-shell: OA_ROM={env_path} ignored — CLI args supplied");
             Some(cfg)
@@ -2288,6 +2293,9 @@ fn main() {
         (None, Some(env_path)) => Some(cli::from_oa_rom_env(env_path)),
         (None, None) => None,
     };
+    if kiosk {
+        log::info!("oa-shell: --kiosk \u{2192} frontend will boot into Cabinet presentation (presentation.json untouched)");
+    }
 
     // Startup-load path: the legacy "load a ROM at startup, no settings
     // cascade" code in run_emu_render reads `rom_path` bytes directly off
@@ -2433,6 +2441,7 @@ fn main() {
             get_shell_mode_pref,
             set_shell_mode_pref,
             get_direct_launch_config,
+            get_kiosk_mode,
             get_game,
             get_layout,
             set_layout,
@@ -2816,6 +2825,7 @@ fn main() {
                     disc_state,
                     cheat_search: Arc::new(Mutex::new(None)),
                     direct_launch,
+                    kiosk,
                 });
 
                 // Register the quit shortcut now that the plugin is initialized.
@@ -6898,6 +6908,14 @@ fn get_direct_launch_config(
         .direct_launch
         .as_ref()
         .map(cli::DirectLaunchConfigDto::from)
+}
+
+/// `--kiosk` CLI flag mirror. Frontend reads on boot and forces the
+/// presentation cascade to Cabinet for the session. `presentation.json` on
+/// disk is preserved — pure runtime override (UI_POLISH_PLAN.md §E.1).
+#[tauri::command]
+fn get_kiosk_mode(state: tauri::State<'_, AppState>) -> bool {
+    state.kiosk
 }
 
 /// Fetch a single game row by id. Mirrors the data shape of `list_games` so

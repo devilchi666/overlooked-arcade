@@ -6,7 +6,17 @@ import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
-import PerGameSettingsDrawer, { type GameDrawerTab } from "./components/PerGameSettingsDrawer";
+import GamePropertiesDialog from "./components/GamePropertiesDialog";
+import {
+  CheatsDialog,
+  GameCoreOptionsDialog,
+  GameDisplayDialog,
+  GameInputDialog,
+  GameRewindDialog,
+  GameShadersDialog,
+  MilestonesDialog,
+  type GameDialogState,
+} from "./components/GameDialogs";
 import CoresPage from "./components/CoresPage";
 import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
@@ -173,13 +183,15 @@ const App: Component = () => {
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
-  // Game ▾ menu items that conceptually map to a drawer tab use this
-  // signal to land on the right tab when the drawer opens. Cleared when
-  // the drawer closes so the next "Properties…" click opens on Overview.
-  const [propertiesInitialTab, setPropertiesInitialTab] = createSignal<GameDrawerTab | undefined>(undefined);
-  function openGameDrawer(entry: RomEntry, tab?: GameDrawerTab) {
-    setPropertiesInitialTab(tab);
+  function openProperties(entry: RomEntry) {
     setPropertiesFor(entry);
+  }
+  // Game ▾ menu items that previously deep-linked into the drawer's tabs
+  // now launch focused dialogs from GameDialogs.tsx. Single discriminated
+  // signal covers all seven; clears on close.
+  const [gameDialog, setGameDialog] = createSignal<GameDialogState>(null);
+  function closeGameDialog() {
+    setGameDialog(null);
   }
   // Game-running state — drives game-mode chrome behavior.
   const [gameRunning, setGameRunning] = createSignal(false);
@@ -273,6 +285,16 @@ const App: Component = () => {
   // Game mode = single-window shell + a ROM is running + the library is hidden.
   const gameMode = () =>
     shellMode() === "single-window" && gameRunning() && !libraryVisible();
+
+  // True when the desktop chrome (menu bar / toolbar / sidebars) should be
+  // visible. UI_POLISH_PLAN.md §E.2 — Phase 0 of the kiosk shell. Zero
+  // behavior change today; Phase 1 kiosk gates the chrome off this memo
+  // when a future PresentationMode variant lands (e.g. "kiosk-locked").
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const chromeVisible = createMemo(() => !isDirectLaunch() && !gameMode());
+  // Keep the closure live (Solid eliminates unread memos) so the linter
+  // and future call sites can rely on it being defined. Cheap.
+  void chromeVisible;
 
   onMount(async () => {
     try {
@@ -1032,15 +1054,15 @@ const App: Component = () => {
                 <MenuDivider />
                 <MenuItem label="Save states…" onClick={() => setSavesEntry(entry())} />
                 <MenuItem label="Game info…" onClick={() => setGameInfoFor(entry())} />
-                <MenuItem label="Properties…" onClick={() => openGameDrawer(entry())} />
+                <MenuItem label="Properties…" onClick={() => openProperties(entry())} />
                 <MenuDivider />
-                <MenuItem label="Cheats…" onClick={() => openGameDrawer(entry(), "cheats")} />
-                <MenuItem label="Milestones…" onClick={() => openGameDrawer(entry(), "milestones")} />
-                <MenuItem label="Shaders…" onClick={() => openGameDrawer(entry(), "shaders")} />
-                <MenuItem label="Rewind overrides…" onClick={() => openGameDrawer(entry(), "rewind")} />
-                <MenuItem label="ROM patch…" onClick={() => openGameDrawer(entry(), "core")} />
-                <MenuItem label="Display overrides…" onClick={() => openGameDrawer(entry(), "display")} />
-                <MenuItem label="Core options…" onClick={() => openGameDrawer(entry(), "core-options")} />
+                <MenuItem label="Cheats…" onClick={() => setGameDialog({ kind: "cheats", target: entry() })} />
+                <MenuItem label="Milestones…" onClick={() => setGameDialog({ kind: "milestones", target: entry() })} />
+                <MenuItem label="Shaders…" onClick={() => setGameDialog({ kind: "shaders", target: entry() })} />
+                <MenuItem label="Rewind overrides…" onClick={() => setGameDialog({ kind: "rewind", target: entry() })} />
+                <MenuItem label="Input…" onClick={() => setGameDialog({ kind: "input", target: entry() })} />
+                <MenuItem label="Display overrides…" onClick={() => setGameDialog({ kind: "display", target: entry() })} />
+                <MenuItem label="Core options…" onClick={() => setGameDialog({ kind: "core-options", target: entry() })} />
                 <MenuDivider />
                 <MenuItem label="Pick region…" onClick={() => setRegionPickerFor(entry())} />
               </>
@@ -1672,16 +1694,50 @@ const App: Component = () => {
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
       />
-      <PerGameSettingsDrawer
+      <GamePropertiesDialog
         open={propertiesFor() !== null}
         entry={propertiesFor()}
-        onClose={() => {
-          setPropertiesFor(null);
-          setPropertiesInitialTab(undefined);
-        }}
+        onClose={() => setPropertiesFor(null)}
         settings={settings}
         library={library}
-        initialTab={propertiesInitialTab()}
+      />
+      <GameCoreOptionsDialog
+        open={gameDialog()?.kind === "core-options"}
+        entry={gameDialog()?.kind === "core-options" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+      />
+      <GameDisplayDialog
+        open={gameDialog()?.kind === "display"}
+        entry={gameDialog()?.kind === "display" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+        settings={settings}
+      />
+      <GameInputDialog
+        open={gameDialog()?.kind === "input"}
+        entry={gameDialog()?.kind === "input" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+      />
+      <GameRewindDialog
+        open={gameDialog()?.kind === "rewind"}
+        entry={gameDialog()?.kind === "rewind" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+        settings={settings}
+      />
+      <GameShadersDialog
+        open={gameDialog()?.kind === "shaders"}
+        entry={gameDialog()?.kind === "shaders" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+        settings={settings}
+      />
+      <MilestonesDialog
+        open={gameDialog()?.kind === "milestones"}
+        entry={gameDialog()?.kind === "milestones" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
+      />
+      <CheatsDialog
+        open={gameDialog()?.kind === "cheats"}
+        entry={gameDialog()?.kind === "cheats" ? gameDialog()!.target : null}
+        onClose={closeGameDialog}
       />
       <GameInfoModal
         entry={gameInfoFor()}
