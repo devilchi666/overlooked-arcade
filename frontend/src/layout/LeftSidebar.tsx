@@ -42,9 +42,11 @@ type Props = {
   currentView: SidebarView;
   onNavigate: (view: SidebarView) => void;
   /// Right-click on a leaf platform row opens the SystemContextMenu
-  /// anchored at the click coords. Container right-click menus (PR-γ.3)
-  /// will land separately — they only carry "Hide from sidebar" in v1.
+  /// anchored at the click coords. Container right-click goes to
+  /// `onContainerContext` instead — only "Hide from sidebar" lives
+  /// there in v1.
   onSystemContext?: (id: SystemId, position: { x: number; y: number }) => void;
+  onContainerContext?: (container: ContainerNode, position: { x: number; y: number }) => void;
 };
 
 /**
@@ -204,6 +206,7 @@ const LeftSidebar: Component<Props> = (props) => {
     onNavigateToNode: (nodeId: string) =>
       props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId }),
     onLeafContextMenu: (systemId, position) => props.onSystemContext?.(systemId, position),
+    onContainerContextMenu: (container, position) => props.onContainerContext?.(container, position),
   };
 
   const totalCount = createMemo(() =>

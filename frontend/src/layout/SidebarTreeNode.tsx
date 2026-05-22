@@ -37,6 +37,7 @@ export type SidebarTreeContext = {
   onToggleExpanded: (nodeId: string) => void;
   onNavigateToNode: (nodeId: string) => void;
   onLeafContextMenu?: (systemId: SystemId, position: { x: number; y: number }) => void;
+  onContainerContextMenu?: (container: ContainerNode, position: { x: number; y: number }) => void;
 };
 
 // ── Sortable top-level container ─────────────────────────────────────
@@ -70,6 +71,7 @@ export const SortableContainerNode: Component<{
         entries={props.ctx.entries}
         onToggleExpanded={() => props.ctx.onToggleExpanded(props.container.id)}
         onNavigate={() => props.ctx.onNavigateToNode(props.container.id)}
+        onContextMenu={(pos) => props.ctx.onContainerContextMenu?.(props.container, pos)}
         dragActivators={sortable.dragActivators}
         isDragging={sortable.isActiveDraggable}
       />
@@ -156,6 +158,7 @@ const StaticContainerNode: Component<{
         entries={props.ctx.entries}
         onToggleExpanded={() => props.ctx.onToggleExpanded(props.container.id)}
         onNavigate={() => props.ctx.onNavigateToNode(props.container.id)}
+        onContextMenu={(pos) => props.ctx.onContainerContextMenu?.(props.container, pos)}
       />
       <Show when={expanded() && props.container.children.length > 0}>
         <ul class="space-y-0.5">
@@ -201,6 +204,7 @@ const ContainerRow: Component<{
   entries: RomEntry[];
   onToggleExpanded: () => void;
   onNavigate: () => void;
+  onContextMenu?: (position: { x: number; y: number }) => void;
   dragActivators?: DragActivators;
   isDragging?: boolean;
 }> = (props) => {
@@ -241,6 +245,11 @@ const ContainerRow: Component<{
         onClick={(e) => {
           e.currentTarget.blur();
           props.onNavigate();
+        }}
+        onContextMenu={(e) => {
+          if (!props.onContextMenu) return;
+          e.preventDefault();
+          props.onContextMenu({ x: e.clientX, y: e.clientY });
         }}
         aria-pressed={props.active}
         class="flex flex-1 items-center gap-2 py-1.5 text-left"
