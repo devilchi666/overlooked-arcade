@@ -231,11 +231,11 @@ const TAB_HINTS: Record<TabId, string> = {
   media:        "Cover art + snapshots + titles, libretro-thumbnails sync, region priority",
 };
 
-const SettingsPage: Component<Props> = (props) => {
+const LibraryManagerPage: Component<Props> = (props) => {
   // Tabbed layout — sidebar nav on the left, per-tab content on the right.
   // Persists the last-selected tab in localStorage so reopening the modal
   // lands you where you were.
-  const TAB_STORAGE = "oa.settings.activeTab";
+  const TAB_STORAGE = "oa.library.activeTab";
   const initialTab: TabId = (() => {
     if (props.initialTab && TABS.includes(props.initialTab as TabId)) return props.initialTab as TabId;
     const saved = localStorage.getItem(TAB_STORAGE) as TabId | null;
@@ -318,11 +318,6 @@ const SettingsPage: Component<Props> = (props) => {
   function removeLibraryFolder(folderId: string) {
     void props.settings.removeLibraryFolderById(folderId);
   }
-  // moveRegion was used by the old ↑/↓ buttons in the media region
-  // list; the drag-reorder path replaces it. Keep the helper around
-  // (marked unused) in case a future "keyboard mode" surface needs it.
-  void moveRegion;
-
   function resetLibraryRegionPriority() {
     void persistLibraryPrefs({
       ...libraryPrefs(),
@@ -391,7 +386,7 @@ const SettingsPage: Component<Props> = (props) => {
         }));
       });
     } catch (e) {
-      console.warn("SettingsPage: listen('oa://library-(metadata-)sync*') failed:", e);
+      console.warn("LibraryManagerPage: listen('oa://library-(metadata-)sync*') failed:", e);
     }
   });
   onCleanup(() => {
@@ -536,7 +531,7 @@ const SettingsPage: Component<Props> = (props) => {
           setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
         });
       } catch (e) {
-        console.warn("SettingsPage: hash listen failed:", e);
+        console.warn("LibraryManagerPage: hash listen failed:", e);
       }
     })();
     onCleanup(() => {
@@ -711,16 +706,6 @@ const SettingsPage: Component<Props> = (props) => {
     // Mirror context value into local mutable draft for reordering UX.
     setRegionDraft(media.regionPriority());
   });
-  function moveRegion(idx: number, delta: number) {
-    setRegionDraft((prev) => {
-      const next = [...prev];
-      const target = idx + delta;
-      if (target < 0 || target >= next.length) return prev;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      void media.setRegionPriority(next);
-      return next;
-    });
-  }
   function removeRegionByName(name: string) {
     setRegionDraft((prev) => {
       const next = prev.filter((r) => r !== name);
@@ -795,7 +780,7 @@ const SettingsPage: Component<Props> = (props) => {
               id="settings-title"
               class="text-sm font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink)"
             >
-              Settings
+              Library Manager
             </h2>
             <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
               {TAB_LABELS[activeTab()]} · {TAB_HINTS[activeTab()]}
@@ -1387,4 +1372,4 @@ const SettingsPage: Component<Props> = (props) => {
   );
 };
 
-export default SettingsPage;
+export default LibraryManagerPage;

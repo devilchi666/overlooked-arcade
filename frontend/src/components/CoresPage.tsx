@@ -69,7 +69,7 @@ type CatalogGroup = {
 };
 
 type Props = {
-  /// Back button target — same shape as SettingsPage / PerSystemSettingsPage.
+  /// Back button target — same shape as LibraryManagerPage.
   onBack: () => void;
 };
 

@@ -1,5 +1,7 @@
 # Overlooked Arcade — UI Surface Audit
 
+**Status as of 2026-05-22:** Several specifics in this audit have shipped or drifted (PerSystemSettingsPage no longer exists, SettingsPage is down to 2 tabs and has been renamed LibraryManagerPage, PerGameSettingsDrawer is 10 tabs not 11, etc.). See `docs/UI_POLISH_PLAN.md` §0 for the current state. The structural-IA findings here (overlap matrix, orphaned features) remain valid as design context.
+
 **Date:** 2026-05-18
 **Purpose:** Catalog every window, tab, modal, drawer, menu, and setting in the shell so we can find gaps, redundancies, and orphaned features before redesigning IA.
 **Scope:** UI surfaces only. Rust commands cross-referenced to find features without a home.

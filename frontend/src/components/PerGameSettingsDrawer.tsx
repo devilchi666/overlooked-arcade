@@ -44,11 +44,11 @@ import SettingRow from "./SettingRow";
 // per-system page's left-rail because the drawer is narrower (480px) and
 // horizontal tabs scale better at that width.
 //
-// Three-tier inheritance: per-game (this drawer) → per-system (slice C
-// PerSystemSettingsPage) → OA-wide (slice A SettingsPage). Each SettingRow
-// computes its inherited chip from `perSystem.field ?? oaWide.field` and
-// passes `inheritedFrom` ("Per-system" or "OA default") to label the chip
-// correctly.
+// Three-tier inheritance: per-game (this drawer) → per-system
+// (SystemDialogs.tsx) → OA-wide (SettingsDialogs.tsx + LibraryManagerPage).
+// Each SettingRow computes its inherited chip from
+// `perSystem.field ?? oaWide.field` and passes `inheritedFrom`
+// ("Per-system" or "OA default") to label the chip correctly.
 //
 // Persistence:
 //   - Display + Region fields → `games.overrides_json` via the new
@@ -1123,8 +1123,8 @@ const PerGameSettingsDrawer: Component<Props> = (props) => {
                         const v = Number(e.currentTarget.value);
                         if (!Number.isFinite(v)) return;
                         void patch({ bloomAmount: v });
-                        // Live preview during drag — see slice-C polish note
-                        // in PerSystemSettingsPage. Launch-path resolution
+                        // Live preview during drag — mirrors the
+                        // SystemDialogs bloom slider. Launch-path resolution
                         // still runs, this is the interactive overlay.
                         void invoke("set_bloom_amount", { amount: v }).catch(() => {});
                       }}

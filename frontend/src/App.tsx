@@ -10,7 +10,7 @@ import PerGameSettingsDrawer, { type GameDrawerTab } from "./components/PerGameS
 import CoresPage from "./components/CoresPage";
 import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
-import SettingsPage from "./components/SettingsPage";
+import LibraryManagerPage from "./components/LibraryManagerPage";
 import SystemContextMenu from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
@@ -242,7 +242,7 @@ const App: Component = () => {
     createSignal<"library" | "media" | undefined>(undefined);
   function openLibraryManager(tab?: "library" | "media") {
     setLibraryManagerInitialTab(tab);
-    setCurrentView({ kind: "settings" });
+    setCurrentView({ kind: "library-manager" });
   }
   // Right-click context menu over a system entry in the left sidebar.
   // Open when the user right-clicks a SystemItem; null when closed.
@@ -421,7 +421,7 @@ const App: Component = () => {
       e.key === "Escape" &&
       shellMode() === "single-window" &&
       gameRunning() &&
-      currentView().kind !== "settings"
+      currentView().kind !== "library-manager"
     ) {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       // The QuickSettings component has its own capture-phase Esc listener
@@ -463,7 +463,7 @@ const App: Component = () => {
     let unlisten: (() => void) | undefined;
     void listen("oa://request-quick-settings", () => {
       if (!gameRunning()) return;
-      if (currentView().kind === "settings") return;
+      if (currentView().kind === "library-manager") return;
       if (quickSettingsOpen()) return;
       setQuickSettingsOpen(true);
       (document.activeElement as HTMLElement | null)?.blur();
@@ -1561,9 +1561,9 @@ const App: Component = () => {
               </Show>
             }
           >
-            <Match when={currentView().kind === "settings"}>
+            <Match when={currentView().kind === "library-manager"}>
               <div class="h-full overflow-y-auto">
-                <SettingsPage
+                <LibraryManagerPage
                   onBack={() => setCurrentView({ kind: "all" })}
                   settings={settings}
                   library={library}

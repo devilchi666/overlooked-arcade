@@ -71,7 +71,7 @@ const LibraryView: Component<Props> = (props) => {
       // LibraryView never mounts in settings / cores mode (App.tsx Switch
       // routes them to dedicated pages), but TypeScript wants the
       // discriminant exhaustive.
-      case "settings": return "Settings";
+      case "library-manager": return "Library Manager";
       case "cores": return "Cores";
     }
   };
