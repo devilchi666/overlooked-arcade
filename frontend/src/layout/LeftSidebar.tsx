@@ -19,6 +19,7 @@ import {
   SortableLeafNode,
   type SidebarTreeContext,
 } from "./SidebarTreeNode";
+import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
 
 /// Which top-level surface the main pane is showing. `all` and `view-node`
 /// are library views (filtered or not); `library-manager` and `cores` are
@@ -245,6 +246,15 @@ const LeftSidebar: Component<Props> = (props) => {
   return (
     <aside class="relative flex h-full flex-col border-r border-white/5 bg-black/20">
       <nav class="flex-1 overflow-y-auto overscroll-contain px-2 py-3">
+        {/* Upgrade-install migration banner (only renders when active
+            view is Flat-Legacy + not yet dismissed; hidden in collapsed
+            sidebar mode). */}
+        <SidebarMigrationBanner
+          views={props.views}
+          layout={props.layout}
+          collapsed={isCollapsed()}
+        />
+
         {/* Quick destinations */}
         <ul class="space-y-0.5">
           <QuickItem
