@@ -1,22 +1,22 @@
-import { For, Show, createMemo, createSignal, type Component } from "solid-js";
+import { For, Show, createMemo, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { LayoutStore } from "./state";
-import type { PlatformNode, ContainerNode, ViewNode } from "../views/types";
+import type { ContainerNode, PlatformNode, ViewNode } from "../views/types";
 import { parsePlatformNodeId, platformNodeIdFor } from "../views/defaults";
+import { flattenLeaves } from "../views/resolver";
 import type { ViewsStore } from "../views/store";
+import SidebarTreeNode, { type SidebarTreeContext } from "./SidebarTreeNode";
 
 /// Which top-level surface the main pane is showing. `all` and `view-node`
 /// are library views (filtered or not); `library-manager` and `cores` are
 /// the two routed full pages. Per-system settings live in dialogs now,
 /// not a page — there is no longer a deep-link tab discriminant.
 ///
-/// `view-node` replaces the old `system` variant (PR-β fold): navigation
-/// is now a pointer into the active view's tree (`viewId` + `nodeId`),
-/// not a bare SystemId. The runtime resolves filterable SystemIds via
-/// `resolveNodeSystemIds` (views/resolver.ts). The flat-system
-/// discriminant is removed, not aliased — TypeScript catches any missed
-/// call site.
+/// `view-node` is the PR-β fold of the old `system` variant — navigation
+/// is a pointer into the active view's tree (`viewId` + `nodeId`), not
+/// a bare SystemId. The runtime resolves filterable SystemIds via
+/// `resolveNodeSystemIds` (views/resolver.ts).
 export type SidebarView =
   | { kind: "all" }
   | { kind: "view-node"; viewId: string; nodeId: string }
@@ -29,37 +29,11 @@ type Props = {
   views: ViewsStore;
   currentView: SidebarView;
   onNavigate: (view: SidebarView) => void;
-  /// Right-click on a system entry opens the SystemContextMenu anchored
-  /// at the click coords. This is the primary route to per-system
-  /// settings dialogs from the sidebar (the System ▾ menu bar entry is
-  /// the other; GridControls and SystemHeader no longer carry ⚙).
+  /// Right-click on a leaf platform row opens the SystemContextMenu
+  /// anchored at the click coords. Container right-click menus (PR-γ.3)
+  /// will land separately — they only carry "Hide from sidebar" in v1.
   onSystemContext?: (id: SystemId, position: { x: number; y: number }) => void;
 };
-
-const DRAG_MIME = "application/x-oa-system";
-
-/// PR-β flat render — walks the active view's tree and collects every
-/// PlatformNode together with the id of the container that holds it.
-/// Drag-reorder uses `parentId` to decide whether a drop should be
-/// committed (same-parent reorders via ViewsStore.reorderChildren;
-/// different-parent drops are silent no-ops — cross-container drag
-/// lands in PR-γ).
-type FlatLeaf = { leaf: PlatformNode; parentId: string };
-
-function collectFlatLeaves(root: ContainerNode): FlatLeaf[] {
-  const out: FlatLeaf[] = [];
-  function walk(container: ContainerNode): void {
-    for (const child of container.children) {
-      if (child.kind === "platform") {
-        out.push({ leaf: child, parentId: container.id });
-      } else if (child.kind === "container") {
-        walk(child);
-      }
-    }
-  }
-  walk(root);
-  return out;
-}
 
 /**
  * Left sidebar — primary navigation surface. Sections (top → bottom):
@@ -68,26 +42,29 @@ function collectFlatLeaves(root: ContainerNode): FlatLeaf[] {
  *     Pinned to the top, not reorderable. For Phase 2.5 only "All" navigates;
  *     others are placeholders until the feature lands.
  *
- *   Systems — one entry per platform leaf in the active view's tree.
- *     PR-β renders this flat (DFS-flattened active view leaves); PR-γ
- *     replaces the flat render with the recursive tree per
- *     SIDEBAR_TIER_PLAN.md §2.5 → §3.1.
+ *   Platforms — the tiered tree (PR-γ). Containers carry twisties + recursive
+ *     count badges; leaves carry the per-system accent + own count. Cascade
+ *     auto-hide-empty applies bottom-up. Collapsed-mode sidebar falls back
+ *     to a flat icon-only render of every visible leaf (no container chrome
+ *     fits in the icon column).
  *
  *   Playlists — section header + create-button. No items yet.
  *   Smart Views — section header + create-button. No items yet.
  *
- * Width is driven by the parent Shell's CSS grid via `--layout-left-sidebar-width`
- * (or the collapsed token). The resizer handle on the right edge writes back
- * to `layout.setLeftSidebarWidth()`.
+ * Width is driven by the parent Shell's CSS grid via
+ * `--layout-left-sidebar-width` (or the collapsed token). The resizer
+ * handle on the right edge writes back to `layout.setLeftSidebarWidth()`.
+ *
+ * Drag-reorder is intentionally absent in γ.1 (the tree render) and lands
+ * via solid-dnd in γ.2. Migration banner is γ.4; per-node hide UX is γ.3.
  */
 const LeftSidebar: Component<Props> = (props) => {
   const isCollapsed = () => props.layout.leftSidebarCollapsed();
 
-  /// The currently-selected platform leaf, if any. Drives the
-  /// always-visible-while-active filter rule and the per-row active
-  /// highlight. Resolution mirrors viewToSystemId in App.tsx — node
-  /// lookup with a synthesized-leaf fallback for deep-links pointing
-  /// outside the active view's tree.
+  /// SystemId driving the active-row highlight + always-visible-while-
+  /// active filter rule. Mirrors viewToSystemId in App.tsx — node lookup
+  /// in the active view with a synthesized-leaf fallback for deep-links
+  /// pointing outside the active view's tree.
   const activeSystemId = createMemo<SystemId | null>(() => {
     const cv = props.currentView;
     if (cv.kind !== "view-node") return null;
@@ -95,101 +72,84 @@ const LeftSidebar: Component<Props> = (props) => {
     if (!view || view.id !== cv.viewId) {
       return parsePlatformNodeId(cv.nodeId);
     }
-    for (const { leaf } of allLeaves()) {
+    // Either matches a leaf in the tree or falls through to the synth
+    // shape — same semantics as App.tsx::viewToSystemId.
+    for (const leaf of flattenLeaves(view.root)) {
       if (leaf.id === cv.nodeId) return leaf.systemId;
     }
     return parsePlatformNodeId(cv.nodeId);
   });
 
-  /// Every platform leaf across the active view, with its container
-  /// parent id (used by drag-reorder for same-parent gating).
-  const allLeaves = createMemo<FlatLeaf[]>(() => {
+  /// Filtered copy of the active view's root container — applies the
+  /// legacy `layout.hiddenSystems` + `autoHideEmptySystems` filters
+  /// bottom-up across the tree. Per-node `hidden` flags also honored
+  /// (γ.3 wires up the right-click that sets them; the storage already
+  /// landed in PR-β). The active leaf is preserved through hide /
+  /// auto-hide gates so navigating to a hidden system doesn't make
+  /// its sidebar row vanish; its ancestor containers stay visible
+  /// because the recursion sees a non-null filtered child.
+  const filteredRoot = createMemo<ContainerNode | null>(() => {
     const view = props.views.activeView();
-    if (!view) return [];
-    return collectFlatLeaves(view.root);
-  });
-
-  const countForSystem = (id: SystemId): number =>
-    props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
-
-  /// Apply the legacy layout.hiddenSystems + autoHideEmptySystems
-  /// filters on top of the active view's leaves. PR-γ migrates hide
-  /// state onto per-node `hidden` flags; for PR-β the legacy
-  /// SystemId-keyed lists stay authoritative so behavior matches
-  /// today exactly.
-  const visibleLeaves = createMemo<FlatLeaf[]>(() => {
-    const hidden = new Set(props.layout.hiddenSystems());
+    if (!view) return null;
+    const hiddenSet = new Set(props.layout.hiddenSystems());
     const autoHide = props.layout.autoHideEmptySystems();
     const active = activeSystemId();
-    return allLeaves().filter(({ leaf }) => {
-      if (leaf.hidden) return false;
-      if (leaf.systemId === active) return true;
-      if (hidden.has(leaf.systemId)) return false;
-      if (autoHide && countForSystem(leaf.systemId) === 0) return false;
-      return true;
-    });
+    const entries = props.library.state.entries;
+    return filterTree(view.root, { hiddenSet, autoHide, active, entries }) as ContainerNode | null;
   });
 
-  const totalCount = createMemo(() => props.library.state.entries.filter((e) => !e.seed).length);
+  /// Collapsed-mode fallback — DFS of the filtered tree's leaves. The
+  /// icon-only sidebar doesn't have room for container chrome, so we
+  /// degrade to today's β-style flat render of just the visible
+  /// platform leaves.
+  const collapsedLeaves = createMemo<PlatformNode[]>(() => {
+    const root = filteredRoot();
+    if (!root) return [];
+    return flattenLeaves(root);
+  });
 
-  // Drag state — tracks which row index the user is dragging plus the
-  // current drop-target index for the visual indicator.
-  const [dragSourceIndex, setDragSourceIndex] = createSignal<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = createSignal<number | null>(null);
-
-  function commitReorder(from: number, to: number) {
-    if (from === to) return;
-    const leaves = visibleLeaves();
-    const source = leaves[from];
-    if (!source) return;
-    // Adjusted target index (splice removes source first; dropping
-    // after the original position shifts the target by one).
-    const insertAt = to > from ? to - 1 : to;
-    const targetSibling = leaves[insertAt];
-    // Cross-container drops are silent no-ops in PR-β. The drop
-    // completes visually (drag state clears in onDrop) but the tree
-    // is unchanged. Cross-container drag-reorder lands in PR-γ /
-    // post-v1 per SIDEBAR_TIER_PLAN.md §0.
-    if (targetSibling && targetSibling.parentId !== source.parentId) return;
-
-    // Build the new order within the source's parent container.
-    const parentId = source.parentId;
-    const parentLeaves = leaves.filter((l) => l.parentId === parentId);
-    const localFrom = parentLeaves.findIndex((l) => l.leaf.id === source.leaf.id);
-    const localInsertAt = (() => {
-      if (!targetSibling) {
-        // Dropped past the last visible leaf — append within parent.
-        return parentLeaves.length;
-      }
-      const idx = parentLeaves.findIndex((l) => l.leaf.id === targetSibling.leaf.id);
-      return idx >= 0 ? idx : parentLeaves.length;
-    })();
-    if (localFrom < 0) return;
-    const reordered = parentLeaves.slice();
-    const [moved] = reordered.splice(localFrom, 1);
-    const adjustedInsertAt = localInsertAt > localFrom ? localInsertAt - 1 : localInsertAt;
-    reordered.splice(adjustedInsertAt, 0, moved);
-    // ViewsStore.reorderChildren operates on the full ordered list of
-    // children ids — but our visible-leaves filter may have dropped
-    // some siblings (hidden / auto-hide-empty). Fetch the parent's
-    // full child set and stitch the reorder into it.
+  const expandedSet = createMemo(() => {
     const view = props.views.activeView();
-    if (!view) return;
-    const parentChildren = findContainerChildren(view.root, parentId);
-    if (!parentChildren) return;
-    const reorderedIds = new Set(reordered.map((l) => l.leaf.id));
-    const reorderQueue = reordered.map((l) => l.leaf.id);
-    const newOrder: string[] = [];
-    for (const child of parentChildren) {
-      if (child.kind === "platform" && reorderedIds.has(child.id)) {
-        const nextId = reorderQueue.shift();
-        if (nextId !== undefined) newOrder.push(nextId);
-      } else {
-        newOrder.push(child.id);
-      }
-    }
-    props.views.reorderChildren(parentId, newOrder);
-  }
+    return new Set(view?.expandedNodes ?? []);
+  });
+
+  const activeViewId = createMemo(() => props.views.activeView()?.id ?? "");
+
+  const treeContext: SidebarTreeContext = {
+    get entries() {
+      return props.library.state.entries;
+    },
+    isExpanded: (nodeId: string) => {
+      if (expandedSet().has(nodeId)) return true;
+      // Auto-expand any container that contains the active leaf — keeps
+      // the highlighted row visible without mutating the persisted
+      // expandedNodes set (the operator's explicit collapse choice
+      // survives a navigation).
+      const sysId = activeSystemId();
+      if (!sysId) return false;
+      const view = props.views.activeView();
+      if (!view) return false;
+      const node = findNode(view.root, nodeId);
+      if (!node || !("children" in node)) return false;
+      return containerContainsSystem(node, sysId);
+    },
+    isActiveNode: (nodeId: string) => {
+      const cv = props.currentView;
+      return (
+        cv.kind === "view-node" &&
+        cv.viewId === activeViewId() &&
+        cv.nodeId === nodeId
+      );
+    },
+    onToggleExpanded: (nodeId: string) => props.views.toggleExpanded(nodeId),
+    onNavigateToNode: (nodeId: string) =>
+      props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId }),
+    onLeafContextMenu: (systemId, position) => props.onSystemContext?.(systemId, position),
+  };
+
+  const totalCount = createMemo(() =>
+    props.library.state.entries.filter((e) => !e.seed).length,
+  );
 
   const isActive = (view: SidebarView): boolean => {
     const cv = props.currentView;
@@ -220,92 +180,60 @@ const LeftSidebar: Component<Props> = (props) => {
     document.body.style.cursor = "ew-resize";
   };
 
-  const activeViewId = createMemo(() => props.views.activeView()?.id ?? "");
-
   return (
     <aside class="relative flex h-full flex-col border-r border-white/5 bg-black/20">
       <nav class="flex-1 overflow-y-auto overscroll-contain px-2 py-3">
         {/* Quick destinations */}
         <ul class="space-y-0.5">
-          <QuickItem icon="▦" label="All Games" badge={totalCount() > 0 ? String(totalCount()) : undefined} active={isActive({ kind: "all" })} collapsed={isCollapsed()} onClick={() => props.onNavigate({ kind: "all" })} />
+          <QuickItem
+            icon="▦"
+            label="All Games"
+            badge={totalCount() > 0 ? String(totalCount()) : undefined}
+            active={isActive({ kind: "all" })}
+            collapsed={isCollapsed()}
+            onClick={() => props.onNavigate({ kind: "all" })}
+          />
         </ul>
 
-        {/* Systems */}
-        <SectionHeader label="Systems" collapsed={isCollapsed()} />
-        <ul class="space-y-0.5">
-          <For each={visibleLeaves()}>
-            {({ leaf }, index) => (
-              <SystemItem
-                id={leaf.systemId}
-                count={countForSystem(leaf.systemId)}
-                active={isActive({ kind: "view-node", viewId: activeViewId(), nodeId: leaf.id })}
-                collapsed={isCollapsed()}
-                draggable={!isCollapsed()}
-                isDraggingThis={dragSourceIndex() === index()}
-                dropIndicatorAbove={dragOverIndex() === index() && dragSourceIndex() !== null && dragSourceIndex() !== index()}
-                onClick={() => props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId: leaf.id })}
-                onContextMenu={(pos) => props.onSystemContext?.(leaf.systemId, pos)}
-                onDragStart={(ev) => {
-                  setDragSourceIndex(index());
-                  ev.dataTransfer?.setData(DRAG_MIME, String(index()));
-                  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
-                }}
-                onDragOver={(ev) => {
-                  if (dragSourceIndex() === null) return;
-                  ev.preventDefault();
-                  if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-                  // Decide whether the cursor is in the top or bottom half —
-                  // dropping in the top half inserts above; bottom half below.
-                  const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-                  const above = ev.clientY < rect.top + rect.height / 2;
-                  setDragOverIndex(above ? index() : index() + 1);
-                }}
-                onDragLeave={() => {
-                  // Only clear if no other item set us as the target since.
-                  if (dragOverIndex() === index() || dragOverIndex() === index() + 1) {
-                    // Defer clearing — the next dragOver on a sibling will
-                    // overwrite us. Clearing here causes flicker.
-                  }
-                }}
-                onDrop={(ev) => {
-                  ev.preventDefault();
-                  const from = dragSourceIndex();
-                  const to = dragOverIndex();
-                  setDragSourceIndex(null);
-                  setDragOverIndex(null);
-                  if (from === null || to === null) return;
-                  commitReorder(from, to);
-                }}
-                onDragEnd={() => {
-                  setDragSourceIndex(null);
-                  setDragOverIndex(null);
-                }}
-              />
+        {/* Platforms */}
+        <SectionHeader label="Platforms" collapsed={isCollapsed()} />
+        <Show
+          when={!isCollapsed()}
+          fallback={
+            <ul class="space-y-0.5">
+              <For each={collapsedLeaves()}>
+                {(leaf) => (
+                  <CollapsedLeaf
+                    leaf={leaf}
+                    active={
+                      props.currentView.kind === "view-node" &&
+                      props.currentView.viewId === activeViewId() &&
+                      props.currentView.nodeId === leaf.id
+                    }
+                    onClick={() =>
+                      props.onNavigate({
+                        kind: "view-node",
+                        viewId: activeViewId(),
+                        nodeId: leaf.id,
+                      })
+                    }
+                    onContextMenu={(pos) => props.onSystemContext?.(leaf.systemId, pos)}
+                  />
+                )}
+              </For>
+            </ul>
+          }
+        >
+          <Show when={filteredRoot()}>
+            {(root) => (
+              <ul class="space-y-0.5">
+                <For each={root().children}>
+                  {(child) => <SidebarTreeNode node={child} depth={0} ctx={treeContext} />}
+                </For>
+              </ul>
             )}
-          </For>
-          {/* Final drop zone — lets the user drop past the last item to
-              append at the end. Only renders while a drag is in progress. */}
-          <Show when={dragSourceIndex() !== null}>
-            <li
-              class="h-1.5 rounded transition"
-              classList={{
-                "bg-(--color-system-accent)": dragOverIndex() === visibleLeaves().length,
-              }}
-              onDragOver={(ev) => {
-                ev.preventDefault();
-                setDragOverIndex(visibleLeaves().length);
-              }}
-              onDrop={(ev) => {
-                ev.preventDefault();
-                const from = dragSourceIndex();
-                setDragSourceIndex(null);
-                setDragOverIndex(null);
-                if (from === null) return;
-                commitReorder(from, visibleLeaves().length);
-              }}
-            />
           </Show>
-        </ul>
+        </Show>
 
         {/* Playlists (placeholder — feature lands later) */}
         <SectionHeader label="Playlists" collapsed={isCollapsed()} />
@@ -355,25 +283,91 @@ const LeftSidebar: Component<Props> = (props) => {
   );
 };
 
-/// DFS lookup for a container's direct children. Used by the drag-reorder
-/// path to stitch a visible-leaf reorder back into the container's full
-/// child set (since hidden / auto-hide-empty filtering can drop siblings
-/// from the visible list).
-function findContainerChildren(node: ContainerNode, containerId: string): ViewNode[] | null {
-  if (node.id === containerId) return node.children;
-  for (const child of node.children) {
-    if (child.kind === "container") {
-      const inner = findContainerChildren(child, containerId);
-      if (inner) return inner;
+// ── Pure tree filter ─────────────────────────────────────────────────
+
+type FilterCtx = {
+  hiddenSet: Set<string>;
+  autoHide: boolean;
+  active: SystemId | null;
+  entries: { systemId: SystemId; seed?: boolean }[];
+};
+
+/// Bottom-up filter. Returns null when the node should not render, or
+/// a filtered copy when it should. Active leaf bypasses hide / auto-
+/// hide gates so it stays visible after navigation; its ancestor
+/// containers stay visible naturally because the recursion sees a
+/// non-null filtered child.
+function filterTree(node: ContainerNode | ViewNode, ctx: FilterCtx): ContainerNode | ViewNode | null {
+  if ("kind" in node && node.kind === "platform") {
+    const leaf = node;
+    if (leaf.systemId === ctx.active) return leaf;
+    if (leaf.hidden) return null;
+    if (ctx.hiddenSet.has(leaf.systemId)) return null;
+    if (ctx.autoHide && countEntriesForSystem(ctx.entries, leaf.systemId) === 0) return null;
+    return leaf;
+  }
+  const container = (node as ContainerNode);
+  if (container.hidden) {
+    // Hidden container — but if it contains the active leaf, surface
+    // the active leaf at this position so navigation doesn't strand.
+    if (ctx.active && containerContainsSystem(container, ctx.active)) {
+      // Recurse to find just the active branch.
+      const filteredChildren = container.children
+        .map((c) => filterTree(c, ctx))
+        .filter((c): c is ViewNode => c !== null);
+      if (filteredChildren.length > 0) {
+        return { ...container, children: filteredChildren as ViewNode[] };
+      }
     }
+    return null;
+  }
+  const filteredChildren = container.children
+    .map((c) => filterTree(c, ctx))
+    .filter((c): c is ViewNode => c !== null);
+  // Cascade auto-hide-empty: container with zero visible descendants
+  // disappears when the toggle is on. Empty containers stay visible
+  // when auto-hide is off so the tree shape remains visible while the
+  // operator scans the library.
+  if (filteredChildren.length === 0 && ctx.autoHide) return null;
+  return { ...container, children: filteredChildren as ViewNode[] };
+}
+
+function countEntriesForSystem(
+  entries: { systemId: SystemId; seed?: boolean }[],
+  id: SystemId,
+): number {
+  let n = 0;
+  for (const e of entries) {
+    if (e.systemId === id && !e.seed) n++;
+  }
+  return n;
+}
+
+function containerContainsSystem(node: ContainerNode | ViewNode, id: SystemId): boolean {
+  if ("kind" in node && node.kind === "platform") return node.systemId === id;
+  const container = node as ContainerNode;
+  for (const child of container.children) {
+    if (containerContainsSystem(child, id)) return true;
+  }
+  return false;
+}
+
+function findNode(node: ContainerNode | ViewNode, nodeId: string): ContainerNode | ViewNode | null {
+  if (node.id === nodeId) return node;
+  if ("kind" in node && node.kind === "platform") return null;
+  const container = node as ContainerNode;
+  for (const child of container.children) {
+    const inner = findNode(child, nodeId);
+    if (inner) return inner;
   }
   return null;
 }
 
-// `platformNodeIdFor` is imported for completeness — used by the App.tsx
-// helpers that pair with this file. Re-exported so callers can build
-// view-node SidebarViews without reaching into views/defaults directly.
+// Re-export so App.tsx + other callers can build view-node SidebarViews
+// without reaching into views/defaults directly.
 export { platformNodeIdFor };
+
+// ── Section + Quick + CollapsedLeaf rows ────────────────────────────
 
 const SectionHeader: Component<{ label: string; collapsed: boolean }> = (props) => (
   <Show
@@ -432,41 +426,18 @@ const QuickItem: Component<{
   </li>
 );
 
-const SystemItem: Component<{
-  id: SystemId;
-  count: number;
+/// Icon-only fallback used when the sidebar is collapsed. No tree chrome
+/// (twisties / labels don't fit in the icon column); just the per-system
+/// accent dot + tooltip so the operator can navigate by hover.
+const CollapsedLeaf: Component<{
+  leaf: PlatformNode;
   active: boolean;
-  collapsed: boolean;
-  draggable: boolean;
-  isDraggingThis: boolean;
-  dropIndicatorAbove: boolean;
   onClick: () => void;
   onContextMenu?: (position: { x: number; y: number }) => void;
-  onDragStart: (ev: DragEvent) => void;
-  onDragOver: (ev: DragEvent) => void;
-  onDragLeave: (ev: DragEvent) => void;
-  onDrop: (ev: DragEvent) => void;
-  onDragEnd: (ev: DragEvent) => void;
 }> = (props) => {
-  const theme = () => systemThemes[props.id];
+  const theme = () => systemThemes[props.leaf.systemId];
   return (
-    <li
-      data-system={props.id}
-      class="relative"
-      classList={{ "opacity-40": props.isDraggingThis }}
-      draggable={props.draggable}
-      onDragStart={props.onDragStart}
-      onDragOver={props.onDragOver}
-      onDragLeave={props.onDragLeave}
-      onDrop={props.onDrop}
-      onDragEnd={props.onDragEnd}
-    >
-      <Show when={props.dropIndicatorAbove}>
-        <span
-          class="pointer-events-none absolute -top-0.5 left-2 right-2 h-0.5 rounded bg-(--color-system-accent)"
-          aria-hidden="true"
-        />
-      </Show>
+    <li data-system={props.leaf.systemId}>
       <button
         type="button"
         onClick={(e) => {
@@ -479,13 +450,12 @@ const SystemItem: Component<{
           props.onContextMenu({ x: e.clientX, y: e.clientY });
         }}
         aria-pressed={props.active}
-        class="group relative flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-xs font-medium transition"
+        title={theme()?.displayName}
+        class="group relative flex w-full items-center justify-center rounded-md px-2 py-2 transition"
         classList={{
-          "bg-(--color-system-accent)/15 text-(--color-oa-ink)": props.active,
-          "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)": !props.active,
-          "justify-center px-2": props.collapsed,
+          "bg-(--color-system-accent)/15": props.active,
+          "hover:bg-white/[0.04]": !props.active,
         }}
-        title={props.collapsed ? theme().displayName : undefined}
       >
         <Show when={props.active}>
           <span
@@ -494,17 +464,9 @@ const SystemItem: Component<{
           />
         </Show>
         <span
-          class="inline-block h-2 w-2 shrink-0 rounded-full bg-(--color-system-accent)"
+          class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-(--color-system-accent)"
           aria-hidden="true"
         />
-        <Show when={!props.collapsed}>
-          <span class="flex-1 truncate">{theme().displayName}</span>
-          <Show when={props.count > 0}>
-            <span class="text-[0.6rem] tabular-nums uppercase tracking-widest text-(--color-oa-ink-dim)">
-              {props.count}
-            </span>
-          </Show>
-        </Show>
       </button>
     </li>
   );
