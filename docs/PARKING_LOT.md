@@ -72,3 +72,7 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
 - 2026-05-20 — Direct-launch CLI v2 — Persistent kiosk profile
   Why it came up: a true kiosk install would auto-launch the same game on every boot (arcade cabinet shipped to a museum, etc.), not just on `--rom` invocation. Operator would configure once, OS auto-runs OA, OA auto-runs the game, no library ever shown.
   Why deferred: needs a persistent on-disk "kiosk mode" flag (`appData/kiosk.json`?), boot-time validation that the configured ROM still exists, and a way for the operator to override-to-library temporarily without erasing the kiosk config. None of these are hard, but no real-world deployment is asking for them yet.
+
+- 2026-05-22 — Kiosk / Cabinet mode (full design)
+  Why it came up: long planning conversation 2026-05-22 settled the entire BigBox-class kiosk feature set — theming substrate (4-layer + Rhai), in-engine Theme Studio, attract mode (3 tiers), 5-bus audio mixer, multi-monitor surfaces, launch ceremony, in-game menu, configurable controller bindings, named views w/ arbitrary hierarchies, kid mode, accessibility floor, federated theme distribution, 7-phase implementation plan.
+  Why deferred: full plan captured in `docs/KIOSK_PLAN.md`. Phase 0 of that plan IS the current settings/IA polish work (`docs/UI_MENU_BAR_PLAN.md`). Kiosk shell itself is Phase 1+ — picked up after the desktop UI lands at a polished baseline.
