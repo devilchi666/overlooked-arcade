@@ -28,6 +28,9 @@ import ToastStack from "./components/ToastStack";
 import Shell from "./layout/Shell";
 import TopToolbar from "./layout/TopToolbar";
 import LeftSidebar, { type SidebarView } from "./layout/LeftSidebar";
+import { createViewsStore } from "./views/store";
+import { platformNodeIdFor, parsePlatformNodeId } from "./views/defaults";
+import { findNode } from "./views/resolver";
 import { MenuBar, Menu, MenuItem, MenuLabel, MenuDivider, MenuRadio, MenuCheckbox } from "./layout/MenuBar";
 import {
   AudioDialog,
@@ -139,6 +142,33 @@ const App: Component = () => {
   });
   const settings = createSettingsStore();
   const layout = createLayoutStore();
+  const viewsStore = createViewsStore();
+
+  /// Build a SidebarView pointing at the active view's platform leaf for
+  /// `id`. The leaf encoding (`platform:<systemId>`) is what defaults +
+  /// migration emit and what `synthesizeLeafForSystem` falls back to —
+  /// so a deep-link to a system the active view's tree excludes still
+  /// resolves correctly via the synthesized-leaf path.
+  function viewForSystem(id: SystemId): SidebarView {
+    return {
+      kind: "view-node",
+      viewId: viewsStore.activeView()?.id ?? "",
+      nodeId: platformNodeIdFor(id),
+    };
+  }
+
+  /// Resolve a SidebarView back to its platform SystemId, if it points at
+  /// a leaf in (or synthesizable from) the active view. Used by menu-bar
+  /// logic that previously read `cv.id` directly off the system variant.
+  function viewToSystemId(view: SidebarView): SystemId | null {
+    if (view.kind !== "view-node") return null;
+    const active = viewsStore.activeView();
+    if (active && active.id === view.viewId) {
+      const node = findNode(active, view.nodeId);
+      if (node && "kind" in node && node.kind === "platform") return node.systemId;
+    }
+    return parsePlatformNodeId(view.nodeId);
+  }
 
   // Resource form drives reactive UI gating (chrome hide, auto-launch).
   // While the resource is pending, `directLaunchConfig()` returns
@@ -898,9 +928,7 @@ const App: Component = () => {
   // Game ▾ is disabled unless a tile is focused, a ROM is running, or one
   // is pinned in the right sidebar.
   const activeSystemId = createMemo<SystemId | null>(() => {
-    const cv = currentView();
-    if (cv.kind === "system") return cv.id;
-    return null;
+    return viewToSystemId(currentView());
   });
   const activeGameEntry = createMemo<RomEntry | null>(() => {
     return runningEntry() ?? focusedEntry() ?? pinnedEntry();
@@ -1004,7 +1032,7 @@ const App: Component = () => {
                 <MenuDivider />
                 <MenuItem
                   label="Show library"
-                  onClick={() => setCurrentView({ kind: "system", id: id() })}
+                  onClick={() => setCurrentView(viewForSystem(id()))}
                 />
                 <MenuDivider />
                 <MenuItem label="Bindings…" onClick={() => openSystemDialog("bindings", id())} />
@@ -1019,7 +1047,7 @@ const App: Component = () => {
                   onClick={() => {
                     const cur = layout.hiddenSystems();
                     if (!cur.includes(id())) layout.setHiddenSystems([...cur, id()]);
-                    if (currentView().kind === "system" && (currentView() as { id: string }).id === id()) {
+                    if (activeSystemId() === id()) {
                       setCurrentView({ kind: "all" });
                     }
                   }}
@@ -1538,6 +1566,7 @@ const App: Component = () => {
           <LeftSidebar
             layout={layout}
             library={library}
+            views={viewsStore}
             currentView={currentView()}
             onNavigate={(v) => setCurrentView(v)}
             onSystemContext={(id, position) => setSystemContextFor({ id, position })}
@@ -1570,6 +1599,7 @@ const App: Component = () => {
                   <LibraryView
                     library={library}
                     layout={layout}
+                    views={viewsStore}
                     currentView={currentView()}
                     searchQuery={searchQuery()}
                     onLaunch={handleLaunch}
@@ -1666,7 +1696,7 @@ const App: Component = () => {
         position={systemContextFor()?.position ?? null}
         library={library}
         onClose={() => setSystemContextFor(null)}
-        onShowLibrary={(id) => setCurrentView({ kind: "system", id })}
+        onShowLibrary={(id) => setCurrentView(viewForSystem(id))}
         onOpenBindings={(id) => openSystemDialog("bindings", id)}
         onOpenSettings={(id) => openSystemDialog("display", id)}
         onHideSystem={(id) => {
@@ -1677,7 +1707,7 @@ const App: Component = () => {
           // If the user hid the system they were viewing, kick them back
           // to "All games" so they aren't stranded on a sidebar entry
           // that just disappeared.
-          if (currentView().kind === "system" && (currentView() as { id: string }).id === id) {
+          if (activeSystemId() === id) {
             setCurrentView({ kind: "all" });
           }
         }}
