@@ -2,6 +2,42 @@
 
 ---
 
+## 2026-05-22 — UI polish PR 2 (Phases B + C, cross-system, not core-specific)
+
+Continues the polish-plan execution. PR 1 (Phase A) landed earlier today.
+
+- **Shipped:** PR 2 of 4 from `docs/UI_POLISH_PLAN.md`.
+  - Dialog primitive: size scale widens to sm/md/lg/xl/2xl; new
+    `<DialogSection>` for row grouping; type ramp + spacing + SVG
+    close-button glyph.
+  - SettingRow: built-in `select` / `slider` / `toggle` controls;
+    typed `inherited` + new `description`, `disabled`, `onReset`
+    props; exports `selectClass(tone)` as the canonical select-
+    styling helper. Legacy `inheritedValue` / `inheritedFrom`
+    pair kept as a passthrough during migration.
+  - DisplayDialog migrates at xl as the reference (three sections:
+    Scaling / Window / Run-ahead).
+  - Audio / Gameplay / Shaders dialogs adopt built-in controls.
+  - SystemDialogs + PerGameSettingsDrawer bloom sliders collapse to
+    `SettingRow.slider` + `onReset`.
+  - 3 of 4 LibraryManagerPage row candidates migrated (only-sync,
+    auto-remove, revision-tiebreaker). Action-select for
+    "Clear games for" stays raw + uses the new `selectClass("oa")`
+    helper — the DOM-reset idiom after each pick doesn't fit a
+    controlled built-in.
+  - Three duplicate SELECT_CLASS constants deleted (SettingsDialogs,
+    SystemDialogs, LibraryManagerPage); single source of styling
+    is now `selectClass()` in SettingRow.
+- **Almost:** —
+- **Next:** PR 3 from `UI_POLISH_PLAN.md` — Phase D, the biggest PR.
+  Shrink `PerGameSettingsDrawer` (10 tabs → 2: Overview + Core) and
+  extract 7 Game-menu dialogs (`GameCoreOptionsDialog`,
+  `GameDisplayDialog`, `GameInputDialog`, `GameRewindDialog`,
+  `GameShadersDialog`, `MilestonesDialog`, `CheatsDialog`). Delete the
+  Region tab (no runtime effect; duplicates boxart RegionPicker
+  semantically). Depends on the `xl` size from PR 2 — Cheats /
+  Milestones / Input / Core options / Display all want the room.
+
 ## 2026-05-22 — UI polish PR 1 (Phase A cleanup, cross-system, not core-specific)
 
 Logged here because nds is the active core; the work itself is cross-cutting
