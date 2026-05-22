@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-05-22 — UI polish PR 1 (Phase A cleanup, cross-system, not core-specific)
+
+Logged here because nds is the active core; the work itself is cross-cutting
+UI shaped by `docs/UI_POLISH_PLAN.md` (Phase 0 of the kiosk plan). See
+`docs/UI_POLISH_PLAN.md` §1 for the full Phase A spec.
+
+- **Shipped:** PR 1 of 4 from the polish plan. `SettingsPage.tsx` →
+  `LibraryManagerPage.tsx` (heading, localStorage key, warn prefixes,
+  dead `moveRegion` helper removed). `SidebarView` discriminant
+  `"settings"` → `"library-manager"` across `App.tsx`, `LeftSidebar`,
+  `LibraryView`, `filter.ts`. Bottom Cores + Settings buttons on the
+  left sidebar deleted (collapse toggle preserved). Stale
+  `PerSystemSettingsPage` doc-comments repointed across `CoresPage`,
+  `PerGameSettingsDrawer`, `SystemBindingsEditor`. `docs/UI_AUDIT.md`
+  gains a staleness header pointing at the polish plan.
+- **Almost:** —
+- **Next:** PR 2 from `UI_POLISH_PLAN.md` — Phase B + C bundled
+  (Dialog primitive polish: new `sm/md/lg/xl/2xl` size scale,
+  `<DialogSection>` component, type-ramp updates; plus `SettingRow`
+  canonicalization: built-in `select/slider/toggle` controls,
+  `description` prop, `disabled` + `onReset` props, delete three
+  duplicate `SELECT_CLASS` constants. `DisplayDialog` migrates as
+  the reference).
+
 ## 2026-05-21 — Shared analog input infra Phases E + F + G (cross-system infra)
 
 - **Audit:** Operator asked "I thought analog input infra was done."
