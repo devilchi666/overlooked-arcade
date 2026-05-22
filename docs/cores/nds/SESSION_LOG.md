@@ -2,6 +2,63 @@
 
 ---
 
+## 2026-05-22 — UI polish PR 3 + PR 4 (Phases D + E, cross-system)
+
+Final two PRs of the polish-plan execution, bundled per operator request.
+Plan now fully shipped — `docs/UI_POLISH_PLAN.md` complete.
+
+- **Shipped:** PR 3 + PR 4 of 4 from `docs/UI_POLISH_PLAN.md`.
+  - **Phase D — drawer shrink + Game-menu dialog extraction:**
+    - New `GameDialogs.tsx` (~1733 lines) with seven focused
+      single-purpose dialogs: `GameCoreOptionsDialog`,
+      `GameDisplayDialog`, `GameInputDialog`, `GameRewindDialog`,
+      `GameShadersDialog`, `MilestonesDialog`, `CheatsDialog`. Shared
+      `useGameOverrides()` composable owns hydration + the patch
+      helper; each dialog uses the appropriate Dialog size from PR 2
+      (Cheats / Milestones / Input / Core options / Display at xl).
+    - `PerGameSettingsDrawer.tsx` (1933 lines, 10 tabs) collapsed to
+      `GamePropertiesDialog.tsx` (~225 lines) with only Overview +
+      Core in two `<DialogSection>`s at xl. Region tab deleted
+      entirely (no runtime effect; duplicated boxart RegionPicker
+      semantically). Drawer chrome (slide-in, tab strip, custom Esc
+      handler, custom backdrop) all gone — Dialog primitive handles
+      them uniformly.
+    - `App.tsx` Game ▾ menu rewires the 7 deep-link items to a single
+      discriminated `gameDialog` signal `{ kind, target }`. Properties
+      keeps opening the slim Properties dialog. Old "ROM patch…" menu
+      item retired (folded into Properties → Core); "Input…" takes
+      its slot.
+    - Cheats + Milestones implementations carried over largely
+      verbatim (4-stage cheat-search state machine + MilestoneEditor
+      draft pattern are fiddly enough that mechanical extraction is
+      the right risk profile). New behavior: `CheatsDialog`
+      auto-ends an in-flight cheat search if the dialog closes
+      mid-search (avoids orphaned Rust-side session).
+  - **Phase E — kiosk shell hooks:**
+    - `--kiosk` CLI flag added to `Cli` (clap). `parse_and_resolve()`
+      now returns `CliConfig { direct_launch, kiosk }` rather than
+      `Option<DirectLaunchConfig>` — keeps kiosk orthogonal to ROM
+      presence so the flag works alone for testing.
+    - `AppState.kiosk` + `get_kiosk_mode` Tauri command surface the
+      flag to the frontend.
+    - `LayoutStore` onMount: after hydrating `presentation.json` but
+      before `setHydrated(true)`, reads `get_kiosk_mode`; if true
+      forces `setPresentationMode("cabinet")`. The write-through
+      effect is gated on `hydrated()`, so this runtime override
+      doesn't persist to disk. Operator's on-disk preference is
+      preserved for the next library-mode launch.
+    - `chromeVisible()` memo added in `App.tsx` —
+      `!isDirectLaunch() && !gameMode()`. Zero behavior change today;
+      pre-wired so Phase 1 of the kiosk plan only has to extend the
+      memo body to gate menu bar + toolbar + sidebars off when a
+      future PresentationMode variant lands.
+- **Almost:** —
+- **Next:** Polish plan complete. Kiosk Phase 1 (the actual kiosk
+  shell — `docs/KIOSK_PLAN.md`) is the next polish-adjacent block but
+  not next-up; we return to per-core work. `docs/ACTIVE_CORE.md` is
+  nds — pick up operator validation for melonDS (Phase 1 BIOS
+  pre-check + cart-shape, NSMB DS + Phantom Hourglass stylus test).
+
 ## 2026-05-22 — UI polish PR 2 (Phases B + C, cross-system, not core-specific)
 
 Continues the polish-plan execution. PR 1 (Phase A) landed earlier today.
