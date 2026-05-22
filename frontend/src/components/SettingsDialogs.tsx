@@ -7,12 +7,13 @@
 // having to lift those lists into shared state.
 
 import {
+  createMemo,
   createResource,
-  For,
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { Dialog } from "../layout/Dialog";
+import { Dialog, DialogSection } from "../layout/Dialog";
+import SettingRow from "./SettingRow";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -28,9 +29,6 @@ import {
   type WindowMode,
 } from "../settings/store";
 import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
-
-const SELECT_CLASS =
-  "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-oa-ink-dim)";
 
 const REWIND_INTERVAL_OPTIONS: readonly number[] = [1, 2, 3, 6, 10, 15, 30];
 const REWIND_BUFFER_OPTIONS: readonly number[] = [8, 16, 32, 64, 128, 256, 512];
@@ -55,86 +53,84 @@ export const DisplayDialog: Component<{
     }
   });
 
+  const scalingOptions = SCALING_OPTIONS.map((m) => ({
+    value: m,
+    label: SCALING_MODE_LABELS[m],
+  }));
+  const windowOptions = WINDOW_OPTIONS.map((m) => ({
+    value: m,
+    label: WINDOW_MODE_LABELS[m],
+  }));
+  const monitorOptions = createMemo(() => [
+    { value: "current", label: "Current monitor" },
+    ...(monitors() ?? []).map((m) => ({
+      value: String(m.index),
+      label: monitorLabel(m),
+    })),
+  ]);
+
   return (
-    <Dialog open={props.open} onClose={props.onClose} title="Display" subtitle="OA-wide" size="md">
-      <div class="flex flex-col gap-3">
-        <label class="block space-y-1">
-          <span class="text-xs text-(--color-oa-ink-dim)">Scaling mode</span>
-          <select
-            value={props.settings.scalingMode()}
-            onChange={(e) =>
-              props.settings.setScalingMode(e.currentTarget.value as ScalingMode)
-            }
-            class={SELECT_CLASS}
-          >
-            <For each={SCALING_OPTIONS}>
-              {(m) => <option value={m}>{SCALING_MODE_LABELS[m]}</option>}
-            </For>
-          </select>
-        </label>
-
-        <label class="block space-y-1">
-          <span class="text-xs text-(--color-oa-ink-dim)">Window mode</span>
-          <select
-            value={props.settings.windowMode()}
-            onChange={(e) =>
-              props.settings.setWindowMode(e.currentTarget.value as WindowMode)
-            }
-            class={SELECT_CLASS}
-          >
-            <For each={WINDOW_OPTIONS}>
-              {(m) => <option value={m}>{WINDOW_MODE_LABELS[m]}</option>}
-            </For>
-          </select>
-        </label>
-
-        <label class="block space-y-1">
-          <span class="text-xs text-(--color-oa-ink-dim)">Monitor (for borderless)</span>
-          <select
-            value={
-              props.settings.monitorIndex() === null
-                ? "current"
-                : String(props.settings.monitorIndex())
-            }
-            onChange={(e) => {
-              const v = e.currentTarget.value;
-              props.settings.setMonitorIndex(v === "current" ? null : Number(v));
+    <Dialog open={props.open} onClose={props.onClose} title="Display" subtitle="OA-wide" size="xl">
+      <div class="flex flex-col gap-5">
+        <DialogSection title="Scaling">
+          <SettingRow
+            label="Scaling mode"
+            inherited={null}
+            overridden={false}
+            select={{
+              value: props.settings.scalingMode(),
+              options: scalingOptions,
+              onChange: (v) => props.settings.setScalingMode(v as ScalingMode),
             }}
-            class={SELECT_CLASS}
-          >
-            <option value="current">Current monitor</option>
-            <For each={monitors() ?? []}>
-              {(m) => <option value={String(m.index)}>{monitorLabel(m)}</option>}
-            </For>
-          </select>
-        </label>
+          />
+        </DialogSection>
 
-        <label class="block space-y-1">
-          <span class="text-xs text-(--color-oa-ink-dim)">Run-ahead frames</span>
-          <div class="flex items-center gap-3">
-            <input
-              type="range"
-              min="0"
-              max="5"
-              step="1"
-              value={props.settings.runAheadFrames()}
-              onInput={(e) => {
-                const v = Number(e.currentTarget.value);
+        <DialogSection title="Window">
+          <SettingRow
+            label="Window mode"
+            inherited={null}
+            overridden={false}
+            select={{
+              value: props.settings.windowMode(),
+              options: windowOptions,
+              onChange: (v) => props.settings.setWindowMode(v as WindowMode),
+            }}
+          />
+          <SettingRow
+            label="Monitor"
+            hint="For borderless"
+            inherited={null}
+            overridden={false}
+            select={{
+              value:
+                props.settings.monitorIndex() === null
+                  ? "current"
+                  : String(props.settings.monitorIndex()),
+              options: monitorOptions(),
+              onChange: (v) =>
+                props.settings.setMonitorIndex(v === "current" ? null : Number(v)),
+            }}
+          />
+        </DialogSection>
+
+        <DialogSection title="Run-ahead">
+          <SettingRow
+            label="Run-ahead frames"
+            inherited={null}
+            overridden={false}
+            slider={{
+              min: 0,
+              max: 5,
+              step: 1,
+              value: props.settings.runAheadFrames(),
+              format: (v) => (v === 0 ? "off" : `+${v}f`),
+              onInput: (v) => {
                 if (Number.isInteger(v)) props.settings.setRunAheadFrames(v);
-              }}
-              class="flex-1"
-            />
-            <span class="font-mono text-sm w-12 text-right tabular-nums">
-              {props.settings.runAheadFrames() === 0
-                ? "off"
-                : `+${props.settings.runAheadFrames()}f`}
-            </span>
-          </div>
-          <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-            Reduces perceived input latency by N frames. Each costs 1 save_state + 1 run_frame + 1
-            load_state per frame. Skipped during scrub / TAS / pause.
-          </span>
-        </label>
+              },
+            }}
+            description="Reduces perceived input latency by N frames. Each costs one save_state + one run_frame + one load_state per frame. Skipped during scrub / TAS / pause."
+          />
+        </DialogSection>
       </div>
     </Dialog>
   );
@@ -155,32 +151,27 @@ export const AudioDialog: Component<{
     }
   });
 
+  const deviceOptions = createMemo(() => [
+    { value: "__default__", label: "System default" },
+    ...(audioDevices() ?? []).map((d) => ({
+      value: d.name,
+      label: `${d.name}${d.isDefault ? " (default)" : ""}`,
+    })),
+  ]);
+
   return (
     <Dialog open={props.open} onClose={props.onClose} title="Audio" subtitle="OA-wide" size="sm">
-      <label class="block space-y-1">
-        <span class="text-xs text-(--color-oa-ink-dim)">Output device</span>
-        <select
-          value={props.settings.audioDevice() ?? "__default__"}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            props.settings.setAudioDevice(v === "__default__" ? null : v);
-          }}
-          class={SELECT_CLASS}
-        >
-          <option value="__default__">System default</option>
-          <For each={audioDevices() ?? []}>
-            {(d) => (
-              <option value={d.name}>
-                {d.name}
-                {d.isDefault ? " (default)" : ""}
-              </option>
-            )}
-          </For>
-        </select>
-        <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          Takes effect immediately — the running stream swaps in place.
-        </span>
-      </label>
+      <SettingRow
+        label="Output device"
+        inherited={null}
+        overridden={false}
+        select={{
+          value: props.settings.audioDevice() ?? "__default__",
+          options: deviceOptions(),
+          onChange: (v) => props.settings.setAudioDevice(v === "__default__" ? null : v),
+        }}
+        description="Takes effect immediately — the running stream swaps in place."
+      />
     </Dialog>
   );
 };
@@ -191,75 +182,60 @@ export const GameplayDialog: Component<{
   open: boolean;
   onClose: () => void;
   settings: SettingsStore;
-}> = (props) => (
-  <Dialog open={props.open} onClose={props.onClose} title="Gameplay" subtitle="OA-wide rewind defaults" size="md">
-    <div class="space-y-3">
-      <p class="text-xs leading-relaxed text-(--color-oa-ink-dim)">
-        Hold <kbd class="rounded border border-white/15 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[0.65rem] text-(--color-oa-ink)">Backspace</kbd>{" "}
-        during gameplay to walk emulation backwards. Snapshots captured every N frames into a
-        memory-bounded ring; older snapshots evict when the cap is reached.
-      </p>
+}> = (props) => {
+  const intervalOptions = REWIND_INTERVAL_OPTIONS.map((n) => ({
+    value: String(n),
+    label: `${n === 1 ? "Every frame" : `Every ${n} frames`} (~${Math.round((n / 60) * 1000)} ms at 60 fps)`,
+  }));
+  const bufferOptions = REWIND_BUFFER_OPTIONS.map((mb) => ({
+    value: String(mb),
+    label: `${mb} MB`,
+  }));
 
-      <label class="flex cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm transition hover:bg-white/[0.06]">
-        <input
-          type="checkbox"
-          checked={props.settings.rewindEnabled()}
-          onChange={(e) => props.settings.setRewindEnabled(e.currentTarget.checked)}
-          class="size-4 cursor-pointer accent-(--color-system-accent)"
+  return (
+    <Dialog open={props.open} onClose={props.onClose} title="Gameplay" subtitle="OA-wide rewind defaults" size="md">
+      <DialogSection
+        title="Rewind"
+        description="Hold Backspace during gameplay to walk emulation backwards. Snapshots captured every N frames into a memory-bounded ring; older snapshots evict when the cap is reached."
+      >
+        <SettingRow
+          label="Enable rewind"
+          inherited={null}
+          overridden={false}
+          toggle={{
+            checked: props.settings.rewindEnabled(),
+            onChange: (v) => props.settings.setRewindEnabled(v),
+          }}
+          description="Captures save-state snapshots while playing."
         />
-        <span class="flex-1">
-          <span class="block text-(--color-oa-ink)">Enable rewind</span>
-          <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-            Captures save-state snapshots while playing
-          </span>
-        </span>
-      </label>
-
-      <label class="block space-y-1">
-        <span class="text-xs text-(--color-oa-ink-dim)">Capture interval (frames between snapshots)</span>
-        <select
-          value={String(props.settings.rewindCaptureIntervalFrames())}
-          onChange={(e) =>
-            props.settings.setRewindCaptureIntervalFrames(Number(e.currentTarget.value))
-          }
-          class={SELECT_CLASS}
+        <SettingRow
+          label="Capture interval"
+          inherited={null}
+          overridden={false}
           disabled={!props.settings.rewindEnabled()}
-        >
-          <For each={REWIND_INTERVAL_OPTIONS}>
-            {(n) => (
-              <option value={String(n)}>
-                {n === 1 ? "Every frame" : `Every ${n} frames`} (~{Math.round((n / 60) * 1000)} ms at 60 fps)
-              </option>
-            )}
-          </For>
-        </select>
-        <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          Lower = smoother rewind, more CPU + RAM. Higher = coarser rewind, cheaper.
-        </span>
-      </label>
-
-      <label class="block space-y-1">
-        <span class="text-xs text-(--color-oa-ink-dim)">Buffer cap</span>
-        <select
-          value={String(props.settings.rewindBufferMegabytes())}
-          onChange={(e) =>
-            props.settings.setRewindBufferMegabytes(Number(e.currentTarget.value))
-          }
-          class={SELECT_CLASS}
+          select={{
+            value: String(props.settings.rewindCaptureIntervalFrames()),
+            options: intervalOptions,
+            onChange: (v) => props.settings.setRewindCaptureIntervalFrames(Number(v)),
+          }}
+          description="Lower = smoother rewind, more CPU + RAM. Higher = coarser rewind, cheaper."
+        />
+        <SettingRow
+          label="Buffer cap"
+          inherited={null}
+          overridden={false}
           disabled={!props.settings.rewindEnabled()}
-        >
-          <For each={REWIND_BUFFER_OPTIONS}>
-            {(mb) => <option value={String(mb)}>{mb} MB</option>}
-          </For>
-        </select>
-        <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          Hard cap on RAM. Cores with large save states (SNES ~300 KB / snap) get fewer
-          seconds of history per MB.
-        </span>
-      </label>
-    </div>
-  </Dialog>
-);
+          select={{
+            value: String(props.settings.rewindBufferMegabytes()),
+            options: bufferOptions,
+            onChange: (v) => props.settings.setRewindBufferMegabytes(Number(v)),
+          }}
+          description="Hard cap on RAM. Cores with large save states (SNES ~300 KB / snap) get fewer seconds of history per MB."
+        />
+      </DialogSection>
+    </Dialog>
+  );
+};
 
 // --- Shaders ------------------------------------------------------------
 
@@ -267,53 +243,43 @@ export const ShadersDialog: Component<{
   open: boolean;
   onClose: () => void;
   settings: SettingsStore;
-}> = (props) => (
-  <Dialog open={props.open} onClose={props.onClose} title="Shaders" subtitle="OA-wide preset + bloom" size="md">
-    <div class="flex flex-col gap-3">
-      <label class="block space-y-1">
-        <span class="text-xs text-(--color-oa-ink-dim)">Shader preset</span>
-        <select
-          value={props.settings.shaderPreset()}
-          onChange={(e) => props.settings.setShaderPreset(e.currentTarget.value)}
-          class={SELECT_CLASS}
-        >
-          <option value="system-default">{shaderPresetLabel("system-default")}</option>
-          <For each={shaderPresets()}>
-            {(p) => <option value={p.name}>{p.displayName}</option>}
-          </For>
-        </select>
-        <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          Applies during the final blit. Per-system + per-game overrides win at launch.
-        </span>
-      </label>
+}> = (props) => {
+  const presetOptions = createMemo(() => [
+    { value: "system-default", label: shaderPresetLabel("system-default") },
+    ...shaderPresets().map((p) => ({ value: p.name, label: p.displayName })),
+  ]);
 
-      <label class="block space-y-1">
-        <span class="text-xs text-(--color-oa-ink-dim)">Phosphor bloom amount</span>
-        <div class="flex items-center gap-3">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={props.settings.bloomAmount()}
-            onInput={(e) => {
-              const v = Number(e.currentTarget.value);
-              if (Number.isFinite(v)) props.settings.setBloomAmount(v);
-            }}
-            class="flex-1"
-          />
-          <span class="font-mono text-sm w-12 text-right tabular-nums">
-            {props.settings.bloomAmount().toFixed(2)}
-          </span>
-        </div>
-        <span class="block text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          OA-wide source/blur mix. Only meaningful when the active preset's base is Phosphor.
-          Per-system + per-game overrides take precedence.
-        </span>
-      </label>
-    </div>
-  </Dialog>
-);
+  return (
+    <Dialog open={props.open} onClose={props.onClose} title="Shaders" subtitle="OA-wide preset + bloom" size="md">
+      <div class="flex flex-col gap-4">
+        <SettingRow
+          label="Shader preset"
+          inherited={null}
+          overridden={false}
+          select={{
+            value: props.settings.shaderPreset(),
+            options: presetOptions(),
+            onChange: (v) => props.settings.setShaderPreset(v),
+          }}
+          description="Applies during the final blit. Per-system + per-game overrides win at launch."
+        />
+        <SettingRow
+          label="Phosphor bloom amount"
+          inherited={null}
+          overridden={false}
+          slider={{
+            min: 0,
+            max: 1,
+            step: 0.05,
+            value: props.settings.bloomAmount(),
+            onInput: (v) => props.settings.setBloomAmount(v),
+          }}
+          description="OA-wide source/blur mix. Only meaningful when the active preset's base is Phosphor. Per-system + per-game overrides take precedence."
+        />
+      </div>
+    </Dialog>
+  );
+};
 
 // --- Shell mode label helper (Settings menu uses MenuRadio directly) ----
 
