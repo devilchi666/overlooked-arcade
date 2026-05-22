@@ -68,6 +68,26 @@ jobs:
             libxtst-dev \
             pkg-config
 
+      # Windows builds the oa-shell crate, whose tauri::generate_context!()
+      # macro embeds the frontend dist into the binary at compile time
+      # (frontendDist: "../../frontend/dist" in tauri.conf.json). Without a
+      # prior Vite build the macro panics with "this path doesn't exist".
+      # macOS + Linux jobs exclude oa-shell, so they don't need this.
+      - name: Setup Node.js
+        if: runner.os == 'Windows'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        if: runner.os == 'Windows'
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
       - name: cargo build
         run: cargo build ${{ matrix.cargo-args }}
 
