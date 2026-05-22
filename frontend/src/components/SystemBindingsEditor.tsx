@@ -22,9 +22,9 @@ import AnalogBindingsSection from "./AnalogBindingsSection";
 // Per-system input bindings editor.
 //
 // Extracted from the original SystemPage (which has been retired in favor
-// of sidebar → filtered library) so the bindings UI can live on the
-// PerSystemSettingsPage Input tab alongside the rest of the per-system
-// settings. Same capture flow as before: click a cell, press a key (or
+// of sidebar → filtered library) so the bindings UI can live inside
+// SystemBindingsDialog alongside the rest of the per-system settings.
+// Same capture flow as before: click a cell, press a key (or
 // gamepad button), the binding is saved + pushed to the running emu's
 // poller. Right-click clears. Escape cancels capture.
 //
