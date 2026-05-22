@@ -124,7 +124,8 @@ fn metadat_system_name_for(system_id: &str, ext: &str) -> Option<&'static str> {
         "nes" => "Nintendo - Nintendo Entertainment System",
         "snes" => "Nintendo - Super Nintendo Entertainment System",
         "n64" => "Nintendo - Nintendo 64",
-        "gb" => "Nintendo - Game Boy", // GBC entries merge into GB upstream-side; one fetch covers both
+        "gb" => "Nintendo - Game Boy", // DMG-only after the gb/gbc registry split
+        "gbc" => "Nintendo - Game Boy Color",
         "gba" => "Nintendo - Game Boy Advance",
         "nds" => "Nintendo - Nintendo DS",
         "virtualboy" => "Nintendo - Virtual Boy",

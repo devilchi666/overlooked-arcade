@@ -422,7 +422,7 @@ mod tests {
             "jaguar", "3do", "pcfx",
             "n64", "gamecube", "dreamcast",
             "psp", "ps2", "nds",
-            "sms", "gamegear", "gb", "gba", "2600",
+            "sms", "gamegear", "gb", "gbc", "gba", "2600",
             "coleco", "intv", "o2", "channelf",
             "vectrex", "virtualboy", "wonderswan",
             "5200", "pokemini",
@@ -450,24 +450,35 @@ mod tests {
         }
     }
 
-    /// Multi-variant systems (gb = DMG + CGB; wonderswan = WS + WS
-    /// Color) must return both repos so a Color-only title still
-    /// resolves covers. Lock in the expected repo names so a future
-    /// edit doesn't silently drop one half.
+    /// Multi-variant systems (wonderswan = WS + WS Color) must return
+    /// both repos so a Color-only title still resolves covers. gb (DMG)
+    /// and gbc (CGB) are now separate OA slugs, each returning their
+    /// own single repo — locked separately below.
     #[test]
     fn multi_variant_systems_return_both_repos() {
-        let gb = super::repos_for_system_id("gb");
-        assert_eq!(
-            gb,
-            &["Nintendo_-_Game_Boy", "Nintendo_-_Game_Boy_Color"],
-            "gb must return DMG + CGB repos (DMG first as primary)"
-        );
-
         let ws = super::repos_for_system_id("wonderswan");
         assert_eq!(
             ws,
             &["Bandai_-_WonderSwan", "Bandai_-_WonderSwan_Color"],
             "wonderswan must return WS + WS Color repos (mono first as primary)"
+        );
+    }
+
+    /// gb (DMG) and gbc (CGB) are sibling slugs sharing the Gambatte
+    /// core but resolving to distinct libretro-thumbnails repos. Locked
+    /// here so a future edit doesn't accidentally re-merge them or drop
+    /// the CGB-side repo.
+    #[test]
+    fn gb_and_gbc_resolve_to_their_own_thumbnails_repos() {
+        assert_eq!(
+            super::repos_for_system_id("gb"),
+            &["Nintendo_-_Game_Boy"],
+            "gb (DMG slug) must resolve to the DMG-only repo"
+        );
+        assert_eq!(
+            super::repos_for_system_id("gbc"),
+            &["Nintendo_-_Game_Boy_Color"],
+            "gbc (CGB slug) must resolve to the CGB-only repo"
         );
     }
 
@@ -669,12 +680,20 @@ mod tests {
             &["Nintendo_-_Nintendo_Entertainment_System"]
         );
 
-        // Multi-repo systems still return both repos via the fallback.
+        // gb (DMG) now resolves to its own single repo; gbc is the
+        // companion slug for CGB. Fallback path returns the per-slug repo.
         e.system_id = "gb".to_string();
         e.file_path = "/nope/some.gb".to_string();
         assert_eq!(
             super::repos_for_entry(&e),
-            &["Nintendo_-_Game_Boy", "Nintendo_-_Game_Boy_Color"]
+            &["Nintendo_-_Game_Boy"]
+        );
+
+        e.system_id = "gbc".to_string();
+        e.file_path = "/nope/some.gbc".to_string();
+        assert_eq!(
+            super::repos_for_entry(&e),
+            &["Nintendo_-_Game_Boy_Color"]
         );
     }
 }
@@ -1205,15 +1224,15 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
             "Bandai_-_WonderSwan",
             "Bandai_-_WonderSwan_Color",
         ],
-        // Game Boy + Game Boy Color share the OA system_id `gb`;
-        // libretro-thumbnails keeps them in separate repos. DMG repo
-        // listed first as primary (most retail-era GB libraries are
-        // DMG-heavy) but a CGB-only title resolves the CGB repo via
-        // the same `gb` system_id. Documented in docs/cores/gb/DECISIONS.md.
-        "gb" => &[
-            "Nintendo_-_Game_Boy",
-            "Nintendo_-_Game_Boy_Color",
-        ],
+        // Game Boy (DMG) and Game Boy Color (CGB) are now separate OA
+        // slugs (`gb` + `gbc`), one sidebar entry each — companion to the
+        // libretro-thumbnails split between Nintendo_-_Game_Boy and
+        // Nintendo_-_Game_Boy_Color repos. Each slug resolves to its own
+        // single repo; cross-resolution (a CGB-only title scanned as `gb`)
+        // isn't a concern now that the registry routes .gb → gb and
+        // .gbc → gbc unambiguously.
+        "gb" => &["Nintendo_-_Game_Boy"],
+        "gbc" => &["Nintendo_-_Game_Boy_Color"],
         // Game Boy Advance — single thumbnails repo; no multi-region or
         // hardware-variant split like `gb` had.
         "gba" => &["Nintendo_-_Game_Boy_Advance"],

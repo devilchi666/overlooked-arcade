@@ -280,12 +280,15 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
             subdir: "metadat/no-intro",
             basename: "Sega - Game Gear",
         }],
-        // Game Boy + Game Boy Color share one slug; libretro-database keeps
-        // them in separate no-intro dats. We merge both into the single
-        // `gb` corpus via `fetch_and_parse_all` so `.gb` and `.gbc` dumps
-        // both match against the right canonical names.
+        // Game Boy (DMG) and Game Boy Color (CGB) are now separate OA
+        // slugs after the sidebar-tier registry split. Each routes to
+        // its own libretro-database no-intro dat — .gb dumps match against
+        // the DMG corpus, .gbc dumps against the CGB corpus. (Before the
+        // split, both dats were merged into a combined `gb` corpus.)
         "gb" => &[
             DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy" },
+        ],
+        "gbc" => &[
             DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy Color" },
         ],
         // Game Boy Advance — single no-intro dat covers the entire library.
@@ -1755,7 +1758,7 @@ game (
             "jaguar", "3do", "pcfx",
             "n64", "gamecube", "dreamcast",
             "psp", "ps2", "nds",
-            "sms", "gamegear", "gb", "gba", "2600",
+            "sms", "gamegear", "gb", "gbc", "gba", "2600",
             "coleco", "intv", "o2", "channelf",
             "vectrex", "virtualboy", "wonderswan",
             "5200", "pokemini",

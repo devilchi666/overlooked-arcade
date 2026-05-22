@@ -1674,7 +1674,7 @@ pub fn bit_for(system_id: &str, button: &str) -> Option<u32> {
         "nds" => nds_bit_for(button),
         "sms" => sms_bit_for(button),
         "gamegear" => gamegear_bit_for(button),
-        "gb" => gb_bit_for(button),
+        "gb" | "gbc" => gb_bit_for(button),
         "gba" => gba_bit_for(button),
         "2600" => atari2600_bit_for(button),
         "5200" => atari5200_bit_for(button),
@@ -1718,7 +1718,7 @@ pub fn buttons_for(system_id: &str) -> &'static [(&'static str, u32)] {
         "nds" => NDS_BUTTONS,
         "sms" => SMS_BUTTONS,
         "gamegear" => GAMEGEAR_BUTTONS,
-        "gb" => GB_BUTTONS,
+        "gb" | "gbc" => GB_BUTTONS,
         "gba" => GBA_BUTTONS,
         "2600" => ATARI2600_BUTTONS,
         "5200" => ATARI5200_BUTTONS,
@@ -2267,7 +2267,7 @@ pub fn to_libretro_bits(system_id: &str, b: u32) -> u32 {
         "nds" => nds_to_libretro_bits(b),
         "sms" => sms_to_libretro_bits(b),
         "gamegear" => gamegear_to_libretro_bits(b),
-        "gb" => gb_to_libretro_bits(b),
+        "gb" | "gbc" => gb_to_libretro_bits(b),
         "gba" => gba_to_libretro_bits(b),
         "2600" => atari2600_to_libretro_bits(b),
         "5200" => atari5200_to_libretro_bits(b),
@@ -3540,7 +3540,7 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "nds" => Some(default_nds_bindings()),
         "sms" => Some(default_sms_bindings()),
         "gamegear" => Some(default_gamegear_bindings()),
-        "gb" => Some(default_gb_bindings()),
+        "gb" | "gbc" => Some(default_gb_bindings()),
         "gba" => Some(default_gba_bindings()),
         "2600" => Some(default_atari2600_bindings()),
         "5200" => Some(default_atari5200_bindings()),
@@ -3706,7 +3706,7 @@ mod tests {
         // Cover every registered system's defaults — a new system that
         // ships a default keyboard name device_query doesn't recognize
         // would silently fail to bind without this check.
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.keyboard {
@@ -3721,7 +3721,7 @@ mod tests {
 
     #[test]
     fn default_pads_round_trip_to_button() {
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.gamepad {
@@ -3789,6 +3789,10 @@ mod tests {
         // gb → identity (libretro-aligned by construction).
         assert_eq!(to_libretro_bits("gb", gb::A), gb::A);
         assert_eq!(to_libretro_bits("gb", gb::START), gb::START);
+        // gbc reuses gb's bit layout + remap entirely (same Gambatte core,
+        // same hardware buttons). Identity dispatch by construction.
+        assert_eq!(to_libretro_bits("gbc", gb::A), gb::A);
+        assert_eq!(to_libretro_bits("gbc", gb::START), gb::START);
         // gba → identity (libretro-aligned by construction).
         assert_eq!(to_libretro_bits("gba", gba::A), gba::A);
         assert_eq!(to_libretro_bits("gba", gba::L), gba::L);
@@ -3870,7 +3874,7 @@ mod tests {
         const LIBRETRO_DOWN: u32  = 1 << 5;
         const LIBRETRO_LEFT: u32  = 1 << 6;
         const LIBRETRO_RIGHT: u32 = 1 << 7;
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
             let up    = bit_for(sys, "UP").expect("UP bit registered");
             let down  = bit_for(sys, "DOWN").expect("DOWN bit registered");
             let left  = bit_for(sys, "LEFT").expect("LEFT bit registered");
@@ -3962,6 +3966,9 @@ mod tests {
             ("sms", "B1", "B2"),
             ("gamegear", "B1", "B2"),
             ("gb", "A", "B"),
+            // gbc shares gb's hardware buttons (companion slug, same
+            // Gambatte core). A primary, B secondary.
+            ("gbc", "A", "B"),
             ("gba", "A", "B"),
             ("coleco", "L_FIRE", "R_FIRE"),
             ("intv", "LOWER_L", "LOWER_R"),

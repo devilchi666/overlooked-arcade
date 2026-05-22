@@ -69,18 +69,30 @@
   --color-system-glow: oklch(0.78 0.18 80 / 0.35);
 }
 
-/* Nintendo Game Boy / Game Boy Color — muted DMG pea-green pulled
-   directly from the iconic DMG screen color. Hue 145° sits 15° away
-   from Game Gear's 130° yellow-green AND uses a lower chroma (0.13 vs
-   0.18) so the two read as decisively distinct families in a mixed
-   library: GG = bright yellow-green, GB = muted forest pea-soup green.
-   Period-correct for the 1989 DMG launch + still recognizable for the
-   CGB era since GBC's colored translucent shells weren't the dominant
-   visual association the way the green screen was. */
+/* Nintendo Game Boy (DMG) — muted pea-green pulled directly from the
+   iconic DMG screen color. Hue 145° sits 15° away from Game Gear's
+   130° yellow-green AND uses a lower chroma (0.13 vs 0.18) so the two
+   read as decisively distinct families in a mixed library: GG = bright
+   yellow-green, GB = muted forest pea-soup green. Period-correct for
+   the 1989 DMG launch. Game Boy Color has its own data-system block
+   below — translucent-cart berry/magenta to evoke the Atomic Purple /
+   Berry / Grape colorways the CGB era was actually defined by. */
 [data-system="gb"] {
   --color-system-accent: oklch(0.62 0.13 145);
   --color-system-accent-soft: oklch(0.93 0.04 145);
   --color-system-glow: oklch(0.62 0.13 145 / 0.35);
+}
+
+/* Nintendo Game Boy Color — translucent-cart magenta evoking the
+   Atomic Purple / Berry / Grape colorways that defined the CGB launch
+   identity (the cart shells, not the DMG-green screen, are what GBC
+   players actually picture). Hue 320° lands in an open band — 25°
+   warmer than Lynx purple (290°) and 50° from SNES violet (270°), so
+   the trio (Lynx / SNES / GBC) read as clearly separate purples. */
+[data-system="gbc"] {
+  --color-system-accent: oklch(0.68 0.20 320);
+  --color-system-accent-soft: oklch(0.94 0.05 320);
+  --color-system-glow: oklch(0.68 0.20 320 / 0.35);
 }
 
 /* GCE Vectrex — bright phosphor green evoking the iconic vector-display
@@ -492,4 +504,27 @@
   --color-system-accent: oklch(0.65 0.16 180);
   --color-system-accent-soft: oklch(0.93 0.05 180);
   --color-system-glow: oklch(0.65 0.16 180 / 0.35);
+}
+
+/* Microsoft MSX — royal blue evoking the era-shared MSX-standard branding
+   (the original 1983 ASCII / Microsoft logo was a strong blue, and most
+   MSX-era marketing in Japan + Europe used a saturated blue identity).
+   Hue 250° sits in the open band between SNES violet (270°) and segacd
+   sapphire (235°) — distinct from both at a glance. L=0.55 lands the
+   accent in the "deep cool tone" tier alongside Saturn (250° at L=0.45)
+   without colliding; chroma 0.18 keeps it readable on dark surfaces. */
+[data-system="msx"] {
+  --color-system-accent: oklch(0.55 0.18 250);
+  --color-system-accent-soft: oklch(0.92 0.05 250);
+  --color-system-glow: oklch(0.55 0.18 250 / 0.35);
+}
+
+/* Microsoft MSX2 — same blue family as MSX1 (computer family read), one
+   lightness step brighter (L=0.65 vs MSX L=0.55) so a mixed library shows
+   the two as siblings with the MSX2 being the "newer / brighter" entry.
+   Hue holds at 250° because they're the same hardware lineage. */
+[data-system="msx2"] {
+  --color-system-accent: oklch(0.65 0.18 250);
+  --color-system-accent-soft: oklch(0.93 0.05 250);
+  --color-system-glow: oklch(0.65 0.18 250 / 0.35);
 }
