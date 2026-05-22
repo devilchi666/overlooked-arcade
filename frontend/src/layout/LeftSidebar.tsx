@@ -2,20 +2,31 @@ import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { LayoutStore } from "./state";
+import type { PlatformNode, ContainerNode, ViewNode } from "../views/types";
+import { parsePlatformNodeId, platformNodeIdFor } from "../views/defaults";
+import type { ViewsStore } from "../views/store";
 
-/// Which top-level surface the main pane is showing. `all` and `system` are
-/// library views (filtered or not); `library-manager` and `cores` are the
-/// two routed full pages. Per-system settings live in dialogs now, not a
-/// page — there is no longer a deep-link tab discriminant.
+/// Which top-level surface the main pane is showing. `all` and `view-node`
+/// are library views (filtered or not); `library-manager` and `cores` are
+/// the two routed full pages. Per-system settings live in dialogs now,
+/// not a page — there is no longer a deep-link tab discriminant.
+///
+/// `view-node` replaces the old `system` variant (PR-β fold): navigation
+/// is now a pointer into the active view's tree (`viewId` + `nodeId`),
+/// not a bare SystemId. The runtime resolves filterable SystemIds via
+/// `resolveNodeSystemIds` (views/resolver.ts). The flat-system
+/// discriminant is removed, not aliased — TypeScript catches any missed
+/// call site.
 export type SidebarView =
   | { kind: "all" }
-  | { kind: "system"; id: SystemId }
+  | { kind: "view-node"; viewId: string; nodeId: string }
   | { kind: "library-manager" }
   | { kind: "cores" };
 
 type Props = {
   layout: LayoutStore;
   library: LibraryStore;
+  views: ViewsStore;
   currentView: SidebarView;
   onNavigate: (view: SidebarView) => void;
   /// Right-click on a system entry opens the SystemContextMenu anchored
@@ -27,29 +38,27 @@ type Props = {
 
 const DRAG_MIME = "application/x-oa-system";
 
-/// Reconcile layout.systemOrder() against the live registry. Returns systems
-/// in user-defined order, with any newly-registered systems appended in
-/// their registry order (so adding a system later doesn't disappear it).
-function orderedSystemIds(
-  registry: SystemId[],
-  userOrder: string[],
-): SystemId[] {
-  const registrySet = new Set(registry);
-  const result: SystemId[] = [];
-  const seen = new Set<string>();
-  for (const id of userOrder) {
-    if (registrySet.has(id as SystemId) && !seen.has(id)) {
-      result.push(id as SystemId);
-      seen.add(id);
+/// PR-β flat render — walks the active view's tree and collects every
+/// PlatformNode together with the id of the container that holds it.
+/// Drag-reorder uses `parentId` to decide whether a drop should be
+/// committed (same-parent reorders via ViewsStore.reorderChildren;
+/// different-parent drops are silent no-ops — cross-container drag
+/// lands in PR-γ).
+type FlatLeaf = { leaf: PlatformNode; parentId: string };
+
+function collectFlatLeaves(root: ContainerNode): FlatLeaf[] {
+  const out: FlatLeaf[] = [];
+  function walk(container: ContainerNode): void {
+    for (const child of container.children) {
+      if (child.kind === "platform") {
+        out.push({ leaf: child, parentId: container.id });
+      } else if (child.kind === "container") {
+        walk(child);
+      }
     }
   }
-  for (const id of registry) {
-    if (!seen.has(id)) {
-      result.push(id);
-      seen.add(id);
-    }
-  }
-  return result;
+  walk(root);
+  return out;
 }
 
 /**
@@ -59,9 +68,10 @@ function orderedSystemIds(
  *     Pinned to the top, not reorderable. For Phase 2.5 only "All" navigates;
  *     others are placeholders until the feature lands.
  *
- *   Systems — one entry per registered SystemId. Counts pulled from the
- *     library store. Drag-to-reorder is deferred to a follow-up slice; for
- *     now display order matches `Object.keys(systemThemes)`.
+ *   Systems — one entry per platform leaf in the active view's tree.
+ *     PR-β renders this flat (DFS-flattened active view leaves); PR-γ
+ *     replaces the flat render with the recursive tree per
+ *     SIDEBAR_TIER_PLAN.md §2.5 → §3.1.
  *
  *   Playlists — section header + create-button. No items yet.
  *   Smart Views — section header + create-button. No items yet.
@@ -72,48 +82,121 @@ function orderedSystemIds(
  */
 const LeftSidebar: Component<Props> = (props) => {
   const isCollapsed = () => props.layout.leftSidebarCollapsed();
-  const registryIds = createMemo(() => Object.keys(systemThemes) as SystemId[]);
+
+  /// The currently-selected platform leaf, if any. Drives the
+  /// always-visible-while-active filter rule and the per-row active
+  /// highlight. Resolution mirrors viewToSystemId in App.tsx — node
+  /// lookup with a synthesized-leaf fallback for deep-links pointing
+  /// outside the active view's tree.
+  const activeSystemId = createMemo<SystemId | null>(() => {
+    const cv = props.currentView;
+    if (cv.kind !== "view-node") return null;
+    const view = props.views.activeView();
+    if (!view || view.id !== cv.viewId) {
+      return parsePlatformNodeId(cv.nodeId);
+    }
+    for (const { leaf } of allLeaves()) {
+      if (leaf.id === cv.nodeId) return leaf.systemId;
+    }
+    return parsePlatformNodeId(cv.nodeId);
+  });
+
+  /// Every platform leaf across the active view, with its container
+  /// parent id (used by drag-reorder for same-parent gating).
+  const allLeaves = createMemo<FlatLeaf[]>(() => {
+    const view = props.views.activeView();
+    if (!view) return [];
+    return collectFlatLeaves(view.root);
+  });
+
   const countForSystem = (id: SystemId): number =>
     props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
-  // Filter the registry by (a) explicitly user-hidden and (b) auto-hide-empty
-  // when that pref is on. Order applies AFTER filtering. The active view's
-  // system is always kept visible even if it would otherwise be hidden, so
-  // navigating into a system never makes the sidebar entry vanish under you.
-  const systemIds = createMemo(() => {
+
+  /// Apply the legacy layout.hiddenSystems + autoHideEmptySystems
+  /// filters on top of the active view's leaves. PR-γ migrates hide
+  /// state onto per-node `hidden` flags; for PR-β the legacy
+  /// SystemId-keyed lists stay authoritative so behavior matches
+  /// today exactly.
+  const visibleLeaves = createMemo<FlatLeaf[]>(() => {
     const hidden = new Set(props.layout.hiddenSystems());
     const autoHide = props.layout.autoHideEmptySystems();
-    const activeId =
-      props.currentView.kind === "system" ? props.currentView.id : null;
-    const filtered = registryIds().filter((id) => {
-      if (id === activeId) return true;
-      if (hidden.has(id)) return false;
-      if (autoHide && countForSystem(id) === 0) return false;
+    const active = activeSystemId();
+    return allLeaves().filter(({ leaf }) => {
+      if (leaf.hidden) return false;
+      if (leaf.systemId === active) return true;
+      if (hidden.has(leaf.systemId)) return false;
+      if (autoHide && countForSystem(leaf.systemId) === 0) return false;
       return true;
     });
-    return orderedSystemIds(filtered, props.layout.systemOrder());
   });
+
   const totalCount = createMemo(() => props.library.state.entries.filter((e) => !e.seed).length);
-  // Drag state — tracks which system index the user is dragging plus the
+
+  // Drag state — tracks which row index the user is dragging plus the
   // current drop-target index for the visual indicator.
   const [dragSourceIndex, setDragSourceIndex] = createSignal<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = createSignal<number | null>(null);
 
   function commitReorder(from: number, to: number) {
     if (from === to) return;
-    const current = systemIds();
-    const next = current.slice();
-    const [moved] = next.splice(from, 1);
-    // Splice removes the source first; if dropping after the original
-    // position, the target index has shifted by one.
+    const leaves = visibleLeaves();
+    const source = leaves[from];
+    if (!source) return;
+    // Adjusted target index (splice removes source first; dropping
+    // after the original position shifts the target by one).
     const insertAt = to > from ? to - 1 : to;
-    next.splice(insertAt, 0, moved);
-    props.layout.setSystemOrder(next);
+    const targetSibling = leaves[insertAt];
+    // Cross-container drops are silent no-ops in PR-β. The drop
+    // completes visually (drag state clears in onDrop) but the tree
+    // is unchanged. Cross-container drag-reorder lands in PR-γ /
+    // post-v1 per SIDEBAR_TIER_PLAN.md §0.
+    if (targetSibling && targetSibling.parentId !== source.parentId) return;
+
+    // Build the new order within the source's parent container.
+    const parentId = source.parentId;
+    const parentLeaves = leaves.filter((l) => l.parentId === parentId);
+    const localFrom = parentLeaves.findIndex((l) => l.leaf.id === source.leaf.id);
+    const localInsertAt = (() => {
+      if (!targetSibling) {
+        // Dropped past the last visible leaf — append within parent.
+        return parentLeaves.length;
+      }
+      const idx = parentLeaves.findIndex((l) => l.leaf.id === targetSibling.leaf.id);
+      return idx >= 0 ? idx : parentLeaves.length;
+    })();
+    if (localFrom < 0) return;
+    const reordered = parentLeaves.slice();
+    const [moved] = reordered.splice(localFrom, 1);
+    const adjustedInsertAt = localInsertAt > localFrom ? localInsertAt - 1 : localInsertAt;
+    reordered.splice(adjustedInsertAt, 0, moved);
+    // ViewsStore.reorderChildren operates on the full ordered list of
+    // children ids — but our visible-leaves filter may have dropped
+    // some siblings (hidden / auto-hide-empty). Fetch the parent's
+    // full child set and stitch the reorder into it.
+    const view = props.views.activeView();
+    if (!view) return;
+    const parentChildren = findContainerChildren(view.root, parentId);
+    if (!parentChildren) return;
+    const reorderedIds = new Set(reordered.map((l) => l.leaf.id));
+    const reorderQueue = reordered.map((l) => l.leaf.id);
+    const newOrder: string[] = [];
+    for (const child of parentChildren) {
+      if (child.kind === "platform" && reorderedIds.has(child.id)) {
+        const nextId = reorderQueue.shift();
+        if (nextId !== undefined) newOrder.push(nextId);
+      } else {
+        newOrder.push(child.id);
+      }
+    }
+    props.views.reorderChildren(parentId, newOrder);
   }
 
   const isActive = (view: SidebarView): boolean => {
     const cv = props.currentView;
     if (cv.kind !== view.kind) return false;
-    if (cv.kind === "system" && view.kind === "system") return cv.id === view.id;
+    if (cv.kind === "view-node" && view.kind === "view-node") {
+      return cv.viewId === view.viewId && cv.nodeId === view.nodeId;
+    }
     return true;
   };
 
@@ -137,6 +220,8 @@ const LeftSidebar: Component<Props> = (props) => {
     document.body.style.cursor = "ew-resize";
   };
 
+  const activeViewId = createMemo(() => props.views.activeView()?.id ?? "");
+
   return (
     <aside class="relative flex h-full flex-col border-r border-white/5 bg-black/20">
       <nav class="flex-1 overflow-y-auto overscroll-contain px-2 py-3">
@@ -148,18 +233,18 @@ const LeftSidebar: Component<Props> = (props) => {
         {/* Systems */}
         <SectionHeader label="Systems" collapsed={isCollapsed()} />
         <ul class="space-y-0.5">
-          <For each={systemIds()}>
-            {(id, index) => (
+          <For each={visibleLeaves()}>
+            {({ leaf }, index) => (
               <SystemItem
-                id={id}
-                count={countForSystem(id)}
-                active={isActive({ kind: "system", id })}
+                id={leaf.systemId}
+                count={countForSystem(leaf.systemId)}
+                active={isActive({ kind: "view-node", viewId: activeViewId(), nodeId: leaf.id })}
                 collapsed={isCollapsed()}
                 draggable={!isCollapsed()}
                 isDraggingThis={dragSourceIndex() === index()}
                 dropIndicatorAbove={dragOverIndex() === index() && dragSourceIndex() !== null && dragSourceIndex() !== index()}
-                onClick={() => props.onNavigate({ kind: "system", id })}
-                onContextMenu={(pos) => props.onSystemContext?.(id, pos)}
+                onClick={() => props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId: leaf.id })}
+                onContextMenu={(pos) => props.onSystemContext?.(leaf.systemId, pos)}
                 onDragStart={(ev) => {
                   setDragSourceIndex(index());
                   ev.dataTransfer?.setData(DRAG_MIME, String(index()));
@@ -204,11 +289,11 @@ const LeftSidebar: Component<Props> = (props) => {
             <li
               class="h-1.5 rounded transition"
               classList={{
-                "bg-(--color-system-accent)": dragOverIndex() === systemIds().length,
+                "bg-(--color-system-accent)": dragOverIndex() === visibleLeaves().length,
               }}
               onDragOver={(ev) => {
                 ev.preventDefault();
-                setDragOverIndex(systemIds().length);
+                setDragOverIndex(visibleLeaves().length);
               }}
               onDrop={(ev) => {
                 ev.preventDefault();
@@ -216,7 +301,7 @@ const LeftSidebar: Component<Props> = (props) => {
                 setDragSourceIndex(null);
                 setDragOverIndex(null);
                 if (from === null) return;
-                commitReorder(from, systemIds().length);
+                commitReorder(from, visibleLeaves().length);
               }}
             />
           </Show>
@@ -269,6 +354,26 @@ const LeftSidebar: Component<Props> = (props) => {
     </aside>
   );
 };
+
+/// DFS lookup for a container's direct children. Used by the drag-reorder
+/// path to stitch a visible-leaf reorder back into the container's full
+/// child set (since hidden / auto-hide-empty filtering can drop siblings
+/// from the visible list).
+function findContainerChildren(node: ContainerNode, containerId: string): ViewNode[] | null {
+  if (node.id === containerId) return node.children;
+  for (const child of node.children) {
+    if (child.kind === "container") {
+      const inner = findContainerChildren(child, containerId);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
+
+// `platformNodeIdFor` is imported for completeness — used by the App.tsx
+// helpers that pair with this file. Re-exported so callers can build
+// view-node SidebarViews without reaching into views/defaults directly.
+export { platformNodeIdFor };
 
 const SectionHeader: Component<{ label: string; collapsed: boolean }> = (props) => (
   <Show

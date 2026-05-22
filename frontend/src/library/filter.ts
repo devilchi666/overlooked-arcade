@@ -7,6 +7,7 @@
 
 import type { GroupBy, SortKey } from "../layout/state";
 import type { SidebarView } from "../layout/LeftSidebar";
+import type { SystemId } from "../themes/registry";
 import type { GameMetadata } from "./media";
 import type { GameGroupInfo, RomEntry } from "./types";
 
@@ -20,18 +21,33 @@ function letterBucket(title: string): string {
   return /^[A-Z]$/.test(upper) ? upper : "#";
 }
 
-/** Apply view + search-query filters. Pure. */
+/** Apply view + search-query filters. Pure.
+ *
+ *  `viewSystemIds` is the caller-resolved set of system ids the active
+ *  view-node restricts to (null for `all`, library-manager, cores —
+ *  meaning "no system-level filter"). The resolution lives in the
+ *  caller (LibraryView) because the views model needs ViewsStore +
+ *  resolver, which we keep out of this pure module. The `view`
+ *  parameter is retained for future per-discriminant logic (e.g.
+ *  date-range filters from a smart view).
+ */
 export function filterEntries(
   entries: RomEntry[],
   view: SidebarView,
   query: string,
+  viewSystemIds: ReadonlyArray<SystemId> | null,
 ): RomEntry[] {
+  // `view` is referenced via the parameter type so the discriminant
+  // stays exhaustive in TypeScript — body-level branching on `view.kind`
+  // lands when a smart-view rule needs more than the resolved ids.
+  void view;
   const q = query.trim().toLowerCase();
   let result = entries;
 
   // View-driven slicing first — narrows the candidate list before search.
-  if (view.kind === "system") {
-    result = result.filter((e) => e.systemId === view.id);
+  if (viewSystemIds !== null) {
+    const allow = new Set<string>(viewSystemIds);
+    result = result.filter((e) => allow.has(e.systemId));
   }
 
   if (q.length > 0) {
