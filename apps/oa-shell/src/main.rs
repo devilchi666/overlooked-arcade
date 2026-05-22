@@ -39,6 +39,7 @@ mod shader_presets_watcher;
 mod system_settings;
 mod title_parse;
 mod video_capture;
+mod views;
 mod watcher;
 
 use std::collections::HashSet;
@@ -2457,6 +2458,8 @@ fn main() {
             get_game,
             get_layout,
             set_layout,
+            get_views,
+            set_views,
             get_presentation_mode,
             set_presentation_mode,
             get_system_settings,
@@ -7160,6 +7163,27 @@ fn get_layout(state: tauri::State<'_, AppState>) -> layout::LayoutPrefs {
 #[tauri::command]
 fn set_layout(prefs: layout::LayoutPrefs, state: tauri::State<'_, AppState>) -> Result<(), String> {
     layout::write_layout(&state.app_data_dir, &prefs).map_err(|e| format!("write layout.json: {e}"))
+}
+
+/// Read views.json. Returns `Option<ViewsConfig>` (serialized as JSON null
+/// when absent or unparseable). The frontend ViewsStore seeds defaults on
+/// null: fresh installs get the default form-factor view only; upgrade
+/// installs with a non-empty `layout.systemOrder` get both default + a
+/// "Flat (Legacy)" view (active = legacy), surfaced by PR-γ's migration
+/// banner.
+#[tauri::command]
+fn get_views(state: tauri::State<'_, AppState>) -> Option<views::ViewsConfig> {
+    views::read_views(&state.app_data_dir)
+}
+
+/// Write views.json atomically. Mirrors `set_layout`'s shape — frontend is
+/// source of truth, this just persists to disk for restart survival.
+#[tauri::command]
+fn set_views(
+    config: views::ViewsConfig,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    views::write_views(&state.app_data_dir, &config).map_err(|e| format!("write views.json: {e}"))
 }
 
 /// Returns the active presentation mode ("desktop" | "theater" | "cabinet"),
