@@ -3,14 +3,14 @@ import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { LayoutStore } from "./state";
 
-/// Optional tab to land on when navigating to a per-system settings page.
-/// Lets the system page header's quick-action buttons + SystemContextMenu
-/// deep-link past the persisted last-tab so e.g. "Edit bindings…" actually
-/// drops on Input regardless of what was open last session.
+/// Which top-level surface the main pane is showing. `all` and `system` are
+/// library views (filtered or not); `library-manager` and `cores` are the
+/// two routed full pages. Per-system settings live in dialogs now, not a
+/// page — there is no longer a deep-link tab discriminant.
 export type SidebarView =
   | { kind: "all" }
   | { kind: "system"; id: SystemId }
-  | { kind: "settings" }
+  | { kind: "library-manager" }
   | { kind: "cores" };
 
 type Props = {
@@ -19,10 +19,9 @@ type Props = {
   currentView: SidebarView;
   onNavigate: (view: SidebarView) => void;
   /// Right-click on a system entry opens the SystemContextMenu anchored
-  /// at the click coords. The menu surfaces per-system settings (the
-  /// primary value-add — without it, the per-system page is only
-  /// reachable via the ⚙ button in GridControls after left-clicking a
-  /// system to filter the library).
+  /// at the click coords. This is the primary route to per-system
+  /// settings dialogs from the sidebar (the System ▾ menu bar entry is
+  /// the other; GridControls and SystemHeader no longer carry ⚙).
   onSystemContext?: (id: SystemId, position: { x: number; y: number }) => void;
 };
 
@@ -240,47 +239,10 @@ const LeftSidebar: Component<Props> = (props) => {
         </Show>
       </nav>
 
-      {/* Shell-level actions pinned to bottom — Cores + Settings + collapse
-          toggle. Sits below the navigation regions because these are app-wide
-          actions (not library destinations) and the BigBox / Steam family
-          convention puts settings at the bottom of the primary nav surface. */}
+      {/* Collapse / expand toggle pinned to bottom. Cores + Settings buttons
+          previously lived here too; both routes are now reached from the
+          menu bar (Library ▾ → Library Manager… / Cores Manager…). */}
       <div class="space-y-1 border-t border-white/5 p-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.currentTarget.blur();
-            props.onNavigate({ kind: "cores" });
-          }}
-          class="flex w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
-          classList={{
-            "bg-white/[0.07] text-(--color-oa-ink)": isActive({ kind: "cores" }),
-          }}
-          aria-pressed={isActive({ kind: "cores" })}
-          title="Cores"
-        >
-          <span aria-hidden="true">▥</span>
-          <Show when={!isCollapsed()}>
-            <span>Cores</span>
-          </Show>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.currentTarget.blur();
-            props.onNavigate({ kind: "settings" });
-          }}
-          class="flex w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
-          classList={{
-            "bg-white/[0.07] text-(--color-oa-ink)": isActive({ kind: "settings" }),
-          }}
-          aria-pressed={isActive({ kind: "settings" })}
-          title="Settings"
-        >
-          <span aria-hidden="true">⚙</span>
-          <Show when={!isCollapsed()}>
-            <span>Settings</span>
-          </Show>
-        </button>
         <button
           type="button"
           onClick={(e) => {
