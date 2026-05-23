@@ -21,7 +21,7 @@ import CoresPage from "./components/CoresPage";
 import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
 import LibraryManagerPage from "./components/LibraryManagerPage";
-import SystemContextMenu from "./components/SystemContextMenu";
+import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
 import ToastStack from "./components/ToastStack";
@@ -314,6 +314,38 @@ const App: Component = () => {
     if (!list.includes(id)) layout.setHiddenSystems([...list, id]);
     viewsStore.setNodeHidden(platformNodeIdFor(id), true);
   }
+
+  /// Containers in the active view that the right-clicked system isn't
+  /// already in — feeds the SystemContextMenu's "Move to category…"
+  /// submenu. Returns empty when no system is right-clicked, when the
+  /// active view has only one container (nowhere to move to), or when
+  /// the active view doesn't host the system at all (synth-leaf case —
+  /// no current parent to exclude, but also no per-view context for
+  /// the move to act on).
+  const sidebarMoveTargets = createMemo<MoveTarget[]>(() => {
+    const ctx = systemContextFor();
+    if (!ctx) return [];
+    const view = viewsStore.activeView();
+    if (!view) return [];
+    const leafId = platformNodeIdFor(ctx.id);
+    let currentParentId: string | null = null;
+    for (const child of view.root.children) {
+      if (child.kind === "container") {
+        for (const inner of child.children) {
+          if (inner.id === leafId) {
+            currentParentId = child.id;
+            break;
+          }
+        }
+        if (currentParentId) break;
+      }
+    }
+    if (!currentParentId) return [];
+    return view.root.children
+      .filter((c): c is ContainerNode & { kind: "container" } => c.kind === "container")
+      .filter((c) => c.id !== currentParentId)
+      .map((c) => ({ id: c.id, label: c.label }));
+  });
   // Import wizard modal (Phase 2.7 slice C). The legacy `handlePickFolder`
   // path stays as a single-shot fallback (kept on the Rescan menu item +
   // the drag-drop commit) so users with simple needs aren't forced through
@@ -1732,6 +1764,12 @@ const App: Component = () => {
           if (activeSystemId() === id) {
             setCurrentView({ kind: "all" });
           }
+        }}
+        moveTargets={sidebarMoveTargets()}
+        onMoveToContainer={(containerId) => {
+          const ctx = systemContextFor();
+          if (!ctx) return;
+          viewsStore.moveNode(platformNodeIdFor(ctx.id), containerId, null);
         }}
       />
       <ContainerContextMenu
