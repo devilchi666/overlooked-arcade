@@ -7,7 +7,13 @@
 import { batch, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 
-import { buildDefaultFormFactorView, DEFAULT_VIEW_ID, LEGACY_VIEW_ID } from "./defaults";
+import {
+  buildDefaultFormFactorView,
+  buildDefaultManufacturerView,
+  DEFAULT_VIEW_ID,
+  LEGACY_VIEW_ID,
+  MANUFACTURER_VIEW_ID,
+} from "./defaults";
 import { buildLegacyFlatView } from "./migration";
 import { CURRENT_SCHEMA_VERSION, type View, type ViewNode, type ViewsConfig } from "./types";
 
@@ -17,7 +23,7 @@ export function createViewsStore() {
   const [config, setConfig] = createSignal<ViewsConfig>({
     schemaVersion: CURRENT_SCHEMA_VERSION,
     activeViewId: DEFAULT_VIEW_ID,
-    views: [buildDefaultFormFactorView()],
+    views: [buildDefaultFormFactorView(), buildDefaultManufacturerView()],
     bannerDismissed: false,
   });
   const [hydrated, setHydrated] = createSignal(false);
@@ -36,8 +42,10 @@ export function createViewsStore() {
     }
     if (next) {
       // Existing file — trust it (Rust-side migrate_inplace has already
-      // bumped schemaVersion if needed).
-      setConfig(next);
+      // bumped schemaVersion if needed). Then reconcile shipped defaults
+      // so any newly-shipped default view (e.g. Manufacturers added in
+      // v2.1) is appended without touching user state.
+      setConfig(ensureShippedDefaults(next));
     } else {
       // No file yet — decide migration path based on legacy systemOrder.
       let legacyOrder: string[] = [];
@@ -48,20 +56,21 @@ export function createViewsStore() {
         console.warn("[oa-views] get_layout failed during migration:", e);
       }
       const defaultView = buildDefaultFormFactorView();
+      const manufacturerView = buildDefaultManufacturerView();
       let seeded: ViewsConfig;
       if (legacyOrder.length > 0) {
         const legacyView = buildLegacyFlatView(legacyOrder);
         seeded = {
           schemaVersion: CURRENT_SCHEMA_VERSION,
           activeViewId: LEGACY_VIEW_ID,
-          views: [defaultView, legacyView],
+          views: [defaultView, manufacturerView, legacyView],
           bannerDismissed: false,
         };
       } else {
         seeded = {
           schemaVersion: CURRENT_SCHEMA_VERSION,
           activeViewId: DEFAULT_VIEW_ID,
-          views: [defaultView],
+          views: [defaultView, manufacturerView],
           bannerDismissed: false,
         };
       }
@@ -183,6 +192,25 @@ export function createViewsStore() {
 export type ViewsStore = ReturnType<typeof createViewsStore>;
 
 // ── Internal tree-mutation helpers ─────────────────────────────────
+
+/// Reconciler — append any missing shipped default views to the
+/// hydrated config without touching activeViewId or existing user
+/// state. Idempotent: running on a config that already has every
+/// shipped default returns it unchanged (by reference). The write-
+/// through effect persists the augmented config on next mutation,
+/// so a one-shot launch after a new shipped default lands is enough
+/// to bring the operator's views.json up to date.
+function ensureShippedDefaults(config: ViewsConfig): ViewsConfig {
+  const have = new Set(config.views.map((v) => v.id));
+  let updated = config;
+  if (!have.has(DEFAULT_VIEW_ID)) {
+    updated = { ...updated, views: [...updated.views, buildDefaultFormFactorView()] };
+  }
+  if (!have.has(MANUFACTURER_VIEW_ID)) {
+    updated = { ...updated, views: [...updated.views, buildDefaultManufacturerView()] };
+  }
+  return updated;
+}
 
 function mapActiveView(config: ViewsConfig, fn: (view: View) => View): ViewsConfig {
   return {

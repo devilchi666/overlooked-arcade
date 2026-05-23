@@ -267,8 +267,11 @@ const LeftSidebar: Component<Props> = (props) => {
           />
         </ul>
 
-        {/* Platforms */}
-        <SectionHeader label="Platforms" collapsed={isCollapsed()} />
+        {/* Platforms — section header is a view picker dropdown when
+            the operator has more than one view available (FormFactor +
+            Manufacturers ship as defaults from v2.1; user-built views
+            land in v3). Collapses to a thin divider in icon-only mode. */}
+        <ViewPickerHeader views={props.views} collapsed={isCollapsed()} />
         <Show
           when={!isCollapsed()}
           fallback={
@@ -502,6 +505,67 @@ const SectionHeader: Component<{ label: string; collapsed: boolean }> = (props) 
     </h3>
   </Show>
 );
+
+/// Platforms section header with an embedded view picker. When only
+/// one view is registered the picker degrades to a plain header (the
+/// dropdown's single option is uninteresting). With multiple views
+/// (v2.1 ships two defaults: Platforms + Manufacturers; v3 adds
+/// user-built views) the active view's name becomes a native select
+/// whose options switch `activeViewId`. Per SIDEBAR_TIER_PLAN.md §8
+/// v2 ("operator picks active via a small <select> in the sidebar
+/// header").
+const ViewPickerHeader: Component<{
+  views: ViewsStore;
+  collapsed: boolean;
+}> = (props) => {
+  const cfg = () => props.views.config();
+  const viewList = () => cfg().views;
+  const activeId = () => cfg().activeViewId;
+  const activeName = () => {
+    const list = viewList();
+    return list.find((v) => v.id === activeId())?.name ?? list[0]?.name ?? "Platforms";
+  };
+
+  return (
+    <Show
+      when={!props.collapsed}
+      fallback={<div class="my-2 h-px bg-white/5" />}
+    >
+      <Show
+        when={viewList().length > 1}
+        fallback={
+          <h3 class="mt-4 mb-1 px-3 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+            {activeName()}
+          </h3>
+        }
+      >
+        <div class="mt-4 mb-1 px-2">
+          <label class="relative block">
+            <select
+              value={activeId()}
+              onChange={(e) => {
+                props.views.setActiveView(e.currentTarget.value);
+                e.currentTarget.blur();
+              }}
+              aria-label="Active view"
+              class="w-full cursor-pointer appearance-none rounded bg-transparent px-2 py-1 pr-6 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink-dim) transition hover:bg-white/[0.04] hover:text-(--color-oa-ink) focus:outline-none focus:bg-white/[0.04] focus:text-(--color-oa-ink)"
+            >
+              <For each={viewList()}>
+                {(view) => <option value={view.id} class="bg-(--color-oa-bg-deep) text-(--color-oa-ink) normal-case tracking-normal">{view.name}</option>}
+              </For>
+            </select>
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[0.55rem] text-(--color-oa-ink-dim)"
+            >
+              ▾
+            </span>
+          </label>
+        </div>
+      </Show>
+    </Show>
+  );
+};
 
 const QuickItem: Component<{
   icon: string;
