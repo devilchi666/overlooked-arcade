@@ -24,7 +24,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 const VIEWS_FILE: &str = "views.json";
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +50,14 @@ pub struct View {
     /// every expand-toggle stays tiny.
     pub expanded_nodes: Vec<String>,
     pub root: ContainerNode,
+    /// SystemIds the operator has deleted from this view via the editor.
+    /// v3.5.3's reconciler consults this list before auto-extending
+    /// shipped views with newly-registered systems — operator-deleted
+    /// systems stay deleted instead of coming back on next launch.
+    /// Optional + serde-default for forward/back compat: v1 configs
+    /// without the field hydrate cleanly with an empty list.
+    #[serde(default)]
+    pub explicitly_removed: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -152,9 +160,21 @@ pub fn write_views(app_data_dir: &Path, config: &ViewsConfig) -> std::io::Result
     std::fs::rename(&tmp, &path)
 }
 
-/// No-op today; lands real migration steps when the schema bumps past v1.
+/// Schema migration ladder.
+///
+/// v1 → v2: every view gains `explicitly_removed: Vec<String>`. Serde
+/// default on the field handles the on-disk migration silently — old
+/// configs deserialize with an empty list. The version bump here is
+/// the explicit semantic flag the reconciler consults to know that
+/// post-migration code can rely on the field's presence.
 fn migrate_inplace(config: &mut ViewsConfig) {
+    if config.schema_version < 2 {
+        // Field already populated via serde default on read; nothing
+        // structural to do beyond bumping the version flag.
+        config.schema_version = 2;
+    }
     if config.schema_version < CURRENT_SCHEMA_VERSION {
+        // Future migrations slot in here.
         config.schema_version = CURRENT_SCHEMA_VERSION;
     }
 }
@@ -165,7 +185,7 @@ mod tests {
 
     fn sample_config() -> ViewsConfig {
         ViewsConfig {
-            schema_version: 1,
+            schema_version: CURRENT_SCHEMA_VERSION,
             active_view_id: "default-formfactor".to_string(),
             banner_dismissed: false,
             views: vec![View {
@@ -173,6 +193,7 @@ mod tests {
                 name: "Platforms".to_string(),
                 kind: ViewKind::UserBuiltin,
                 expanded_nodes: vec!["root".to_string(), "container:console".to_string()],
+                explicitly_removed: Vec::new(),
                 root: ContainerNode {
                     id: "root".to_string(),
                     label: "Platforms".to_string(),
@@ -235,7 +256,7 @@ mod tests {
     fn views_serializes_with_camelcase_and_tag_discriminant() {
         let cfg = sample_config();
         let json = serde_json::to_string(&cfg).expect("serialize");
-        assert!(json.contains("\"schemaVersion\":1"));
+        assert!(json.contains(&format!("\"schemaVersion\":{}", CURRENT_SCHEMA_VERSION)));
         assert!(json.contains("\"activeViewId\":\"default-formfactor\""));
         assert!(json.contains("\"expandedNodes\""));
         assert!(json.contains("\"user-builtin\""));
@@ -266,5 +287,52 @@ mod tests {
         }"#;
         let config: ViewsConfig = serde_json::from_str(json).expect("parse");
         assert!(!config.banner_dismissed);
+    }
+
+    #[test]
+    fn views_v1_config_migrates_to_v2_with_empty_explicitly_removed() {
+        // Forward-compat: v1 configs lacking `explicitlyRemoved` on each
+        // view deserialize with empty lists (serde default), then
+        // migrate_inplace bumps the schema_version flag to 2.
+        let json = r#"{
+            "schemaVersion": 1,
+            "activeViewId": "default-formfactor",
+            "views": [
+                {
+                    "id": "default-formfactor",
+                    "name": "Platforms",
+                    "kind": "user-builtin",
+                    "expandedNodes": ["root"],
+                    "root": {
+                        "id": "root",
+                        "label": "Platforms",
+                        "rule": null,
+                        "accent": null,
+                        "art": null,
+                        "hidden": false,
+                        "children": []
+                    }
+                }
+            ]
+        }"#;
+        let mut config: ViewsConfig = serde_json::from_str(json).expect("parse v1");
+        assert_eq!(config.schema_version, 1);
+        assert_eq!(config.views[0].explicitly_removed.len(), 0);
+        migrate_inplace(&mut config);
+        assert_eq!(config.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(config.views[0].explicitly_removed.len(), 0);
+    }
+
+    #[test]
+    fn views_v2_explicitly_removed_round_trips() {
+        let mut cfg = sample_config();
+        cfg.views[0].explicitly_removed = vec!["nes".to_string(), "snes".to_string()];
+        let tmp = std::env::temp_dir().join(format!("oa-views-v2-roundtrip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        write_views(&tmp, &cfg).expect("write");
+        let read = read_views(&tmp).expect("read");
+        assert_eq!(read.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(read.views[0].explicitly_removed, vec!["nes".to_string(), "snes".to_string()]);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
