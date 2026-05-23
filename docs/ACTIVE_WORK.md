@@ -11,7 +11,13 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-(Nothing actively in flight today.)
+- **Portable install** ([features/portable-install/](features/portable-install/)) —
+  branch `feat/portable-install`, 4 phase commits (resolver,
+  asset-protocol scope + frontend swap, AppData→portable migration,
+  docs). All Rust + frontend type-checks + workspace tests green
+  (355/355). Pending operator runtime test of the three scenarios in
+  `plans/groovy-enchanting-candle.md` verification section, then
+  merge `--no-ff` to main.
 
 ## Recently completed (this session)
 
