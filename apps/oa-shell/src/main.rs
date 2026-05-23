@@ -2365,6 +2365,56 @@ fn main() {
     let focused_windows_event = focused_windows.clone();
     let focused_windows_shortcut = focused_windows.clone();
 
+    // Window-geometry persistence: on_window_event captures Resized/Moved/
+    // ScaleFactorChanged into a per-label pending map; a background thread
+    // debounces (300ms quiescent) and flushes the merged geometry to
+    // layout.json. Setup() sets `app_data_dir_for_window_persist` once
+    // resolved so the flusher knows where to write.
+    let app_data_dir_for_window_persist: Arc<std::sync::OnceLock<PathBuf>> =
+        Arc::new(std::sync::OnceLock::new());
+    let app_data_dir_for_setup_persist = app_data_dir_for_window_persist.clone();
+    let app_data_dir_for_flusher = app_data_dir_for_window_persist.clone();
+    let pending_window_writes: Arc<Mutex<std::collections::HashMap<String, (Instant, layout::WindowGeometry)>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let pending_for_handler = pending_window_writes.clone();
+    let pending_for_flusher = pending_window_writes.clone();
+    let running_for_flusher = running.clone();
+    std::thread::Builder::new()
+        .name("oa-window-persist".into())
+        .spawn(move || {
+            const DEBOUNCE: Duration = Duration::from_millis(300);
+            while running_for_flusher.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(100));
+                let now = Instant::now();
+                let ready: Vec<(String, layout::WindowGeometry)> = {
+                    let Ok(mut map) = pending_for_flusher.lock() else { continue };
+                    let due: Vec<String> = map
+                        .iter()
+                        .filter(|(_, (t, _))| now.duration_since(*t) >= DEBOUNCE)
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    due.into_iter()
+                        .filter_map(|label| map.remove(&label).map(|(_, g)| (label, g)))
+                        .collect()
+                };
+                if ready.is_empty() { continue; }
+                let Some(dir) = app_data_dir_for_flusher.get() else {
+                    // Not yet initialized — push entries back and try again next tick.
+                    if let Ok(mut map) = pending_for_flusher.lock() {
+                        for (label, geom) in ready {
+                            map.insert(label, (now, geom));
+                        }
+                    }
+                    continue;
+                };
+                for (label, geom) in ready {
+                    layout::persist_window_geometry(dir, &label, geom);
+                }
+            }
+            log::debug!("oa-shell: window-persist flusher exiting");
+        })
+        .ok();
+
     // Ctrl+Q (Windows/Linux) / Cmd+Q (macOS). Quit isn't gated on the same
     // `enable` flag as F5/F8 — it should fire regardless of whether the game
     // window has focus vs. the library WebView, and regardless of whether a
@@ -2587,6 +2637,9 @@ fn main() {
                     app_data_dir.display(),
                     if resolved.portable { "portable" } else { "appdata" }
                 );
+                // Hand the resolved dir to the window-geometry flusher
+                // thread so it knows where to write layout.json.
+                let _ = app_data_dir_for_setup_persist.set(app_data_dir.clone());
 
                 // Now that app_data_dir is resolved, switch the logger's
                 // file output on. Earlier log lines (cli arg parse,
@@ -2902,6 +2955,26 @@ fn main() {
                         if *focused { set.insert(label); } else { set.remove(&label); }
                     }
                 }
+                tauri::WindowEvent::Resized(_)
+                | tauri::WindowEvent::Moved(_)
+                | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                    // Capture current geometry and enqueue for the debounced
+                    // flusher thread. Errors swallowed — geometry persistence
+                    // is best-effort.
+                    let Ok(size) = window.inner_size() else { return };
+                    let pos = window.outer_position().ok();
+                    let maximized = window.is_maximized().unwrap_or(false);
+                    let geom = layout::WindowGeometry {
+                        width: size.width,
+                        height: size.height,
+                        x: pos.as_ref().map(|p| p.x),
+                        y: pos.as_ref().map(|p| p.y),
+                        maximized,
+                    };
+                    if let Ok(mut map) = pending_for_handler.lock() {
+                        map.insert(window.label().to_string(), (Instant::now(), geom));
+                    }
+                }
                 _ => {}
             }
         })
@@ -2911,6 +2984,51 @@ fn main() {
     log::info!("oa-shell: tauri exited, signalling threads");
     running.store(false, Ordering::SeqCst);
     log::info!("oa-shell: bye");
+}
+
+/// Apply a persisted geometry slot to a WebviewWindowBuilder. If the
+/// slot is None, conditionally enables maximize-on-first-launch — that
+/// branch fires only for the library/main window so its first start
+/// fills the screen instead of opening at the legacy 960×640 default.
+fn apply_persisted_webview_geometry<'a>(
+    mut builder: tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::App<tauri::Wry>>,
+    geom: Option<&layout::WindowGeometry>,
+    default_maximize: bool,
+) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, tauri::App<tauri::Wry>> {
+    match geom {
+        Some(g) => {
+            builder = builder.inner_size(g.width as f64, g.height as f64);
+            if let (Some(x), Some(y)) = (g.x, g.y) {
+                builder = builder.position(x as f64, y as f64);
+            }
+            if g.maximized {
+                builder = builder.maximized(true);
+            }
+            builder
+        }
+        None if default_maximize => builder.maximized(true),
+        None => builder,
+    }
+}
+
+/// Apply a persisted geometry slot to a WindowBuilder. Used for the game
+/// window in two-window mode. No first-launch maximize default — game
+/// window stays at its compiled 768×717 default until the operator
+/// resizes it.
+fn apply_persisted_window_geometry<'a>(
+    mut builder: tauri::WindowBuilder<'a, tauri::Wry, tauri::App<tauri::Wry>>,
+    geom: Option<&layout::WindowGeometry>,
+) -> tauri::WindowBuilder<'a, tauri::Wry, tauri::App<tauri::Wry>> {
+    if let Some(g) = geom {
+        builder = builder.inner_size(g.width as f64, g.height as f64);
+        if let (Some(x), Some(y)) = (g.x, g.y) {
+            builder = builder.position(x as f64, y as f64);
+        }
+        if g.maximized {
+            builder = builder.maximized(true);
+        }
+    }
+    builder
 }
 
 fn setup_two_window(
@@ -2931,20 +3049,23 @@ fn setup_two_window(
     app_handle: tauri::AppHandle,
     bootstrap_hint: Option<BootstrapHint>,
 ) -> tauri::Result<ShellWindow> {
-    let _library = tauri::WebviewWindowBuilder::new(
+    let prefs = layout::read_layout(&app_data_dir);
+    let mut library_builder = tauri::WebviewWindowBuilder::new(
         app,
         "library",
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("Overlooked Arcade")
-    .inner_size(960.0, 640.0)
-    .build()?;
+    .inner_size(960.0, 640.0);
+    library_builder = apply_persisted_webview_geometry(library_builder, prefs.windows.get("library"), /* default_maximize */ true);
+    let _library = library_builder.build()?;
     log::info!("oa-shell: library WebviewWindow built (two-window)");
 
-    let game = tauri::WindowBuilder::new(app, "game")
+    let mut game_builder = tauri::WindowBuilder::new(app, "game")
         .title("Overlooked Arcade \u{2014} game")
-        .inner_size(768.0, 717.0)
-        .build()?;
+        .inner_size(768.0, 717.0);
+    game_builder = apply_persisted_window_geometry(game_builder, prefs.windows.get("game"));
+    let game = game_builder.build()?;
     log::info!("oa-shell: game Window built (two-window)");
     let game = Arc::new(game);
 
@@ -3007,15 +3128,17 @@ fn setup_single_window(
     // to be unreliable on transparent WebView2 windows (see
     // PARKING_LOT.md 2026-05-19 entry) — the Import Wizard and
     // Settings → Library → Add cover the same ingest flow.
-    let window = tauri::WebviewWindowBuilder::new(
+    let prefs = layout::read_layout(&app_data_dir);
+    let mut sw_builder = tauri::WebviewWindowBuilder::new(
         app,
         "main",
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("Overlooked Arcade")
     .inner_size(960.0, 640.0)
-    .transparent(true)
-    .build()?;
+    .transparent(true);
+    sw_builder = apply_persisted_webview_geometry(sw_builder, prefs.windows.get("main"), /* default_maximize */ true);
+    let window = sw_builder.build()?;
     log::info!("oa-shell: single transparent WebviewWindow built (single-window)");
     let window = Arc::new(window);
 
@@ -7197,7 +7320,13 @@ fn get_layout(state: tauri::State<'_, AppState>) -> layout::LayoutPrefs {
 /// from the frontend's perspective (it's the source of truth); persistence is
 /// for restart survival.
 #[tauri::command]
-fn set_layout(prefs: layout::LayoutPrefs, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn set_layout(mut prefs: layout::LayoutPrefs, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // Frontend doesn't own window geometry — that's the on_window_event
+    // flusher thread's territory. Preserve whatever's on disk so a
+    // frontend write (sidebar resize, view-mode change, slider drag)
+    // doesn't clobber a concurrent geometry flush.
+    let existing = layout::read_layout(&state.app_data_dir);
+    prefs.windows = existing.windows;
     layout::write_layout(&state.app_data_dir, &prefs).map_err(|e| format!("write layout.json: {e}"))
 }
 

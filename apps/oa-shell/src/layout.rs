@@ -14,6 +14,7 @@
 // through on every change. Both commands are tolerant of missing / malformed
 // files: return defaults so first launches don't surprise the UI.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,39 @@ pub struct LayoutPrefs {
     /// registry.
     #[serde(default = "default_auto_hide_empty")]
     pub auto_hide_empty_systems: bool,
+    /// Per-window persisted geometry, keyed by Tauri window label
+    /// ("library" / "game"). Empty map on first launch — the absence of
+    /// a slot is the signal to maximize the library window. Game window
+    /// stays at its compiled default size on first launch and only starts
+    /// remembering after the operator resizes/moves it.
+    #[serde(default)]
+    pub windows: HashMap<String, WindowGeometry>,
+    /// Target library tile width in pixels. Slider in the library header
+    /// toolbar writes here. VirtualLibraryGrid applies hybrid ±20%
+    /// scaling at render time so tiles fill the container cleanly at
+    /// any window width.
+    #[serde(default = "default_library_tile_size")]
+    pub library_tile_size: u32,
 }
+
+/// Persisted window geometry. `x`/`y` are Option so first-launch / DPI-
+/// change scenarios that don't have a known position can fall back to
+/// Tauri's centering. `maximized` is captured separately so restore
+/// preserves the maximize state across launches.
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowGeometry {
+    pub width: u32,
+    pub height: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
+    #[serde(default)]
+    pub maximized: bool,
+}
+
+fn default_library_tile_size() -> u32 { 220 }
 
 fn default_auto_hide_empty() -> bool { true }
 
@@ -78,6 +111,8 @@ impl Default for LayoutPrefs {
             system_order: Vec::new(),
             hidden_systems: Vec::new(),
             auto_hide_empty_systems: default_auto_hide_empty(),
+            windows: HashMap::new(),
+            library_tile_size: default_library_tile_size(),
         }
     }
 }
@@ -133,6 +168,43 @@ pub fn write_layout(app_data_dir: &Path, prefs: &LayoutPrefs) -> std::io::Result
     let body = serde_json::to_string_pretty(prefs)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(&path, body)
+}
+
+/// Merge a freshly-captured window geometry into a previously-persisted
+/// one. The key subtlety: when `current.maximized` is true, the inner
+/// size we just captured is the maximized dimensions — not what we want
+/// to "restore" to when the user unmaximizes. So we preserve the prior
+/// restore size (width/height) and only flip the maximized flag.
+///
+/// When `current.maximized` is false, current IS the new restore baseline
+/// — overwrite everything.
+pub fn merge_geometry(prev: WindowGeometry, current: WindowGeometry) -> WindowGeometry {
+    if current.maximized {
+        WindowGeometry {
+            width: prev.width,
+            height: prev.height,
+            x: current.x.or(prev.x),
+            y: current.y.or(prev.y),
+            maximized: true,
+        }
+    } else {
+        current
+    }
+}
+
+/// Read layout.json, merge a new window's geometry into the existing
+/// slot for that label, write back. Logs and swallows I/O errors —
+/// geometry persistence is best-effort and must not crash the shell.
+pub fn persist_window_geometry(app_data_dir: &Path, label: &str, new_geom: WindowGeometry) {
+    let mut prefs = read_layout(app_data_dir);
+    let merged = match prefs.windows.get(label).cloned() {
+        Some(existing) => merge_geometry(existing, new_geom),
+        None => new_geom,
+    };
+    prefs.windows.insert(label.to_string(), merged);
+    if let Err(e) = write_layout(app_data_dir, &prefs) {
+        log::warn!("oa-shell: persist window geometry for {label} failed: {e}");
+    }
 }
 
 pub fn read_presentation(app_data_dir: &Path) -> PresentationMode {
@@ -208,5 +280,110 @@ mod tests {
         assert!(!read.right_sidebar_visible);
         assert_eq!(read.widget_hidden, vec!["metadata"]);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn default_library_tile_size_is_220() {
+        assert_eq!(LayoutPrefs::default().library_tile_size, 220);
+    }
+
+    #[test]
+    fn default_windows_map_is_empty() {
+        assert!(LayoutPrefs::default().windows.is_empty());
+    }
+
+    #[test]
+    fn windows_and_tile_size_round_trip() {
+        let tmp = std::env::temp_dir().join(format!("oa-layout-windows-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut prefs = LayoutPrefs::default();
+        prefs.library_tile_size = 280;
+        prefs.windows.insert(
+            "library".into(),
+            WindowGeometry { width: 1600, height: 900, x: Some(100), y: Some(50), maximized: false },
+        );
+        prefs.windows.insert(
+            "game".into(),
+            WindowGeometry { width: 1024, height: 768, x: None, y: None, maximized: true },
+        );
+        write_layout(&tmp, &prefs).expect("write");
+        let read = read_layout(&tmp);
+        assert_eq!(read.library_tile_size, 280);
+        assert_eq!(read.windows.len(), 2);
+        let lib = read.windows.get("library").expect("library slot");
+        assert_eq!(lib.width, 1600);
+        assert_eq!(lib.x, Some(100));
+        assert!(!lib.maximized);
+        let game = read.windows.get("game").expect("game slot");
+        assert!(game.maximized);
+        assert_eq!(game.x, None);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn merge_keeps_restore_size_when_current_maximized() {
+        let prev = WindowGeometry { width: 1000, height: 700, x: Some(50), y: Some(60), maximized: false };
+        let current = WindowGeometry { width: 1920, height: 1080, x: Some(0), y: Some(0), maximized: true };
+        let merged = merge_geometry(prev, current);
+        assert_eq!(merged.width, 1000);
+        assert_eq!(merged.height, 700);
+        assert!(merged.maximized);
+        // Position carried from current (the maximized position)
+        assert_eq!(merged.x, Some(0));
+    }
+
+    #[test]
+    fn merge_overwrites_when_current_unmaximized() {
+        let prev = WindowGeometry { width: 1000, height: 700, x: Some(50), y: Some(60), maximized: true };
+        let current = WindowGeometry { width: 1200, height: 800, x: Some(100), y: Some(120), maximized: false };
+        let merged = merge_geometry(prev, current);
+        assert_eq!(merged.width, 1200);
+        assert_eq!(merged.height, 800);
+        assert!(!merged.maximized);
+        assert_eq!(merged.x, Some(100));
+    }
+
+    #[test]
+    fn persist_window_geometry_writes_through() {
+        let tmp = std::env::temp_dir().join(format!("oa-layout-persist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        persist_window_geometry(
+            &tmp,
+            "library",
+            WindowGeometry { width: 1280, height: 720, x: Some(10), y: Some(20), maximized: false },
+        );
+        let prefs = read_layout(&tmp);
+        let lib = prefs.windows.get("library").expect("library slot");
+        assert_eq!(lib.width, 1280);
+        // Now persist a maximized state — restore size should NOT be clobbered
+        persist_window_geometry(
+            &tmp,
+            "library",
+            WindowGeometry { width: 1920, height: 1080, x: Some(0), y: Some(0), maximized: true },
+        );
+        let prefs = read_layout(&tmp);
+        let lib = prefs.windows.get("library").expect("library slot");
+        assert_eq!(lib.width, 1280);  // preserved
+        assert!(lib.maximized);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn legacy_layout_json_without_new_fields_parses() {
+        // Older installs have layout.json files written before these fields
+        // existed. Verify they still parse with sensible defaults.
+        let legacy = r#"{
+            "leftSidebarWidth": 280,
+            "leftSidebarCollapsed": false,
+            "rightSidebarWidth": 320,
+            "rightSidebarVisible": true,
+            "widgetOrder": ["hero","title"],
+            "widgetHidden": []
+        }"#;
+        let prefs: LayoutPrefs = serde_json::from_str(legacy).expect("legacy parse");
+        assert_eq!(prefs.library_tile_size, 220);
+        assert!(prefs.windows.is_empty());
+        // sanity-check that the legacy fields still landed
+        assert_eq!(prefs.left_sidebar_width, 280);
     }
 }

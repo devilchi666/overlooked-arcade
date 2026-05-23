@@ -44,7 +44,17 @@ export type LayoutPrefs = {
   /// `hiddenSystems` — flipping this off shows the entire registry; the
   /// explicit hide list still suppresses individual entries.
   autoHideEmptySystems: boolean;
+  /// Target library tile width in pixels. Slider in the library header
+  /// toolbar writes here. VirtualLibraryGrid applies ±20% hybrid scaling
+  /// at render time so tiles fill the container cleanly at any window
+  /// width. Defaults to 220 when absent.
+  libraryTileSize?: number;
 };
+
+export const LIBRARY_TILE_SIZE_MIN = 120;
+export const LIBRARY_TILE_SIZE_MAX = 400;
+export const LIBRARY_TILE_SIZE_STEP = 20;
+export const LIBRARY_TILE_SIZE_DEFAULT = 220;
 
 export type ViewMode = "capsule" | "list";
 export type SortKey = "title" | "addedAt" | "year";
@@ -94,6 +104,7 @@ const DEFAULT_LAYOUT: LayoutPrefs = {
   systemOrder: [],
   hiddenSystems: [],
   autoHideEmptySystems: true,
+  libraryTileSize: LIBRARY_TILE_SIZE_DEFAULT,
 };
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -122,6 +133,15 @@ export function createLayoutStore() {
   const [systemOrder, setSystemOrder] = createSignal<string[]>(DEFAULT_LAYOUT.systemOrder);
   const [hiddenSystems, setHiddenSystems] = createSignal<string[]>(DEFAULT_LAYOUT.hiddenSystems);
   const [autoHideEmptySystems, setAutoHideEmptySystems] = createSignal<boolean>(DEFAULT_LAYOUT.autoHideEmptySystems);
+  const [libraryTileSize, setLibraryTileSizeInternal] = createSignal<number>(LIBRARY_TILE_SIZE_DEFAULT);
+  // Clamp + snap-to-step on writes so callers can pass raw input.range values
+  // without worrying about the bounds. Round-trips through the same signal so
+  // the slider UI tracks the actual stored value.
+  const setLibraryTileSize = (px: number) => {
+    const clamped = clamp(px, LIBRARY_TILE_SIZE_MIN, LIBRARY_TILE_SIZE_MAX);
+    const snapped = Math.round(clamped / LIBRARY_TILE_SIZE_STEP) * LIBRARY_TILE_SIZE_STEP;
+    setLibraryTileSizeInternal(snapped);
+  };
   // Suppress write-through during the initial hydrate so we don't echo
   // defaults back to disk before the real values land.
   const [hydrated, setHydrated] = createSignal(false);
@@ -176,6 +196,9 @@ export function createLayoutStore() {
       if (typeof prefs.autoHideEmptySystems === "boolean") {
         setAutoHideEmptySystems(prefs.autoHideEmptySystems);
       }
+      if (typeof prefs.libraryTileSize === "number" && Number.isFinite(prefs.libraryTileSize)) {
+        setLibraryTileSize(prefs.libraryTileSize);
+      }
     } catch (e) {
       console.warn("LayoutStore: get_layout failed:", e);
     }
@@ -199,6 +222,7 @@ export function createLayoutStore() {
       systemOrder: systemOrder(),
       hiddenSystems: hiddenSystems(),
       autoHideEmptySystems: autoHideEmptySystems(),
+      libraryTileSize: libraryTileSize(),
     };
     invoke("set_layout", { prefs }).catch((e) =>
       console.warn("LayoutStore: set_layout failed:", e),
@@ -242,6 +266,8 @@ export function createLayoutStore() {
     setHiddenSystems,
     autoHideEmptySystems,
     setAutoHideEmptySystems,
+    libraryTileSize,
+    setLibraryTileSize,
   };
 }
 

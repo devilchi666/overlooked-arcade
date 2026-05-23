@@ -138,7 +138,12 @@ const LibraryView: Component<Props> = (props) => {
           gameCount={count()}
         />
       </Show>
-      <GridControls title={title()} count={count()} />
+      <GridControls
+        title={title()}
+        count={count()}
+        tileSize={props.layout.viewMode() === "capsule" ? props.layout.libraryTileSize() : undefined}
+        onTileSizeChange={props.layout.setLibraryTileSize}
+      />
       <div class="min-h-0 flex-1">
         <Show
           when={hasAny()}
@@ -155,6 +160,7 @@ const LibraryView: Component<Props> = (props) => {
             fallback={
               <VirtualLibraryGrid
                 groups={grouped()}
+                tileWidth={props.layout.libraryTileSize()}
                 onLaunch={props.onLaunch}
                 onShowSaves={props.onShowSaves}
                 onPickContext={props.onPickContext}

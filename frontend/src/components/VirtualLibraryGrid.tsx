@@ -51,21 +51,56 @@ const HEADER_HEIGHT = 48;
 const TITLE_BLOCK_HEIGHT = 56; // tile bottom title/system label slot
 const ROW_VERTICAL_PADDING = 12;
 
+/// Hybrid column-fitting helper. The caller-provided `target` width is
+/// the operator's slider preference (e.g. 220px). We try every viable
+/// column count and pick the one whose actual per-column width lands
+/// within ±20% of target, choosing the closest to target if multiple
+/// fit. Fallback: pure floor-divide at the unscaled target width
+/// (matches the pre-slider behavior so extreme cases still render
+/// sanely).
+export function fitColumns(containerWidth: number, target: number, gap: number) {
+  const usable = containerWidth - 32; // matches existing padding budget
+  if (usable <= target * 0.5) {
+    // Window too narrow to fit even a half-target tile — snap to 1 column
+    // at whatever width the container provides.
+    return { cols: 1, width: Math.max(usable, target * 0.5) };
+  }
+  const MIN_FACTOR = 0.8;
+  const MAX_FACTOR = 1.2;
+  const minWidth = target * MIN_FACTOR;
+  const maxWidth = target * MAX_FACTOR;
+  let best: { cols: number; width: number; delta: number } | null = null;
+  for (let cols = 1; cols <= 32; cols++) {
+    const w = (usable - gap * (cols - 1)) / cols;
+    if (w < minWidth || w > maxWidth) continue;
+    const delta = Math.abs(w - target);
+    if (best === null || delta < best.delta) {
+      best = { cols, width: w, delta };
+    }
+  }
+  if (best !== null) {
+    return { cols: best.cols, width: best.width };
+  }
+  // Fallback (extreme case): no col count fits within ±20% — use floor
+  // divide at the target. Visual consequence: small gap on the right
+  // edge. Acceptable.
+  const cols = Math.max(1, Math.floor((usable + gap) / (target + gap)));
+  return { cols, width: target };
+}
+
 const VirtualLibraryGrid: Component<Props> = (props) => {
   let scrollRef: HTMLDivElement | undefined;
   const [containerWidth, setContainerWidth] = createSignal(0);
 
-  const tileWidth = () => props.tileWidth ?? 220;
+  const tileTarget = () => props.tileWidth ?? 220;
   const gap = () => props.gap ?? 12;
   const aspect = () => props.minAspect ?? 0.75; // width / height
 
-  // Derive column count from container width (excluding the layout token
-  // padding). Snaps to >=1 column even on tiny windows.
-  const columnCount = createMemo(() => {
-    const cw = containerWidth();
-    if (cw < tileWidth() + 32) return 1;
-    return Math.max(1, Math.floor((cw - 32 + gap()) / (tileWidth() + gap())));
-  });
+  // Hybrid scaling: target tile width comes from the slider; actual
+  // rendered width flexes ±20% to fill columns cleanly.
+  const fit = createMemo(() => fitColumns(containerWidth(), tileTarget(), gap()));
+  const columnCount = createMemo(() => fit().cols);
+  const actualTileWidth = createMemo(() => fit().width);
 
   // Flatten grouped entries into a flat row list — alternating header rows
   // (when label non-empty) and tile rows (with up to `cols` entries each).
@@ -88,9 +123,9 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
   });
 
   // Estimated row height — varies between header (small) and tile (large).
-  // tile row height = tileWidth / aspect + title block + vertical padding.
+  // tile row height = actualTileWidth / aspect + title block + vertical padding.
   const tileRowHeight = createMemo(
-    () => Math.round(tileWidth() / aspect()) + TITLE_BLOCK_HEIGHT + ROW_VERTICAL_PADDING,
+    () => Math.round(actualTileWidth() / aspect()) + TITLE_BLOCK_HEIGHT + ROW_VERTICAL_PADDING,
   );
 
   const virtualizer = createVirtualizer({
@@ -115,10 +150,12 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
     onCleanup(() => ro.disconnect());
   });
 
-  // When column count changes (due to resize), tell the virtualizer to
-  // re-measure so row offsets stay correct.
+  // When column count or actual tile width changes (due to resize or
+  // slider change), tell the virtualizer to re-measure so row offsets
+  // stay correct.
   createEffect(() => {
     void columnCount();
+    void actualTileWidth();
     void tileRowHeight();
     virtualizer.measure();
   });
@@ -164,7 +201,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                   <div
                     class="grid px-(--layout-content-padding-x) py-(--layout-content-padding-y)"
                     style={{
-                      "grid-template-columns": `repeat(${columnCount()}, minmax(0, 1fr))`,
+                      "grid-template-columns": `repeat(${columnCount()}, ${actualTileWidth()}px)`,
                       gap: `${gap()}px`,
                       "padding-top": `${ROW_VERTICAL_PADDING / 2}px`,
                       "padding-bottom": `${ROW_VERTICAL_PADDING / 2}px`,
