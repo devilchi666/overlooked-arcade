@@ -584,48 +584,6 @@ fn is_known_system(slug: &str) -> bool {
     )
 }
 
-/// Tauri 2 bundle identifier — must match `tauri.conf.json` `identifier`.
-/// Used to derive `app_data_dir` in headless maintenance mode (when no
-/// Tauri runtime is spun up, so the usual `app.path().app_data_dir()`
-/// path resolver isn't available).
-const TAURI_IDENTIFIER: &str = "dev.overlookedarcade.shell";
-
-/// Resolve the Tauri-managed app_data_dir without spinning up a Tauri
-/// runtime. Mirrors `dirs`/Tauri's per-platform convention.
-///
-/// - Windows: `%APPDATA%\<identifier>`
-/// - macOS:   `~/Library/Application Support/<identifier>`
-/// - Linux:   `${XDG_DATA_HOME:-~/.local/share}/<identifier>`
-fn resolve_app_data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let appdata = std::env::var("APPDATA")
-            .map_err(|e| format!("APPDATA env not set: {e}"))?;
-        Ok(PathBuf::from(appdata).join(TAURI_IDENTIFIER))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME")
-            .map_err(|e| format!("HOME env not set: {e}"))?;
-        Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join(TAURI_IDENTIFIER))
-    }
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return Ok(PathBuf::from(xdg).join(TAURI_IDENTIFIER));
-        }
-        let home = std::env::var("HOME")
-            .map_err(|e| format!("HOME env not set: {e}"))?;
-        Ok(PathBuf::from(home)
-            .join(".local")
-            .join("share")
-            .join(TAURI_IDENTIFIER))
-    }
-}
-
 /// Headless --clear-metadata <SYSTEM_ID> entry point. Opens library_db
 /// to enumerate game ids for the system, mutates media.json's
 /// `metadata` slot to None for matching entries, writes back, prints
@@ -634,9 +592,14 @@ fn resolve_app_data_dir() -> Result<PathBuf, String> {
 /// Runs without a Tauri runtime — no window, no emu thread, no
 /// settings store. Single-purpose maintenance mode.
 pub fn run_clear_metadata_headless(system_id: &str) -> Result<(), String> {
-    let app_data_dir = resolve_app_data_dir()?;
+    let resolved = crate::data_dir::resolve_data_dir(None)?;
+    let app_data_dir = resolved.path;
     eprintln!("oa-shell: clear-metadata {system_id}");
-    eprintln!("oa-shell: app_data_dir = {}", app_data_dir.display());
+    eprintln!(
+        "oa-shell: data dir = {} ({})",
+        app_data_dir.display(),
+        if resolved.portable { "portable" } else { "appdata" }
+    );
 
     let library = crate::library_db::LibraryDb::open(&app_data_dir)
         .map_err(|e| format!("library_db open: {e}"))?;

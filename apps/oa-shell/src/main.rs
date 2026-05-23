@@ -19,6 +19,7 @@ mod bindings;
 mod cd_id;
 mod cheat_search;
 mod cli;
+mod data_dir;
 mod http_retry;
 mod core_installer;
 mod core_options;
@@ -2572,11 +2573,19 @@ fn main() {
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
-                let app_data_dir = app.path().app_data_dir().unwrap_or_else(|e| {
-                    log::warn!("oa-shell: app_data_dir() failed ({e:?}); save states + prefs will use cwd");
-                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                let resolved = data_dir::resolve_data_dir(Some(app)).unwrap_or_else(|e| {
+                    log::warn!("oa-shell: data dir resolution failed ({e}); falling back to cwd");
+                    data_dir::DataDir {
+                        path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                        portable: false,
+                    }
                 });
-                log::info!("oa-shell: app_data_dir = {}", app_data_dir.display());
+                let app_data_dir = resolved.path;
+                log::info!(
+                    "oa-shell: data dir = {} ({})",
+                    app_data_dir.display(),
+                    if resolved.portable { "portable" } else { "appdata" }
+                );
 
                 // Now that app_data_dir is resolved, switch the logger's
                 // file output on. Earlier log lines (cli arg parse,
