@@ -30,26 +30,28 @@ The human is the **project owner** and operator at the keyboard. Claude (me) is 
 ## How to start a session
 
 1. Read `CLAUDE.md` (this file).
-2. Read `docs/ACTIVE_CORE.md` — one word: which core is active.
-3. Read `docs/cores/<active>/README.md` — current status, upstream version vendored, what works/doesn't.
-4. Read `docs/cores/<active>/ROADMAP.md` — phase tracking for the active core.
-5. Read the most recent entry in `docs/cores/<active>/SESSION_LOG.md` — what last session shipped, what's next.
-6. Read `docs/cores/<active>/KNOWN_GAME_BUGS.md` if working on per-game compatibility.
-7. Read `docs/cores/<active>/DECISIONS.md` if a per-core architectural topic comes up.
-8. Read project-wide `docs/DECISIONS.md` for project-wide topics.
-9. **Summarize back to the human:** "Last session shipped X, next task is Y, confirming we're still on that?"
-10. Wait for confirmation before doing work.
+2. Read `docs/INDEX.md` — routing table for the docs tree.
+3. Read `docs/ACTIVE_WORK.md` — list of streams currently in flight (cores + features mixed).
+4. For each in-flight stream listed in ACTIVE_WORK.md:
+   - Read its README at `docs/features/<name>/README.md` or `docs/cores/<id>/README.md`.
+   - Read the most recent entry in the same folder's `SESSION_LOG.md` — what last session shipped, what's next.
+5. Read `docs/cores/<id>/KNOWN_GAME_BUGS.md` if working on per-game compatibility.
+6. Read the stream's `DECISIONS.md` if an architectural topic comes up.
+7. Read project-wide `docs/DECISIONS.md` for project-wide topics.
+8. **Summarize back to the human:** "Active streams are X (current task Y) and Z (current task W); confirming we're still on those?"
+9. Wait for confirmation before doing work.
 
-## Switching cores
+## Switching streams
 
-Edit `docs/ACTIVE_CORE.md` to the target core's id (e.g. `lynx`, `atari7800`). All per-core docs persist under `docs/cores/<previous>/` for when you return.
+Edit `docs/ACTIVE_WORK.md` to update what's in flight. Each stream lives under either `docs/cores/<id>/` (per-core integration) or `docs/features/<name>/` (cross-cutting work like sidebar / ui-polish / library-import / kiosk-shell). When picking up a returned-to stream, its full history persists in place.
 
 ## How to end a session
 
-1. Append to `docs/cores/<active>/SESSION_LOG.md` — three lines: **Shipped / Almost / Next**.
-2. If a design decision was made, append to `docs/cores/<active>/DECISIONS.md` (per-core) or `docs/DECISIONS.md` (project-wide) with the date and the *why*.
+1. Append to the SESSION_LOG of whichever stream(s) you worked on — either `docs/features/<name>/SESSION_LOG.md` or `docs/cores/<id>/SESSION_LOG.md`. Three lines: **Shipped / Almost / Next**. Cross-cutting work goes under features/, not under whichever core happened to be active.
+2. If a design decision was made, append to the stream's `DECISIONS.md` (per-stream) or `docs/DECISIONS.md` (project-wide) with the date and the *why*.
 3. If an out-of-scope idea came up that's worth keeping, append to `docs/PARKING_LOT.md`.
-4. Confirm with the human before closing.
+4. If a stream's work wrapped, update `docs/ACTIVE_WORK.md`.
+5. Confirm with the human before closing.
 
 ## Architectural rules (apply once Rust code exists)
 
