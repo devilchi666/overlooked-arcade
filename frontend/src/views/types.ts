@@ -13,7 +13,7 @@
 
 import type { FormFactorTag, ManufacturerTag, SystemId } from "../themes/registry";
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export type ViewsConfig = {
   schemaVersion: number;
@@ -33,6 +33,12 @@ export type View = {
   /// produces a tiny diff rather than rewriting the whole tree.
   expandedNodes: string[];
   root: ContainerNode;
+  /// SystemIds the operator deleted from this view via the v3.2 editor.
+  /// v3.5.3's reconciler consults this list when auto-extending shipped
+  /// views with newly-registered systems — operator-deleted systems
+  /// stay deleted across launches instead of coming back. Optional for
+  /// forward/back compat (v1 configs lack the field).
+  explicitlyRemoved?: SystemId[];
 };
 
 /// `user-builtin` = shipped default (Platforms form-factor view) or

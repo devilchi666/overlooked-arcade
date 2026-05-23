@@ -25,7 +25,7 @@ import {
   type ViewNode,
   type ViewsConfig,
 } from "./types";
-import type { SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "../themes/registry";
 
 export type NewViewTemplate =
   | "blank"
@@ -284,12 +284,27 @@ export function createViewsStore() {
         rewriteClonedNodeId(nodeId, source.root.id, root.id, newId),
       );
     }
+    // v3.5.2: clone explicitlyRemoved from the source for copy-*
+    // templates so the operator's "I removed NES from Platforms"
+    // intent carries into a new "Copy of Platforms". Blank views
+    // start fresh.
+    const sourceForRemoved =
+      template === "copy-formfactor"
+        ? config().views.find((v) => v.id === DEFAULT_VIEW_ID)
+        : template === "copy-manufacturer"
+          ? config().views.find((v) => v.id === MANUFACTURER_VIEW_ID)
+          : template === "copy-legacy"
+            ? config().views.find((v) => v.id === LEGACY_VIEW_ID)
+            : null;
     const newView: View = {
       id: newId,
       name: trimmed,
       kind: "user-built",
       expandedNodes,
       root,
+      explicitlyRemoved: sourceForRemoved
+        ? [...(sourceForRemoved.explicitlyRemoved ?? [])]
+        : [],
     };
     setConfig((prev) => ({ ...prev, views: [...prev.views, newView] }));
     return newId;
@@ -377,6 +392,11 @@ export function createViewsStore() {
   /// duplicate manual leaves per view — operators wanting overlap
   /// across containers use rule-based containers per
   /// VIEW_EDITOR_PLAN.md §0.11).
+  ///
+  /// v3.5.2: clears the systemId from the view's explicitlyRemoved
+  /// list — operator added it back, so the marker that would have
+  /// prevented v3.5.3's reconciler from re-introducing it should
+  /// also clear.
   function addPlatformLeaf(parentId: string, systemId: SystemId): string | null {
     const view = activeView();
     if (!view) return null;
@@ -394,6 +414,7 @@ export function createViewsStore() {
           ],
         };
       }),
+      explicitlyRemoved: (v.explicitlyRemoved ?? []).filter((s) => s !== systemId),
     })));
     return leafId;
   }
@@ -402,12 +423,32 @@ export function createViewsStore() {
   /// Refuses on the root id — the root is a structural anchor, not a
   /// removable container. Cascades any descendant subtree along with
   /// the removed node.
+  ///
+  /// v3.5.2: when the removed node is a platform leaf, push its
+  /// systemId onto the view's `explicitlyRemoved` list (deduped).
+  /// v3.5.3's reconciler consults this list to keep the deletion
+  /// from being undone on next launch. Container removals don't
+  /// push anything — only individual platforms can be auto-re-added
+  /// by the reconciler.
   function removeNode(nodeId: string): void {
     if (nodeId === ROOT_NODE_ID) return;
-    setConfig((prev) => mapActiveView(prev, (view) => ({
-      ...view,
-      root: removeNodeFromTree(view.root, nodeId),
-    })));
+    setConfig((prev) => mapActiveView(prev, (view) => {
+      const located = locateNode(view.root, nodeId);
+      const removedLeafSystemId =
+        located && "kind" in located.node && located.node.kind === "platform"
+          ? located.node.systemId
+          : null;
+      const existing = view.explicitlyRemoved ?? [];
+      const updatedRemoved =
+        removedLeafSystemId && !existing.includes(removedLeafSystemId)
+          ? [...existing, removedLeafSystemId]
+          : existing;
+      return {
+        ...view,
+        root: removeNodeFromTree(view.root, nodeId),
+        explicitlyRemoved: updatedRemoved,
+      };
+    }));
   }
 
   return {
@@ -438,13 +479,27 @@ export type ViewsStore = ReturnType<typeof createViewsStore>;
 
 // ── Internal tree-mutation helpers ─────────────────────────────────
 
-/// Reconciler — append any missing shipped default views to the
-/// hydrated config without touching activeViewId or existing user
-/// state. Idempotent: running on a config that already has every
-/// shipped default returns it unchanged (by reference). The write-
-/// through effect persists the augmented config on next mutation,
-/// so a one-shot launch after a new shipped default lands is enough
-/// to bring the operator's views.json up to date.
+/// Reconciler — runs on hydrate to bring older configs forward to the
+/// current shipped-default surface. Two passes:
+///
+/// 1. Append any entirely-missing shipped default view (β.2's original
+///    behavior). Covers operators whose views.json was created before
+///    a particular shipped view existed.
+///
+/// 2. Auto-extend existing FormFactor + Manufacturer shipped views
+///    with newly-registered systems (v3.5.3). When a future PR adds
+///    a 42nd system to systemThemes, this pass slots it into the
+///    appropriate bucket of the operator's existing FormFactor +
+///    Manufacturer views — unless the operator has explicitly
+///    removed it (per the v3.5.2 marker).
+///
+/// Flat-Legacy stays frozen-after-seed; auto-extending its single
+/// container would reshuffle the operator's customized order.
+///
+/// Idempotent: running on a config that's already up-to-date returns
+/// it unchanged (by reference). The write-through effect persists
+/// the augmented config on next mutation, so a one-shot launch after
+/// new systems land is enough to update the operator's views.json.
 function ensureShippedDefaults(config: ViewsConfig): ViewsConfig {
   const have = new Set(config.views.map((v) => v.id));
   let updated = config;
@@ -454,7 +509,88 @@ function ensureShippedDefaults(config: ViewsConfig): ViewsConfig {
   if (!have.has(MANUFACTURER_VIEW_ID)) {
     updated = { ...updated, views: [...updated.views, buildDefaultManufacturerView()] };
   }
+  // v3.5.3: auto-extend pass for shipped FormFactor + Manufacturer.
+  updated = {
+    ...updated,
+    views: updated.views.map((view) => {
+      if (view.id === DEFAULT_VIEW_ID) return autoExtendShippedView(view, "formFactor");
+      if (view.id === MANUFACTURER_VIEW_ID) return autoExtendShippedView(view, "manufacturer");
+      return view;
+    }),
+  };
   return updated;
+}
+
+/// Walk the registry; for each system not present in `view` AND not
+/// in `view.explicitlyRemoved`, find the container whose rule matches
+/// the system's tag (formFactor or manufacturer per `ruleKind`) and
+/// append a platform leaf there. If no matching container exists
+/// (operator deleted "Consoles" entirely), skip the leaf — surfacing
+/// it elsewhere would surprise the operator. Never reorders existing
+/// leaves; never modifies hidden flags.
+function autoExtendShippedView(
+  view: View,
+  ruleKind: "formFactor" | "manufacturer",
+): View {
+  const existing = new Set<SystemId>();
+  collectLeafSystemIds(view.root, existing);
+  const removed = new Set<SystemId>((view.explicitlyRemoved ?? []) as SystemId[]);
+
+  let root = view.root;
+  let changed = false;
+  for (const systemId of Object.keys(systemThemes) as SystemId[]) {
+    if (existing.has(systemId)) continue;
+    if (removed.has(systemId)) continue;
+    const tagValue =
+      ruleKind === "formFactor"
+        ? systemThemes[systemId].formFactor
+        : systemThemes[systemId].manufacturer;
+    const target = findContainerByRule(root, ruleKind, tagValue);
+    if (!target) continue;
+    root = mapNode(root, target.id, (n) => {
+      if (!("children" in n)) return n;
+      return {
+        ...n,
+        children: [
+          ...n.children,
+          {
+            kind: "platform",
+            id: platformNodeIdFor(systemId),
+            systemId,
+            hidden: false,
+          },
+        ],
+      };
+    });
+    changed = true;
+  }
+  return changed ? { ...view, root } : view;
+}
+
+function collectLeafSystemIds(node: ContainerNode | ViewNode, into: Set<SystemId>): void {
+  if ("kind" in node && node.kind === "platform") {
+    into.add(node.systemId);
+    return;
+  }
+  if (!("children" in node)) return;
+  for (const child of node.children) collectLeafSystemIds(child, into);
+}
+
+function findContainerByRule(
+  node: ContainerNode | ViewNode,
+  ruleKind: "formFactor" | "manufacturer",
+  value: string,
+): ContainerNode | null {
+  if (!("children" in node)) return null;
+  const container = node as ContainerNode;
+  if (container.rule && container.rule.kind === ruleKind && container.rule.value === value) {
+    return container;
+  }
+  for (const child of container.children) {
+    const inner = findContainerByRule(child, ruleKind, value);
+    if (inner) return inner;
+  }
+  return null;
 }
 
 function mapActiveView(config: ViewsConfig, fn: (view: View) => View): ViewsConfig {
