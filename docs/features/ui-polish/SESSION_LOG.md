@@ -8,6 +8,65 @@ of the docs reorg so cross-cutting work has a proper home.
 
 ---
 
+## 2026-05-23 — Window persistence + library tile-size slider (cross-system)
+
+Two long-standing paper-cuts in the desktop UI, planned as one pass
+since both are layout-persistence work riding on the existing
+`layout.json`.
+
+- **Shipped:** branch `feat/window-and-tile-prefs`, 2 phase commits.
+  - **Phase 1 — Window geometry persistence (`1936bb2`):**
+    `LayoutPrefs` extended with `windows: HashMap<String, WindowGeometry>`
+    keyed by Tauri window label. `WindowGeometry { width, height,
+    x, y, maximized }`. Both `setup_two_window` and
+    `setup_single_window` now read layout on entry and apply persisted
+    geometry per window via two new builder-helper functions
+    (`apply_persisted_webview_geometry` + `apply_persisted_window_geometry`).
+    First launch with no slot for the library/main window enables
+    maximize-on-build (matches Steam / Epic / LaunchBox); game window
+    keeps its 768×717 default. `on_window_event` extended with
+    Resized/Moved/ScaleFactorChanged → per-label pending map; a
+    background thread (`oa-window-persist`) debounces 300ms and
+    flushes via new `layout::persist_window_geometry`. Maximize-state
+    handling is non-trivial: `merge_geometry` preserves the prior
+    un-maximized restore size when the operator maximizes (otherwise
+    the next launch would open at maximized resolution stuck in
+    restored mode). 7 new layout tests covering serde + merge logic
+    + flush write-through.
+
+  - **Phase 2 — Tile-size slider + hybrid ±20% scaling (`52aed5b`):**
+    `LayoutPrefs.library_tile_size: u32` default 220. Frontend
+    `layout/state.ts` hydrates + writes through. `GridControls`
+    (the sticky bar above the library) renders a range slider on
+    the right when the active view is the capsule grid (hidden in
+    list view). Live preview while dragging.
+    `VirtualLibraryGrid` swaps fixed-220 column derivation for new
+    `fitColumns(containerWidth, target, gap)` — picks the column
+    count whose per-tile width lands closest to target within ±20%.
+    Grid template uses computed width (`${actualTileWidth}px`)
+    instead of `1fr` so tiles stay at the chosen size instead of
+    stretching to fill remainder. Result: dragging the window edge
+    smoothly scales tiles; column adds/drops only when the band
+    exhausts. `set_layout` Tauri command now preserves the on-disk
+    `windows` map across frontend writes so a sidebar resize
+    doesn't clobber concurrent flusher writes.
+
+- **Almost:** N/A — `cargo test layout` 11/11 green
+  (`cargo test --workspace` includes them in the 355-test suite).
+  Frontend `npm run typecheck` clean. Operator runtime verification
+  pending per the plan's verification section: resize/move/maximize
+  cycle across launches, multi-monitor drag, slider live-scrub
+  during window resize, hybrid scaling at extreme container widths.
+
+- **Next:** Operator runtime test pass → merge `--no-ff` to main +
+  delete branch. Follow-ups parked: per-system tile-size override
+  (`SystemSettings.library_tile_size_override: Option<u32>` riding
+  the existing 3-tier cascade) and density-preset shortcuts
+  (Compact / Comfortable / Cozy / Huge buttons) — only if real-world
+  usage surfaces the friction.
+
+---
+
 ## 2026-05-22 — UI polish PR 3 + PR 4 (Phases D + E, cross-system)
 
 Final two PRs of the polish-plan execution, bundled per operator request.
