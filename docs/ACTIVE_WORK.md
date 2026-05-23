@@ -11,23 +11,24 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Portable install** ([features/portable-install/](features/portable-install/)) —
-  branch `feat/portable-install`, 4 phase commits (resolver,
-  asset-protocol scope + frontend swap, AppData→portable migration,
-  docs). All Rust + frontend type-checks + workspace tests green
-  (355/355). Pending operator runtime test of the three scenarios in
-  `plans/groovy-enchanting-candle.md` verification section, then
-  merge `--no-ff` to main.
+(Nothing actively in flight.)
 
 ## Recently completed (this session)
 
+- **Portable install** ([features/portable-install/](features/portable-install/)) —
+  merged to main 2026-05-23 as `993ca6a`. 5 commits: data_dir
+  resolver + marker file, asset-protocol runtime scope + frontend
+  getDataDir helper, AppData→portable auto-migration with sentinel,
+  CLAUDE.md + docs, and a follow-up `npm --prefix` fix to
+  tauri.conf.json so `cargo tauri build` works end-to-end.
 - **Docs audit + reorg** — branch `feat/docs-audit-and-reorg`, 5 commits.
   Phase 1 fixed stale references across the docs tree; Phase 2 introduced
   `INDEX.md` + `ACTIVE_WORK.md` + `docs/features/<name>/` skeleton, moved
   executed plans into their feature folders, re-filed cross-cutting
   session entries out of per-core SESSION_LOGs, and capped the long
-  SESSION_LOGs with sibling ARCHIVE files. Pending operator review +
-  merge to main.
+  SESSION_LOGs with sibling ARCHIVE files. Merged to main.
+- **Sidebar v3.4 PARKING_LOT entry** — small doc-cleanup PR merged
+  to main 2026-05-23 as `c700641`.
 
 ## Recently completed (last 1–2 sessions; reference for context)
 
