@@ -1,15 +1,15 @@
 # UI Polish Plan — Concrete Execution Sheet
 
-> **STATUS: ✅ FULLY SHIPPED 2026-05-22.** Phases A (cleanup + renames), B+C (Dialog primitive + SettingRow), D (drawer shrink + 7 Game dialogs), E (CLI stub + chromeVisible) all landed. Menu-bar architecture (the Phase 0 prereq for `docs/KIOSK_PLAN.md`) operationalized via the dialog refactor. This file is kept as historical reference.
+> **STATUS: ✅ FULLY SHIPPED 2026-05-22.** Phases A (cleanup + renames), B+C (Dialog primitive + SettingRow), D (drawer shrink + 7 Game dialogs), E (CLI stub + chromeVisible) all landed. Menu-bar architecture (the Phase 0 prereq for `../kiosk-shell/KIOSK_PLAN.md`) operationalized via the dialog refactor. This file is kept as historical reference.
 
 **Status:** Ready to execute. Synthesized 2026-05-22 from six parallel codebase audits.
 
-**Purpose:** Eliminate duplicate settings surfaces, polish the Dialog primitive, canonicalize `SettingRow`, and shrink the per-game drawer to a focused Properties dialog. **This is Phase 0 of `docs/KIOSK_PLAN.md`** — the prereq before any kiosk shell work.
+**Purpose:** Eliminate duplicate settings surfaces, polish the Dialog primitive, canonicalize `SettingRow`, and shrink the per-game drawer to a focused Properties dialog. **This is Phase 0 of `../kiosk-shell/KIOSK_PLAN.md`** — the prereq before any kiosk shell work.
 
 **Companion docs:**
-- `docs/UI_AUDIT.md` (2026-05-18) — original inventory; **stale on several points** (see §0 below).
-- `docs/UI_MENU_BAR_PLAN.md` (2026-05-18) — original menu-bar roadmap. ~70% shipped; this plan finishes it.
-- `docs/KIOSK_PLAN.md` (2026-05-22) — long-term kiosk design.
+- Sibling `UI_AUDIT.md` (2026-05-18) — original inventory; **stale on several points** (see §0 below).
+- Sibling `UI_MENU_BAR_PLAN.md` (2026-05-18) — original menu-bar roadmap. ~70% shipped; this plan finishes it.
+- `../kiosk-shell/KIOSK_PLAN.md` (2026-05-22) — long-term kiosk design.
 
 ---
 
@@ -65,7 +65,7 @@ Cosmetic, no behavior change:
 - `frontend/src/components/PerGameSettingsDrawer.tsx:1127` — comment "in PerSystemSettingsPage. Launch-path resolution…" → repoint to `SystemDialogs.tsx`.
 - `frontend/src/components/SystemBindingsEditor.tsx:26` — "PerSystemSettingsPage Input tab" → "wrapped by SystemBindingsDialog".
 
-### A.4 Update `docs/UI_AUDIT.md` staleness
+### A.4 Update sibling `UI_AUDIT.md` staleness
 
 Add a status header at the top of the file:
 > **Status as of 2026-05-22:** Several specifics in this audit have shipped or drifted. See `docs/UI_POLISH_PLAN.md` §0 for the current state. The structural-IA findings (overlap matrix, orphaned features) remain valid as design context.
@@ -313,7 +313,7 @@ Two cheap changes that pay off for the future kiosk shell without doing real kio
 - Add `#[arg(long)] pub kiosk: bool` to the args struct.
 - In `DirectLaunchConfig`, add `kiosk: bool`.
 - At startup, when `--kiosk` is set, **override** the initial presentation mode at runtime only — don't write `presentation.json`. Mirror the precedence used by `OA_SHELL_MODE` in `apps/oa-shell/src/main.rs:2605-2615`.
-- Initial override target: `PresentationMode::Cabinet` (the closest existing approximation). When kiosk chrome lands in Phase 1 of `KIOSK_PLAN.md`, add a fourth variant.
+- Initial override target: `PresentationMode::Cabinet` (the closest existing approximation). When kiosk chrome lands in Phase 1 of `../kiosk-shell/KIOSK_PLAN.md`, add a fourth variant.
 
 ### E.2 Extract `chromeVisible()` memo
 
@@ -352,10 +352,10 @@ Per-PR scope discipline: do not touch anything outside the named phase. If you s
 
 ## 7. Out of scope (deliberately)
 
-- Building kiosk chrome (`docs/KIOSK_PLAN.md` Phase 1+).
+- Building kiosk chrome (`../kiosk-shell/KIOSK_PLAN.md` Phase 1+).
 - New settings fields.
 - Migrating Milestones / Cheats draft-form layouts to SettingRow (they're new-record entry forms, not inheritance-aware settings).
-- Rewriting `UI_AUDIT.md` (add the staleness header in A.4; leave content as historical reference).
+- Rewriting sibling `UI_AUDIT.md` (add the staleness header in A.4; leave content as historical reference).
 - Touching emulator-side code beyond the small CLI flag stub in E.1.
 - `<DialogNavRail>` scroll-spy left rail (revisit when a 6+ section dialog actually exists).
 - Adding a fourth `PresentationMode::Kiosk` variant (waits for kiosk chrome).

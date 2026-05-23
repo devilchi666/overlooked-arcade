@@ -4,7 +4,7 @@
 
 **Date:** 2026-05-18
 **Status:** Proposal · planning only · no code (original; see banner above)
-**Companion:** `docs/UI_AUDIT.md` (inventory of today's UI surfaces)
+**Companion:** sibling `UI_AUDIT.md` (inventory of today's UI surfaces)
 
 ## Why this shape
 
@@ -189,7 +189,7 @@ In-game power tools, always visible.
 
 ## Mapping of every current settings field
 
-For audit traceability — every field listed in `docs/UI_AUDIT.md` §5 has a new home above. Summary by source surface:
+For audit traceability — every field listed in sibling `UI_AUDIT.md` §5 has a new home above. Summary by source surface:
 
 - **`SettingsPage` (OA-wide, 7 tabs)** → `Settings ▾` (Display / Audio / Gameplay / Shaders / Shell mode) + `Library ▾` (Library Manager + Cores Manager + Game media routes) + `View ▾` (Presentation toggles).
 - **`PerSystemSettingsPage` (8 tabs)** → `System ▾` items, each opening a focused modal.

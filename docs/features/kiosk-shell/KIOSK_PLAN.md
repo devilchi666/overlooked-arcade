@@ -1,12 +1,12 @@
 # Kiosk / Cabinet Mode — Design Plan
 
-> **STATUS: 📐 DESIGN-ONLY — NOT YET IMPLEMENTED.** Full design locked 2026-05-22 (this doc). Phase 0 (desktop polish) ran in parallel via `UI_POLISH_PLAN.md` (✅ shipped) + `UI_MENU_BAR_PLAN.md`. Phase 1+ (kiosk shell itself: `--kiosk` flag, theme substrate, attract mode, in-game menu, 5-bus mixer, multi-monitor surfaces) has not begun.
+> **STATUS: 📐 DESIGN-ONLY — NOT YET IMPLEMENTED.** Full design locked 2026-05-22 (this doc). Phase 0 (desktop polish) ran in parallel via `../ui-polish/UI_POLISH_PLAN.md` (✅ shipped) + `../ui-polish/UI_MENU_BAR_PLAN.md`. Phase 1+ (kiosk shell itself: `--kiosk` flag, theme substrate, attract mode, in-game menu, 5-bus mixer, multi-monitor surfaces) has not begun.
 
 **Status:** Someday plan. Designed but not on the active roadmap. Pick this up after current polish + settings IA work lands.
 
 **Date settled:** 2026-05-22 (planning conversation).
 
-**Purpose:** Capture every design decision settled during the kiosk-mode planning conversation so a future session can pick this up without re-deriving anything. Companion documents that already exist on this topic: `docs/UI_AUDIT.md` (today's UI surfaces — informs what changes for kiosk) and `docs/UI_MENU_BAR_PLAN.md` (desktop-mode IA polish — runs in parallel to / before this).
+**Purpose:** Capture every design decision settled during the kiosk-mode planning conversation so a future session can pick this up without re-deriving anything. Companion documents that already exist on this topic: `../ui-polish/UI_AUDIT.md` (today's UI surfaces — informs what changes for kiosk) and `../ui-polish/UI_MENU_BAR_PLAN.md` (desktop-mode IA polish — runs in parallel to / before this).
 
 This file is the source of truth for *what we decided*. When implementation starts, individual phases get their own working docs.
 
@@ -524,7 +524,7 @@ If a theme can read `%USERPROFILE%\Documents\passwords.txt`, the federation mode
 ## 19. Phased implementation
 
 ### Phase 0 — Polish current program (NOW)
-- **Settings/IA polish** per `docs/UI_MENU_BAR_PLAN.md`. Step-1 (trim placeholders) through Step-7 (Tools menu) are the critical pre-work.
+- **Settings/IA polish** per `../ui-polish/UI_MENU_BAR_PLAN.md`. Step-1 (trim placeholders) through Step-7 (Tools menu) are the critical pre-work.
 - Get the desktop UI to a polished baseline; many of the surfaces stay in desktop mode forever.
 - Mode switch foundation — even before kiosk is built, the shell architecture should anticipate a future mode switch (don't bake desktop-only assumptions into shared state).
 
@@ -631,7 +631,7 @@ What's missing and needs to be built or planned:
 
 ## 22. Companion docs
 
-- `docs/UI_AUDIT.md` (2026-05-18) — today's UI surfaces. Informs what changes for kiosk.
-- `docs/UI_MENU_BAR_PLAN.md` (2026-05-18) — desktop-mode IA polish. Phase 0 of this plan.
+- `../ui-polish/UI_AUDIT.md` (2026-05-18) — today's UI surfaces. Informs what changes for kiosk.
+- `../ui-polish/UI_MENU_BAR_PLAN.md` (2026-05-18) — desktop-mode IA polish. Phase 0 of this plan.
 - `docs/DECISIONS.md` — when implementation starts, append per-phase decisions here.
 - `docs/PARKING_LOT.md` — kiosk-plan entry points here.
