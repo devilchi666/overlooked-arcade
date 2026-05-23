@@ -9,6 +9,9 @@ Routing table. Read this first; it points to everything else.
   Each carries its own README / ROADMAP / SESSION_LOG / DECISIONS.
 - **Per-core work** lives under `docs/cores/<id>/`. Same file shape.
 - **Project-wide** lives at `docs/` root.
+- **Old SESSION_LOG entries** spill to `SESSION_LOG_ARCHIVE.md` next to the
+  live one when the live file grows past ~150 lines. Read the archive only
+  when you need history older than the last ~5 entries.
 
 ## Project-wide
 

@@ -11,10 +11,17 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Docs audit + reorg** — fixing stale docs, then restructuring per-stream
-  docs so cross-cutting work has a proper home. Branch
-  `feat/docs-audit-and-reorg`. This stream's the meta-work that produced
-  INDEX.md / ACTIVE_WORK.md / features/.
+(Nothing actively in flight today.)
+
+## Recently completed (this session)
+
+- **Docs audit + reorg** — branch `feat/docs-audit-and-reorg`, 5 commits.
+  Phase 1 fixed stale references across the docs tree; Phase 2 introduced
+  `INDEX.md` + `ACTIVE_WORK.md` + `docs/features/<name>/` skeleton, moved
+  executed plans into their feature folders, re-filed cross-cutting
+  session entries out of per-core SESSION_LOGs, and capped the long
+  SESSION_LOGs with sibling ARCHIVE files. Pending operator review +
+  merge to main.
 
 ## Recently completed (last 1–2 sessions; reference for context)
 
