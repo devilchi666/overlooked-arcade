@@ -832,7 +832,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 this is purely a visibility toggle). */}
             <section class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
             <Show when={activeTab() === "views"}>
-              <ViewsManagerTab views={props.views} />
+              <ViewsManagerTab views={props.views} library={props.library} />
             </Show>
             <Show when={activeTab() === "media"}>
             <div class="space-y-3">

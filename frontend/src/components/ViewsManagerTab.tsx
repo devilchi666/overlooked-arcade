@@ -1,14 +1,17 @@
-import { createSignal, For, Show, type Component } from "solid-js";
+import { createMemo, createSignal, For, Show, type Component } from "solid-js";
 
+import type { LibraryStore } from "../library/store";
 import type { ViewsStore, NewViewTemplate } from "../views/store";
 import {
   DEFAULT_VIEW_ID,
   LEGACY_VIEW_ID,
   MANUFACTURER_VIEW_ID,
 } from "../views/defaults";
+import ViewEditorPane from "./ViewEditorPane";
 
 type Props = {
   views: ViewsStore;
+  library: LibraryStore;
 };
 
 /// Library Manager → Views tab body. Per VIEW_EDITOR_PLAN.md §1, ships
@@ -24,6 +27,15 @@ const ViewsManagerTab: Component<Props> = (props) => {
   const cfg = () => props.views.config();
   const allViews = () => cfg().views;
   const activeId = () => cfg().activeViewId;
+
+  // v3.2 — editor mode. When set, the tab body swaps from the list to
+  // the ViewEditorPane for that view. Cleared on [← Back to views].
+  const [editingViewId, setEditingViewId] = createSignal<string | null>(null);
+  const editingView = createMemo(() => {
+    const id = editingViewId();
+    if (!id) return null;
+    return allViews().find((v) => v.id === id) ?? null;
+  });
 
   // Inline rename state — only one view in rename mode at a time.
   const [renamingId, setRenamingId] = createSignal<string | null>(null);
@@ -103,6 +115,17 @@ const ViewsManagerTab: Component<Props> = (props) => {
   }
 
   return (
+    <Show
+      when={!editingView()}
+      fallback={
+        <ViewEditorPane
+          views={props.views}
+          library={props.library}
+          view={editingView()!}
+          onBack={() => setEditingViewId(null)}
+        />
+      }
+    >
     <div class="max-w-2xl space-y-6">
       <header>
         <h2 class="text-sm font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink)">
@@ -171,6 +194,16 @@ const ViewsManagerTab: Component<Props> = (props) => {
                   when={!isRenaming()}
                   fallback={null}
                 >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setEditingViewId(view.id);
+                    }}
+                    class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-system-accent)/15 hover:text-(--color-oa-ink)"
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -332,6 +365,7 @@ const ViewsManagerTab: Component<Props> = (props) => {
         </div>
       </Show>
     </div>
+    </Show>
   );
 };
 
