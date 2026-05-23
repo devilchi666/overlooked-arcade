@@ -100,9 +100,11 @@ Per-core ROADMAPs are the source of truth for per-system status. If you find you
 A unified Rust + frontend log stream lands in three places at runtime (see `docs/DECISIONS.md` 2026-05-18 "Three-output logger" entry for the full design):
 
 - **stderr** — visible when running via `cargo tauri dev`.
-- **`appData/logs/oa-current.log`** — stable path, truncated each launch. Read this file when investigating bugs. On Windows: `C:\Users\<user>\AppData\Roaming\dev.overlookedarcade.shell\logs\oa-current.log`.
-- **`appData/logs/oa-<YYYYMMDD-HHmmss>.log`** — per-session archive, last 5 retained.
-- **In-app**: `Help → Debug log…` opens a live filterable view of the in-memory ring (last 2000 entries).
+- **`<data_dir>/logs/oa-current.log`** — stable path, truncated each launch. Read this file when investigating bugs. `<data_dir>` resolves to one of two places per [docs/features/portable-install/](docs/features/portable-install/):
+  - **AppData mode (default)**: `C:\Users\<user>\AppData\Roaming\dev.overlookedarcade.shell\logs\oa-current.log` on Windows.
+  - **Portable mode** (when a `portable.txt` marker file sits next to `oa-shell.exe`): `<exe_dir>\settings\logs\oa-current.log`. The startup line `oa-shell: data dir = <path> (portable|appdata)` in the log itself confirms which.
+- **`<data_dir>/logs/oa-<YYYYMMDD-HHmmss>.log`** — per-session archive, last 5 retained.
+- **In-app**: `Help → Debug log…` opens a live filterable view of the in-memory ring (last 2000 entries). The **Copy path** button always returns the right path for the current mode.
 
 When the human reports a bug:
 1. Ask them to open `Help → Debug log…` and click **Copy path** — they can paste it back so I can `Read` the file directly.

@@ -29,6 +29,7 @@ Routing table. Read this first; it points to everything else.
 - [features/ui-polish/](features/ui-polish/) — menu-bar IA + dialog reorganization
 - [features/library-import/](features/library-import/) — import wizard, scanner, media sync
 - [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
+- [features/portable-install/](features/portable-install/) — `<exe_dir>/settings/` opt-in via portable.txt marker
 
 ## Per-core docs
 

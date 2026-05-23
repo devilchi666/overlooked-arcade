@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { appDataDir } from "@tauri-apps/api/path";
+import { getDataDir } from "../lib/dataDir";
 import type { RomEntry } from "../library/types";
 import { useMedia } from "../library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
@@ -20,9 +20,9 @@ const RegionPicker: Component<Props> = (props) => {
   const [appDataPath, setAppDataPath] = createSignal("");
   onMount(async () => {
     try {
-      setAppDataPath(await appDataDir());
+      setAppDataPath(await getDataDir());
     } catch (e) {
-      console.warn("RegionPicker: appDataDir failed:", e);
+      console.warn("RegionPicker: getDataDir failed:", e);
     }
   });
   function joinAppData(rel: string): string {

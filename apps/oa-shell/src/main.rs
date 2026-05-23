@@ -19,6 +19,7 @@ mod bindings;
 mod cd_id;
 mod cheat_search;
 mod cli;
+mod data_dir;
 mod http_retry;
 mod core_installer;
 mod core_options;
@@ -2420,6 +2421,7 @@ fn main() {
             get_perf_stats,
             get_recent_logs,
             get_log_file_path,
+            get_oa_data_dir,
             reveal_logs_folder,
             log_from_frontend,
             start_rewind_scrub,
@@ -2572,11 +2574,19 @@ fn main() {
             move |app| {
                 let (cmd_tx, cmd_rx) = mpsc::channel::<EmuCommand>();
 
-                let app_data_dir = app.path().app_data_dir().unwrap_or_else(|e| {
-                    log::warn!("oa-shell: app_data_dir() failed ({e:?}); save states + prefs will use cwd");
-                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                let resolved = data_dir::resolve_data_dir(Some(app)).unwrap_or_else(|e| {
+                    log::warn!("oa-shell: data dir resolution failed ({e}); falling back to cwd");
+                    data_dir::DataDir {
+                        path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                        portable: false,
+                    }
                 });
-                log::info!("oa-shell: app_data_dir = {}", app_data_dir.display());
+                let app_data_dir = resolved.path;
+                log::info!(
+                    "oa-shell: data dir = {} ({})",
+                    app_data_dir.display(),
+                    if resolved.portable { "portable" } else { "appdata" }
+                );
 
                 // Now that app_data_dir is resolved, switch the logger's
                 // file output on. Earlier log lines (cli arg parse,
@@ -2585,6 +2595,22 @@ fn main() {
                 match logger::configure_file_output(&app_data_dir) {
                     Ok(path) => log::info!("oa-shell: log file = {}", path.display()),
                     Err(e) => log::warn!("oa-shell: log file setup failed: {e}"),
+                }
+
+                // In portable mode, widen the asset-protocol scope to cover
+                // the portable settings dir. tauri.conf.json scopes it to
+                // `$APPDATA/**` at compile time; the frontend's
+                // convertFileSrc URLs for cover art would 403 otherwise.
+                if resolved.portable {
+                    if let Err(e) = app
+                        .asset_protocol_scope()
+                        .allow_directory(&app_data_dir, true)
+                    {
+                        log::error!(
+                            "oa-shell: failed to widen asset-protocol scope to {}: {e}",
+                            app_data_dir.display()
+                        );
+                    }
                 }
 
                 // Phase E — multi-core boot. Fan out the four boot-time
@@ -6099,6 +6125,16 @@ fn get_recent_logs(
         .lock()
         .map_err(|_| "log ring poisoned".to_string())?;
     Ok(ring.snapshot(limit))
+}
+
+/// Absolute path of the resolved OA data dir — `<exe_dir>/settings/` in
+/// portable mode, or Tauri's app_data_dir otherwise. Frontend code that
+/// builds asset-protocol URLs for cover art (media.tsx, GameInfoModal,
+/// RegionPicker) calls this in place of `@tauri-apps/api/path::appDataDir()`
+/// so URLs resolve against the right base in both modes.
+#[tauri::command]
+fn get_oa_data_dir(state: tauri::State<'_, AppState>) -> String {
+    state.app_data_dir.to_string_lossy().into_owned()
 }
 
 /// Absolute path of the current session's `oa-current.log`. Used by
