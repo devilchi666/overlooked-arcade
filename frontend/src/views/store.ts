@@ -386,6 +386,23 @@ export function createViewsStore() {
     })));
   }
 
+  /// v3.3: per-container accent override. Stored as a free-form
+  /// string (typically a CSS color literal like `#ff7733`) so the
+  /// schema doesn't pin a representation. SidebarTreeNode's
+  /// ContainerRow reads this and applies it as an inline
+  /// `--color-system-accent` override on the row — cascades into the
+  /// container's chrome (active-row tint, twisty hover, count badge)
+  /// without leaking into descendant leaf rows (those have their
+  /// own `data-system` CSS rule that resets the variable).
+  ///
+  /// Pass `null` to clear and revert to the OA default accent.
+  function setContainerAccent(nodeId: string, accent: string | null): void {
+    setConfig((prev) => mapActiveView(prev, (view) => ({
+      ...view,
+      root: mapNode(view.root, nodeId, (n) => ({ ...n, accent })),
+    })));
+  }
+
   /// Add a platform leaf for `systemId` as the last child of
   /// `parentId`. Returns the new leaf's id, or null if the system is
   /// already represented by a leaf anywhere in the active view (no
@@ -470,6 +487,7 @@ export function createViewsStore() {
     addContainer,
     setContainerLabel,
     setContainerRule,
+    setContainerAccent,
     addPlatformLeaf,
     removeNode,
   };
