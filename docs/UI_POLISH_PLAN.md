@@ -1,5 +1,7 @@
 # UI Polish Plan — Concrete Execution Sheet
 
+> **STATUS: ✅ FULLY SHIPPED 2026-05-22.** Phases A (cleanup + renames), B+C (Dialog primitive + SettingRow), D (drawer shrink + 7 Game dialogs), E (CLI stub + chromeVisible) all landed. Menu-bar architecture (the Phase 0 prereq for `docs/KIOSK_PLAN.md`) operationalized via the dialog refactor. This file is kept as historical reference.
+
 **Status:** Ready to execute. Synthesized 2026-05-22 from six parallel codebase audits.
 
 **Purpose:** Eliminate duplicate settings surfaces, polish the Dialog primitive, canonicalize `SettingRow`, and shrink the per-game drawer to a focused Properties dialog. **This is Phase 0 of `docs/KIOSK_PLAN.md`** — the prereq before any kiosk shell work.

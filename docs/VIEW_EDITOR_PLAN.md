@@ -1,5 +1,7 @@
 # View Editor Plan — v3 of the Sidebar Tier Work
 
+> **STATUS: ✅ SUBSTANTIALLY SHIPPED 2026-05-22.** v3.1 (Views tab + CRUD — `b58812e`), v3.2 (ViewEditorPane tree+properties+drag — `b98852d`), v3.3 (per-container accent picker — `d37ae71`), v3.5 (schema v2 + `explicitlyRemoved` + auto-extend reconciler — `b325c70`) all merged. **v3.4 (per-container art slots) intentionally parked** — see `docs/PARKING_LOT.md` 2026-05-22 entry. This file is kept as historical reference.
+
 **Status:** Design locked 2026-05-22. Q1–Q3, Q5–Q7, Q9, Q11 answered by operator; Q4, Q8, Q10, Q12, Q13 defaulted to recommendations (operational details — operator can push back during implementation if a default feels wrong). Ready to execute.
 
 **Locked decisions (operator-confirmed):**

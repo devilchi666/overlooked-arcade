@@ -1,5 +1,7 @@
 # Sidebar Hierarchy Plan — Concrete Execution Sheet
 
+> **STATUS: ✅ FULLY SHIPPED 2026-05-22.** PR-α (registry tagging), PR-β (views infrastructure), PR-γ (tree render + drag + per-node hide + migration banner — merge `ab5a335`) all landed. v2/v3 follow-on work (Manufacturers view, cross-container drag, View Editor) tracked in `docs/VIEW_EDITOR_PLAN.md`. This file is kept as historical reference.
+
 **Status:** Design locked 2026-05-22. Ready to execute.
 
 **Purpose:** Replace the flat list of systems in the left sidebar with a tiered tree organized by form factor (Consoles / Handhelds / Computers / Arcade / Other) in v1, on top of a new "views" data model that's the same model the kiosk shell will consume in Phase 1 of `docs/KIOSK_PLAN.md`.

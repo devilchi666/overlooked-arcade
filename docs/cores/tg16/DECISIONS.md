@@ -1,5 +1,7 @@
 # tg16 Decisions Log
 
+> **Architectural note (2026-05-16 libretro pivot):** The 2026-05-15 entries below describe the original `crates/oa-pce-sys` + `crates/oa-pce` vendored static-crate integration. That integration was retired by the project-wide 2026-05-16 "Architecture pivot: libretro frontend" decision in `docs/DECISIONS.md`. Entries from 2026-05-16 forward describe the libretro-frontend tier. The 2026-05-15 entries are kept as historical reference for the reasoning behind the original FFI surface and Mednafen choice.
+
 Append-only. Newest at the bottom. Every entry: **what** we decided, **when**, **why**, and **what we considered and rejected**.
 
 tg16-specific integration choices live here. Project-wide decisions (engine stack, license, vendoring policy, no-per-core-ARCHITECTURE rule, etc.) live in `docs/DECISIONS.md`.

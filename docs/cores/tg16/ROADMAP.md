@@ -1,5 +1,7 @@
 # tg16 Roadmap
 
+> **Architectural note (2026-05-16 libretro pivot):** Phase 1 items below describe the original `crates/oa-pce-sys` + `crates/oa-pce` vendored static-crate integration. Both crates are retired and excluded from the workspace; the equivalent runtime path is now `oa_libretro::LibretroCore` loading `mednafen_pce_fast_libretro.dll` from `<exe_dir>/cores/`. Phase 1 bullets stay ✅ because the *functionality* shipped — only the implementation tier changed.
+
 Per-core phase tracking for TurboGrafx-16 / PC Engine. Mirrors the project-wide phases in `docs/ROADMAP.md` but only the tg16 slice.
 
 Status legend: ⬜ not started · 🟨 in progress · ✅ complete.

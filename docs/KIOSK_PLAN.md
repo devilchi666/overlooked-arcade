@@ -1,5 +1,7 @@
 # Kiosk / Cabinet Mode — Design Plan
 
+> **STATUS: 📐 DESIGN-ONLY — NOT YET IMPLEMENTED.** Full design locked 2026-05-22 (this doc). Phase 0 (desktop polish) ran in parallel via `UI_POLISH_PLAN.md` (✅ shipped) + `UI_MENU_BAR_PLAN.md`. Phase 1+ (kiosk shell itself: `--kiosk` flag, theme substrate, attract mode, in-game menu, 5-bus mixer, multi-monitor surfaces) has not begun.
+
 **Status:** Someday plan. Designed but not on the active roadmap. Pick this up after current polish + settings IA work lands.
 
 **Date settled:** 2026-05-22 (planning conversation).

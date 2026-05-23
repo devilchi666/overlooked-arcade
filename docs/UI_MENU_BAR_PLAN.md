@@ -1,7 +1,9 @@
 # UI Redesign — Menu-Bar Architecture
 
+> **STATUS: 🚧 SUBSTANTIALLY SHIPPED via `UI_POLISH_PLAN.md` (2026-05-22).** The intent architecture (Library / View / System / Game / Tools / Settings menus organized by tier) is live via the dialog refactor: SettingsPage → LibraryManagerPage rename, sidebar Cores/Settings buttons removed, SystemDialogs.tsx organized by intent, PerGameSettingsDrawer shrunk. Visual top-of-window menu-bar component itself is not the canonical home today — the menu-organized dialogs do the work. Kept as historical reference for the IA reasoning.
+
 **Date:** 2026-05-18
-**Status:** Proposal · planning only · no code
+**Status:** Proposal · planning only · no code (original; see banner above)
 **Companion:** `docs/UI_AUDIT.md` (inventory of today's UI surfaces)
 
 ## Why this shape
