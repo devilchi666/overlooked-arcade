@@ -24,7 +24,7 @@ import {
   type JSX,
 } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { appDataDir } from "@tauri-apps/api/path";
+import { getDataDir } from "../lib/dataDir";
 import { launchRom } from "../library/launch";
 import { useMedia, type MediaVariant } from "../library/media";
 import type { RomEntry } from "../library/types";
@@ -65,14 +65,16 @@ const TAB_BUTTON_CLASS =
 const GameInfoModal: Component<Props> = (props) => {
   const media = useMedia();
 
-  // appDataDir absolute path for asset-protocol URL construction. Same
-  // approach as RegionPicker — resolved on mount, reused for every variant.
+  // Resolved data dir for asset-protocol URL construction. Same approach
+  // as RegionPicker — resolved on mount, reused for every variant.
+  // getDataDir() returns the portable settings dir or AppData per the
+  // Rust resolver; absolute path either way.
   const [appDataPath, setAppDataPath] = createSignal("");
   onMount(async () => {
     try {
-      setAppDataPath(await appDataDir());
+      setAppDataPath(await getDataDir());
     } catch (e) {
-      console.warn("GameInfoModal: appDataDir failed:", e);
+      console.warn("GameInfoModal: getDataDir failed:", e);
     }
   });
   function joinAppData(rel: string): string {

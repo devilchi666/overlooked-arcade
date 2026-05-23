@@ -27,7 +27,7 @@ import {
 } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { appDataDir } from "@tauri-apps/api/path";
+import { getDataDir } from "../lib/dataDir";
 import type { SystemId } from "../themes/registry";
 
 export type MediaSourceKind = "manual" | "libretroThumbnails";
@@ -163,14 +163,16 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
   }
 
   onMount(async () => {
-    // Resolve the absolute appDataDir path first — `convertFileSrc` requires
+    // Resolve the absolute data dir first — `convertFileSrc` requires
     // the full path. Without this, coverUrl() can't construct asset URLs.
+    // In portable mode this returns `<exe_dir>/settings/`; otherwise
+    // it's Tauri's app_data_dir.
     try {
-      const p = await appDataDir();
+      const p = await getDataDir();
       setAppDataPath(p);
-      console.log("[oa-media] appDataDir =", p);
+      console.log("[oa-media] dataDir =", p);
     } catch (e) {
-      console.warn("MediaProvider: appDataDir() failed:", e);
+      console.warn("MediaProvider: getDataDir() failed:", e);
     }
     // Install the listener FIRST so events fired during hydration (or during
     // a fast sync started moments after app launch) aren't dropped between
