@@ -150,29 +150,70 @@ const LeftSidebar: Component<Props> = (props) => {
     return map;
   });
 
-  /// solid-dnd onDragEnd. Computes the new order in the UNFILTERED
-  /// view tree (so hidden / auto-hide-empty siblings keep their
-  /// positions) and writes via `ViewsStore.reorderChildren`. Same-
-  /// parent drops only: cross-container drag-reorder is deferred to a
-  /// post-v1 PR per SIDEBAR_TIER_PLAN.md §0.
+  /// solid-dnd onDragEnd. Two paths:
+  ///   - Same-parent drag → reorderSiblingsInPlace (γ.2 behavior,
+  ///     unchanged). Writes against the UNFILTERED view tree so
+  ///     hidden / auto-hide-empty siblings keep their positions.
+  ///   - Cross-parent leaf drag (v2.2) → ViewsStore.moveNode. Source
+  ///     leaf removed from its current container, inserted into the
+  ///     target container at the drop position (before the drop leaf,
+  ///     or appended if the drop target IS a container header).
+  ///
+  /// Cross-parent CONTAINER drag (e.g. dragging "Consoles" onto a
+  /// leaf in "Handhelds") stays a silent no-op — containers don't
+  /// nest in v2 default views, and dragging top-level containers
+  /// across each other is meaningless at root level. v3's View
+  /// Editor introduces the surface for nested containers.
   const handleSidebarDragEnd: DragEventHandler = ({ draggable, droppable }) => {
     if (!droppable || draggable.id === droppable.id) return;
     const dragId = String(draggable.id);
     const dropId = String(droppable.id);
     const dragParent = parentOfId().get(dragId);
     const dropParent = parentOfId().get(dropId);
-    if (!dragParent || dragParent !== dropParent) return;
+    if (!dragParent) return;
 
     const view = props.views.activeView();
     if (!view) return;
 
-    if (dragParent === "__root__") {
-      reorderSiblingsInPlace(view.root.id, view.root.children, dragId, dropId, props.views);
-    } else {
-      const parent = findContainerById(view.root, dragParent);
-      if (!parent) return;
-      reorderSiblingsInPlace(parent.id, parent.children, dragId, dropId, props.views);
+    if (dragParent === dropParent) {
+      // Same-parent reorder — γ.2 path.
+      if (dragParent === "__root__") {
+        reorderSiblingsInPlace(view.root.id, view.root.children, dragId, dropId, props.views);
+      } else {
+        const parent = findContainerById(view.root, dragParent);
+        if (!parent) return;
+        reorderSiblingsInPlace(parent.id, parent.children, dragId, dropId, props.views);
+      }
+      return;
     }
+
+    // Cross-parent drag. Only leaf drags supported in v2.2 — container
+    // drags across scopes silently no-op (no container-nesting in v2).
+    const dragNode = findNode(view.root, dragId);
+    const isLeafDrag = dragNode && "kind" in dragNode && dragNode.kind === "platform";
+    if (!isLeafDrag) return;
+
+    // Determine target container + insertion anchor based on what was
+    // dropped on.
+    const dropNode = findNode(view.root, dropId);
+    let targetParentId: string;
+    let insertBeforeId: string | null;
+    if (dropNode && "children" in dropNode) {
+      // Dropped on a container header → append to that container.
+      targetParentId = dropId;
+      insertBeforeId = null;
+    } else if (dropParent && dropParent !== "__root__") {
+      // Dropped on a leaf in a different container → insert at that
+      // leaf's position (drop leaf shifts down).
+      targetParentId = dropParent;
+      insertBeforeId = dropId;
+    } else {
+      // Drop target's parent is root (unexpected for a leaf drop);
+      // bail rather than guess.
+      return;
+    }
+
+    props.views.moveNode(dragId, targetParentId, insertBeforeId);
   };
 
   const topLevelIds = createMemo(() => filteredRoot()?.children.map((c) => c.id) ?? []);

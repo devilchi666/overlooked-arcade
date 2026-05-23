@@ -154,6 +154,54 @@ export function createViewsStore() {
     reorderChildren("root", newOrder);
   }
 
+  /// Move a node from its current parent into `targetParentId`,
+  /// inserting before `insertBeforeId` (or appending to the end when
+  /// null). Used by PR-v2.2's cross-container drag + right-click "Move
+  /// to category…" submenu.
+  ///
+  /// Cycle guard: refuses moves that would place the node inside
+  /// itself or one of its descendants (e.g. dragging a container into
+  /// one of its own children). Same-parent moves work — they're
+  /// equivalent to reorderChildren but spelled as a position-relative
+  /// shift, which matches the drag-end-handler's perspective when
+  /// it doesn't pre-compute a full new order.
+  function moveNode(
+    nodeId: string,
+    targetParentId: string,
+    insertBeforeId: string | null,
+  ): void {
+    setConfig((prev) => mapActiveView(prev, (view) => {
+      const located = locateNode(view.root, nodeId);
+      if (!located) return view;
+      if (nodeId === targetParentId) return view;
+      // Cycle guard — refuse moves into the node's own subtree.
+      if (isAncestor(view.root, nodeId, targetParentId)) return view;
+
+      // Remove from current parent.
+      let newRoot = mapNode(view.root, located.parentId, (parent) => {
+        if (!("children" in parent)) return parent;
+        return {
+          ...parent,
+          children: parent.children.filter((c) => c.id !== nodeId),
+        };
+      });
+
+      // Insert into target parent at insertBeforeId's position (or end).
+      newRoot = mapNode(newRoot, targetParentId, (parent) => {
+        if (!("children" in parent)) return parent;
+        const insertIdx = insertBeforeId === null
+          ? parent.children.length
+          : parent.children.findIndex((c) => c.id === insertBeforeId);
+        const at = insertIdx < 0 ? parent.children.length : insertIdx;
+        const newChildren = parent.children.slice();
+        newChildren.splice(at, 0, located.node);
+        return { ...parent, children: newChildren };
+      });
+
+      return { ...view, root: newRoot };
+    }));
+  }
+
   /// Replace the entire active view's tree. Used when applying
   /// `reorderForFormFactor` after the operator picks "Try Form Factor
   /// view" — swaps the seeded default for the reordered version.
@@ -184,6 +232,7 @@ export function createViewsStore() {
     setNodeHidden,
     reorderChildren,
     reorderTopLevel,
+    moveNode,
     replaceView,
     commitTryFormFactor,
   };
@@ -234,4 +283,57 @@ function mapNode<T extends NodeLike>(node: T, targetId: string, transform: (n: T
     ...node,
     children: node.children.map((c) => mapNode(c, targetId, transform as never)),
   } as T;
+}
+
+/// DFS that returns the node matching `nodeId` along with its parent
+/// container's id. Returns null if not found OR if the node is the
+/// root (root has no parent within the tree). Used by moveNode to
+/// find a node's current location so it can be removed from its
+/// current parent's children.
+function locateNode(
+  root: View["root"],
+  nodeId: string,
+): { node: ViewNode; parentId: string } | null {
+  function walk(container: View["root"]): { node: ViewNode; parentId: string } | null {
+    for (const child of container.children) {
+      if (child.id === nodeId) return { node: child, parentId: container.id };
+      if ("children" in child) {
+        const inner = walk(child as View["root"]);
+        if (inner) return inner;
+      }
+    }
+    return null;
+  }
+  return walk(root);
+}
+
+/// Returns true when `descendantId` is `ancestorId` itself OR one of
+/// its descendants. Used as the cycle guard in moveNode — prevents
+/// moving a container into itself or into one of its own children.
+function isAncestor(
+  root: View["root"],
+  ancestorId: string,
+  descendantId: string,
+): boolean {
+  function walk(node: ViewNode | View["root"]): boolean {
+    if (node.id === ancestorId) {
+      return findInSubtree(node, descendantId);
+    }
+    if ("children" in node) {
+      for (const child of node.children) {
+        if (walk(child)) return true;
+      }
+    }
+    return false;
+  }
+  function findInSubtree(node: ViewNode | View["root"], targetId: string): boolean {
+    if (node.id === targetId) return true;
+    if ("children" in node) {
+      for (const child of node.children) {
+        if (findInSubtree(child, targetId)) return true;
+      }
+    }
+    return false;
+  }
+  return walk(root);
 }
