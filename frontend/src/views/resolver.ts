@@ -115,3 +115,17 @@ export function synthesizeLeafForSystem(systemId: SystemId): PlatformNode {
     hidden: false,
   };
 }
+
+/// Returns true when `targetId` matches `node`'s id or any descendant's
+/// id. Used by container-hide routing to decide whether to redirect
+/// the operator off a stranded node when their parent container gets
+/// hidden.
+export function nodeContainsId(node: ViewNode | ContainerNode, targetId: string): boolean {
+  if (node.id === targetId) return true;
+  if ("kind" in node && node.kind === "platform") return false;
+  const container = node as ContainerNode;
+  for (const child of container.children) {
+    if (nodeContainsId(child, targetId)) return true;
+  }
+  return false;
+}

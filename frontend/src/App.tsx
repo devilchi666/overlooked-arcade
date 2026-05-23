@@ -30,7 +30,9 @@ import TopToolbar from "./layout/TopToolbar";
 import LeftSidebar, { type SidebarView } from "./layout/LeftSidebar";
 import { createViewsStore } from "./views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "./views/defaults";
-import { findNode } from "./views/resolver";
+import { findNode, nodeContainsId } from "./views/resolver";
+import type { ContainerNode } from "./views/types";
+import ContainerContextMenu from "./components/ContainerContextMenu";
 import { MenuBar, Menu, MenuItem, MenuLabel, MenuDivider, MenuRadio, MenuCheckbox } from "./layout/MenuBar";
 import {
   AudioDialog,
@@ -292,6 +294,26 @@ const App: Component = () => {
     id: SystemId;
     position: { x: number; y: number };
   } | null>(null);
+  // Container right-click context menu (sister to systemContextFor —
+  // operator can right-click a container header in the sidebar tree to
+  // hide the whole bucket).
+  const [containerContextFor, setContainerContextFor] = createSignal<{
+    container: ContainerNode;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  /// Hide a system from the sidebar. Writes both the per-node `hidden`
+  /// flag in the active view (PR-γ source of truth — survives view
+  /// switches, container-level cascade) AND the legacy
+  /// `layout.hiddenSystems` set (covers systems not present in the
+  /// active view's tree + keeps Settings checkbox state coherent
+  /// across views). Reads use a union — either-or marks a system
+  /// hidden.
+  function hideSystemInActiveView(id: SystemId): void {
+    const list = layout.hiddenSystems();
+    if (!list.includes(id)) layout.setHiddenSystems([...list, id]);
+    viewsStore.setNodeHidden(platformNodeIdFor(id), true);
+  }
   // Import wizard modal (Phase 2.7 slice C). The legacy `handlePickFolder`
   // path stays as a single-shot fallback (kept on the Rescan menu item +
   // the drag-drop commit) so users with simple needs aren't forced through
@@ -1045,8 +1067,7 @@ const App: Component = () => {
                 <MenuItem
                   label="Hide from sidebar"
                   onClick={() => {
-                    const cur = layout.hiddenSystems();
-                    if (!cur.includes(id())) layout.setHiddenSystems([...cur, id()]);
+                    hideSystemInActiveView(id());
                     if (activeSystemId() === id()) {
                       setCurrentView({ kind: "all" });
                     }
@@ -1570,6 +1591,9 @@ const App: Component = () => {
             currentView={currentView()}
             onNavigate={(v) => setCurrentView(v)}
             onSystemContext={(id, position) => setSystemContextFor({ id, position })}
+            onContainerContext={(container, position) =>
+              setContainerContextFor({ container, position })
+            }
           />
         }
         rightSidebar={
@@ -1620,6 +1644,7 @@ const App: Component = () => {
                   settings={settings}
                   library={library}
                   layout={layout}
+                  views={viewsStore}
                   onAddLibraryFolder={handleAddLibraryFolder}
                   onRescanLibraryFolders={handleRescanLibraryFolders}
                   initialTab={libraryManagerInitialTab()}
@@ -1700,15 +1725,34 @@ const App: Component = () => {
         onOpenBindings={(id) => openSystemDialog("bindings", id)}
         onOpenSettings={(id) => openSystemDialog("display", id)}
         onHideSystem={(id) => {
-          const current = layout.hiddenSystems();
-          if (!current.includes(id)) {
-            layout.setHiddenSystems([...current, id]);
-          }
+          hideSystemInActiveView(id);
           // If the user hid the system they were viewing, kick them back
           // to "All games" so they aren't stranded on a sidebar entry
           // that just disappeared.
           if (activeSystemId() === id) {
             setCurrentView({ kind: "all" });
+          }
+        }}
+      />
+      <ContainerContextMenu
+        container={containerContextFor()?.container ?? null}
+        position={containerContextFor()?.position ?? null}
+        entries={library.state.entries}
+        onClose={() => setContainerContextFor(null)}
+        onHide={(containerId) => {
+          viewsStore.setNodeHidden(containerId, true);
+          // If the user's currently-viewing node was inside the hidden
+          // container, kick them back to "All games" so the sidebar
+          // doesn't strand them on a row that just disappeared.
+          const cv = currentView();
+          if (cv.kind === "view-node") {
+            const active = viewsStore.activeView();
+            if (active && active.id === cv.viewId) {
+              const containerNode = findNode(active, containerId);
+              if (containerNode && nodeContainsId(containerNode, cv.nodeId)) {
+                setCurrentView({ kind: "all" });
+              }
+            }
           }
         }}
       />

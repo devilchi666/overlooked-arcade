@@ -15,6 +15,9 @@ import { useMedia } from "../library/media";
 import type { LayoutStore } from "../layout/state";
 import type { SettingsStore } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
+import type { ViewsStore } from "../views/store";
+import { findNode } from "../views/resolver";
+import { platformNodeIdFor } from "../views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
 
 type Props = {
@@ -24,6 +27,7 @@ type Props = {
   settings: SettingsStore;
   library: LibraryStore;
   layout: LayoutStore;
+  views: ViewsStore;
   onAddLibraryFolder: () => void;
   onRescanLibraryFolders: () => void;
   /// Optional deep-link target — Library menu items use this to land on
@@ -1214,7 +1218,23 @@ const LibraryManagerPage: Component<Props> = (props) => {
                       const theme = systemThemes[id];
                       const count = () =>
                         props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
-                      const hidden = () => props.layout.hiddenSystems().includes(id);
+                      /// PR-γ source of truth is the active view's per-leaf
+                      /// `hidden` flag; the legacy flat `layout.hiddenSystems`
+                      /// set is checked as a fallback so systems not present
+                      /// in the active view's tree (custom v3+ views) still
+                      /// honor the operator's hide intent. Writes go to both
+                      /// to keep the two representations consistent during
+                      /// the soft-migration window.
+                      const hidden = () => {
+                        const active = props.views.activeView();
+                        if (active) {
+                          const node = findNode(active, platformNodeIdFor(id));
+                          if (node && "kind" in node && node.kind === "platform" && node.hidden) {
+                            return true;
+                          }
+                        }
+                        return props.layout.hiddenSystems().includes(id);
+                      };
                       return (
                         <li class="flex items-center gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
                           <input
@@ -1222,11 +1242,13 @@ const LibraryManagerPage: Component<Props> = (props) => {
                             checked={!hidden()}
                             onChange={(e) => {
                               const list = props.layout.hiddenSystems();
-                              if (e.currentTarget.checked) {
+                              const show = e.currentTarget.checked;
+                              if (show) {
                                 props.layout.setHiddenSystems(list.filter((s) => s !== id));
                               } else if (!list.includes(id)) {
                                 props.layout.setHiddenSystems([...list, id]);
                               }
+                              props.views.setNodeHidden(platformNodeIdFor(id), !show);
                             }}
                           />
                           <span class="flex-1 truncate text-(--color-oa-ink)">{theme.displayName}</span>
