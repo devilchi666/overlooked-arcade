@@ -1,5 +1,7 @@
 # View Editor Plan — v3 of the Sidebar Tier Work
 
+> **STATUS: ✅ SUBSTANTIALLY SHIPPED 2026-05-22.** v3.1 (Views tab + CRUD — `b58812e`), v3.2 (ViewEditorPane tree+properties+drag — `b98852d`), v3.3 (per-container accent picker — `d37ae71`), v3.5 (schema v2 + `explicitlyRemoved` + auto-extend reconciler — `b325c70`) all merged. **v3.4 (per-container art slots) intentionally parked** — see `docs/PARKING_LOT.md` 2026-05-22 entry. This file is kept as historical reference.
+
 **Status:** Design locked 2026-05-22. Q1–Q3, Q5–Q7, Q9, Q11 answered by operator; Q4, Q8, Q10, Q12, Q13 defaulted to recommendations (operational details — operator can push back during implementation if a default feels wrong). Ready to execute.
 
 **Locked decisions (operator-confirmed):**
@@ -22,9 +24,9 @@
 **Purpose:** Lets operators create, rename, delete, and edit custom views in the sidebar tree. Today (post-v2) we ship two view defaults (Platforms, Manufacturers) plus the migration-seeded Flat-Legacy view; operators can re-order, hide containers/leaves, drag leaves between containers, and switch active view via the picker — but they can't add a new container, rename "Consoles" to "TVs", or build a Decade view from scratch. v3 closes that gap.
 
 **Companion docs:**
-- `docs/SIDEBAR_TIER_PLAN.md` §8 (v3 spec, one paragraph) — the parent contract this plan implements.
-- `docs/KIOSK_PLAN.md` §3.3 — future kiosk consumer reads the same views model.
-- `docs/DECISIONS.md` — design choices land here as they're made.
+- Sibling `SIDEBAR_TIER_PLAN.md` §8 (v3 spec, one paragraph) — the parent contract this plan implements.
+- `../kiosk-shell/KIOSK_PLAN.md` §3.3 — future kiosk consumer reads the same views model.
+- `../../DECISIONS.md` — design choices land here as they're made.
 
 **Pre-v3 state (current main):**
 - Two-level view trees only (root → form-factor/manufacturer container → platform leaves).
@@ -173,7 +175,7 @@ When an operator deletes a platform leaf from a view (whether shipped or user-bu
 
 A given system can appear under MULTIPLE containers in the same view if the operator authors overlapping rules (e.g. "Consoles" with formFactor=console AND "Nintendo Consoles" with systemIds=[nes,snes,n64,gamecube]). Both containers' count badges would include the same SystemId; the leaf would render twice in the tree.
 
-**Recommendation:** Allow it. The view-as-projection model from SIDEBAR_TIER_PLAN.md §0 explicitly says "games never belong to a category folder" — overlapping membership is consistent with that. Operator who creates overlapping rules sees the consequence and can adjust.
+**Recommendation:** Allow it. The view-as-projection model from sibling `SIDEBAR_TIER_PLAN.md` §0 explicitly says "games never belong to a category folder" — overlapping membership is consistent with that. Operator who creates overlapping rules sees the consequence and can adjust.
 
 **Alternative:** Refuse overlapping rules with a validation error. Defensive but adds friction.
 
@@ -438,7 +440,7 @@ How v3 sets up future work:
 
 **v6 — View import / export + community presets.** Share custom views as JSON. Curated preset catalog.
 
-**vN — Kiosk shell view consumer.** KIOSK_PLAN.md §3.3. Kiosk shell reads the same `views.json`; user-built views appear as advisory tabs / wheels alongside theme-shipped views.
+**vN — Kiosk shell view consumer.** `../kiosk-shell/KIOSK_PLAN.md` §3.3. Kiosk shell reads the same `views.json`; user-built views appear as advisory tabs / wheels alongside theme-shipped views.
 
 ---
 

@@ -1,5 +1,7 @@
 # tg16 — TurboGrafx-16 / PC Engine (HuCard)
 
+> **Architectural note (2026-05-16 libretro pivot):** The vendored-crate description below (`crates/oa-pce-sys` + `crates/oa-pce`) is **pre-pivot** and retired. Both crates were excluded from the workspace build per `docs/DECISIONS.md` 2026-05-16 "Architecture pivot: libretro frontend"; they remain on disk as historical reference only. Today TG-16 loads `mednafen_pce_fast_libretro.dll` from `<exe_dir>/cores/` via `oa_libretro::LibretroCore`, same as every other system. Build surface, shim layer, and FFI sections below describe the original integration path and are kept for historical context — they no longer reflect how TG-16 boots.
+
 First core online. Wraps **Beetle PCE Fast** (libretro port of Mednafen's PCE Fast module) via `crates/oa-pce-sys` (raw FFI + C++ shim) and `crates/oa-pce` (safe wrapper, `oa_core::Core` impl).
 
 ## Upstream

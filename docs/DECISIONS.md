@@ -354,7 +354,7 @@ Neither applies today. Re-evaluate per-system if it does.
 - New in-game tools (Performance HUD, Screenshot gallery) become `Tools ▾` items. If they're light, they live as inline `MenuItem`s with state toggles (Performance HUD = a `MenuCheckbox`); if they're heavy, they open dialogs.
 - Step 10 polish (icon set replacement, type ramp tightening, accent usage in more places) is deferred to a separate pass with a live dev server in front of an actual human eye.
 
-**Companion docs:** `docs/UI_AUDIT.md` is the surface-by-surface inventory of the pre-redesign UI; `docs/UI_MENU_BAR_PLAN.md` is the redesign proposal with the full field-to-menu mapping and visual treatment spec.
+**Companion docs:** `docs/features/ui-polish/UI_AUDIT.md` is the surface-by-surface inventory of the pre-redesign UI; `docs/features/ui-polish/UI_MENU_BAR_PLAN.md` is the redesign proposal with the full field-to-menu mapping and visual treatment spec.
 
 ---
 

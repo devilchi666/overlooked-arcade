@@ -320,17 +320,11 @@ See project-wide `docs/SESSION_LOG.md` for the full narrative. tg16-relevant sli
 - **Almost:** Gamepad. `gilrs` in dep graph but not wired. CI matrix empty.
 - **Next:** Optional gamepad via `gilrs`, then CI.
 
-## 2026-05-18 — Menu-bar redesign (project-wide IA shift)
+## 2026-05-18 — Menu-bar redesign entries (RELOCATED 2026-05-22)
 
-- **Shipped:** Top-bar menu-bar redesign (`docs/UI_AUDIT.md` + `docs/UI_MENU_BAR_PLAN.md` drafted first, then 9 of 10 steps shipped). Seven named menus replace the scattered Settings/Cores/⚙ entry points: Library · View · System ▾ · Game ▾ · Tools · Settings · Help. New primitives: `MenuBar` + `Menu` + `MenuItem` + `MenuRadio` + `MenuCheckbox` + `MenuLabel` + `MenuDivider` (`frontend/src/layout/MenuBar.tsx`), `Dialog` (`frontend/src/layout/Dialog.tsx`). 16 settings dialogs across `SettingsDialogs.tsx` (OA-wide Display/Audio/Gameplay/Shaders), `SystemDialogs.tsx` (per-system Bindings/Display/Rewind/Shaders/DefaultCore/CoreOptions), `HelpDialogs.tsx` (Shortcuts/About). Retired `PerSystemSettingsPage.tsx` entirely; trimmed `SettingsPage` from 7 tabs → 2 (Library + Game media only). Trimmed `QuickSettings` action grid from 10 rows → 4 verbs (Resume / Saves / Game info / Exit); the drill-in panels are now reached via the Tools menu which can deep-link the overlay to a specific view. View menu owns sort/group/view-mode/sidebar toggles/presentation mode — `GridControls` collapsed to title + count. Trimmed 4 disabled "soon" Quick Destinations from the left sidebar, dropped 4 placeholder tabs (Audio/Theme in per-system, Audio/Input in per-game). Surfaced 2 orphans (Keyboard shortcuts cheatsheet, About) under Help ▾.
-- **Almost:** Step 10 visual polish (icon set, type ramp, accent usage) not done — needs visual eye on the live dev server. Remaining orphans (Screenshot gallery, Performance HUD, Right-sidebar widget customizer) not surfaced — they need new backend wiring / new Rust commands.
-- **Next:** Sanity-check the bar in dev server, commit slice, then polish pass + orphan wiring.
-
-## 2026-05-18 — Menu-bar redesign: deferred work shipped
-
-- **Shipped:** Widget customizer dialog (`View → Customize widgets…`) — drives the existing `widgetOrder` + `widgetHidden` layout fields, finally surfacing the right-sidebar reorder/hide UI that the store had supported since Phase 2. Screenshot gallery (`Tools → Screenshot gallery`) — added Rust commands `list_screenshots` / `delete_screenshot` / `open_screenshot_folder` following the existing `list_video_clips` pattern; frontend dialog grids thumbnails with delete + open-folder actions. Performance HUD overlay (`Tools → Performance HUD` checkbox) — pure frontend `requestAnimationFrame` counter that surfaces UI render FPS + frame time as a small fixed-position chip in the top-right; honest about scope (says "UI" not "FPS") so future emu-side telemetry can plug in without changing the HUD shell. Polish: removed `▶`/`🚪` emoji from `Game ▾` Launch/Exit items to stay consistent with the "stylized text" decision; tightened `MenuItem` gap from `gap-3` to `gap-2` to match `MenuRadio` + `MenuCheckbox`. `cargo check -p oa-shell` green; `tsc --noEmit` green.
-- **Almost:** Emu-side performance telemetry not exposed yet — `SharedPerfStats` Rust struct + `get_perf_stats` command would unlock displaying real emulator fps in the HUD. Decided against threading the change through the EmuLoopArgs structs in a no-live-verify session.
-- **Next:** Visual check the new dialogs (widget customizer, screenshot gallery, perf HUD) in dev server, commit slice.
+Two 2026-05-18 entries on the project-wide menu-bar IA shift moved to
+`docs/features/ui-polish/SESSION_LOG.md` as part of the docs reorg — the
+work was cross-system, not tg16-specific.
 
 ## 2026-05-18 — Emu perf telemetry + debug console
 

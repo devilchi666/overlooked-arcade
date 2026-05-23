@@ -1,13 +1,15 @@
 # Sidebar Hierarchy Plan — Concrete Execution Sheet
 
+> **STATUS: ✅ FULLY SHIPPED 2026-05-22.** PR-α (registry tagging), PR-β (views infrastructure), PR-γ (tree render + drag + per-node hide + migration banner — merge `ab5a335`) all landed. v2/v3 follow-on work (Manufacturers view, cross-container drag, View Editor) tracked in sibling `VIEW_EDITOR_PLAN.md`. This file is kept as historical reference.
+
 **Status:** Design locked 2026-05-22. Ready to execute.
 
-**Purpose:** Replace the flat list of systems in the left sidebar with a tiered tree organized by form factor (Consoles / Handhelds / Computers / Arcade / Other) in v1, on top of a new "views" data model that's the same model the kiosk shell will consume in Phase 1 of `docs/KIOSK_PLAN.md`.
+**Purpose:** Replace the flat list of systems in the left sidebar with a tiered tree organized by form factor (Consoles / Handhelds / Computers / Arcade / Other) in v1, on top of a new "views" data model that's the same model the kiosk shell will consume in Phase 1 of `../kiosk-shell/KIOSK_PLAN.md`.
 
 **Companion docs:**
-- `docs/KIOSK_PLAN.md` §3.3 — "Named views with arbitrary hierarchies" — the data model this plan implements ahead of the kiosk shell.
-- `docs/UI_POLISH_PLAN.md` — preceding desktop UI polish work (completed); the sidebar's `LeftSidebar.tsx` rewrite assumes the menu-bar architecture that polish established.
-- `docs/UI_AUDIT.md` — original inventory of the flat-systems sidebar surface.
+- `../kiosk-shell/KIOSK_PLAN.md` §3.3 — "Named views with arbitrary hierarchies" — the data model this plan implements ahead of the kiosk shell.
+- `../ui-polish/UI_POLISH_PLAN.md` — preceding desktop UI polish work (completed); the sidebar's `LeftSidebar.tsx` rewrite assumes the menu-bar architecture that polish established.
+- `../ui-polish/UI_AUDIT.md` — original inventory of the flat-systems sidebar surface.
 
 ---
 
@@ -544,7 +546,7 @@ How this v1 spec sets up the future work — sanity check that the data model ho
 - Needs per-game metadata (year, genre, publisher) to be reliably populated — depends on completing the metadata sync work.
 
 **vN — Kiosk shell view consumer.**
-- The kiosk shell (Phase 1 of `KIOSK_PLAN.md`) reads the same `views.json` and renders its BigBox-class wheel/grid from the active view. Theme-shipped advisory views appear alongside user-built persistent views per kiosk plan §3.3.
+- The kiosk shell (Phase 1 of `../kiosk-shell/KIOSK_PLAN.md`) reads the same `views.json` and renders its BigBox-class wheel/grid from the active view. Theme-shipped advisory views appear alongside user-built persistent views per kiosk plan §3.3.
 - Per-container art slots become first-class (theme-painted banners, clear logos at each tree level).
 - Breadcrumb UI for deep hierarchies.
 

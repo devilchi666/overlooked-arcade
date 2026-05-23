@@ -1,8 +1,10 @@
 # UI Redesign — Menu-Bar Architecture
 
+> **STATUS: 🚧 SUBSTANTIALLY SHIPPED via `UI_POLISH_PLAN.md` (2026-05-22).** The intent architecture (Library / View / System / Game / Tools / Settings menus organized by tier) is live via the dialog refactor: SettingsPage → LibraryManagerPage rename, sidebar Cores/Settings buttons removed, SystemDialogs.tsx organized by intent, PerGameSettingsDrawer shrunk. Visual top-of-window menu-bar component itself is not the canonical home today — the menu-organized dialogs do the work. Kept as historical reference for the IA reasoning.
+
 **Date:** 2026-05-18
-**Status:** Proposal · planning only · no code
-**Companion:** `docs/UI_AUDIT.md` (inventory of today's UI surfaces)
+**Status:** Proposal · planning only · no code (original; see banner above)
+**Companion:** sibling `UI_AUDIT.md` (inventory of today's UI surfaces)
 
 ## Why this shape
 
@@ -187,7 +189,7 @@ In-game power tools, always visible.
 
 ## Mapping of every current settings field
 
-For audit traceability — every field listed in `docs/UI_AUDIT.md` §5 has a new home above. Summary by source surface:
+For audit traceability — every field listed in sibling `UI_AUDIT.md` §5 has a new home above. Summary by source surface:
 
 - **`SettingsPage` (OA-wide, 7 tabs)** → `Settings ▾` (Display / Audio / Gameplay / Shaders / Shell mode) + `Library ▾` (Library Manager + Cores Manager + Game media routes) + `View ▾` (Presentation toggles).
 - **`PerSystemSettingsPage` (8 tabs)** → `System ▾` items, each opening a focused modal.
