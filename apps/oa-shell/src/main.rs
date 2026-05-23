@@ -7320,7 +7320,13 @@ fn get_layout(state: tauri::State<'_, AppState>) -> layout::LayoutPrefs {
 /// from the frontend's perspective (it's the source of truth); persistence is
 /// for restart survival.
 #[tauri::command]
-fn set_layout(prefs: layout::LayoutPrefs, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn set_layout(mut prefs: layout::LayoutPrefs, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // Frontend doesn't own window geometry — that's the on_window_event
+    // flusher thread's territory. Preserve whatever's on disk so a
+    // frontend write (sidebar resize, view-mode change, slider drag)
+    // doesn't clobber a concurrent geometry flush.
+    let existing = layout::read_layout(&state.app_data_dir);
+    prefs.windows = existing.windows;
     layout::write_layout(&state.app_data_dir, &prefs).map_err(|e| format!("write layout.json: {e}"))
 }
 
