@@ -98,7 +98,7 @@ Per-core ROADMAPs are the source of truth for per-system status. If you find you
 A unified Rust + frontend log stream lands in three places at runtime (see `docs/DECISIONS.md` 2026-05-18 "Three-output logger" entry for the full design):
 
 - **stderr** — visible when running via `cargo tauri dev`.
-- **`appData/logs/oa-current.log`** — stable path, truncated each launch. Read this file when investigating bugs. On Windows: `C:\Users\<user>\AppData\Roaming\com.oa.overlooked-arcade\logs\oa-current.log`.
+- **`appData/logs/oa-current.log`** — stable path, truncated each launch. Read this file when investigating bugs. On Windows: `C:\Users\<user>\AppData\Roaming\dev.overlookedarcade.shell\logs\oa-current.log`.
 - **`appData/logs/oa-<YYYYMMDD-HHmmss>.log`** — per-session archive, last 5 retained.
 - **In-app**: `Help → Debug log…` opens a live filterable view of the in-memory ring (last 2000 entries).
 

@@ -2,6 +2,98 @@
 
 ---
 
+## 2026-05-22 — Sidebar tier PR-γ: tree render + drag + per-node hide + migration banner (cross-system)
+
+Third (and final) PR of `docs/SIDEBAR_TIER_PLAN.md`. The visible-
+change PR — replaces β's invisible plumbing with the real tree
+sidebar. Four phase commits squashed via `--no-ff` merge into main
+as `ab5a335`.
+
+- **Shipped:** PR-γ of 3 from `docs/SIDEBAR_TIER_PLAN.md`. Plan
+  complete; tree sidebar fully landed.
+  - **γ.1 Recursive tree render (`4865a75`)**: new
+    `frontend/src/layout/SidebarTreeNode.tsx` — recursive component
+    rendering container rows (twisty + label + cumulative count
+    badge) and leaf rows (per-system accent dot + shortName + own
+    count). Indent scales 0.75rem per depth level. Twisty click
+    toggles expand state without navigating; label click navigates
+    to the node. `LeftSidebar.tsx` rewrite: `filterTree` walks the
+    active view bottom-up applying legacy `layout.hiddenSystems` +
+    `autoHideEmptySystems` + per-node `hidden` gates with the active
+    leaf always preserved (so its ancestor containers stay visible).
+    Auto-expand-ancestors-of-active is render-time only —
+    operator's collapse choice survives navigation. Collapsed-mode
+    sidebar degrades to flat icon list (`CollapsedLeaf`) since
+    container chrome doesn't fit in the icon column. "Systems"
+    section header renamed → "Platforms" per plan §0.
+  - **γ.2 Drag-reorder (`d0b6c8b`)**: solid-dnd nested-scope pattern
+    per plan §3.5. `SortableContainerNode` wires `createSortable`
+    on the container `<li>` and embeds a per-container
+    `SortableProvider` around its leaf children;
+    `SortableLeafNode` wires sortable on each leaf. Drag handles
+    (⋮⋮, hidden-until-hover) bound to scope drag activation away
+    from the navigation buttons. `handleSidebarDragEnd` gates
+    drops via a `parentOfId` lookup — same-parent commits;
+    cross-parent silent no-op (cross-container drag deferred to a
+    post-v1 PR). Writes against the UNFILTERED view tree so hidden
+    siblings keep their positions.
+    `StaticContainerNode` kept as scaffolding for v3+ deep trees
+    (the recursive non-sortable path).
+  - **γ.3 Container hide + Settings reconciliation (`4e6bb2a`)**:
+    new `frontend/src/components/ContainerContextMenu.tsx` — right-
+    click on a container row opens a minimal menu with a single
+    "Hide from sidebar" item. `SidebarTreeNode.tsx` ContainerRow
+    accepts `onContextMenu`; SidebarTreeContext gains
+    `onContainerContextMenu`; LeftSidebar.tsx threads
+    `onContainerContext` through. `App.tsx` adds the new
+    `containerContextFor` signal and mounts ContainerContextMenu
+    sister to SystemContextMenu. New `hideSystemInActiveView`
+    helper dual-writes per-node `hidden` flag + legacy
+    `layout.hiddenSystems` set. Both code paths (System menu
+    "Hide from sidebar" + SystemContextMenu's `onHideSystem`)
+    route through the helper. Container hide redirects the
+    operator off the hidden subtree if they were viewing a node
+    inside it. `LibraryManagerPage.tsx` system-visibility
+    checkboxes accept the `views` prop, read state from per-node
+    hidden first (active view) with legacy fallback, write to
+    both representations. Soft-migration model: no schema bump,
+    no one-shot pass — every operator interaction updates both
+    representations so the per-node flags catch up with the
+    legacy set over a single session. `resolver.ts` adds
+    `nodeContainsId` for the redirect predicate.
+  - **γ.4 Migration banner (`3467076`)**: new
+    `frontend/src/components/SidebarMigrationBanner.tsx` — top-of-
+    sidebar banner shown when active view is `flat-legacy` AND
+    `bannerDismissed` is false (hidden in collapsed-sidebar mode
+    since multi-line copy doesn't fit). "Try Form Factor view"
+    button applies `reorderForFormFactor` (β.2's Option C —
+    preserves operator's relative ordering within each form-
+    factor bucket), commits via the batched
+    `viewsStore.commitTryFormFactor` mutation. "Stay on Flat
+    (Legacy)" just `setBannerDismissed(true)`. Per-system accent
+    border + tinted background so the banner picks up the active
+    theme without competing with the primary nav.
+
+- **Almost:** N/A — operator validated end-to-end (forced the
+  upgrade-install path by patching layout.json's systemOrder + 
+  deleting views.json; banner appeared on Flat-Legacy, Try Form
+  Factor button correctly applied Option-C reorder with SNES
+  above NES in Consoles and Lynx above GB in Handhelds).
+
+- **Next:** Sidebar tier plan complete; pick up the next item from
+  `docs/NEXT.md` or `docs/PARKING_LOT.md`. Candidate cleanups
+  flagged during this session: (a) CLAUDE.md appData path fixed
+  here (was stale `com.oa.overlooked-arcade`, now correct
+  `dev.overlookedarcade.shell`); (b) `LEGACY_VIEW_ID` constant is
+  exported but the underlying view only ever appears via the
+  one-shot migration — no current code path needs to query for it
+  later, candidate to inline if it stays unused; (c) cross-
+  container drag in the sidebar tree (deferred from γ.2 — would
+  surface a red drop indicator + a "Move to container…" right-
+  click submenu per plan §8 v3).
+
+---
+
 ## 2026-05-22 — Sidebar tier PR-β: views.json + ViewsStore + SidebarView fold (cross-system)
 
 Second PR of `docs/SIDEBAR_TIER_PLAN.md`. Pure-plumbing PR — zero
