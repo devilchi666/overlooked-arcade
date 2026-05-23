@@ -116,6 +116,24 @@ export function synthesizeLeafForSystem(systemId: SystemId): PlatformNode {
   };
 }
 
+/// DFS-collect every container node under `node` that carries
+/// `hidden: true`. Used by v2.3's "Hidden containers" recovery UI in
+/// LibraryManagerPage — once an operator right-clicks a container to
+/// hide it, this is the surface that exposes the un-hide affordance.
+/// Walks at any depth so v3+ custom views with nested containers are
+/// covered, not just the v2 default views' two-level shape.
+export function collectHiddenContainers(node: ContainerNode | ViewNode): ContainerNode[] {
+  const out: ContainerNode[] = [];
+  function walk(n: ContainerNode | ViewNode): void {
+    if ("kind" in n && n.kind === "platform") return;
+    const container = n as ContainerNode;
+    if (container.hidden) out.push(container);
+    for (const child of container.children) walk(child);
+  }
+  walk(node);
+  return out;
+}
+
 /// Returns true when `targetId` matches `node`'s id or any descendant's
 /// id. Used by container-hide routing to decide whether to redirect
 /// the operator off a stranded node when their parent container gets
