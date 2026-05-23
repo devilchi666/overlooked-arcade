@@ -1,6 +1,23 @@
 # View Editor Plan — v3 of the Sidebar Tier Work
 
-**Status:** Design proposed 2026-05-22; awaiting operator review. **DO NOT CODE** until the §0 design contract is reviewed and the open questions in §0 are answered.
+**Status:** Design locked 2026-05-22. Q1–Q3, Q5–Q7, Q9, Q11 answered by operator; Q4, Q8, Q10, Q12, Q13 defaulted to recommendations (operational details — operator can push back during implementation if a default feels wrong). Ready to execute.
+
+**Locked decisions (operator-confirmed):**
+- **Q1 — Editor home:** Library Manager → Views tab.
+- **Q2 — Commit model:** Live editing; every change persists immediately.
+- **Q3 — UI layout:** Two-pane (tree on the left, properties panel on the right).
+- **Q5 — New-view templates:** Blank + 3 copy templates (Platforms / Manufacturers / Flat-Legacy).
+- **Q6 — Shipped views:** Editable with warning banner; deletion still blocked.
+- **Q7 — Accent picker (v3.3):** Native `<input type="color">` (operator overrode the curated-palette recommendation; full RGB picker ships).
+- **Q9 — v3.5 timing:** Ship right after v3.2 so delete-leaf actually means delete.
+- **Q11 — Rule overlap:** Allowed; consistent with view-as-projection model.
+
+**Defaulted decisions (operator can override during impl):**
+- **Q4 — Rule editing UI:** Properties panel renders per-kind editor (5-option select for formFactor, 15-option for manufacturer, multi-select checkbox list with search for systemIds).
+- **Q8 — Per-container art (v3.4):** Deferred to vN; needs storage + format design.
+- **Q10 — Reconciler scope:** Hands-off for user-built views; only touches shipped defaults.
+- **Q12 — Container ordering in editor:** Drag-only; no alphabetical-sort button.
+- **Q13 — Auto-extend on shipped defaults:** Reconciler adds newly-registered systems to shipped buckets on launch, skipping `explicitlyRemoved`. Behavior change for shipped views; user customization (reorder, hide flags) preserved.
 
 **Purpose:** Lets operators create, rename, delete, and edit custom views in the sidebar tree. Today (post-v2) we ship two view defaults (Platforms, Manufacturers) plus the migration-seeded Flat-Legacy view; operators can re-order, hide containers/leaves, drag leaves between containers, and switch active view via the picker — but they can't add a new container, rename "Consoles" to "TVs", or build a Decade view from scratch. v3 closes that gap.
 
