@@ -13,16 +13,19 @@ import {
   DEFAULT_VIEW_ID,
   LEGACY_VIEW_ID,
   MANUFACTURER_VIEW_ID,
+  platformNodeIdFor,
   ROOT_NODE_ID,
 } from "./defaults";
 import { buildLegacyFlatView } from "./migration";
 import {
   CURRENT_SCHEMA_VERSION,
   type ContainerNode,
+  type ContainerRule,
   type View,
   type ViewNode,
   type ViewsConfig,
 } from "./types";
+import type { SystemId } from "../themes/registry";
 
 export type NewViewTemplate =
   | "blank"
@@ -319,6 +322,94 @@ export function createViewsStore() {
     });
   }
 
+  // ── v3.2: container + leaf CRUD ────────────────────────────────
+
+  /// Add a new container as the last child of `parentId` in the active
+  /// view. Returns the new container's id. Generated as
+  /// `${viewId}:container:N` so ids stay unique within and across
+  /// views (mirrors the cloneViewTree id-rewriting convention).
+  function addContainer(
+    parentId: string,
+    label: string,
+    rule: ContainerRule | null = null,
+  ): string | null {
+    const view = activeView();
+    if (!view) return null;
+    const newId = generateContainerId(view);
+    const container: ContainerNode = {
+      id: newId,
+      label: label.trim() || "New container",
+      rule,
+      accent: null,
+      art: null,
+      hidden: false,
+      children: [],
+    };
+    setConfig((prev) => mapActiveView(prev, (v) => ({
+      ...v,
+      root: mapNode(v.root, parentId, (n) => {
+        if (!("children" in n)) return n;
+        return { ...n, children: [...n.children, { kind: "container", ...container }] };
+      }),
+    })));
+    return newId;
+  }
+
+  function setContainerLabel(nodeId: string, label: string): void {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setConfig((prev) => mapActiveView(prev, (view) => ({
+      ...view,
+      root: mapNode(view.root, nodeId, (n) => ({ ...n, label: trimmed })),
+    })));
+  }
+
+  function setContainerRule(nodeId: string, rule: ContainerRule | null): void {
+    setConfig((prev) => mapActiveView(prev, (view) => ({
+      ...view,
+      root: mapNode(view.root, nodeId, (n) => ({ ...n, rule })),
+    })));
+  }
+
+  /// Add a platform leaf for `systemId` as the last child of
+  /// `parentId`. Returns the new leaf's id, or null if the system is
+  /// already represented by a leaf anywhere in the active view (no
+  /// duplicate manual leaves per view — operators wanting overlap
+  /// across containers use rule-based containers per
+  /// VIEW_EDITOR_PLAN.md §0.11).
+  function addPlatformLeaf(parentId: string, systemId: SystemId): string | null {
+    const view = activeView();
+    if (!view) return null;
+    if (containsLeafForSystem(view.root, systemId)) return null;
+    const leafId = platformNodeIdFor(systemId);
+    setConfig((prev) => mapActiveView(prev, (v) => ({
+      ...v,
+      root: mapNode(v.root, parentId, (n) => {
+        if (!("children" in n)) return n;
+        return {
+          ...n,
+          children: [
+            ...n.children,
+            { kind: "platform", id: leafId, systemId, hidden: false },
+          ],
+        };
+      }),
+    })));
+    return leafId;
+  }
+
+  /// Remove a node (container OR leaf) from its parent's children.
+  /// Refuses on the root id — the root is a structural anchor, not a
+  /// removable container. Cascades any descendant subtree along with
+  /// the removed node.
+  function removeNode(nodeId: string): void {
+    if (nodeId === ROOT_NODE_ID) return;
+    setConfig((prev) => mapActiveView(prev, (view) => ({
+      ...view,
+      root: removeNodeFromTree(view.root, nodeId),
+    })));
+  }
+
   return {
     config,
     activeView,
@@ -335,6 +426,11 @@ export function createViewsStore() {
     createView,
     renameView,
     deleteView,
+    addContainer,
+    setContainerLabel,
+    setContainerRule,
+    addPlatformLeaf,
+    removeNode,
   };
 }
 
@@ -405,6 +501,58 @@ function locateNode(
     return null;
   }
   return walk(root);
+}
+
+// ── v3.2 helpers ──────────────────────────────────────────────────
+
+/// Generate a unique container id within the given view. Scheme:
+/// `${viewId}:container:N`. Walks all existing node ids in the view
+/// to avoid collisions even when the operator has manually edited
+/// views.json.
+function generateContainerId(view: View): string {
+  const taken = new Set<string>();
+  walkIds(view.root, taken);
+  let counter = 1;
+  for (;;) {
+    const candidate = `${view.id}:container:${counter}`;
+    if (!taken.has(candidate)) return candidate;
+    counter++;
+  }
+}
+
+function walkIds(node: ViewNode | ContainerNode, into: Set<string>): void {
+  into.add(node.id);
+  if ("children" in node) {
+    for (const child of node.children) walkIds(child, into);
+  }
+}
+
+/// DFS for any platform leaf with `systemId === target`. Used to
+/// refuse duplicate manual leaves in addPlatformLeaf — operators who
+/// want a system to appear in multiple containers should use rule-
+/// based containers (formFactor / manufacturer / systemIds).
+function containsLeafForSystem(node: ViewNode | ContainerNode, target: SystemId): boolean {
+  if ("kind" in node && node.kind === "platform") return node.systemId === target;
+  if (!("children" in node)) return false;
+  for (const child of node.children) {
+    if (containsLeafForSystem(child, target)) return true;
+  }
+  return false;
+}
+
+/// Recursive tree map — removes the matching node from its parent's
+/// children and rebuilds the path back to the root.
+function removeNodeFromTree(node: ContainerNode, targetId: string): ContainerNode {
+  const filtered: ViewNode[] = [];
+  for (const child of node.children) {
+    if (child.id === targetId) continue;
+    if (child.kind === "container") {
+      filtered.push({ kind: "container", ...removeNodeFromTree(child, targetId) });
+    } else {
+      filtered.push(child);
+    }
+  }
+  return { ...node, children: filtered };
 }
 
 // ── v3.1 helpers ──────────────────────────────────────────────────
