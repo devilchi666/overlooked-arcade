@@ -19,6 +19,7 @@ import type { ViewsStore } from "../views/store";
 import { collectHiddenContainers, findNode } from "../views/resolver";
 import { platformNodeIdFor } from "../views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
+import ViewsManagerTab from "./ViewsManagerTab";
 
 type Props = {
   /// Navigate back to the previous view. Used by the header Back button
@@ -32,7 +33,7 @@ type Props = {
   onRescanLibraryFolders: () => void;
   /// Optional deep-link target — Library menu items use this to land on
   /// "library" vs "media" instead of the persisted last-visited tab.
-  initialTab?: "library" | "media";
+  initialTab?: "library" | "media" | "views";
 };
 
 type SyncProgressPayload = {
@@ -222,14 +223,16 @@ const SortableFolderRow: Component<{
 // Cores moved to the dedicated CoresPage. Library + Media stay full-page
 // because of the wide editors (folder lists, per-system sync rows with
 // progress bars, region priority editor, disk-usage panel).
-const TABS = ["library", "media"] as const;
+const TABS = ["library", "views", "media"] as const;
 type TabId = typeof TABS[number];
 const TAB_LABELS: Record<TabId, string> = {
   library:      "Library",
+  views:        "Views",
   media:        "Game media",
 };
 const TAB_HINTS: Record<TabId, string> = {
   library:      "Tracked folders, scanning, ingest",
+  views:        "Sidebar tree views — create, rename, switch active",
   media:        "Cover art + snapshots + titles, libretro-thumbnails sync, region priority",
 };
 
@@ -828,6 +831,9 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 resources (createResource etc. are tied to props.open, so
                 this is purely a visibility toggle). */}
             <section class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
+            <Show when={activeTab() === "views"}>
+              <ViewsManagerTab views={props.views} />
+            </Show>
             <Show when={activeTab() === "media"}>
             <div class="space-y-3">
               <div class="flex items-center justify-between">

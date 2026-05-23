@@ -13,9 +13,22 @@ import {
   DEFAULT_VIEW_ID,
   LEGACY_VIEW_ID,
   MANUFACTURER_VIEW_ID,
+  ROOT_NODE_ID,
 } from "./defaults";
 import { buildLegacyFlatView } from "./migration";
-import { CURRENT_SCHEMA_VERSION, type View, type ViewNode, type ViewsConfig } from "./types";
+import {
+  CURRENT_SCHEMA_VERSION,
+  type ContainerNode,
+  type View,
+  type ViewNode,
+  type ViewsConfig,
+} from "./types";
+
+export type NewViewTemplate =
+  | "blank"
+  | "copy-formfactor"
+  | "copy-manufacturer"
+  | "copy-legacy";
 
 type LayoutLite = { systemOrder?: string[] };
 
@@ -222,6 +235,90 @@ export function createViewsStore() {
     });
   }
 
+  // ── v3.1: view metadata CRUD ───────────────────────────────────
+
+  /// Create a new user-built view from a template. Returns the new
+  /// view's id so the caller can immediately switch active to it /
+  /// jump to the editor. Per VIEW_EDITOR_PLAN.md §1.2.
+  ///
+  /// Template semantics:
+  ///   blank             — empty root container ("My View"), no children
+  ///   copy-formfactor   — deep clone of the shipped FormFactor view
+  ///   copy-manufacturer — deep clone of the shipped Manufacturer view
+  ///   copy-legacy       — deep clone of the seeded Flat-Legacy view
+  ///                       (only valid on upgrade installs that have it)
+  function createView(name: string, template: NewViewTemplate): string {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("View name cannot be empty");
+    const newId = generateUserViewId(config().views);
+    let root: ContainerNode;
+    let expandedNodes: string[];
+    if (template === "blank") {
+      root = {
+        id: ROOT_NODE_ID,
+        label: trimmed,
+        rule: null,
+        accent: null,
+        art: null,
+        hidden: false,
+        children: [],
+      };
+      expandedNodes = [ROOT_NODE_ID];
+    } else {
+      const sourceId =
+        template === "copy-formfactor"
+          ? DEFAULT_VIEW_ID
+          : template === "copy-manufacturer"
+            ? MANUFACTURER_VIEW_ID
+            : LEGACY_VIEW_ID;
+      const source = config().views.find((v) => v.id === sourceId);
+      if (!source) {
+        throw new Error(`Cannot clone view ${sourceId} — not present in current config`);
+      }
+      const clone = cloneViewTree(source.root, newId);
+      root = { ...clone, label: trimmed };
+      expandedNodes = source.expandedNodes.map((nodeId) =>
+        rewriteClonedNodeId(nodeId, source.root.id, root.id, newId),
+      );
+    }
+    const newView: View = {
+      id: newId,
+      name: trimmed,
+      kind: "user-built",
+      expandedNodes,
+      root,
+    };
+    setConfig((prev) => ({ ...prev, views: [...prev.views, newView] }));
+    return newId;
+  }
+
+  function renameView(viewId: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setConfig((prev) => ({
+      ...prev,
+      views: prev.views.map((v) => (v.id === viewId ? { ...v, name: trimmed } : v)),
+    }));
+  }
+
+  /// Delete a user-built view. Refuses on `user-builtin` kind (shipped
+  /// defaults stay deletable only via factory reset / views.json edit).
+  /// Falls back active view to FormFactor if the deleted view was
+  /// active.
+  function deleteView(viewId: string): void {
+    const target = config().views.find((v) => v.id === viewId);
+    if (!target) return;
+    if (target.kind === "user-builtin") return;
+    setConfig((prev) => {
+      const remaining = prev.views.filter((v) => v.id !== viewId);
+      const nextActive =
+        prev.activeViewId === viewId
+          ? (remaining.find((v) => v.id === DEFAULT_VIEW_ID)?.id ?? remaining[0]?.id ?? prev.activeViewId)
+          : prev.activeViewId;
+      return { ...prev, views: remaining, activeViewId: nextActive };
+    });
+  }
+
   return {
     config,
     activeView,
@@ -235,6 +332,9 @@ export function createViewsStore() {
     moveNode,
     replaceView,
     commitTryFormFactor,
+    createView,
+    renameView,
+    deleteView,
   };
 }
 
@@ -305,6 +405,60 @@ function locateNode(
     return null;
   }
   return walk(root);
+}
+
+// ── v3.1 helpers ──────────────────────────────────────────────────
+
+/// Generate a unique id for a new user-built view. Counter-based with a
+/// collision-check fallback so manual edits to views.json that introduce
+/// `user-N`-shaped ids don't accidentally collide.
+function generateUserViewId(existing: ReadonlyArray<View>): string {
+  const taken = new Set(existing.map((v) => v.id));
+  let counter = 1;
+  for (;;) {
+    const candidate = `user-${counter}`;
+    if (!taken.has(candidate)) return candidate;
+    counter++;
+  }
+}
+
+/// Deep-clone a view's root container into a fresh tree with rewritten
+/// node ids prefixed by the new view's id. Keeps the structure /
+/// rules / accents / hide flags intact; just renames node ids so the
+/// clone's nodes don't accidentally collide with the source view's
+/// nodes (relevant for the expandedNodes lookup + drag-reorder
+/// targeting).
+function cloneViewTree(source: ContainerNode, newViewId: string): ContainerNode {
+  function clone(node: ContainerNode): ContainerNode {
+    return {
+      ...node,
+      id: rewriteClonedNodeId(node.id, source.id, ROOT_NODE_ID, newViewId),
+      children: node.children.map((c): ViewNode => {
+        if (c.kind === "container") {
+          return { kind: "container", ...clone(c) };
+        }
+        return {
+          ...c,
+          id: rewriteClonedNodeId(c.id, source.id, ROOT_NODE_ID, newViewId),
+        };
+      }),
+    };
+  }
+  return clone(source);
+}
+
+/// Rewrite a node id from `source` tree's namespace to the cloned
+/// tree's namespace. Root nodes keep "root"; other nodes get prefixed
+/// with the new view's id so cloned containers / leaves don't
+/// collide with the source view's ids.
+function rewriteClonedNodeId(
+  nodeId: string,
+  sourceRootId: string,
+  destRootId: string,
+  newViewId: string,
+): string {
+  if (nodeId === sourceRootId) return destRootId;
+  return `${newViewId}:${nodeId}`;
 }
 
 /// Returns true when `descendantId` is `ancestorId` itself OR one of
