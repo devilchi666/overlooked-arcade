@@ -210,6 +210,18 @@ const ContainerRow: Component<{
 }> = (props) => {
   const count = createMemo(() => countGamesUnder(props.container, props.entries));
   const indentRem = () => 0.5 + props.depth * 0.75;
+  /// v3.3: per-container accent override applied as an inline
+  /// `--color-system-accent` CSS variable. Cascades into the
+  /// container's own active-row tint + twisty + count badge without
+  /// leaking into descendant leaf rows (those carry their own
+  /// `data-system` rule that resets the variable for their subtree).
+  const rowStyle = () => {
+    const base: Record<string, string> = { "padding-left": `${indentRem()}rem` };
+    if (props.container.accent) {
+      base["--color-system-accent"] = props.container.accent;
+    }
+    return base;
+  };
   return (
     <div
       class="group relative flex w-full items-center gap-1 rounded-md pr-1 text-left text-xs font-medium transition"
@@ -219,7 +231,7 @@ const ContainerRow: Component<{
           !props.active && !props.isDragging,
         "bg-(--color-system-accent)/10 shadow-lg": props.isDragging === true,
       }}
-      style={{ "padding-left": `${indentRem()}rem` }}
+      style={rowStyle()}
     >
       <Show when={props.active}>
         <span

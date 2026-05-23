@@ -406,6 +406,40 @@ const ContainerProperties: Component<{
       </Show>
 
       <Show when={!props.isRoot}>
+        <div class="space-y-1">
+          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            Accent
+          </span>
+          <div class="flex items-center gap-2">
+            <input
+              type="color"
+              value={props.container.accent ?? "#888888"}
+              onInput={(e) =>
+                props.views.setContainerAccent(props.container.id, e.currentTarget.value)
+              }
+              aria-label="Container accent color"
+              class="h-7 w-10 cursor-pointer rounded border border-white/15 bg-(--color-oa-bg-deep)"
+            />
+            <span class="flex-1 truncate text-[0.7rem] text-(--color-oa-ink-dim)">
+              {props.container.accent ?? "default"}
+            </span>
+            <Show when={props.container.accent}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  props.views.setContainerAccent(props.container.id, null);
+                }}
+                class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+              >
+                Clear
+              </button>
+            </Show>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={!props.isRoot}>
         <div class="border-t border-white/5 pt-2">
           <button
             type="button"
