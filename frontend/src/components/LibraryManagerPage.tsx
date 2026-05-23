@@ -16,7 +16,7 @@ import type { LayoutStore } from "../layout/state";
 import type { SettingsStore } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { ViewsStore } from "../views/store";
-import { findNode } from "../views/resolver";
+import { collectHiddenContainers, findNode } from "../views/resolver";
 import { platformNodeIdFor } from "../views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
 
@@ -1208,6 +1208,45 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   />
                   <span>Auto-hide systems with no games</span>
                 </label>
+
+                {/* Hidden containers (v2.3) — operator can right-click a
+                    container in the sidebar tree to hide it; this surfaces
+                    the un-hide affordance so it's not a one-way trip. Walks
+                    the active view at any depth so v3+ nested-container
+                    views work too. Renders only when at least one container
+                    is hidden. */}
+                <Show when={collectHiddenContainers(props.views.activeView()?.root ?? {
+                  id: "_empty", label: "", rule: null, accent: null, art: null, hidden: false, children: []
+                }).length > 0}>
+                  <div class="mt-4 space-y-1">
+                    <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                      Hidden containers
+                    </p>
+                    <ul class="space-y-1">
+                      <For each={collectHiddenContainers(props.views.activeView()?.root ?? {
+                        id: "_empty", label: "", rule: null, accent: null, art: null, hidden: false, children: []
+                      })}>
+                        {(container) => (
+                          <li class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
+                            <span class="flex-1 truncate text-(--color-oa-ink-dim)">
+                              {container.label}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.currentTarget.blur();
+                                props.views.setNodeHidden(container.id, false);
+                              }}
+                              class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-system-accent)/15 hover:text-(--color-oa-ink)"
+                            >
+                              Show
+                            </button>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
                 <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
                   Uncheck a system to hide it from the left sidebar. Hidden systems still live
                   in the registry; per-system files (bindings, settings) are preserved.
