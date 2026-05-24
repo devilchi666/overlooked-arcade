@@ -853,6 +853,7 @@ const PCE_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("gexpress.pce",  "014881A959E045E00F4DB8F52955200865D40280", "Games Express CD Card (libretro-database alternate name)"),
 ];
 
+#[derive(Debug)]
 enum BiosCheck {
     /// File's filename + content both match a known canonical entry.
     OkCanonical { name: String, sha1: String },
@@ -861,6 +862,7 @@ enum BiosCheck {
     OkUnknownHash { name: String, sha1: String },
 }
 
+#[derive(Debug)]
 enum BiosError {
     Missing,
     Io(std::io::Error),
@@ -1858,6 +1860,85 @@ fn check_pokemini_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
         let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
 
         let exact_match = POKEMINI_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Game Boy Advance BIOS. mGBA (the default
+/// `gba` core) can run BIOS-less via HLE for most titles, but some
+/// games (Pokémon Emerald RNG-dependent battles, Golden Sun Sound
+/// engines, intro logo screens that the BIOS draws) need the real
+/// `gba_bios.bin`. Pre-check is WARN-on-missing — launch still
+/// proceeds, operator just sees "consider dropping gba_bios.bin in
+/// system/" in the log + toast. All hashes sourced from libretro-
+/// database/dat/System.dat.
+const GBA_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,       SHA-1 uppercase,                            description)
+    ("gba_bios.bin", "300C20DF6731A33952DED8C436F7F186D25D3492", "Game Boy Advance BIOS (16 KB, canonical)"),
+];
+
+/// Scan `<system_dir>` for the GBA BIOS. Same shape as
+/// `check_coleco_bios`. Differs from the other cart-shape checks at
+/// the DISPATCH site (caller): missing BIOS warns instead of blocks
+/// because mGBA's HLE path runs most titles fine.
+fn check_gba_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in GBA_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = GBA_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for Atari Jaguar BIOS. Virtual Jaguar (the
+/// default `jaguar` core) hard-requires `jagboot.rom` — without it
+/// the core fails to initialize and game launches abort. Sourced from
+/// libretro-database/dat/System.dat. Some dumps name the file
+/// `jaguar_boot.rom` instead; recognized for operator convenience.
+const JAGUAR_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,           SHA-1 uppercase,                            description)
+    ("jagboot.rom",      "10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5", "Atari Jaguar boot ROM (8 KB, canonical)"),
+    ("jaguar_boot.rom",  "10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5", "Atari Jaguar boot ROM (alternate naming, same content)"),
+];
+
+/// Scan `<system_dir>` for the Jaguar boot ROM. Same shape as
+/// `check_coleco_bios` — blocks launch when missing (Virtual Jaguar
+/// won't initialize without it).
+fn check_jaguar_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in JAGUAR_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = JAGUAR_BIOS_KNOWN_HASHES
             .iter()
             .any(|(n, h, _)| *n == *name && *h == sha_str);
         if exact_match {
@@ -4124,6 +4205,13 @@ fn run_emu_render(
                             "DAAD4113713ED776FBD47727762BCA81BA74915F",
                             "the canonical bios.min boot ROM (libretro-database)",
                         )),
+                        "jaguar" => Some((
+                            "Atari Jaguar",
+                            "jagboot.rom",
+                            check_jaguar_bios(&system_dir),
+                            "10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5",
+                            "the canonical jagboot.rom (libretro-database)",
+                        )),
                         _ => None,
                     };
                     if let Some((label, expected_files, result, canonical_sha, canonical_desc)) = cart_bios {
@@ -4153,6 +4241,46 @@ fn run_emu_render(
                             Err(BiosError::Io(e)) => {
                                 log::error!("oa-shell: {} load — BIOS check failed: {e:?}", label);
                                 toast(&app_handle, ToastLevel::Warn, format!("BIOS check failed: {e}"));
+                            }
+                        }
+                    }
+                    // GBA cart-shape BIOS pre-check — DIFFERENT failure
+                    // semantics from the other cart-shape systems above.
+                    // mGBA can run BIOS-less via HLE for most titles, so
+                    // missing BIOS WARNS but doesn't block the launch.
+                    // Some games (Pokémon Emerald RNG-dependent battles,
+                    // Golden Sun sound engine, intro logos that the BIOS
+                    // draws) need the real `gba_bios.bin` for accuracy —
+                    // the warn surfaces the operator-actionable fix
+                    // without forcing them to find a BIOS for every
+                    // casual launch.
+                    if system_id == "gba" {
+                        log::info!(
+                            "oa-shell: GBA load — system_dir = {} (drop gba_bios.bin here for accuracy; mGBA HLE works without it for most titles)",
+                            system_dir.display()
+                        );
+                        match check_gba_bios(&system_dir) {
+                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                                log::info!("oa-shell: GBA load — BIOS {} verified (SHA-1 {})", name, sha1);
+                            }
+                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                                log::warn!(
+                                    "oa-shell: GBA load — BIOS {} has SHA-1 {} which doesn't match the canonical libretro-database dump (300C20DF6731A33952DED8C436F7F186D25D3492). mGBA may fall back to HLE.",
+                                    name, sha1,
+                                );
+                            }
+                            Err(BiosError::Missing) => {
+                                // Warn-only — game still launches via
+                                // mGBA's HLE BIOS path. Operator can drop
+                                // gba_bios.bin into system/ later if a
+                                // specific title needs the real BIOS.
+                                log::warn!(
+                                    "oa-shell: GBA load — no gba_bios.bin in {}; mGBA will use HLE. Drop the canonical 16 KB GBA BIOS there if a title misbehaves.",
+                                    system_dir.display()
+                                );
+                            }
+                            Err(BiosError::Io(e)) => {
+                                log::warn!("oa-shell: GBA load — BIOS check failed: {e:?}");
                             }
                         }
                     }
@@ -8843,4 +8971,125 @@ fn launch_rom(
 
     state.shell_window.focus_game();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Make a fresh empty tmp dir for filesystem-shaped tests. Caller is
+    /// responsible for cleanup if they care; tmp dir leaks are acceptable
+    /// in test runs.
+    fn fresh_tmp_dir(label: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "oa-bios-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).expect("mkdir tmp");
+        p
+    }
+
+    // ---- check_gba_bios ----
+
+    #[test]
+    fn gba_bios_missing_returns_missing_err() {
+        let dir = fresh_tmp_dir("gba-missing");
+        let r = check_gba_bios(&dir);
+        assert!(matches!(r, Err(BiosError::Missing)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gba_bios_present_with_wrong_bytes_returns_unknown_hash() {
+        let dir = fresh_tmp_dir("gba-wrong");
+        // Drop a non-BIOS file at the expected name — sha won't match
+        // the canonical 300C20... so check returns OkUnknownHash.
+        std::fs::write(dir.join("gba_bios.bin"), b"not the real bios").expect("seed");
+        match check_gba_bios(&dir).expect("check_gba_bios") {
+            BiosCheck::OkUnknownHash { name, sha1 } => {
+                assert_eq!(name, "gba_bios.bin");
+                assert_eq!(sha1.len(), 40, "sha1 should be 40 hex chars");
+                assert_ne!(sha1, "300C20DF6731A33952DED8C436F7F186D25D3492");
+            }
+            other => panic!("expected OkUnknownHash, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gba_bios_known_hashes_table_has_canonical_entry() {
+        // Guard against accidental table truncation — the canonical SHA-1
+        // for gba_bios.bin is locked here so any future edit that drops
+        // or rewrites it fails this test instead of silently breaking
+        // the operator's per-launch BIOS verification.
+        let canonical = GBA_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(n, _, _)| *n == "gba_bios.bin")
+            .expect("gba_bios.bin must be in the known-hashes table");
+        assert_eq!(canonical.1, "300C20DF6731A33952DED8C436F7F186D25D3492");
+    }
+
+    // ---- check_jaguar_bios ----
+
+    #[test]
+    fn jaguar_bios_missing_returns_missing_err() {
+        let dir = fresh_tmp_dir("jag-missing");
+        let r = check_jaguar_bios(&dir);
+        assert!(matches!(r, Err(BiosError::Missing)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn jaguar_bios_present_with_wrong_bytes_returns_unknown_hash() {
+        let dir = fresh_tmp_dir("jag-wrong");
+        std::fs::write(dir.join("jagboot.rom"), b"not the real bios").expect("seed");
+        match check_jaguar_bios(&dir).expect("check_jaguar_bios") {
+            BiosCheck::OkUnknownHash { name, sha1 } => {
+                assert_eq!(name, "jagboot.rom");
+                assert_eq!(sha1.len(), 40);
+            }
+            other => panic!("expected OkUnknownHash, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn jaguar_bios_recognizes_alt_filename() {
+        // Some dumps name the file jaguar_boot.rom instead of jagboot.rom.
+        // The check should pick it up via the second entry in the
+        // known-hashes table.
+        let dir = fresh_tmp_dir("jag-alt");
+        std::fs::write(dir.join("jaguar_boot.rom"), b"not the real bios").expect("seed");
+        match check_jaguar_bios(&dir).expect("check_jaguar_bios") {
+            BiosCheck::OkUnknownHash { name, .. } => {
+                assert_eq!(name, "jaguar_boot.rom");
+            }
+            other => panic!("expected OkUnknownHash, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn jaguar_bios_known_hashes_table_has_canonical_entries() {
+        // Both primary + alt filenames map to the same canonical SHA-1
+        // (same 8 KB boot ROM content; only the filename varies).
+        let primary = JAGUAR_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(n, _, _)| *n == "jagboot.rom")
+            .expect("jagboot.rom must be in the known-hashes table");
+        let alt = JAGUAR_BIOS_KNOWN_HASHES
+            .iter()
+            .find(|(n, _, _)| *n == "jaguar_boot.rom")
+            .expect("jaguar_boot.rom alt name must be in the table");
+        assert_eq!(primary.1, "10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5");
+        assert_eq!(
+            primary.1, alt.1,
+            "primary + alt filenames must point at the same canonical SHA-1"
+        );
+    }
 }

@@ -21,7 +21,7 @@ Per-core phase tracking for Magnavox Odyssey² / Videopac. Status: ⬜ not start
 ## ⬜ Phase 1 — First O2 ROM running
 
 - ⬜ Operator validation: launch a `.o2` ROM. Suggested: **KC Munchkin**, **Pick Axe Pete**, **Atlantis**, **Smithereens!** — operator playtest.
-- ⬜ BIOS pre-check workflow — O2-specific cart-shape BIOS pre-check for `o2rom.bin` / `c52.bin` still ⬜ (cart-shape BIOS-check infra is shipped cross-system).
+- ✅ BIOS pre-check workflow — closed by `check_o2_bios` in `apps/oa-shell/src/main.rs` + dispatch arm for `o2` system_id. Recognizes `o2rom.bin` / `c52.bin` / `g7400.bin` / `jopac.bin` with libretro-database canonical SHA-1s; blocks launch + toasts when missing.
 - ✅ Keyboard passthrough validation — closed by cross-system keyboard passthrough + Game-Focus + Ctrl+G.
 - ⬜ Region auto-detect — operator spot-check (NTSC Odyssey² vs PAL Videopac).
 - ✅ Cover sync + libretro-database hashing — closed by cross-system media sync (`media::sync_media_for_system`) + hash ID (`rom_hashes::resolve_rom_hashes_for_system`).
