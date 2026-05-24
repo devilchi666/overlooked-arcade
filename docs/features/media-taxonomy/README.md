@@ -1,9 +1,11 @@
 # Media taxonomy — full LaunchBox-shaped art + audio + video + manual storage
 
-> **Status: 📐 PLANNED, not implemented.** Design locked 2026-05-23 in
-> conversation with operator. Implementation deferred — listed under
-> `docs/NEXT.md` MEDIUM band. Pick up by reading this doc + the original
-> approved plan at `C:\Users\Devilchi\.claude\plans\groovy-enchanting-candle.md`.
+> **Status: ✅ SHIPPED 2026-05-24.** All 7 phases landed on
+> `feat/media-taxonomy`; merged `--no-ff` to main after operator
+> end-to-end approval. Per-phase ship details + commit shas live in
+> [SESSION_LOG.md](SESSION_LOG.md). This README stays as the design-
+> intent reference (the locked 8 decisions, folder layout, file-by-file
+> change list, risk register).
 
 ## Context
 

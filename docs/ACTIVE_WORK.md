@@ -15,6 +15,33 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Media taxonomy** ([features/media-taxonomy/](features/media-taxonomy/)) —
+  merged to main 2026-05-24 (`--no-ff` from `feat/media-taxonomy`).
+  7 phase commits implementing the full LaunchBox-shape art/audio
+  taxonomy locked in the 2026-05-23 plan:
+  - **Phase 1** (`7c1b0e9`) data model + folder layout: MediaKind
+    5 → 27 variants, GameMedia/SelectedMedia per-slot fields,
+    sanitize/path-builder helpers, set_manual_cover writes to new
+    layout via library_db.find_game_by_id rom_stem lookup.
+  - **Phase 2** (`c2d0976`) libretro-thumbnails sync to new layout
+    + operator-art-wins guard (sha-based cache, next-variant
+    suffix), ingest_manual_for_slot eviction logic.
+  - **Phase 3** (`2edfc1d`) LaunchBox/EmuMovies art-pack importer
+    (auto-detects single- vs multi-platform layouts, fuzzy
+    matches against library titles at 0.95 threshold) +
+    ImportArtPackDialog UI.
+  - **Phase 4** (`b71057c`) 4-bus audio mixer over rodio/symphonia
+    (platform-music / ui-sounds / ceremony / snap-audio) +
+    SystemSettings audio override fields + GameOverrides
+    platform_music_path + frontend audio dispatch service.
+  - **Phase 5** (`92c2403`) existing-install migration: walks
+    pre-Phase-1 MediaDb, moves manual covers / copies synced art
+    to canonical kind dirs, sentinel-guarded one-shot pass.
+  - **Phase 6** (`d8dd98a`) per-system PlatformMedia (9 slots —
+    banner, clear-logo, console, controller, fanart, marquee,
+    photo, wheel, background) + PlatformMediaDialog UI.
+  - **Phase 7** docs + SESSION_LOG (this entry).
+  cargo test workspace 430 oa-shell + 64 others all green.
 - **Window geometry persistence + tile-size slider**
   ([features/ui-polish/](features/ui-polish/)) — merged to main
   2026-05-23 as `6cf6acb`. 3 phase commits on
@@ -22,10 +49,6 @@ spanned every system but was filed under whichever core happened to be active.
   per-label geometry + first-launch maximize + debounced flusher
   thread; `library_tile_size` + GridControls slider + hybrid ±20%
   scaling in VirtualLibraryGrid; SESSION_LOG entry.
-- **Media taxonomy plan** ([features/media-taxonomy/](features/media-taxonomy/)) —
-  7-phase implementation plan documented + listed in `NEXT.md`
-  MEDIUM band. Design locked but implementation deferred. Merged
-  2026-05-23 as `d4204bb`.
 - **Portable install** ([features/portable-install/](features/portable-install/)) —
   merged to main 2026-05-23 as `993ca6a`. 5 commits: data_dir
   resolver + marker file, asset-protocol runtime scope + frontend
