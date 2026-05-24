@@ -21,6 +21,7 @@ import { platformNodeIdFor } from "../views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
+import { PlatformMediaDialog } from "./PlatformMediaDialog";
 
 type Props = {
   /// Navigate back to the previous view. Used by the header Back button
@@ -339,6 +340,9 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // up to LibraryManagerPage so the "Import art pack…" button in the
   // media tab can open it.
   const [importArtPackOpen, setImportArtPackOpen] = createSignal(false);
+  // Phase 6 (2026-05-23): platform-media dialog open-state — same
+  // top-of-component pattern so a button in the media tab can open it.
+  const [platformMediaOpen, setPlatformMediaOpen] = createSignal(false);
 
   // Per-system live sync progress, keyed by systemId. Updated by oa://library-sync events.
   const [syncProgress, setSyncProgress] = createSignal<Record<string, SyncProgressPayload>>({});
@@ -848,6 +852,16 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   Game media
                 </h3>
                 <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setPlatformMediaOpen(true);
+                    }}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                  >
+                    Platform media…
+                  </button>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1458,6 +1472,10 @@ const LibraryManagerPage: Component<Props> = (props) => {
           // show on the grid + Game Info modals without a restart.
           void media.refreshAll();
         }}
+      />
+      <PlatformMediaDialog
+        open={platformMediaOpen()}
+        onClose={() => setPlatformMediaOpen(false)}
       />
     </>
   );

@@ -34,6 +34,7 @@ mod media;
 mod metadata;
 mod normalize;
 mod patch;
+mod platform_media;
 mod rom_hashes;
 mod rom_header;
 mod scan_service;
@@ -2615,6 +2616,9 @@ fn main() {
             audio_player::set_audio_volume,
             audio_player::resolve_platform_music,
             audio_player::resolve_ui_sound,
+            platform_media::get_platform_media_index,
+            platform_media::set_platform_media,
+            platform_media::clear_platform_media,
             metadata::sync_metadata_for_system,
             media::media_storage_stats,
             media::open_media_folder,
@@ -2790,6 +2794,23 @@ fn main() {
                     system_op_gates: Arc::new(std::sync::Mutex::new(
                         std::collections::HashMap::new(),
                     )),
+                });
+
+                // Media-taxonomy Phase 6 — platform media (per-system
+                // hardware photos, controllers, wheel art, banners).
+                // Separate db from MediaState because the shape differs
+                // (Option per slot, one entry per system, vs Vec per slot,
+                // one entry per ROM). Persisted at
+                // <data_dir>/library/platform-media.json with the same
+                // atomic-write + .corrupt-backup pattern as media.json.
+                let pm_db = platform_media::read_db(&app_data_dir);
+                log::info!(
+                    "oa-shell: platform_media db loaded ({} systems)",
+                    pm_db.len(),
+                );
+                app.manage(platform_media::PlatformMediaState {
+                    db: Arc::new(std::sync::RwLock::new(pm_db)),
+                    app_data_dir: app_data_dir.clone(),
                 });
 
                 // Media-taxonomy Phase 4 audio overrides + audio player.

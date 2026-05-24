@@ -346,6 +346,10 @@ impl MediaState {
 /// next launch's parser hit the truncated JSON, fell back to
 /// `MediaDb::default()`, and silently lost all the operator's
 /// custom cover selections, region priorities, and so on.
+pub(crate) fn atomic_write_bytes_pub(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    atomic_write_bytes(path, bytes)
+}
+
 fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -1908,6 +1912,10 @@ fn is_image_magic(bytes: &[u8]) -> bool {
     false
 }
 
+pub(crate) fn detect_format_pub(bytes: &[u8]) -> Result<(image::ImageFormat, &'static str), String> {
+    detect_format(bytes)
+}
+
 fn detect_format(bytes: &[u8]) -> Result<(image::ImageFormat, &'static str), String> {
     let format = image::guess_format(bytes).map_err(|e| format!("not an image: {e}"))?;
     let ext = match format {
@@ -1917,6 +1925,10 @@ fn detect_format(bytes: &[u8]) -> Result<(image::ImageFormat, &'static str), Str
         other => return Err(format!("unsupported image format: {other:?}")),
     };
     Ok((format, ext))
+}
+
+pub(crate) fn sha1_hex_pub(bytes: &[u8]) -> String {
+    sha1_hex(bytes)
 }
 
 fn sha1_hex(bytes: &[u8]) -> String {
