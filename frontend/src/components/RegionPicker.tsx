@@ -35,8 +35,11 @@ const RegionPicker: Component<Props> = (props) => {
     const e = props.entry;
     return e ? media.media(e.id) : undefined;
   });
-  const variants = createMemo(() => gm()?.boxart ?? []);
-  const activePin = createMemo(() => gm()?.selected?.boxartIndex);
+  // Post-2026-05-23 media-taxonomy rename: boxFront is the new field
+  // name, `boxart` stays as a defensive fallback for one release in
+  // case a stale in-memory snapshot is still around.
+  const variants = createMemo(() => gm()?.boxFront ?? gm()?.boxart ?? []);
+  const activePin = createMemo(() => gm()?.selected?.boxFrontIndex ?? gm()?.selected?.boxartIndex);
   const tileAspect = createMemo(() => {
     const e = props.entry;
     return (e ? systemThemes[e.systemId].tileAspect : null) ?? DEFAULT_TILE_ASPECT;
@@ -54,7 +57,7 @@ const RegionPicker: Component<Props> = (props) => {
   async function pick(idx: number) {
     if (!props.entry) return;
     try {
-      await media.setSelectedVariant(props.entry.id, "boxart", idx);
+      await media.setSelectedVariant(props.entry.id, "box-front", idx);
     } catch (e) {
       console.warn("setSelectedVariant failed:", e);
     }

@@ -18,14 +18,52 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
+/// Full LaunchBox-shape media slot set. v1 (pre 2026-05-23) shipped 5
+/// slots: `boxart`/`snap`/`title`/`cart`/`disc`. Those keys are preserved
+/// via `#[serde(alias = ...)]` on the renamed fields below — old
+/// `media.json` files deserialize forward into the new shape with no
+/// migration step. The 26-slot taxonomy ships in the data model from
+/// day one; UI catches up incrementally (see Phase 6 of the
+/// media-taxonomy plan).
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GameMedia {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub boxart: Vec<MediaVariant>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub snap: Vec<MediaVariant>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub title: Vec<MediaVariant>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub cart: Vec<MediaVariant>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub disc: Vec<MediaVariant>,
+    // ---- v1 slots, semantically renamed to map to LaunchBox names ----
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "boxart")]
+    pub box_front: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "snap")]
+    pub screenshot_gameplay: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "title")]
+    pub screenshot_title: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "cart")]
+    pub cart_front: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disc: Vec<MediaVariant>,
+
+    // ---- new slots (all default-empty; old JSON omits them) ----
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub box_back: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub box_3d: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub box_spine: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub box_full: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub cart_back: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub cart_3d: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub screenshot_select: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub banner: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub clear_logo: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub fanart_background: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub fanart_disc: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub advert_front: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub advert_back: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_cabinet: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_marquee: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_controlpanel: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_controlsinfo: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_playerselect: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub arcade_flyer: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub video: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub music: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub manual: Vec<MediaVariant>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")] pub selected: Option<SelectedMedia>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<GameMetadata>,
 }
@@ -87,12 +125,111 @@ impl Region {
     }
 }
 
+/// Per-slot pinned variant index. v1 (pre 2026-05-23) shipped 3 indexes
+/// keyed `boxartIndex` / `snapIndex` / `titleIndex`; the renamed fields
+/// below preserve those keys via `#[serde(alias = ...)]`. New slots
+/// default to None so old prefs roundtrip cleanly.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectedMedia {
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub boxart_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub snap_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")] pub title_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "boxartIndex")]
+    pub box_front_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "snapIndex")]
+    pub screenshot_gameplay_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "titleIndex")]
+    pub screenshot_title_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cart_front_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub disc_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub box_back_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub box_3d_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub box_spine_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub box_full_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cart_back_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cart_3d_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub screenshot_select_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub banner_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub clear_logo_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub fanart_background_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub fanart_disc_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub advert_front_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub advert_back_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_cabinet_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_marquee_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_controlpanel_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_controlsinfo_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_playerselect_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub arcade_flyer_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub video_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub music_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub manual_index: Option<usize>,
+}
+
+impl SelectedMedia {
+    /// Set the pinned-variant index for `kind`. None clears the pin.
+    pub fn set_for_kind(&mut self, kind: MediaKind, idx: Option<usize>) {
+        match kind {
+            MediaKind::BoxFront => self.box_front_index = idx,
+            MediaKind::ScreenshotGameplay => self.screenshot_gameplay_index = idx,
+            MediaKind::ScreenshotTitle => self.screenshot_title_index = idx,
+            MediaKind::CartFront => self.cart_front_index = idx,
+            MediaKind::Disc => self.disc_index = idx,
+            MediaKind::BoxBack => self.box_back_index = idx,
+            MediaKind::Box3d => self.box_3d_index = idx,
+            MediaKind::BoxSpine => self.box_spine_index = idx,
+            MediaKind::BoxFull => self.box_full_index = idx,
+            MediaKind::CartBack => self.cart_back_index = idx,
+            MediaKind::Cart3d => self.cart_3d_index = idx,
+            MediaKind::ScreenshotSelect => self.screenshot_select_index = idx,
+            MediaKind::Banner => self.banner_index = idx,
+            MediaKind::ClearLogo => self.clear_logo_index = idx,
+            MediaKind::FanartBackground => self.fanart_background_index = idx,
+            MediaKind::FanartDisc => self.fanart_disc_index = idx,
+            MediaKind::AdvertFront => self.advert_front_index = idx,
+            MediaKind::AdvertBack => self.advert_back_index = idx,
+            MediaKind::ArcadeCabinet => self.arcade_cabinet_index = idx,
+            MediaKind::ArcadeMarquee => self.arcade_marquee_index = idx,
+            MediaKind::ArcadeControlpanel => self.arcade_controlpanel_index = idx,
+            MediaKind::ArcadeControlsinfo => self.arcade_controlsinfo_index = idx,
+            MediaKind::ArcadePlayerselect => self.arcade_playerselect_index = idx,
+            MediaKind::ArcadeFlyer => self.arcade_flyer_index = idx,
+            MediaKind::Video => self.video_index = idx,
+            MediaKind::Music => self.music_index = idx,
+            MediaKind::Manual => self.manual_index = idx,
+        }
+    }
+
+    /// Read the pinned-variant index for `kind`.
+    pub fn get_for_kind(&self, kind: MediaKind) -> Option<usize> {
+        match kind {
+            MediaKind::BoxFront => self.box_front_index,
+            MediaKind::ScreenshotGameplay => self.screenshot_gameplay_index,
+            MediaKind::ScreenshotTitle => self.screenshot_title_index,
+            MediaKind::CartFront => self.cart_front_index,
+            MediaKind::Disc => self.disc_index,
+            MediaKind::BoxBack => self.box_back_index,
+            MediaKind::Box3d => self.box_3d_index,
+            MediaKind::BoxSpine => self.box_spine_index,
+            MediaKind::BoxFull => self.box_full_index,
+            MediaKind::CartBack => self.cart_back_index,
+            MediaKind::Cart3d => self.cart_3d_index,
+            MediaKind::ScreenshotSelect => self.screenshot_select_index,
+            MediaKind::Banner => self.banner_index,
+            MediaKind::ClearLogo => self.clear_logo_index,
+            MediaKind::FanartBackground => self.fanart_background_index,
+            MediaKind::FanartDisc => self.fanart_disc_index,
+            MediaKind::AdvertFront => self.advert_front_index,
+            MediaKind::AdvertBack => self.advert_back_index,
+            MediaKind::ArcadeCabinet => self.arcade_cabinet_index,
+            MediaKind::ArcadeMarquee => self.arcade_marquee_index,
+            MediaKind::ArcadeControlpanel => self.arcade_controlpanel_index,
+            MediaKind::ArcadeControlsinfo => self.arcade_controlsinfo_index,
+            MediaKind::ArcadePlayerselect => self.arcade_playerselect_index,
+            MediaKind::ArcadeFlyer => self.arcade_flyer_index,
+            MediaKind::Video => self.video_index,
+            MediaKind::Music => self.music_index,
+            MediaKind::Manual => self.manual_index,
+        }
+    }
 }
 
 /// Placeholder for the LaunchBox-tier metadata layer. Lives here so the
@@ -137,7 +274,10 @@ pub struct MediaPrefs {
 }
 
 fn default_kinds_to_fetch() -> Vec<String> {
-    vec!["boxart".into(), "snap".into(), "title".into()]
+    // Kebab-case canonical names. Legacy "boxart"/"snap"/"title" still
+    // parse via MediaKind::parse aliases, so old media-prefs.json files
+    // keep working unchanged until next save flips them to the new shape.
+    vec!["box-front".into(), "screenshot-gameplay".into(), "screenshot-title".into()]
 }
 
 fn default_only_sync_identified() -> bool { true }
@@ -696,6 +836,408 @@ mod tests {
             &["Nintendo_-_Game_Boy_Color"]
         );
     }
+
+    // ---- media-taxonomy Phase 1: path-builder + filename sanitizer +
+    //      variant-suffix + MediaKind parse/as_str + serde-alias tests ----
+
+    #[test]
+    fn sanitize_strips_windows_forbidden_chars() {
+        assert_eq!(super::sanitize_filename_stem("X: Beyond Frontier"), "X_ Beyond Frontier");
+        // Only `?` is forbidden; `!` is fine on every supported OS.
+        assert_eq!(super::sanitize_filename_stem("Whoa?!"), "Whoa_!");
+        assert_eq!(super::sanitize_filename_stem("a/b\\c|d*e"), "a_b_c_d_e");
+        assert_eq!(super::sanitize_filename_stem("Final Fantasy V <fan-dub>"), "Final Fantasy V _fan-dub_");
+    }
+
+    #[test]
+    fn sanitize_handles_empty_and_trim_only_input() {
+        assert_eq!(super::sanitize_filename_stem(""), "_");
+        assert_eq!(super::sanitize_filename_stem("..."), "_");
+        assert_eq!(super::sanitize_filename_stem("   "), "_");
+    }
+
+    #[test]
+    fn sanitize_strips_trailing_dot_and_space() {
+        assert_eq!(super::sanitize_filename_stem("Sonic the Hedgehog ."), "Sonic the Hedgehog");
+        assert_eq!(super::sanitize_filename_stem("foo. . "), "foo");
+    }
+
+    #[test]
+    fn sanitize_avoids_reserved_dos_names() {
+        assert_eq!(super::sanitize_filename_stem("CON"), "CON_");
+        assert_eq!(super::sanitize_filename_stem("con"), "con_");
+        assert_eq!(super::sanitize_filename_stem("LPT1"), "LPT1_");
+        // Plain words that happen to contain reserved prefixes are fine.
+        assert_eq!(super::sanitize_filename_stem("CONTRA"), "CONTRA");
+    }
+
+    #[test]
+    fn sanitize_strips_control_chars() {
+        let s = format!("hello{}world", '\x07');
+        assert_eq!(super::sanitize_filename_stem(&s), "hello_world");
+    }
+
+    #[test]
+    fn rom_stem_strips_extension_and_directory() {
+        assert_eq!(
+            super::rom_stem_from_path("C:\\ROMs\\Genesis\\Sonic the Hedgehog (USA).md"),
+            "Sonic the Hedgehog (USA)"
+        );
+        assert_eq!(
+            super::rom_stem_from_path("/home/me/roms/snes/Super Metroid.smc"),
+            "Super Metroid"
+        );
+    }
+
+    #[test]
+    fn rom_stem_sanitizes_in_one_pass() {
+        // colon in title gets replaced; extension still stripped.
+        assert_eq!(
+            super::rom_stem_from_path("/roms/X: Beyond Frontier.iso"),
+            "X_ Beyond Frontier"
+        );
+    }
+
+    #[test]
+    fn rom_stem_empty_path_returns_underscore() {
+        assert_eq!(super::rom_stem_from_path(""), "_");
+    }
+
+    #[test]
+    fn media_path_for_slot_primary() {
+        assert_eq!(
+            super::media_path_for_slot("genesis", super::MediaKind::BoxFront, "Sonic", "png", None),
+            "media/genesis/box-front/Sonic.png"
+        );
+        // variant_n = 1 is treated as primary (no suffix).
+        assert_eq!(
+            super::media_path_for_slot("snes", super::MediaKind::ClearLogo, "Super Mario World", "png", Some(1)),
+            "media/snes/clear-logo/Super Mario World.png"
+        );
+    }
+
+    #[test]
+    fn media_path_for_slot_variant_suffix() {
+        assert_eq!(
+            super::media_path_for_slot("genesis", super::MediaKind::BoxFront, "Sonic", "png", Some(2)),
+            "media/genesis/box-front/Sonic-02.png"
+        );
+        assert_eq!(
+            super::media_path_for_slot("tg16", super::MediaKind::ScreenshotGameplay, "Bonk", "jpg", Some(10)),
+            "media/tg16/screenshot-gameplay/Bonk-10.jpg"
+        );
+    }
+
+    #[test]
+    fn next_variant_filename_returns_primary_when_empty() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-mt-empty-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let got = super::next_variant_filename(&tmp, "Sonic", "png");
+        assert_eq!(got, "Sonic.png");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn next_variant_filename_skips_existing() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-mt-suffix-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        std::fs::write(tmp.join("Sonic.png"), b"x").expect("primary");
+        let got = super::next_variant_filename(&tmp, "Sonic", "png");
+        assert_eq!(got, "Sonic-02.png");
+        std::fs::write(tmp.join("Sonic-02.png"), b"x").expect("v2");
+        let got = super::next_variant_filename(&tmp, "Sonic", "png");
+        assert_eq!(got, "Sonic-03.png");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn media_kind_parse_accepts_kebab_case() {
+        assert_eq!(super::MediaKind::parse("box-front"), Some(super::MediaKind::BoxFront));
+        assert_eq!(super::MediaKind::parse("screenshot-gameplay"), Some(super::MediaKind::ScreenshotGameplay));
+        assert_eq!(super::MediaKind::parse("clear-logo"), Some(super::MediaKind::ClearLogo));
+        assert_eq!(super::MediaKind::parse("arcade-marquee"), Some(super::MediaKind::ArcadeMarquee));
+        assert_eq!(super::MediaKind::parse("manual"), Some(super::MediaKind::Manual));
+    }
+
+    #[test]
+    fn media_kind_parse_accepts_v1_aliases() {
+        assert_eq!(super::MediaKind::parse("boxart"), Some(super::MediaKind::BoxFront));
+        assert_eq!(super::MediaKind::parse("snap"), Some(super::MediaKind::ScreenshotGameplay));
+        assert_eq!(super::MediaKind::parse("title"), Some(super::MediaKind::ScreenshotTitle));
+        assert_eq!(super::MediaKind::parse("cart"), Some(super::MediaKind::CartFront));
+        assert_eq!(super::MediaKind::parse("disc"), Some(super::MediaKind::Disc));
+    }
+
+    #[test]
+    fn media_kind_parse_rejects_unknown() {
+        assert_eq!(super::MediaKind::parse("unknown"), None);
+        assert_eq!(super::MediaKind::parse(""), None);
+        assert_eq!(super::MediaKind::parse("Box-Front"), None); // case-sensitive
+    }
+
+    #[test]
+    fn media_kind_as_str_returns_kebab_case() {
+        assert_eq!(super::MediaKind::BoxFront.as_str(), "box-front");
+        assert_eq!(super::MediaKind::ScreenshotGameplay.as_str(), "screenshot-gameplay");
+        assert_eq!(super::MediaKind::ClearLogo.as_str(), "clear-logo");
+        assert_eq!(super::MediaKind::Disc.as_str(), "disc");
+        assert_eq!(super::MediaKind::Manual.as_str(), "manual");
+    }
+
+    #[test]
+    fn media_kind_all_covers_every_variant_via_round_trip() {
+        // Locks the ALL invariant: parsing each ALL entry's as_str back
+        // must produce the same variant. If a new MediaKind is added but
+        // not appended to ALL, this test catches it because the round
+        // trip works but the count check below fails.
+        for &k in super::MediaKind::ALL {
+            assert_eq!(super::MediaKind::parse(k.as_str()), Some(k));
+        }
+        // Expected count tracks the 26-slot LaunchBox taxonomy plus
+        // multimedia + manual (= 27). Bumping the enum requires bumping
+        // ALL and this constant in lockstep — intentional friction so
+        // the data model stays in sync.
+        assert_eq!(super::MediaKind::ALL.len(), 27);
+    }
+
+    #[test]
+    fn libretro_thumbnails_subdir_only_three_kinds() {
+        assert_eq!(super::MediaKind::BoxFront.libretro_thumbnails_subdir(), Some("Named_Boxarts"));
+        assert_eq!(super::MediaKind::ScreenshotGameplay.libretro_thumbnails_subdir(), Some("Named_Snaps"));
+        assert_eq!(super::MediaKind::ScreenshotTitle.libretro_thumbnails_subdir(), Some("Named_Titles"));
+        // All other kinds have no upstream coverage.
+        for &k in super::MediaKind::ALL {
+            match k {
+                super::MediaKind::BoxFront
+                | super::MediaKind::ScreenshotGameplay
+                | super::MediaKind::ScreenshotTitle => {}
+                _ => assert_eq!(
+                    k.libretro_thumbnails_subdir(),
+                    None,
+                    "{:?} unexpectedly has an upstream subdir",
+                    k,
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn game_media_parses_v1_legacy_json() {
+        // A v1 media.json entry with the old field names. The new
+        // GameMedia must accept this via serde aliases and surface the
+        // values on the renamed fields.
+        let legacy = r#"{
+            "boxart": [{"source":{"kind":"manual"},"path":"old/path.png"}],
+            "snap":   [{"source":{"kind":"manual"},"path":"old/snap.png"}],
+            "title":  [{"source":{"kind":"manual"},"path":"old/title.png"}],
+            "cart":   [{"source":{"kind":"manual"},"path":"old/cart.png"}],
+            "disc":   [{"source":{"kind":"manual"},"path":"old/disc.png"}]
+        }"#;
+        let gm: super::GameMedia = serde_json::from_str(legacy).expect("legacy parses");
+        assert_eq!(gm.box_front.len(), 1);
+        assert_eq!(gm.box_front[0].path, "old/path.png");
+        assert_eq!(gm.screenshot_gameplay.len(), 1);
+        assert_eq!(gm.screenshot_title.len(), 1);
+        assert_eq!(gm.cart_front.len(), 1);
+        assert_eq!(gm.disc.len(), 1);
+        // New slots default to empty.
+        assert!(gm.clear_logo.is_empty());
+        assert!(gm.manual.is_empty());
+        assert!(gm.banner.is_empty());
+    }
+
+    #[test]
+    fn game_media_parses_new_camel_case_json() {
+        // A new media.json entry with the camelCase serialized names.
+        let modern = r#"{
+            "boxFront": [{"source":{"kind":"manual"},"path":"media/genesis/box-front/Sonic.png"}],
+            "clearLogo": [{"source":{"kind":"manual"},"path":"media/genesis/clear-logo/Sonic.png"}],
+            "manual": [{"source":{"kind":"manual"},"path":"media/genesis/manual/Sonic.pdf"}]
+        }"#;
+        let gm: super::GameMedia = serde_json::from_str(modern).expect("modern parses");
+        assert_eq!(gm.box_front.len(), 1);
+        assert_eq!(gm.box_front[0].path, "media/genesis/box-front/Sonic.png");
+        assert_eq!(gm.clear_logo.len(), 1);
+        assert_eq!(gm.manual.len(), 1);
+    }
+
+    #[test]
+    fn game_media_serializes_to_camel_case() {
+        let mut gm = super::GameMedia::default();
+        gm.box_front.push(super::MediaVariant {
+            source: super::MediaSource::Manual,
+            region: None,
+            path: "media/genesis/box-front/Sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        gm.clear_logo.push(super::MediaVariant {
+            source: super::MediaSource::Manual,
+            region: None,
+            path: "media/genesis/clear-logo/Sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        let json = serde_json::to_string(&gm).expect("serialize");
+        // Empty slots skipped, present slots use camelCase keys.
+        assert!(json.contains(r#""boxFront""#));
+        assert!(json.contains(r#""clearLogo""#));
+        // Legacy v1 names must NOT appear on serialize.
+        assert!(!json.contains(r#""boxart""#));
+        assert!(!json.contains(r#""snap""#));
+        // Empty slots skipped via skip_serializing_if.
+        assert!(!json.contains(r#""banner""#));
+    }
+
+    #[test]
+    fn selected_media_parses_v1_legacy_indexes() {
+        let legacy = r#"{"boxartIndex":1,"snapIndex":2,"titleIndex":3}"#;
+        let sel: super::SelectedMedia = serde_json::from_str(legacy).expect("legacy parses");
+        assert_eq!(sel.box_front_index, Some(1));
+        assert_eq!(sel.screenshot_gameplay_index, Some(2));
+        assert_eq!(sel.screenshot_title_index, Some(3));
+        // Other slots default to None.
+        assert_eq!(sel.cart_front_index, None);
+        assert_eq!(sel.clear_logo_index, None);
+    }
+
+    #[test]
+    fn selected_media_set_and_get_round_trip_every_kind() {
+        // Lock: set_for_kind followed by get_for_kind returns the same
+        // value for every MediaKind variant. Catches accidental
+        // dispatch-table drift between the two helpers.
+        for (i, &k) in super::MediaKind::ALL.iter().enumerate() {
+            let mut sel = super::SelectedMedia::default();
+            sel.set_for_kind(k, Some(i));
+            assert_eq!(sel.get_for_kind(k), Some(i), "round-trip failed for {:?}", k);
+            // Clearing works.
+            sel.set_for_kind(k, None);
+            assert_eq!(sel.get_for_kind(k), None, "clear failed for {:?}", k);
+        }
+    }
+}
+
+// ---- LaunchBox-shape path builders + filename sanitization ----
+
+/// Characters Windows forbids in filenames (`< > : " / \ | ? *`) plus
+/// any C0 control byte. Other platforms permit most of these but we
+/// keep one shared sanitization rule so OA installs are portable across
+/// OSes and a Windows-safe filename always works elsewhere.
+fn is_forbidden_filename_char(c: char) -> bool {
+    matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || (c as u32) < 0x20
+}
+
+const RESERVED_WIN_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Sanitize a filename stem (no extension) for cross-platform safety.
+/// Forbidden chars become `_`. Trailing `.` / space — both of which
+/// Windows treats specially — are trimmed. Reserved DOS names
+/// (CON/PRN/AUX/NUL/COM1-9/LPT1-9, case-insensitive) get a `_`
+/// appended so the resulting name is never reserved. Empty input
+/// produces `_` (so we never emit a zero-length filename).
+pub fn sanitize_filename_stem(stem: &str) -> String {
+    if stem.is_empty() {
+        return "_".to_string();
+    }
+    let mut out: String = stem
+        .chars()
+        .map(|c| if is_forbidden_filename_char(c) { '_' } else { c })
+        .collect();
+    // Trim trailing whitespace + dots — Windows silently strips both
+    // from filenames at creation time, which would produce a different
+    // filename than the caller intended.
+    while out.ends_with('.') || out.ends_with(' ') {
+        out.pop();
+    }
+    if out.is_empty() {
+        return "_".to_string();
+    }
+    let upper = out.to_ascii_uppercase();
+    if RESERVED_WIN_NAMES.iter().any(|r| *r == upper.as_str()) {
+        out.push('_');
+    }
+    out
+}
+
+/// Derive the rom_stem from a ROM file path. Returns the file stem
+/// (basename without extension), sanitized for cross-platform safety.
+/// Examples:
+///   "C:\\ROMs\\Genesis\\Sonic the Hedgehog (USA).md" -> "Sonic the Hedgehog (USA)"
+///   "/roms/snes/Super Metroid.smc"                   -> "Super Metroid"
+///   "/roms/pcecd/Y's IV.cue"                         -> "Y's IV"
+pub fn rom_stem_from_path(file_path: &str) -> String {
+    let p = std::path::Path::new(file_path);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    sanitize_filename_stem(stem)
+}
+
+/// Build the canonical media path for a slot.
+/// Returns `"media/<system_id>/<kind>/<rom_stem>.<ext>"` for primary
+/// variants. `variant_n` controls the -NN suffix:
+///   - None or Some(1) → primary, no suffix
+///   - Some(n) where n ≥ 2 → `-02` / `-03` / ... appended to the stem
+///
+/// `system_id` is NOT sanitized — it's an internal slug controlled by
+/// the registry (always safe). `rom_stem` MUST already be sanitized
+/// (callers get this from `rom_stem_from_path` or build with care).
+/// `ext` is also passed through as-is; callers should use lowercase
+/// short extensions like "png" / "jpg" / "webp" / "mp4" / "ogg".
+pub fn media_path_for_slot(
+    system_id: &str,
+    kind: MediaKind,
+    rom_stem: &str,
+    ext: &str,
+    variant_n: Option<u32>,
+) -> String {
+    let suffix = match variant_n {
+        Some(n) if n >= 2 => format!("-{:02}", n),
+        _ => String::new(),
+    };
+    format!(
+        "media/{}/{}/{}{}.{}",
+        system_id, kind.as_str(), rom_stem, suffix, ext
+    )
+}
+
+/// Pick the next available variant filename in `dir`. Returns the
+/// primary `<stem>.<ext>` when no collision; otherwise tries
+/// `<stem>-02.<ext>`, `<stem>-03.<ext>`, ... up to -99. After that
+/// (extremely unlikely in practice) falls back to a millisecond-stamped
+/// suffix so we never overwrite an existing file silently.
+///
+/// Unused in Phase 1 — wired into the libretro-thumbnails sync's
+/// operator-art-wins guard in Phase 2.
+#[allow(dead_code)]
+pub fn next_variant_filename(dir: &Path, stem: &str, ext: &str) -> String {
+    let primary = format!("{stem}.{ext}");
+    if !dir.join(&primary).exists() {
+        return primary;
+    }
+    for n in 2u32..=99 {
+        let candidate = format!("{stem}-{:02}.{ext}", n);
+        if !dir.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{stem}-{ms}.{ext}")
 }
 
 // ---- oa-media:// protocol handler ----
@@ -716,71 +1258,216 @@ mod tests {
 // serve `appDataDir / variant.thumb_path` (size=thumb) or `appDataDir /
 // variant.path` (size=full). Missing file or any failed lookup yields 404.
 
-#[derive(Clone, Copy)]
-pub enum MediaKind { Boxart, Snap, Title, Cart, Disc }
+/// Full LaunchBox-shape media slot taxonomy. v1 shipped 5 variants
+/// (Boxart/Snap/Title/Cart/Disc); the 2026-05-23 media-taxonomy pivot
+/// added the remaining ~21 slots from the LaunchBox naming. `parse`
+/// accepts both the legacy 5 names (`"boxart"`/`"snap"`/`"title"`/
+/// `"cart"`/`"disc"`) AND the new kebab-case names, so prefs files +
+/// frontend URLs from before the migration keep working without a
+/// flag day.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MediaKind {
+    BoxFront,
+    BoxBack,
+    Box3d,
+    BoxSpine,
+    BoxFull,
+    CartFront,
+    CartBack,
+    Cart3d,
+    Disc,
+    ScreenshotGameplay,
+    ScreenshotTitle,
+    ScreenshotSelect,
+    Banner,
+    ClearLogo,
+    FanartBackground,
+    FanartDisc,
+    AdvertFront,
+    AdvertBack,
+    ArcadeCabinet,
+    ArcadeMarquee,
+    ArcadeControlpanel,
+    ArcadeControlsinfo,
+    ArcadePlayerselect,
+    ArcadeFlyer,
+    Video,
+    Music,
+    Manual,
+}
 
 impl MediaKind {
-    fn parse(s: &str) -> Option<Self> {
+    /// All variants in stable enumeration order. Use this for "iterate
+    /// every slot" loops (e.g. importer scans, migration sweeps). Used
+    /// today by tests; the Phase 3 art-pack importer + Phase 5 migration
+    /// loops will consume it.
+    #[allow(dead_code)]
+    pub const ALL: &'static [MediaKind] = &[
+        MediaKind::BoxFront, MediaKind::BoxBack, MediaKind::Box3d, MediaKind::BoxSpine, MediaKind::BoxFull,
+        MediaKind::CartFront, MediaKind::CartBack, MediaKind::Cart3d,
+        MediaKind::Disc,
+        MediaKind::ScreenshotGameplay, MediaKind::ScreenshotTitle, MediaKind::ScreenshotSelect,
+        MediaKind::Banner, MediaKind::ClearLogo,
+        MediaKind::FanartBackground, MediaKind::FanartDisc,
+        MediaKind::AdvertFront, MediaKind::AdvertBack,
+        MediaKind::ArcadeCabinet, MediaKind::ArcadeMarquee, MediaKind::ArcadeControlpanel,
+        MediaKind::ArcadeControlsinfo, MediaKind::ArcadePlayerselect, MediaKind::ArcadeFlyer,
+        MediaKind::Video, MediaKind::Music, MediaKind::Manual,
+    ];
+
+    /// Parse a kind name. Accepts kebab-case (`"box-front"`) for new
+    /// callers AND the v1 5-slot aliases (`"boxart"`/`"snap"`/`"title"`/
+    /// `"cart"`/`"disc"`). Returns None for unknown input.
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "boxart" => Some(MediaKind::Boxart),
-            "snap"   => Some(MediaKind::Snap),
-            "title"  => Some(MediaKind::Title),
-            "cart"   => Some(MediaKind::Cart),
-            "disc"   => Some(MediaKind::Disc),
+            // ---- v1 aliases ----
+            "boxart" => Some(MediaKind::BoxFront),
+            "snap"   => Some(MediaKind::ScreenshotGameplay),
+            "title"  => Some(MediaKind::ScreenshotTitle),
+            "cart"   => Some(MediaKind::CartFront),
+            // ---- canonical kebab-case names (match folder names exactly) ----
+            "box-front"             => Some(MediaKind::BoxFront),
+            "box-back"              => Some(MediaKind::BoxBack),
+            "box-3d"                => Some(MediaKind::Box3d),
+            "box-spine"             => Some(MediaKind::BoxSpine),
+            "box-full"              => Some(MediaKind::BoxFull),
+            "cart-front"            => Some(MediaKind::CartFront),
+            "cart-back"             => Some(MediaKind::CartBack),
+            "cart-3d"               => Some(MediaKind::Cart3d),
+            "disc"                  => Some(MediaKind::Disc),
+            "screenshot-gameplay"   => Some(MediaKind::ScreenshotGameplay),
+            "screenshot-title"      => Some(MediaKind::ScreenshotTitle),
+            "screenshot-select"     => Some(MediaKind::ScreenshotSelect),
+            "banner"                => Some(MediaKind::Banner),
+            "clear-logo"            => Some(MediaKind::ClearLogo),
+            "fanart-background"     => Some(MediaKind::FanartBackground),
+            "fanart-disc"           => Some(MediaKind::FanartDisc),
+            "advert-front"          => Some(MediaKind::AdvertFront),
+            "advert-back"           => Some(MediaKind::AdvertBack),
+            "arcade-cabinet"        => Some(MediaKind::ArcadeCabinet),
+            "arcade-marquee"        => Some(MediaKind::ArcadeMarquee),
+            "arcade-controlpanel"   => Some(MediaKind::ArcadeControlpanel),
+            "arcade-controlsinfo"   => Some(MediaKind::ArcadeControlsinfo),
+            "arcade-playerselect"   => Some(MediaKind::ArcadePlayerselect),
+            "arcade-flyer"          => Some(MediaKind::ArcadeFlyer),
+            "video"                 => Some(MediaKind::Video),
+            "music"                 => Some(MediaKind::Music),
+            "manual"                => Some(MediaKind::Manual),
             _ => None,
         }
     }
 
-    fn as_str(&self) -> &'static str {
+    /// Canonical kebab-case name. Matches folder names + new JSON keys.
+    pub fn as_str(&self) -> &'static str {
         match self {
-            MediaKind::Boxart => "boxart",
-            MediaKind::Snap   => "snap",
-            MediaKind::Title  => "title",
-            MediaKind::Cart   => "cart",
-            MediaKind::Disc   => "disc",
+            MediaKind::BoxFront             => "box-front",
+            MediaKind::BoxBack              => "box-back",
+            MediaKind::Box3d                => "box-3d",
+            MediaKind::BoxSpine             => "box-spine",
+            MediaKind::BoxFull              => "box-full",
+            MediaKind::CartFront            => "cart-front",
+            MediaKind::CartBack             => "cart-back",
+            MediaKind::Cart3d               => "cart-3d",
+            MediaKind::Disc                 => "disc",
+            MediaKind::ScreenshotGameplay   => "screenshot-gameplay",
+            MediaKind::ScreenshotTitle      => "screenshot-title",
+            MediaKind::ScreenshotSelect     => "screenshot-select",
+            MediaKind::Banner               => "banner",
+            MediaKind::ClearLogo            => "clear-logo",
+            MediaKind::FanartBackground     => "fanart-background",
+            MediaKind::FanartDisc           => "fanart-disc",
+            MediaKind::AdvertFront          => "advert-front",
+            MediaKind::AdvertBack           => "advert-back",
+            MediaKind::ArcadeCabinet        => "arcade-cabinet",
+            MediaKind::ArcadeMarquee        => "arcade-marquee",
+            MediaKind::ArcadeControlpanel   => "arcade-controlpanel",
+            MediaKind::ArcadeControlsinfo   => "arcade-controlsinfo",
+            MediaKind::ArcadePlayerselect   => "arcade-playerselect",
+            MediaKind::ArcadeFlyer          => "arcade-flyer",
+            MediaKind::Video                => "video",
+            MediaKind::Music                => "music",
+            MediaKind::Manual               => "manual",
         }
     }
 
-    /// libretro-thumbnails subdirectory hosting this kind. None for kinds
-    /// the libretro-thumbnails repos don't carry (cart/disc) — the sync loop
-    /// silently skips those.
-    fn libretro_thumbnails_subdir(&self) -> Option<&'static str> {
+    /// libretro-thumbnails subdirectory hosting this kind. Only the three
+    /// kinds with upstream coverage map to a subdir; everything else
+    /// returns None and the sync loop silently skips it.
+    pub fn libretro_thumbnails_subdir(&self) -> Option<&'static str> {
         match self {
-            MediaKind::Boxart => Some("Named_Boxarts"),
-            MediaKind::Snap   => Some("Named_Snaps"),
-            MediaKind::Title  => Some("Named_Titles"),
+            MediaKind::BoxFront             => Some("Named_Boxarts"),
+            MediaKind::ScreenshotGameplay   => Some("Named_Snaps"),
+            MediaKind::ScreenshotTitle      => Some("Named_Titles"),
             _ => None,
         }
     }
 
-    fn variants<'a>(&self, gm: &'a GameMedia) -> &'a [MediaVariant] {
+    pub fn variants<'a>(&self, gm: &'a GameMedia) -> &'a [MediaVariant] {
         match self {
-            MediaKind::Boxart => &gm.boxart,
-            MediaKind::Snap   => &gm.snap,
-            MediaKind::Title  => &gm.title,
-            MediaKind::Cart   => &gm.cart,
-            MediaKind::Disc   => &gm.disc,
+            MediaKind::BoxFront             => &gm.box_front,
+            MediaKind::BoxBack              => &gm.box_back,
+            MediaKind::Box3d                => &gm.box_3d,
+            MediaKind::BoxSpine             => &gm.box_spine,
+            MediaKind::BoxFull              => &gm.box_full,
+            MediaKind::CartFront            => &gm.cart_front,
+            MediaKind::CartBack             => &gm.cart_back,
+            MediaKind::Cart3d               => &gm.cart_3d,
+            MediaKind::Disc                 => &gm.disc,
+            MediaKind::ScreenshotGameplay   => &gm.screenshot_gameplay,
+            MediaKind::ScreenshotTitle      => &gm.screenshot_title,
+            MediaKind::ScreenshotSelect     => &gm.screenshot_select,
+            MediaKind::Banner               => &gm.banner,
+            MediaKind::ClearLogo            => &gm.clear_logo,
+            MediaKind::FanartBackground     => &gm.fanart_background,
+            MediaKind::FanartDisc           => &gm.fanart_disc,
+            MediaKind::AdvertFront          => &gm.advert_front,
+            MediaKind::AdvertBack           => &gm.advert_back,
+            MediaKind::ArcadeCabinet        => &gm.arcade_cabinet,
+            MediaKind::ArcadeMarquee        => &gm.arcade_marquee,
+            MediaKind::ArcadeControlpanel   => &gm.arcade_controlpanel,
+            MediaKind::ArcadeControlsinfo   => &gm.arcade_controlsinfo,
+            MediaKind::ArcadePlayerselect   => &gm.arcade_playerselect,
+            MediaKind::ArcadeFlyer          => &gm.arcade_flyer,
+            MediaKind::Video                => &gm.video,
+            MediaKind::Music                => &gm.music,
+            MediaKind::Manual               => &gm.manual,
         }
     }
 
-    fn variants_mut<'a>(&self, gm: &'a mut GameMedia) -> &'a mut Vec<MediaVariant> {
+    pub fn variants_mut<'a>(&self, gm: &'a mut GameMedia) -> &'a mut Vec<MediaVariant> {
         match self {
-            MediaKind::Boxart => &mut gm.boxart,
-            MediaKind::Snap   => &mut gm.snap,
-            MediaKind::Title  => &mut gm.title,
-            MediaKind::Cart   => &mut gm.cart,
-            MediaKind::Disc   => &mut gm.disc,
+            MediaKind::BoxFront             => &mut gm.box_front,
+            MediaKind::BoxBack              => &mut gm.box_back,
+            MediaKind::Box3d                => &mut gm.box_3d,
+            MediaKind::BoxSpine             => &mut gm.box_spine,
+            MediaKind::BoxFull              => &mut gm.box_full,
+            MediaKind::CartFront            => &mut gm.cart_front,
+            MediaKind::CartBack             => &mut gm.cart_back,
+            MediaKind::Cart3d               => &mut gm.cart_3d,
+            MediaKind::Disc                 => &mut gm.disc,
+            MediaKind::ScreenshotGameplay   => &mut gm.screenshot_gameplay,
+            MediaKind::ScreenshotTitle      => &mut gm.screenshot_title,
+            MediaKind::ScreenshotSelect     => &mut gm.screenshot_select,
+            MediaKind::Banner               => &mut gm.banner,
+            MediaKind::ClearLogo            => &mut gm.clear_logo,
+            MediaKind::FanartBackground     => &mut gm.fanart_background,
+            MediaKind::FanartDisc           => &mut gm.fanart_disc,
+            MediaKind::AdvertFront          => &mut gm.advert_front,
+            MediaKind::AdvertBack           => &mut gm.advert_back,
+            MediaKind::ArcadeCabinet        => &mut gm.arcade_cabinet,
+            MediaKind::ArcadeMarquee        => &mut gm.arcade_marquee,
+            MediaKind::ArcadeControlpanel   => &mut gm.arcade_controlpanel,
+            MediaKind::ArcadeControlsinfo   => &mut gm.arcade_controlsinfo,
+            MediaKind::ArcadePlayerselect   => &mut gm.arcade_playerselect,
+            MediaKind::ArcadeFlyer          => &mut gm.arcade_flyer,
+            MediaKind::Video                => &mut gm.video,
+            MediaKind::Music                => &mut gm.music,
+            MediaKind::Manual               => &mut gm.manual,
         }
     }
 
-    fn pinned_index(&self, sel: Option<&SelectedMedia>) -> Option<usize> {
-        let s = sel?;
-        match self {
-            MediaKind::Boxart => s.boxart_index,
-            MediaKind::Snap   => s.snap_index,
-            MediaKind::Title  => s.title_index,
-            _ => None,
-        }
+    pub fn pinned_index(&self, sel: Option<&SelectedMedia>) -> Option<usize> {
+        sel.and_then(|s| s.get_for_kind(*self))
     }
 }
 
@@ -1059,24 +1746,38 @@ fn generate_thumbnail(bytes: &[u8], dest: &Path) -> Result<(u32, u32), String> {
     Ok((orig_w, orig_h))
 }
 
-/// Pure logic: writes a manual cover + thumbnail to disk + mutates the in-
-/// memory MediaDb. Caller is responsible for persisting `db` to disk and
-/// emitting `oa://media-updated`.
-fn ingest_manual_cover(
+/// Pure logic: writes a manual cover + thumbnail to disk for the given
+/// slot + mutates the in-memory MediaDb. Caller is responsible for
+/// persisting `db` to disk and emitting `oa://media-updated`.
+///
+/// File lands at `media/<system_id>/<kind>/<rom_stem>.<ext>` (new
+/// LaunchBox-shape layout from the 2026-05-23 media-taxonomy pivot).
+/// Thumbnail stays content-addressed at `media/thumbs/<system_id>/<sha[..16]>.webp`
+/// so duplicate art across regional clones dedupes naturally.
+///
+/// Manual variants always sort to index 0 on their slot and clear any
+/// prior pinned selection for that slot — the operator's most-recent
+/// manual choice wins the default-display fallback. Any pre-existing
+/// Manual variant on the same slot is replaced in place (only one
+/// Manual per slot at a time; use the `-NN` suffix logic in Phase 2+
+/// when we want multi-variant manual art).
+fn ingest_manual_for_slot(
     app_data_dir: &Path,
-    rom_id: &str,
+    rom_stem: &str,
     system_id: &str,
+    kind: MediaKind,
     source_path: &Path,
     db: &mut MediaDb,
+    rom_id: &str,
 ) -> Result<GameMedia, String> {
     let bytes = std::fs::read(source_path).map_err(|e| format!("read source: {e}"))?;
     let (_format, ext) = detect_format(&bytes)?;
     let sha = sha1_hex(&bytes);
 
-    let cover_rel = format!("media/covers/{system_id}/{rom_id}.{ext}");
+    let cover_rel = media_path_for_slot(system_id, kind, rom_stem, ext, None);
     let cover_abs = app_data_dir.join(&cover_rel);
     if let Some(parent) = cover_abs.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir covers: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir slot dir: {e}"))?;
     }
     std::fs::write(&cover_abs, &bytes).map_err(|e| format!("write cover: {e}"))?;
 
@@ -1102,14 +1803,11 @@ fn ingest_manual_cover(
     };
 
     let entry = db.entry(rom_id.to_string()).or_insert_with(GameMedia::default);
-    // Manual replaces any prior manual variant + sorts to front so it wins
-    // the region-priority fallback (index 0 is the final fallback in
-    // resolve_active_index). Any pinned selection is cleared so a previous
-    // pinned synced variant doesn't shadow the new manual choice.
-    entry.boxart.retain(|v| v.source != MediaSource::Manual);
-    entry.boxart.insert(0, new_variant);
+    let slot = kind.variants_mut(entry);
+    slot.retain(|v| v.source != MediaSource::Manual);
+    slot.insert(0, new_variant);
     if let Some(sel) = entry.selected.as_mut() {
-        sel.boxart_index = None;
+        sel.set_for_kind(kind, None);
     }
     Ok(entry.clone())
 }
@@ -1428,9 +2126,9 @@ struct RepoTree {
 impl RepoTree {
     fn for_kind(&self, kind: MediaKind) -> &[String] {
         match kind {
-            MediaKind::Boxart => &self.boxarts,
-            MediaKind::Snap   => &self.snaps,
-            MediaKind::Title  => &self.titles,
+            MediaKind::BoxFront             => &self.boxarts,
+            MediaKind::ScreenshotGameplay   => &self.snaps,
+            MediaKind::ScreenshotTitle      => &self.titles,
             _ => &[],
         }
     }
@@ -1762,7 +2460,7 @@ fn enabled_sync_kinds(prefs: &Arc<RwLock<MediaPrefs>>) -> Vec<MediaKind> {
         .filter(|k| k.libretro_thumbnails_subdir().is_some())
         .collect();
     if kinds.is_empty() {
-        vec![MediaKind::Boxart, MediaKind::Snap, MediaKind::Title]
+        vec![MediaKind::BoxFront, MediaKind::ScreenshotGameplay, MediaKind::ScreenshotTitle]
     } else {
         kinds
     }
@@ -2160,23 +2858,54 @@ pub fn get_media_index(state: tauri::State<'_, MediaState>) -> MediaDb {
     state.db.read().map(|db| db.clone()).unwrap_or_default()
 }
 
+/// Set a manual cover. v1 default — kind defaults to box-front (the
+/// historical "set cover" gesture) so the frontend doesn't need to pass
+/// `kind` until the UI starts surfacing other slots. Pass `kind` when
+/// the UI needs to target a non-default slot (snapshots, clear-logo, etc.).
+///
+/// Looks up `file_path` from library_db so the on-disk filename uses
+/// the human-readable rom stem (`Sonic the Hedgehog (USA).png`) rather
+/// than the opaque `rom-<hash>.png` from the v1 layout.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn set_manual_cover(
     romId: String,
     systemId: String,
     sourcePath: String,
+    kind: Option<String>,
     state: tauri::State<'_, MediaState>,
+    library: tauri::State<'_, crate::library_db::LibraryDb>,
     app: tauri::AppHandle,
 ) -> Result<GameMedia, String> {
+    let kind = match kind.as_deref() {
+        None | Some("") => MediaKind::BoxFront,
+        Some(k) => MediaKind::parse(k).ok_or_else(|| format!("unknown kind: {k}"))?,
+    };
+    // Look up the rom's file_path so we can name the on-disk art by
+    // its human-readable stem. Falls back to the rom_id if the lookup
+    // fails (lets the user drop covers on ad-hoc / pre-import entries
+    // without crashing the flow).
+    let rom_stem = match library.find_game_by_id(&romId) {
+        Ok(Some(row)) => {
+            let raw = row
+                .archive_inner_path
+                .as_deref()
+                .unwrap_or(&row.file_path);
+            rom_stem_from_path(raw)
+        }
+        Ok(None) | Err(_) => sanitize_filename_stem(&romId),
+    };
+
     let updated = {
         let mut db = state.db.write().map_err(|_| "media db lock poisoned".to_string())?;
-        let r = ingest_manual_cover(
+        let r = ingest_manual_for_slot(
             &state.app_data_dir,
-            &romId,
+            &rom_stem,
             &systemId,
+            kind,
             Path::new(&sourcePath),
             &mut db,
+            &romId,
         )?;
         write_media_db(&state.app_data_dir, &db).map_err(|e| format!("write media.json: {e}"))?;
         r
@@ -2186,7 +2915,10 @@ pub fn set_manual_cover(
         "oa://media-updated",
         serde_json::json!({ "romId": &romId, "media": &updated }),
     );
-    log::info!("oa-shell: manual cover set for {romId} from {sourcePath}");
+    log::info!(
+        "oa-shell: manual cover set for {romId} [{}] (stem={rom_stem}) from {sourcePath}",
+        kind.as_str(),
+    );
     Ok(updated)
 }
 
@@ -2309,6 +3041,10 @@ pub struct MetadataClearSummary {
     pub cleared: usize,
 }
 
+/// Pin a specific variant index as the default-display choice for
+/// `(rom_id, kind)`. Accepts any of the 27 MediaKind names (kebab-case
+/// or v1 aliases). Pre-2026-05-23 this only worked for boxart / snap /
+/// title; now every slot has its own pin.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn set_selected_variant(
@@ -2324,12 +3060,7 @@ pub fn set_selected_variant(
         let cloned = {
             let gm = db.get_mut(&romId).ok_or_else(|| format!("no media for rom_id: {romId}"))?;
             let sel = gm.selected.get_or_insert_with(SelectedMedia::default);
-            match parsed {
-                MediaKind::Boxart => sel.boxart_index = Some(index),
-                MediaKind::Snap   => sel.snap_index   = Some(index),
-                MediaKind::Title  => sel.title_index  = Some(index),
-                _ => return Err(format!("selection not supported for kind: {kind}")),
-            }
+            sel.set_for_kind(parsed, Some(index));
             gm.clone()
         };
         write_media_db(&state.app_data_dir, &db).map_err(|e| format!("write media.json: {e}"))?;

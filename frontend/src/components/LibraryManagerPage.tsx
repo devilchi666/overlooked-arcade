@@ -881,12 +881,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   Kinds to fetch (per-ROM downloads during sync)
                 </p>
                 <div class="flex flex-wrap gap-2">
-                  <For each={["boxart", "snap", "title"] as const}>
+                  <For each={["box-front", "screenshot-gameplay", "screenshot-title"] as const}>
                     {(k) => {
                       const checked = () => media.kindsToFetch().includes(k);
                       const label =
-                        k === "boxart" ? "Boxart"
-                        : k === "snap" ? "Snapshots"
+                        k === "box-front" ? "Boxart"
+                        : k === "screenshot-gameplay" ? "Snapshots"
                         : "Title screens";
                       return (
                         <label class="flex cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) transition hover:bg-white/[0.08]">
