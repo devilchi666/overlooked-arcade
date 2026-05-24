@@ -11,24 +11,23 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **DOSBox onboarding** ([cores/dosbox/](cores/dosbox/)) — branch
-  `feat/dosbox-onboarding`, Phase 2 of the dosbox-and-scummvm plan.
-  Phase 1 (scummvm) shipped + merged to main 2026-05-24 as `0b56bd8`.
-  Phase 2 (dosbox) shipped on the new branch 2026-05-24: SystemId
-  variant, bindings module (12 buttons — d-pad + A/B/X/Y diamond +
-  L/R + START + SELECT), default core dll, libretro-thumbnails repo
-  mapping, LaunchBox `MS-DOS`/`DOS` art-pack mappings, keyboard
-  passthrough on, per-core `system_dir` subdirectory, new
-  `is_directory_path_system` helper routing directory launches
-  through `RomSource::Path`, new `GameOverrides.dosbox_entry_point`
-  field wired at launch, new `scan_service::run_dir_scan_blocking`
-  directory-mode walker + `start_background_directory_scan` Tauri
-  command, Import Wizard wiring (`DIR_MODE_SYSTEMS` constant + dual-
-  mode scan dispatch + `systemHint` classification), frontend theme
-  (amber-on-black 55°), per-core docs scaffold. Awaiting operator
-  playtest with real `dosbox_pure_libretro.dll` + game data.
+(Nothing actively in flight.)
 
 ## Recently completed (this session)
+
+- **DOSBox + ScummVM onboarding** ([features/dosbox-and-scummvm/](features/dosbox-and-scummvm/))
+  — shipped 2026-05-24 across two `--no-ff` merges. Phase 1
+  scummvm (`0b56bd8`, branch `feat/dosbox-and-scummvm`) wired
+  the descriptor-file engine launcher; Phase 2 dosbox (`b6fea2c`,
+  branch `feat/dosbox-onboarding`) wired the directory-path engine
+  launcher and added new infrastructure that future engine cores
+  will reuse: `is_directory_path_system` helper, `run_dir_scan_blocking`
+  + `start_background_directory_scan`, `systemHint`-aware classification
+  in the Import Wizard, `GameOverrides.dosbox_entry_point` field.
+  Cross-stream SESSION_LOG + commit shas at
+  [docs/features/dosbox-and-scummvm/SESSION_LOG.md](features/dosbox-and-scummvm/SESSION_LOG.md).
+  Per-core ROADMAP Phase 1 entries flip ✅ when operator playtest
+  validates each (gated on having game data on hand).
 
 - **Media taxonomy** ([features/media-taxonomy/](features/media-taxonomy/)) —
   merged to main 2026-05-24 (`--no-ff` from `feat/media-taxonomy`).

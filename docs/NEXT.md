@@ -46,10 +46,22 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    (audio override UI surfaces, kiosk wheel-art consumption) lives
    in [PARKING_LOT.md](PARKING_LOT.md).
 
-7. **scummvm + dosbox onboarding** (~600 lines, 5 phases, plan locked 2026-05-24).
-   - Closes the last 2 deferred cores from the original system-wiring plan. Both ship as ordinary OA systems alongside consoles — no separate "PC games" UI surface. ScummVM scans `.scummvm` descriptor files; DOSBox scans one-level-deep subdirectories. New `ScanMode` enum + `LaunchPayload` enum contain the engine-launcher dispatch cleanly so future engine cores slot in.
-   - Full plan: [docs/features/dosbox-and-scummvm/README.md](features/dosbox-and-scummvm/README.md).
-   - Touches: `oa_core` (2 SystemId variants), `apps/oa-shell/src/main.rs` (~250 lines launch dispatch), `bindings.rs` (2 new modules ~150 lines), `scan_service.rs` (~80 lines ScanMode dispatch), library_db `GameOverrides.dosbox_entry_point` (~10 lines), 2 frontend theme entries + CSS, art-pack importer launchbox-platform map, 2 per-core doc scaffolds.
+~~7. scummvm + dosbox onboarding~~ — **SHIPPED 2026-05-24** across two
+   `--no-ff` merges:
+   - Phase 1 (scummvm, `0b56bd8`): `feat/dosbox-and-scummvm` —
+     SystemId variant + bindings + `.scummvm` descriptor routing
+     through `RomSource::Path` + per-core `system_dir` subdirectory
+     + keyboard passthrough + frontend theme + per-core docs.
+   - Phase 2 (dosbox, `b6fea2c`): `feat/dosbox-onboarding` — SystemId
+     variant + bindings + new `is_directory_path_system` helper +
+     new `scan_service::run_dir_scan_blocking` + new
+     `start_background_directory_scan` Tauri command +
+     `GameOverrides.dosbox_entry_point` field + Import Wizard
+     dual-mode scan dispatch + theme + per-core docs.
+   - See [docs/features/dosbox-and-scummvm/](features/dosbox-and-scummvm/)
+     for the cross-stream SESSION_LOG and the locked plan.
+   - Both pending operator playtest with real `.dll` cores + game
+     data on disk before per-core ROADMAP Phase 1 entries flip ✅.
 
 ---
 
