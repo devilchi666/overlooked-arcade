@@ -50,7 +50,7 @@ In planned bring-up order, biased toward forked-core availability (Mednafen + Be
 9. **Virtual Boy** (with optional real-VR mode)
 10. **WonderSwan / WonderSwan Color**
 
-**Current state (2026-05-19):** TG-16 ✅, PCE-CD ✅, Lynx ✅, NES ✅, SNES ✅, MAME ✅, Atari 7800 ✅ — all at Phase 0 onboarding done (NES + SNES + MAME jumped on operator request; A7800 onboarded after MAME). Six first-wave systems remaining: SMS / Game Gear, MSX / MSX2, ColecoVision, Vectrex, Virtual Boy, WonderSwan.
+**Current state (2026-05-24):** First wave complete — all 10 documented "overlooked consoles" are live at Phase 0 onboarding. The system lineup has continued expanding well past the original list; **41 frontend slugs are live today** across consoles, handhelds, computers, arcade, and engine launchers. The libretro pivot (2026-05-16) made adding system N+1 a recipe rather than a refactor, and the run from May 17 through May 24 closed: NES / SNES / MAME / Atari 7800 / Genesis / Sega CD / Sega 32X / Saturn / Playstation / Neo Geo / Neo Geo CD / NGP/C / Jaguar / 3DO / PC-FX / N64 / GameCube + Wii / Dreamcast / PSP / PS2 / NDS / Game Boy / Game Boy Color / GBA / Atari 2600 / ColecoVision / Intellivision / Odyssey² / Channel F / Vectrex / Virtual Boy / WonderSwan / Atari 5200 / Pokémon Mini / ScummVM / DOSBox. Cross-system infrastructure (POINTER device, analog axes, rumble, sensor interface, multi-core boot, media taxonomy, art-pack import, BIOS pre-checks for 19 systems) all shipped along the way. Per-system status surfaces lives in `docs/cores/<id>/ROADMAP.md`; the cross-system queue lives in `docs/NEXT.md`.
 
 ### The bigger picture — long-term ambition
 

@@ -1,10 +1,17 @@
 # DOSBox + ScummVM onboarding
 
-> **Status: 📐 PLANNED, not implemented.** Design locked 2026-05-24 in
-> conversation with operator after the media-taxonomy + cart-shape-BIOS
-> work landed. Implementation is the next code session; pick up by
-> reading this doc cover-to-cover, then confirming the 8 locked
-> decisions before any code starts.
+> **Status: ✅ SHIPPED 2026-05-24.** Both halves merged to main via
+> `--no-ff` per the feature-branch workflow:
+> - Phase 1 scummvm: commit `0b56bd8` (merge of `feat/dosbox-and-scummvm`)
+> - Phase 2 dosbox: commit `b6fea2c` (merge of `feat/dosbox-onboarding`)
+>
+> Per-core docs + per-phase ship details live in `docs/cores/scummvm/`
+> and `docs/cores/dosbox/`; this folder's `SESSION_LOG.md` is the
+> cross-stream summary. Operator playtest with real `.dll` cores +
+> game data pending — per-core ROADMAP Phase 1 entries flip ✅ when
+> that lands.
+>
+> Original design + decisions log preserved below for reference.
 
 ## Context
 
