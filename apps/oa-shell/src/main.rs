@@ -26,6 +26,7 @@ mod core_options;
 mod layout;
 mod library_db;
 mod art_pack_importer;
+mod audio_player;
 mod library_groups;
 mod library_prefs;
 mod logger;
@@ -57,6 +58,15 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tauri::{Emitter, Manager};
 
 use bindings::Bindings;
+
+/// Newtype wrapper around the resolved app-data dir, managed as Tauri
+/// state. Commands that need the data dir (e.g. settings/audio resolvers
+/// that aren't already going through a stateful service) ask for
+/// `tauri::State<'_, AppDataDir>` and read `.0` on it. Pre-existing
+/// services that need the same path keep a `PathBuf` field on their
+/// own state struct (MediaState.app_data_dir etc.) — this state is
+/// the catch-all for commands that don't fit elsewhere.
+pub struct AppDataDir(pub PathBuf);
 
 /// Toast event payload sent to the frontend over the `oa://toast` channel.
 /// `level` drives the leading glyph + per-level accent (info/success neutral,
@@ -2600,6 +2610,11 @@ fn main() {
             media::set_selected_variant,
             media::sync_media_for_system,
             art_pack_importer::import_art_pack,
+            audio_player::play_audio,
+            audio_player::stop_audio,
+            audio_player::set_audio_volume,
+            audio_player::resolve_platform_music,
+            audio_player::resolve_ui_sound,
             metadata::sync_metadata_for_system,
             media::media_storage_stats,
             media::open_media_folder,
@@ -2776,6 +2791,18 @@ fn main() {
                         std::collections::HashMap::new(),
                     )),
                 });
+
+                // Media-taxonomy Phase 4 audio overrides + audio player.
+                // Manages the app-data-dir as Tauri state for the audio
+                // resolver commands (which need to read SystemSettings
+                // files), and spawns the file-driven audio player thread
+                // that owns rodio's OutputStream.
+                app.manage(AppDataDir(app_data_dir.clone()));
+                let audio_handle = audio_player::AudioPlayerHandle::spawn();
+                app.manage(audio_handle.player());
+                // Hold the handle itself in app state so Drop fires on
+                // shutdown and the audio thread joins cleanly.
+                app.manage(std::sync::Mutex::new(Some(audio_handle)));
 
                 // Background scan service state — tracks in-flight scan jobs
                 // so cancel_background_scan can flip their cancel flags.

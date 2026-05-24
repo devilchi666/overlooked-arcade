@@ -115,6 +115,26 @@ pub struct SystemSettings {
     /// game overrides (`GameOverrides::analog_routing`) stack on top.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analog_routing: Option<AnalogRoutingPrefs>,
+    // ---- Media-taxonomy Phase 4 (2026-05-23) — audio overrides ----
+    //
+    // Per-system BGM that plays when this system is selected in kiosk
+    // mode. Per-game overrides (`GameOverrides::platform_music_path`)
+    // stack on top. None = inherit the theme default (or silence if
+    // no theme music is configured).
+    //
+    // UI sound paths default to None (silent). Operators opt-in
+    // per-event by pointing each field at an audio file. The kiosk
+    // shell will surface a theme-level default once .oatheme packages
+    // ship; until then, desktop UI stays silent unless explicitly
+    // configured here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform_music_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_click: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_navigate: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_back: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_launch: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_error: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub ui_sound_scroll_tick: Option<PathBuf>,
 }
 
 /// JSON-friendly mirror of `oa_input::AnalogRouting`. Lives here so the
@@ -487,6 +507,45 @@ mod tests {
         assert!(d.display_aspect_override.is_none());
         assert!(d.overscan_crop_override.is_none());
         assert!(d.bezel_image_path.is_none());
+        // Phase 4 audio overrides default to None (silent UI, no BGM
+        // override) so old per-system JSON files keep parsing cleanly.
+        assert!(d.platform_music_path.is_none());
+        assert!(d.ui_sound_click.is_none());
+        assert!(d.ui_sound_navigate.is_none());
+        assert!(d.ui_sound_back.is_none());
+        assert!(d.ui_sound_launch.is_none());
+        assert!(d.ui_sound_error.is_none());
+        assert!(d.ui_sound_scroll_tick.is_none());
+    }
+
+    #[test]
+    fn legacy_json_without_audio_fields_still_parses() {
+        // A pre-Phase-4 per-system JSON file with no audio fields.
+        // Must round-trip cleanly via serde defaults — operators with
+        // existing installs shouldn't see settings reset on upgrade.
+        let legacy = r#"{
+            "scalingOverride": "fit-screen",
+            "windowModeOverride": "fullscreen",
+            "monitorIndexOverride": 1
+        }"#;
+        let s: SystemSettings = serde_json::from_str(legacy).expect("legacy parses");
+        assert_eq!(s.scaling_override.as_deref(), Some("fit-screen"));
+        assert_eq!(s.window_mode_override.as_deref(), Some("fullscreen"));
+        assert_eq!(s.monitor_index_override, Some(1));
+        assert!(s.platform_music_path.is_none());
+        assert!(s.ui_sound_click.is_none());
+    }
+
+    #[test]
+    fn audio_fields_serialize_to_camel_case() {
+        let mut s = SystemSettings::default();
+        s.platform_music_path = Some(PathBuf::from("D:/Music/Genesis Theme.ogg"));
+        s.ui_sound_click = Some(PathBuf::from("D:/Sounds/click.ogg"));
+        let json = serde_json::to_string(&s).expect("serialize");
+        assert!(json.contains(r#""platformMusicPath""#));
+        assert!(json.contains(r#""uiSoundClick""#));
+        // Untouched fields serialize-skipped via skip_serializing_if.
+        assert!(!json.contains(r#""uiSoundError""#));
     }
 
     #[test]
@@ -685,6 +744,13 @@ mod tests {
                     stick_swap: false,
                 }],
             }),
+            platform_music_path: None,
+            ui_sound_click: None,
+            ui_sound_navigate: None,
+            ui_sound_back: None,
+            ui_sound_launch: None,
+            ui_sound_error: None,
+            ui_sound_scroll_tick: None,
         };
         write_system_settings(&tmp, "tg16", &prefs).expect("write");
         let read = read_system_settings(&tmp, "tg16");

@@ -152,6 +152,14 @@ pub struct GameOverrides {
     /// Per-game device-type override for port 4. See `libretro_device_port1`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libretro_device_port4: Option<u32>,
+    /// Media-taxonomy Phase 4 (2026-05-23) — per-game platform music
+    /// override. Plays when this game is highlighted in the library,
+    /// overriding the `SystemSettings::platform_music_path` for the
+    /// game's system. Stored as a `PathBuf` (absolute or app-data-
+    /// relative — frontend resolves). `None` = inherit per-system →
+    /// theme default → silence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform_music_path: Option<std::path::PathBuf>,
 }
 
 impl GameOverrides {
@@ -3188,6 +3196,7 @@ mod tests {
             libretro_device_port2: None,
             libretro_device_port3: None,
             libretro_device_port4: None,
+            platform_music_path: None,
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

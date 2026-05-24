@@ -61,5 +61,6 @@ sevenz-rust         = { workspace = true }
 chd                 = "0.3"
 notify              = { workspace = true }
 tokio               = { workspace = true }
+rodio               = { workspace = true }
 clap                = { version = "4", features = ["derive"] }
 rayon               = { workspace = true }
