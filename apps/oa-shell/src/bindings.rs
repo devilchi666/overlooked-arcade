@@ -361,6 +361,43 @@ pub mod atari5200 {
     pub const RESET: u32  = 1 << 11; // libretro R — keypad RESET
 }
 
+/// DOSBox button bit positions. DOSBox-pure runs a wide range of DOS
+/// games whose input shapes vary enormously — arcade-style action
+/// titles (Doom, Wolfenstein 3D, Commander Keen, Jazz Jackrabbit) want
+/// a Nintendo-style face-button layout; mouse-driven sims (X-COM,
+/// SimCity, Civilization) flow through OA's shared POINTER infra and
+/// barely touch the RetroPad; keyboard-heavy titles flow through
+/// libretro KEYBOARD via OA's keyboard passthrough.
+///
+/// The 12-button RetroPad layout here is the action-DOS-game default:
+///   A → jump / use (libretro A bit 8 — PRIMARY)
+///   B → shoot / attack (libretro B bit 0 — secondary)
+///   X → reload / strafe-modifier (libretro X bit 9)
+///   Y → item-cycle / secondary (libretro Y bit 1)
+///   L → strafe-left (libretro L bit 10)
+///   R → strafe-right (libretro R bit 11)
+///   START → ESC / pause (libretro START bit 3 — most DOS games eat ESC)
+///   SELECT → TAB / map / inventory (libretro SELECT bit 2)
+///   D-pad → movement (libretro d-pad)
+///
+/// Bits are laid out to match the libretro `RETRO_DEVICE_ID_JOYPAD_*`
+/// positions directly so the remap is identity. Operators rebind via
+/// the per-system Bindings UI for non-action DOS games.
+pub mod dosbox {
+    pub const B: u32      = 1 << 0;  // libretro B — shoot / attack (secondary)
+    pub const Y: u32      = 1 << 1;  // libretro Y — item-cycle
+    pub const SELECT: u32 = 1 << 2;  // libretro SELECT — TAB / map / inventory
+    pub const START: u32  = 1 << 3;  // libretro START — ESC / pause
+    pub const UP: u32     = 1 << 4;
+    pub const DOWN: u32   = 1 << 5;
+    pub const LEFT: u32   = 1 << 6;
+    pub const RIGHT: u32  = 1 << 7;
+    pub const A: u32      = 1 << 8;  // libretro A — jump / use (PRIMARY)
+    pub const X: u32      = 1 << 9;  // libretro X — reload / strafe-modifier
+    pub const L: u32      = 1 << 10; // libretro L — strafe-left
+    pub const R: u32      = 1 << 11; // libretro R — strafe-right
+}
+
 /// ScummVM button bit positions. ScummVM is an adventure-game engine
 /// launcher (Monkey Island, Day of the Tentacle, Sam & Max, Lure of
 /// the Temptress, etc.) — mouse-primary navigation with occasional
@@ -1565,6 +1602,30 @@ pub fn atari5200_bit_for(button: &str) -> Option<u32> {
     ATARI5200_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
+/// DOSBox button bits in declaration order. 12 entries — d-pad +
+/// A/B/X/Y face diamond + L/R shoulders + START + SELECT. Action-DOS-
+/// game layout; mouse-driven games flow through the shared POINTER
+/// infra and keyboard-heavy games flow through libretro KEYBOARD.
+pub const DOSBOX_BUTTONS: &[(&str, u32)] = &[
+    ("UP",     dosbox::UP),
+    ("DOWN",   dosbox::DOWN),
+    ("LEFT",   dosbox::LEFT),
+    ("RIGHT",  dosbox::RIGHT),
+    ("A",      dosbox::A),
+    ("B",      dosbox::B),
+    ("X",      dosbox::X),
+    ("Y",      dosbox::Y),
+    ("L",      dosbox::L),
+    ("R",      dosbox::R),
+    ("START",  dosbox::START),
+    ("SELECT", dosbox::SELECT),
+];
+
+/// Resolve a system-button name to its DOSBox bit mask.
+pub fn dosbox_bit_for(button: &str) -> Option<u32> {
+    DOSBOX_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
+}
+
 /// ScummVM button bits in declaration order. 8 entries — d-pad +
 /// LMB + RMB + ESCAPE + PAUSE. Same shape as a simplified handheld;
 /// pointer cursor flows separately via the shared POINTER infra.
@@ -1728,6 +1789,7 @@ pub fn bit_for(system_id: &str, button: &str) -> Option<u32> {
         "5200" => atari5200_bit_for(button),
         "pokemini" => pokemini_bit_for(button),
         "scummvm" => scummvm_bit_for(button),
+        "dosbox" => dosbox_bit_for(button),
         "coleco" => coleco_bit_for(button),
         "intv" => intv_bit_for(button),
         "o2" => o2_bit_for(button),
@@ -1773,6 +1835,7 @@ pub fn buttons_for(system_id: &str) -> &'static [(&'static str, u32)] {
         "5200" => ATARI5200_BUTTONS,
         "pokemini" => POKEMINI_BUTTONS,
         "scummvm" => SCUMMVM_BUTTONS,
+        "dosbox" => DOSBOX_BUTTONS,
         "coleco" => COLECO_BUTTONS,
         "intv" => INTV_BUTTONS,
         "o2" => O2_BUTTONS,
@@ -2203,6 +2266,23 @@ pub fn atari5200_to_libretro_bits(b: u32) -> u32 {
         | atari5200::RIGHT)
 }
 
+/// DOSBox → libretro bit remap. Identity by construction; mask trims
+/// to the 12-bit DOSBox button set so stray high bits get dropped.
+pub fn dosbox_to_libretro_bits(b: u32) -> u32 {
+    b & (dosbox::A
+        | dosbox::B
+        | dosbox::X
+        | dosbox::Y
+        | dosbox::L
+        | dosbox::R
+        | dosbox::SELECT
+        | dosbox::START
+        | dosbox::UP
+        | dosbox::DOWN
+        | dosbox::LEFT
+        | dosbox::RIGHT)
+}
+
 /// ScummVM → libretro bit remap. Identity by construction; mask trims
 /// to the 8-bit ScummVM button set (d-pad + LMB + RMB + ESCAPE + PAUSE).
 /// Pointer cursor (mouse-as-pointer) flows separately via
@@ -2338,6 +2418,7 @@ pub fn to_libretro_bits(system_id: &str, b: u32) -> u32 {
         "5200" => atari5200_to_libretro_bits(b),
         "pokemini" => pokemini_to_libretro_bits(b),
         "scummvm" => scummvm_to_libretro_bits(b),
+        "dosbox" => dosbox_to_libretro_bits(b),
         "coleco" => coleco_to_libretro_bits(b),
         "intv" => intv_to_libretro_bits(b),
         "o2" => o2_to_libretro_bits(b),
@@ -3384,6 +3465,44 @@ pub fn default_atari5200_bindings() -> Bindings {
     b
 }
 
+/// DOSBox defaults — action-DOS-game layout. **Z = A (primary —
+/// jump / use)**, **X = B (secondary — shoot / attack)** per the
+/// cross-system "Z is primary" rule. S = X (reload / strafe-modifier),
+/// A = Y (item-cycle) — diamond pattern matches SNES/GBA/NDS face
+/// layout. L/R shoulders on Q/W (strafe-left / strafe-right) — matches
+/// the gba/snes shoulder convention. START on Enter (ESC / pause —
+/// most DOS games treat ESC as the pause / cancel key), SELECT on
+/// RShift (TAB / map / inventory). Operators rebind freely for non-
+/// action DOS games via the per-system Bindings UI; mouse-driven
+/// titles work out of the box via the shared POINTER infra.
+pub fn default_dosbox_bindings() -> Bindings {
+    let mut b = Bindings::new();
+    let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("UP",     Some("Up"),     Some("DPadUp")),
+        ("DOWN",   Some("Down"),   Some("DPadDown")),
+        ("LEFT",   Some("Left"),   Some("DPadLeft")),
+        ("RIGHT",  Some("Right"),  Some("DPadRight")),
+        ("A",      Some("Z"),      Some("East")),    // libretro A — jump/use (PRIMARY)
+        ("B",      Some("X"),      Some("South")),   // libretro B — shoot/attack
+        ("X",      Some("S"),      Some("North")),   // libretro X — reload
+        ("Y",      Some("A"),      Some("West")),    // libretro Y — item-cycle
+        ("L",      Some("Q"),      Some("LeftTrigger")),
+        ("R",      Some("W"),      Some("RightTrigger")),
+        ("START",  Some("Enter"),  Some("Start")),   // ESC / pause
+        ("SELECT", Some("RShift"), Some("Select")),  // TAB / map / inventory
+    ];
+    for (name, kb, pad) in pairs {
+        b.insert(
+            (*name).into(),
+            BindingPair {
+                keyboard: kb.map(|s| s.to_string()),
+                gamepad: pad.map(|s| s.to_string()),
+            },
+        );
+    }
+    b
+}
+
 /// ScummVM defaults — pointer + face-button fallback for users without
 /// a mouse. **Z = LMB (primary click)**, **X = RMB (secondary click /
 /// right-click context menu)** per the cross-system "Z is primary"
@@ -3645,6 +3764,7 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "5200" => Some(default_atari5200_bindings()),
         "pokemini" => Some(default_pokemini_bindings()),
         "scummvm" => Some(default_scummvm_bindings()),
+        "dosbox" => Some(default_dosbox_bindings()),
         "coleco" => Some(default_coleco_bindings()),
         "intv" => Some(default_intv_bindings()),
         "o2" => Some(default_o2_bindings()),
@@ -3806,7 +3926,7 @@ mod tests {
         // Cover every registered system's defaults — a new system that
         // ships a default keyboard name device_query doesn't recognize
         // would silently fail to bind without this check.
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm", "dosbox"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.keyboard {
@@ -3821,7 +3941,7 @@ mod tests {
 
     #[test]
     fn default_pads_round_trip_to_button() {
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm", "dosbox"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.gamepad {
@@ -3919,8 +4039,34 @@ mod tests {
         assert_eq!(to_libretro_bits("scummvm", scummvm::LMB), scummvm::LMB);
         assert_eq!(to_libretro_bits("scummvm", scummvm::RMB), scummvm::RMB);
         assert_eq!(to_libretro_bits("scummvm", scummvm::ESCAPE), scummvm::ESCAPE);
+        // dosbox → identity (libretro-aligned by construction).
+        assert_eq!(to_libretro_bits("dosbox", dosbox::A), dosbox::A);
+        assert_eq!(to_libretro_bits("dosbox", dosbox::B), dosbox::B);
+        assert_eq!(to_libretro_bits("dosbox", dosbox::L), dosbox::L);
+        assert_eq!(to_libretro_bits("dosbox", dosbox::R), dosbox::R);
         // Unknown system → identity (defensive default).
         assert_eq!(to_libretro_bits("unknown", 0x42), 0x42);
+    }
+
+    #[test]
+    fn defaults_cover_every_dosbox_button() {
+        let b = default_dosbox_bindings();
+        for (name, _) in DOSBOX_BUTTONS {
+            assert!(b.contains_key(*name), "dosbox default missing: {name}");
+        }
+    }
+
+    #[test]
+    fn dosbox_remap_is_identity() {
+        for (_, bit) in DOSBOX_BUTTONS {
+            assert_eq!(dosbox_to_libretro_bits(*bit), *bit);
+        }
+        let all = dosbox::A | dosbox::B | dosbox::X | dosbox::Y
+                | dosbox::L | dosbox::R | dosbox::SELECT | dosbox::START
+                | dosbox::UP | dosbox::DOWN | dosbox::LEFT | dosbox::RIGHT;
+        assert_eq!(dosbox_to_libretro_bits(all), all);
+        // Stray high bits get masked off.
+        assert_eq!(dosbox_to_libretro_bits(all | (1 << 20)), all);
     }
 
     #[test]
@@ -3998,7 +4144,7 @@ mod tests {
         const LIBRETRO_DOWN: u32  = 1 << 5;
         const LIBRETRO_LEFT: u32  = 1 << 6;
         const LIBRETRO_RIGHT: u32 = 1 << 7;
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm", "dosbox"] {
             let up    = bit_for(sys, "UP").expect("UP bit registered");
             let down  = bit_for(sys, "DOWN").expect("DOWN bit registered");
             let left  = bit_for(sys, "LEFT").expect("LEFT bit registered");
@@ -4105,6 +4251,11 @@ mod tests {
             // (libretro A bit 8). Same Z/X muscle memory across every
             // system in the launcher.
             ("scummvm", "LMB", "RMB"),
+            // DOSBox action-game face layout — A primary (jump/use,
+            // libretro A bit 8 = Z key), B secondary (shoot/attack,
+            // libretro B bit 0 = X key). Matches the Nintendo / SNES /
+            // NDS face-diamond convention.
+            ("dosbox", "A", "B"),
         ] {
             let bindings = defaults_for(sys).expect("defaults registered");
             let primary = bindings.get(*primary_name).expect("primary button present");

@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
 
 /// Form-factor bucket — consumed by the sidebar's default Platforms view
 /// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
@@ -822,6 +822,35 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // 320×200 expecting modern displays). Plain default keeps the art
     // visible; users wanting CRT vibes toggle per-system.
     defaultShaderPreset: "plain",
+  },
+  dosbox: {
+    id: "dosbox",
+    formFactor: "computer",
+    // DOSBox-pure is a community-built libretro core wrapping the
+    // DOSBox runtime. No single hardware vendor — "other" same as
+    // scummvm.
+    manufacturer: "other",
+    displayName: "DOSBox",
+    shortName: "DOSBox",
+    // Directory-based scan — each top-level subdir of an operator-marked
+    // "DOS Games" folder is one game. Extensions list is EMPTY because
+    // there's no extension to filter on; the Import Wizard branches on
+    // system_id at scan time and invokes the directory-mode scanner
+    // (`start_background_directory_scan`) instead of the file-extension
+    // one. .exe / .com / .bat collisions with Windows installers are
+    // sidestepped because we never scan files at all — only
+    // subdirectories of an operator-curated folder.
+    extensions: [],
+    // DOS box art is universally landscape — Big Box era retail
+    // sleeves (Origin, LucasArts, Sierra, Apogee, Epic Megagames) all
+    // shipped wide. 4/3 fits the whole scan.
+    tileAspect: "4/3",
+    // 320×200 / 320×240 source on early-'90s CRT VGAs. crt-lite is
+    // period-correct for the era — visible scanlines + soft vignette
+    // were what every screenshot of the time remembered. Operators
+    // wanting clean output for the rare 640×480 SVGA-era titles
+    // (Civilization II, Master of Magic) toggle per-system.
+    defaultShaderPreset: "crt-lite",
   },
 };
 

@@ -11,15 +11,22 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **DOSBox + ScummVM onboarding** ([features/dosbox-and-scummvm/](features/dosbox-and-scummvm/)) —
-  5-phase work on `feat/dosbox-and-scummvm`. Phase 1 (scummvm
-  onboarding) shipped 2026-05-24: SystemId variant, bindings module
-  (8 buttons + d-pad), default core dll, libretro-thumbnails repo
-  mapping, LaunchBox art-pack mapping, keyboard passthrough on,
-  per-core `system_dir` subdirectory, `.scummvm` descriptor routing
-  through `RomSource::Path`, frontend theme (teal-cyan 195°), per-core
-  docs scaffold. Awaiting operator playtest with real
-  `scummvm_libretro.dll` + game data before Phase 2 (dosbox).
+- **DOSBox onboarding** ([cores/dosbox/](cores/dosbox/)) — branch
+  `feat/dosbox-onboarding`, Phase 2 of the dosbox-and-scummvm plan.
+  Phase 1 (scummvm) shipped + merged to main 2026-05-24 as `0b56bd8`.
+  Phase 2 (dosbox) shipped on the new branch 2026-05-24: SystemId
+  variant, bindings module (12 buttons — d-pad + A/B/X/Y diamond +
+  L/R + START + SELECT), default core dll, libretro-thumbnails repo
+  mapping, LaunchBox `MS-DOS`/`DOS` art-pack mappings, keyboard
+  passthrough on, per-core `system_dir` subdirectory, new
+  `is_directory_path_system` helper routing directory launches
+  through `RomSource::Path`, new `GameOverrides.dosbox_entry_point`
+  field wired at launch, new `scan_service::run_dir_scan_blocking`
+  directory-mode walker + `start_background_directory_scan` Tauri
+  command, Import Wizard wiring (`DIR_MODE_SYSTEMS` constant + dual-
+  mode scan dispatch + `systemHint` classification), frontend theme
+  (amber-on-black 55°), per-core docs scaffold. Awaiting operator
+  playtest with real `dosbox_pure_libretro.dll` + game data.
 
 ## Recently completed (this session)
 

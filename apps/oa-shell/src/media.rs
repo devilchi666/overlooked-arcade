@@ -2236,6 +2236,12 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         // shared 0.95 threshold lands the operator's `.scummvm`
         // filename stem against the canonical title.
         "scummvm" => &["ScummVM"],
+        // DOSBox — DOS-game runner; libretro-thumbnails ships a `DOS`
+        // repo covering the canonical no-intro set. Fuzzy match
+        // against the operator's game-directory basename. Operators
+        // who track DOS games under "MS-DOS" / "DOS" platform names in
+        // LaunchBox land here via `launchbox_platform_to_system_id`.
+        "dosbox" => &["DOS"],
         _ => &[],
     }
 }

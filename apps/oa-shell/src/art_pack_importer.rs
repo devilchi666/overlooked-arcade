@@ -104,6 +104,12 @@ pub fn launchbox_platform_to_system_id(name: &str) -> Option<&'static str> {
         // fuzzy match lands against the operator's `.scummvm` file
         // stem at the shared 0.95 threshold.
         "ScummVM"                                   => Some("scummvm"),
+        // DOSBox — DOS-game runner. LaunchBox catalogs DOS games under
+        // "MS-DOS" (modern) and "DOS" (older releases). Both route to
+        // the OA `dosbox` slug; covers key on the canonical game
+        // title (e.g. "Doom.png"), which our fuzzy match lands against
+        // the operator's game-directory basename at the 0.95 threshold.
+        "MS-DOS" | "DOS"                            => Some("dosbox"),
         _ => None,
     }
 }
@@ -633,6 +639,17 @@ mod tests {
         // launchbox name uses the canonical capitalization.
         assert_eq!(launchbox_platform_to_system_id("ScummVM"), Some("scummvm"));
         assert_eq!(launchbox_platform_to_system_id("scummvm"), None);
+    }
+
+    #[test]
+    fn launchbox_platform_maps_dosbox() {
+        // LaunchBox catalogs DOS games under both the modern "MS-DOS"
+        // platform name and the older "DOS" alias. Both route to the
+        // OA `dosbox` slug. Case-sensitive — typo-protected.
+        assert_eq!(launchbox_platform_to_system_id("MS-DOS"), Some("dosbox"));
+        assert_eq!(launchbox_platform_to_system_id("DOS"), Some("dosbox"));
+        assert_eq!(launchbox_platform_to_system_id("ms-dos"), None);
+        assert_eq!(launchbox_platform_to_system_id("dos"), None);
     }
 
     #[test]

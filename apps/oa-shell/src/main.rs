@@ -465,10 +465,22 @@ fn is_cd_extension(ext: &str) -> bool {
 /// relative to the descriptor's directory.
 ///
 /// Currently just `.scummvm` (the ScummVM descriptor). DOSBox uses
-/// directory paths, not a descriptor file extension — different shape,
-/// different dispatch (Phase 2).
+/// directory paths, not a descriptor file extension — see
+/// `is_directory_path_system`.
 fn is_descriptor_extension(ext: &str) -> bool {
     matches!(ext, "scummvm")
+}
+
+/// Engine-launcher cores whose "ROM" is a DIRECTORY rather than a
+/// file. The launch path passes the directory string straight through
+/// `RomSource::Path`; the core walks the directory at load time and
+/// auto-detects the boot path.
+///
+/// Currently just `"dosbox"`. ScummVM uses a descriptor FILE
+/// (`.scummvm`) — same path-based load shape but a different
+/// per-system check (`is_descriptor_extension`).
+fn is_directory_path_system(system_id: &str) -> bool {
+    matches!(system_id, "dosbox")
 }
 
 /// Resolve the libretro `system_dir` for a given system. Most cores
@@ -485,12 +497,18 @@ fn is_descriptor_extension(ext: &str) -> bool {
 /// Creates the per-core subdirectory on first use so the core has a
 /// stable path to write its config / cache on launch.
 fn system_dir_for(exe_system_dir: &Path, system_id: &str) -> PathBuf {
-    if system_id == "scummvm" {
-        let p = exe_system_dir.join("scummvm");
-        let _ = std::fs::create_dir_all(&p);
-        p
-    } else {
-        exe_system_dir.to_path_buf()
+    match system_id {
+        "scummvm" => {
+            let p = exe_system_dir.join("scummvm");
+            let _ = std::fs::create_dir_all(&p);
+            p
+        }
+        "dosbox" => {
+            let p = exe_system_dir.join("dosbox");
+            let _ = std::fs::create_dir_all(&p);
+            p
+        }
+        _ => exe_system_dir.to_path_buf(),
     }
 }
 
@@ -528,6 +546,11 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         // a tiny `.scummvm` descriptor file. Accept the canonical slug
         // and the short "scumm" alias.
         "scummvm" | "scumm" => oa_core::SystemId::ScummVm,
+        // DOSBox — MS-DOS game runner (not a hardware platform). A
+        // "game" is a directory containing the game's executable +
+        // data files. Accept the canonical slug + common aliases
+        // ("dos", "ms-dos", "dosbox-pure").
+        "dosbox" | "dos" | "ms-dos" | "msdos" | "dosbox-pure" => oa_core::SystemId::DosBox,
         "vectrex" => oa_core::SystemId::Vectrex,
         "virtualboy" | "virtual-boy" => oa_core::SystemId::VirtualBoy,
         "wonderswan" => oa_core::SystemId::WonderSwan,
@@ -694,6 +717,17 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // path, so OA always passes it via `RomSource::Path` (handled
         // by `is_descriptor_extension` below).
         "scummvm" => "scummvm_libretro.dll",
+        // DOSBox-pure — the libretro port of DOSBox with auto-config
+        // baked in. Accepts a DIRECTORY PATH (not a single file) and
+        // auto-detects the boot path by walking the directory. No BIOS
+        // — dosbox-pure ships its own DOSBox runtime. Per-core
+        // `system_dir` lands at `<exe_dir>/system/dosbox/` (config
+        // cache, save states, screenshots). The launch dispatch routes
+        // dosbox via `is_directory_path_system` so the path string
+        // points at the game's directory rather than a single file.
+        // Alternates via per-system Cores: none — dosbox-pure is the
+        // only mature libretro DOS option.
+        "dosbox" => "dosbox_pure_libretro.dll",
         // mGBA — the libretro GBA gold standard. Mature, broad compat,
         // light CPU. Alternates via per-system Cores:
         // `vba_next_libretro.dll` (VBA-Next, lighter / less accurate),
@@ -2710,6 +2744,7 @@ fn main() {
             migrate_folders_from_local_storage,
             directory_is_empty,
             start_background_scan,
+            start_background_directory_scan,
             cancel_background_scan,
             set_watched_folders,
             list_save_slots,
@@ -3551,9 +3586,9 @@ fn run_emu_render(
     };
 
     log::info!("oa-shell: loading libretro core from {}", dll_path.display());
-    // Engine-launcher cores (scummvm — Phase 2 dosbox) want a per-core
-    // system_dir subdirectory rather than the global <exe_dir>/system/.
-    // Most cores fall through to the install-wide path. See system_dir_for.
+    // Engine-launcher cores (scummvm, dosbox) want a per-core system_dir
+    // subdirectory rather than the global <exe_dir>/system/. Most cores
+    // fall through to the install-wide path. See system_dir_for.
     let bootstrap_system_dir = system_dir_for(&system_dir, &current_system_id);
     let initial_core = match LibretroCore::load(&dll_path, bootstrap_system_enum, &bootstrap_system_dir, &save_dir) {
         Ok(c) => {
@@ -3607,10 +3642,13 @@ fn run_emu_render(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_else(|| "pce".to_string());
         let stem = sanitize_stem(path);
-        let load_result = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
-            // Path-based load: core opens the .cue / .chd / .m3u (CD) or
-            // .scummvm (engine descriptor) itself and reads
-            // tracks / game-data relative to it.
+        let load_result = if is_cd_extension(&ext)
+            || is_descriptor_extension(&ext)
+            || is_directory_path_system(&current_system_id)
+        {
+            // Path-based load: core opens the .cue / .chd / .m3u (CD),
+            // .scummvm (engine descriptor), or directory (dosbox)
+            // itself and reads tracks / game-data relative to it.
             log::info!("oa-shell: loading path-based source ({}) from {}", ext, path);
             core_ref.load_rom(oa_libretro::RomSource::Path(Path::new(path)), &ext, &stem)
         } else {
@@ -3968,8 +4006,8 @@ fn run_emu_render(
                         } else {
                             // Drop current to release the libretro singleton before loading the new one.
                             let _ = core.take();
-                            // Engine-launcher cores (scummvm — Phase 2 dosbox) want a
-                            // per-core system_dir subdirectory. See system_dir_for.
+                            // Engine-launcher cores (scummvm, dosbox) want a per-core
+                            // system_dir subdirectory. See system_dir_for.
                             let launch_system_dir = system_dir_for(&system_dir, &system_id);
                             match LibretroCore::load(&target_path, parse_system_id(&system_id), &launch_system_dir, &save_dir) {
                                 Ok(new_core) => {
@@ -4019,10 +4057,14 @@ fn run_emu_render(
                         .and_then(|s| s.to_str())
                         .map(|s| s.to_ascii_lowercase())
                         .unwrap_or_else(|| "pce".to_string());
-                    let source = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
-                        // CD container OR engine-launcher descriptor file
-                        // (.scummvm) — both need a real filesystem path so
-                        // the core can open additional files relative to it.
+                    let source = if is_cd_extension(&ext)
+                        || is_descriptor_extension(&ext)
+                        || is_directory_path_system(&system_id)
+                    {
+                        // CD container, engine-launcher descriptor file
+                        // (.scummvm), or directory-path system (dosbox) —
+                        // all three need a real filesystem path so the
+                        // core can open additional files relative to it.
                         oa_libretro::RomSource::Path(Path::new(&path))
                     } else {
                         oa_libretro::RomSource::Bytes(&bytes)
@@ -8526,6 +8568,83 @@ fn cancel_background_scan(
     Ok(())
 }
 
+/// Directory-mode background scan — walk a folder one level deep,
+/// emit one row per subdirectory. Used by the dosbox onboarding flow:
+/// each top-level subdir of the operator's "DOS Games" folder is one
+/// game; nested dirs inside are content (game data), not nested games.
+/// `system_id` is the hint stamped into each emitted row so the
+/// frontend ingest path classifies them correctly without an extension
+/// to match against.
+///
+/// Parallel to `start_background_scan`: same job-id machinery, same
+/// `oa://library-scan-progress` + `oa://library-scan-complete`
+/// channels, so the Import Wizard UI works against both without
+/// branching the listener code.
+#[tauri::command]
+#[allow(non_snake_case)]
+async fn start_background_directory_scan(
+    folder: String,
+    systemId: String,
+    handle: tauri::AppHandle,
+    scan_state: tauri::State<'_, scan_service::ScanServiceState>,
+) -> Result<u64, String> {
+    let folder_path = std::path::PathBuf::from(&folder);
+    if !folder_path.is_dir() {
+        return Err(format!("not a directory: {folder}"));
+    }
+
+    let job_id = scan_service::next_job_id();
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut jobs = scan_state
+            .jobs
+            .lock()
+            .map_err(|_| "scan jobs lock poisoned".to_string())?;
+        jobs.insert(job_id, cancel.clone());
+    }
+
+    let jobs_handle = scan_state.jobs.clone();
+    let emit_handle = handle.clone();
+    let folder_for_task = folder_path.clone();
+    let folder_str = folder.clone();
+    let system_id_for_task = systemId.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let result = scan_service::run_dir_scan_blocking(
+            job_id,
+            emit_handle.clone(),
+            folder_for_task,
+            1, // depth — only 1-level-deep is supported today
+            system_id_for_task,
+            cancel.clone(),
+        );
+        let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
+
+        if let Ok(mut jobs) = jobs_handle.lock() {
+            jobs.remove(&job_id);
+        }
+
+        let (rows, error_message) = match result {
+            Ok(rows) => (rows, None),
+            Err(e) => (Vec::new(), Some(e)),
+        };
+        let payload = scan_service::ScanCompletePayload {
+            job_id,
+            folder: folder_str,
+            matches: rows.len() as u64,
+            archived: 0,
+            cancelled,
+            error_message,
+            rows,
+        };
+        if let Err(e) = emit_handle.emit("oa://library-scan-complete", &payload) {
+            log::warn!("scan_service: emit dir-scan complete failed: {e:?}");
+        }
+    });
+
+    Ok(job_id)
+}
+
 /// Reconfigure the filesystem watcher. The frontend calls this on startup
 /// (with its persisted tracked folder list) and again whenever the user
 /// adds or removes a folder via Settings → Library.
@@ -8973,16 +9092,45 @@ fn launch_rom(
         if let Ok(mut active) = state.active_archive_entry_id.lock() {
             *active = None;
         }
+        // DOSBox per-game entry-point override. Substitute the path
+        // BEFORE the existence check + bytes/path dispatch so the rest
+        // of the flow sees a single coherent resolved path. When set,
+        // the core boots `<game_dir>/<entry_point>` (a specific .exe /
+        // .bat) instead of auto-detecting from `<game_dir>`. Covers
+        // the ~10% of DOS games where dosbox-pure's auto-detect picks
+        // the wrong binary (install utility, DOS shell, etc.).
+        let path: String = if system_id == "dosbox" {
+            entryId
+                .as_deref()
+                .and_then(|id| db.get_game_overrides(id).ok())
+                .and_then(|o| o.dosbox_entry_point)
+                .filter(|ep| !ep.is_empty())
+                .map(|ep| Path::new(&path).join(&ep).to_string_lossy().into_owned())
+                .unwrap_or(path)
+        } else {
+            path
+        };
         let ext = Path::new(&path)
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
 
-        let bytes = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
-            // CD container OR engine-launcher descriptor (.scummvm) —
-            // pass via path; core opens additional files relative to it.
-            if !Path::new(&path).is_file() {
+        let bytes = if is_cd_extension(&ext)
+            || is_descriptor_extension(&ext)
+            || is_directory_path_system(&system_id)
+        {
+            // CD container, engine-launcher descriptor (.scummvm), or
+            // directory-path system (dosbox) — pass via path; core opens
+            // additional files relative to it.
+            let p = Path::new(&path);
+            if is_directory_path_system(&system_id) {
+                // dosbox accepts either a directory (auto-detect) or a
+                // specific file (post entry-point override). Accept both.
+                if !(p.is_dir() || p.is_file()) {
+                    return Err(format!("not a directory or file: {path}"));
+                }
+            } else if !p.is_file() {
                 return Err(format!("not a file: {path}"));
             }
             Vec::new()

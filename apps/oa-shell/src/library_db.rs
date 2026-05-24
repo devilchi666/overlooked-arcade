@@ -160,6 +160,19 @@ pub struct GameOverrides {
     /// theme default → silence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform_music_path: Option<std::path::PathBuf>,
+    /// DOSBox-only — per-game entry-point override. Path is relative
+    /// to the game directory (e.g. `"INSTALL.EXE"`, `"DOSBOX/AUTOEXEC.BAT"`).
+    /// Covers the ~10% of DOS games where dosbox-pure's auto-detect
+    /// picks the wrong .exe — typically install utilities or DOS
+    /// shells sitting next to the real game binary. `None` = let
+    /// dosbox-pure auto-detect from the directory contents.
+    ///
+    /// Wired at launch by the `launch_rom` Tauri command: when set,
+    /// the resolved path passed to `retro_load_game` becomes
+    /// `<game_dir>/<dosbox_entry_point>` instead of just `<game_dir>`.
+    /// dosbox-pure interprets the explicit path as the boot target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dosbox_entry_point: Option<String>,
 }
 
 impl GameOverrides {
@@ -3197,6 +3210,7 @@ mod tests {
             libretro_device_port3: None,
             libretro_device_port4: None,
             platform_music_path: None,
+            dosbox_entry_point: Some("INSTALL.EXE".to_string()),
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

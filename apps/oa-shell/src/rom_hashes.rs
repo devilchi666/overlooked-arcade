@@ -371,6 +371,13 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
         // (or LaunchBox's ScummVM importer) name `.scummvm` files after
         // the canonical title ("Monkey Island.scummvm").
         "scummvm" => &[],
+        // DOSBox — DOS-game runner, also no hardware platform. DOS
+        // games shipped on multiple media (floppy / CD / GOG re-releases)
+        // and through fan-curated patch sets; the directory contents
+        // vary enormously across releases. Cover sync falls back to
+        // fuzzy filename matching against the directory basename at
+        // the 0.95 threshold.
+        "dosbox" => &[],
         _ => &[],
     }
 }
@@ -1770,7 +1777,7 @@ game (
             "coleco", "intv", "o2", "channelf",
             "vectrex", "virtualboy", "wonderswan",
             "5200", "pokemini",
-            "scummvm",
+            "scummvm", "dosbox",
         ];
         // Systems whose `libretro_dat_refs_for_system` returns an empty
         // slice on purpose. Document the reason next to the id.
@@ -1779,6 +1786,7 @@ game (
             "3do",    // libretro-database 3DO dat carries NO `serial` fields — 3DO never standardized a catalog code, disc-id lookup is structurally impossible.
             "mame",   // arcade ROM identification is set-based, not single-file.
             "scummvm",// engine launcher, not hardware. Game data files vary by release/translation; cover sync falls back to fuzzy filename match at the 0.95 threshold.
+            "dosbox", // DOS-game runner, also no hardware. Directory contents vary by media (floppy/CD/GOG re-release) + fan patches; fuzzy filename match at the 0.95 threshold against directory basename.
         ];
         for sys in ONBOARDED_SYSTEMS {
             let refs = libretro_dat_refs_for_system(sys);

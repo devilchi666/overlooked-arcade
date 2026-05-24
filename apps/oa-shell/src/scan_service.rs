@@ -277,3 +277,82 @@ fn walk(
 pub fn next_job_id() -> u64 {
     NEXT_JOB_ID.fetch_add(1, Ordering::Relaxed)
 }
+
+/// Directory-mode scan — walk the folder at exactly `depth` levels deep
+/// and emit one [`ScannedRom`] per subdirectory found. Used by the
+/// dosbox onboarding flow (Phase 2 of `feat/dosbox-and-scummvm`): each
+/// top-level subdir of an operator-marked "DOS Games" folder is one
+/// game; nested dirs inside are content (game data files), not nested
+/// games.
+///
+/// Currently `depth == 1` is the only supported value — operator points
+/// at a parent folder, OA enumerates its direct subdirectories.
+/// Different cores (a hypothetical future engine launcher with deeper
+/// game-per-folder shape) can lift the depth without rewriting the
+/// walker.
+///
+/// Emitted rows carry `extension = ""` and `archive_inner_path = None`;
+/// `system_hint` is filled with the supplied `system_id_hint` so the
+/// frontend's ingest path classifies the row to the right system
+/// without re-deriving from filename extension (which doesn't exist).
+pub fn run_dir_scan_blocking(
+    job_id: u64,
+    handle: AppHandle,
+    folder: PathBuf,
+    depth: u32,
+    system_id_hint: String,
+    cancel: Arc<AtomicBool>,
+) -> Result<Vec<ScannedRom>, String> {
+    if depth != 1 {
+        return Err(format!(
+            "run_dir_scan_blocking: only depth = 1 is supported (got {depth})"
+        ));
+    }
+    let folder_str = folder.to_string_lossy().into_owned();
+    let mut out = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(&folder) else {
+        return Ok(out);
+    };
+    let mut seen: u64 = 0;
+    for entry in entries.flatten() {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let Ok(file_type) = entry.file_type() else { continue };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_owned: String = name.to_string_lossy().into_owned();
+        if name_owned.starts_with('.') {
+            continue;
+        }
+        let dir_path = entry.path();
+        out.push(ScannedRom {
+            path: dir_path.to_string_lossy().into_owned(),
+            file_name: name_owned.clone(),
+            extension: String::new(),
+            archive_inner_path: None,
+            system_hint: Some(system_id_hint.clone()),
+        });
+        seen += 1;
+        // Throttled progress emit — one per directory found is fine at
+        // 1-level-deep scale (operator collections rarely have thousands
+        // of top-level subdirs).
+        let progress = ScanProgress {
+            job_id,
+            folder: folder_str.clone(),
+            files_seen: seen,
+            matches: out.len() as u64,
+            archived: 0,
+            current_file: name_owned,
+        };
+        if let Err(e) = handle.emit("oa://library-scan-progress", progress) {
+            log::warn!("scan_service: emit dir-scan progress failed: {e:?}");
+        }
+    }
+
+    out.sort_by(|a, b| a.file_name.to_ascii_lowercase().cmp(&b.file_name.to_ascii_lowercase()));
+    Ok(out)
+}
