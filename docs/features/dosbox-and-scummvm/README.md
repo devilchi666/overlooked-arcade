@@ -1,4 +1,4 @@
-# PC engine launchers — scummvm + dosbox onboarding
+# DOSBox + ScummVM onboarding
 
 > **Status: 📐 PLANNED, not implemented.** Design locked 2026-05-24 in
 > conversation with operator after the media-taxonomy + cart-shape-BIOS
@@ -390,7 +390,7 @@ End-to-end on Windows:
 ## Branch + commit plan (when implementing)
 
 1. Pre-feature push (main clean).
-2. `git checkout -b feat/pc-engine-launchers`.
+2. `git checkout -b feat/dosbox-and-scummvm`.
 3. Phase commits in order (1 = scummvm; 2 = dosbox; 3 = cross-cutting;
    4 = docs/ROADMAPs; 5 = SESSION_LOG). Each phase is independent
    enough that operator can test + thumbs-up incrementally.
