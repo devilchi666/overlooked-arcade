@@ -30,7 +30,8 @@ Routing table. Read this first; it points to everything else.
 - [features/library-import/](features/library-import/) — import wizard, scanner, media sync
 - [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
 - [features/portable-install/](features/portable-install/) — `<exe_dir>/settings/` opt-in via portable.txt marker
-- [features/media-taxonomy/](features/media-taxonomy/) — full LaunchBox-shape art/audio/video/manual storage (📐 planned, not yet implemented)
+- [features/media-taxonomy/](features/media-taxonomy/) — full LaunchBox-shape art/audio/video/manual storage (✅ shipped 2026-05-24)
+- [features/pc-engine-launchers/](features/pc-engine-launchers/) — scummvm + dosbox onboarding plan (📐 planned, not yet implemented)
 
 ## Per-core docs
 
