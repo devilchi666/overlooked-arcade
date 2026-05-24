@@ -245,10 +245,17 @@ fn default_edge_only() -> bool {
 /// constrained to 1 / 2 / 4; rows with other widths silently no-op
 /// (defensive against corrupted persisted data).
 ///
-/// Game Genie / Action Replay / GameShark codes are not first-class —
-/// they're system-specific encodings. Users translate to raw
-/// address+value via online tables for now; per-system decoders are a
-/// follow-up.
+/// `kind` discriminates the dispatch:
+/// - `"memory_poke"` — written to core memory every frame via
+///   `Core::memory_region_mut` (`main.rs::apply_cheats`).
+/// - Any other value (including the generic `"libretro_code"` and the
+///   per-system named formats like `"game_genie_nes"`,
+///   `"action_replay_gba"`, `"gameshark_gb"` etc.) — `code` string
+///   passed verbatim to `Core::cheat_set(idx, enabled, code)` which
+///   calls libretro's `retro_cheat_set`. Each core decodes its native
+///   formats — `cheat_formats.rs` declares which formats each system's
+///   core accepts so the frontend can render a system-aware Type
+///   picker + validate input at save time.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Cheat {
