@@ -93,9 +93,12 @@ const GameInfoModal: Component<Props> = (props) => {
     const e = props.entry;
     return e ? media.media(e.id) : undefined;
   });
-  const boxarts = createMemo<MediaVariant[]>(() => gm()?.boxart ?? []);
-  const snaps   = createMemo<MediaVariant[]>(() => gm()?.snap ?? []);
-  const titles  = createMemo<MediaVariant[]>(() => gm()?.title ?? []);
+  // Post-2026-05-23 media-taxonomy rename. Prefer the new field names;
+  // fall back to v1 for one release in case a stale in-memory snapshot
+  // is still around.
+  const boxarts = createMemo<MediaVariant[]>(() => gm()?.boxFront ?? gm()?.boxart ?? []);
+  const snaps   = createMemo<MediaVariant[]>(() => gm()?.screenshotGameplay ?? gm()?.snap ?? []);
+  const titles  = createMemo<MediaVariant[]>(() => gm()?.screenshotTitle ?? gm()?.title ?? []);
   const metadata = createMemo(() => gm()?.metadata);
 
   // Hero boxart: pin → fallback to first variant (manual or earliest
@@ -103,7 +106,7 @@ const GameInfoModal: Component<Props> = (props) => {
   const heroBoxart = createMemo<MediaVariant | undefined>(() => {
     const bs = boxarts();
     if (bs.length === 0) return undefined;
-    const pinned = gm()?.selected?.boxartIndex;
+    const pinned = gm()?.selected?.boxFrontIndex ?? gm()?.selected?.boxartIndex;
     return pinned !== undefined && pinned < bs.length ? bs[pinned] : bs[0];
   });
 

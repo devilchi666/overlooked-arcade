@@ -141,7 +141,7 @@ const DetailRow: Component<{
   const theme = () => systemThemes[props.entry.systemId];
   const meta = () => media.media(props.entry.id)?.metadata;
   const coverSrc = () =>
-    media.coverUrl(props.entry.systemId, props.entry.id, "boxart", "thumb");
+    media.coverUrl(props.entry.systemId, props.entry.id, "box-front", "thumb");
   const selected = () => props.selectedId?.() === props.entry.id;
 
   return (

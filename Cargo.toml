@@ -52,6 +52,12 @@ pollster           = "0.3"
 bytemuck           = { version = "1", features = ["derive"] }
 cpal               = "0.15"
 ringbuf            = "0.4"
+# File-driven audio playback (platform music, UI sounds, ceremony, snap audio).
+# Wraps cpal output + symphonia decoders. The emulator's audio pipe stays on
+# the dedicated `oa-audio` crate (i16 PCM + ring buffer); rodio is for "play
+# this .ogg / .mp3 / .flac file" use cases the kiosk plan defines as separate
+# buses from live game audio.
+rodio              = { version = "0.20", default-features = false, features = ["symphonia-all"] }
 gilrs              = "0.11"
 device_query       = "4"
 cc                 = "1"

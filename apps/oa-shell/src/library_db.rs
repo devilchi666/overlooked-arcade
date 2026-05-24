@@ -152,6 +152,14 @@ pub struct GameOverrides {
     /// Per-game device-type override for port 4. See `libretro_device_port1`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libretro_device_port4: Option<u32>,
+    /// Media-taxonomy Phase 4 (2026-05-23) — per-game platform music
+    /// override. Plays when this game is highlighted in the library,
+    /// overriding the `SystemSettings::platform_music_path` for the
+    /// game's system. Stored as a `PathBuf` (absolute or app-data-
+    /// relative — frontend resolves). `None` = inherit per-system →
+    /// theme default → silence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform_music_path: Option<std::path::PathBuf>,
 }
 
 impl GameOverrides {
@@ -1136,6 +1144,48 @@ impl LibraryDb {
         Ok(added)
     }
 
+    /// Return every game tagged with `system_id` as a `GameRow`.
+    /// Mirrors `list_games` but filtered to one system. Used by the
+    /// art-pack importer to scope fuzzy matching — Genesis-folder art
+    /// only matches Genesis library entries, never accidentally lands
+    /// on a Game Boy title with a similar name.
+    pub fn list_games_for_system(&self, system_id: &str) -> Result<Vec<GameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial, disc_id
+                 FROM games
+                 WHERE system_id = ?1
+                 ORDER BY title",
+            )
+            .map_err(|e| format!("prepare list_games_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                Ok(GameRow {
+                    id: row.get(0)?,
+                    system_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    title: row.get(3)?,
+                    added_at: row.get(4)?,
+                    core_override: row.get(5)?,
+                    cover_path: row.get(6)?,
+                    seed: row.get::<_, i64>(7)? != 0,
+                    archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
+                    disc_id: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("query list_games_for_system: {e}"))?;
+        let mut out: Vec<GameRow> = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| format!("step list_games_for_system: {e}"))?);
+        }
+        Ok(out)
+    }
+
     /// Remove seed rows. Called when the first real ingest commits so the
     /// six placeholder TG-16 tiles don't co-exist with real data.
     pub fn drop_seed_rows(&self) -> Result<usize, String> {
@@ -1223,6 +1273,46 @@ impl LibraryDb {
     /// user spawns oa-shell with a ROM path from an external frontend.
     /// Uses the `idx_games_sha1` index. Matches case-insensitively — sha1
     /// is normalized to lowercase on both sides.
+    /// Look up a single game by its row id (the djb2 path-hash key used
+    /// throughout the frontend). Returns Ok(None) when the id isn't in
+    /// the table. Used by `media::set_manual_cover` to discover the
+    /// rom_stem (file_path basename) for the new LaunchBox-shape art
+    /// folder layout introduced 2026-05-23.
+    pub fn find_game_by_id(&self, id: &str) -> Result<Option<GameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial, disc_id
+                 FROM games
+                 WHERE id = ?1
+                 LIMIT 1",
+            )
+            .map_err(|e| format!("prepare find_game_by_id: {e}"))?;
+        let mut rows = stmt
+            .query(params![id])
+            .map_err(|e| format!("query find_game_by_id: {e}"))?;
+        if let Some(row) = rows.next().map_err(|e| format!("step find_game_by_id: {e}"))? {
+            Ok(Some(GameRow {
+                id: row.get(0).map_err(|e| format!("col id: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col system_id: {e}"))?,
+                file_path: row.get(2).map_err(|e| format!("col file_path: {e}"))?,
+                title: row.get(3).map_err(|e| format!("col title: {e}"))?,
+                added_at: row.get(4).map_err(|e| format!("col added_at: {e}"))?,
+                core_override: row.get(5).map_err(|e| format!("col core_override: {e}"))?,
+                cover_path: row.get(6).map_err(|e| format!("col cover_path: {e}"))?,
+                seed: row.get::<_, i64>(7).map_err(|e| format!("col seed: {e}"))? != 0,
+                archive_inner_path: row.get(8).map_err(|e| format!("col archive_inner_path: {e}"))?,
+                sha1: row.get(9).map_err(|e| format!("col sha1: {e}"))?,
+                serial: row.get(10).map_err(|e| format!("col serial: {e}"))?,
+                disc_id: row.get(11).map_err(|e| format!("col disc_id: {e}"))?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn find_game_by_sha1(&self, sha1: &str) -> Result<Option<GameRow>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn
@@ -3106,6 +3196,7 @@ mod tests {
             libretro_device_port2: None,
             libretro_device_port3: None,
             libretro_device_port4: None,
+            platform_music_path: None,
         };
         db.set_game_overrides("a", &pref).expect("set");
         let after = db.get_game_overrides("a").expect("get after");

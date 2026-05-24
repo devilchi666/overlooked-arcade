@@ -17,7 +17,7 @@ export const HeroCoverWidget: Component<WidgetProps> = (props) => {
   const media = useMedia();
   const theme = () => systemThemes[props.entry.systemId];
   const aspect = () => theme().tileAspect ?? DEFAULT_TILE_ASPECT;
-  const url = () => media.coverUrl(props.entry.systemId, props.entry.id, "boxart", "full");
+  const url = () => media.coverUrl(props.entry.systemId, props.entry.id, "box-front", "full");
 
   return (
     <section data-system={props.entry.systemId} class="px-3">

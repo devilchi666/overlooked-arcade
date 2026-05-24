@@ -25,6 +25,8 @@ mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
+mod art_pack_importer;
+mod audio_player;
 mod library_groups;
 mod library_prefs;
 mod logger;
@@ -32,6 +34,7 @@ mod media;
 mod metadata;
 mod normalize;
 mod patch;
+mod platform_media;
 mod rom_hashes;
 mod rom_header;
 mod scan_service;
@@ -56,6 +59,15 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tauri::{Emitter, Manager};
 
 use bindings::Bindings;
+
+/// Newtype wrapper around the resolved app-data dir, managed as Tauri
+/// state. Commands that need the data dir (e.g. settings/audio resolvers
+/// that aren't already going through a stateful service) ask for
+/// `tauri::State<'_, AppDataDir>` and read `.0` on it. Pre-existing
+/// services that need the same path keep a `PathBuf` field on their
+/// own state struct (MediaState.app_data_dir etc.) — this state is
+/// the catch-all for commands that don't fit elsewhere.
+pub struct AppDataDir(pub PathBuf);
 
 /// Toast event payload sent to the frontend over the `oa://toast` channel.
 /// `level` drives the leading glyph + per-level accent (info/success neutral,
@@ -2598,6 +2610,15 @@ fn main() {
             media::clear_metadata_for_system,
             media::set_selected_variant,
             media::sync_media_for_system,
+            art_pack_importer::import_art_pack,
+            audio_player::play_audio,
+            audio_player::stop_audio,
+            audio_player::set_audio_volume,
+            audio_player::resolve_platform_music,
+            audio_player::resolve_ui_sound,
+            platform_media::get_platform_media_index,
+            platform_media::set_platform_media,
+            platform_media::clear_platform_media,
             metadata::sync_metadata_for_system,
             media::media_storage_stats,
             media::open_media_folder,
@@ -2775,6 +2796,35 @@ fn main() {
                     )),
                 });
 
+                // Media-taxonomy Phase 6 — platform media (per-system
+                // hardware photos, controllers, wheel art, banners).
+                // Separate db from MediaState because the shape differs
+                // (Option per slot, one entry per system, vs Vec per slot,
+                // one entry per ROM). Persisted at
+                // <data_dir>/library/platform-media.json with the same
+                // atomic-write + .corrupt-backup pattern as media.json.
+                let pm_db = platform_media::read_db(&app_data_dir);
+                log::info!(
+                    "oa-shell: platform_media db loaded ({} systems)",
+                    pm_db.len(),
+                );
+                app.manage(platform_media::PlatformMediaState {
+                    db: Arc::new(std::sync::RwLock::new(pm_db)),
+                    app_data_dir: app_data_dir.clone(),
+                });
+
+                // Media-taxonomy Phase 4 audio overrides + audio player.
+                // Manages the app-data-dir as Tauri state for the audio
+                // resolver commands (which need to read SystemSettings
+                // files), and spawns the file-driven audio player thread
+                // that owns rodio's OutputStream.
+                app.manage(AppDataDir(app_data_dir.clone()));
+                let audio_handle = audio_player::AudioPlayerHandle::spawn();
+                app.manage(audio_handle.player());
+                // Hold the handle itself in app state so Drop fires on
+                // shutdown and the audio thread joins cleanly.
+                app.manage(std::sync::Mutex::new(Some(audio_handle)));
+
                 // Background scan service state — tracks in-flight scan jobs
                 // so cancel_background_scan can flip their cancel flags.
                 app.manage(scan_service::ScanServiceState::default());
@@ -2870,6 +2920,39 @@ fn main() {
                                         cfg.rom_path.display()
                                     ),
                                 }
+                            }
+                        }
+
+                        // Media-taxonomy Phase 5 migration — sentinel-guarded
+                        // one-shot pass that moves manual covers from
+                        // media/covers/<sys>/rom-<hash>.<ext> to the new
+                        // media/<sys>/box-front/<rom_stem>.<ext> layout and
+                        // copies synced art out of the cache dir to the
+                        // canonical kind dirs. Needs both library_db (rom_id
+                        // → file_path lookup for rom_stem derivation) and
+                        // the shared MediaDb Arc (mutates variant.path in
+                        // memory + writes media.json). No-op after first
+                        // successful run via .media-taxonomy-migrated
+                        // sentinel in the data dir.
+                        {
+                            let mut db_w = media_db.write().expect("media db write lock");
+                            let report = data_dir::migrate_media_naming(
+                                &app_data_dir, &db, &mut db_w,
+                            );
+                            if report.already_migrated {
+                                log::info!(
+                                    "media-taxonomy migration: sentinel present; no-op"
+                                );
+                            } else if report.manual_renamed + report.synced_copied > 0 {
+                                let app_handle = app.handle().clone();
+                                let _ = app_handle.emit(
+                                    "oa://media-updated",
+                                    serde_json::json!({
+                                        "batch": true,
+                                        "count": report.manual_renamed + report.synced_copied,
+                                        "source": "phase5-migration",
+                                    }),
+                                );
                             }
                         }
 

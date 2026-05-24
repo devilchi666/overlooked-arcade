@@ -39,10 +39,12 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 5. **Multi-system light-gun smoke-test validation** (~160 lines harness).
    - POINTER device dispatch is shipped; per-system validation across dreamcast (House of the Dead), saturn (Virtua Cop), nes (Zapper), psx (Time Crisis) is pending. Mostly operator playtest — code work is a test harness.
 
-6. **Full media taxonomy + LaunchBox-shape storage** (~7 phases, plan locked).
-   - Closes the art-pack-compatibility gap (operators can drag-drop LaunchBox / EmuMovies packs), wires the kiosk-plan 5-bus audio infrastructure, adds 9 per-system platform-media slots (banner / clear-logo / console / controller / fanart / marquee / photo / wheel / background), bumps `MediaKind` from 5 → 25+ slots with kebab-case folder names, and includes a one-shot rename migration for existing `media/covers/rom-<hash>.png` files.
-   - Full plan: [docs/features/media-taxonomy/README.md](features/media-taxonomy/README.md).
-   - Touches: `apps/oa-shell/src/media.rs` (~600 lines), `system_settings.rs` + `library_db.rs` (~40 lines), two new modules (`audio_player.rs` ~250, `art_pack_importer.rs` ~200), `data_dir.rs` migration (~150), three frontend files (~220). 7 phase commits on `feat/media-taxonomy`.
+~~6. Full media taxonomy + LaunchBox-shape storage~~ — **SHIPPED 2026-05-24**
+   on `feat/media-taxonomy` (`--no-ff` merge to main). 7 phase commits;
+   see [docs/features/media-taxonomy/SESSION_LOG.md](features/media-taxonomy/SESSION_LOG.md)
+   for per-phase ship details + commit shas. Followup stretch polish
+   (audio override UI surfaces, kiosk wheel-art consumption) lives
+   in [PARKING_LOT.md](PARKING_LOT.md).
 
 ---
 

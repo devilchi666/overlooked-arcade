@@ -20,6 +20,8 @@ import { collectHiddenContainers, findNode } from "../views/resolver";
 import { platformNodeIdFor } from "../views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
+import { ImportArtPackDialog } from "./ImportArtPackDialog";
+import { PlatformMediaDialog } from "./PlatformMediaDialog";
 
 type Props = {
   /// Navigate back to the previous view. Used by the header Back button
@@ -333,6 +335,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // --- Game media (covers): sync, region priority, storage stats ---
 
   const media = useMedia();
+
+  // Phase 3 (2026-05-23): art-pack importer dialog open-state. Pulled
+  // up to LibraryManagerPage so the "Import art pack…" button in the
+  // media tab can open it.
+  const [importArtPackOpen, setImportArtPackOpen] = createSignal(false);
+  // Phase 6 (2026-05-23): platform-media dialog open-state — same
+  // top-of-component pattern so a button in the media tab can open it.
+  const [platformMediaOpen, setPlatformMediaOpen] = createSignal(false);
 
   // Per-system live sync progress, keyed by systemId. Updated by oa://library-sync events.
   const [syncProgress, setSyncProgress] = createSignal<Record<string, SyncProgressPayload>>({});
@@ -761,6 +771,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
   });
 
   return (
+    <>
     <div
       class="flex h-full w-full flex-col bg-(--color-oa-bg)"
       role="region"
@@ -840,16 +851,38 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
                   Game media
                 </h3>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    void invoke("open_media_folder");
-                  }}
-                  class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
-                >
-                  Open folder
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setPlatformMediaOpen(true);
+                    }}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                  >
+                    Platform media…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setImportArtPackOpen(true);
+                    }}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                  >
+                    Import art pack…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      void invoke("open_media_folder");
+                    }}
+                    class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                  >
+                    Open folder
+                  </button>
+                </div>
               </div>
 
               {/* Only-sync-identified gate. Default on — the fuzzy
@@ -881,12 +914,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   Kinds to fetch (per-ROM downloads during sync)
                 </p>
                 <div class="flex flex-wrap gap-2">
-                  <For each={["boxart", "snap", "title"] as const}>
+                  <For each={["box-front", "screenshot-gameplay", "screenshot-title"] as const}>
                     {(k) => {
                       const checked = () => media.kindsToFetch().includes(k);
                       const label =
-                        k === "boxart" ? "Boxart"
-                        : k === "snap" ? "Snapshots"
+                        k === "box-front" ? "Boxart"
+                        : k === "screenshot-gameplay" ? "Snapshots"
                         : "Title screens";
                       return (
                         <label class="flex cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) transition hover:bg-white/[0.08]">
@@ -1431,6 +1464,20 @@ const LibraryManagerPage: Component<Props> = (props) => {
             </section>
           </div>
       </div>
+      <ImportArtPackDialog
+        open={importArtPackOpen()}
+        onClose={() => setImportArtPackOpen(false)}
+        onImported={() => {
+          // Re-hydrate the MediaIndex so the just-imported variants
+          // show on the grid + Game Info modals without a restart.
+          void media.refreshAll();
+        }}
+      />
+      <PlatformMediaDialog
+        open={platformMediaOpen()}
+        onClose={() => setPlatformMediaOpen(false)}
+      />
+    </>
   );
 };
 

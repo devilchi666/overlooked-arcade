@@ -45,7 +45,47 @@ export type MediaVariant = {
   bytes?: number;
 };
 
+// Per-slot pinned variant index. Mirrors Rust `SelectedMedia`. v1
+// shipped just three indexes (boxartIndex / snapIndex / titleIndex);
+// the renamed fields below preserve those keys via the Rust-side serde
+// aliases. We keep the legacy field names as optional so frontend code
+// can still read old in-memory snapshots without crashing if a stale
+// MediaIndex slips through during the 2026-05-23 transition.
 export type SelectedMedia = {
+  // v1 fields (renamed). Rust serializes via the new names — these
+  // optional aliases let dormant frontend code keep compiling.
+  boxFrontIndex?: number;
+  screenshotGameplayIndex?: number;
+  screenshotTitleIndex?: number;
+  cartFrontIndex?: number;
+  discIndex?: number;
+  // New slots.
+  boxBackIndex?: number;
+  box3dIndex?: number;
+  boxSpineIndex?: number;
+  boxFullIndex?: number;
+  cartBackIndex?: number;
+  cart3dIndex?: number;
+  screenshotSelectIndex?: number;
+  bannerIndex?: number;
+  clearLogoIndex?: number;
+  fanartBackgroundIndex?: number;
+  fanartDiscIndex?: number;
+  advertFrontIndex?: number;
+  advertBackIndex?: number;
+  arcadeCabinetIndex?: number;
+  arcadeMarqueeIndex?: number;
+  arcadeControlpanelIndex?: number;
+  arcadeControlsinfoIndex?: number;
+  arcadePlayerselectIndex?: number;
+  arcadeFlyerIndex?: number;
+  videoIndex?: number;
+  musicIndex?: number;
+  manualIndex?: number;
+  // v1 legacy keys — kept for one release as defensive read-side
+  // fallbacks. Rust's serde aliases handle the inbound direction; this
+  // covers any cached/in-memory v1 snapshot the frontend might still
+  // be holding when the upgraded shell first runs.
   boxartIndex?: number;
   snapIndex?: number;
   titleIndex?: number;
@@ -60,17 +100,67 @@ export type GameMetadata = {
   description?: string;
 };
 
+// Mirrors Rust `GameMedia`. The 2026-05-23 media-taxonomy pivot
+// expanded this from 5 slots to the full ~26-slot LaunchBox shape.
+// Field names are camelCase per Rust's serde rename_all = "camelCase".
+// v1 legacy keys (`boxart`/`snap`/`title`/`cart`) remain readable via
+// Rust's serde aliases, but Rust serializes only the new names —
+// frontend reads should prefer `boxFront` etc. and treat the v1
+// aliases as defensive read-only fallbacks.
 export type GameMedia = {
+  // v1 fields, renamed.
+  boxFront?: MediaVariant[];
+  screenshotGameplay?: MediaVariant[];
+  screenshotTitle?: MediaVariant[];
+  cartFront?: MediaVariant[];
+  disc?: MediaVariant[];
+  // New slots (Phase 1 plumbing; UI rendering catches up incrementally).
+  boxBack?: MediaVariant[];
+  box3d?: MediaVariant[];
+  boxSpine?: MediaVariant[];
+  boxFull?: MediaVariant[];
+  cartBack?: MediaVariant[];
+  cart3d?: MediaVariant[];
+  screenshotSelect?: MediaVariant[];
+  banner?: MediaVariant[];
+  clearLogo?: MediaVariant[];
+  fanartBackground?: MediaVariant[];
+  fanartDisc?: MediaVariant[];
+  advertFront?: MediaVariant[];
+  advertBack?: MediaVariant[];
+  arcadeCabinet?: MediaVariant[];
+  arcadeMarquee?: MediaVariant[];
+  arcadeControlpanel?: MediaVariant[];
+  arcadeControlsinfo?: MediaVariant[];
+  arcadePlayerselect?: MediaVariant[];
+  arcadeFlyer?: MediaVariant[];
+  video?: MediaVariant[];
+  music?: MediaVariant[];
+  manual?: MediaVariant[];
+  // v1 legacy keys — defensive read-side fallbacks for one release.
   boxart?: MediaVariant[];
   snap?: MediaVariant[];
   title?: MediaVariant[];
   cart?: MediaVariant[];
-  disc?: MediaVariant[];
   selected?: SelectedMedia;
   metadata?: GameMetadata;
 };
 
-export type MediaKind = "boxart" | "snap" | "title" | "cart" | "disc";
+// Kebab-case names — matches Rust `MediaKind::as_str()` and folder
+// names exactly. The Rust-side `MediaKind::parse` still accepts the
+// v1 strings ("boxart"/"snap"/"title"/"cart") for one release, so
+// any callers that haven't migrated keep working.
+export type MediaKind =
+  | "box-front" | "box-back" | "box-3d" | "box-spine" | "box-full"
+  | "cart-front" | "cart-back" | "cart-3d"
+  | "disc"
+  | "screenshot-gameplay" | "screenshot-title" | "screenshot-select"
+  | "banner" | "clear-logo"
+  | "fanart-background" | "fanart-disc"
+  | "advert-front" | "advert-back"
+  | "arcade-cabinet" | "arcade-marquee" | "arcade-controlpanel"
+  | "arcade-controlsinfo" | "arcade-playerselect" | "arcade-flyer"
+  | "video" | "music" | "manual";
 export type MediaSize = "thumb" | "full";
 
 // Rust's MediaDb serializes as BTreeMap<String, GameMedia> → JS object.
@@ -108,12 +198,97 @@ export type MediaStore = {
   /// Mutations — wrap Tauri commands that update Rust's MediaDb. All of them
   /// rely on Rust emitting `oa://media-updated` for the local store to
   /// catch up; the Promise resolves once the command itself returns.
-  setManualCover(romId: string, systemId: SystemId, sourcePath: string): Promise<void>;
+  /// `kind` defaults to "box-front" (the historical "set cover" gesture).
+  /// Pass an explicit kind to target a different slot — e.g. "clear-logo",
+  /// "screenshot-gameplay", "manual" — once the UI surfaces them.
+  setManualCover(romId: string, systemId: SystemId, sourcePath: string, kind?: MediaKind): Promise<void>;
   setSelectedVariant(romId: string, kind: MediaKind, index: number): Promise<void>;
   clearMedia(romId: string): Promise<void>;
   syncSystem(systemId: SystemId, entries: Array<{ id: string; title: string; filePath: string; systemId: string }>): Promise<void>;
   syncMetadata(systemId: SystemId, entries: Array<{ id: string; title: string; filePath: string; systemId: string }>): Promise<void>;
 };
+
+/// Dispatch a MediaKind name to the matching GameMedia variants array.
+/// Accepts both new kebab-case names and v1 legacy strings — the latter
+/// for any caller still passing "boxart"/"snap"/"title"/"cart". Reads
+/// the v1 GameMedia field as a defensive fallback in case a stale
+/// in-memory snapshot from the pre-rename world is still around.
+function variantsForKind(gm: GameMedia, kind: MediaKind | string): MediaVariant[] | undefined {
+  switch (kind) {
+    case "box-front":
+    case "boxart": return gm.boxFront ?? gm.boxart;
+    case "screenshot-gameplay":
+    case "snap": return gm.screenshotGameplay ?? gm.snap;
+    case "screenshot-title":
+    case "title": return gm.screenshotTitle ?? gm.title;
+    case "cart-front":
+    case "cart": return gm.cartFront ?? gm.cart;
+    case "disc": return gm.disc;
+    case "box-back": return gm.boxBack;
+    case "box-3d": return gm.box3d;
+    case "box-spine": return gm.boxSpine;
+    case "box-full": return gm.boxFull;
+    case "cart-back": return gm.cartBack;
+    case "cart-3d": return gm.cart3d;
+    case "screenshot-select": return gm.screenshotSelect;
+    case "banner": return gm.banner;
+    case "clear-logo": return gm.clearLogo;
+    case "fanart-background": return gm.fanartBackground;
+    case "fanart-disc": return gm.fanartDisc;
+    case "advert-front": return gm.advertFront;
+    case "advert-back": return gm.advertBack;
+    case "arcade-cabinet": return gm.arcadeCabinet;
+    case "arcade-marquee": return gm.arcadeMarquee;
+    case "arcade-controlpanel": return gm.arcadeControlpanel;
+    case "arcade-controlsinfo": return gm.arcadeControlsinfo;
+    case "arcade-playerselect": return gm.arcadePlayerselect;
+    case "arcade-flyer": return gm.arcadeFlyer;
+    case "video": return gm.video;
+    case "music": return gm.music;
+    case "manual": return gm.manual;
+    default: return undefined;
+  }
+}
+
+/// Look up the pinned-variant index for a given kind. Falls back to v1
+/// legacy fields when the new ones are missing.
+function pinnedIndexForKind(sel: SelectedMedia | undefined, kind: MediaKind | string): number | undefined {
+  if (!sel) return undefined;
+  switch (kind) {
+    case "box-front":
+    case "boxart": return sel.boxFrontIndex ?? sel.boxartIndex;
+    case "screenshot-gameplay":
+    case "snap": return sel.screenshotGameplayIndex ?? sel.snapIndex;
+    case "screenshot-title":
+    case "title": return sel.screenshotTitleIndex ?? sel.titleIndex;
+    case "cart-front":
+    case "cart": return sel.cartFrontIndex;
+    case "disc": return sel.discIndex;
+    case "box-back": return sel.boxBackIndex;
+    case "box-3d": return sel.box3dIndex;
+    case "box-spine": return sel.boxSpineIndex;
+    case "box-full": return sel.boxFullIndex;
+    case "cart-back": return sel.cartBackIndex;
+    case "cart-3d": return sel.cart3dIndex;
+    case "screenshot-select": return sel.screenshotSelectIndex;
+    case "banner": return sel.bannerIndex;
+    case "clear-logo": return sel.clearLogoIndex;
+    case "fanart-background": return sel.fanartBackgroundIndex;
+    case "fanart-disc": return sel.fanartDiscIndex;
+    case "advert-front": return sel.advertFrontIndex;
+    case "advert-back": return sel.advertBackIndex;
+    case "arcade-cabinet": return sel.arcadeCabinetIndex;
+    case "arcade-marquee": return sel.arcadeMarqueeIndex;
+    case "arcade-controlpanel": return sel.arcadeControlpanelIndex;
+    case "arcade-controlsinfo": return sel.arcadeControlsinfoIndex;
+    case "arcade-playerselect": return sel.arcadePlayerselectIndex;
+    case "arcade-flyer": return sel.arcadeFlyerIndex;
+    case "video": return sel.videoIndex;
+    case "music": return sel.musicIndex;
+    case "manual": return sel.manualIndex;
+    default: return undefined;
+  }
+}
 
 const MediaContext = createContext<MediaStore>();
 
@@ -127,7 +302,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     "USA", "World", "Europe", "Japan",
   ]);
   const [kindsToFetch, setKindsToFetchInternal] = createSignal<MediaKind[]>([
-    "boxart", "snap", "title",
+    "box-front", "screenshot-gameplay", "screenshot-title",
   ]);
   // appDataDir absolute path — resolved at mount, used to construct
   // asset-protocol URLs for cover images. Custom URI schemes
@@ -217,9 +392,21 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     try {
       const kinds = await invoke<string[]>("get_media_kinds_to_fetch");
       if (Array.isArray(kinds)) {
-        const validated = kinds.filter((k): k is MediaKind =>
-          k === "boxart" || k === "snap" || k === "title"
-        );
+        // Filter to libretro-thumbnails-served kinds only (the only ones
+        // sync actually fetches). Accept both new kebab-case names and
+        // v1 aliases so a media-prefs.json from the pre-rename world
+        // doesn't reset to defaults silently on first load.
+        const remap: Record<string, MediaKind> = {
+          "boxart": "box-front",
+          "snap": "screenshot-gameplay",
+          "title": "screenshot-title",
+          "box-front": "box-front",
+          "screenshot-gameplay": "screenshot-gameplay",
+          "screenshot-title": "screenshot-title",
+        };
+        const validated: MediaKind[] = kinds
+          .map((k) => remap[k])
+          .filter((k): k is MediaKind => k !== undefined);
         if (validated.length > 0) setKindsToFetchInternal(validated);
       }
     } catch (e) {
@@ -241,24 +428,14 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     media(romId) {
       return index().get(romId);
     },
-    coverUrl(_systemId, romId, kind = "boxart", size = "thumb") {
+    coverUrl(_systemId, romId, kind = "box-front", size = "thumb") {
       const gm = index().get(romId);
       if (!gm) return null;
-      const variants: MediaVariant[] | undefined =
-        kind === "boxart" ? gm.boxart
-        : kind === "snap" ? gm.snap
-        : kind === "title" ? gm.title
-        : kind === "cart" ? gm.cart
-        : kind === "disc" ? gm.disc
-        : undefined;
+      const variants = variantsForKind(gm, kind);
       if (!variants || variants.length === 0) return null;
       const base = appDataPath();
       if (!base) return null;
-      const pinned =
-        kind === "boxart" ? gm.selected?.boxartIndex
-        : kind === "snap" ? gm.selected?.snapIndex
-        : kind === "title" ? gm.selected?.titleIndex
-        : undefined;
+      const pinned = pinnedIndexForKind(gm.selected, kind);
       const variant = pinned !== undefined && pinned < variants.length
         ? variants[pinned]
         : variants[0];
@@ -298,8 +475,8 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
         throw e;
       }
     },
-    async setManualCover(romId, systemId, sourcePath) {
-      await invoke("set_manual_cover", { romId, systemId, sourcePath });
+    async setManualCover(romId, systemId, sourcePath, kind) {
+      await invoke("set_manual_cover", { romId, systemId, sourcePath, kind });
       await refresh(romId);
     },
     async setSelectedVariant(romId, kind, idx) {
