@@ -17,6 +17,7 @@
 mod archive;
 mod bindings;
 mod cd_id;
+mod cheat_formats;
 mod cheat_search;
 mod cli;
 mod data_dir;
@@ -2726,6 +2727,7 @@ fn main() {
             add_cheat,
             update_cheat,
             delete_cheat,
+            list_cheat_formats,
             arm_cheats,
             start_cheat_search,
             filter_cheat_search,
@@ -5148,7 +5150,14 @@ fn run_emu_render(
                         c.cheat_reset();
                         let mut idx: u32 = 0;
                         for cheat in cheat_runtime.iter() {
-                            if cheat.kind == "libretro_code" {
+                            // Every non-memory-poke kind routes through
+                            // `retro_cheat_set` — the core's own decoder
+                            // handles Game Genie / GameShark / Action
+                            // Replay / Pro Action Replay / CodeBreaker /
+                            // raw per-format. See `cheat_formats.rs` for
+                            // the per-system format declarations + the
+                            // validation regexes the frontend uses.
+                            if !cheat_formats::is_memory_poke_kind(&cheat.kind) {
                                 if let Some(code) = cheat.code.as_deref() {
                                     c.cheat_set(idx, cheat.enabled, code);
                                     idx += 1;
@@ -7115,6 +7124,21 @@ fn update_cheat(cheat: library_db::Cheat, db: tauri::State<'_, library_db::Libra
 #[tauri::command]
 fn delete_cheat(id: i64, db: tauri::State<'_, library_db::LibraryDb>) -> Result<usize, String> {
     db.delete_cheat(id)
+}
+
+/// Per-system cheat-code format declarations. Frontend's CheatsDialog
+/// fetches this on open to render a system-aware Type picker — instead
+/// of the generic "Memory poke / Code" pair, the operator sees the
+/// formats that actually apply (Game Genie / GameShark / Action Replay /
+/// CodeBreaker / Pro Action Replay / etc. depending on the system).
+///
+/// Backed by `cheat_formats::cheat_formats_for`. Systems without
+/// named formats return the minimum 2-entry list (`memory_poke` +
+/// `libretro_code`).
+#[allow(non_snake_case)]
+#[tauri::command]
+fn list_cheat_formats(systemId: String) -> Vec<cheat_formats::CheatFormat> {
+    cheat_formats::cheat_formats_for(&systemId)
 }
 
 /// Read the current bytes for a memory region from the per-frame snapshot.

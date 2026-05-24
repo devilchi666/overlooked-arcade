@@ -85,7 +85,20 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 
 These wait for a single, larger infrastructure pass that benefits many systems at once. Each line item below names what unlocks the deferred work.
 
-- **System-agnostic cheat code path** (~300 lines). Once Phase 4 milestone pattern is more established.
+- ~~System-agnostic cheat code path~~ — **SHIPPED** across two passes.
+  The end-to-end machinery (DB schema + CRUD + frame-loop dispatch +
+  libretro `retro_cheat_set` wiring + `CheatsDialog` UI + auto-arm on
+  launch) shipped earlier under RetroArch parity slice 5 (see
+  `apps/oa-shell/src/library_db.rs::Cheat` + `main.rs::apply_cheats`).
+  Per-system named code formats (Game Genie / GameShark / Action
+  Replay v3 / CodeBreaker / Pro Action Replay / etc., declared per
+  system in `apps/oa-shell/src/cheat_formats.rs` + surfaced via the
+  `list_cheat_formats` Tauri command) shipped 2026-05-24 — adds
+  per-system Type-picker entries with operator-side regex validation
+  for nes / snes / genesis / segacd / sega32x / sms / gamegear / gb /
+  gbc / gba / 2600 / n64. Per-core ROADMAP "Game Genie / cheat
+  support — operator-driven validation" bullets remain ⬜ pending
+  actual operator playtest against running cores.
 - **GameCube Wii Remote / Nunchuk / Classic Controller dispatch** (~500 lines, new libretro device type, Phase 2.5).
 - **Dreamcast VMU peripheral** (~400 lines, secondary screen + device dispatch).
 - **Real OS-level accelerometer access** (~250 lines, Windows Sensor API / Linux iio / macOS Core Motion). Phase G's keyboard-arrows-as-tilt fallback handles GBA Boktai / Kirby Tilt 'n' Tumble / WarioWare Twisted! today; a real accelerometer would let operators with tablet hardware or USB IMU devices play with native motion.

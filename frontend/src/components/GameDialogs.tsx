@@ -1180,6 +1180,19 @@ type Cheat = {
   code?: string | null;
 };
 
+/// Per-system cheat format declaration — returned by the backend's
+/// `list_cheat_formats` Tauri command. Each system gets at minimum
+/// `memory_poke` + `libretro_code`; systems with documented named
+/// formats (Game Genie / GameShark / Action Replay / CodeBreaker /
+/// Pro Action Replay) include those between the two.
+type CheatFormat = {
+  id: string;
+  label: string;
+  hint: string;
+  validationRegex: string;
+  isMemoryPoke: boolean;
+};
+
 const CHEAT_REGION_OPTIONS = ["system_ram", "save_ram", "video_ram", "rtc"] as const;
 
 type CheatSearchSummary = {
@@ -1202,6 +1215,9 @@ export const CheatsDialog: Component<{
 }> = (props) => {
   const [cheats, setCheats] = createSignal<Cheat[]>([]);
   const [draft, setDraft] = createSignal<Cheat | null>(null);
+  // Per-system cheat-format declarations, fetched on dialog open.
+  // Drives the Type picker + per-format input validation.
+  const [cheatFormats, setCheatFormats] = createSignal<CheatFormat[]>([]);
   // Cheat search state
   const [searchActive, setSearchActive] = createSignal(false);
   const [searchRegion, setSearchRegion] = createSignal("system_ram");
@@ -1239,8 +1255,58 @@ export const CheatsDialog: Component<{
     }
   }
 
+  /// Pull per-system cheat-format declarations once per dialog open.
+  /// Static per system_id — no need to refresh on cheat add/edit.
+  async function refreshFormats() {
+    const sysId = props.entry?.systemId;
+    if (!sysId) {
+      setCheatFormats([]);
+      return;
+    }
+    try {
+      const formats = await invoke<CheatFormat[]>("list_cheat_formats", {
+        systemId: sysId,
+      });
+      setCheatFormats(formats);
+    } catch (e) {
+      console.warn("[oa-cheats-dialog] list_cheat_formats failed:", e);
+      setCheatFormats([]);
+    }
+  }
+
+  /// Validate a code string against the chosen format's regex. Returns
+  /// `null` (valid) or a short error message. Empty validation_regex
+  /// means "no validation" (memory_poke + libretro_code generic).
+  function validateCode(kind: string, code: string | null | undefined): string | null {
+    const format = cheatFormats().find((f) => f.id === kind);
+    if (!format || !format.validationRegex) return null;
+    const trimmed = (code ?? "").trim();
+    if (!trimmed) return "Code required";
+    try {
+      const re = new RegExp(format.validationRegex, "i");
+      if (!re.test(trimmed)) {
+        return `Expected ${format.hint}`;
+      }
+    } catch (e) {
+      console.warn("[oa-cheats-dialog] regex parse failed:", e);
+      return null; // fail-open if the pattern itself is broken
+    }
+    return null;
+  }
+
+  /// Label for a saved cheat's format — shown in the cheat list row.
+  /// Falls back to the raw `kind` string if the format isn't declared
+  /// for the active system (defensive — operators editing a cheat
+  /// after switching cores might see a stale kind).
+  function labelForKind(kind: string): string {
+    return cheatFormats().find((f) => f.id === kind)?.label ?? kind;
+  }
+
   createEffect(() => {
-    if (props.open && gameId()) void refresh();
+    if (props.open && gameId()) {
+      void refresh();
+      void refreshFormats();
+    }
   });
 
   async function rearm() {
@@ -1540,11 +1606,24 @@ export const CheatsDialog: Component<{
                 />
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-sm text-(--color-oa-ink)">{c.name || "(unnamed)"}</p>
-                  <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
-                    {c.region} · 0x
-                    {c.offset.toString(16).toUpperCase().padStart(4, "0")} · {c.width}B · ={" "}
-                    {c.value}
-                  </p>
+                  {/* Subtitle layout differs per cheat kind: memory_poke
+                      shows the raw (region · offset · width · value)
+                      tuple; code formats show the format label + a
+                      truncated preview of the code string. */}
+                  <Show
+                    when={c.kind === "memory_poke"}
+                    fallback={
+                      <p class="truncate text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+                        {labelForKind(c.kind)} · {c.code ?? ""}
+                      </p>
+                    }
+                  >
+                    <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+                      {c.region} · 0x
+                      {c.offset.toString(16).toUpperCase().padStart(4, "0")} · {c.width}B · ={" "}
+                      {c.value}
+                    </p>
+                  </Show>
                 </div>
                 <button
                   type="button"
@@ -1588,10 +1667,15 @@ export const CheatsDialog: Component<{
                         onChange={(e) => setDraft({ ...d, kind: e.currentTarget.value })}
                         class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-(--color-oa-ink)"
                       >
-                        <option value="memory_poke">Memory poke (raw address + value)</option>
-                        <option value="libretro_code">
-                          Code (Game Genie / GameShark / Action Replay / raw)
-                        </option>
+                        {/* Per-system formats from list_cheat_formats —
+                            Memory poke first, named formats (Game Genie /
+                            GameShark / Action Replay / etc.) in the middle,
+                            generic libretro_code catch-all last. Systems
+                            without named formats still get the 2-entry
+                            minimum so the picker is never empty. */}
+                        <For each={cheatFormats()}>
+                          {(f) => <option value={f.id}>{f.label}</option>}
+                        </For>
                       </select>
                     </label>
                     <label class="col-span-2 flex flex-col gap-1 text-xs">
@@ -1606,7 +1690,7 @@ export const CheatsDialog: Component<{
                     </label>
 
                     <Show
-                      when={d.kind === "libretro_code"}
+                      when={d.kind !== "memory_poke"}
                       fallback={
                         <>
                           <label class="flex flex-col gap-1 text-xs">
@@ -1673,22 +1757,37 @@ export const CheatsDialog: Component<{
                     >
                       <label class="col-span-2 flex flex-col gap-1 text-xs">
                         <span class="uppercase tracking-widest text-(--color-oa-ink-dim)">
-                          Code (Game Genie / GameShark / Action Replay / raw address:value)
+                          {labelForKind(d.kind)} code
                         </span>
                         <input
                           type="text"
                           value={d.code ?? ""}
                           onInput={(e) => setDraft({ ...d, code: e.currentTarget.value })}
                           class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm font-mono text-(--color-oa-ink)"
-                          placeholder="e.g. SXIOPO   ·   AENZIAEH+OZNZAAOE   ·   00B0CFA:09"
+                          placeholder={
+                            cheatFormats().find((f) => f.id === d.kind)?.hint ??
+                            "Paste the cheat code"
+                          }
                         />
-                        <span class="text-xs text-(--color-oa-ink-dim)">
-                          Format is decided by the core for this system. Beetle /
-                          Mednafen cores generally accept Game Genie / Pro Action
-                          Replay / raw <code>address:value</code> strings; FCEUmm
-                          + Mesen accept 6-char Game Genie + ARLY format. Multiple
-                          codes joined with <code>+</code>.
-                        </span>
+                        {/* Per-format validation feedback — inline error on
+                            malformed input, generic hint when valid. Empty
+                            validation_regex (memory_poke + libretro_code
+                            generic) shows the hint with no error path. */}
+                        <Show
+                          when={validateCode(d.kind, d.code)}
+                          fallback={
+                            <span class="text-xs text-(--color-oa-ink-dim)">
+                              {cheatFormats().find((f) => f.id === d.kind)?.hint ??
+                                "Format is decided by the core for this system. Multiple codes joined with +."}
+                            </span>
+                          }
+                        >
+                          {(err) => (
+                            <span class="text-xs text-(--color-oa-warn, theme(colors.amber.300))">
+                              {err()}
+                            </span>
+                          )}
+                        </Show>
                       </label>
                     </Show>
                   </div>
@@ -1696,7 +1795,10 @@ export const CheatsDialog: Component<{
                     <button
                       type="button"
                       onClick={() => void save(d)}
-                      disabled={!d.name.trim()}
+                      disabled={
+                        !d.name.trim() ||
+                        (d.kind !== "memory_poke" && validateCode(d.kind, d.code) !== null)
+                      }
                       class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1 text-xs uppercase tracking-wider text-(--color-system-accent-soft) disabled:opacity-50"
                     >
                       {d.id ? "Save" : "Add"}
