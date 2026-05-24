@@ -46,6 +46,11 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    (audio override UI surfaces, kiosk wheel-art consumption) lives
    in [PARKING_LOT.md](PARKING_LOT.md).
 
+7. **scummvm + dosbox onboarding** (~600 lines, 5 phases, plan locked 2026-05-24).
+   - Closes the last 2 deferred cores from the original system-wiring plan. Both ship as ordinary OA systems alongside consoles — no separate "PC games" UI surface. ScummVM scans `.scummvm` descriptor files; DOSBox scans one-level-deep subdirectories. New `ScanMode` enum + `LaunchPayload` enum contain the engine-launcher dispatch cleanly so future engine cores slot in.
+   - Full plan: [docs/features/pc-engine-launchers/README.md](features/pc-engine-launchers/README.md).
+   - Touches: `oa_core` (2 SystemId variants), `apps/oa-shell/src/main.rs` (~250 lines launch dispatch), `bindings.rs` (2 new modules ~150 lines), `scan_service.rs` (~80 lines ScanMode dispatch), library_db `GameOverrides.dosbox_entry_point` (~10 lines), 2 frontend theme entries + CSS, art-pack importer launchbox-platform map, 2 per-core doc scaffolds.
+
 ---
 
 ## LOWER — operator-driven or Phase 3+ stretch

@@ -86,9 +86,12 @@ Per-core status surfaces:
   playtest only (drop .dll + BIOS, scan library, launch flagship
   titles per the ROADMAP). No more code work on these two from this
   side until playtest surfaces a Phase 2 polish need.
-- **scummvm + dosbox** — engine cores, no folder shells yet,
-  deferred per the system-wiring-plan (PC games, different launch
-  semantics from console emulation).
+- **scummvm + dosbox** — engine cores, plan locked 2026-05-24
+  ([features/pc-engine-launchers/](features/pc-engine-launchers/)).
+  5-phase implementation pending operator green-light. Both ship as
+  ordinary OA systems alongside consoles; scummvm scans for
+  `.scummvm` descriptor files, dosbox scans for one-level-deep
+  subdirectories. No new UI surface beyond the existing sidebar.
 
 ## Picking next work
 
