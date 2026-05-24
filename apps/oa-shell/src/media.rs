@@ -1987,7 +1987,7 @@ fn generate_thumbnail(bytes: &[u8], dest: &Path) -> Result<(u32, u32), String> {
 /// Manual variant on the same slot is replaced in place (only one
 /// Manual per slot at a time; use the `-NN` suffix logic in Phase 2+
 /// when we want multi-variant manual art).
-fn ingest_manual_for_slot(
+pub(crate) fn ingest_manual_for_slot(
     app_data_dir: &Path,
     rom_stem: &str,
     system_id: &str,

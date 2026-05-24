@@ -1136,6 +1136,48 @@ impl LibraryDb {
         Ok(added)
     }
 
+    /// Return every game tagged with `system_id` as a `GameRow`.
+    /// Mirrors `list_games` but filtered to one system. Used by the
+    /// art-pack importer to scope fuzzy matching — Genesis-folder art
+    /// only matches Genesis library entries, never accidentally lands
+    /// on a Game Boy title with a similar name.
+    pub fn list_games_for_system(&self, system_id: &str) -> Result<Vec<GameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial, disc_id
+                 FROM games
+                 WHERE system_id = ?1
+                 ORDER BY title",
+            )
+            .map_err(|e| format!("prepare list_games_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                Ok(GameRow {
+                    id: row.get(0)?,
+                    system_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    title: row.get(3)?,
+                    added_at: row.get(4)?,
+                    core_override: row.get(5)?,
+                    cover_path: row.get(6)?,
+                    seed: row.get::<_, i64>(7)? != 0,
+                    archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
+                    disc_id: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("query list_games_for_system: {e}"))?;
+        let mut out: Vec<GameRow> = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| format!("step list_games_for_system: {e}"))?);
+        }
+        Ok(out)
+    }
+
     /// Remove seed rows. Called when the first real ingest commits so the
     /// six placeholder TG-16 tiles don't co-exist with real data.
     pub fn drop_seed_rows(&self) -> Result<usize, String> {

@@ -25,6 +25,7 @@ mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
+mod art_pack_importer;
 mod library_groups;
 mod library_prefs;
 mod logger;
@@ -2598,6 +2599,7 @@ fn main() {
             media::clear_metadata_for_system,
             media::set_selected_variant,
             media::sync_media_for_system,
+            art_pack_importer::import_art_pack,
             metadata::sync_metadata_for_system,
             media::media_storage_stats,
             media::open_media_folder,
