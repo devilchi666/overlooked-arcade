@@ -31,7 +31,7 @@ Per-core phase tracking for GCE Vectrex. Status: ⬜ not started · 🟨 in prog
 
 - ⬜ Dedicated `vector-phosphor` shader preset — Gaussian glow on vector lines, no scanlines, optional persistence trail. Not yet shipped (separate from generic `LcdHandheld` preset).
 - ⬜ Translucent overlay rendering — per-game PNG overlay composited over the framebuffer to recreate the plastic-color-strip feature. Not yet shipped.
-- ⬜ Aspect ratio override — Vectrex CRT was portrait (3:4); per-system aspect override infra is shipped cross-system (`system_settings::default_display_aspect`) but Vectrex-specific portrait default still ⬜.
+- ✅ Aspect ratio override — Vectrex CRT was portrait (3:4); defaulted 2026-05-24 via `system_settings::default_display_aspect("vectrex") = Some(0.75)`. Operators with a landscape monitor configuration toggle per-system via Display.
 - ⬜ The Vectrex 3D Imager — deferred (niche).
 
 ---

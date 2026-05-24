@@ -3827,6 +3827,20 @@ pub fn analog_sticks_for(system_id: &str) -> AnalogSticks {
         // Saga). Surface the analog UI even on the digital default —
         // operators using 3D Pad mode need it.
         "saturn" => AnalogSticks::Single { left_label: "Analog Stick (3D Pad)" },
+        // Nintendo Virtual Boy — the VB controller has DUAL physical
+        // 4-way D-pads (LEFT + RIGHT), one for each hand, designed
+        // around the stereoscopic 3D + dual-anchor gameplay shape of
+        // titles like Mario Clash, VB Wario Land, Teleroboxer, Red
+        // Alarm, and Vertical Force. Beetle VB exposes the left D-pad
+        // via libretro D-pad bits + the right D-pad via the right
+        // analog stick. Surfacing both panels in the per-system
+        // Bindings UI lets keyboard-only operators bind the right
+        // D-pad via the `default_analog_routing("virtualboy")` Numpad
+        // fallback; gamepad users get it via right analog stick.
+        "virtualboy" => AnalogSticks::Dual {
+            left_label: "Left D-pad",
+            right_label: "Right D-pad",
+        },
         // Everything else: no analog inputs.
         _ => AnalogSticks::None,
     }

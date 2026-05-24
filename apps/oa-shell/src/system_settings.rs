@@ -430,6 +430,34 @@ pub fn default_analog_routing(system_id: &str) -> Option<AnalogRoutingPrefs> {
                 stick_swap: false,
             }],
         }),
+        // Virtual Boy — the dual-D-pad controller exposes the LEFT
+        // pad as libretro D-pad (already bound to arrow keys via
+        // `bindings::default_virtualboy_bindings()`) and the RIGHT
+        // pad as the right analog stick. Numpad 8/2/4/6 is the
+        // natural keyboard fallback for the right D-pad — it mirrors
+        // the arrow-key cluster on the other side of the keyboard
+        // for the same shape of input. Unlocks Mario Clash, VB
+        // Wario Land, Teleroboxer, Red Alarm, Vertical Force.
+        "virtualboy" => Some(AnalogRoutingPrefs {
+            ports: vec![AnalogPortRouting {
+                left: AnalogStickPrefs::default(),
+                right: AnalogStickPrefs {
+                    gamepad_source: "right".into(),
+                    keyboard: [
+                        Some("Numpad8".into()), // up
+                        Some("Numpad2".into()), // down
+                        Some("Numpad4".into()), // left
+                        Some("Numpad6".into()), // right
+                    ],
+                    mouse_source: None,
+                    deadzone: 0.0,
+                    sensitivity: 1.0,
+                    invert_x: false,
+                    invert_y: false,
+                },
+                stick_swap: false,
+            }],
+        }),
         _ => None,
     }
 }
@@ -456,6 +484,13 @@ pub fn default_display_aspect(system_id: &str) -> Option<f32> {
         // the actual screen content. The hardware was 3:2; that's the
         // authentic default.
         "gba" => Some(1.5),
+        // Vectrex — the 1982 console's built-in CRT was a 9-inch
+        // PORTRAIT vector display (taller than wide), and the entire
+        // library was designed for that orientation. vecx reports
+        // landscape per libretro convention which crops + letterboxes
+        // the actual screen content. Hardware was 3:4 portrait
+        // (~0.75); that's the authentic default.
+        "vectrex" => Some(0.75),
         _ => None,
     }
 }
@@ -681,7 +716,7 @@ mod tests {
         for sys in &[
             "tg16", "pce-cd", "nes", "snes", "n64", "psx", "saturn",
             "dreamcast", "gb", "gbc", "lynx", "atari7800", "2600", "5200",
-            "vectrex", "virtualboy", "wonderswan", "mame",
+            "virtualboy", "wonderswan", "mame",
         ] {
             assert_eq!(
                 default_display_aspect(sys),
@@ -691,6 +726,15 @@ mod tests {
             );
         }
         assert_eq!(default_display_aspect("not-a-real-system"), None);
+    }
+
+    #[test]
+    fn default_display_aspect_vectrex_is_portrait_3_4() {
+        // Vectrex's 9-inch CRT was portrait-oriented; vecx reports
+        // landscape per libretro convention. The default override
+        // forces 3:4 (0.75) so the full library renders correctly
+        // out of the box.
+        assert_eq!(default_display_aspect("vectrex"), Some(0.75));
     }
 
     #[test]

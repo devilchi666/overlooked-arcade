@@ -29,7 +29,7 @@ Per-core phase tracking for Nintendo Virtual Boy. Status: ⬜ not started · �
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Right D-pad bindings — not yet shipped (deferred; see DECISIONS). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force.
+- ✅ Right D-pad bindings — shipped 2026-05-24 via the shared analog routing infra. `analog_sticks_for("virtualboy") = Dual { left_label: "Left D-pad", right_label: "Right D-pad" }` surfaces both panels in the per-system Bindings UI; `default_analog_routing("virtualboy")` adds the Numpad 8/2/4/6 keyboard fallback for the right pad. Gamepad operators get it via the right analog stick out of the box. Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force.
 - ⬜ Modern VR support via OpenXR — deferred (Phase 2+, ~800 lines).
 - ⬜ Color-tinting palette options — operator-driven Beetle VB Core-Option curation (per-system Core Options page shipped cross-system).
 - ⬜ Dedicated `vb-monochrome` shader — not yet shipped (~120 lines WGSL).

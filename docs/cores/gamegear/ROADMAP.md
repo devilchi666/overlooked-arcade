@@ -60,7 +60,7 @@ audio + working controller at native 59.92 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-system shader tweaks — operator-driven preset choice; `lcd-handheld` shader preset shipped (`ShaderPreset::LcdHandheld` id 4) but per-system default binding for gg still ⬜.
+- ✅ Per-system shader tweaks — `lcd-handheld` preset defaulted 2026-05-24 for gg (in `frontend/src/themes/registry.ts::systemThemes.gamegear.defaultShaderPreset`). Operators wanting a different look toggle per-system via Display.
 - ⬜ Game Gear bezel — bezel-rendering infra shipped via shader pipeline (`crates/oa-render/src/lib.rs::ShaderPreset` + `shaders/presets/*.preset.toml`); GG-specific bezel asset still operator-driven.
 - ⬜ Master Gear adapter — documented here so a future contributor doesn't add a separate slug.
 - ⬜ Game Gear's link cable (multiplayer Columns / Pop Breaker / a few others) — deferred.
