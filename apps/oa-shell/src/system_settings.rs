@@ -363,6 +363,12 @@ pub fn default_keyboard_passthrough(system_id: &str) -> bool {
         // Command's screen-coord shooting, RealSports Football's play
         // selection, and a long tail of keypad-using titles.
         | "5200"
+        // ScummVM — text input drives a meaningful slice of the
+        // canonical library: the Monkey Island sword-fighting insults,
+        // password prompts in Indiana Jones / Loom / Zak McKracken,
+        // typed verb input in the SCI titles ScummVM has added support
+        // for. Without passthrough those games are stuck.
+        | "scummvm"
     )
 }
 
@@ -550,10 +556,14 @@ mod tests {
 
     #[test]
     fn keyboard_passthrough_default_per_system() {
-        // Computer-shaped systems default to passthrough ON.
+        // Computer-shaped + engine-launcher systems default to passthrough ON.
         assert!(default_keyboard_passthrough("mame"));
         assert!(default_keyboard_passthrough("msx"));
         assert!(default_keyboard_passthrough("msx2"));
+        // ScummVM — adventure-game engine; text input (sword-fighting
+        // insults in Monkey Island, password prompts elsewhere) drives
+        // a meaningful slice of the canonical library.
+        assert!(default_keyboard_passthrough("scummvm"));
         // Console / handheld systems default OFF.
         for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "sms", "gamegear", "atari7800"] {
             assert!(!default_keyboard_passthrough(sys), "{sys}: expected off");

@@ -2229,6 +2229,13 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         "2600" => &["Atari_-_2600"],
         "5200" => &["Atari_-_5200"],
         "pokemini" => &["Nintendo_-_Pokemon_Mini"],
+        // ScummVM — engine launcher, not a hardware platform. The
+        // libretro-thumbnails repo `ScummVM` holds cover art for the
+        // canonical game-ID set the engine ships with (Monkey Island,
+        // Day of the Tentacle, Sam & Max, etc.). Fuzzy match at the
+        // shared 0.95 threshold lands the operator's `.scummvm`
+        // filename stem against the canonical title.
+        "scummvm" => &["ScummVM"],
         _ => &[],
     }
 }
