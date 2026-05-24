@@ -83,6 +83,7 @@ import { listen } from "@tauri-apps/api/event";
 import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from "./themes/registry";
 import { launchRom, type LaunchResult } from "./library/launch";
 import { MediaProvider } from "./library/media";
+import { PlatformMediaProvider } from "./library/platformMedia";
 import { createLibraryStore } from "./library/store";
 import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
@@ -1604,6 +1605,7 @@ const App: Component = () => {
 
   return (
     <MediaProvider>
+      <PlatformMediaProvider>
       <Shell
         layout={layout}
         fullBleed={isDirectLaunch() || gameMode()}
@@ -1952,6 +1954,7 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      </PlatformMediaProvider>
     </MediaProvider>
   );
 };
