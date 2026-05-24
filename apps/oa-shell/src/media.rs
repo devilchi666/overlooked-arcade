@@ -1125,6 +1125,205 @@ mod tests {
             assert_eq!(sel.get_for_kind(k), None, "clear failed for {:?}", k);
         }
     }
+
+    // ---- media-taxonomy Phase 2: sync placement + variant_sha lookup +
+    //      manual eviction tests ----
+
+    /// Make a fresh empty tmp dir for filesystem tests, returned as
+    /// PathBuf. Caller is responsible for cleanup if they care; tmp dir
+    /// leaks are acceptable in test runs.
+    fn fresh_tmp_dir(label: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "oa-mt2-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&p).expect("mkdir tmp");
+        p
+    }
+
+    #[test]
+    fn next_sync_path_returns_primary_in_empty_slot() {
+        let app_data = fresh_tmp_dir("nsync-empty");
+        let got = super::next_sync_path_for_slot(
+            &app_data, "genesis", super::MediaKind::BoxFront, "Sonic", "png"
+        ).expect("compute path");
+        assert_eq!(got, "media/genesis/box-front/Sonic.png");
+        // mkdir side effect — slot dir exists.
+        assert!(app_data.join("media/genesis/box-front").is_dir());
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
+
+    #[test]
+    fn next_sync_path_picks_dash_02_when_primary_occupied() {
+        let app_data = fresh_tmp_dir("nsync-occupied");
+        // Pre-create the primary file (e.g. operator manual cover lands here first).
+        let primary_dir = app_data.join("media/snes/box-front");
+        std::fs::create_dir_all(&primary_dir).expect("mkdir primary");
+        std::fs::write(primary_dir.join("Super Metroid.png"), b"manual-bytes").expect("seed");
+
+        let got = super::next_sync_path_for_slot(
+            &app_data, "snes", super::MediaKind::BoxFront, "Super Metroid", "png"
+        ).expect("compute path");
+        assert_eq!(got, "media/snes/box-front/Super Metroid-02.png");
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
+
+    #[test]
+    fn next_sync_path_walks_past_existing_variant_chain() {
+        let app_data = fresh_tmp_dir("nsync-chain");
+        let dir = app_data.join("media/tg16/screenshot-gameplay");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        for f in &["Bonk.png", "Bonk-02.png", "Bonk-03.png"] {
+            std::fs::write(dir.join(f), b"x").expect("seed");
+        }
+        let got = super::next_sync_path_for_slot(
+            &app_data, "tg16", super::MediaKind::ScreenshotGameplay, "Bonk", "png"
+        ).expect("compute path");
+        assert_eq!(got, "media/tg16/screenshot-gameplay/Bonk-04.png");
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
+
+    #[test]
+    fn variant_sha_present_in_slot_finds_existing_match() {
+        let mut gm = super::GameMedia::default();
+        gm.box_front.push(super::MediaVariant {
+            source: super::MediaSource::LibretroThumbnails,
+            region: None,
+            path: "media/genesis/box-front/Sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None,
+            sha1: Some("deadbeef".into()),
+            bytes: None,
+        });
+        assert!(super::variant_sha_present_in_slot(&gm, super::MediaKind::BoxFront, "deadbeef"));
+        assert!(!super::variant_sha_present_in_slot(&gm, super::MediaKind::BoxFront, "feedface"));
+        // Wrong slot — no match.
+        assert!(!super::variant_sha_present_in_slot(&gm, super::MediaKind::ClearLogo, "deadbeef"));
+    }
+
+    #[test]
+    fn variant_sha_present_in_slot_ignores_variants_without_sha() {
+        let mut gm = super::GameMedia::default();
+        gm.box_front.push(super::MediaVariant {
+            source: super::MediaSource::Manual,
+            region: None,
+            path: "x".into(),
+            thumb_path: None,
+            width: None, height: None,
+            sha1: None,    // variant missing sha — shouldn't accidentally match anything
+            bytes: None,
+        });
+        assert!(!super::variant_sha_present_in_slot(&gm, super::MediaKind::BoxFront, ""));
+        assert!(!super::variant_sha_present_in_slot(&gm, super::MediaKind::BoxFront, "deadbeef"));
+    }
+
+    #[test]
+    fn rom_stem_for_entry_uses_file_path_basename() {
+        let e = super::SyncRomEntry {
+            id: "rom-x".into(),
+            title: "Sonic the Hedgehog".into(),
+            file_path: "C:\\ROMs\\Genesis\\Sonic the Hedgehog (USA).md".into(),
+            system_id: "genesis".into(),
+            sha1: None,
+        };
+        assert_eq!(super::rom_stem_for_entry(&e), "Sonic the Hedgehog (USA)");
+    }
+
+    /// Encode a valid 1×1 RGBA PNG so the image crate's decoder
+    /// (used by generate_thumbnail inside ingest_manual_for_slot)
+    /// doesn't choke on CRC mismatches. Hand-rolled PNG byte literals
+    /// pass guess_format's magic-only check but fail full decode.
+    fn one_pixel_png() -> Vec<u8> {
+        let img: image::RgbaImage = image::ImageBuffer::from_pixel(1, 1, image::Rgba([0u8, 0, 0, 255]));
+        let mut buf: Vec<u8> = Vec::new();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("encode 1px png");
+        buf
+    }
+
+    #[test]
+    fn ingest_manual_evicts_existing_synced_primary() {
+        // End-to-end test of the operator-art-wins guard's eviction
+        // half: a prior synced variant owns the primary path; ingest
+        // a manual cover for the same slot; the synced file must be
+        // renamed (not deleted), its variant.path updated, and the
+        // manual lands at primary with index 0.
+        let app_data = fresh_tmp_dir("evict-1");
+        let png = one_pixel_png();
+        // Pre-existing synced PNG at primary.
+        let slot_dir = app_data.join("media/snes/box-front");
+        std::fs::create_dir_all(&slot_dir).expect("mkdir");
+        let primary_abs = slot_dir.join("Super Metroid.png");
+        std::fs::write(&primary_abs, &png).expect("seed primary file");
+
+        // Seed db with a synced variant pointing at primary.
+        let mut db: super::MediaDb = std::collections::BTreeMap::new();
+        let mut gm = super::GameMedia::default();
+        gm.box_front.push(super::MediaVariant {
+            source: super::MediaSource::LibretroThumbnails,
+            region: Some(super::Region::Known(super::KnownRegion::USA)),
+            path: "media/snes/box-front/Super Metroid.png".into(),
+            thumb_path: None,
+            width: None, height: None,
+            sha1: Some("deadbeef-prior-sync".into()),
+            bytes: None,
+        });
+        db.insert("rom-sm".into(), gm);
+
+        // Manual source file (same 1px PNG bytes — we're checking the
+        // eviction + index-0 placement, not sha collisions).
+        let source = app_data.join("operator-source.png");
+        std::fs::write(&source, &png).expect("write source");
+
+        let updated = super::ingest_manual_for_slot(
+            &app_data, "Super Metroid", "snes",
+            super::MediaKind::BoxFront, &source,
+            &mut db, "rom-sm",
+        ).expect("ingest manual");
+
+        // Manual at index 0.
+        assert_eq!(updated.box_front.len(), 2);
+        assert!(matches!(updated.box_front[0].source, super::MediaSource::Manual));
+        assert_eq!(updated.box_front[0].path, "media/snes/box-front/Super Metroid.png");
+        // Evicted synced variant kept, path updated to -02.
+        assert!(matches!(updated.box_front[1].source, super::MediaSource::LibretroThumbnails));
+        assert_eq!(updated.box_front[1].path, "media/snes/box-front/Super Metroid-02.png");
+        // Files on disk: primary now has manual bytes, -02 has the
+        // original (synced) bytes.
+        assert!(app_data.join("media/snes/box-front/Super Metroid.png").is_file());
+        assert!(app_data.join("media/snes/box-front/Super Metroid-02.png").is_file());
+
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
+
+    #[test]
+    fn ingest_manual_no_eviction_when_primary_empty() {
+        // Sanity: when nothing else owns the primary path, ingest
+        // writes manual at primary and the slot has exactly one
+        // variant.
+        let app_data = fresh_tmp_dir("evict-empty");
+        let png = one_pixel_png();
+        let source = app_data.join("operator-source.png");
+        std::fs::write(&source, &png).expect("write source");
+
+        let mut db: super::MediaDb = std::collections::BTreeMap::new();
+        let updated = super::ingest_manual_for_slot(
+            &app_data, "Sonic", "genesis",
+            super::MediaKind::BoxFront, &source,
+            &mut db, "rom-sonic",
+        ).expect("ingest manual");
+
+        assert_eq!(updated.box_front.len(), 1);
+        assert!(matches!(updated.box_front[0].source, super::MediaSource::Manual));
+        assert_eq!(updated.box_front[0].path, "media/genesis/box-front/Sonic.png");
+        // No -02 file exists (no eviction happened).
+        assert!(!app_data.join("media/genesis/box-front/Sonic-02.png").exists());
+
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
 }
 
 // ---- LaunchBox-shape path builders + filename sanitization ----
@@ -1218,10 +1417,6 @@ pub fn media_path_for_slot(
 /// `<stem>-02.<ext>`, `<stem>-03.<ext>`, ... up to -99. After that
 /// (extremely unlikely in practice) falls back to a millisecond-stamped
 /// suffix so we never overwrite an existing file silently.
-///
-/// Unused in Phase 1 — wired into the libretro-thumbnails sync's
-/// operator-art-wins guard in Phase 2.
-#[allow(dead_code)]
 pub fn next_variant_filename(dir: &Path, stem: &str, ext: &str) -> String {
     let primary = format!("{stem}.{ext}");
     if !dir.join(&primary).exists() {
@@ -1238,6 +1433,37 @@ pub fn next_variant_filename(dir: &Path, stem: &str, ext: &str) -> String {
         .map(|d| d.as_millis())
         .unwrap_or(0);
     format!("{stem}-{ms}.{ext}")
+}
+
+/// Compute the canonical app-data-relative write path for a synced
+/// variant. Side effect: mkdirs the slot directory so the caller can
+/// write into it immediately. Honors the operator-art-wins guard by
+/// way of `next_variant_filename` — when the primary
+/// `<rom_stem>.<ext>` is occupied (by a manual cover or a prior sync)
+/// the new variant lands at `-02` / `-03` / etc. instead of clobbering.
+pub fn next_sync_path_for_slot(
+    app_data_dir: &Path,
+    system_id: &str,
+    kind: MediaKind,
+    rom_stem: &str,
+    ext: &str,
+) -> Result<String, String> {
+    let dir_rel = format!("media/{}/{}", system_id, kind.as_str());
+    let dir_abs = app_data_dir.join(&dir_rel);
+    std::fs::create_dir_all(&dir_abs)
+        .map_err(|e| format!("mkdir {}: {e}", dir_abs.display()))?;
+    let filename = next_variant_filename(&dir_abs, rom_stem, ext);
+    Ok(format!("{dir_rel}/{filename}"))
+}
+
+/// True iff any existing variant on the given (rom, kind) slot has
+/// `sha1 == sha`. Used by the libretro-thumbnails sync to skip
+/// re-downloads when the upstream content was already pulled in a
+/// prior run — pure read against the in-memory MediaDb, no I/O.
+pub fn variant_sha_present_in_slot(gm: &GameMedia, kind: MediaKind, sha: &str) -> bool {
+    kind.variants(gm)
+        .iter()
+        .any(|v| v.sha1.as_deref() == Some(sha))
 }
 
 // ---- oa-media:// protocol handler ----
@@ -1779,6 +2005,47 @@ fn ingest_manual_for_slot(
     if let Some(parent) = cover_abs.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir slot dir: {e}"))?;
     }
+    let slot_dir = cover_abs
+        .parent()
+        .expect("cover_abs has a parent (we just mkdir'd it)")
+        .to_path_buf();
+
+    // Eviction: if a non-Manual variant currently owns the primary
+    // path, move its file out of the way before we write the manual
+    // there. Manual always claims primary so it wins region-priority
+    // resolution at index 0 (set below by the slot.insert(0, ...) call).
+    //
+    // We compute the eviction target path UPFRONT (read-only db) so
+    // the rename happens before any mutating db borrow.
+    let evicted_path: Option<String> = {
+        let gm_read = db.get(rom_id);
+        gm_read.and_then(|gm| {
+            kind.variants(gm).iter().find_map(|v| {
+                if v.source != MediaSource::Manual && v.path == cover_rel {
+                    let new_filename = next_variant_filename(&slot_dir, rom_stem, ext);
+                    Some(format!("media/{}/{}/{}", system_id, kind.as_str(), new_filename))
+                } else {
+                    None
+                }
+            })
+        })
+    };
+    if let Some(new_rel) = evicted_path.as_ref() {
+        let new_abs = app_data_dir.join(new_rel);
+        if cover_abs.exists() {
+            match std::fs::rename(&cover_abs, &new_abs) {
+                Ok(()) => log::info!(
+                    "oa-shell: evicted synced art {} -> {} so manual can claim primary",
+                    cover_rel, new_rel
+                ),
+                Err(e) => log::warn!(
+                    "oa-shell: evict rename {} -> {} failed: {e}; manual write will overwrite",
+                    cover_rel, new_rel
+                ),
+            }
+        }
+    }
+
     std::fs::write(&cover_abs, &bytes).map_err(|e| format!("write cover: {e}"))?;
 
     let thumb_rel = format!("media/thumbs/{system_id}/{}.webp", &sha[..sha.len().min(16)]);
@@ -1794,7 +2061,7 @@ fn ingest_manual_for_slot(
     let new_variant = MediaVariant {
         source: MediaSource::Manual,
         region: None,
-        path: cover_rel,
+        path: cover_rel.clone(),
         thumb_path: Some(thumb_rel),
         width: w,
         height: h,
@@ -1803,6 +2070,18 @@ fn ingest_manual_for_slot(
     };
 
     let entry = db.entry(rom_id.to_string()).or_insert_with(GameMedia::default);
+    // Apply the eviction-path-update to the evicted variant (if any).
+    // Identified by the same (path == old cover_rel, source != Manual)
+    // predicate used to choose the eviction above — only one variant
+    // can own a given path at a time.
+    if let Some(new_rel) = evicted_path {
+        let slot = kind.variants_mut(entry);
+        if let Some(v) = slot.iter_mut().find(|v|
+            v.source != MediaSource::Manual && v.path == cover_rel
+        ) {
+            v.path = new_rel;
+        }
+    }
     let slot = kind.variants_mut(entry);
     slot.retain(|v| v.source != MediaSource::Manual);
     slot.insert(0, new_variant);
@@ -2089,6 +2368,20 @@ pub struct SyncRomEntry {
     pub sha1: Option<String>,
 }
 
+/// Derive the rom_stem for a sync entry — the human-readable filename
+/// base used by the new LaunchBox-shape art layout. v1 logic: file_path
+/// basename minus extension, sanitized for cross-platform safety. This
+/// matches what LaunchBox / EmuMovies art packs ship art under, so a
+/// post-sync operator drop slots cleanly into the same slot.
+///
+/// Known limitation: for archive entries the file_path is the .zip
+/// path (the inner-rom name isn't on the IPC payload), so the stem is
+/// the archive basename. Phase 5 migration can rewrite these once
+/// archive_inner_path is reachable.
+fn rom_stem_for_entry(entry: &SyncRomEntry) -> String {
+    rom_stem_from_path(&entry.file_path)
+}
+
 /// Per-ROM progress event, fired as each entry completes (download / cached / no-match / error).
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -2326,45 +2619,36 @@ async fn sync_single_rom(
         entry.title, kind.as_str(), matched.filename, owned_score,
     );
 
-    // 3. Build destination paths. Subdir is part of the cache path so
-    //    snap/title can coexist with boxart for the same ROM without
-    //    filename collisions.
+    // Upstream-filename-keyed cache path. Stable across re-runs (upstream
+    // doesn't typically rename files), preserved on disk after download
+    // so future re-syncs hit the fast path below without a network walk.
     let cache_rel = format!(
         "media/cache/libretro-thumbnails/{}/{}/{}",
         entry.system_id, subdir, matched.filename
     );
     let cache_abs = app_data_dir.join(&cache_rel);
 
-    // 4. Cache check: if file already exists AND we have a recorded variant
-    //    (on the matching kind's array) whose sha1 matches the on-disk
-    //    content, skip the download entirely.
-    let existing_sha: Option<String> = {
-        let db_read = db.read().map_err(|_| "db lock".to_string())?;
-        db_read
-            .get(&entry.id)
-            .and_then(|gm| {
-                kind.variants(gm).iter().find(|v| {
-                    matches!(v.source, MediaSource::LibretroThumbnails) && v.path == cache_rel
-                }).cloned()
-            })
-            .and_then(|v| v.sha1)
-    };
+    // Fast-path cache check: if the upstream-cached file is on disk AND
+    // any existing variant in this slot has matching sha, we've already
+    // synced this content. Skip the network walk entirely.
     if cache_abs.is_file() {
-        if let Some(prior) = existing_sha {
-            if let Ok(disk) = std::fs::read(&cache_abs) {
-                let disk_sha = sha1_hex(&disk);
-                if disk_sha == prior {
-                    return Ok(SyncOutcome::Cached);
-                }
+        if let Ok(disk_bytes) = std::fs::read(&cache_abs) {
+            let disk_sha = sha1_hex(&disk_bytes);
+            let already_present = {
+                let db_read = db.read().map_err(|_| "db lock".to_string())?;
+                db_read.get(&entry.id)
+                    .map(|gm| variant_sha_present_in_slot(gm, kind, &disk_sha))
+                    .unwrap_or(false)
+            };
+            if already_present {
+                return Ok(SyncOutcome::Cached);
             }
         }
     }
 
-    // 5. Download — chasing Git symlinks ourselves. Neither raw.githubusercontent
-    //    nor github.com/.../raw/... resolves them server-side; they both return
-    //    the symlink target as plain-text bytes. libretro-thumbnails uses
-    //    symlinks heavily (regional renames, beta/final aliases, etc.), so
-    //    we recognize that response and re-fetch.
+    // Download — chasing Git symlinks ourselves. Neither
+    // raw.githubusercontent nor github.com/.../raw/... resolves them
+    // server-side; libretro-thumbnails uses symlinks heavily.
     let bytes_vec = download_following_symlinks(client, repo, subdir, &matched.filename, 3).await?;
     log::debug!(
         "oa-shell: sync downloaded {}/{} ({} bytes, first4 = {:02x?})",
@@ -2373,34 +2657,63 @@ async fn sync_single_rom(
         bytes_vec.iter().take(4).copied().collect::<Vec<_>>(),
     );
 
-    // 6. Hash + write file + thumbnail. The thumbnail directory mirrors the
-    //    subdir so the same content-addressed sha1 in two kinds doesn't
-    //    collide (rare in practice — different art for the same game — but
-    //    cheap insurance).
     let sha = sha1_hex(&bytes_vec);
+
+    // Post-download sha check: covers the case where the cache was
+    // cleared but the db still has a variant for the same content
+    // (e.g. operator wiped the cache dir but kept media.json). Skips
+    // creating a duplicate variant, refreshes cache_abs so the
+    // fast-path check works next time, and returns Cached.
+    let already_present = {
+        let db_read = db.read().map_err(|_| "db lock".to_string())?;
+        db_read.get(&entry.id)
+            .map(|gm| variant_sha_present_in_slot(gm, kind, &sha))
+            .unwrap_or(false)
+    };
+    if already_present {
+        if let Some(parent) = cache_abs.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&cache_abs, &bytes_vec);
+        return Ok(SyncOutcome::Cached);
+    }
+
+    // Persist the upstream copy at the cache path. Keeps the fast-path
+    // cache check working for future re-syncs even though the
+    // operator-visible canonical write below uses a different filename.
     if let Some(parent) = cache_abs.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir cache: {e}"))?;
     }
     std::fs::write(&cache_abs, &bytes_vec).map_err(|e| format!("write cache: {e}"))?;
 
+    // Canonical (operator-visible) write to the new LaunchBox-shape
+    // layout. `next_sync_path_for_slot` enforces the operator-art-wins
+    // guard by way of `next_variant_filename`: when primary
+    // `<rom_stem>.<ext>` is occupied (manual cover, prior sync) the
+    // new variant lands at `-02` / `-03` / etc. instead of clobbering.
+    let rom_stem = rom_stem_for_entry(entry);
+    let ext = std::path::Path::new(&matched.filename)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png");
+    let canonical_rel = next_sync_path_for_slot(app_data_dir, &entry.system_id, kind, &rom_stem, ext)?;
+    let canonical_abs = app_data_dir.join(&canonical_rel);
+    std::fs::write(&canonical_abs, &bytes_vec)
+        .map_err(|e| format!("write canonical {canonical_rel}: {e}"))?;
+
+    // Thumbnail — content-addressed (one webp per unique sha across
+    // every kind for the system). Generated on the blocking pool so
+    // the CPU work doesn't starve the async runtime's worker threads
+    // — see the pre-2026-05-23 sync's spawn_blocking rationale.
     let thumb_rel = format!(
-        "media/thumbs/{}/{}/{}.webp",
-        entry.system_id, subdir,
+        "media/thumbs/{}/{}.webp",
+        entry.system_id,
         &sha[..sha.len().min(16)]
     );
     let thumb_abs = app_data_dir.join(&thumb_rel);
     let (w, h) = if thumb_abs.exists() {
         (None, None)
     } else {
-        // Move the decode → resize → WebP-encode pass onto Tokio's blocking
-        // pool. Without this, every concurrent sync_single_rom holds an
-        // async-runtime worker for 50-200ms per image while it does pure
-        // CPU work — the upstream `buffer_unordered(8)` then can't actually
-        // run 8 simultaneously and the decode step is the bottleneck of
-        // first-scan-of-a-large-library. spawn_blocking moves it to the
-        // blocking pool (~cpu_count threads), so CPU work parallelizes
-        // across cores while runtime threads stay free for the next
-        // batch of network fetches.
         let bytes_for_thumb = bytes_vec.clone();
         let thumb_abs_for_task = thumb_abs.clone();
         let (w, h) = tokio::task::spawn_blocking(move || {
@@ -2411,11 +2724,10 @@ async fn sync_single_rom(
         (Some(w), Some(h))
     };
 
-    // 7. Build the new variant.
     let variant = MediaVariant {
         source: MediaSource::LibretroThumbnails,
         region: matched.region.map(|r| Region::parse(r)),
-        path: cache_rel,
+        path: canonical_rel,
         thumb_path: Some(thumb_rel),
         width: w,
         height: h,
