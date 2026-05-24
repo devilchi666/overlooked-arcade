@@ -42,6 +42,24 @@ const Placeholder: Component = () => (
 const LibraryTile: Component<Props> = (props) => {
   const theme = () => systemThemes[props.entry.systemId];
   const media = useMedia();
+  /// Subsystem distinction for systems where a single OA system_id covers
+  /// multiple hardware variants distinguishable from the ROM file (e.g.
+  /// NGP mono vs NGPC color via `.ngp` vs `.ngc` extension). Returns the
+  /// hardware-specific short label to render in place of the system's
+  /// canonical shortName, or null if the system has no such split.
+  const subsystemLabel = (): string | null => {
+    const sysId = props.entry.systemId;
+    const path = props.entry.filePath ?? "";
+    if (sysId === "ngp") {
+      // .ngp = mono Neo Geo Pocket (1998); .ngc = NGP Color (1999).
+      // Beetle NeoPop covers both via ROM-header auto-detect; the
+      // tile label surfaces which is which at a glance.
+      const lower = path.toLowerCase();
+      if (lower.endsWith(".ngc")) return "NGPC";
+      if (lower.endsWith(".ngp")) return "NGP";
+    }
+    return null;
+  };
   // `coverUrl` is reactive via the MediaContext store — changing variants
   // (region pick, manual override, sync) causes this to re-render the <img>.
   const coverSrc = () => media.coverUrl(props.entry.systemId, props.entry.id);
@@ -186,7 +204,7 @@ const LibraryTile: Component<Props> = (props) => {
           {props.entry.title}
         </h3>
         <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-          {theme().shortName}
+          {subsystemLabel() ?? theme().shortName}
         </p>
       </div>
     </button>

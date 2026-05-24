@@ -66,7 +66,7 @@ audio + working controller at native 59.73 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Dedicated `lcd-handheld` shader preset — **partial**: shader preset shipped (`ShaderPreset::LcdHandheld` id 4 in `crates/oa-render/src/lib.rs`); per-system default binding for `gb` still ⬜.
+- ✅ Dedicated `lcd-handheld` shader preset — defaulted 2026-05-24 for `gb` (in `frontend/src/themes/registry.ts::systemThemes.gb.defaultShaderPreset`). The same wave defaulted gbc / gba / gamegear / ngp / wonderswan / pokemini / psp.
 - ⬜ Game Boy bezel — bezel-rendering infra shipped via shader pipeline; DMG-specific bezel asset still operator-driven.
 - ⬜ DMG palette presets — operator-driven Gambatte core-option curation via the per-system Core Options page (per-system settings shipped).
 - ⬜ Super Game Boy palette support — deferred until the `snes`-side SGB path lands.

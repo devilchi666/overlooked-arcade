@@ -300,9 +300,12 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // PSP boxes were landscape UMD-jewel-case shape.
     tileAspect: "4/3",
     // PSP's 480×272 LCD source — handheld pearl shader convention
-    // matches gb/gba/gg/ws (crt-lite as temporary handheld default
-    // until the dedicated lcd-handheld preset lands).
-    defaultShaderPreset: "crt-lite",
+    // matches gb/gba/gg/ws. The lcd-handheld preset (subpixel grid,
+    // no scanlines) shipped 2026-05-21 in `ShaderPreset::LcdHandheld`
+    // (id 4); operator validation against real handheld captures was
+    // the gate. Defaulted 2026-05-24 — operators wanting a different
+    // look toggle per-system via Display.
+    defaultShaderPreset: "lcd-handheld",
   },
   ps2: {
     id: "ps2",
@@ -436,10 +439,9 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // NGPC pack-in boxes were vertical clamshell sleeves — matches the
     // gb/gba/wonderswan handheld convention.
     tileAspect: "3/4",
-    // 160×152 LCD source. Same temporary handheld default as gb/gba/
-    // gamegear/wonderswan — crt-lite until the dedicated lcd-handheld
-    // preset lands.
-    defaultShaderPreset: "crt-lite",
+    // 160×152 LCD source — `lcd-handheld` defaulted 2026-05-24 alongside
+    // the rest of the handheld family.
+    defaultShaderPreset: "lcd-handheld",
   },
   psx: {
     id: "psx",
@@ -480,12 +482,11 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // iconic Nintendo Big Box era for handhelds. 3/4 fits the whole
     // scan without letterboxing.
     tileAspect: "3/4",
-    // 160×144 LCD source. Same compromise as Lynx and Game Gear —
-    // crt-lite reads as a softened look that compensates for the chunky
-    // pixel ratio at modern scales without faking CRT artifacts the
-    // hardware never had. A dedicated `lcd-handheld` preset (subpixel
-    // grid, no scanlines) is the follow-up.
-    defaultShaderPreset: "crt-lite",
+    // 160×144 LCD source. The `lcd-handheld` preset (subpixel grid,
+    // no scanlines) shipped in `ShaderPreset::LcdHandheld` (id 4) and
+    // is the period-correct default for every handheld — defaulted
+    // 2026-05-24 after operator validation against real DMG captures.
+    defaultShaderPreset: "lcd-handheld",
   },
   gbc: {
     id: "gbc",
@@ -503,9 +504,9 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // GBC pack-in boxes were vertical clamshell sleeves (matches GB / GBA
     // handheld family convention).
     tileAspect: "3/4",
-    // 160×144 CGB LCD source — same handheld defaults as gb / gba / gg
-    // until the dedicated `lcd-handheld` preset lands.
-    defaultShaderPreset: "crt-lite",
+    // 160×144 CGB LCD source — same `lcd-handheld` default as the
+    // rest of the handheld family. Defaulted 2026-05-24.
+    defaultShaderPreset: "lcd-handheld",
   },
   vectrex: {
     id: "vectrex",
@@ -554,10 +555,9 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // WS pack-in boxes were vertical handheld-style clamshells. 3/4
     // matches the GB/GBA family convention.
     tileAspect: "3/4",
-    // 224×144 LCD source. Same compromise as Lynx/GG/GB/GBA — crt-lite
-    // is the temporary handheld default until `lcd-handheld` preset
-    // lands.
-    defaultShaderPreset: "crt-lite",
+    // 224×144 LCD source — `lcd-handheld` defaulted 2026-05-24 alongside
+    // the rest of the handheld family.
+    defaultShaderPreset: "lcd-handheld",
   },
   coleco: {
     id: "coleco",
@@ -668,10 +668,9 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // Tiny portrait Nintendo handheld — small landscape boxes shipped
     // with a hangtag. Portrait tile aspect 3/4 matches the GB family.
     tileAspect: "3/4",
-    // 96×64 monochrome 2-bit LCD source. The PokeMini's actual screen
-    // was a peculiar shape (close to square-ish) — crt-lite is the
-    // best general default until a dedicated lcd-handheld preset lands.
-    defaultShaderPreset: "crt-lite",
+    // 96×64 monochrome 2-bit LCD source — `lcd-handheld` defaulted
+    // 2026-05-24 alongside the rest of the handheld family.
+    defaultShaderPreset: "lcd-handheld",
   },
   gba: {
     id: "gba",
@@ -688,10 +687,9 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // family). Portrait keeps the GBA family-aligned with `gb` in the
     // library view.
     tileAspect: "3/4",
-    // 240×160 LCD. Same compromise as Lynx / GG / GB — crt-lite is a
-    // temporary handheld default until the dedicated `lcd-handheld`
-    // preset lands.
-    defaultShaderPreset: "crt-lite",
+    // 240×160 LCD — `lcd-handheld` defaulted 2026-05-24 alongside the
+    // rest of the handheld family.
+    defaultShaderPreset: "lcd-handheld",
   },
   sms: {
     id: "sms",
@@ -724,11 +722,10 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     extensions: ["gg"],
     // GG boxes were small landscape clamshells — 4/3 fits the whole scan.
     tileAspect: "4/3",
-    // 160×144 LCD source running on the unit's small backlit screen.
-    // crt-lite reads as a softened look that compensates for the chunky
-    // pixel ratio at modern scales without faking CRT artifacts the
-    // hardware never had.
-    defaultShaderPreset: "crt-lite",
+    // 160×144 LCD source running on the unit's small backlit screen —
+    // `lcd-handheld` defaulted 2026-05-24 alongside the rest of the
+    // handheld family.
+    defaultShaderPreset: "lcd-handheld",
   },
   mame: {
     id: "mame",
