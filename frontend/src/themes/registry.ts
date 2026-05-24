@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm";
 
 /// Form-factor bucket — consumed by the sidebar's default Platforms view
 /// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
@@ -786,6 +786,42 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     tileAspect: "4/3",
     // 512×212 enhanced CRT-era source.
     defaultShaderPreset: "crt-lite",
+  },
+  // ── Engine launchers ──────────────────────────────────────────────
+  // ScummVM (and Phase 2's DOSBox) ship as ordinary OA systems alongside
+  // hardware platforms — the same sidebar grouping, the same media
+  // pipeline, the same per-system settings surface. Their "PC engine
+  // launcher" nature is contained behind the launch dispatch (descriptor
+  // file → core opens game data in the same directory), not surfaced as
+  // a separate UI concept.
+  scummvm: {
+    id: "scummvm",
+    formFactor: "computer",
+    // ScummVM isn't a hardware manufacturer — it's a community-maintained
+    // game engine. "other" is the catch-all for systems without a clean
+    // hardware-vendor pedigree.
+    manufacturer: "other",
+    displayName: "ScummVM",
+    shortName: "ScummVM",
+    // The .scummvm descriptor file is a single line of text naming the
+    // game ID + engine (e.g. "monkey:scumm"). Operators (or LaunchBox's
+    // ScummVM importer) drop these next to each game's data directory;
+    // OA scans for them at any depth under the library folder. The
+    // scummvm libretro core opens game data in the descriptor's parent
+    // directory; OA always passes the .scummvm path via RomSource::Path
+    // because the core sets need_fullpath = true.
+    extensions: ["scummvm"],
+    // Cover-art shape — adventure-game box scans are typically square-ish
+    // (LucasArts / Sierra retail boxes were ~1:1) but landscape covers
+    // exist too. 1/1 fits both without cropping; clear-logo overlays
+    // hang well on either.
+    tileAspect: "1/1",
+    // Pixel-art adventures shown at native resolution. CRT scanlines
+    // would muddy the crisp dithered pixel-art LucasArts shipped (Monkey
+    // Island, Day of the Tentacle, Sam & Max all painted directly to
+    // 320×200 expecting modern displays). Plain default keeps the art
+    // visible; users wanting CRT vibes toggle per-system.
+    defaultShaderPreset: "plain",
   },
 };
 

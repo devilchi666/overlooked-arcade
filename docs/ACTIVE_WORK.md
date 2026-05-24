@@ -11,7 +11,15 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-(Nothing actively in flight.)
+- **DOSBox + ScummVM onboarding** ([features/dosbox-and-scummvm/](features/dosbox-and-scummvm/)) —
+  5-phase work on `feat/dosbox-and-scummvm`. Phase 1 (scummvm
+  onboarding) shipped 2026-05-24: SystemId variant, bindings module
+  (8 buttons + d-pad), default core dll, libretro-thumbnails repo
+  mapping, LaunchBox art-pack mapping, keyboard passthrough on,
+  per-core `system_dir` subdirectory, `.scummvm` descriptor routing
+  through `RomSource::Path`, frontend theme (teal-cyan 195°), per-core
+  docs scaffold. Awaiting operator playtest with real
+  `scummvm_libretro.dll` + game data before Phase 2 (dosbox).
 
 ## Recently completed (this session)
 

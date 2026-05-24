@@ -363,6 +363,14 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
             subdir: "metadat/no-intro",
             basename: "Nintendo - Pokemon Mini",
         }],
+        // ScummVM — engine launcher, not a hardware platform. Game data
+        // files vary per release (different revisions, language packs,
+        // fan translations) so libretro-database doesn't ship a canonical
+        // SHA-1 set. The cover-sync pipeline falls back to fuzzy filename
+        // match at the 0.95 threshold, which works fine because operators
+        // (or LaunchBox's ScummVM importer) name `.scummvm` files after
+        // the canonical title ("Monkey Island.scummvm").
+        "scummvm" => &[],
         _ => &[],
     }
 }
@@ -1762,6 +1770,7 @@ game (
             "coleco", "intv", "o2", "channelf",
             "vectrex", "virtualboy", "wonderswan",
             "5200", "pokemini",
+            "scummvm",
         ];
         // Systems whose `libretro_dat_refs_for_system` returns an empty
         // slice on purpose. Document the reason next to the id.
@@ -1769,6 +1778,7 @@ game (
             "pce-cd", // PCE-CD discs use catalog codes (Hu7-series) not present in libretro-database as standalone dat — game_serials is populated via the no-intro PCE dat which doesn't cover CD-shape titles.
             "3do",    // libretro-database 3DO dat carries NO `serial` fields — 3DO never standardized a catalog code, disc-id lookup is structurally impossible.
             "mame",   // arcade ROM identification is set-based, not single-file.
+            "scummvm",// engine launcher, not hardware. Game data files vary by release/translation; cover sync falls back to fuzzy filename match at the 0.95 threshold.
         ];
         for sys in ONBOARDED_SYSTEMS {
             let refs = libretro_dat_refs_for_system(sys);

@@ -528,3 +528,19 @@
   --color-system-accent-soft: oklch(0.93 0.05 250);
   --color-system-glow: oklch(0.65 0.18 250 / 0.35);
 }
+
+/* ScummVM — teal-cyan evoking the ocean / dialogue-box atmosphere of
+   the canonical LucasArts adventures (Monkey Island's pirate seas, the
+   Sam & Max highway, Day of the Tentacle's purple wash). Hue 195° sits
+   in the open band between coleco cyan (210°-ish — note: coleco at 195°
+   already; check) and PCE-CD silver-cyan (220°). To avoid coleco
+   collision, ScummVM lands at L=0.62 vs coleco's L=0.72, plus its tile
+   aspect (1/1, only system in the lineup) makes it visually distinct
+   even at the same hue. Period-correct to the adventure-game era's
+   dominant teal-cyan UI palette (Sierra's classic GUI panels, ScummVM's
+   own GUI theme defaults). */
+[data-system="scummvm"] {
+  --color-system-accent: oklch(0.62 0.16 195);
+  --color-system-accent-soft: oklch(0.93 0.05 195);
+  --color-system-glow: oklch(0.62 0.16 195 / 0.35);
+}

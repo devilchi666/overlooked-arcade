@@ -98,6 +98,12 @@ pub fn launchbox_platform_to_system_id(name: &str) -> Option<&'static str> {
         "Coleco ColecoVision"                       => Some("coleco"),
         "Microsoft MSX"                             => Some("msx"),
         "Microsoft MSX2"                            => Some("msx2"),
+        // ScummVM — engine launcher. LaunchBox ships ScummVM art under
+        // a single "ScummVM" platform folder; covers key on the
+        // canonical game title (e.g. "Monkey Island.png"), which our
+        // fuzzy match lands against the operator's `.scummvm` file
+        // stem at the shared 0.95 threshold.
+        "ScummVM"                                   => Some("scummvm"),
         _ => None,
     }
 }
@@ -618,6 +624,15 @@ mod tests {
         assert_eq!(launchbox_platform_to_system_id("MAME"), Some("mame"));
         assert_eq!(launchbox_platform_to_system_id("Bandai WonderSwan"), Some("wonderswan"));
         assert_eq!(launchbox_platform_to_system_id("Bandai WonderSwan Color"), Some("wonderswan"));
+    }
+
+    #[test]
+    fn launchbox_platform_maps_scummvm() {
+        // ScummVM cover packs ship under a single "ScummVM" platform
+        // folder. The mapping is case-sensitive (typo-protected) — the
+        // launchbox name uses the canonical capitalization.
+        assert_eq!(launchbox_platform_to_system_id("ScummVM"), Some("scummvm"));
+        assert_eq!(launchbox_platform_to_system_id("scummvm"), None);
     }
 
     #[test]

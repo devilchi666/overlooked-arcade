@@ -457,6 +457,43 @@ fn is_cd_extension(ext: &str) -> bool {
     matches!(ext, "cue" | "chd" | "ccd" | "toc" | "m3u" | "iso" | "pbp")
 }
 
+/// Engine-launcher descriptor files. A tiny text file the engine core
+/// reads to find the actual game data living next to it. These are
+/// NOT CD images (no BIOS pre-check, no multi-track sentinel) but
+/// they ARE always passed via `RomSource::Path` because the engine
+/// core sets `need_fullpath = true` and opens additional files
+/// relative to the descriptor's directory.
+///
+/// Currently just `.scummvm` (the ScummVM descriptor). DOSBox uses
+/// directory paths, not a descriptor file extension — different shape,
+/// different dispatch (Phase 2).
+fn is_descriptor_extension(ext: &str) -> bool {
+    matches!(ext, "scummvm")
+}
+
+/// Resolve the libretro `system_dir` for a given system. Most cores
+/// receive the install-wide `<exe_dir>/system/` directly so a single
+/// BIOS-drop folder serves every console — that's the right default.
+///
+/// Engine-launcher cores (ScummVM, DOSBox-pure) ship their own engine
+/// plugins / runtime that live in per-core subdirectories rather than
+/// alongside console BIOSes. They get a dedicated subdirectory so the
+/// top-level `system/` folder doesn't accumulate engine-specific files
+/// (themes/, extra/, dosbox.conf, etc.) that would confuse operators
+/// looking for the cart-shape BIOS pre-check files.
+///
+/// Creates the per-core subdirectory on first use so the core has a
+/// stable path to write its config / cache on launch.
+fn system_dir_for(exe_system_dir: &Path, system_id: &str) -> PathBuf {
+    if system_id == "scummvm" {
+        let p = exe_system_dir.join("scummvm");
+        let _ = std::fs::create_dir_all(&p);
+        p
+    } else {
+        exe_system_dir.to_path_buf()
+    }
+}
+
 /// Map the frontend's `SystemId` string to `oa_core::SystemId`. The tag is
 /// used by `LibretroCore` for metadata (`core.system()`) but doesn't change
 /// any runtime behavior — wrong-tag is recoverable, not fatal. Unknown ids
@@ -485,6 +522,12 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "5200" | "atari5200" | "atari-5200" => oa_core::SystemId::Atari5200,
         // Nintendo Pokémon Mini — tiny 2001 handheld. Slug stays "pokemini".
         "pokemini" | "pokémon-mini" | "pokemon-mini" => oa_core::SystemId::PokeMini,
+        // ScummVM — adventure-game engine launcher (Monkey Island, Day of
+        // the Tentacle, Sam & Max, Lure of the Temptress, etc.). Not a
+        // hardware platform: a "game" is a directory of data files plus
+        // a tiny `.scummvm` descriptor file. Accept the canonical slug
+        // and the short "scumm" alias.
+        "scummvm" | "scumm" => oa_core::SystemId::ScummVm,
         "vectrex" => oa_core::SystemId::Vectrex,
         "virtualboy" | "virtual-boy" => oa_core::SystemId::VirtualBoy,
         "wonderswan" => oa_core::SystemId::WonderSwan,
@@ -639,6 +682,18 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // option). Requires `bios.min` (4 KB) in `<exe_dir>/system/`.
         // Pre-checked by check_pokemini_bios.
         "pokemini" => "pokemini_libretro.dll",
+        // ScummVM — the libretro port of the canonical adventure-game
+        // engine. Loads a tiny `.scummvm` descriptor file (text: game
+        // ID + engine) and opens game data next to the descriptor.
+        // No BIOS — ScummVM ships its own engine plugins; OA places
+        // them under `<exe_dir>/system/scummvm/` so the global
+        // `<exe_dir>/system/` doesn't accumulate engine-specific
+        // subdirectories (see the per-system system_dir override at
+        // the LibretroCore::load site). `need_fullpath = true` — the
+        // core opens additional files relative to the descriptor's
+        // path, so OA always passes it via `RomSource::Path` (handled
+        // by `is_descriptor_extension` below).
+        "scummvm" => "scummvm_libretro.dll",
         // mGBA — the libretro GBA gold standard. Mature, broad compat,
         // light CPU. Alternates via per-system Cores:
         // `vba_next_libretro.dll` (VBA-Next, lighter / less accurate),
@@ -3496,7 +3551,11 @@ fn run_emu_render(
     };
 
     log::info!("oa-shell: loading libretro core from {}", dll_path.display());
-    let initial_core = match LibretroCore::load(&dll_path, bootstrap_system_enum, &system_dir, &save_dir) {
+    // Engine-launcher cores (scummvm — Phase 2 dosbox) want a per-core
+    // system_dir subdirectory rather than the global <exe_dir>/system/.
+    // Most cores fall through to the install-wide path. See system_dir_for.
+    let bootstrap_system_dir = system_dir_for(&system_dir, &current_system_id);
+    let initial_core = match LibretroCore::load(&dll_path, bootstrap_system_enum, &bootstrap_system_dir, &save_dir) {
         Ok(c) => {
             log::info!("oa-shell: libretro core loaded successfully");
             c
@@ -3548,10 +3607,11 @@ fn run_emu_render(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_else(|| "pce".to_string());
         let stem = sanitize_stem(path);
-        let load_result = if is_cd_extension(&ext) {
-            // Path-based load: core opens the .cue / .chd / .m3u itself and
-            // reads tracks relative to it.
-            log::info!("oa-shell: loading CD image (path-based) from {}", path);
+        let load_result = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
+            // Path-based load: core opens the .cue / .chd / .m3u (CD) or
+            // .scummvm (engine descriptor) itself and reads
+            // tracks / game-data relative to it.
+            log::info!("oa-shell: loading path-based source ({}) from {}", ext, path);
             core_ref.load_rom(oa_libretro::RomSource::Path(Path::new(path)), &ext, &stem)
         } else {
             match std::fs::read(path) {
@@ -3908,7 +3968,10 @@ fn run_emu_render(
                         } else {
                             // Drop current to release the libretro singleton before loading the new one.
                             let _ = core.take();
-                            match LibretroCore::load(&target_path, parse_system_id(&system_id), &system_dir, &save_dir) {
+                            // Engine-launcher cores (scummvm — Phase 2 dosbox) want a
+                            // per-core system_dir subdirectory. See system_dir_for.
+                            let launch_system_dir = system_dir_for(&system_dir, &system_id);
+                            match LibretroCore::load(&target_path, parse_system_id(&system_id), &launch_system_dir, &save_dir) {
                                 Ok(new_core) => {
                                     let new_timing = new_core.timing();
                                     log::info!(
@@ -3956,7 +4019,10 @@ fn run_emu_render(
                         .and_then(|s| s.to_str())
                         .map(|s| s.to_ascii_lowercase())
                         .unwrap_or_else(|| "pce".to_string());
-                    let source = if is_cd_extension(&ext) {
+                    let source = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
+                        // CD container OR engine-launcher descriptor file
+                        // (.scummvm) — both need a real filesystem path so
+                        // the core can open additional files relative to it.
                         oa_libretro::RomSource::Path(Path::new(&path))
                     } else {
                         oa_libretro::RomSource::Bytes(&bytes)
@@ -8913,7 +8979,9 @@ fn launch_rom(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
 
-        let bytes = if is_cd_extension(&ext) {
+        let bytes = if is_cd_extension(&ext) || is_descriptor_extension(&ext) {
+            // CD container OR engine-launcher descriptor (.scummvm) —
+            // pass via path; core opens additional files relative to it.
             if !Path::new(&path).is_file() {
                 return Err(format!("not a file: {path}"));
             }

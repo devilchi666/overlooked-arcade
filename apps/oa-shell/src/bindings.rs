@@ -361,6 +361,35 @@ pub mod atari5200 {
     pub const RESET: u32  = 1 << 11; // libretro R — keypad RESET
 }
 
+/// ScummVM button bit positions. ScummVM is an adventure-game engine
+/// launcher (Monkey Island, Day of the Tentacle, Sam & Max, Lure of
+/// the Temptress, etc.) — mouse-primary navigation with occasional
+/// keyboard input for text prompts (sword-fighting insults in Monkey
+/// Island, password prompts elsewhere). The cursor itself flows
+/// through the shared POINTER infrastructure (mouse-as-pointer);
+/// these bits are the RetroPad fallback for users without a mouse,
+/// plus the always-bound action buttons.
+///
+/// libretro convention for scummvm:
+///   LMB → libretro B (primary action — "click")
+///   RMB → libretro A (secondary action — "right-click", context menu)
+///   ESCAPE → libretro SELECT (in-engine "back" / cancel)
+///   PAUSE → libretro START (ScummVM main menu / save+restore)
+///   D-pad → libretro D-pad (cursor movement without a mouse;
+///                 ScummVM core walks the pointer via this fallback)
+/// Bits are laid out to match the libretro `RETRO_DEVICE_ID_JOYPAD_*`
+/// positions directly so the remap is identity.
+pub mod scummvm {
+    pub const LMB: u32    = 1 << 0;  // libretro B — left mouse button (primary)
+    pub const ESCAPE: u32 = 1 << 2;  // libretro SELECT — Esc / "back"
+    pub const PAUSE: u32  = 1 << 3;  // libretro START — ScummVM main menu
+    pub const UP: u32     = 1 << 4;  // cursor fallback (no mouse)
+    pub const DOWN: u32   = 1 << 5;
+    pub const LEFT: u32   = 1 << 6;
+    pub const RIGHT: u32  = 1 << 7;
+    pub const RMB: u32    = 1 << 8;  // libretro A — right mouse button (secondary)
+}
+
 /// Nintendo Pokémon Mini button bit positions. The smallest Nintendo
 /// first-party platform — d-pad + A + B + C (power/menu) + the
 /// shake sensor. IR is niche enough to skip entirely. PokeMini libretro
@@ -1536,6 +1565,25 @@ pub fn atari5200_bit_for(button: &str) -> Option<u32> {
     ATARI5200_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
 }
 
+/// ScummVM button bits in declaration order. 8 entries — d-pad +
+/// LMB + RMB + ESCAPE + PAUSE. Same shape as a simplified handheld;
+/// pointer cursor flows separately via the shared POINTER infra.
+pub const SCUMMVM_BUTTONS: &[(&str, u32)] = &[
+    ("UP",     scummvm::UP),
+    ("DOWN",   scummvm::DOWN),
+    ("LEFT",   scummvm::LEFT),
+    ("RIGHT",  scummvm::RIGHT),
+    ("LMB",    scummvm::LMB),
+    ("RMB",    scummvm::RMB),
+    ("ESCAPE", scummvm::ESCAPE),
+    ("PAUSE",  scummvm::PAUSE),
+];
+
+/// Resolve a system-button name to its ScummVM bit mask.
+pub fn scummvm_bit_for(button: &str) -> Option<u32> {
+    SCUMMVM_BUTTONS.iter().find(|(n, _)| *n == button).map(|(_, b)| *b)
+}
+
 /// Pokémon Mini button bits in declaration order. 8 entries — d-pad +
 /// A + B + C + SHAKE. Smallest face-button set in OA's lineup; the
 /// shake sensor is the one quirky input the platform has beyond the
@@ -1679,6 +1727,7 @@ pub fn bit_for(system_id: &str, button: &str) -> Option<u32> {
         "2600" => atari2600_bit_for(button),
         "5200" => atari5200_bit_for(button),
         "pokemini" => pokemini_bit_for(button),
+        "scummvm" => scummvm_bit_for(button),
         "coleco" => coleco_bit_for(button),
         "intv" => intv_bit_for(button),
         "o2" => o2_bit_for(button),
@@ -1723,6 +1772,7 @@ pub fn buttons_for(system_id: &str) -> &'static [(&'static str, u32)] {
         "2600" => ATARI2600_BUTTONS,
         "5200" => ATARI5200_BUTTONS,
         "pokemini" => POKEMINI_BUTTONS,
+        "scummvm" => SCUMMVM_BUTTONS,
         "coleco" => COLECO_BUTTONS,
         "intv" => INTV_BUTTONS,
         "o2" => O2_BUTTONS,
@@ -2153,6 +2203,21 @@ pub fn atari5200_to_libretro_bits(b: u32) -> u32 {
         | atari5200::RIGHT)
 }
 
+/// ScummVM → libretro bit remap. Identity by construction; mask trims
+/// to the 8-bit ScummVM button set (d-pad + LMB + RMB + ESCAPE + PAUSE).
+/// Pointer cursor (mouse-as-pointer) flows separately via
+/// `InputState.pointer`; this remap only handles the RetroPad bits.
+pub fn scummvm_to_libretro_bits(b: u32) -> u32 {
+    b & (scummvm::LMB
+        | scummvm::RMB
+        | scummvm::ESCAPE
+        | scummvm::PAUSE
+        | scummvm::UP
+        | scummvm::DOWN
+        | scummvm::LEFT
+        | scummvm::RIGHT)
+}
+
 /// Pokémon Mini → libretro bit remap. Identity by construction; mask
 /// trims to the 8-bit PokeMini button set (d-pad + A + B + C + SHAKE).
 pub fn pokemini_to_libretro_bits(b: u32) -> u32 {
@@ -2272,6 +2337,7 @@ pub fn to_libretro_bits(system_id: &str, b: u32) -> u32 {
         "2600" => atari2600_to_libretro_bits(b),
         "5200" => atari5200_to_libretro_bits(b),
         "pokemini" => pokemini_to_libretro_bits(b),
+        "scummvm" => scummvm_to_libretro_bits(b),
         "coleco" => coleco_to_libretro_bits(b),
         "intv" => intv_to_libretro_bits(b),
         "o2" => o2_to_libretro_bits(b),
@@ -3318,6 +3384,39 @@ pub fn default_atari5200_bindings() -> Bindings {
     b
 }
 
+/// ScummVM defaults — pointer + face-button fallback for users without
+/// a mouse. **Z = LMB (primary click)**, **X = RMB (secondary click /
+/// right-click context menu)** per the cross-system "Z is primary"
+/// rule. ESCAPE on Esc (in-engine "back" / cancel), PAUSE on Enter
+/// (ScummVM main menu / save+restore). D-pad on arrow keys for
+/// cursor movement when no mouse is attached. The actual mouse
+/// pointer flows through OA's shared POINTER input infrastructure;
+/// these bindings are the keyboard/pad fallback surface for the
+/// per-system Bindings page.
+pub fn default_scummvm_bindings() -> Bindings {
+    let mut b = Bindings::new();
+    let pairs: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("UP",     Some("Up"),     Some("DPadUp")),
+        ("DOWN",   Some("Down"),   Some("DPadDown")),
+        ("LEFT",   Some("Left"),   Some("DPadLeft")),
+        ("RIGHT",  Some("Right"),  Some("DPadRight")),
+        ("LMB",    Some("Z"),      Some("East")),    // libretro B — primary click
+        ("RMB",    Some("X"),      Some("South")),   // libretro A — right-click / context
+        ("ESCAPE", Some("Escape"), Some("Select")),  // libretro SELECT — in-engine back
+        ("PAUSE",  Some("Enter"),  Some("Start")),   // libretro START — ScummVM main menu
+    ];
+    for (name, kb, pad) in pairs {
+        b.insert(
+            (*name).into(),
+            BindingPair {
+                keyboard: kb.map(|s| s.to_string()),
+                gamepad: pad.map(|s| s.to_string()),
+            },
+        );
+    }
+    b
+}
+
 /// Pokémon Mini defaults — 8-button handheld layout. **Z = A (primary)**,
 /// **X = B (secondary)** — matches the cross-system convention used by
 /// GB / GBA / WonderSwan. C (Power / Menu) on RShift / SELECT. SHAKE
@@ -3545,6 +3644,7 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "2600" => Some(default_atari2600_bindings()),
         "5200" => Some(default_atari5200_bindings()),
         "pokemini" => Some(default_pokemini_bindings()),
+        "scummvm" => Some(default_scummvm_bindings()),
         "coleco" => Some(default_coleco_bindings()),
         "intv" => Some(default_intv_bindings()),
         "o2" => Some(default_o2_bindings()),
@@ -3706,7 +3806,7 @@ mod tests {
         // Cover every registered system's defaults — a new system that
         // ships a default keyboard name device_query doesn't recognize
         // would silently fail to bind without this check.
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.keyboard {
@@ -3721,7 +3821,7 @@ mod tests {
 
     #[test]
     fn default_pads_round_trip_to_button() {
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
             let bindings = defaults_for(sys).expect("defaults registered");
             for (button, pair) in &bindings {
                 if let Some(name) = &pair.gamepad {
@@ -3815,8 +3915,32 @@ mod tests {
         assert_eq!(to_libretro_bits("virtualboy", virtualboy::L), virtualboy::L);
         assert_eq!(to_libretro_bits("wonderswan", wonderswan::A), wonderswan::A);
         assert_eq!(to_libretro_bits("wonderswan", wonderswan::START), wonderswan::START);
+        // scummvm → identity (libretro-aligned by construction).
+        assert_eq!(to_libretro_bits("scummvm", scummvm::LMB), scummvm::LMB);
+        assert_eq!(to_libretro_bits("scummvm", scummvm::RMB), scummvm::RMB);
+        assert_eq!(to_libretro_bits("scummvm", scummvm::ESCAPE), scummvm::ESCAPE);
         // Unknown system → identity (defensive default).
         assert_eq!(to_libretro_bits("unknown", 0x42), 0x42);
+    }
+
+    #[test]
+    fn defaults_cover_every_scummvm_button() {
+        let b = default_scummvm_bindings();
+        for (name, _) in SCUMMVM_BUTTONS {
+            assert!(b.contains_key(*name), "scummvm default missing: {name}");
+        }
+    }
+
+    #[test]
+    fn scummvm_remap_is_identity() {
+        for (_, bit) in SCUMMVM_BUTTONS {
+            assert_eq!(scummvm_to_libretro_bits(*bit), *bit);
+        }
+        let all = scummvm::LMB | scummvm::RMB | scummvm::ESCAPE | scummvm::PAUSE
+                | scummvm::UP | scummvm::DOWN | scummvm::LEFT | scummvm::RIGHT;
+        assert_eq!(scummvm_to_libretro_bits(all), all);
+        // Stray high bits get masked off.
+        assert_eq!(scummvm_to_libretro_bits(all | (1 << 20)), all);
     }
 
     #[test]
@@ -3874,7 +3998,7 @@ mod tests {
         const LIBRETRO_DOWN: u32  = 1 << 5;
         const LIBRETRO_LEFT: u32  = 1 << 6;
         const LIBRETRO_RIGHT: u32 = 1 << 7;
-        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini"] {
+        for sys in &["tg16", "pce-cd", "lynx", "nes", "snes", "mame", "atari7800", "genesis", "segacd", "sega32x", "saturn", "psx", "neogeo", "neocd", "ngp", "jaguar", "3do", "pcfx", "n64", "gamecube", "dreamcast", "psp", "ps2", "nds", "sms", "gamegear", "gb", "gbc", "gba", "2600", "coleco", "intv", "o2", "channelf", "vectrex", "virtualboy", "wonderswan", "5200", "pokemini", "scummvm"] {
             let up    = bit_for(sys, "UP").expect("UP bit registered");
             let down  = bit_for(sys, "DOWN").expect("DOWN bit registered");
             let left  = bit_for(sys, "LEFT").expect("LEFT bit registered");
@@ -3975,6 +4099,12 @@ mod tests {
             ("vectrex", "B1", "B2"),
             ("virtualboy", "A", "B"),
             ("wonderswan", "A", "B"),
+            // ScummVM is mouse-primary, but the RetroPad fallback
+            // preserves Z=primary / X=secondary: LMB = primary click
+            // (libretro B bit 0), RMB = secondary / right-click
+            // (libretro A bit 8). Same Z/X muscle memory across every
+            // system in the launcher.
+            ("scummvm", "LMB", "RMB"),
         ] {
             let bindings = defaults_for(sys).expect("defaults registered");
             let primary = bindings.get(*primary_name).expect("primary button present");

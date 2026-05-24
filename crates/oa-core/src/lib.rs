@@ -201,6 +201,14 @@ pub enum SystemId {
     /// C) + d-pad + shake sensor + IR. PokeMini libretro core handles
     /// playback. Requires `bios.min` (4 KB).
     PokeMini,
+    /// ScummVM — adventure-game engine launcher (not a hardware
+    /// platform). A "game" is a directory of data files (`MONKEY.000`,
+    /// `MONKEY.001`, …) plus a tiny `.scummvm` descriptor file that
+    /// names the game ID + engine. The libretro core auto-detects the
+    /// engine and opens game data next to the descriptor file. Mouse-
+    /// primary + keyboard passthrough for text input (sword-fighting
+    /// insults, password prompts). No BIOS.
+    ScummVm,
 }
 
 /// Native output dimensions and timing.
