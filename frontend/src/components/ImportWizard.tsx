@@ -41,6 +41,12 @@ type ScannedRom = {
   fileName: string;
   extension: string;
   archiveInnerPath?: string;
+  /// Backend-emitted classification hint. Set when the scan walker
+  /// can't disambiguate via extension alone — Neo Geo .zip ROM-sets,
+  /// or any directory-mode scan (dosbox) where there's no extension
+  /// to match against. When present, the bucketing logic prefers it
+  /// over the extension lookup.
+  systemHint?: string;
 };
 
 type Folder = {
@@ -107,13 +113,26 @@ function patternToExtension(pattern: string): string | null {
   return m ? m[1] : null;
 }
 
+/// Directory-mode systems — each top-level subdir of the operator's
+/// library folder is one game. Renders in the rules editor with a
+/// "(folder)" sentinel pattern that signals intent (the pattern
+/// itself doesn't match any file extension; the wizard branches on
+/// systemId to fire the directory-mode scanner). Currently just
+/// dosbox; future engine launchers slot in here.
+const DIR_MODE_SYSTEMS: readonly SystemId[] = ["dosbox"] as const;
+const DIR_MODE_PATTERN = "(folder)";
+
 function defaultRulesFromRegistry(): RuleDraft[] {
-  // One row per extension in the registry. Order: by system, then by ext.
+  // One row per extension in the registry, plus one row per
+  // directory-mode system. Order: by system, then by ext.
   const out: RuleDraft[] = [];
   const sysIds = Object.keys(systemThemes) as SystemId[];
   for (const sysId of sysIds) {
     for (const ext of systemThemes[sysId].extensions) {
       out.push({ uiKey: nextUiKey(), pattern: `*.${ext}`, systemId: sysId });
+    }
+    if (DIR_MODE_SYSTEMS.includes(sysId)) {
+      out.push({ uiKey: nextUiKey(), pattern: DIR_MODE_PATTERN, systemId: sysId });
     }
   }
   return out;
@@ -323,13 +342,25 @@ const ImportWizard: Component<Props> = (props) => {
 
   /// Bucket scanned rows by system using rules + registry fallback. Returns
   /// matched RomEntries + a Map<extension, count> of unmatched.
+  /// Resolve a scanned row to its system_id, preferring (in order):
+  ///   1. the backend-emitted `systemHint` (Neo Geo zip disambiguation,
+  ///      dosbox directory scan), since the walker has more context;
+  ///   2. the rule map (user-set extension → system override);
+  ///   3. the registry extension lookup (default mapping).
+  /// Returns null for rows that don't classify (kept as "unmatched").
+  function classifyScanRow(r: ScannedRom): SystemId | null {
+    if (r.systemHint && systemThemes[r.systemHint as SystemId]) {
+      return r.systemHint as SystemId;
+    }
+    return ruleMap().get(r.extension) ?? systemForExtension(r.extension);
+  }
+
   function bucketScanned() {
-    const m = ruleMap();
     const now = Date.now();
     const entries: RomEntry[] = [];
     const unmatched = new Map<string, number>();
     for (const r of scanRows()) {
-      const sysId = m.get(r.extension) ?? systemForExtension(r.extension);
+      const sysId = classifyScanRow(r);
       if (!sysId) {
         unmatched.set(r.extension, (unmatched.get(r.extension) ?? 0) + 1);
         continue;
@@ -348,10 +379,9 @@ const ImportWizard: Component<Props> = (props) => {
 
   /// Per-system tally for the Step 3 found-so-far box.
   function bucketTally(): { systemId: SystemId; count: number; archived: number }[] {
-    const m = ruleMap();
     const tally = new Map<SystemId, { count: number; archived: number }>();
     for (const r of scanRows()) {
-      const sysId = (m.get(r.extension) ?? systemForExtension(r.extension)) as SystemId | null;
+      const sysId = classifyScanRow(r);
       if (!sysId) continue;
       const cur = tally.get(sysId) ?? { count: 0, archived: 0 };
       cur.count++;
@@ -420,17 +450,46 @@ const ImportWizard: Component<Props> = (props) => {
     setScanCancelled(false);
 
     const extensions = await buildScanExtensionList();
-    let myJobId = -1;
+    // Directory-mode scan dispatch: dosbox library folders contain one
+    // subdirectory per game and have no scannable file extensions. When
+    // any active rule maps to a directory-mode system, we also fire
+    // the directory-mode scanner and merge its results into the same
+    // scanRows() list.
+    const dirModeSystems = new Set<SystemId>();
+    for (const r of rules()) {
+      if (DIR_MODE_SYSTEMS.includes(r.systemId)) {
+        dirModeSystems.add(r.systemId);
+      }
+    }
 
-    // Inline the listener+invoke flow (instead of using runBackgroundScan)
-    // because we need the jobId exposed for the Cancel button.
+    // Set of jobIds we're waiting on. Each complete event removes its
+    // jobId; the overall scan is "done" when the set empties.
+    const pendingJobs = new Set<number>();
+    const accumulatedRows: ScannedRom[] = [];
+    let firstError: string | null = null;
+    let anyCancelled = false;
+
+    function finishIfDone() {
+      if (pendingJobs.size > 0) return;
+      if (firstError) {
+        setScanError(firstError);
+      } else if (anyCancelled) {
+        setScanCancelled(true);
+      } else {
+        setScanRows(accumulatedRows);
+      }
+      setScanRunning(false);
+      setScanJobId(null);
+      teardownListeners();
+    }
+
     try {
       progressUnlistenDone = false;
       completeUnlistenDone = false;
       progressUnlisten = await listen<ScanProgress>(
         "oa://library-scan-progress",
         (event) => {
-          if (event.payload.jobId !== myJobId) return;
+          if (!pendingJobs.has(event.payload.jobId)) return;
           setScanProgress(event.payload);
           props.onStatus?.(
             `Scanning ${event.payload.folder}: ${event.payload.matches} matched (${event.payload.archived} archived)`,
@@ -446,20 +505,33 @@ const ImportWizard: Component<Props> = (props) => {
         errorMessage?: string;
         rows: ScannedRom[];
       }>("oa://library-scan-complete", (event) => {
-        if (event.payload.jobId !== myJobId) return;
+        if (!pendingJobs.has(event.payload.jobId)) return;
+        pendingJobs.delete(event.payload.jobId);
         if (event.payload.errorMessage) {
-          setScanError(event.payload.errorMessage);
+          firstError = firstError ?? event.payload.errorMessage;
         } else if (event.payload.cancelled) {
-          setScanCancelled(true);
+          anyCancelled = true;
         } else {
-          setScanRows(event.payload.rows);
+          accumulatedRows.push(...event.payload.rows);
         }
-        setScanRunning(false);
-        setScanJobId(null);
-        teardownListeners();
+        finishIfDone();
       });
-      myJobId = await invoke<number>("start_background_scan", { folder: f, extensions });
-      setScanJobId(myJobId);
+      // Kick off the extension-mode scan unconditionally — it's the
+      // path 38+ existing systems use, and it costs nothing for
+      // dosbox-only folders since there are no scannable extensions.
+      const extJobId = await invoke<number>("start_background_scan", { folder: f, extensions });
+      pendingJobs.add(extJobId);
+      // The Cancel button targets the extension job — dosbox dir scans
+      // are short enough that cancelling the visible one is sufficient.
+      setScanJobId(extJobId);
+      // Kick off any directory-mode scans alongside.
+      for (const sysId of dirModeSystems) {
+        const dirJobId = await invoke<number>("start_background_directory_scan", {
+          folder: f,
+          systemId: sysId,
+        });
+        pendingJobs.add(dirJobId);
+      }
     } catch (e) {
       setScanError(String(e));
       setScanRunning(false);

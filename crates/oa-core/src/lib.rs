@@ -209,6 +209,17 @@ pub enum SystemId {
     /// primary + keyboard passthrough for text input (sword-fighting
     /// insults, password prompts). No BIOS.
     ScummVm,
+    /// DOSBox — MS-DOS game runner (not a hardware platform). A "game"
+    /// is a directory containing the game's executable + data files;
+    /// the libretro `dosbox_pure_libretro.dll` core auto-detects the
+    /// entry point at launch. Operators can override the entry point
+    /// via `GameOverrides.dosbox_entry_point` for the ~10% of titles
+    /// where auto-detect picks the wrong .exe (typically install
+    /// utilities sitting next to the real game binary). Keyboard +
+    /// gamepad-mapped action layout for arcade-style DOS games (Doom,
+    /// Wolfenstein 3D, Commander Keen, Jazz Jackrabbit); pointer for
+    /// mouse-driven games (X-COM, SimCity, Civilization). No BIOS.
+    DosBox,
 }
 
 /// Native output dimensions and timing.

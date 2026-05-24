@@ -544,3 +544,20 @@
   --color-system-accent-soft: oklch(0.93 0.05 195);
   --color-system-glow: oklch(0.62 0.16 195 / 0.35);
 }
+
+/* DOSBox — amber-on-black evoking the iconic DOS prompt CRT-amber
+   phosphor + the orange-on-black palette of the era's text-mode boot
+   screens (DOS 5.0 / 6.22 BIOS POST, command prompt at C:\>, the
+   Norton Utilities orange tones). Hue 55° aligns with the TG-16
+   "orange" (also 55° at L=0.74) but DOSBox sits at lower lightness
+   (L=0.65) and higher chroma (C=0.18 vs TG-16's 0.18) — together with
+   its different formFactor (computer vs console) and the engine-
+   launcher pairing with ScummVM teal it reads as the "DOS amber" most
+   players associate with the platform. Period-correct to the CRT
+   amber phosphor most PCs of the era shipped on monochrome monitors.
+*/
+[data-system="dosbox"] {
+  --color-system-accent: oklch(0.65 0.18 55);
+  --color-system-accent-soft: oklch(0.94 0.05 55);
+  --color-system-glow: oklch(0.65 0.18 55 / 0.35);
+}
