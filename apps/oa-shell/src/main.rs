@@ -2902,6 +2902,39 @@ fn main() {
                             }
                         }
 
+                        // Media-taxonomy Phase 5 migration — sentinel-guarded
+                        // one-shot pass that moves manual covers from
+                        // media/covers/<sys>/rom-<hash>.<ext> to the new
+                        // media/<sys>/box-front/<rom_stem>.<ext> layout and
+                        // copies synced art out of the cache dir to the
+                        // canonical kind dirs. Needs both library_db (rom_id
+                        // → file_path lookup for rom_stem derivation) and
+                        // the shared MediaDb Arc (mutates variant.path in
+                        // memory + writes media.json). No-op after first
+                        // successful run via .media-taxonomy-migrated
+                        // sentinel in the data dir.
+                        {
+                            let mut db_w = media_db.write().expect("media db write lock");
+                            let report = data_dir::migrate_media_naming(
+                                &app_data_dir, &db, &mut db_w,
+                            );
+                            if report.already_migrated {
+                                log::info!(
+                                    "media-taxonomy migration: sentinel present; no-op"
+                                );
+                            } else if report.manual_renamed + report.synced_copied > 0 {
+                                let app_handle = app.handle().clone();
+                                let _ = app_handle.emit(
+                                    "oa://media-updated",
+                                    serde_json::json!({
+                                        "batch": true,
+                                        "count": report.manual_renamed + report.synced_copied,
+                                        "source": "phase5-migration",
+                                    }),
+                                );
+                            }
+                        }
+
                         app.manage(db);
                     }
                     Err(e) => {

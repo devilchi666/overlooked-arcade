@@ -235,6 +235,319 @@ pub(crate) fn resolve_appdata_manually() -> Result<PathBuf, String> {
     }
 }
 
+// ---- Media-taxonomy Phase 5 migration ----
+//
+// Pre-2026-05-23 layout used opaque djb2-hashed filenames:
+//   - Manual:  media/covers/<systemId>/rom-<hash>.<ext>
+//   - Synced:  media/cache/libretro-thumbnails/<systemId>/Named_X/<filename>
+//
+// Post-Phase-1 layout uses human-readable rom-stem filenames in a
+// kind-folder shape:
+//   - All variants:  media/<systemId>/<kind>/<rom_stem>.<ext>
+//
+// The data model deserializes old media.json forward via serde aliases
+// (Phase 1) — the variants land in the right slots in memory. What's
+// still broken on an upgraded install is the variant.path strings
+// (point at the old paths) + the files-on-disk (sit at the old
+// locations). This migration walks the MediaDb, moves/copies files,
+// rewrites paths, and writes the new media.json + a sentinel so the
+// migration runs at most once per install.
+
+/// Sentinel filename written inside `<data_dir>` after a successful
+/// media-taxonomy migration. Presence means "migration already ran;
+/// skip it on subsequent launches." Distinct from the AppData→portable
+/// migration sentinel `.migrated-from-appdata`.
+const MEDIA_TAXONOMY_SENTINEL: &str = ".media-taxonomy-migrated";
+
+/// Summary returned by `migrate_media_naming`. Logged at INFO so
+/// operators can see what happened; structured for any future Tauri
+/// command that surfaces the report in the UI.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaTaxonomyMigrationReport {
+    /// Manual variants whose files were renamed from media/covers/...
+    /// to the new canonical layout.
+    pub manual_renamed: usize,
+    /// Synced variants whose files were copied from
+    /// media/cache/libretro-thumbnails/... to the new canonical
+    /// layout. Cache file kept in place so future re-syncs use the
+    /// fast-path cache check.
+    pub synced_copied: usize,
+    /// Variants whose path was already in the new format — left
+    /// untouched.
+    pub skipped_already_new: usize,
+    /// Variants whose rom_id wasn't found in library_db (orphan
+    /// MediaDb entry). Path left as-is, file left as-is — operator
+    /// can clean these out via media folder browse.
+    pub skipped_lookup_failed: usize,
+    /// Variants whose source file didn't exist at the old path
+    /// (operator manually deleted, disk error). Path updated to the
+    /// new target anyway so a future operator drop lands cleanly.
+    pub skipped_file_missing: usize,
+    /// True if the sentinel was already present at function entry
+    /// (no work performed, no media.json write).
+    pub already_migrated: bool,
+}
+
+/// One-shot media-taxonomy migration. Walks the in-memory MediaDb
+/// (passed `&mut` so the caller's MediaState gets the migrated state
+/// without a re-read), and for any variant whose `path` is in the
+/// pre-2026-05-23 format:
+///
+/// - Looks up the rom's `file_path` via `library_db.find_game_by_id`
+///   to derive `rom_stem` (the new filename base).
+/// - Builds the canonical target path
+///   `media/<system_id>/<kind>/<rom_stem>{-NN}.<ext>` via the same
+///   `next_variant_filename` helper the live sync uses, so the
+///   operator-art-wins guard kicks in for migrated data the same
+///   way it does for new sync runs.
+/// - Manual variants (MediaSource::Manual) → file renamed (moved).
+/// - Synced variants (MediaSource::LibretroThumbnails) → file copied
+///   (the cache stays for the fast-path cache check in future
+///   re-syncs).
+/// - variant.path is rewritten in memory.
+///
+/// Sentinel-guarded: if `<data_dir>/.media-taxonomy-migrated` exists,
+/// no-op (the input `db` is left untouched). Sentinel is written
+/// after a successful media.json write — so a crash mid-migration
+/// leaves the next launch retrying.
+///
+/// All errors logged + counted; never propagated. Migration failure
+/// should never block app launch.
+pub fn migrate_media_naming(
+    data_dir: &Path,
+    library: &crate::library_db::LibraryDb,
+    db: &mut crate::media::MediaDb,
+) -> MediaTaxonomyMigrationReport {
+    let sentinel = data_dir.join(MEDIA_TAXONOMY_SENTINEL);
+    if sentinel.exists() {
+        return MediaTaxonomyMigrationReport {
+            already_migrated: true,
+            ..Default::default()
+        };
+    }
+
+    let mut report = MediaTaxonomyMigrationReport::default();
+    if db.is_empty() {
+        log::info!(
+            "media-taxonomy migration: media.json empty; writing sentinel and skipping"
+        );
+        write_sentinel(&sentinel, &report);
+        return report;
+    }
+
+    let mut any_changes = false;
+    // Iterate every rom_id; for each, walk every MediaKind slot.
+    let rom_ids: Vec<String> = db.keys().cloned().collect();
+    for rom_id in &rom_ids {
+        // Resolve rom_stem + system_id once per rom_id.
+        let row = match library.find_game_by_id(rom_id) {
+            Ok(Some(r)) => r,
+            _ => {
+                // Orphan MediaDb entry. Count every old-layout variant
+                // in this rom as "lookup failed" so the operator can
+                // see what's been left behind.
+                if let Some(gm) = db.get(rom_id) {
+                    for &kind in crate::media::MediaKind::ALL {
+                        for v in kind.variants(gm) {
+                            if classify_old_path(&v.path).is_some() {
+                                report.skipped_lookup_failed += 1;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+        };
+        let raw = row.archive_inner_path.as_deref().unwrap_or(&row.file_path);
+        let rom_stem = crate::media::rom_stem_from_path(raw);
+        let system_id = row.system_id.clone();
+
+        // Snapshot the list of slots that have at least one variant
+        // needing work, to avoid borrowing db both immutably + mutably
+        // in the same loop.
+        let slot_actions = plan_slot_migrations(
+            db.get(rom_id).expect("rom_id present"),
+            &system_id,
+        );
+
+        if slot_actions.is_empty() {
+            continue;
+        }
+
+        for action in slot_actions {
+            match action {
+                VariantAction::AlreadyNew { .. } => {
+                    report.skipped_already_new += 1;
+                }
+                VariantAction::Migrate { kind, variant_idx, old_path, source } => {
+                    // Perform the file op + path rewrite.
+                    let ext = std::path::Path::new(&old_path)
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("png");
+                    let new_rel = match crate::media::next_sync_path_for_slot(
+                        data_dir, &system_id, kind, &rom_stem, ext,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            log::warn!(
+                                "media-taxonomy migration: next_sync_path_for_slot {} [{}] failed: {e}",
+                                rom_id, kind.as_str()
+                            );
+                            continue;
+                        }
+                    };
+                    let old_abs = data_dir.join(&old_path);
+                    let new_abs = data_dir.join(&new_rel);
+                    if !old_abs.is_file() {
+                        // Path was old-format but file gone (operator
+                        // cleaned out covers manually). Still update
+                        // variant.path so a future drop at the new
+                        // location is reachable.
+                        report.skipped_file_missing += 1;
+                        if let Some(gm) = db.get_mut(rom_id) {
+                            if let Some(v) = kind.variants_mut(gm).get_mut(variant_idx) {
+                                v.path = new_rel;
+                                any_changes = true;
+                            }
+                        }
+                        continue;
+                    }
+                    let op_result = match source {
+                        crate::media::MediaSource::Manual => {
+                            // Move — operator's manual file has no cache copy.
+                            std::fs::rename(&old_abs, &new_abs).map(|_| "renamed")
+                        }
+                        crate::media::MediaSource::LibretroThumbnails => {
+                            // Copy — keep the cache copy at its old path so
+                            // future re-syncs use the fast-path cache check.
+                            std::fs::copy(&old_abs, &new_abs).map(|_| "copied")
+                        }
+                    };
+                    match op_result {
+                        Ok(verb) => {
+                            log::info!(
+                                "media-taxonomy migration: {} {} -> {}",
+                                verb, old_path, new_rel
+                            );
+                            if let Some(gm) = db.get_mut(rom_id) {
+                                if let Some(v) = kind.variants_mut(gm).get_mut(variant_idx) {
+                                    v.path = new_rel;
+                                    any_changes = true;
+                                }
+                            }
+                            match source {
+                                crate::media::MediaSource::Manual => report.manual_renamed += 1,
+                                crate::media::MediaSource::LibretroThumbnails => report.synced_copied += 1,
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "media-taxonomy migration: file op {} -> {} failed: {e}",
+                                old_path, new_rel
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if any_changes {
+        if let Err(e) = crate::media::write_media_db(data_dir, db) {
+            log::warn!(
+                "media-taxonomy migration: media.json flush failed: {e}; \
+                 sentinel NOT written, next launch will retry"
+            );
+            return report;
+        }
+    }
+    write_sentinel(&sentinel, &report);
+    log::info!(
+        "media-taxonomy migration: done — manual renamed={} synced copied={} \
+         already-new={} lookup-failed={} file-missing={}",
+        report.manual_renamed, report.synced_copied,
+        report.skipped_already_new, report.skipped_lookup_failed,
+        report.skipped_file_missing,
+    );
+    report
+}
+
+/// Per-variant migration action. Computed up-front (read-only db
+/// access) and applied later (write-only db access) to dodge the
+/// "borrowed both immutably and mutably" issue in one pass.
+enum VariantAction {
+    AlreadyNew {
+        #[allow(dead_code)]
+        kind: crate::media::MediaKind,
+    },
+    Migrate {
+        kind: crate::media::MediaKind,
+        variant_idx: usize,
+        old_path: String,
+        source: crate::media::MediaSource,
+    },
+}
+
+/// Detect old-layout paths. Returns the legacy-format tag for
+/// diagnostics; None means the path is already in (or compatible
+/// with) the new layout.
+fn classify_old_path(path: &str) -> Option<&'static str> {
+    if path.starts_with("media/covers/") {
+        Some("manual-v1")
+    } else if path.starts_with("media/cache/libretro-thumbnails/") {
+        Some("synced-v1")
+    } else {
+        None
+    }
+}
+
+/// Walk every slot of a GameMedia, returning the action list for
+/// variants that need migrating. `_system_id` reserved for future use
+/// when we want per-system gating.
+fn plan_slot_migrations(
+    gm: &crate::media::GameMedia,
+    _system_id: &str,
+) -> Vec<VariantAction> {
+    let mut out: Vec<VariantAction> = Vec::new();
+    for &kind in crate::media::MediaKind::ALL {
+        for (idx, v) in kind.variants(gm).iter().enumerate() {
+            match classify_old_path(&v.path) {
+                None => out.push(VariantAction::AlreadyNew { kind }),
+                Some(_) => out.push(VariantAction::Migrate {
+                    kind,
+                    variant_idx: idx,
+                    old_path: v.path.clone(),
+                    source: v.source.clone(),
+                }),
+            }
+        }
+    }
+    out
+}
+
+fn write_sentinel(sentinel: &Path, report: &MediaTaxonomyMigrationReport) {
+    let body = format!(
+        "media-taxonomy migration completed\n\
+         manual_renamed={}\n\
+         synced_copied={}\n\
+         skipped_already_new={}\n\
+         skipped_lookup_failed={}\n\
+         skipped_file_missing={}\n",
+        report.manual_renamed, report.synced_copied,
+        report.skipped_already_new, report.skipped_lookup_failed,
+        report.skipped_file_missing,
+    );
+    if let Err(e) = std::fs::write(sentinel, body) {
+        log::warn!(
+            "media-taxonomy migration: failed to write sentinel {}: {e}; \
+             migration may re-run on next launch",
+            sentinel.display()
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,5 +629,352 @@ mod tests {
         let dir = tempdir_for("has-content-empty");
         assert!(!portable_has_user_content(&dir));
         cleanup(&dir);
+    }
+
+    // ---- Phase 5 media-taxonomy migration tests ----
+
+    /// Make a real 1×1 PNG via the image crate. Phase 2's tests use
+    /// the same pattern — hand-rolled PNG bytes don't survive CRC
+    /// validation by the image decoder used inside ingest paths.
+    fn one_pixel_png() -> Vec<u8> {
+        let img: image::RgbaImage = image::ImageBuffer::from_pixel(1, 1, image::Rgba([0u8, 0, 0, 255]));
+        let mut buf: Vec<u8> = Vec::new();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("encode 1px png");
+        buf
+    }
+
+    fn fresh_library_for_data_dir(data_dir: &Path) -> crate::library_db::LibraryDb {
+        crate::library_db::LibraryDb::open(data_dir).expect("open library db")
+    }
+
+    /// Seed `library` with a single ROM whose file_path basename
+    /// matches `stem`. Returns the rom_id used.
+    fn seed_one_rom(
+        library: &crate::library_db::LibraryDb,
+        rom_id: &str,
+        title: &str,
+        stem: &str,
+    ) -> String {
+        let row = crate::library_db::GameRow {
+            id: rom_id.to_string(),
+            title: title.to_string(),
+            system_id: "genesis".to_string(),
+            file_path: format!("/roms/genesis/{stem}.md"),
+            added_at: 0,
+            cover_path: None,
+            core_override: None,
+            seed: false,
+            archive_inner_path: None,
+            sha1: None,
+            serial: None,
+            disc_id: None,
+        };
+        library.add_games(&[row]).expect("seed row");
+        rom_id.to_string()
+    }
+
+    fn write_pre_phase5_manual_file(data_dir: &Path, system_id: &str, rom_id: &str) -> PathBuf {
+        let rel = format!("media/covers/{system_id}/{rom_id}.png");
+        let abs = data_dir.join(&rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).expect("mkdir manual dir");
+        std::fs::write(&abs, one_pixel_png()).expect("seed manual file");
+        abs
+    }
+
+    fn write_pre_phase5_synced_file(
+        data_dir: &Path,
+        system_id: &str,
+        subdir: &str,
+        filename: &str,
+    ) -> PathBuf {
+        let rel = format!("media/cache/libretro-thumbnails/{system_id}/{subdir}/{filename}");
+        let abs = data_dir.join(&rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).expect("mkdir cache dir");
+        std::fs::write(&abs, one_pixel_png()).expect("seed cache file");
+        abs
+    }
+
+    fn empty_db_dir(label: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "oa-mt5-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).expect("mkdir tmp");
+        p
+    }
+
+    #[test]
+    fn migration_empty_db_writes_sentinel_and_noops() {
+        let dir = empty_db_dir("empty-db");
+        let library = fresh_library_for_data_dir(&dir);
+        let mut db: crate::media::MediaDb = Default::default();
+        let r = migrate_media_naming(&dir, &library, &mut db);
+        assert_eq!(r.manual_renamed, 0);
+        assert_eq!(r.synced_copied, 0);
+        assert!(!r.already_migrated);
+        assert!(dir.join(MEDIA_TAXONOMY_SENTINEL).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_skips_when_sentinel_exists() {
+        let dir = empty_db_dir("sentinel-present");
+        std::fs::write(dir.join(MEDIA_TAXONOMY_SENTINEL), "from a prior run").expect("seed sentinel");
+        let library = fresh_library_for_data_dir(&dir);
+        // Even with an old-layout entry present, sentinel guards.
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-x.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        db.insert("rom-x".into(), gm);
+        let r = migrate_media_naming(&dir, &library, &mut db);
+        assert!(r.already_migrated);
+        assert_eq!(r.manual_renamed, 0);
+        // The variant.path was NOT touched (sentinel said skip).
+        assert_eq!(
+            db.get("rom-x").unwrap().box_front[0].path,
+            "media/covers/genesis/rom-x.png"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_renames_manual_file_and_updates_path() {
+        let dir = empty_db_dir("manual-rename");
+        let library = fresh_library_for_data_dir(&dir);
+        // Seed library: rom_id "rom-sonic" maps to file Sonic the Hedgehog (USA).md.
+        seed_one_rom(&library, "rom-sonic", "Sonic the Hedgehog (USA)", "Sonic the Hedgehog (USA)");
+        // Seed the old-layout manual file on disk.
+        let old_abs = write_pre_phase5_manual_file(&dir, "genesis", "rom-sonic");
+        // Seed MediaDb with a Manual variant pointing at the old path.
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None,
+            sha1: Some("test-sha".into()), bytes: None,
+        });
+        db.insert("rom-sonic".into(), gm);
+
+        let r = migrate_media_naming(&dir, &library, &mut db);
+
+        assert_eq!(r.manual_renamed, 1);
+        assert_eq!(r.synced_copied, 0);
+        assert!(!r.already_migrated);
+        // Old file is gone (rename = move).
+        assert!(!old_abs.exists());
+        // New file is at canonical path.
+        let new_abs = dir.join("media/genesis/box-front/Sonic the Hedgehog (USA).png");
+        assert!(new_abs.is_file(), "new file should exist at {}", new_abs.display());
+        // variant.path was rewritten.
+        assert_eq!(
+            db.get("rom-sonic").unwrap().box_front[0].path,
+            "media/genesis/box-front/Sonic the Hedgehog (USA).png"
+        );
+        // Sentinel is present.
+        assert!(dir.join(MEDIA_TAXONOMY_SENTINEL).exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_copies_synced_file_and_keeps_cache() {
+        let dir = empty_db_dir("synced-copy");
+        let library = fresh_library_for_data_dir(&dir);
+        seed_one_rom(&library, "rom-sonic", "Sonic", "Sonic");
+        // Seed the old cache file.
+        let cache_abs = write_pre_phase5_synced_file(
+            &dir, "genesis", "Named_Boxarts", "Sonic.png",
+        );
+        // Variant whose path is the old cache path.
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::LibretroThumbnails,
+            region: None,
+            path: "media/cache/libretro-thumbnails/genesis/Named_Boxarts/Sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None,
+            sha1: Some("test-sha".into()), bytes: None,
+        });
+        db.insert("rom-sonic".into(), gm);
+
+        let r = migrate_media_naming(&dir, &library, &mut db);
+
+        assert_eq!(r.manual_renamed, 0);
+        assert_eq!(r.synced_copied, 1);
+        // Cache file is STILL there (copy, not move) — keeps the
+        // fast-path cache check warm for future re-syncs.
+        assert!(cache_abs.exists(), "cache file should be kept");
+        // Canonical kind dir file exists.
+        let new_abs = dir.join("media/genesis/box-front/Sonic.png");
+        assert!(new_abs.is_file());
+        // variant.path was rewritten to canonical.
+        assert_eq!(
+            db.get("rom-sonic").unwrap().box_front[0].path,
+            "media/genesis/box-front/Sonic.png"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_mixed_old_and_new_only_touches_old() {
+        let dir = empty_db_dir("mixed");
+        let library = fresh_library_for_data_dir(&dir);
+        seed_one_rom(&library, "rom-sonic", "Sonic", "Sonic");
+        // Old manual at old path.
+        write_pre_phase5_manual_file(&dir, "genesis", "rom-sonic");
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        // A NEW-format variant on a different slot — must be left alone.
+        gm.screenshot_gameplay.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::LibretroThumbnails,
+            region: None,
+            path: "media/genesis/screenshot-gameplay/Sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        db.insert("rom-sonic".into(), gm);
+
+        let r = migrate_media_naming(&dir, &library, &mut db);
+
+        assert_eq!(r.manual_renamed, 1);
+        assert_eq!(r.skipped_already_new, 1);
+        // The new-format variant's path is untouched.
+        assert_eq!(
+            db.get("rom-sonic").unwrap().screenshot_gameplay[0].path,
+            "media/genesis/screenshot-gameplay/Sonic.png"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_orphan_media_entry_counted_as_lookup_failed() {
+        let dir = empty_db_dir("orphan");
+        let library = fresh_library_for_data_dir(&dir);
+        // NO library entry for rom-ghost — orphan.
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-ghost.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        db.insert("rom-ghost".into(), gm);
+
+        let r = migrate_media_naming(&dir, &library, &mut db);
+
+        assert_eq!(r.manual_renamed, 0);
+        assert_eq!(r.skipped_lookup_failed, 1);
+        // variant.path NOT changed (we couldn't compute the new path).
+        assert_eq!(
+            db.get("rom-ghost").unwrap().box_front[0].path,
+            "media/covers/genesis/rom-ghost.png"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_missing_file_skipped_but_path_updated() {
+        let dir = empty_db_dir("missing-file");
+        let library = fresh_library_for_data_dir(&dir);
+        seed_one_rom(&library, "rom-sonic", "Sonic", "Sonic");
+        // Variant points at a path that doesn't exist on disk
+        // (operator manually deleted the covers folder).
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        db.insert("rom-sonic".into(), gm);
+
+        let r = migrate_media_naming(&dir, &library, &mut db);
+
+        assert_eq!(r.skipped_file_missing, 1);
+        // variant.path still updated to point at the new canonical
+        // location — a future operator drop will land cleanly.
+        assert_eq!(
+            db.get("rom-sonic").unwrap().box_front[0].path,
+            "media/genesis/box-front/Sonic.png"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_re_run_after_success_noops_via_sentinel() {
+        let dir = empty_db_dir("re-run");
+        let library = fresh_library_for_data_dir(&dir);
+        seed_one_rom(&library, "rom-sonic", "Sonic", "Sonic");
+        write_pre_phase5_manual_file(&dir, "genesis", "rom-sonic");
+        let mut db: crate::media::MediaDb = Default::default();
+        let mut gm = crate::media::GameMedia::default();
+        gm.box_front.push(crate::media::MediaVariant {
+            source: crate::media::MediaSource::Manual,
+            region: None,
+            path: "media/covers/genesis/rom-sonic.png".into(),
+            thumb_path: None,
+            width: None, height: None, sha1: None, bytes: None,
+        });
+        db.insert("rom-sonic".into(), gm);
+
+        let r1 = migrate_media_naming(&dir, &library, &mut db);
+        assert_eq!(r1.manual_renamed, 1);
+        // Second run — sentinel present.
+        let r2 = migrate_media_naming(&dir, &library, &mut db);
+        assert!(r2.already_migrated);
+        assert_eq!(r2.manual_renamed, 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn classify_old_path_recognizes_both_legacy_shapes() {
+        assert_eq!(
+            classify_old_path("media/covers/genesis/rom-abc.png"),
+            Some("manual-v1"),
+        );
+        assert_eq!(
+            classify_old_path("media/cache/libretro-thumbnails/genesis/Named_Boxarts/Sonic.png"),
+            Some("synced-v1"),
+        );
+        // New layout returns None.
+        assert_eq!(
+            classify_old_path("media/genesis/box-front/Sonic.png"),
+            None,
+        );
+        assert_eq!(
+            classify_old_path("media/snes/clear-logo/Super Metroid.png"),
+            None,
+        );
     }
 }
