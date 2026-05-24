@@ -15,6 +15,17 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Window geometry persistence + tile-size slider**
+  ([features/ui-polish/](features/ui-polish/)) — merged to main
+  2026-05-23 as `6cf6acb`. 3 phase commits on
+  `feat/window-and-tile-prefs`: `LayoutPrefs.windows` map with
+  per-label geometry + first-launch maximize + debounced flusher
+  thread; `library_tile_size` + GridControls slider + hybrid ±20%
+  scaling in VirtualLibraryGrid; SESSION_LOG entry.
+- **Media taxonomy plan** ([features/media-taxonomy/](features/media-taxonomy/)) —
+  7-phase implementation plan documented + listed in `NEXT.md`
+  MEDIUM band. Design locked but implementation deferred. Merged
+  2026-05-23 as `d4204bb`.
 - **Portable install** ([features/portable-install/](features/portable-install/)) —
   merged to main 2026-05-23 as `993ca6a`. 5 commits: data_dir
   resolver + marker file, asset-protocol runtime scope + frontend
@@ -47,8 +58,14 @@ infrastructure batch (psp + ps2 + nds) was the most recent cross-core focus.
 Per-core status surfaces:
 - High-priority next work — [NEXT.md](NEXT.md) HIGH/MEDIUM bands
 - Per-system status — `docs/cores/<id>/ROADMAP.md`
-- 4 systems remain to onboard: `5200`, `pokemini` (have folder shells),
-  plus `scummvm`, `dosbox` (engine cores, deferred — see system-wiring-plan).
+- **5200 + pokemini** Phase 0 fully wired 2026-05-20 (default core,
+  BIOS check, bindings, registry, theme). Phase 1 = operator
+  playtest only (drop .dll + BIOS, scan library, launch flagship
+  titles per the ROADMAP). No more code work on these two from this
+  side until playtest surfaces a Phase 2 polish need.
+- **scummvm + dosbox** — engine cores, no folder shells yet,
+  deferred per the system-wiring-plan (PC games, different launch
+  semantics from console emulation).
 
 ## Picking next work
 
