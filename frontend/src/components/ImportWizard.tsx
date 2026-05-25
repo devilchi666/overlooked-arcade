@@ -366,9 +366,11 @@ const ImportWizard: Component<Props> = (props) => {
   }
 
   function bucketScanned() {
+    const t0 = performance.now();
     const now = Date.now();
     const entries: RomEntry[] = [];
     const unmatched = new Map<string, number>();
+    const rowCount = scanRows().length;
     for (const r of scanRows()) {
       const sysId = classifyScanRow(r);
       if (!sysId) {
@@ -383,6 +385,11 @@ const ImportWizard: Component<Props> = (props) => {
         addedAt: now,
         ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
       });
+    }
+    const ms = performance.now() - t0;
+    // Quiet on fast calls so the log isn't drowned; loud when it's slow.
+    if (ms > 10) {
+      console.log(`[oa-wizard] bucketScanned rows=${rowCount} entries=${entries.length} took ${ms.toFixed(1)}ms`);
     }
     return { entries, unmatched };
   }
@@ -480,7 +487,12 @@ const ImportWizard: Component<Props> = (props) => {
     let anyCancelled = false;
 
     function finishIfDone() {
-      if (pendingJobs.size > 0) return;
+      if (pendingJobs.size > 0) {
+        console.log(`[oa-wizard] finishIfDone early-exit: ${pendingJobs.size} jobs still pending`);
+        return;
+      }
+      console.log(`[oa-wizard] finishIfDone: applying ${accumulatedRows.length} rows`);
+      const t0 = performance.now();
       if (firstError) {
         setScanError(firstError);
       } else if (anyCancelled) {
@@ -488,9 +500,12 @@ const ImportWizard: Component<Props> = (props) => {
       } else {
         setScanRows(accumulatedRows);
       }
+      console.log(`[oa-wizard] setScanRows took ${(performance.now() - t0).toFixed(1)}ms`);
+      const t1 = performance.now();
       setScanRunning(false);
       setScanJobId(null);
       teardownListeners();
+      console.log(`[oa-wizard] post-set cleanup took ${(performance.now() - t1).toFixed(1)}ms; finishIfDone done`);
     }
 
     try {
@@ -515,7 +530,13 @@ const ImportWizard: Component<Props> = (props) => {
         errorMessage?: string;
         rows: ScannedRom[];
       }>("oa://library-scan-complete", (event) => {
-        if (!pendingJobs.has(event.payload.jobId)) return;
+        console.log(
+          `[oa-wizard] complete event arrived job=${event.payload.jobId} rows=${event.payload.rows.length} cancelled=${event.payload.cancelled} hasError=${!!event.payload.errorMessage}`,
+        );
+        if (!pendingJobs.has(event.payload.jobId)) {
+          console.log(`[oa-wizard] complete event dropped (jobId ${event.payload.jobId} not in pending set)`);
+          return;
+        }
         pendingJobs.delete(event.payload.jobId);
         if (event.payload.errorMessage) {
           firstError = firstError ?? event.payload.errorMessage;
@@ -524,7 +545,9 @@ const ImportWizard: Component<Props> = (props) => {
         } else {
           accumulatedRows.push(...event.payload.rows);
         }
+        console.log(`[oa-wizard] pendingJobs.size=${pendingJobs.size} accumulated=${accumulatedRows.length} — calling finishIfDone`);
         finishIfDone();
+        console.log(`[oa-wizard] finishIfDone returned`);
       });
       // Kick off the extension-mode scan unconditionally — it's the
       // path 38+ existing systems use, and it costs nothing for
