@@ -147,12 +147,15 @@ impl log::Log for MultiLogger {
                     target,
                     message
                 );
-                // Flush on WARN/ERROR so a crash mid-line still leaves a
-                // useful tail. INFO/DEBUG ride the BufWriter and flush
-                // on drop or buffer fill.
-                if matches!(record.level(), log::Level::Warn | log::Level::Error) {
-                    let _ = writer.flush();
-                }
+                // Flush on every line, not just WARN/ERROR. Operators
+                // investigating freezes hard-kill the process via Task
+                // Manager, which skips BufWriter::drop — anything sitting
+                // in the 8 KB buffer is lost. Cost is one fwrite syscall
+                // per log line; OA's peak log rate is ~30/sec, well below
+                // any meaningful disk-syscall ceiling. Preserves the
+                // diagnostic trail through every kind of process exit
+                // including SIGKILL-equivalent.
+                let _ = writer.flush();
             }
         }
 

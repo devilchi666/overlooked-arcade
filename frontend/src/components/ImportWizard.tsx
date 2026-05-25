@@ -366,9 +366,11 @@ const ImportWizard: Component<Props> = (props) => {
   }
 
   function bucketScanned() {
+    const t0 = performance.now();
     const now = Date.now();
     const entries: RomEntry[] = [];
     const unmatched = new Map<string, number>();
+    const rowCount = scanRows().length;
     for (const r of scanRows()) {
       const sysId = classifyScanRow(r);
       if (!sysId) {
@@ -383,6 +385,11 @@ const ImportWizard: Component<Props> = (props) => {
         addedAt: now,
         ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
       });
+    }
+    const ms = performance.now() - t0;
+    // Quiet on fast calls so the log isn't drowned; loud when it's slow.
+    if (ms > 10) {
+      console.log(`[oa-wizard] bucketScanned rows=${rowCount} entries=${entries.length} took ${ms.toFixed(1)}ms`);
     }
     return { entries, unmatched };
   }
@@ -475,9 +482,56 @@ const ImportWizard: Component<Props> = (props) => {
     // Set of jobIds we're waiting on. Each complete event removes its
     // jobId; the overall scan is "done" when the set empties.
     const pendingJobs = new Set<number>();
+    // Buffer for complete events that arrive BEFORE their jobId lands in
+    // pendingJobs. Race fix: a directory-mode scan over an empty subdir
+    // tree finishes in ~2 ms — faster than `await invoke()` round-trips
+    // jobId back to the JS thread, so the complete event hits this
+    // listener with pendingJobs.has(jobId) == false. Pre-fix we dropped
+    // those events; the parent scan then never finished because its
+    // jobId stayed orphan-added to pendingJobs forever. Now we buffer
+    // by jobId; registerJob() drains the buffer once the jobId lands.
+    const earlyCompletes = new Map<number, {
+      jobId: number;
+      cancelled: boolean;
+      errorMessage?: string;
+      rows: ScannedRom[];
+    }>();
     const accumulatedRows: ScannedRom[] = [];
     let firstError: string | null = null;
     let anyCancelled = false;
+
+    function applyCompletePayload(payload: {
+      jobId: number;
+      cancelled: boolean;
+      errorMessage?: string;
+      rows: ScannedRom[];
+    }) {
+      pendingJobs.delete(payload.jobId);
+      if (payload.errorMessage) {
+        firstError = firstError ?? payload.errorMessage;
+      } else if (payload.cancelled) {
+        anyCancelled = true;
+      } else {
+        accumulatedRows.push(...payload.rows);
+      }
+      finishIfDone();
+    }
+
+    /// Call this with the jobId returned from `invoke(start_background_scan)`.
+    /// Adds it to pendingJobs AND drains any complete event for this jobId
+    /// that already arrived (the race the dosbox empty-dir scan loses).
+    function registerJob(jobId: number) {
+      pendingJobs.add(jobId);
+      const buffered = earlyCompletes.get(jobId);
+      if (buffered) {
+        earlyCompletes.delete(jobId);
+        // Keep this log — fires only when the race wins. Useful
+        // regression signal if the buffer-then-drain path stops
+        // working in a future refactor.
+        console.log(`[oa-wizard] registerJob job=${jobId} draining buffered early-complete`);
+        applyCompletePayload(buffered);
+      }
+    }
 
     function finishIfDone() {
       if (pendingJobs.size > 0) return;
@@ -515,22 +569,30 @@ const ImportWizard: Component<Props> = (props) => {
         errorMessage?: string;
         rows: ScannedRom[];
       }>("oa://library-scan-complete", (event) => {
-        if (!pendingJobs.has(event.payload.jobId)) return;
-        pendingJobs.delete(event.payload.jobId);
-        if (event.payload.errorMessage) {
-          firstError = firstError ?? event.payload.errorMessage;
-        } else if (event.payload.cancelled) {
-          anyCancelled = true;
-        } else {
-          accumulatedRows.push(...event.payload.rows);
+        if (!pendingJobs.has(event.payload.jobId)) {
+          // Race fix: jobId hasn't been registerJob()'d yet because the
+          // backend scan finished faster than `await invoke()` could
+          // round-trip the jobId back to us. Buffer the payload; when
+          // registerJob(jobId) runs, it'll drain the buffer. Logged
+          // because this happens only when the race wins — if a future
+          // regression resurrects the "wizard freezes on Step 3" bug,
+          // this line in oa-current.log is the trigger to look for.
+          console.log(`[oa-wizard] complete event buffered (jobId ${event.payload.jobId} arrived before invoke returned)`);
+          earlyCompletes.set(event.payload.jobId, {
+            jobId: event.payload.jobId,
+            cancelled: event.payload.cancelled,
+            errorMessage: event.payload.errorMessage,
+            rows: event.payload.rows,
+          });
+          return;
         }
-        finishIfDone();
+        applyCompletePayload(event.payload);
       });
       // Kick off the extension-mode scan unconditionally — it's the
       // path 38+ existing systems use, and it costs nothing for
       // dosbox-only folders since there are no scannable extensions.
       const extJobId = await invoke<number>("start_background_scan", { folder: f, extensions });
-      pendingJobs.add(extJobId);
+      registerJob(extJobId);
       // The Cancel button targets the extension job — dosbox dir scans
       // are short enough that cancelling the visible one is sufficient.
       setScanJobId(extJobId);
@@ -540,7 +602,7 @@ const ImportWizard: Component<Props> = (props) => {
           folder: f,
           systemId: sysId,
         });
-        pendingJobs.add(dirJobId);
+        registerJob(dirJobId);
       }
     } catch (e) {
       setScanError(String(e));

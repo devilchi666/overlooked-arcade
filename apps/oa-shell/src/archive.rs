@@ -20,6 +20,9 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveKind {
@@ -126,6 +129,104 @@ pub fn list_rom_contents(
         ArchiveKind::Zip => list_zip(archive, accepted_exts),
         ArchiveKind::SevenZ => list_sevenz(archive, accepted_exts),
     }
+}
+
+/// Per-archive failure modes returned by the cancellable wrappers. The
+/// scan walker pattern-matches on these to log + skip without giving up
+/// the entire walk.
+#[derive(Debug)]
+pub enum PeekFailure {
+    /// Caller-supplied cancel flag flipped before the peek finished.
+    Cancelled,
+    /// Worker thread didn't return within the timeout. Most likely cause:
+    /// malformed archive central directory sending `zip::ZipArchive::new`
+    /// into a seek loop, or a `.7z` whose `decompress_file_with_extract_fn`
+    /// is doing more work than the metadata walk needs. The worker thread
+    /// is detached; it will finish or get killed at process exit.
+    TimedOut,
+    /// The underlying [`list_rom_contents`] returned an error string.
+    Failed(String),
+}
+
+/// Internal helper: run a synchronous closure on a worker thread, polling
+/// `cancel` every 100 ms and giving up after `timeout`. Returns the
+/// closure's result or a [`PeekFailure`] describing why we bailed.
+///
+/// The closure must be `Send + 'static` so the spawned thread can own it
+/// outright; the result type must be `Send + 'static` so it can travel
+/// back through the channel. The worker thread is NOT joined on timeout
+/// — that's a deliberate trade-off: a hung archive read can't be safely
+/// interrupted from the outside, so we drop the join handle and let the
+/// thread finish whenever it does. The mpsc receiver is dropped along
+/// with the function frame, so the worker's `send` on a late-arriving
+/// result fails silently. Acceptable for scan-time peeks; do NOT use
+/// this for hot-path work where lingering threads matter.
+pub(crate) fn run_with_timeout_and_cancel<T, F>(
+    work: F,
+    cancel: Arc<AtomicBool>,
+    timeout: Duration,
+) -> Result<T, PeekFailure>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let (tx, rx) = mpsc::sync_channel::<Result<T, String>>(1);
+    std::thread::spawn(move || {
+        // Ignore send errors — receiver is dropped on cancel/timeout.
+        let _ = tx.send(work());
+    });
+
+    let poll = Duration::from_millis(100);
+    let mut elapsed = Duration::ZERO;
+    while elapsed < timeout {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(PeekFailure::Cancelled);
+        }
+        match rx.recv_timeout(poll) {
+            Ok(Ok(v)) => return Ok(v),
+            Ok(Err(e)) => return Err(PeekFailure::Failed(e)),
+            Err(mpsc::RecvTimeoutError::Timeout) => elapsed += poll,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(PeekFailure::Failed(
+                    "archive peek worker disconnected without sending".to_string(),
+                ));
+            }
+        }
+    }
+    Err(PeekFailure::TimedOut)
+}
+
+/// Cancellable + bounded-time wrapper around [`list_rom_contents`]. Use
+/// this from the scan walker so a malformed archive can't hang the entire
+/// import job and the Cancel button propagates within ~100 ms even if the
+/// archive read is stuck in native code.
+pub fn list_rom_contents_cancellable(
+    archive: PathBuf,
+    accepted_exts: HashSet<String>,
+    cancel: Arc<AtomicBool>,
+    timeout: Duration,
+) -> Result<Vec<ArchiveEntry>, PeekFailure> {
+    run_with_timeout_and_cancel(
+        move || list_rom_contents(&archive, &accepted_exts),
+        cancel,
+        timeout,
+    )
+}
+
+/// Cancellable + bounded-time wrapper around [`peek_zip_for_neogeo`].
+/// Same hang vulnerability as `list_rom_contents` — `ZipArchive::new` can
+/// loop indefinitely on certain malformed central directories, so the
+/// scan walker needs to be able to give up.
+pub fn peek_zip_for_neogeo_cancellable(
+    archive: PathBuf,
+    cancel: Arc<AtomicBool>,
+    timeout: Duration,
+) -> Result<bool, PeekFailure> {
+    run_with_timeout_and_cancel(
+        move || Ok::<bool, String>(peek_zip_for_neogeo(&archive)),
+        cancel,
+        timeout,
+    )
 }
 
 fn list_zip(archive: &Path, accepted: &HashSet<String>) -> Result<Vec<ArchiveEntry>, String> {
@@ -545,5 +646,119 @@ mod tests {
         assert!(temp_root.join("safe.pce").exists());
         let escaped = dir.join("escaped.txt");
         assert!(!escaped.exists(), "path-traversal entry must not escape temp_root");
+    }
+
+    #[test]
+    fn run_with_timeout_and_cancel_returns_ok_for_fast_work() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let res = run_with_timeout_and_cancel(
+            || Ok::<u32, String>(42),
+            cancel,
+            Duration::from_secs(1),
+        );
+        match res {
+            Ok(v) => assert_eq!(v, 42),
+            other => panic!("expected Ok(42), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_with_timeout_and_cancel_surfaces_inner_error() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let res = run_with_timeout_and_cancel::<u32, _>(
+            || Err::<u32, String>("synthetic failure".to_string()),
+            cancel,
+            Duration::from_secs(1),
+        );
+        match res {
+            Err(PeekFailure::Failed(e)) => assert_eq!(e, "synthetic failure"),
+            other => panic!("expected Failed(...), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_with_timeout_and_cancel_returns_timeout_for_slow_work() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let res = run_with_timeout_and_cancel::<u32, _>(
+            || {
+                std::thread::sleep(Duration::from_millis(800));
+                Ok(1)
+            },
+            cancel,
+            // Tight deadline so the worker can't finish in time.
+            Duration::from_millis(200),
+        );
+        match res {
+            Err(PeekFailure::TimedOut) => {}
+            other => panic!("expected TimedOut, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_with_timeout_and_cancel_propagates_cancel_within_one_poll() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        // Trip the flag from a watcher thread shortly after the worker
+        // starts. The wrapper polls every 100ms so cancel should land
+        // within ~200ms total (one poll for the flip, one for the
+        // observation) regardless of the worker's 5s sleep.
+        let cancel_for_flipper = Arc::clone(&cancel);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            cancel_for_flipper.store(true, Ordering::Relaxed);
+        });
+        let started = std::time::Instant::now();
+        let res = run_with_timeout_and_cancel::<u32, _>(
+            || {
+                std::thread::sleep(Duration::from_secs(5));
+                Ok(1)
+            },
+            cancel,
+            Duration::from_secs(10),
+        );
+        let elapsed = started.elapsed();
+        match res {
+            Err(PeekFailure::Cancelled) => {}
+            other => panic!("expected Cancelled, got {other:?}"),
+        }
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "cancel should propagate in <1s, took {elapsed:?}",
+        );
+    }
+
+    #[test]
+    fn list_rom_contents_cancellable_happy_path() {
+        let dir = tmp();
+        let z = dir.join("games.zip");
+        make_zip(&z, &[("bonk.pce", b"BONK"), ("readme.txt", b"docs")]);
+        let mut accepted = HashSet::new();
+        accepted.insert("pce".to_string());
+        let cancel = Arc::new(AtomicBool::new(false));
+        let res = list_rom_contents_cancellable(
+            z,
+            accepted,
+            cancel,
+            Duration::from_secs(5),
+        );
+        let entries = res.expect("happy-path list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].inner_path, "bonk.pce");
+    }
+
+    #[test]
+    fn peek_zip_for_neogeo_cancellable_happy_path() {
+        let dir = tmp();
+        let z = dir.join("kof97.zip");
+        // Minimal Neo Geo ROM-set fingerprint: a .p1 + .s1 in the zip
+        // is enough for peek_zip_for_neogeo to return true.
+        make_zip(&z, &[("kof97.p1", b"p1bytes"), ("kof97.s1", b"s1bytes")]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let is_neogeo = peek_zip_for_neogeo_cancellable(
+            z,
+            cancel,
+            Duration::from_secs(5),
+        )
+        .expect("neogeo peek");
+        assert!(is_neogeo, "p1+s1 zip must be classified as Neo Geo");
     }
 }
