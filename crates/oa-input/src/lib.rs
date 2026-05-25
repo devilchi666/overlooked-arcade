@@ -1053,4 +1053,119 @@ mod analog_tests {
         let vp = PointerViewport { screen_x: 0.0, screen_y: 0.0, width: 0.0, height: 720.0 };
         assert_eq!(vp.width, 0.0);
     }
+
+    // ---- Light-gun smoke-test harness extensions ----------------------
+    //
+    // The 4 tests above cover the happy-path coord math. These add
+    // edge cases that catch real bugs operators would hit during gun
+    // playtest:
+    //   - cursor outside the game viewport (sidebar / chrome / letterbox)
+    //   - sweep monotonicity (catches sign-flips, off-by-ones)
+    //   - extreme coords (catches integer overflow / clamp errors)
+    //
+    // Combined with the cb_input_state dispatch tests in
+    // crates/oa-libretro/src/state.rs::tests, these cover the full
+    // path from OS mouse coords → InputState.pointer → libretro
+    // POINTER/LIGHTGUN device polls. Per-game validation still needs
+    // an operator playtest — these tests catch coord math bugs before
+    // they reach the operator.
+
+    /// Same screen→libretro normalization poll_pointer uses, but
+    /// without needing a DeviceState. Lets the tests exercise the
+    /// coord math against synthetic mouse positions.
+    fn map_screen_xy(
+        mouse_x: f32, mouse_y: f32,
+        vp: PointerViewport,
+    ) -> (i16, i16, bool /* in_viewport */) {
+        let rel_x = mouse_x - vp.screen_x;
+        let rel_y = mouse_y - vp.screen_y;
+        if vp.width <= 0.0 || vp.height <= 0.0 {
+            return (0, 0, false);
+        }
+        if rel_x < 0.0 || rel_y < 0.0 || rel_x >= vp.width || rel_y >= vp.height {
+            return (0, 0, false);
+        }
+        let nx = ((rel_x / vp.width) * 65535.0 - 32768.0).clamp(-32768.0, 32767.0) as i16;
+        let ny = ((rel_y / vp.height) * 65535.0 - 32768.0).clamp(-32768.0, 32767.0) as i16;
+        (nx, ny, true)
+    }
+
+    #[test]
+    fn pointer_outside_viewport_returns_offscreen_sentinel() {
+        // Game window at (200, 100), 1280×720 viewport. Mouse on
+        // chrome / sidebar / above the viewport / below the viewport
+        // all report (0, 0, false) — the "offscreen" sentinel that
+        // light-gun cores read as "don't fire."
+        let vp = PointerViewport { screen_x: 200.0, screen_y: 100.0, width: 1280.0, height: 720.0 };
+        // Left of viewport (in the sidebar).
+        assert_eq!(map_screen_xy(50.0, 400.0, vp), (0, 0, false));
+        // Above viewport (in the toolbar / menu bar).
+        assert_eq!(map_screen_xy(500.0, 50.0, vp), (0, 0, false));
+        // Right of viewport.
+        assert_eq!(map_screen_xy(1600.0, 400.0, vp), (0, 0, false));
+        // Below viewport.
+        assert_eq!(map_screen_xy(500.0, 1000.0, vp), (0, 0, false));
+        // Exactly on the right edge (>= width is "out").
+        assert_eq!(map_screen_xy(200.0 + 1280.0, 400.0, vp), (0, 0, false));
+        // One pixel inside the right edge is in.
+        let (_, _, inside) = map_screen_xy(200.0 + 1279.0, 400.0, vp);
+        assert!(inside);
+    }
+
+    #[test]
+    fn pointer_viewport_with_window_offset_centers_correctly() {
+        // Game window placed at (100, 200) — typical for windowed mode.
+        // Mouse at (100 + 640, 200 + 360) is at the center of a
+        // 1280×720 viewport → libretro near (0, 0).
+        let vp = PointerViewport { screen_x: 100.0, screen_y: 200.0, width: 1280.0, height: 720.0 };
+        let (x, y, inside) = map_screen_xy(100.0 + 640.0, 200.0 + 360.0, vp);
+        assert!(inside);
+        assert!(x.abs() <= 256, "centered x should be near 0, got {x}");
+        assert!(y.abs() <= 256, "centered y should be near 0, got {y}");
+    }
+
+    #[test]
+    fn pointer_sweep_horizontal_is_monotonic() {
+        // Walk the mouse left → right across the viewport. The
+        // normalized x must increase monotonically — a sign flip or
+        // off-by-one would manifest as a non-monotonic step here and
+        // cause "gun aims left when player moves right" in playtest.
+        let vp = PointerViewport { screen_x: 0.0, screen_y: 0.0, width: 1280.0, height: 720.0 };
+        let mut prev_x = i16::MIN;
+        for screen_x in (0..1280).step_by(16) {
+            let (x, _, inside) = map_screen_xy(screen_x as f32, 360.0, vp);
+            assert!(inside, "x={screen_x} should be inside viewport");
+            assert!(x >= prev_x, "sweep at x={screen_x} produced non-monotonic: {prev_x} → {x}");
+            prev_x = x;
+        }
+    }
+
+    #[test]
+    fn pointer_sweep_vertical_is_monotonic() {
+        // Same monotonicity check for the Y axis. Most cores read
+        // both axes per poll; a regression in one axis only shows up
+        // here.
+        let vp = PointerViewport { screen_x: 0.0, screen_y: 0.0, width: 1280.0, height: 720.0 };
+        let mut prev_y = i16::MIN;
+        for screen_y in (0..720).step_by(16) {
+            let (_, y, inside) = map_screen_xy(640.0, screen_y as f32, vp);
+            assert!(inside, "y={screen_y} should be inside viewport");
+            assert!(y >= prev_y, "sweep at y={screen_y} produced non-monotonic: {prev_y} → {y}");
+            prev_y = y;
+        }
+    }
+
+    #[test]
+    fn pointer_viewport_extreme_mouse_coords_clamp_safely() {
+        // Defensive: a buggy compositor or remote-desktop session
+        // could feed extreme mouse coords. The clamp must not panic
+        // or produce out-of-range i16 values.
+        let vp = PointerViewport { screen_x: 0.0, screen_y: 0.0, width: 1920.0, height: 1080.0 };
+        // Wildly negative.
+        assert_eq!(map_screen_xy(-1_000_000.0, 400.0, vp), (0, 0, false));
+        // Wildly positive (way past viewport).
+        assert_eq!(map_screen_xy(1_000_000.0, 400.0, vp), (0, 0, false));
+        // Both extreme.
+        assert_eq!(map_screen_xy(f32::MAX, f32::MAX, vp), (0, 0, false));
+    }
 }

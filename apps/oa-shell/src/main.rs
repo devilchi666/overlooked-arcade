@@ -26,6 +26,7 @@ mod core_installer;
 mod core_options;
 mod layout;
 mod library_db;
+mod light_gun_systems;
 mod art_pack_importer;
 mod audio_player;
 mod library_groups;

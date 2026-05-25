@@ -64,15 +64,49 @@ pub const RETRO_DEVICE_INDEX_ANALOG_BUTTON: u32 = 2;
 pub const RETRO_DEVICE_ID_ANALOG_X: u32 = 0;
 pub const RETRO_DEVICE_ID_ANALOG_Y: u32 = 1;
 
-// Pointer device — touch screen / light gun / mouse-as-touch input.
-// Used by Nintendo DS (stylus), Saturn light-gun games, Dreamcast House
-// of the Dead, etc. Cores poll `cb_input_state(port, RETRO_DEVICE_POINTER,
-// index, id)` per pointer; `id` selects which axis or the press state.
+// Pointer device — touch screen / mouse-as-touch input. Used by
+// Nintendo DS (stylus) and any title that wants generic touch input.
+// Cores poll `cb_input_state(port, RETRO_DEVICE_POINTER, index, id)`
+// per pointer; `id` selects which axis or the press state.
 pub const RETRO_DEVICE_POINTER: u32 = 6;
 pub const RETRO_DEVICE_ID_POINTER_X: u32       = 0;
 pub const RETRO_DEVICE_ID_POINTER_Y: u32       = 1;
 pub const RETRO_DEVICE_ID_POINTER_PRESSED: u32 = 2;
 pub const RETRO_DEVICE_ID_POINTER_COUNT: u32   = 3;
+
+// Light gun device — classical arcade-style point-and-shoot input.
+// Used by FCEUmm Zapper, Beetle PSX GunCon (Time Crisis), Flycast
+// House of the Dead, Beetle Saturn Virtua Gun, Genesis Plus GX
+// Light Phaser, snes9x Super Scope. Cores call cb_input_state with
+// device=RETRO_DEVICE_LIGHTGUN; id selects screen coords / trigger /
+// off-screen status / aux buttons.
+//
+// Constants mirror libretro.h verbatim. We currently wire:
+//   SCREEN_X / SCREEN_Y / TRIGGER — from `input_pointer[port]`
+//   X / Y (deprecated relative aliases) — same source, satisfy older cores
+//   IS_OFFSCREEN — Phase 0: always 0. Reload-by-aiming-off-screen needs
+//     a separate "in_viewport" flag on InputState that we haven't
+//     plumbed yet. Most games are playable without; the reload gesture
+//     is a polish item.
+//   AUX_A / AUX_B / AUX_C / START / SELECT / DPAD_* / RELOAD — Phase 0:
+//     return 0. Phase 2 would map these to RetroPad bits the operator
+//     configures in the Bindings UI.
+pub const RETRO_DEVICE_ID_LIGHTGUN_X:             u32 = 0;  // deprecated relative
+pub const RETRO_DEVICE_ID_LIGHTGUN_Y:             u32 = 1;  // deprecated relative
+pub const RETRO_DEVICE_ID_LIGHTGUN_TRIGGER:       u32 = 2;
+pub const RETRO_DEVICE_ID_LIGHTGUN_AUX_A:         u32 = 3;
+pub const RETRO_DEVICE_ID_LIGHTGUN_AUX_B:         u32 = 4;
+pub const RETRO_DEVICE_ID_LIGHTGUN_START:         u32 = 6;
+pub const RETRO_DEVICE_ID_LIGHTGUN_SELECT:        u32 = 7;
+pub const RETRO_DEVICE_ID_LIGHTGUN_AUX_C:         u32 = 8;
+pub const RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP:       u32 = 9;
+pub const RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN:     u32 = 10;
+pub const RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT:     u32 = 11;
+pub const RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT:    u32 = 12;
+pub const RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X:      u32 = 13; // absolute
+pub const RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y:      u32 = 14; // absolute
+pub const RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN:  u32 = 15;
+pub const RETRO_DEVICE_ID_LIGHTGUN_RELOAD:        u32 = 16;
 
 pub const RETRO_DEVICE_ID_JOYPAD_B: u32       = 0;
 pub const RETRO_DEVICE_ID_JOYPAD_Y: u32       = 1;

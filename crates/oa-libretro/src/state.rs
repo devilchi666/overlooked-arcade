@@ -606,6 +606,58 @@ pub(crate) unsafe extern "C" fn cb_get_sensor_input(port: u32, id: u32) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// Pure helper: resolve a RETRO_DEVICE_ID_POINTER_* query against a
+/// stored `(x, y, pressed)` tuple. Extracted from cb_input_state so
+/// the dispatch table is unit-testable without manipulating the
+/// libretro singleton state. `count` reports 1 when pressed, 0
+/// otherwise — single-pointer model; multi-touch is Phase 2.5.
+pub(crate) fn pointer_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
+    let (x, y, pressed) = pointer;
+    match id {
+        RETRO_DEVICE_ID_POINTER_X       => x,
+        RETRO_DEVICE_ID_POINTER_Y       => y,
+        RETRO_DEVICE_ID_POINTER_PRESSED => if pressed { 1 } else { 0 },
+        RETRO_DEVICE_ID_POINTER_COUNT   => if pressed { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+/// Pure helper: resolve a RETRO_DEVICE_ID_LIGHTGUN_* query against a
+/// stored `(x, y, pressed)` tuple. Wires the screen-coordinate +
+/// trigger + deprecated relative aliases; AUX/START/SELECT/DPAD/
+/// RELOAD return 0 at Phase 0. IS_OFFSCREEN also returns 0 (always
+/// on-screen) — the reload-by-aiming-off-screen gesture needs an
+/// in_viewport flag on InputState that hasn't been plumbed yet;
+/// games are playable without it. See `RETRO_DEVICE_ID_LIGHTGUN_*`
+/// in `ffi.rs` for the full id table.
+pub(crate) fn lightgun_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
+    let (x, y, pressed) = pointer;
+    match id {
+        // Absolute screen coordinates — the modern way (post-2013).
+        // All currently-maintained light-gun cores poll these.
+        RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X      => x,
+        RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y      => y,
+        // Deprecated relative coordinates — legacy cores still query
+        // these. Same source as absolute; the spec treats the
+        // distinction as historical.
+        RETRO_DEVICE_ID_LIGHTGUN_X             => x,
+        RETRO_DEVICE_ID_LIGHTGUN_Y             => y,
+        // Primary fire button.
+        RETRO_DEVICE_ID_LIGHTGUN_TRIGGER       => if pressed { 1 } else { 0 },
+        // Phase 0 simplification: always on-screen. Plumbing an
+        // in_viewport flag through InputState.pointer is the Phase 2
+        // task; titles that REQUIRE off-screen reload (House of the
+        // Dead 2, Time Crisis series) still play with the reload bound
+        // to a keyboard key as an interim workaround.
+        RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN  => 0,
+        // AUX / START / SELECT / DPAD / RELOAD — Phase 2 will surface
+        // these in the per-system Bindings UI as additional gun-side
+        // buttons. Return 0 today so a core polling them sees an
+        // unpressed neutral state rather than a stale value.
+        _ => 0,
+    }
+}
+
 pub(crate) unsafe extern "C" fn cb_input_state(
     port: u32,
     device: u32,
@@ -650,24 +702,25 @@ pub(crate) unsafe extern "C" fn cb_input_state(
         return with_state(|s| s.input_axes[port as usize][axis_idx]).unwrap_or(0);
     }
 
-    // Pointer device — touch screen / mouse-as-touch / light gun.
-    // Cores polling this get the per-port (x, y, pressed) tuple back.
-    // OA's `index` is ignored at Phase 0 (multi-touch is Phase 2.5);
-    // single-pointer support handles NDS stylus + light-gun titles.
+    // Pointer device — touch screen / mouse-as-touch / stylus. Cores
+    // polling this get the per-port (x, y, pressed) tuple back. OA's
+    // `index` is ignored at Phase 0 (multi-touch is Phase 2.5);
+    // single-pointer support handles NDS stylus + generic touch.
     if device == RETRO_DEVICE_POINTER {
-        return with_state(|s| {
-            let (x, y, pressed) = s.input_pointer[port as usize];
-            match id {
-                RETRO_DEVICE_ID_POINTER_X       => x,
-                RETRO_DEVICE_ID_POINTER_Y       => y,
-                RETRO_DEVICE_ID_POINTER_PRESSED => if pressed { 1 } else { 0 },
-                // POINTER_COUNT — returns the number of active pointers.
-                // Phase 0 supports single-pointer only; report 1 if
-                // pressed, 0 if not.
-                RETRO_DEVICE_ID_POINTER_COUNT   => if pressed { 1 } else { 0 },
-                _ => 0,
-            }
-        }).unwrap_or(0);
+        return with_state(|s| pointer_field_value(s.input_pointer[port as usize], id))
+            .unwrap_or(0);
+    }
+
+    // Light gun device — classical arcade-style point-and-shoot. Shares
+    // the per-port input_pointer state with RETRO_DEVICE_POINTER but
+    // exposes the libretro LIGHTGUN id space, which most light-gun
+    // cores (FCEUmm Zapper, Beetle PSX GunCon, Flycast HotD, Beetle
+    // Saturn Virtua Gun, Genesis Plus GX Light Phaser, snes9x Super
+    // Scope) poll instead of POINTER. See lightgun_field_value for
+    // the id → coord/state mapping.
+    if device == RETRO_DEVICE_LIGHTGUN {
+        return with_state(|s| lightgun_field_value(s.input_pointer[port as usize], id))
+            .unwrap_or(0);
     }
 
     if device != RETRO_DEVICE_JOYPAD {
@@ -1141,5 +1194,126 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             true
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- pointer_field_value ------------------------------------------
+
+    #[test]
+    fn pointer_field_value_returns_stored_coords() {
+        // Mid-screen click, pressed.
+        let p = (1000i16, -2000i16, true);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       1000);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -2000);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_COUNT),   1);
+    }
+
+    #[test]
+    fn pointer_field_value_unpressed_reports_zero_count() {
+        // Pointer at min coords, released. COUNT must follow PRESSED.
+        let p = (-32768i16, -32768i16, false);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       -32768);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -32768);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 0);
+        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_COUNT),   0);
+    }
+
+    #[test]
+    fn pointer_field_value_unknown_id_returns_zero() {
+        // Anything outside the 4 documented IDs returns 0 — defensive
+        // against future libretro spec additions.
+        let p = (100i16, 200i16, true);
+        for id in [4u32, 7, 42, 9999] {
+            assert_eq!(pointer_field_value(p, id), 0, "id {id} must return 0");
+        }
+    }
+
+    // ---- lightgun_field_value -----------------------------------------
+
+    #[test]
+    fn lightgun_field_value_screen_coords_match_pointer_state() {
+        // The screen-coordinate IDs (modern) must return the same
+        // coords as the underlying input_pointer state.
+        let p = (12345i16, -7890i16, true);
+        assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X), 12345);
+        assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y), -7890);
+    }
+
+    #[test]
+    fn lightgun_field_value_deprecated_x_y_alias_screen_coords() {
+        // Legacy LIGHTGUN_X / LIGHTGUN_Y aliases (id 0/1) must report
+        // the same absolute coords. Some older cores (Genesis Plus GX
+        // Light Phaser path) still poll the relative aliases.
+        let p = (-100i16, 200i16, false);
+        assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_X), -100);
+        assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_Y), 200);
+        // Confirm the alias matches the modern SCREEN_X result for
+        // the same input — a regression that desyncs them would silently
+        // break older cores.
+        assert_eq!(
+            lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_X),
+            lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X),
+        );
+    }
+
+    #[test]
+    fn lightgun_field_value_trigger_follows_pressed() {
+        let pressed = (0i16, 0i16, true);
+        let released = (0i16, 0i16, false);
+        assert_eq!(lightgun_field_value(pressed,  RETRO_DEVICE_ID_LIGHTGUN_TRIGGER), 1);
+        assert_eq!(lightgun_field_value(released, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER), 0);
+    }
+
+    #[test]
+    fn lightgun_field_value_is_offscreen_is_zero_phase_zero() {
+        // Phase 0 simplification: always on-screen. When the
+        // in_viewport plumbing lands (Phase 2 reload-by-aim work),
+        // this assertion will flip and the dispatch will source from
+        // a new state field. Until then the constant is the contract.
+        let p_outside = (0i16, 0i16, false);
+        let p_inside  = (100i16, 100i16, true);
+        assert_eq!(lightgun_field_value(p_outside, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN), 0);
+        assert_eq!(lightgun_field_value(p_inside,  RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN), 0);
+    }
+
+    #[test]
+    fn lightgun_field_value_aux_start_select_dpad_reload_are_zero() {
+        // Phase 0: every non-screen / non-trigger LIGHTGUN id returns
+        // 0. Cores polling AUX / START / SELECT / DPAD / RELOAD see
+        // unpressed-neutral, which is the correct default-binding
+        // semantic for a fresh light-gun setup.
+        let p = (500i16, -500i16, true);
+        for id in [
+            RETRO_DEVICE_ID_LIGHTGUN_AUX_A,
+            RETRO_DEVICE_ID_LIGHTGUN_AUX_B,
+            RETRO_DEVICE_ID_LIGHTGUN_AUX_C,
+            RETRO_DEVICE_ID_LIGHTGUN_START,
+            RETRO_DEVICE_ID_LIGHTGUN_SELECT,
+            RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP,
+            RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN,
+            RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT,
+            RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT,
+            RETRO_DEVICE_ID_LIGHTGUN_RELOAD,
+        ] {
+            assert_eq!(
+                lightgun_field_value(p, id), 0,
+                "Phase 0: LIGHTGUN id {id} must return 0 (binding-UI plumbing is Phase 2)",
+            );
+        }
+    }
+
+    #[test]
+    fn lightgun_field_value_unknown_id_returns_zero() {
+        // Spec compliance: any id outside the documented LIGHTGUN
+        // table returns 0 rather than leaking stack / uninit.
+        let p = (1i16, 2i16, true);
+        for id in [17u32, 50, 100, 9999, u32::MAX] {
+            assert_eq!(lightgun_field_value(p, id), 0, "unknown id {id} must return 0");
+        }
     }
 }
