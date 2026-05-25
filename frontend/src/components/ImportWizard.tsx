@@ -16,6 +16,7 @@ import {
   systemThemes,
   type SystemId,
 } from "../themes/registry";
+import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
 
 // Phase 2.7 slice C — Import wizard.
 //
@@ -178,6 +179,15 @@ const ImportWizard: Component<Props> = (props) => {
   const [scanJobId, setScanJobId] = createSignal<number | null>(null);
   const [scanError, setScanError] = createSignal<string | null>(null);
   const [scanCancelled, setScanCancelled] = createSignal(false);
+
+  // ScummVM auto-detect dialog — opened from step 2's banner button
+  // when the active rule set includes a `scummvm` rule. The dialog
+  // walks the picked folder for game subdirs, runs the curated
+  // sentinel-filename detection, and writes `.scummvm` descriptors
+  // for operator-confirmed matches. After the dialog closes the
+  // operator advances to step 3 and the regular scan picks up the
+  // newly-written descriptors.
+  const [scummvmDetectOpen, setScummvmDetectOpen] = createSignal(false);
 
   // Step 4 sync options.
   const [syncCovers, setSyncCovers] = createSignal(true);
@@ -792,6 +802,30 @@ const ImportWizard: Component<Props> = (props) => {
           </button>
         </div>
       </div>
+      {/* Banner — visible when a scummvm rule is in the active set.
+          Opens the ScummvmDetectDialog scoped to the wizard's
+          currently-picked folder. Operator runs detection, confirms
+          matches, writes `.scummvm` descriptors, then advances to
+          Step 3 where the regular extension scan picks them up. */}
+      <Show when={rules().some((r) => r.systemId === "scummvm") && folder()}>
+        <div class="flex items-center justify-between rounded-md border border-(--color-system-accent)/30 bg-(--color-system-accent)/10 px-3 py-2 text-xs">
+          <div>
+            <p class="text-(--color-oa-ink)">ScummVM games in this folder?</p>
+            <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+              Auto-detect known SCUMM titles + ScummVM freewares and
+              generate <code class="font-mono">.scummvm</code> descriptor
+              files in bulk — no need to hand-craft one per game.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setScummvmDetectOpen(true)}
+            class="shrink-0 rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/20 px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-system-accent-soft) hover:bg-(--color-system-accent)/30"
+          >
+            Detect ScummVM games…
+          </button>
+        </div>
+      </Show>
       <div class="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto pr-1">
         <For
           each={rules()}
@@ -1112,6 +1146,14 @@ const ImportWizard: Component<Props> = (props) => {
           </footer>
         </div>
       </div>
+      {/* ScummVM auto-detect — mounted at wizard root so it can layer
+          on top of the wizard's own backdrop. Scoped to the currently-
+          picked folder. */}
+      <ScummvmDetectDialog
+        open={scummvmDetectOpen()}
+        onClose={() => setScummvmDetectOpen(false)}
+        initialFolder={folder()}
+      />
     </Show>
   );
 };
