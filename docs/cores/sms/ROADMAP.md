@@ -62,7 +62,7 @@ audio + working controller at native 59.92 Hz NTSC.
 
 - ⬜ Per-system shader tweaks — operator-driven shader-preset choice (per-system shader override shipped cross-system).
 - ⬜ Optional BIOS handling — operator-driven UI polish (per-system settings page shipped cross-system).
-- ⬜ Light Phaser (SMS's light-gun peripheral) — POINTER device infra shipped cross-system; per-game Light Phaser smoke-test still ⬜.
+- ⬜ Light Phaser — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`). Genesis Plus GX exposes the Phaser through RETRO_DEVICE_LIGHTGUN; SCREEN_X/Y/TRIGGER now reach the core. Flagship validation: Operation Wolf / Rambo III / Shooting Gallery. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
 - ⬜ 3D glasses (SMS SegaScope add-on) — operator-driven Genesis Plus GX anaglyph fallback toggle (deferred).
 
 ---

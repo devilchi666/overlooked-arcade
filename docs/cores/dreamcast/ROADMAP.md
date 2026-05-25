@@ -43,7 +43,7 @@ with gamepad analog stick driving movement.
 ## ⬜ Phase 2 — Polish
 
 - ⬜ **VMU peripheral support** — the iconic memory-card-with-screen doubled as a peripheral for some titles — gated on Phase 2.5 secondary-screen plumbing.
-- ⬜ **Light gun support** (House of the Dead 2, Confidential Mission, Death Crimson 2) — POINTER device infra is shipped (`oa_core::InputState.pointer` + `cb_input_state` POINTER dispatch); per-game light-gun smoke-test still operator-driven.
+- ⬜ **Light gun support** (House of the Dead 2, Confidential Mission, Death Crimson OX, Maze of the Kings) — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`). Flycast polls RETRO_DEVICE_LIGHTGUN for the DC light gun + arcade-cabinet ports; SCREEN_X/Y/TRIGGER reach the core. **Caveat**: Confidential Mission demands the reload gesture — IS_OFFSCREEN flag is Phase 2 work, interim is keyboard-bound reload. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::dreamcast` (reads IP.BIN HDR serial); `rom_hashes` points at `metadat/redump/Sega - Dreamcast`.
 - ✅ **L/R analog trigger pressure-sensitivity** — closed by Phase B (see above). Same shared infra closed GC + PS2.
 - ✅ **DC Jump Pack rumble** — closed by Phase F rumble interface (`RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE` wired through to gilrs). Operator playtest pending.

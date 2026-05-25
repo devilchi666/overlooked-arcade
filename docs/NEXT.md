@@ -36,8 +36,28 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    - Bits 16-20 in `bindings.rs::jaguar` already exist. Wire libretro `RETRO_DEVICE_KEYBOARD` events from the upper-bit presses through to Virtual Jaguar.
    - Wants VJ-specific RETROK keycode validation against a running core.
 
-5. **Multi-system light-gun smoke-test validation** (~160 lines harness).
-   - POINTER device dispatch is shipped; per-system validation across dreamcast (House of the Dead), saturn (Virtua Cop), nes (Zapper), psx (Time Crisis) is pending. Mostly operator playtest — code work is a test harness.
+~~5. Multi-system light-gun smoke-test validation~~ — **SHIPPED 2026-05-25**
+   on `feat/light-gun-harness`. Original audit framing was wrong:
+   "POINTER device dispatch is shipped" only covered the touch/stylus
+   shape (NDS). Most classical light-gun cores (FCEUmm Zapper, snes9x
+   Super Scope, Genesis Plus GX Light Phaser, Beetle Saturn Virtua
+   Gun, Beetle PSX GunCon, Flycast HotD) poll `RETRO_DEVICE_LIGHTGUN`
+   (id=4), not POINTER (id=6). Pre-fix `cb_input_state` rejected
+   everything that wasn't JOYPAD/POINTER → light-gun cores got zeros.
+   This branch adds the LIGHTGUN branch (in
+   `crates/oa-libretro/src/state.rs::lightgun_field_value`) wiring
+   SCREEN_X / SCREEN_Y / TRIGGER + deprecated relative X/Y aliases.
+   AUX / START / SELECT / DPAD / RELOAD return 0 (Phase 2 Bindings UI
+   work). IS_OFFSCREEN also returns 0 — proper reload-by-aim-off-screen
+   needs an `in_viewport` flag on InputState (Phase 2). 18 new unit
+   tests across `oa-libretro`, `oa-input`, `oa-shell::light_gun_systems`
+   cover both dispatch helpers + viewport coord math edge cases
+   (sweep monotonicity, out-of-viewport sentinel, extreme-coord
+   clamping). Declarative `apps/oa-shell/src/light_gun_systems.rs`
+   table catalogues nes/snes/sms/saturn/psx/dreamcast/nds with their
+   expected device type + flagship test title + validation status.
+   Per-system operator playtest is the remaining work — code is
+   ready.
 
 ~~6. Full media taxonomy + LaunchBox-shape storage~~ — **SHIPPED 2026-05-24**
    on `feat/media-taxonomy` (`--no-ff` merge to main). 7 phase commits;
@@ -149,7 +169,7 @@ What's already shipped that future work can lean on. Cite these in PRs that clos
 - **BIOS pre-checks** — CD-launch dispatch covers 9 CD systems; cart-shape covers nds/neogeo/coleco/intv/o2/channelf/5200/pokemini/gba/jaguar (10 systems). Neogeo BIOS flavour-tagged stock vs Universe. GBA pre-check is warn-on-missing (mGBA HLE works); jaguar pre-check is block-on-missing (Virtual Jaguar requires jagboot).
 - **Keyboard passthrough** + Game-Focus toggle + Ctrl+G. Default-on for `mame`, `msx`, `msx2`, `5200`.
 - **Analog axes** — `InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity + per-system default routing (`default_analog_routing("n64") → WASD`).
-- **POINTER device** — `oa_core::InputState.pointer` + `cb_input_state` POINTER dispatch + `InputPoller::poll_pointer` with `PointerViewport` (window-relative mapping fed from `Renderer::last_viewport()` per frame).
+- **POINTER + LIGHTGUN devices** — `oa_core::InputState.pointer` + `cb_input_state` dispatch for both `RETRO_DEVICE_POINTER` (touch/stylus shape, NDS et al.) AND `RETRO_DEVICE_LIGHTGUN` (classical gun shape, NES Zapper / Saturn Virtua Gun / PSX GunCon / Dreamcast HotD / SMS Light Phaser / SNES Super Scope). Pure helper functions `pointer_field_value` + `lightgun_field_value` in `crates/oa-libretro/src/state.rs` are exhaustively unit-tested. `InputPoller::poll_pointer` + `PointerViewport` (window-relative mapping fed from `Renderer::last_viewport()` per frame). Catalogue of known light-gun systems + device-type expectations in `apps/oa-shell/src/light_gun_systems.rs`. Phase 2 gaps for full light-gun support: LIGHTGUN AUX/START/SELECT/DPAD/RELOAD bindings UI, IS_OFFSCREEN flag (needs `in_viewport` on InputState for reload-by-aim-off-screen).
 - **Direct-launch CLI** — `--system` / `--core` / per-game lookup + bootstrap-hint so the emu thread loads the right .dll on first launch.
 - **Disc-id extraction** — `cd_id.rs::extractors` covers pce-cd, segacd, saturn, psx/ps2, neocd, pcfx, gamecube, dreamcast; 3DO returns None by design.
 - **Per-system theming** — `frontend/src/themes/systems.css` + `registry.ts`.

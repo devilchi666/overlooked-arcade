@@ -73,7 +73,7 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::psx_family` (reads SLUS_/SCUS_/SLES_/SCES_/SLPS_/SLPM_/SCPS_ prefixes from SYSTEM.CNF); `rom_hashes` points at `metadat/redump/Sony - PlayStation`.
 - ⬜ **HW vs SW perf benchmarks** — operator-driven DECISIONS doc.
 - ⬜ **PGXP geometry correction** — operator-driven per-game core-option curation (per-game core-options drawer shipped cross-system).
-- ⬜ **Light gun support** — operator playtest (POINTER device infra shipped cross-system; per-game light-gun smoke-test still ⬜).
+- ⬜ **Light gun support** — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`). Beetle PSX polls RETRO_DEVICE_LIGHTGUN for both the Namco GunCon (Time Crisis 1/2, Point Blank trilogy) AND the Konami Justifier (Lethal Enforcers, Crypt Killer); SCREEN_X/Y/TRIGGER reach the core. **Caveat**: Time Crisis-style reload-by-aiming-off-screen needs the IS_OFFSCREEN flag which is hard-coded to 0 today; operators can bind reload to a keyboard key as an interim workaround. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
 
 ---
 
