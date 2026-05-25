@@ -31,7 +31,7 @@ scans Jaguar ROMs, sees gold-themed tiles, launches a known-good ROM.
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ **Keyboard-passthrough dispatch for KP8-KP_HASH** — the upper 5 keypad keys surface in the per-system Bindings page but don't reach Virtual Jaguar (keyboard-passthrough infra is shipped cross-system; the libretro KEYBOARD device dispatch for these high-bit entries is still ⬜).
+- ✅ **Keyboard-event dispatch for KP8-KP_HASH** — bits 16-20 in the polled mask (KP8 / KP9 / KP_STAR / KP0 / KP_HASH) now dispatch to Virtual Jaguar through `retro_keyboard_event_t` as RETROK_KP8 / KP9 / KP_MULTIPLY / KP0 / HASH respectively. Per-port edge detection in the emu thread (`apps/oa-shell/src/main.rs` Port0 input slice) only fires on transitions; gated on `current_system_id == "jaguar"` + `core.has_keyboard_callback()` so the path costs ~one mask compare per frame for other systems. Translation lives in `bindings::jaguar_high_bit_to_retro_key`; 4 new unit tests lock the mapping table + bit-mask hygiene. **Operator validation pending:** confirm Virtual Jaguar registers a keyboard callback and that Iron Soldier weapon-select (KP1-KP9) round-trips end-to-end.
 - ✅ `jagboot.rom` BIOS pre-check — closed by `check_jaguar_bios` in `apps/oa-shell/src/main.rs` + dispatch arm for `jaguar` system_id. Recognizes `jagboot.rom` (and `jaguar_boot.rom` alt name) with libretro-database canonical SHA-1 (10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5); blocks launch + toasts when missing (Virtual Jaguar won't initialize without it).
 - ✅ Per-system shader override — closed by cross-system per-system shader override (slice 2.8.C + shader pipeline). Jaguar-specific scanline profile is operator-driven preset choice.
 
