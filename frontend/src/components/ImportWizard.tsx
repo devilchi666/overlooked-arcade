@@ -514,7 +514,6 @@ const ImportWizard: Component<Props> = (props) => {
       } else {
         accumulatedRows.push(...payload.rows);
       }
-      console.log(`[oa-wizard] applyCompletePayload job=${payload.jobId} pendingJobs.size=${pendingJobs.size} accumulated=${accumulatedRows.length}`);
       finishIfDone();
     }
 
@@ -526,18 +525,16 @@ const ImportWizard: Component<Props> = (props) => {
       const buffered = earlyCompletes.get(jobId);
       if (buffered) {
         earlyCompletes.delete(jobId);
+        // Keep this log — fires only when the race wins. Useful
+        // regression signal if the buffer-then-drain path stops
+        // working in a future refactor.
         console.log(`[oa-wizard] registerJob job=${jobId} draining buffered early-complete`);
         applyCompletePayload(buffered);
       }
     }
 
     function finishIfDone() {
-      if (pendingJobs.size > 0) {
-        console.log(`[oa-wizard] finishIfDone early-exit: ${pendingJobs.size} jobs still pending`);
-        return;
-      }
-      console.log(`[oa-wizard] finishIfDone: applying ${accumulatedRows.length} rows`);
-      const t0 = performance.now();
+      if (pendingJobs.size > 0) return;
       if (firstError) {
         setScanError(firstError);
       } else if (anyCancelled) {
@@ -545,12 +542,9 @@ const ImportWizard: Component<Props> = (props) => {
       } else {
         setScanRows(accumulatedRows);
       }
-      console.log(`[oa-wizard] setScanRows took ${(performance.now() - t0).toFixed(1)}ms`);
-      const t1 = performance.now();
       setScanRunning(false);
       setScanJobId(null);
       teardownListeners();
-      console.log(`[oa-wizard] post-set cleanup took ${(performance.now() - t1).toFixed(1)}ms; finishIfDone done`);
     }
 
     try {
@@ -575,15 +569,15 @@ const ImportWizard: Component<Props> = (props) => {
         errorMessage?: string;
         rows: ScannedRom[];
       }>("oa://library-scan-complete", (event) => {
-        console.log(
-          `[oa-wizard] complete event arrived job=${event.payload.jobId} rows=${event.payload.rows.length} cancelled=${event.payload.cancelled} hasError=${!!event.payload.errorMessage}`,
-        );
         if (!pendingJobs.has(event.payload.jobId)) {
           // Race fix: jobId hasn't been registerJob()'d yet because the
           // backend scan finished faster than `await invoke()` could
           // round-trip the jobId back to us. Buffer the payload; when
-          // registerJob(jobId) runs, it'll drain the buffer.
-          console.log(`[oa-wizard] complete event buffered (jobId ${event.payload.jobId} not yet in pending set)`);
+          // registerJob(jobId) runs, it'll drain the buffer. Logged
+          // because this happens only when the race wins — if a future
+          // regression resurrects the "wizard freezes on Step 3" bug,
+          // this line in oa-current.log is the trigger to look for.
+          console.log(`[oa-wizard] complete event buffered (jobId ${event.payload.jobId} arrived before invoke returned)`);
           earlyCompletes.set(event.payload.jobId, {
             jobId: event.payload.jobId,
             cancelled: event.payload.cancelled,
@@ -593,7 +587,6 @@ const ImportWizard: Component<Props> = (props) => {
           return;
         }
         applyCompletePayload(event.payload);
-        console.log(`[oa-wizard] finishIfDone returned`);
       });
       // Kick off the extension-mode scan unconditionally — it's the
       // path 38+ existing systems use, and it costs nothing for
