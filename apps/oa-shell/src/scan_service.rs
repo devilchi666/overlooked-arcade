@@ -17,11 +17,20 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::archive;
+
+/// Per-archive deadline for the cancellable peek wrappers. A clean .zip
+/// peek is single-digit milliseconds; a typical .7z is tens of ms. 15 s
+/// is long enough that no honest archive hits it, short enough that the
+/// scan can recover + log + skip a malformed one without the operator
+/// staring at a frozen progress bar for minutes. Tuned for "user
+/// patience" not "worst-case archive size."
+const ARCHIVE_PEEK_TIMEOUT: Duration = Duration::from_secs(15);
 
 static NEXT_JOB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -94,6 +103,12 @@ pub fn run_scan_blocking(
     cancel: Arc<AtomicBool>,
 ) -> Result<Vec<ScannedRom>, String> {
     let folder_str = folder.to_string_lossy().into_owned();
+    log::info!(
+        "scan_service: start job {job_id} folder={folder_str} extensions={} cancel={:p}",
+        wanted.len(),
+        Arc::as_ptr(&cancel),
+    );
+    let started = std::time::Instant::now();
     let mut out = Vec::new();
     let mut files_seen: u64 = 0;
     let mut last_emit = std::time::Instant::now();
@@ -138,6 +153,12 @@ pub fn run_scan_blocking(
     emit_progress(&handle, job_id, &folder_str, files_seen, &out, "");
 
     out.sort_by(|a, b| a.file_name.to_ascii_lowercase().cmp(&b.file_name.to_ascii_lowercase()));
+    let cancelled = cancel.load(Ordering::Relaxed);
+    log::info!(
+        "scan_service: end job {job_id} files_seen={files_seen} matches={} cancelled={cancelled} elapsed={}ms",
+        out.len(),
+        started.elapsed().as_millis(),
+    );
     Ok(out)
 }
 
@@ -147,7 +168,7 @@ fn walk(
     depth: u32,
     max_depth: u32,
     wanted: &HashSet<String>,
-    cancel: &AtomicBool,
+    cancel: &Arc<AtomicBool>,
     out: &mut Vec<ScannedRom>,
     files_seen: &mut u64,
     last_emit: &mut std::time::Instant,
@@ -196,6 +217,20 @@ fn walk(
         let Some(ext) = ext else { continue };
 
         if archive::ArchiveKind::from_extension(&ext).is_some() {
+            // Per-archive diagnostic line — the LAST log entry before
+            // a freeze names the file that hung, so an operator-reported
+            // "Cancel button doesn't respond" investigation can identify
+            // the culprit archive from oa-current.log without having to
+            // bisect their library. log::debug would be nicer for
+            // signal-to-noise but most users run at INFO level and
+            // wouldn't see it; the line is a single ~120 bytes so a
+            // 1000-archive folder costs ~120 KB of log.
+            log::info!(
+                "scan_service: peek archive {} ({} bytes)",
+                entry_path.display(),
+                std::fs::metadata(&entry_path).map(|m| m.len()).unwrap_or(0),
+            );
+
             // Neo Geo .zip content-peek disambiguation. A .zip whose
             // inner files match the Neo Geo ROM-set signature (.p1 +
             // .s1) gets emitted as a standalone ScannedRom for the
@@ -204,16 +239,61 @@ fn walk(
             // generic extension-based mapping (which would otherwise
             // route .zip files to MAME by default). MAME zips fall
             // through to the normal archive-enumeration path below.
-            if ext == "zip" && archive::peek_zip_for_neogeo(&entry_path) {
-                out.push(ScannedRom {
-                    path: entry_path.to_string_lossy().into_owned(),
-                    file_name: name_owned.clone(),
-                    extension: ext,
-                    archive_inner_path: None,
-                    system_hint: Some("neogeo".to_string()),
-                });
-            } else {
-                match archive::list_rom_contents(&entry_path, wanted) {
+            //
+            // Both peeks run through the cancellable wrappers because
+            // either one can hang on a malformed archive (zip-rs's
+            // central-directory parser can seek-loop on certain bad
+            // ZIP64 entries; sevenz-rust's metadata walk shares the
+            // same surface). The wrappers poll cancel every ~100 ms
+            // and give up entirely after `ARCHIVE_PEEK_TIMEOUT`, so
+            // the operator's Cancel button reaches the walker quickly
+            // and one bad file in a 1000-file folder doesn't freeze
+            // the whole import.
+            let mut handled_as_neogeo = false;
+            if ext == "zip" {
+                match archive::peek_zip_for_neogeo_cancellable(
+                    entry_path.clone(),
+                    Arc::clone(cancel),
+                    ARCHIVE_PEEK_TIMEOUT,
+                ) {
+                    Ok(true) => {
+                        out.push(ScannedRom {
+                            path: entry_path.to_string_lossy().into_owned(),
+                            file_name: name_owned.clone(),
+                            extension: ext.clone(),
+                            archive_inner_path: None,
+                            system_hint: Some("neogeo".to_string()),
+                        });
+                        handled_as_neogeo = true;
+                    }
+                    Ok(false) => {}
+                    Err(archive::PeekFailure::Cancelled) => return,
+                    Err(archive::PeekFailure::TimedOut) => {
+                        log::warn!(
+                            "scan_service: neogeo peek timed out after {}s, skipping: {}",
+                            ARCHIVE_PEEK_TIMEOUT.as_secs(),
+                            entry_path.display(),
+                        );
+                        continue;
+                    }
+                    Err(archive::PeekFailure::Failed(e)) => {
+                        log::warn!(
+                            "scan_service: neogeo peek {} failed: {e}",
+                            entry_path.display(),
+                        );
+                        // Fall through to the generic list_rom_contents
+                        // attempt — a peek failure here doesn't mean
+                        // the full enumeration will also fail.
+                    }
+                }
+            }
+            if !handled_as_neogeo {
+                match archive::list_rom_contents_cancellable(
+                    entry_path.clone(),
+                    wanted.clone(),
+                    Arc::clone(cancel),
+                    ARCHIVE_PEEK_TIMEOUT,
+                ) {
                     Ok(inner_entries) => {
                         for inner in inner_entries {
                             if cancel.load(Ordering::Relaxed) {
@@ -234,7 +314,20 @@ fn walk(
                             });
                         }
                     }
-                    Err(e) => log::warn!("scan_service: peek {} failed: {e}", entry_path.display()),
+                    Err(archive::PeekFailure::Cancelled) => return,
+                    Err(archive::PeekFailure::TimedOut) => {
+                        log::warn!(
+                            "scan_service: archive peek timed out after {}s, skipping: {}",
+                            ARCHIVE_PEEK_TIMEOUT.as_secs(),
+                            entry_path.display(),
+                        );
+                    }
+                    Err(archive::PeekFailure::Failed(e)) => {
+                        log::warn!(
+                            "scan_service: peek {} failed: {e}",
+                            entry_path.display(),
+                        );
+                    }
                 }
             }
         } else if archive::ArchiveKind::is_unsupported_archive(&ext) {
