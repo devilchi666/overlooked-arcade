@@ -39,6 +39,7 @@ mod platform_media;
 mod rom_hashes;
 mod rom_header;
 mod scan_service;
+mod scummvm_detect;
 mod shader_presets;
 mod shader_presets_watcher;
 mod system_settings;
@@ -2748,6 +2749,8 @@ fn main() {
             start_background_scan,
             start_background_directory_scan,
             cancel_background_scan,
+            detect_scummvm_directories,
+            write_scummvm_descriptors,
             set_watched_folders,
             list_save_slots,
             delete_save_slot,
@@ -8667,6 +8670,49 @@ async fn start_background_directory_scan(
     });
 
     Ok(job_id)
+}
+
+/// ScummVM auto-detect — walks `parentDir` one level deep, runs the
+/// curated sentinel-filename detection on each subdirectory, and
+/// returns a list of `DetectionResult` rows (matched + unmatched).
+/// The frontend's "Detect ScummVM games" UI consumes this directly
+/// and lets the operator confirm + edit before any descriptor files
+/// get written.
+///
+/// See `apps/oa-shell/src/scummvm_detect.rs` for the curated table.
+/// Read-only — never writes to disk.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn detect_scummvm_directories(
+    parentDir: String,
+) -> Result<Vec<scummvm_detect::DetectionResult>, String> {
+    let parent_path = std::path::PathBuf::from(&parentDir);
+    if !parent_path.is_dir() {
+        return Err(format!("not a directory: {parentDir}"));
+    }
+    scummvm_detect::detect_in_parent(&parent_path)
+        .map_err(|e| format!("detect_in_parent {parentDir}: {e}"))
+}
+
+/// ScummVM auto-detect — write `.scummvm` descriptor files for the
+/// operator-confirmed batch. Returns the number of files actually
+/// written (rows with `overwrite=false` AND an existing file are
+/// silently skipped; per-file write failures land in the log and
+/// count as "not written").
+///
+/// After this returns, the operator's next library scan will pick
+/// up the new `.scummvm` files via the regular extension-mode scan
+/// (`scummvm` system_id's registered extensions include `.scummvm`).
+#[tauri::command]
+fn write_scummvm_descriptors(
+    writes: Vec<scummvm_detect::DescriptorWrite>,
+) -> Result<usize, String> {
+    let written = scummvm_detect::write_descriptors(&writes);
+    log::info!(
+        "scummvm_detect: write_scummvm_descriptors — {} of {} files written",
+        written, writes.len()
+    );
+    Ok(written)
 }
 
 /// Reconfigure the filesystem watcher. The frontend calls this on startup

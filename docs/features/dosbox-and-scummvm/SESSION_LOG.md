@@ -4,6 +4,16 @@ Cross-stream session log. Per-core ship details + commit shas live in the per-co
 
 ---
 
+## 2026-05-24 (later) — ScummVM auto-detect follow-up
+
+- **Shipped:** Branch `feat/scummvm-auto-detect`. Closes the PARKING_LOT entry "ScummVM `--detect` auto-generation of `.scummvm` files" via option B (curated sentinel-filename heuristic; no `scummvm.exe` dependency). New backend module `apps/oa-shell/src/scummvm_detect.rs` ships a table of ~18 well-known games (every SCUMM mainstay from Monkey Island through Curse of Monkey Island + the ScummVM freeware classics Beneath a Steel Sky / Flight of the Amazon Queen / Lure of the Temptress / Drascula / Soltys). Two new Tauri commands: `detect_scummvm_directories` (read-only scan) + `write_scummvm_descriptors` (operator-confirmed batch write). New frontend `ScummvmDetectDialog` opens from a banner in Import Wizard Step 2 (visible when a scummvm rule is active); operator picks the parent folder, sees per-subdir detection results, edits or fills in misses, clicks "Write N descriptors" to land the `.scummvm` files. After write the operator advances to Step 3 and the regular extension scan picks up the new descriptors.
+- **Almost:** Same operator playtest gate as Phase 1 — drop `scummvm_libretro.dll` + a real game directory, run detect, launch.
+- **Next:** With auto-detect shipped, the per-core ScummVM Phase 1 validation backlog is now significantly cheaper (operator points OA at a folder, gets descriptors generated automatically for the popular games). Phase 2 hardening items (per-game `scummvm_extra_path` core option, per-game core-options templates) remain ⬜.
+
+cargo test workspace green (459 oa-shell tests, +9 new scummvm_detect tests). Frontend tsc clean.
+
+---
+
 ## 2026-05-24 — Phase 1 + Phase 2 shipped, merged to main
 
 The locked plan in this folder's `README.md` was implemented across two `--no-ff` merges, one per half. Operator opted to merge each phase as it landed rather than do a single end-of-branch merge (changed the original plan's "merge once after all 5 phases" to "merge per phase"). Final cleanup phase (this entry + the doc cross-references) follows as a tiny separate merge.
