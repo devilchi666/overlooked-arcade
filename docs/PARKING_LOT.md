@@ -82,7 +82,25 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
   Why deferred: full plan captured in `docs/features/kiosk-shell/KIOSK_PLAN.md`. Phase 0 of that plan IS the current settings/IA polish work (`docs/features/ui-polish/UI_MENU_BAR_PLAN.md`). Kiosk shell itself is Phase 1+ — picked up after the desktop UI lands at a polished baseline.
 
 - ~~2026-05-24 — ScummVM `--detect` auto-generation of `.scummvm` files~~
-  **2026-05-24 — Closed via option B** (curated sentinel-filename heuristic, no `scummvm.exe` dependency). Shipped on `feat/scummvm-auto-detect`: new `apps/oa-shell/src/scummvm_detect.rs` ships a table of ~18 well-known SCUMM games + ScummVM freewares with unambiguous main-data-file signatures; new `ScummvmDetectDialog` (Import Wizard Step 2 banner) walks a parent folder, runs detection on each subdir, lets the operator confirm + edit before writing `.scummvm` descriptors in bulk. Games outside the curated set surface as "Not recognized" rows the operator fills in manually right in the same dialog. The CLI-shell approach (option A) and bundled detector (option C) stay parked — option B covers the top ~90% of operator-realistic libraries with zero external deps + zero ongoing maintenance against the ScummVM source.
+  **2026-05-24 — Closed via options A + B both shipped.** Option B
+  (curated sentinel-filename heuristic) shipped first on
+  `feat/scummvm-auto-detect`: new `apps/oa-shell/src/scummvm_detect.rs`
+  ships a table of ~18 well-known SCUMM games + ScummVM freewares;
+  new `ScummvmDetectDialog` (Import Wizard Step 2 banner) walks a
+  parent folder, runs sentinel detection on each subdir, lets the
+  operator confirm + edit + write `.scummvm` descriptors in bulk.
+  Option A (standalone ScummVM CLI shell-out) followed on
+  `feat/scummvm-cli-option` as a power-user mode toggle in the same
+  dialog: new `apps/oa-shell/src/scummvm_cli.rs` auto-discovers
+  `scummvm.exe` in standard install paths + `$PATH`, runs
+  `scummvm --detect --recursive --path=<dir>`, parses the CLI output
+  with a defensive line-by-line parser that handles modern 2.x and
+  variant column widths, and overlays CLI matches onto the
+  directory-walker's canonical subdir list. Operators with a
+  standalone install flip to CLI mode for the full ~400-game
+  catalog; everyone else stays on the curated table. Option C
+  (bundled detector) stays ruled out — significant maintenance
+  burden vs the two-option approach now shipped.
 
 - 2026-05-24 — DOSBox per-game `dosbox.conf` editor
   Why it came up: dosbox-pure honors a per-game `dosbox.conf` in the game directory automatically; operators who need to tune cycles / sound card / memory currently hand-edit that file outside OA. An in-app conf editor (drawer panel rendering `[autoexec]` + tuning knobs as form fields) would close the alt-tab loop.

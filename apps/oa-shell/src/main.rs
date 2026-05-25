@@ -39,6 +39,7 @@ mod platform_media;
 mod rom_hashes;
 mod rom_header;
 mod scan_service;
+mod scummvm_cli;
 mod scummvm_detect;
 mod shader_presets;
 mod shader_presets_watcher;
@@ -2751,6 +2752,8 @@ fn main() {
             cancel_background_scan,
             detect_scummvm_directories,
             write_scummvm_descriptors,
+            find_scummvm_cli,
+            run_scummvm_cli_detect,
             set_watched_folders,
             list_save_slots,
             delete_save_slot,
@@ -8713,6 +8716,42 @@ fn write_scummvm_descriptors(
         written, writes.len()
     );
     Ok(written)
+}
+
+/// ScummVM auto-detect — discover a standalone ScummVM install on the
+/// operator's machine. Used by the `ScummvmDetectDialog`'s CLI-mode
+/// toggle to pre-fill the executable path field on dialog open.
+/// Returns `None` when no install is found in the standard install
+/// paths or on `$PATH`; operator can pick a custom path manually.
+///
+/// See `apps/oa-shell/src/scummvm_cli.rs` for the per-platform
+/// search order.
+#[tauri::command]
+fn find_scummvm_cli() -> Option<String> {
+    scummvm_cli::find_scummvm_executable().map(|p| p.to_string_lossy().into_owned())
+}
+
+/// ScummVM auto-detect — shell out to the operator-supplied
+/// standalone ScummVM CLI for the heavy-lifting detection that
+/// covers the engine's full ~400-game catalog (vs the curated
+/// table's top ~18). Parses the CLI's stdout into structured rows
+/// the dialog can render alongside the curated-table walk.
+///
+/// Runs on tokio's blocking pool so the renderer thread doesn't
+/// stall on the OS process invocation. ScummVM detection on a
+/// few hundred game dirs is typically <1s; anything slower likely
+/// means a malformed dir tree hanging the CLI.
+#[tauri::command]
+#[allow(non_snake_case)]
+async fn run_scummvm_cli_detect(
+    scummvmPath: String,
+    parentDir: String,
+) -> Result<Vec<scummvm_cli::CliDetectionRow>, String> {
+    let exe = std::path::PathBuf::from(scummvmPath);
+    let target = std::path::PathBuf::from(parentDir);
+    tokio::task::spawn_blocking(move || scummvm_cli::run_detect(&exe, &target))
+        .await
+        .map_err(|e| format!("blocking task panicked: {e}"))?
 }
 
 /// Reconfigure the filesystem watcher. The frontend calls this on startup
