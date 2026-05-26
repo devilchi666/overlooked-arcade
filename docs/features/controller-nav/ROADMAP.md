@@ -12,11 +12,13 @@ Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
 
 ## Slice B — Focus manager + focus-ring pattern
 
-- ⬜ `<FocusGroup>` Solid component — registers child focusables, owns selection index
-- ⬜ Roving-tabindex helper (only current focusable has `tabindex=0`)
-- ⬜ `useFocus()` primitive for focusables to bind handlers
-- ⬜ Focus-ring CSS class (`.oa-focus-ring` — 2px solid accent color, 8px radius)
-- ⬜ Wired to gamepad event bus from Slice A
+- ✅ `useFocusGroup` hook — registers a group, returns helpers (`isActive`, `activate`, `bind`) (in frontend/src/nav/focus.ts)
+- ✅ Index-based focus model: parent owns focusedIndex signal, group reads/writes it; works with virtualized lists
+- ✅ Per-orientation direction handling: vertical / horizontal / grid (columns accessor)
+- ✅ Shoulder-bumper transfer to neighbour groups (L1/R1)
+- ✅ Button routing: A/B/X/Y/Start → onActivate/onCancel/onSecondary/onTertiary/onStart
+- ✅ Focus-ring CSS via `[data-oa-focus="true"]` (2px solid system accent, 8px radius, --oa-focus-anim-ms transition)
+- ✅ Inactive-group ring style (dashed dim outline) so the operator sees the bumper-back target
 
 ## Slice C — On-screen hint bar
 
