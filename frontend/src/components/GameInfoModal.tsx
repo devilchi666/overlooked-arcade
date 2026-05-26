@@ -29,6 +29,9 @@ import { launchRom } from "../library/launch";
 import { useMedia, type MediaVariant } from "../library/media";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 type Props = {
   entry: RomEntry | null;
@@ -191,6 +194,34 @@ const GameInfoModal: Component<Props> = (props) => {
     }
   }
 
+  // Controller-nav: modal acts as a single "primary action" surface.
+  // Body is read-only metadata + galleries; the buttons that matter are
+  // Launch (A), Resume-from-slot (Y, when one exists), Close (B), and
+  // L1/R1 cycle the tabs. No focus ring on individual elements — the
+  // modal owns the visible focus.
+  const TABS: TabId[] = ["screenshots", "titles", "saves"];
+  function cycleTab(delta: -1 | 1): void {
+    const cur = TABS.indexOf(activeTab());
+    const next = (cur + delta + TABS.length) % TABS.length;
+    setActiveTab(TABS[next]);
+  }
+  const [infoFocusIndex, setInfoFocusIndex] = createSignal(0);
+  const infoFocusGroup = useFocusGroup({
+    id: "game-info-modal",
+    orientation: "vertical",
+    itemCount: () => (props.entry ? 1 : 0),
+    focusedIndex: infoFocusIndex,
+    setFocusedIndex: setInfoFocusIndex,
+    onActivate: () => void handleLaunch(),
+    onCancel: () => props.onClose(),
+    onTertiary: () => {
+      const s = resumeSlot();
+      if (s !== undefined) void handleLaunchSlot(s);
+    },
+    onShoulderL: () => cycleTab(-1),
+    onShoulderR: () => cycleTab(1),
+  });
+
   function MetadataRow(label: string, value: JSX.Element): JSX.Element {
     return (
       <div class="contents">
@@ -204,13 +235,25 @@ const GameInfoModal: Component<Props> = (props) => {
 
   return (
     <Show when={props.entry}>
-      {(entry) => (
+      {(entry) => {
+        useBackHandler(() => props.onClose());
+        onMount(() => {
+          infoFocusGroup.activate();
+          setInfoFocusIndex(0);
+        });
+        onCleanup(() => activateFocusGroup("library-grid"));
+        return (
         <div
           class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
           onClick={(e) => {
             if (e.currentTarget === e.target) props.onClose();
           }}
         >
+          <HintRegion hints={() => {
+            const base = { a: "Launch", b: "Close", l1: "Prev tab", r1: "Next tab" } as Record<string, string>;
+            if (resumeSlot() !== undefined) base.y = "Resume";
+            return base as never;
+          }} />
           <div
             class="flex w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
             style={{ height: "min(720px, 85vh)" }}
@@ -571,7 +614,8 @@ const GameInfoModal: Component<Props> = (props) => {
             </footer>
           </div>
         </div>
-      )}
+        );
+      }}
     </Show>
   );
 };

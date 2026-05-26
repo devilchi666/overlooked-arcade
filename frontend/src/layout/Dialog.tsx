@@ -18,8 +18,19 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
+
+/// Tiny helper component — pushes the dialog's onClose onto the back
+/// stack for the lifetime of the open dialog. Mount/unmount tied to
+/// the parent `<Show when={open}>` block so the handler auto-pops on
+/// close. Renders nothing.
+const DialogBackHandler: Component<{ onClose: () => void }> = (props) => {
+  useBackHandler(() => props.onClose());
+  return null;
+};
 
 type Props = {
   open: boolean;
@@ -61,6 +72,8 @@ export const Dialog: Component<Props> = (props) => {
 
   return (
     <Show when={props.open}>
+      <DialogBackHandler onClose={props.onClose} />
+      <HintRegion hints={{ b: "Close" }} />
       <div
         class="fixed inset-0 z-[55] grid place-items-center bg-black/55 backdrop-blur-sm"
         onClick={(e) => {

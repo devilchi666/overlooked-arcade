@@ -65,6 +65,11 @@ export type FocusGroupOptions = {
    *  behaviour like "left collapses a sidebar container" or "right
    *  expands a tree node before descending." */
   onDirection?: (direction: NavDirection, currentIndex: number) => boolean;
+  /** Overrides for the shoulder bumpers. When defined, the handler runs
+   *  instead of jumping to a neighbour group — useful for modals that
+   *  want L1/R1 to cycle tabs rather than transfer focus. */
+  onShoulderL?: () => void;
+  onShoulderR?: () => void;
 };
 
 type FocusGroupHandle = {
@@ -143,11 +148,19 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
         handle.options.onStart?.();
         return;
       case "l1": {
+        if (handle.options.onShoulderL) {
+          handle.options.onShoulderL();
+          return;
+        }
         const left = handle.options.neighbours?.left;
         if (left) manager.activate(left);
         return;
       }
       case "r1": {
+        if (handle.options.onShoulderR) {
+          handle.options.onShoulderR();
+          return;
+        }
         const right = handle.options.neighbours?.right;
         if (right) manager.activate(right);
         return;
