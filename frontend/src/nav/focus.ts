@@ -191,13 +191,16 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
     if (event.direction === "left") next = Math.max(0, cur - 1);
     else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
   } else {
-    // grid
+    // grid — flat 1D list visually wrapped into columns. Left/right walk
+    // the list linearly (so left at column 0 lands on the previous row's
+    // last entry); up/down jump by `cols`. This matches Steam Big Picture
+    // / Xbox dashboard / every grid-shaped UI the operator's reflexes
+    // already know.
     const cols = Math.max(1, o.columns?.() ?? 1);
-    const col = cur % cols;
     const row = Math.floor(cur / cols);
     const lastRow = Math.floor((count - 1) / cols);
-    if (event.direction === "left") next = col > 0 ? cur - 1 : cur;
-    else if (event.direction === "right") next = col < cols - 1 && cur + 1 < count ? cur + 1 : cur;
+    if (event.direction === "left") next = Math.max(0, cur - 1);
+    else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
     else if (event.direction === "up") next = row > 0 ? cur - cols : cur;
     else if (event.direction === "down") {
       if (row < lastRow) next = Math.min(cur + cols, count - 1);
