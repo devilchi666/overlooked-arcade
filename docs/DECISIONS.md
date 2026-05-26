@@ -741,3 +741,111 @@ Net effect on Genesis: sync_metadata now fetches `Sega - Mega Drive - Genesis.da
 
 **Why duplicated mapping (vs sharing rom_hashes::libretro_dat_refs_for_system):** Considered. Rejected for now because rom_hashes uses `DatRef` (subdir + basename, supporting metadat/no-intro vs metadat/redump split + multi-dat merges like gb DMG+CGB), while metadata only needs a single basename per (system, ext). The duplication is small (one match arm per system) and the type shapes don't align cleanly. Worth revisiting if a third call site grows that needs the same mapping — at that point promoting to a shared `system_id → libretro-database name` table earns its keep.
 
+---
+
+## 2026-05-25 — Strategic locks from external-advisor planning session
+
+**Context:** Operator + Claude collaborated with an external LLM advisor (ChatGPT) on strategic direction. Advisor consumed `docs/EXTERNAL_ADVISOR_BRIEF.md` and surfaced 6 feature concepts + 2 direct answers to the brief's open questions. Operator made decisions; this entry captures the strategic locks before implementation planning.
+
+Full implementation plan landed at [`docs/PLANS/guided-setup.md`](PLANS/guided-setup.md).
+
+### Decision A — Audience priority
+
+**Decision:** Primary audience is **couch gamers** (controller in hand, monitor/TV across the room, want OA to work and stay out of the way). Secondary is **cabinet builders** (kiosk shell audience, served eventually by the kiosk shell plan). Tertiary is **desktop users** (already served by the existing UI).
+
+**Onboarding order:** desktop → couch → cabinet. Every operator encounters OA first on a desktop install; from there they may move to couch or cabinet. The guided-setup arc is the first step every new operator walks regardless of where they end up.
+
+**Why:** OA's premium-feel positioning + per-system theming already implies "I want this to feel like a curated home, not a launcher tool" — that maps to the couch audience more naturally than the desktop-power-user audience. Desktop users keep what they have; couch becomes the priority for new investment.
+
+**Considered and rejected:**
+- **Desktop primary, couch secondary.** The status quo. Easier to ship but cedes the audience-expansion opportunity to LaunchBox/BigBox.
+- **Cabinet primary.** Would force kiosk shell ahead of guided-setup. Multi-month commitment for a smaller audience than couch.
+
+### Decision B — Two-tier UX model (smart defaults + power-user escape hatch)
+
+**Decision:** Every operator-facing decision in the guided-setup arc — folder layout, core selection, bindings, BIOS — ships with a smart default that handles the 80% case, and an explicit "customize / override" path for power users.
+
+**Why:** Apple + Steam both operate this way successfully. Aligns with "guided automation, not magic" — operator sees what was decided and why, can always override. Serves both defectors (skip past defaults) AND first-timers (accept defaults, learn over time).
+
+**Considered and rejected:**
+- **Fully automatic, no override surface.** Magic vibe; risks alienating power users who want to tune.
+- **Fully manual, no defaults.** Status quo for the existing wizard. Defeats the guided-setup goal.
+
+### Decision C — Controller-navigable from day one, scope = wizard + library browse/launch
+
+**Decision:** The guided-setup wizard is navigable with a controller from the day it ships. Same for library browsing and launching games. Per-game settings drawer, cheat editor, complex configuration screens stay mouse + keyboard until kiosk shell Phase 1 ships properly later.
+
+**Model:** D-pad + focus rings (Steam Big Picture style). A confirms, B cancels, Y customizes, Select shows help overlay. On-screen hint bar persistent at footer.
+
+**Why:** Couch-primary audience can't grab a keyboard mid-onboarding. Controller-nav is load-bearing for that audience. Scoping to wizard + browse/launch lets us ship without absorbing the entire kiosk Phase 1 effort.
+
+**Considered and rejected:**
+- **Mouse + keyboard only; add controller polish later.** Half-experience for the priority audience.
+- **Whole desktop UI controller-navigable.** Effectively absorbs kiosk Phase 1; multi-month addition to the scope.
+- **Stick-driven cursor instead of DPad focus.** Slower for grid navigation; less aligned with BigBox-class UX conventions. Cursor mode parked for the kiosk shell library browser later.
+
+### Decision D — Curated decision tree for core selection (not benchmarking)
+
+**Decision:** Per-system core recommendations driven by a hardcoded `(system, power_tier) → core` table. CPU power detected via the `sysinfo` crate (brand + base clock + core count) and bucketed into three tiers: low, mid, high. Operator can override the auto-detected tier in Settings.
+
+**Why:** Predictable, maintainable, low-magic. The table encodes our per-system knowledge directly rather than hoping a benchmark generalizes. Operators see "we picked Beetle PSX HW because we detected your system as high-tier" — visible automation, not silent decisions.
+
+**Considered and rejected:**
+- **Detected + benchmarked.** sysinfo reports the hardware, one-time benchmark frame at first launch buckets the operator into a power tier. More accurate, more failure modes, more complex. Benchmark results can mislead on systems with thermal throttling, integrated GPUs, etc.
+- **Operator picks core per-system manually.** Status quo. Loses the "smart default" win that defines the guided-setup pitch.
+
+### Decision E — Folder model: read-in-place default, canonical layout opt-in
+
+**Decision:** OA continues to read ROMs from wherever they live by default. The wizard OFFERS a canonical `<root>/<system>/` layout; operator can have OA copy or move ROMs there. Default state of the "organize my ROMs" toggle is OFF (opt-in only). Default root is mode-aware:
+- Portable mode → `<exe_dir>\roms\<system>\`
+- AppData mode → `~\Documents\OverlookedArcade\roms\<system>\`
+- Operator can pick a different location; persisted to settings.
+
+**Why:** ROM collections are personal. Many operators have years of organization invested in their existing layout (No-Intro, TOSEC, ROMVault-managed). Forcing a canonical layout would alienate that audience. Auto-moving ROMs is also expensive (500GB+ collections take hours) and risky (CD `.cue + .bin` siblings, archive inner-path encoding, watcher conflicts during move). Opt-in only.
+
+**Considered and rejected:**
+- **Force canonical layout.** Alienates existing-collection operators. Risk of file-move corruption for niche edge cases (archives, CD multi-file sets).
+- **No canonical layout offer at all.** Loses a real win for new users without a system — they benefit from OA suggesting a clean layout out of the gate.
+
+### Decision F — Voice / tone: warm + curator/enthusiast
+
+**Decision:** OA's copy voice is warm-but-not-saccharine, knowledgeable-but-not-condescending. Acknowledges the operator as someone who knows what they're doing without assuming they remember every system's quirks. Treats emulation as a cultural pursuit, not a task to grind through.
+
+**Why:** The Jaguar gold theme, per-system care, and "premium home for overlooked systems" positioning all imply this voice already. The copy should match. Plain/utilitarian feels generic; saccharine feels condescending; wry-only feels exclusive. Warm-plus-curator is the middle that serves both first-timers (welcoming) and defectors (respectful).
+
+**Considered and rejected:**
+- **Plain / utilitarian (Apple HIG style).** Generic, doesn't match the per-system theming personality.
+- **Wry / understated only.** Risks excluding first-time-emulation users who don't get the joke.
+
+### Decision G — Theme ecosystem: WAIT (deferred to PARKING_LOT)
+
+**Decision:** Do NOT build the Rhai-scripted theme ecosystem currently designed in `docs/features/kiosk-shell/KIOSK_PLAN.md` Phase 2. Per-system CSS hardcoded in `frontend/src/themes/registry.ts` remains the only theming surface for now. Reconsider if/when (a) the kiosk shell launches AND (b) there's clear community pull (multiple operators independently asking how to share themes).
+
+**Why:** Classic dead-ecosystem trap. Theme ecosystems require simultaneous critical mass on demand (users wanting themes) AND supply (theme authors producing them). OA's current user count meets neither. Author would maintain the entire ecosystem alone with no community contributions, locking in maintenance cost without product value.
+
+Full reasoning logged in `docs/PARKING_LOT.md` (2026-05-25 entry).
+
+### Decision H — License pivot: GPL-2.0 → permissive (timing deferred)
+
+**Decision:** Eventually move the OA shell from GPL-2.0 to MIT or Apache 2.0. Timing condition: pivot when (a) the dynamic-load architecture pivot is complete (✅ vendored static crates retired per 2026-05-16 entry) AND (b) the installer ships only our own DLL builds of any forked cores (in-progress; we currently use community-built nightlies for most cores).
+
+**Why:** Mission-aligned with "gift to the retro community" — permissive licensing encourages contributions + forks + downstream ecosystem use. GPL cores stay GPL inside their .dll regardless; the shell license is independent post-pivot. Commercial-actor copying is not a meaningful risk — they'll copy regardless of license; OA's defense is vision + execution speed + non-commercial intent, not legal walls.
+
+**Supersedes:** the 2026-05-15 "License: GPLv2 binary-wide" decision, **once timing conditions are met**. Until then, the original decision stands. When the pivot ships, file a new entry that names the chosen permissive license (MIT vs Apache 2.0) and updates `workspace.package.license` in the root `Cargo.toml`.
+
+**Considered and rejected:**
+- **Stay GPL-2.0 forever.** Keeps the original alignment with copyleft cores but unnecessarily limits downstream use post-pivot.
+- **Pivot to permissive immediately.** Premature; the "ship our own DLLs" condition isn't met yet, and the binary-wide GPL story is still technically accurate while community-built core nightlies are the default.
+
+### Adjacent features mentioned but not in scope
+
+These came up in the advisor session as future-feature ideas. Catalogued in `docs/PLANS/guided-setup.md` §15 for follow-up arcs after guided-setup ships:
+
+- **System Mode** — immersive per-system experience (boot animation, ambient music, UI transforms per system).
+- **Game Context System** — rich hover info ("if you like X try this", fun facts, dev/year, known issues). ChatGPT's "highest ROI" pick at 2-3 weeks of work.
+- **Play History Intelligence** — original-to-the-space feature. Track plays, surface "you seem to like SNES RPGs", dormant favorites.
+- **RetroAchievements integration** — close one of two big RetroArch gaps. Pending strategic decision after guided-setup ships.
+- **Netplay** — close the other RetroArch gap. Multi-month effort with real risk of shipping a worse version for years. Pending strategic decision.
+
+None decided in scope yet. Operator opted to commit to guided-setup as the next major arc; the rest stay future-work.
+

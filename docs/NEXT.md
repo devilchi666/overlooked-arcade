@@ -8,6 +8,33 @@ When you close an item, the matching PR also flips the corresponding `⬜` to `�
 
 ---
 
+## NEXT MAJOR ARC — Guided Setup
+
+**Planning locked 2026-05-25.** Full plan at [docs/PLANS/guided-setup.md](PLANS/guided-setup.md).
+
+Upgrade the existing Import Wizard into a guided-setup flow:
+- Smart ROM/system matching (hash → header → extension → folder-hint)
+- Per-system readiness checklist (single component, reused in Settings)
+- Curated CPU-tier core selection (`sysinfo` crate + per-system tier table; no benchmarking)
+- Controller-navigable from day one (DPad + focus rings, Steam Big Picture style)
+- Optional canonical folder layout (opt-in, mode-aware default)
+- Per-game KNOWN_GAME_BUGS overrides applied at commit
+- Help / tip suppression with criticality tier (load-bearing alerts never suppressible)
+
+**Audience priority:** couch gamers primary, cabinet builders secondary (kiosk shell later), desktop users tertiary (already served).
+
+**Voice:** warm + curator/enthusiast. Sample copy in the plan.
+
+**Phase 0 = controller-nav primitives** (~2-3 weeks frontend infrastructure: focus manager, gamepad → UI event layer, focus-ring component pattern, on-screen hint bar). Shippable independently — makes a few existing screens controller-navigable as a proof-of-concept before the wizard work.
+
+**Phases 1-6** (~6-7 weeks): wizard upgrade, curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry.
+
+**Total estimate:** 8-10 weeks of focused work. Awaiting operator green-light to start Phase 0.
+
+Dwarfs the MEDIUM band below — when implementation starts, this arc dominates the roadmap for ~2 months. MEDIUM-band shader work + light-gun playtest can pipeline alongside if multiple sessions overlap.
+
+---
+
 ## HIGH — ready to ship next
 
 These are operator-independent and the infrastructure they sit on already exists.
