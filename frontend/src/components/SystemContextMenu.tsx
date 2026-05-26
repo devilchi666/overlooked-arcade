@@ -1,6 +1,9 @@
-import { createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 export type MoveTarget = {
   /// The container's node id in the active view (e.g. "container:handheld").
@@ -39,19 +42,17 @@ type Props = {
   onMoveToContainer?: (containerId: string) => void;
 };
 
+type MenuItem = {
+  key: string;
+  label: string;
+  badge?: string;
+  badgeAccent?: boolean;
+  onActivate: () => void;
+};
+
 const ITEM_CLASS =
   "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06]";
 
-/// Right-click context menu for a system entry in the left sidebar. Anchored
-/// at the click coordinates (passed as `position`). Mirrors the
-/// `TileContextMenu` UX — Esc closes, click-outside closes.
-///
-/// Carries a stacked-view state for the v2.2.2 "Move to category…"
-/// submenu: clicking the submenu trigger swaps the menu content for
-/// a flat list of move targets with a "← Back" affordance. Doing it
-/// in-place rather than as a nested popout keeps the positioning logic
-/// simple — the menu's bounding box doesn't change so click-outside
-/// still works.
 type MenuView = "main" | "move-category";
 
 const SystemContextMenu: Component<Props> = (props) => {
@@ -96,8 +97,61 @@ const SystemContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onMoveToContainer!(containerId));
   }
 
+  /// Flat item list for the current sub-view. Empty when the menu is
+  /// closed (so the focus group ignores events).
+  const items = createMemo<MenuItem[]>(() => {
+    if (!props.systemId) return [];
+    if (menuView() === "move-category") {
+      const list: MenuItem[] = [];
+      list.push({ key: "back", label: "← Back", badge: "Move", onActivate: () => setMenuView("main") });
+      for (const t of props.moveTargets ?? []) {
+        list.push({ key: `move-${t.id}`, label: t.label, onActivate: () => moveToContainer(t.id) });
+      }
+      return list;
+    }
+    const list: MenuItem[] = [];
+    list.push({ key: "show", label: "Show library", badge: "Click", onActivate: showLibrary });
+    list.push({ key: "bindings", label: "Edit bindings…", badge: "⌨", onActivate: openBindings });
+    list.push({ key: "settings", label: "System settings…", badge: "⚙", badgeAccent: true, onActivate: openSettings });
+    if (showMoveItem()) {
+      list.push({ key: "move", label: "Move to category…", badge: "›", onActivate: () => setMenuView("move-category") });
+    }
+    list.push({ key: "hide", label: "Hide from sidebar", badge: "👁", onActivate: hideSystem });
+    return list;
+  });
+
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "system-context-menu",
+    orientation: "vertical",
+    itemCount: () => items().length,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => items()[i]?.onActivate(),
+    onCancel: () => {
+      // In sub-views, B steps back to main. Otherwise close the menu.
+      if (menuView() === "move-category") {
+        setMenuView("main");
+        return;
+      }
+      props.onClose();
+    },
+  });
+
+  // Reset focus when switching sub-views so the operator lands on the
+  // first item rather than wherever they were in the previous list.
+  function resetFocusOnViewChange(): void {
+    setFocusedIndex(0);
+  }
+
   function onWindowKey(e: KeyboardEvent) {
-    if (e.key === "Escape") props.onClose();
+    if (e.key === "Escape") {
+      if (menuView() === "move-category") {
+        setMenuView("main");
+        return;
+      }
+      props.onClose();
+    }
   }
   function onWindowClick(e: MouseEvent) {
     const target = e.target as HTMLElement | null;
@@ -118,6 +172,18 @@ const SystemContextMenu: Component<Props> = (props) => {
     <Show when={props.systemId && props.position} keyed>
       {(_) => {
         const pos = props.position!;
+        useBackHandler(() => {
+          if (menuView() === "move-category") {
+            setMenuView("main");
+            return;
+          }
+          props.onClose();
+        });
+        onMount(() => {
+          focusGroup.activate();
+          setFocusedIndex(0);
+        });
+        onCleanup(() => activateFocusGroup("left-sidebar"));
         return (
           <div
             data-system-context-root
@@ -126,6 +192,10 @@ const SystemContextMenu: Component<Props> = (props) => {
             onClick={(e) => e.stopPropagation()}
             data-system={props.systemId!}
           >
+            <HintRegion hints={{
+              a: "Activate",
+              b: menuView() === "move-category" ? "Back" : "Close",
+            }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">
                 {theme()?.displayName ?? props.systemId}
@@ -134,90 +204,44 @@ const SystemContextMenu: Component<Props> = (props) => {
                 {gameCount()} {gameCount() === 1 ? "game" : "games"}
               </p>
             </div>
-            <Show
-              when={menuView() === "main"}
-              fallback={
-                <ul class="py-1">
-                  <li class="border-b border-white/5 pb-1 mb-1">
-                    <button
-                      type="button"
-                      class={ITEM_CLASS}
-                      onClick={() => setMenuView("main")}
+            {/* Re-render the list when menuView flips so focus resets to 0. */}
+            <ul class="py-1">
+              <For each={items()}>
+                {(item, index) => {
+                  // Reactive cue: re-key item rows so the bind() refs
+                  // re-fire when the sub-view changes.
+                  void menuView();
+                  void resetFocusOnViewChange;
+                  return (
+                    <li
+                      ref={(el) => focusGroup.bind(index(), el)}
+                      data-oa-focus={focusedIndex() === index() ? "true" : undefined}
+                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
                     >
-                      <span>← Back</span>
-                      <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                        Move
-                      </span>
-                    </button>
-                  </li>
-                  <For each={props.moveTargets ?? []}>
-                    {(target) => (
-                      <li>
-                        <button
-                          type="button"
-                          class={ITEM_CLASS}
-                          onClick={() => moveToContainer(target.id)}
-                        >
-                          <span>{target.label}</span>
-                        </button>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              }
-            >
-              <ul class="py-1">
-                <li>
-                  <button type="button" class={ITEM_CLASS} onClick={showLibrary}>
-                    <span>Show library</span>
-                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Click
-                    </span>
-                  </button>
-                </li>
-                <li>
-                  <button type="button" class={ITEM_CLASS} onClick={openBindings}>
-                    <span>Edit bindings…</span>
-                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      ⌨
-                    </span>
-                  </button>
-                </li>
-                <li>
-                  <button type="button" class={ITEM_CLASS} onClick={openSettings}>
-                    <span>System settings…</span>
-                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">
-                      ⚙
-                    </span>
-                  </button>
-                </li>
-                <Show when={showMoveItem()}>
-                  <li class="border-t border-white/5 mt-1 pt-1">
-                    <button
-                      type="button"
-                      class={ITEM_CLASS}
-                      onClick={() => setMenuView("move-category")}
-                    >
-                      <span>Move to category…</span>
-                      <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                        ›
-                      </span>
-                    </button>
-                  </li>
-                </Show>
-                <li
-                  class="mt-1 pt-1"
-                  classList={{ "border-t border-white/5": !showMoveItem() }}
-                >
-                  <button type="button" class={ITEM_CLASS} onClick={hideSystem}>
-                    <span>Hide from sidebar</span>
-                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      👁
-                    </span>
-                  </button>
-                </li>
-              </ul>
-            </Show>
+                      <button
+                        type="button"
+                        class={ITEM_CLASS}
+                        onMouseEnter={() => setFocusedIndex(index())}
+                        onClick={item.onActivate}
+                      >
+                        <span class="truncate">{item.label}</span>
+                        <Show when={item.badge}>
+                          <span
+                            class="text-[0.6rem] uppercase tracking-widest"
+                            classList={{
+                              "text-(--color-system-accent)": item.badgeAccent === true,
+                              "text-(--color-oa-ink-dim)": item.badgeAccent !== true,
+                            }}
+                          >
+                            {item.badge}
+                          </span>
+                        </Show>
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
           </div>
         );
       }}

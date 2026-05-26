@@ -26,6 +26,30 @@ slices + decisions, not the design rationale.
 - Per-system audio / boot animation (Per-System UI Stage 1).
 - Kiosk-shell theming.
 
+## Completion pass (post-Phase 0) — `feat/controller-nav-completion`
+
+Phase 0 (A–E) merged to main on 2026-05-26. A follow-on branch extends
+the primitives to cover every remaining interactive surface so the
+operator can drive the whole shell from a pad without grabbing a mouse.
+See [ROADMAP.md](ROADMAP.md) for the per-slice surface inventory and
+[SESSION_LOG.md](SESSION_LOG.md) for the 2026-05-26 completion-pass
+entry.
+
+| Slice | Surface |
+| --- | --- |
+| F | Global back-stack + sidebar containers focusable + Y→info + hint A/B swap |
+| G | TileContextMenu / SystemContextMenu / SaveSlotsModal / QuickSettings actions |
+| H | GameInfoModal (A/B/Y/L1+R1) + every Dialog auto-mounts back handler |
+| fix | Suppress Web Gamepad poll while gilrs (game) owns input |
+| K | Top toolbar menu bar (Start opens, L1/R1 cycle menus) |
+| L | CorePickerMenu + RegionPicker chained popovers |
+| M | Right sidebar widget actions (Play / Saves / Game info) |
+
+Read-only sidebar widgets and utility chrome (pin toggle, sidebar-hide
+button) stay mouse-only for v1 — the play path is "pick a tile → R1 →
+activate." Branch is local-only and clean as of 2026-05-26, pending
+operator playtest before push + merge.
+
 ## Design calls locked (2026-05-26)
 
 - **Pad source:** Web Gamepad API in the frontend (rAF poll on

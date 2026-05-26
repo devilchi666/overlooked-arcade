@@ -1,7 +1,10 @@
-import { createMemo, createResource, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 type CoreEntry = {
   fileName: string;
@@ -64,6 +67,34 @@ const CorePickerMenu: Component<Props> = (props) => {
     props.onClose();
   }
 
+  /// Flat ordered item list. Index 0 is the "(Default — auto-detect)"
+  /// row that clears the override; subsequent indices are the compatible
+  /// cores. Empty when the menu is closed so the focus group ignores
+  /// nav events.
+  type PickItem =
+    | { kind: "default" }
+    | { kind: "core"; core: CoreEntry };
+  const items = createMemo<PickItem[]>(() => {
+    if (!props.entry) return [];
+    return [{ kind: "default" }, ...compatibleCores().map<PickItem>((c) => ({ kind: "core", core: c }))];
+  });
+
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "core-picker-menu",
+    orientation: "vertical",
+    itemCount: () => items().length,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      const it = items()[i];
+      if (!it) return;
+      if (it.kind === "default") pick(null);
+      else pick(it.core.fileName);
+    },
+    onCancel: () => props.onClose(),
+  });
+
   function onWindowKey(e: KeyboardEvent) {
     if (e.key === "Escape") props.onClose();
   }
@@ -89,6 +120,12 @@ const CorePickerMenu: Component<Props> = (props) => {
     <Show when={props.entry && props.position} keyed>
       {(_) => {
         const pos = props.position!;
+        useBackHandler(() => props.onClose());
+        onMount(() => {
+          focusGroup.activate();
+          setFocusedIndex(0);
+        });
+        onCleanup(() => activateFocusGroup("library-grid"));
         return (
           <div
             data-core-picker-root
@@ -96,41 +133,47 @@ const CorePickerMenu: Component<Props> = (props) => {
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
             onClick={(e) => e.stopPropagation()}
           >
+            <HintRegion hints={{ a: "Pick", b: "Close" }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">{props.entry!.title}</p>
               <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">Run with core</p>
             </div>
             <ul class="max-h-72 overflow-y-auto py-1">
-              <li>
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-white/[0.06]"
-                  onClick={() => pick(null)}
-                >
-                  <span class="text-(--color-oa-ink)">(Default — auto-detect)</span>
-                  <Show when={!props.entry!.coreOverride}>
-                    <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">active</span>
-                  </Show>
-                </button>
-              </li>
-              <Show when={cores.loading}>
-                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Scanning cores…
-                </li>
-              </Show>
-              <Show when={!cores.loading && compatibleCores().length === 0}>
-                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  No compatible cores for .{romExt() || "(no ext)"}
-                </li>
-              </Show>
-              <For each={compatibleCores()}>
-                {(c) => {
+              <For each={items()}>
+                {(item, index) => {
+                  if (item.kind === "default") {
+                    return (
+                      <li
+                        ref={(el) => focusGroup.bind(index(), el)}
+                        data-oa-focus={focusedIndex() === index() ? "true" : undefined}
+                        data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                      >
+                        <button
+                          type="button"
+                          class="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-white/[0.06]"
+                          onMouseEnter={() => setFocusedIndex(index())}
+                          onClick={() => pick(null)}
+                        >
+                          <span class="text-(--color-oa-ink)">(Default — auto-detect)</span>
+                          <Show when={!props.entry!.coreOverride}>
+                            <span class="text-[0.6rem] uppercase tracking-widest text-(--color-system-accent)">active</span>
+                          </Show>
+                        </button>
+                      </li>
+                    );
+                  }
+                  const c = item.core;
                   const active = () => props.entry!.coreOverride === c.fileName;
                   return (
-                    <li>
+                    <li
+                      ref={(el) => focusGroup.bind(index(), el)}
+                      data-oa-focus={focusedIndex() === index() ? "true" : undefined}
+                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                    >
                       <button
                         type="button"
                         class="flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left hover:bg-white/[0.06]"
+                        onMouseEnter={() => setFocusedIndex(index())}
                         onClick={() => pick(c.fileName)}
                       >
                         <span class="flex w-full items-center justify-between">
@@ -147,6 +190,16 @@ const CorePickerMenu: Component<Props> = (props) => {
                   );
                 }}
               </For>
+              <Show when={cores.loading}>
+                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Scanning cores…
+                </li>
+              </Show>
+              <Show when={!cores.loading && compatibleCores().length === 0}>
+                <li class="px-3 py-2 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  No compatible cores for .{romExt() || "(no ext)"}
+                </li>
+              </Show>
             </ul>
           </div>
         );

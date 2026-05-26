@@ -20,13 +20,14 @@
 // catches up.
 
 import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js";
+import { popBack } from "./back";
 
 /// Either a Solid Setter (from createSignal) or a plain `next => void`
 /// callback. Both work — Solid's Setter is structurally assignable to
 /// the callback form, and the manager only needs to push values, never
 /// read return values.
 export type IndexSink = (next: number) => void;
-import type { NavDirectionEvent, NavEvent } from "./types";
+import type { NavDirection, NavDirectionEvent, NavEvent } from "./types";
 import { onNavEvent } from "./gamepad";
 
 export type FocusOrientation = "vertical" | "horizontal" | "grid";
@@ -59,6 +60,16 @@ export type FocusGroupOptions = {
     left?: string;
     right?: string;
   };
+  /** Pre-handler for direction events. Return true to consume the event
+   *  (default movement skipped). Use this for orientation-specific
+   *  behaviour like "left collapses a sidebar container" or "right
+   *  expands a tree node before descending." */
+  onDirection?: (direction: NavDirection, currentIndex: number) => boolean;
+  /** Overrides for the shoulder bumpers. When defined, the handler runs
+   *  instead of jumping to a neighbour group — useful for modals that
+   *  want L1/R1 to cycle tabs rather than transfer focus. */
+  onShoulderL?: () => void;
+  onShoulderR?: () => void;
 };
 
 type FocusGroupHandle = {
@@ -86,14 +97,17 @@ function createManager(): Manager {
 
 const manager = createManager();
 
-let swapAB = false;
+const [swapABSig, setSwapABSig] = createSignal(false);
 
 /// When true, A and B button events swap before dispatch — Nintendo-
 /// convention layout (B = confirm, A = back). Settings calls this when
-/// the operator flips the swap toggle.
+/// the operator flips the swap toggle. Reactive accessor exposed for
+/// the hint bar (renames glyph labels) + any consumer that wants to
+/// adapt copy ("Press A" vs "Press B").
 export function setSwapAB(on: boolean): void {
-  swapAB = on;
+  setSwapABSig(on);
 }
+export const isSwapAB: Accessor<boolean> = swapABSig;
 
 // Global event subscription — once, at module load. Routes every
 // NavEvent to whichever group is active. No-op if no group is active.
@@ -110,7 +124,8 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
     if (event.phase !== "down") return;
     const idx = handle.options.focusedIndex();
     // Nintendo-layout swap: rename A→B and B→A before semantic dispatch.
-    const button = swapAB && (event.button === "a" || event.button === "b")
+    const swap = swapABSig();
+    const button = swap && (event.button === "a" || event.button === "b")
       ? (event.button === "a" ? "b" : "a")
       : event.button;
     switch (button) {
@@ -118,6 +133,9 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
         handle.options.onActivate?.(idx);
         return;
       case "b":
+        // Global back-stack consumes first; the active group's onCancel
+        // is the fallback when no overlay / menu is open.
+        if (popBack()) return;
         handle.options.onCancel?.();
         return;
       case "x":
@@ -130,11 +148,19 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
         handle.options.onStart?.();
         return;
       case "l1": {
+        if (handle.options.onShoulderL) {
+          handle.options.onShoulderL();
+          return;
+        }
         const left = handle.options.neighbours?.left;
         if (left) manager.activate(left);
         return;
       }
       case "r1": {
+        if (handle.options.onShoulderR) {
+          handle.options.onShoulderR();
+          return;
+        }
         const right = handle.options.neighbours?.right;
         if (right) manager.activate(right);
         return;
@@ -153,6 +179,7 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
   const count = o.itemCount();
   if (count <= 0) return;
   const cur = clamp(o.focusedIndex(), 0, count - 1);
+  if (o.onDirection?.(event.direction, cur)) return;
   let next = cur;
 
   if (o.orientation === "vertical") {
@@ -164,13 +191,16 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
     if (event.direction === "left") next = Math.max(0, cur - 1);
     else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
   } else {
-    // grid
+    // grid — flat 1D list visually wrapped into columns. Left/right walk
+    // the list linearly (so left at column 0 lands on the previous row's
+    // last entry); up/down jump by `cols`. This matches Steam Big Picture
+    // / Xbox dashboard / every grid-shaped UI the operator's reflexes
+    // already know.
     const cols = Math.max(1, o.columns?.() ?? 1);
-    const col = cur % cols;
     const row = Math.floor(cur / cols);
     const lastRow = Math.floor((count - 1) / cols);
-    if (event.direction === "left") next = col > 0 ? cur - 1 : cur;
-    else if (event.direction === "right") next = col < cols - 1 && cur + 1 < count ? cur + 1 : cur;
+    if (event.direction === "left") next = Math.max(0, cur - 1);
+    else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
     else if (event.direction === "up") next = row > 0 ? cur - cols : cur;
     else if (event.direction === "down") {
       if (row < lastRow) next = Math.min(cur + cols, count - 1);

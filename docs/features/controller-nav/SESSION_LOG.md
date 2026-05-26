@@ -1,5 +1,86 @@
 # Controller Navigation — Session Log
 
+## 2026-05-26 — Completion pass: Slices F–M cover the rest of the UI
+
+Phase 0 (A–E) merged earlier today; this entry covers the follow-on
+branch `feat/controller-nav-completion`, which extends focus + back-stack
+coverage to every interactive surface left on the table by the POC.
+
+- **Shipped:**
+  - Slice F — critical polish + missing primitives (`102eef8`): global
+    back-stack in `nav/back.ts` (mount order = stack order; B pops the
+    innermost handler before falling through to the active group's
+    onCancel); sidebar containers now take focus and DPad left/right
+    collapses/expands them; Y on a tile opens `GameInfoModal`; HintBar
+    swaps A↔B glyphs when the A/B-swap setting is on.
+  - Slice G — context + overlay menus (`8254aa1`): TileContextMenu,
+    SystemContextMenu, SaveSlotsModal and the QuickSettings actions
+    panel all consume `useFocusGroup` + back-stack. Both context menus
+    were refactored to a data-driven `items()` memo so the flat focus
+    index maps 1:1 onto rendered rows regardless of conditional
+    sections. QuickSettings sub-views (rewind / TAS / memory / video)
+    stay mouse + keyboard for now.
+  - Slice H — game info modal + Dialog primitive auto-back
+    (`6cb86d9`): `GameInfoModal` routes A→Launch / B→Close / Y→Resume
+    / L1+R1→cycle tabs via new `onShoulderL` / `onShoulderR` overrides
+    in `focus.ts`. The `Dialog` primitive itself auto-mounts a
+    `useBackHandler` and publishes a baseline `HintRegion ({ b: "Close" })`
+    for every Show-branch instance, so every modal in the app
+    (Display / Audio / Gameplay / Shaders / System Settings / System
+    Bindings / Core Options / Game Properties / Game Display / Game
+    Input / Game Rewind / Game Shaders / Cheats / About / Keyboard
+    Shortcuts / Debug Log / Platform Media / Widget Customizer /
+    Screenshot Gallery / etc.) closes on B without further wiring.
+  - Fix — suppress Web Gamepad poll while gilrs owns input (`662cd5a`):
+    operator reported menus opening mid-gameplay. New gate in App.tsx
+    walks four cases (nav disabled, no game, single-window+game,
+    two-window+game) and keys the two-window case on DOM focus events
+    on the library WebView's `window` rather than Tauri 2's
+    `is_focused` (see existing feedback memory). Seeded from
+    `document.hasFocus()` so the first frame is correct.
+  - Slice K — top toolbar menu bar (`d68ab7f`): Start opens the first
+    menu globally; DPad navigates items; L1/R1 cycle between menus.
+    `MenuBar` exposes `requestOpenFirstMenu()` plus a counter signal so
+    repeat Start presses re-open the bar. Item discovery is a DOM
+    query of `[role^="menuitem"]` after each open via
+    `queueMicrotask`; dynamic-during-open menu contents would need
+    re-binding (deferred).
+  - Slice L — chained popovers (`8180a0e`): `CorePickerMenu` and
+    `RegionPicker` (opened from `TileContextMenu`) consume the focus
+    group + back stack so the X-menu chain has no dead ends. Both
+    publish their own `HintRegion`; cleanup re-activates `library-grid`
+    so backing out lands the operator on the originating tile.
+  - Slice M — right sidebar widget actions (`e721e7d`): the action row
+    (Play / Saves / Game info) is a focus group with R1 from the
+    library grid as its right neighbour; read-only widgets above the
+    row and utility controls (pin toggle, sidebar-hide button) stay
+    mouse-only for v1 — the play path is "pick a tile → R1 → activate."
+    Library-grid HintRegion gains `r1: Widgets` so the operator sees
+    the binding.
+- **Operator-found bugs + fixes (post-push, same session):**
+  - Library grid DPad left/right hit a wall at row edges — the grid
+    branch in `nav/focus.ts::applyDirection` was clamping to column-
+    only movement. Fixed in `792f17d` so left/right walk the flat
+    index linearly across rows; up/down still jump by `cols`. Same
+    fix flows through to `SaveSlotsModal`.
+  - Menu toolbar up/down "didn't work" — focus.ts was routing correctly
+    and even calling `.focus()` on each new button, but Tailwind's
+    preflight strips the default browser outline and `Menu` wasn't
+    writing OA's `data-oa-focus` pattern. Fixed in `dc25ab4` (mirror
+    `focusedIndex` into `data-oa-focus` + `data-oa-focus-active` on
+    bound buttons), plus three audit-driven follow-ups in the same
+    commit: queryButtons filters disabled rows so DPad skips them;
+    a `MutationObserver` on the popover re-binds on `disabled`-attr
+    flips or content changes mid-open (race-guarded so an open-then-
+    close faster than a microtask can't leak); and `index.css:242`
+    broadens the dashed-dim inactive ring rule to
+    `:not([data-oa-focus-active="true"])` so it matches both the
+    literal "false" and the absent-attribute case used by seven
+    completion-pass components.
+- **Shipped (merge close-out):** Branch merged `--no-ff` to main as
+  `feat/controller-nav-completion`. With Phase 0 + the completion pass
+  in, Per-System UI Stage 1 is the next major arc.
+
 ## 2026-05-26 — Stream opened + all five slices landed
 
 - **Shipped:**

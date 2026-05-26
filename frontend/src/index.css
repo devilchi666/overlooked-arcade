@@ -238,8 +238,11 @@
   }
   /* When the focused group is INACTIVE (focus is on another group), dim
      the outline so the operator sees "this is where I'll land if I bumper
-     back here" without it competing with the active group's focus. */
-  [data-oa-focus="true"][data-oa-focus-active="false"] {
+     back here" without it competing with the active group's focus. Matches
+     both `data-oa-focus-active="false"` literal AND the absent-attribute
+     case — some completion-pass components write `undefined` (which
+     removes the attribute) rather than the literal "false". */
+  [data-oa-focus="true"]:not([data-oa-focus-active="true"]) {
     outline-color: var(--color-oa-ink-dim);
     outline-style: dashed;
   }

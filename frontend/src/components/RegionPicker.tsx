@@ -4,6 +4,9 @@ import { getDataDir } from "../lib/dataDir";
 import type { RomEntry } from "../library/types";
 import { useMedia } from "../library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 type Props = {
   entry: RomEntry | null;
@@ -64,8 +67,34 @@ const RegionPicker: Component<Props> = (props) => {
     props.onClose();
   }
 
+  // Controller-nav: horizontal flex wrap is conceptually a grid of
+  // variant cards. We don't know the column count at runtime (depends
+  // on viewport / variant count), so model it as a horizontal list —
+  // DPad left/right always move to adjacent variants regardless of row
+  // wrap. A picks; B closes.
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "region-picker",
+    orientation: "horizontal",
+    itemCount: () => variants().length,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => void pick(i),
+    onCancel: () => props.onClose(),
+  });
+
   return (
     <Show when={props.entry}>
+      {(() => {
+        useBackHandler(() => props.onClose());
+        onMount(() => {
+          focusGroup.activate();
+          setFocusedIndex(0);
+        });
+        onCleanup(() => activateFocusGroup("library-grid"));
+        return null;
+      })()}
+      <HintRegion hints={{ a: "Pick", b: "Close" }} />
       <div
         class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
         onClick={(e) => {
@@ -122,9 +151,14 @@ const RegionPicker: Component<Props> = (props) => {
                     const rel = v.thumbPath ?? v.path;
                     const src = convertFileSrc(joinAppData(rel));
                     return (
-                      <li>
+                      <li
+                        ref={(el) => focusGroup.bind(i(), el)}
+                        data-oa-focus={focusedIndex() === i() ? "true" : undefined}
+                        data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                      >
                         <button
                           type="button"
+                          onMouseEnter={() => setFocusedIndex(i())}
                           onClick={() => void pick(i())}
                           class="group relative block w-[180px] overflow-hidden rounded-md border border-white/10 bg-white/[0.03] shadow-lg shadow-black/40 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                           aria-pressed={isActive()}

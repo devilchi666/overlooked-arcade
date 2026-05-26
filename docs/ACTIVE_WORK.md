@@ -15,6 +15,30 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Controller navigation completion pass**
+  ([features/controller-nav/](features/controller-nav/)) — merged to
+  main 2026-05-26 (`--no-ff` from `feat/controller-nav-completion`).
+  Extends Phase 0 (A–E, merged earlier today) to cover every remaining
+  interactive surface so the operator can run the whole shell from a
+  pad. Ten commits on the branch: seven feature slices plus three
+  post-test fixes. Slices: F critical polish + global back-stack
+  (`102eef8`); G context + overlay menus — TileContextMenu /
+  SystemContextMenu / SaveSlotsModal / QuickSettings (`8254aa1`);
+  H GameInfoModal + universal Dialog B-close via the primitive
+  (`6cb86d9`); a fix that gates the frontend Web Gamepad poller while
+  gilrs owns input via DOM focus on the library WebView (`662cd5a`);
+  K top toolbar menu bar with Start-to-open + L1/R1 menu cycling
+  (`d68ab7f`); L chained CorePicker + RegionPicker popovers
+  (`8180a0e`); M right sidebar widget actions row with R1-from-grid
+  transfer (`e721e7d`). Post-test fixes: docs (`4079d20`), library
+  grid DPad left/right wrap-across-rows (`792f17d`), and menu bar
+  focus ring + disabled filter + dynamic content + a cross-cutting
+  `data-oa-focus-active` CSS broadening (`dc25ab4`). Read-only
+  widgets, utility chrome, and QuickSettings sub-views deliberately
+  stay mouse + keyboard in v1. With Phase 0 + the completion pass
+  shipped, Per-System UI Stage 1 unblocks next per the pipelined
+  sequence in `docs/NEXT.md`.
+
 - **Controller navigation primitives (Phase 0)**
   ([features/controller-nav/](features/controller-nav/)) — merged to
   main 2026-05-26 (`--no-ff` from `feat/controller-nav-primitives`).
