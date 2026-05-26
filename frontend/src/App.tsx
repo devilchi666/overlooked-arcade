@@ -89,9 +89,10 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
-import { setNavEnabled, setNavSource, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { onNavEvent, setNavEnabled, setNavSource, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
 import { activeFocusGroupId, setSwapAB } from "./nav/focus";
+import { requestOpenFirstMenu } from "./layout/MenuBar";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -288,6 +289,23 @@ const App: Component = () => {
   createEffect(() => setNavEnabled(settings.controllerNavEnabled()));
   createEffect(() => setNavSource(settings.controllerNavSource()));
   createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
+
+  // Global Start button → open the menu bar. Bypasses the per-group
+  // onStart routing in focus.ts so Start works from any active group
+  // (sidebar, library-grid, etc.). When the menu is already open the
+  // request is a no-op (the createEffect inside MenuBar only re-fires
+  // on tick change and re-opens the first menu; switching menus is
+  // handled by L1/R1).
+  onMount(() => {
+    const dispose = onNavEvent((event) => {
+      if (event.kind !== "button") return;
+      if (event.button !== "start") return;
+      if (event.phase !== "down") return;
+      if (gameMode() || isDirectLaunch()) return;
+      requestOpenFirstMenu();
+    });
+    onCleanup(dispose);
+  });
   // Tools ▾ menu items request the overlay to land on a specific panel.
   // Cleared on close so a subsequent Esc-open lands on the action grid.
   const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
@@ -1982,9 +2000,9 @@ const App: Component = () => {
           hints={(): Hints => {
             switch (activeFocusGroupId()) {
               case "left-sidebar":
-                return { a: "Open", x: "System menu", r1: "Library" };
+                return { a: "Open", x: "System menu", r1: "Library", start: "Menu bar" };
               case "library-grid":
-                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar" };
+                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar", start: "Menu bar" };
               default:
                 return {};
             }

@@ -14,14 +14,19 @@
 import {
   Show,
   createContext,
+  createEffect,
   createMemo,
   createSignal,
   onCleanup,
   onMount,
   useContext,
+  type Accessor,
   type Component,
   type JSX,
 } from "solid-js";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 // --- Context ------------------------------------------------------------
 //
@@ -34,9 +39,23 @@ type MenuBarContextValue = {
   setOpenId: (id: string | null) => void;
   hovering: () => boolean;
   setHovering: (v: boolean) => void;
+  /// Mount-order registration so L1/R1 can cycle to neighbouring menus
+  /// when the operator is navigating with a gamepad. Each <Menu> appends
+  /// its id on mount and removes it on cleanup.
+  registerMenu: (id: string) => () => void;
+  menuIds: Accessor<string[]>;
 };
 
 const MenuBarContext = createContext<MenuBarContextValue>();
+
+/// Global signal used by the top-level Start handler to request the
+/// menu bar open its first menu. Exposed as an exported function so the
+/// App can drive it from its gamepad-event subscription without
+/// reaching into MenuBar internals.
+const [menuBarOpenRequest, setMenuBarOpenRequest] = createSignal(0);
+export function requestOpenFirstMenu(): void {
+  setMenuBarOpenRequest((n) => n + 1);
+}
 
 let menuIdCounter = 0;
 function nextMenuId(): string {
@@ -64,6 +83,26 @@ export const MenuBar: Component<MenuBarProps> = (props) => {
   /// take over on hover, but a mouseleave from the bar doesn't immediately
   /// close (gives a small intent window before auto-close).
   const [hovering, setHovering] = createSignal(false);
+  /// Menu registration in mount order. The first <Menu> to mount appears
+  /// at index 0, and so on. Used by L1/R1 cycling + by the Start-button
+  /// handler to find a default open target.
+  const [menuIds, setMenuIds] = createSignal<string[]>([]);
+  function registerMenu(id: string): () => void {
+    setMenuIds((cur) => [...cur, id]);
+    return () => setMenuIds((cur) => cur.filter((x) => x !== id));
+  }
+
+  // Open the first registered menu when the App's Start handler signals
+  // requestOpenFirstMenu(). Re-triggers each time the signal increments
+  // (uses a count rather than a flag so the same "press Start again"
+  // re-opens after a close).
+  createEffect(() => {
+    const tick = menuBarOpenRequest();
+    if (tick === 0) return;
+    const ids = menuIds();
+    if (ids.length === 0) return;
+    setOpenId(ids[0]);
+  });
 
   // Outside-click and Esc handlers. Capture-phase Esc so we win against
   // page-level handlers that may also listen.
@@ -92,7 +131,7 @@ export const MenuBar: Component<MenuBarProps> = (props) => {
   });
 
   return (
-    <MenuBarContext.Provider value={{ openId, setOpenId, hovering, setHovering }}>
+    <MenuBarContext.Provider value={{ openId, setOpenId, hovering, setHovering, registerMenu, menuIds }}>
       <nav
         role="menubar"
         aria-label={props.ariaLabel ?? "Main menu"}
@@ -147,6 +186,67 @@ export const Menu: Component<MenuProps> = (props) => {
     if (cur !== null && cur !== id) ctx.setOpenId(id);
   };
 
+  // Register this menu in the bar's mount-order list. Cleanup on dispose.
+  onMount(() => {
+    const unreg = ctx.registerMenu(id);
+    onCleanup(unreg);
+  });
+
+  // Controller-nav: when open, the menu's popover items become DPad-
+  // navigable. Buttons are discovered via DOM query (the popover's role
+  // selectors below). The focus group is registered unconditionally so
+  // its activate() in the open-effect always works; itemCount returns 0
+  // when closed so nav events are ignored.
+  let popoverRef: HTMLDivElement | undefined;
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const menuItemSelector =
+    'button[role="menuitem"], button[role="menuitemradio"], button[role="menuitemcheckbox"]';
+  const queryButtons = (): HTMLButtonElement[] => {
+    if (!popoverRef) return [];
+    return Array.from(popoverRef.querySelectorAll<HTMLButtonElement>(menuItemSelector));
+  };
+  const [itemCount, setItemCount] = createSignal(0);
+  const menuFocus = useFocusGroup({
+    id: `menubar-menu-${id}`,
+    orientation: "vertical",
+    itemCount,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      const btn = queryButtons()[i];
+      btn?.click();
+    },
+    onCancel: () => ctx.setOpenId(null),
+    onShoulderL: () => cycleMenu(-1),
+    onShoulderR: () => cycleMenu(1),
+  });
+  function cycleMenu(delta: -1 | 1): void {
+    const ids = ctx!.menuIds();
+    const cur = ids.indexOf(id);
+    if (cur < 0 || ids.length < 2) return;
+    const next = (cur + delta + ids.length) % ids.length;
+    ctx!.setOpenId(ids[next]);
+  }
+
+  // When the menu opens, activate the focus group, bind every visible
+  // button by DOM order, and reset the focused index. When it closes,
+  // transfer focus back to the library grid.
+  createEffect(() => {
+    if (!isOpen()) {
+      setItemCount(0);
+      return;
+    }
+    queueMicrotask(() => {
+      const btns = queryButtons();
+      setItemCount(btns.length);
+      btns.forEach((btn, i) => menuFocus.bind(i, btn));
+      setFocusedIndex(0);
+      menuFocus.activate();
+    });
+  });
+  // Back-stack registration is conditional on isOpen; mount the inner
+  // <MenuBackHandler> via Show so the handler auto-pops on close.
+
   return (
     <div class="relative" data-oa-menu-root>
       <button
@@ -184,7 +284,10 @@ export const Menu: Component<MenuProps> = (props) => {
       </button>
 
       <Show when={isOpen()}>
+        <MenuOpenScope onClose={() => ctx.setOpenId(null)} />
+        <HintRegion hints={{ a: "Activate", b: "Close", l1: "Prev menu", r1: "Next menu" }} />
         <div
+          ref={popoverRef}
           role="menu"
           aria-label={props.label}
           // Popover. Positioned just below the button, left-aligned. Width
@@ -199,6 +302,16 @@ export const Menu: Component<MenuProps> = (props) => {
       </Show>
     </div>
   );
+};
+
+/// Tiny helper component — registers the menu's onClose with the back
+/// stack for the lifetime of the open popover. Also transfers active
+/// focus group back to library-grid on close so a B press doesn't strand
+/// the operator in an emptied menu group.
+const MenuOpenScope: Component<{ onClose: () => void }> = (props) => {
+  useBackHandler(() => props.onClose());
+  onCleanup(() => activateFocusGroup("library-grid"));
+  return null;
 };
 
 // --- MenuItem -----------------------------------------------------------
