@@ -1685,6 +1685,7 @@ const App: Component = () => {
                     onShowSaves={(entry) => setSavesEntry(entry)}
                     onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
                     onFocus={(entry) => setFocusedEntry(entry)}
+                    onShowInfo={(entry) => setGameInfoFor(entry)}
                     selectedId={() => focusedEntry()?.id ?? null}
                     onPickFolder={handlePickFolder}
                   />
@@ -1983,7 +1984,7 @@ const App: Component = () => {
               case "left-sidebar":
                 return { a: "Open", x: "System menu", r1: "Library" };
               case "library-grid":
-                return { a: "Launch", x: "Menu", l1: "Sidebar" };
+                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar" };
               default:
                 return {};
             }

@@ -224,22 +224,46 @@ const LeftSidebar: Component<Props> = (props) => {
   // ── Controller-nav focus group ─────────────────────────────────────
   //
   // Flat nav list = "All Games" quick destination + every visible
-  // leaf (filtered by hide rules + container expanded state). Containers
-  // themselves don't take focus in v1; DPad nav skips them and lands on
-  // the next leaf in render order. The R1 bumper transfers focus to
-  // the library grid.
+  // top-level item (containers + leaves). Containers walk depth-first:
+  // a container appears in the list followed by its children IF the
+  // container is expanded; collapsed containers contribute only their
+  // own row. The R1 bumper transfers focus to the library grid.
   type SidebarNavItem =
     | { kind: "all" }
+    | { kind: "container"; nodeId: string; container: ContainerNode }
     | { kind: "leaf"; nodeId: string; systemId: SystemId };
 
+  /// DFS the filtered tree, emitting containers + leaves in render
+  /// order, skipping the subtree of any collapsed container. The
+  /// `isExpanded` check matches the same source-of-truth the tree
+  /// renderer uses (treeContext.isExpanded, but inlined here so the
+  /// memo's deps are explicit + the lookup happens against the live
+  /// views store).
   const navItems = createMemo<SidebarNavItem[]>(() => {
     const items: SidebarNavItem[] = [{ kind: "all" }];
     const root = filteredRoot();
-    if (root) {
-      for (const leaf of flattenLeaves(root)) {
-        items.push({ kind: "leaf", nodeId: leaf.id, systemId: leaf.systemId });
+    if (!root) return items;
+    const expanded = expandedSet();
+    const activeLeafSysId = activeSystemId();
+    const isContainerExpanded = (n: ContainerNode): boolean => {
+      if (expanded.has(n.id)) return true;
+      // Auto-expand containers holding the active leaf (matches the
+      // tree-render auto-expand behaviour so focus + render stay in
+      // sync).
+      return activeLeafSysId !== null && containerContainsSystem(n, activeLeafSysId);
+    };
+    const walk = (node: ContainerNode | ViewNode): void => {
+      if ("kind" in node && node.kind === "platform") {
+        items.push({ kind: "leaf", nodeId: node.id, systemId: node.systemId });
+        return;
       }
-    }
+      const c = node as ContainerNode;
+      items.push({ kind: "container", nodeId: c.id, container: c });
+      if (isContainerExpanded(c)) {
+        for (const child of c.children) walk(child);
+      }
+    };
+    for (const child of root.children) walk(child);
     return items;
   });
 
@@ -262,7 +286,16 @@ const LeftSidebar: Component<Props> = (props) => {
       if (!item) return;
       if (item.kind === "all") {
         props.onNavigate({ kind: "all" });
+      } else if (item.kind === "leaf") {
+        props.onNavigate({
+          kind: "view-node",
+          viewId: activeViewId(),
+          nodeId: item.nodeId,
+        });
       } else {
+        // Container: navigate to its view-node (matches mouse click on
+        // the label area). Twisty-style expand/collapse is the L/R
+        // direction handler's job.
         props.onNavigate({
           kind: "view-node",
           viewId: activeViewId(),
@@ -272,29 +305,55 @@ const LeftSidebar: Component<Props> = (props) => {
     },
     onSecondary: (i) => {
       const item = navItems()[i];
-      if (!item || item.kind !== "leaf") return;
+      if (!item) return;
       const el = navElements.get(i);
-      if (!el || !props.onSystemContext) return;
+      if (!el) return;
       const r = el.getBoundingClientRect();
-      props.onSystemContext(item.systemId, {
-        x: r.right - 16,
-        y: r.top + r.height / 2,
-      });
+      const pos = { x: r.right - 16, y: r.top + r.height / 2 };
+      if (item.kind === "leaf") {
+        props.onSystemContext?.(item.systemId, pos);
+      } else if (item.kind === "container") {
+        props.onContainerContext?.(item.container, pos);
+      }
+    },
+    onDirection: (direction, currentIndex) => {
+      const item = navItems()[currentIndex];
+      if (!item || item.kind !== "container") return false;
+      if (direction === "left") {
+        // Collapse if expanded; no-op if already collapsed (the tree
+        // has no parent-container concept in v1).
+        if (expandedSet().has(item.nodeId)) {
+          props.views.toggleExpanded(item.nodeId);
+        }
+        return true;
+      }
+      if (direction === "right") {
+        // Expand if collapsed; if already expanded, fall through to
+        // default movement (down into first child).
+        if (!expandedSet().has(item.nodeId)) {
+          props.views.toggleExpanded(item.nodeId);
+          return true;
+        }
+        return false;
+      }
+      return false;
     },
     neighbours: { right: "library-grid" },
   });
 
-  // Reverse lookup: nodeId → index in navItems ("all" is 0; leaves are 1+).
-  const leafIndexById = createMemo(() => {
+  // Reverse lookup: nodeId → index in navItems ("all" is 0; containers
+  // and leaves get their flat index in DFS order). Used by both the
+  // tree's leaf bind callback and the container row bind callback.
+  const nodeIndexById = createMemo(() => {
     const m = new Map<string, number>();
     navItems().forEach((it, i) => {
-      if (it.kind === "leaf") m.set(it.nodeId, i);
+      if (it.kind === "leaf" || it.kind === "container") m.set(it.nodeId, i);
     });
     return m;
   });
 
   const focusBindingFor = (nodeId: string): LeafFocusBinding | null => {
-    const i = leafIndexById().get(nodeId);
+    const i = nodeIndexById().get(nodeId);
     if (i === undefined) return null;
     return {
       bind: (el) => {

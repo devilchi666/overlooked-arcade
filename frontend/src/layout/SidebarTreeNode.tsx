@@ -65,11 +65,17 @@ export const SortableContainerNode: Component<{
     props.container.children.filter((c): c is PlatformNode & { kind: "platform" } => c.kind === "platform"),
   );
   const leafIds = createMemo(() => leafChildren().map((c) => c.id));
+  const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.container.id) ?? null);
 
   return (
     <li
-      ref={sortable.ref}
+      ref={(el) => {
+        sortable.ref(el);
+        focusBinding()?.bind(el);
+      }}
       style={transformStyle(sortable.transform)}
+      data-oa-focus={focusBinding()?.focused() ? "true" : undefined}
+      data-oa-focus-active={focusBinding()?.active() ? "true" : undefined}
       class="relative"
       classList={{
         "z-10": sortable.isActiveDraggable,
@@ -166,8 +172,14 @@ const StaticContainerNode: Component<{
   ctx: SidebarTreeContext;
 }> = (props) => {
   const expanded = createMemo(() => props.ctx.isExpanded(props.container.id));
+  const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.container.id) ?? null);
   return (
-    <li class="relative">
+    <li
+      ref={(el) => focusBinding()?.bind(el)}
+      data-oa-focus={focusBinding()?.focused() ? "true" : undefined}
+      data-oa-focus-active={focusBinding()?.active() ? "true" : undefined}
+      class="relative"
+    >
       <ContainerRow
         container={props.container}
         depth={props.depth}

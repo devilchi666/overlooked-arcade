@@ -24,6 +24,9 @@ type Props = {
   onShowSaves: (entry: RomEntry) => void;
   onPickContext: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus: (entry: RomEntry) => void;
+  /// Controller-nav: Y button on a focused tile opens the game info modal.
+  /// Mouse path is unchanged (tile context menu still has its own entry).
+  onShowInfo?: (entry: RomEntry) => void;
   /// Accessor for the currently-selected entry id (or null). Passed through
   /// to the grid / list views so tiles can render an accent ring on the
   /// active pick.
@@ -165,6 +168,7 @@ const LibraryView: Component<Props> = (props) => {
                 onShowSaves={props.onShowSaves}
                 onPickContext={props.onPickContext}
                 onFocus={props.onFocus}
+                onShowInfo={props.onShowInfo}
                 selectedId={props.selectedId}
                 variantCountFor={(id) =>
                   props.library.groupsByVariantId().get(id)?.variants.length

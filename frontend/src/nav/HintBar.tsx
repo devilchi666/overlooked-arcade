@@ -14,6 +14,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type Component, type JSX } from "solid-js";
 import type { NavButton } from "./types";
 import { hasSeenGamepad } from "./gamepad";
+import { isSwapAB } from "./focus";
 
 export type Hints = Partial<Record<NavButton, string>>;
 
@@ -89,7 +90,12 @@ export const HintBar: Component = () => {
     return s.length === 0 ? {} : s[s.length - 1].hints;
   });
   const visibleEntries = createMemo(() => {
-    const hints = currentHints();
+    let hints = currentHints();
+    // Nintendo-layout swap: render the A glyph next to the B label and
+    // vice versa so the operator sees which physical button confirms.
+    if (isSwapAB() && (hints.a !== undefined || hints.b !== undefined)) {
+      hints = { ...hints, a: hints.b, b: hints.a };
+    }
     return BUTTON_ORDER.filter((b) => hints[b]).map((b) => ({ button: b, label: hints[b]! }));
   });
   return (

@@ -32,6 +32,9 @@ type Props = {
   onShowSaves?: (entry: RomEntry) => void;
   onPickContext?: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (entry: RomEntry) => void;
+  /// Controller-nav Y handler — opens the game info modal for the
+  /// focused tile.
+  onShowInfo?: (entry: RomEntry) => void;
   /// Accessor for the current selection id. Each tile compares its own
   /// entry id to derive its `selected` state — passed as a getter (not a
   /// raw value) so virtualized tiles only re-render when their own
@@ -225,6 +228,10 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
         const r = el.getBoundingClientRect();
         props.onPickContext(e, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
       }
+    },
+    onTertiary: (i) => {
+      const e = flatEntries()[i];
+      if (e) props.onShowInfo?.(e);
     },
     neighbours: { left: "left-sidebar" },
   });
