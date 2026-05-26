@@ -8,6 +8,96 @@ When you close an item, the matching PR also flips the corresponding `⬜` to `�
 
 ---
 
+## Pipelined sequence (two major arcs interleaved)
+
+**Decided 2026-05-26.** Both major arcs below — Guided Setup and Per-System Custom UI — share a foundation and can pipeline through subsequent stages.
+
+### The shared foundation: Phase 0 — Controller-nav primitives (~2-3 weeks)
+
+Currently described in [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §13 as guided-setup's Phase 0, but functionally serves BOTH arcs:
+
+- Focus manager (which element is currently focused; how DPad moves between elements)
+- Gamepad → UI event layer (A=confirm, B=back, Y=customize, Select=help)
+- Focus-ring component pattern (high-contrast outline; ≤120ms transition)
+- On-screen hint bar (persistent footer showing button hints for current screen)
+- Settings → Controller-nav (off / remap nav buttons)
+
+Without Phase 0, neither arc can ship its controller-navigable experience. With Phase 0 done, both arcs unblock simultaneously.
+
+### Strict sequence to the inflection point
+
+```
+Phase 0 (controller-nav, ~2-3w)
+       ↓
+Per-System UI Stage 1 (polish layer, ~5-7w)
+   - SystemUIConfig data model + registry
+   - Per-system SFX + boot animation + tile flourishes + backgrounds
+   - 3 pilots full builds (GB → NES → Vectrex)
+   - Baseline SystemUIConfig for other 37 systems
+   - Settings → Display → "Per-system experiences" toggle
+       ↓
+[INFLECTION POINT — ≈ 7-10 weeks from green-light]
+```
+
+**Why this order:** Per-System Stage 1 is the identity moment. After it ships, OA is identifiably different from the field — "the only frontend where every system feels alive" is no longer a positioning claim, it's a working demo. Onboarding polish then lands against a richer product that already has its hook.
+
+**No interleaving until those two are done.** Discipline matters. Half-finishing both arcs is the failure mode this sequence avoids.
+
+### After the inflection point — interleave by session feel
+
+```
+Phase 0 ✓
+Per-System Stage 1 ✓
+       ↓
+   ╔════════════════════════════════════════════════════════════╗
+   ║  Pick by session — both tracks pipeline freely             ║
+   ║                                                            ║
+   ║  Guided Setup Track (~5-6w cumulative):                    ║
+   ║    Phase 1B  Wizard upgrade (~3-4w)                        ║
+   ║    Phase 2B  Curated core selection (~1w)                  ║
+   ║    Phase 2C  Folder management (~1w)                       ║
+   ║    Phase 2D  First-system bindings + KNOWN_GAME_BUGS (~1w) ║
+   ║    Phase 2E  Help suppression (~3-4d)                      ║
+   ║    Phase 2F  Existing-operator re-entry (~3-4d)            ║
+   ║                                                            ║
+   ║  Per-System UI Stage 2 — Behavior layer (~4-6w):           ║
+   ║    Per-system navigation (carousel / list / wheel)         ║
+   ║    Per-system interaction style (instant / delayed /       ║
+   ║      physical)                                             ║
+   ║    Per-system tile emphasis                                ║
+   ║    5-10 more systems tuned to showcase tier                ║
+   ║                                                            ║
+   ║  Per-System UI Stage 3 — Experience layer (~6-10w):        ║
+   ║    In-game overlays themed per system                      ║
+   ║    Library ↔ game transitions themed                       ║
+   ║    Per-system metadata priorities                          ║
+   ║    All ~40 systems tuned past baseline                     ║
+   ╚════════════════════════════════════════════════════════════╝
+```
+
+Each phase is a shippable PR. Pick whichever feels right session-to-session. Order across phases doesn't matter after the inflection point; there are no hard dependencies.
+
+### Total estimate
+
+- **Phase 0 + Per-System Stage 1 (the inflection point):** ~7-10 weeks. Foundation + identity-defining demo. Shippable as a complete inflection on its own.
+- **Full vision (all arcs through Per-System Stage 3):** ~22-32 weeks.
+
+### Shared-infrastructure savings
+
+Pipelining compounds code reuse:
+- Focus manager + hint bar + audio dispatcher built in Phase 0 power both arcs throughout
+- `SystemUIConfig` registry pattern (Per-System Stage 1) reuses the shape of `LIGHT_GUN_SYSTEMS` (shipped 2026-05-25) — same declarative-table pattern across systems
+- Per-system SFX (Per-System Stage 1) routes through the existing 4-bus audio mixer (shipped 2026-05-24 in media-taxonomy)
+- Per-system bindings card (Guided Setup Phase 2D) reuses the same per-system theming + audio that Per-System Stage 1 builds
+
+Probably 10-20% off the total vs running the two arcs as fully separate work streams.
+
+### Kiosk shell scheduling — separate, after the full pipeline
+
+The kiosk shell ([docs/features/kiosk-shell/KIOSK_PLAN.md](features/kiosk-shell/KIOSK_PLAN.md)) is its own major arc, scoped at multi-month effort. After this plan locks, kiosk shell's positioning shifted (per 2026-05-26 DECISIONS Q): it becomes the theme editor for power users that **consumes the built-in per-system experiences as starting defaults**. Kiosk shell scheduling happens after the per-system-UI / guided-setup pipeline ships, when there's a richer product to wrap a kiosk mode around.
+
+---
+
 ## NEXT MAJOR ARC — Guided Setup
 
 **Planning locked 2026-05-25.** Full plan at [docs/PLANS/guided-setup.md](PLANS/guided-setup.md).
