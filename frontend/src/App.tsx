@@ -282,11 +282,63 @@ const App: Component = () => {
     onCleanup(() => stopGamepadInput());
   });
 
+  // Track whether the library WebView (this window) currently has OS
+  // focus. The DOM `focus` / `blur` events on window fire on user
+  // click-through between the library and game windows in two-window
+  // shell mode — the only reliable cross-platform signal for
+  // "which window does the gamepad feed?" Initial value comes from
+  // document.hasFocus() so the first frame is correct even before any
+  // event fires.
+  const [webviewFocused, setWebviewFocused] = createSignal(
+    typeof document !== "undefined" ? document.hasFocus() : true,
+  );
+  onMount(() => {
+    const onFocus = () => setWebviewFocused(true);
+    const onBlur = () => setWebviewFocused(false);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    onCleanup(() => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    });
+  });
+
   // Push controller-nav preferences into the gamepad poller + focus
   // manager whenever the settings store mutates them. Three knobs:
   // master enable (suppress all events), source (dpad / stick / both),
   // A/B swap (Nintendo convention).
-  createEffect(() => setNavEnabled(settings.controllerNavEnabled()));
+  //
+  // Game-running gate: while the emulator runs, the Rust gilrs poller
+  // owns the gamepad and feeds the core. The Web Gamepad API only
+  // emits NavEvents when an obvious UI surface is up:
+  //  - No game running → always on (operator is browsing the library).
+  //  - Single-window mode + library overlay visible OR Quick Settings
+  //    open → on (operator paused or alt-tabbed to browse).
+  //  - Two-window mode + this WebView has OS focus → on (the operator
+  //    is clearly interacting with the library window, not the game).
+  //  - Otherwise off — same gamepad press would otherwise drive both
+  //    the UI and the running game.
+  createEffect(() => {
+    const userEnabled = settings.controllerNavEnabled();
+    if (!userEnabled) {
+      setNavEnabled(false);
+      return;
+    }
+    if (!gameRunning()) {
+      setNavEnabled(true);
+      return;
+    }
+    if (shellMode() === "single-window") {
+      setNavEnabled(libraryVisible() || quickSettingsOpen());
+      return;
+    }
+    // Two-window: library lives in this WebView, game lives in the
+    // sibling no-WebView window. OS focus on this WebView = operator
+    // interacting with us. tauri::is_focused is unreliable for the
+    // no-WebView window (see memory), but DOM focus on this WebView
+    // is reliable.
+    setNavEnabled(webviewFocused());
+  });
   createEffect(() => setNavSource(settings.controllerNavSource()));
   createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
 
