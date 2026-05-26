@@ -32,6 +32,7 @@ Routing table. Read this first; it points to everything else.
 - [features/portable-install/](features/portable-install/) — `<exe_dir>/settings/` opt-in via portable.txt marker
 - [features/media-taxonomy/](features/media-taxonomy/) — full LaunchBox-shape art/audio/video/manual storage (✅ shipped 2026-05-24)
 - [features/dosbox-and-scummvm/](features/dosbox-and-scummvm/) — DOSBox + ScummVM onboarding plan (📐 planned, not yet implemented)
+- [features/controller-nav/](features/controller-nav/) — Phase 0 controller-nav primitives (focus manager + gamepad event layer + hint bar); shared foundation for guided-setup + per-system-UI
 
 ## Per-core docs
 

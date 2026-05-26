@@ -89,6 +89,7 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
+import { startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -266,6 +267,16 @@ const App: Component = () => {
       setGameFocusSignal(!!e.payload);
     }).then((u) => { unlisten = u; });
     onCleanup(() => unlisten?.());
+  });
+
+  // Controller-nav: start the Web Gamepad API poller. Emits NavEvents on
+  // the bus exposed by `frontend/src/nav/gamepad.ts`. The poller is rAF-
+  // driven so it suspends when the window is hidden, and only fires when
+  // the user is in the UI (the emulator's gilrs poller is gated to game-
+  // window focus, so the two never overlap).
+  onMount(() => {
+    startGamepadInput();
+    onCleanup(() => stopGamepadInput());
   });
   // Tools ▾ menu items request the overlay to land on a specific panel.
   // Cleared on close so a subsequent Esc-open lands on the action grid.
