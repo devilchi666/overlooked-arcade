@@ -57,13 +57,29 @@ coverage to every interactive surface left on the table by the POC.
     mouse-only for v1 — the play path is "pick a tile → R1 → activate."
     Library-grid HintRegion gains `r1: Widgets` so the operator sees
     the binding.
-- **Almost:** Operator playtest with a real controller across every
-  newly-wired surface — the branch is local-only; nothing pushed yet.
-  Branch tree is clean.
-- **Next:** Push `feat/controller-nav-completion`, operator playtest,
-  then merge `--no-ff` to main and update `NEXT.md` / `ACTIVE_WORK.md`
-  to reflect the closed completion pass. After merge, the next arc in
-  the pipelined sequence is Per-System UI Stage 1.
+- **Operator-found bugs + fixes (post-push, same session):**
+  - Library grid DPad left/right hit a wall at row edges — the grid
+    branch in `nav/focus.ts::applyDirection` was clamping to column-
+    only movement. Fixed in `792f17d` so left/right walk the flat
+    index linearly across rows; up/down still jump by `cols`. Same
+    fix flows through to `SaveSlotsModal`.
+  - Menu toolbar up/down "didn't work" — focus.ts was routing correctly
+    and even calling `.focus()` on each new button, but Tailwind's
+    preflight strips the default browser outline and `Menu` wasn't
+    writing OA's `data-oa-focus` pattern. Fixed in `dc25ab4` (mirror
+    `focusedIndex` into `data-oa-focus` + `data-oa-focus-active` on
+    bound buttons), plus three audit-driven follow-ups in the same
+    commit: queryButtons filters disabled rows so DPad skips them;
+    a `MutationObserver` on the popover re-binds on `disabled`-attr
+    flips or content changes mid-open (race-guarded so an open-then-
+    close faster than a microtask can't leak); and `index.css:242`
+    broadens the dashed-dim inactive ring rule to
+    `:not([data-oa-focus-active="true"])` so it matches both the
+    literal "false" and the absent-attribute case used by seven
+    completion-pass components.
+- **Shipped (merge close-out):** Branch merged `--no-ff` to main as
+  `feat/controller-nav-completion`. With Phase 0 + the completion pass
+  in, Per-System UI Stage 1 is the next major arc.
 
 ## 2026-05-26 — Stream opened + all five slices landed
 

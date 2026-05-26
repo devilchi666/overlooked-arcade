@@ -24,18 +24,20 @@ breakdown + decisions. Five deliverables landed:
 - ✅ On-screen hint bar — `nav/HintBar.tsx` with `HintRegion` provider stack
 - ✅ Settings → Controller-nav — Display dialog gains a Controller navigation section
 
-A follow-on **completion pass** (branch `feat/controller-nav-completion`,
-local-only as of 2026-05-26) extends focus + back-stack coverage to
+A follow-on **completion pass** (`feat/controller-nav-completion`,
+merged to main 2026-05-26) extended focus + back-stack coverage to
 every remaining interactive surface — global back stack, sidebar
 containers, every Dialog, top toolbar menu bar, chained popovers
 (CorePicker / RegionPicker), right-sidebar action row, plus a fix to
-suppress the frontend gamepad poller while gilrs owns input. Pending
-operator playtest before push + merge. See
+suppress the frontend gamepad poller while gilrs owns input and three
+post-test fixes (library grid DPad wrap-across-rows, menu bar focus
+ring visibility + disabled filter + dynamic content support, and a
+cross-cutting `data-oa-focus-active` CSS broadening). See
 [features/controller-nav/ROADMAP.md](features/controller-nav/ROADMAP.md)
 "Completion pass (post-Phase 0)" for the slice inventory and
 [features/controller-nav/SESSION_LOG.md](features/controller-nav/SESSION_LOG.md)
-for the 2026-05-26 completion-pass entry. Per-System UI Stage 1 is the
-next major arc, unblocked once the completion pass merges.
+for the 2026-05-26 completion-pass entry. Per-System UI Stage 1 is
+the next major arc.
 
 ### Strict sequence to the inflection point
 
