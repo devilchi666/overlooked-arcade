@@ -11,7 +11,14 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-(Nothing actively in flight.)
+- **Controller navigation primitives (Phase 0)**
+  ([features/controller-nav/](features/controller-nav/)) — branch
+  `feat/controller-nav-primitives`. Shared foundation for the
+  Guided Setup arc + Per-System UI Stage 1. 5 slices: gamepad
+  event layer, focus manager + ring, hint bar, library/sidebar
+  POC wiring, Settings page. Currently working Slice A
+  (Web Gamepad API rAF poller). Plan source of truth in
+  `docs/PLANS/guided-setup.md` §10 + §13.
 
 ## Recently completed (this session)
 

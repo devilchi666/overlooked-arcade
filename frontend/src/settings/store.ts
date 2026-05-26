@@ -106,6 +106,27 @@ const DEFAULT_REWIND_ENABLED = false;
 const DEFAULT_REWIND_INTERVAL = 6;
 const DEFAULT_REWIND_BUFFER_MB = 64;
 
+// Controller-nav defaults (Phase 0 of the guided-setup pipeline). On by
+// default — couch gamers are the primary audience. Animation budget
+// matches Steam Big Picture's snappy-but-visible 120ms; 0 disables the
+// transition for operators on very low-end hardware.
+const DEFAULT_CONTROLLER_NAV_ENABLED = true;
+const DEFAULT_CONTROLLER_NAV_SOURCE: ControllerNavSource = "both";
+const DEFAULT_CONTROLLER_NAV_SWAP_AB = false;
+const DEFAULT_CONTROLLER_NAV_ANIMATION_MS = 120;
+
+export type ControllerNavSource = "dpad" | "stick-left" | "both";
+
+const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
+  "dpad",
+  "stick-left",
+  "both",
+];
+
+function isControllerNavSource(v: unknown): v is ControllerNavSource {
+  return typeof v === "string" && (CONTROLLER_NAV_SOURCE_OPTIONS as readonly string[]).includes(v);
+}
+
 type Persisted = {
   scalingMode: ScalingMode;
   windowMode: WindowMode;
@@ -117,6 +138,10 @@ type Persisted = {
   rewindEnabled: boolean;
   rewindCaptureIntervalFrames: number;
   rewindBufferMegabytes: number;
+  controllerNavEnabled: boolean;
+  controllerNavSource: ControllerNavSource;
+  controllerNavSwapAB: boolean;
+  controllerNavAnimationMs: number;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -182,6 +207,10 @@ function load(): Persisted {
     rewindEnabled: DEFAULT_REWIND_ENABLED,
     rewindCaptureIntervalFrames: DEFAULT_REWIND_INTERVAL,
     rewindBufferMegabytes: DEFAULT_REWIND_BUFFER_MB,
+    controllerNavEnabled: DEFAULT_CONTROLLER_NAV_ENABLED,
+    controllerNavSource: DEFAULT_CONTROLLER_NAV_SOURCE,
+    controllerNavSwapAB: DEFAULT_CONTROLLER_NAV_SWAP_AB,
+    controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -223,6 +252,24 @@ function load(): Persisted {
           && parsed.rewindBufferMegabytes >= 1
           ? parsed.rewindBufferMegabytes
           : DEFAULT_REWIND_BUFFER_MB,
+      controllerNavEnabled:
+        typeof parsed.controllerNavEnabled === "boolean"
+          ? parsed.controllerNavEnabled
+          : DEFAULT_CONTROLLER_NAV_ENABLED,
+      controllerNavSource: isControllerNavSource(parsed.controllerNavSource)
+        ? parsed.controllerNavSource
+        : DEFAULT_CONTROLLER_NAV_SOURCE,
+      controllerNavSwapAB:
+        typeof parsed.controllerNavSwapAB === "boolean"
+          ? parsed.controllerNavSwapAB
+          : DEFAULT_CONTROLLER_NAV_SWAP_AB,
+      controllerNavAnimationMs:
+        typeof parsed.controllerNavAnimationMs === "number"
+          && Number.isFinite(parsed.controllerNavAnimationMs)
+          && parsed.controllerNavAnimationMs >= 0
+          && parsed.controllerNavAnimationMs <= 1000
+          ? parsed.controllerNavAnimationMs
+          : DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
     };
   } catch {
     return fallback;
@@ -325,6 +372,14 @@ export function createSettingsStore() {
     createSignal<number>(initial.rewindCaptureIntervalFrames);
   const [rewindBufferMegabytes, setRewindBufferMegabytes] =
     createSignal<number>(initial.rewindBufferMegabytes);
+  const [controllerNavEnabled, setControllerNavEnabled] =
+    createSignal<boolean>(initial.controllerNavEnabled);
+  const [controllerNavSource, setControllerNavSource] =
+    createSignal<ControllerNavSource>(initial.controllerNavSource);
+  const [controllerNavSwapAB, setControllerNavSwapAB] =
+    createSignal<boolean>(initial.controllerNavSwapAB);
+  const [controllerNavAnimationMs, setControllerNavAnimationMs] =
+    createSignal<number>(initial.controllerNavAnimationMs);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -351,7 +406,19 @@ export function createSettingsStore() {
       rewindEnabled: rewindEnabled(),
       rewindCaptureIntervalFrames: rewindCaptureIntervalFrames(),
       rewindBufferMegabytes: rewindBufferMegabytes(),
+      controllerNavEnabled: controllerNavEnabled(),
+      controllerNavSource: controllerNavSource(),
+      controllerNavSwapAB: controllerNavSwapAB(),
+      controllerNavAnimationMs: controllerNavAnimationMs(),
     });
+  });
+
+  // Push the focus-ring animation budget to the CSS root variable
+  // immediately on change. The [data-oa-focus="true"] outline transition
+  // consumes --oa-focus-anim-ms; setting it to 0ms disables the animation.
+  createEffect(() => {
+    const ms = controllerNavAnimationMs();
+    document.documentElement.style.setProperty("--oa-focus-anim-ms", `${ms}ms`);
   });
 
   // Push the OA-wide bloom amount to the renderer immediately on change.
@@ -454,6 +521,10 @@ export function createSettingsStore() {
     rewindEnabled, setRewindEnabled,
     rewindCaptureIntervalFrames, setRewindCaptureIntervalFrames,
     rewindBufferMegabytes, setRewindBufferMegabytes,
+    controllerNavEnabled, setControllerNavEnabled,
+    controllerNavSource, setControllerNavSource,
+    controllerNavSwapAB, setControllerNavSwapAB,
+    controllerNavAnimationMs, setControllerNavAnimationMs,
   };
 }
 

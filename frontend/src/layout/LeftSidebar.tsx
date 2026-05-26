@@ -17,8 +17,11 @@ import type { ViewsStore } from "../views/store";
 import {
   SortableContainerNode,
   SortableLeafNode,
+  type LeafFocusBinding,
   type SidebarTreeContext,
 } from "./SidebarTreeNode";
+import { useFocusGroup } from "../nav/focus";
+import { createSignal } from "solid-js";
 import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
 
 /// Which top-level surface the main pane is showing. `all` and `view-node`
@@ -218,6 +221,92 @@ const LeftSidebar: Component<Props> = (props) => {
 
   const topLevelIds = createMemo(() => filteredRoot()?.children.map((c) => c.id) ?? []);
 
+  // ── Controller-nav focus group ─────────────────────────────────────
+  //
+  // Flat nav list = "All Games" quick destination + every visible
+  // leaf (filtered by hide rules + container expanded state). Containers
+  // themselves don't take focus in v1; DPad nav skips them and lands on
+  // the next leaf in render order. The R1 bumper transfers focus to
+  // the library grid.
+  type SidebarNavItem =
+    | { kind: "all" }
+    | { kind: "leaf"; nodeId: string; systemId: SystemId };
+
+  const navItems = createMemo<SidebarNavItem[]>(() => {
+    const items: SidebarNavItem[] = [{ kind: "all" }];
+    const root = filteredRoot();
+    if (root) {
+      for (const leaf of flattenLeaves(root)) {
+        items.push({ kind: "leaf", nodeId: leaf.id, systemId: leaf.systemId });
+      }
+    }
+    return items;
+  });
+
+  const [focusedSidebarIndex, setFocusedSidebarIndex] = createSignal(0);
+
+  // Pre-bind a registry: index by leaf nodeId for the tree's bind
+  // callback, plus a separate ref slot for the All Games button. The
+  // focus.ts manager calls `.focus()` + `.scrollIntoView()` on bound
+  // elements when index changes.
+  const navElements = new Map<number, HTMLElement>();
+
+  const sidebarFocus = useFocusGroup({
+    id: "left-sidebar",
+    orientation: "vertical",
+    itemCount: () => navItems().length,
+    focusedIndex: focusedSidebarIndex,
+    setFocusedIndex: setFocusedSidebarIndex,
+    onActivate: (i) => {
+      const item = navItems()[i];
+      if (!item) return;
+      if (item.kind === "all") {
+        props.onNavigate({ kind: "all" });
+      } else {
+        props.onNavigate({
+          kind: "view-node",
+          viewId: activeViewId(),
+          nodeId: item.nodeId,
+        });
+      }
+    },
+    onSecondary: (i) => {
+      const item = navItems()[i];
+      if (!item || item.kind !== "leaf") return;
+      const el = navElements.get(i);
+      if (!el || !props.onSystemContext) return;
+      const r = el.getBoundingClientRect();
+      props.onSystemContext(item.systemId, {
+        x: r.right - 16,
+        y: r.top + r.height / 2,
+      });
+    },
+    neighbours: { right: "library-grid" },
+  });
+
+  // Reverse lookup: nodeId → index in navItems ("all" is 0; leaves are 1+).
+  const leafIndexById = createMemo(() => {
+    const m = new Map<string, number>();
+    navItems().forEach((it, i) => {
+      if (it.kind === "leaf") m.set(it.nodeId, i);
+    });
+    return m;
+  });
+
+  const focusBindingFor = (nodeId: string): LeafFocusBinding | null => {
+    const i = leafIndexById().get(nodeId);
+    if (i === undefined) return null;
+    return {
+      bind: (el) => {
+        if (el) navElements.set(i, el);
+        else navElements.delete(i);
+        sidebarFocus.bind(i, el);
+      },
+      focused: () => focusedSidebarIndex() === i,
+      active: () => sidebarFocus.isActive(),
+    };
+  };
+
   const treeContext: SidebarTreeContext = {
     get entries() {
       return props.library.state.entries;
@@ -249,6 +338,7 @@ const LeftSidebar: Component<Props> = (props) => {
       props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId }),
     onLeafContextMenu: (systemId, position) => props.onSystemContext?.(systemId, position),
     onContainerContextMenu: (container, position) => props.onContainerContext?.(container, position),
+    focusBindingFor,
   };
 
   const totalCount = createMemo(() =>
@@ -305,6 +395,15 @@ const LeftSidebar: Component<Props> = (props) => {
             active={isActive({ kind: "all" })}
             collapsed={isCollapsed()}
             onClick={() => props.onNavigate({ kind: "all" })}
+            controllerFocus={{
+              bind: (el) => {
+                if (el) navElements.set(0, el);
+                else navElements.delete(0);
+                sidebarFocus.bind(0, el);
+              },
+              focused: () => focusedSidebarIndex() === 0,
+              active: () => sidebarFocus.isActive(),
+            }}
           />
         </ul>
 
@@ -334,6 +433,7 @@ const LeftSidebar: Component<Props> = (props) => {
                       })
                     }
                     onContextMenu={(pos) => props.onSystemContext?.(leaf.systemId, pos)}
+                    controllerFocus={focusBindingFor(leaf.id) ?? undefined}
                   />
                 )}
               </For>
@@ -616,8 +716,13 @@ const QuickItem: Component<{
   disabled?: boolean;
   collapsed: boolean;
   onClick: () => void;
+  controllerFocus?: LeafFocusBinding;
 }> = (props) => (
-  <li>
+  <li
+    ref={(el) => props.controllerFocus?.bind(el)}
+    data-oa-focus={props.controllerFocus?.focused() ? "true" : undefined}
+    data-oa-focus-active={props.controllerFocus?.active() ? "true" : undefined}
+  >
     <button
       type="button"
       onClick={(e) => {
@@ -662,10 +767,16 @@ const CollapsedLeaf: Component<{
   active: boolean;
   onClick: () => void;
   onContextMenu?: (position: { x: number; y: number }) => void;
+  controllerFocus?: LeafFocusBinding;
 }> = (props) => {
   const theme = () => systemThemes[props.leaf.systemId];
   return (
-    <li data-system={props.leaf.systemId}>
+    <li
+      ref={(el) => props.controllerFocus?.bind(el)}
+      data-system={props.leaf.systemId}
+      data-oa-focus={props.controllerFocus?.focused() ? "true" : undefined}
+      data-oa-focus-active={props.controllerFocus?.active() ? "true" : undefined}
+    >
       <button
         type="button"
         onClick={(e) => {

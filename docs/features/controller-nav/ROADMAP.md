@@ -1,0 +1,58 @@
+# Controller Navigation — Roadmap
+
+Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
+
+## Slice A — Gamepad → UI event layer
+
+- ⬜ rAF poller reading `navigator.getGamepads()`
+- ⬜ Synthetic event types: `nav-button` (A/B/X/Y/Start/Select/L/R), `nav-direction` (up/down/left/right)
+- ⬜ Press / release / repeat (initial delay 400ms, repeat rate 80ms)
+- ⬜ Deadzone for analog stick (0.4 default; configurable)
+- ⬜ Single event bus consumed by focus manager + hint bar
+
+## Slice B — Focus manager + focus-ring pattern
+
+- ✅ `useFocusGroup` hook — registers a group, returns helpers (`isActive`, `activate`, `bind`) (in frontend/src/nav/focus.ts)
+- ✅ Index-based focus model: parent owns focusedIndex signal, group reads/writes it; works with virtualized lists
+- ✅ Per-orientation direction handling: vertical / horizontal / grid (columns accessor)
+- ✅ Shoulder-bumper transfer to neighbour groups (L1/R1)
+- ✅ Button routing: A/B/X/Y/Start → onActivate/onCancel/onSecondary/onTertiary/onStart
+- ✅ Focus-ring CSS via `[data-oa-focus="true"]` (2px solid system accent, 8px radius, --oa-focus-anim-ms transition)
+- ✅ Inactive-group ring style (dashed dim outline) so the operator sees the bumper-back target
+
+## Slice C — On-screen hint bar
+
+- ✅ `<HintBar>` component pinned to bottom of viewport (in frontend/src/nav/HintBar.tsx, mounted at App root)
+- ✅ Per-screen `<HintRegion hints={...}>` provider — innermost wins via module-level mount-order stack
+- ✅ Auto-hide when no gamepad has been seen this session (via `hasSeenGamepad` reactive accessor)
+- ✅ Auto-hide when no HintRegion is mounted (game running unmounts library → empty stack → bar hidden)
+- ✅ Focus-ring transition respects `--oa-focus-anim-ms` (Slice E wires the settings → CSS var bridge)
+
+## Slice D — POC wiring
+
+- ✅ VirtualLibraryGrid: DPad moves tile selection, A launches, X opens TileContextMenu (in frontend/src/components/VirtualLibraryGrid.tsx)
+- ✅ LeftSidebar: DPad navigates "All Games" + visible leaves, A opens, X opens system context menu (in frontend/src/layout/LeftSidebar.tsx)
+- ✅ Shoulder bumpers (L1/R1) transfer focus between sidebar and grid via `neighbours` config
+- ✅ HintRegion at App root publishes A/X/L1/R1 labels based on active group
+- ✅ Mouse hover + click still work — `onFocus` callback explicitly activates the group + updates focus
+- ✅ Focused tile scrolls into view via `virtualizer.scrollToIndex({align:"auto"})` — no-op when already visible
+- ⬜ Sidebar containers don't take focus (DPad nav skips them); deferred to a later polish — operators can still toggle expansion with mouse
+- ⬜ B (cancel) doesn't yet clear selection or close menus — needs Slice E global semantics decision
+
+## Slice E — Settings → Controller-nav
+
+- ✅ `Settings → Display → Controller navigation` panel (in frontend/src/components/SettingsDialogs.tsx::DisplayDialog)
+- ✅ Master toggle — flips `setNavEnabled(...)` on the gamepad poller; all NavEvents suppressed when off
+- ✅ Nav source: DPad / left stick / both — `setNavSource(...)` filters poller emit
+- ✅ A/B swap — `setSwapAB(true)` in focus.ts renames the A↔B button before routing the switch
+- ✅ Animation budget: 0 / 120 / 250 ms — writes `--oa-focus-anim-ms` on documentElement; CSS transition reads it
+- ✅ Persisted under existing `oa.settings.v1` localStorage payload with validation in `load()` + emit on `save()`
+
+## Gate to Phase 1
+
+When all five slices land + operator validates the POC with a real controller,
+Phase 0 closes and Phase 1 (wizard upgrade) can start.
+
+**Slice status (2026-05-26):** A/B/C/D/E shipped on
+`feat/controller-nav-primitives`; awaiting operator playtest with a
+real gamepad before the branch merges and the gate closes.

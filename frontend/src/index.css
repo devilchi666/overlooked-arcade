@@ -220,6 +220,30 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
+  /* Controller-nav focus ring. Applied to the focused element inside an
+     active FocusGroup; toggled via data-oa-focus="true" on each focusable.
+     The accent color picks up the active system theme so a focused TG-16
+     tile shows orange, an NES tile shows red, etc. Animation budget
+     respects --oa-focus-anim-ms (settings-driven; default 120ms; 0 disables). */
+  :root {
+    --oa-focus-anim-ms: 120ms;
+  }
+  [data-oa-focus="true"] {
+    outline: 2px solid var(--color-system-accent, var(--color-oa-ink));
+    outline-offset: 2px;
+    border-radius: 8px;
+    transition:
+      outline-color var(--oa-focus-anim-ms) ease-out,
+      outline-offset var(--oa-focus-anim-ms) ease-out;
+  }
+  /* When the focused group is INACTIVE (focus is on another group), dim
+     the outline so the operator sees "this is where I'll land if I bumper
+     back here" without it competing with the active group's focus. */
+  [data-oa-focus="true"][data-oa-focus-active="false"] {
+    outline-color: var(--color-oa-ink-dim);
+    outline-style: dashed;
+  }
+
   /* Loading state for cover art — a subtle diagonal sweep across the
      gradient placeholder while the image streams in. Keeps the tile area
      visually alive; vanishes once <img onLoad> fires. */

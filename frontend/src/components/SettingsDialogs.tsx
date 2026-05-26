@@ -22,6 +22,7 @@ import {
   WINDOW_MODE_LABELS,
   WINDOW_OPTIONS,
   type AudioDeviceInfo,
+  type ControllerNavSource,
   type MonitorInfo,
   type ScalingMode,
   type SettingsStore,
@@ -129,6 +130,64 @@ export const DisplayDialog: Component<{
               },
             }}
             description="Reduces perceived input latency by N frames. Each costs one save_state + one run_frame + one load_state per frame. Skipped during scrub / TAS / pause."
+          />
+        </DialogSection>
+
+        <DialogSection
+          title="Controller navigation"
+          description="Drive the library and menus with a gamepad. DPad or left stick moves focus; A activates, B cancels, X opens context menus, Y opens details, shoulder bumpers switch between panels."
+        >
+          <SettingRow
+            label="Enabled"
+            inherited={null}
+            overridden={false}
+            toggle={{
+              checked: props.settings.controllerNavEnabled(),
+              onChange: (v) => props.settings.setControllerNavEnabled(v),
+            }}
+          />
+          <SettingRow
+            label="Navigation source"
+            inherited={null}
+            overridden={false}
+            select={{
+              value: props.settings.controllerNavSource(),
+              options: [
+                { value: "both", label: "DPad + left stick" },
+                { value: "dpad", label: "DPad only" },
+                { value: "stick-left", label: "Left stick only" },
+              ],
+              onChange: (v) => props.settings.setControllerNavSource(v as ControllerNavSource),
+            }}
+          />
+          <SettingRow
+            label="Swap A and B"
+            hint="Nintendo layout"
+            inherited={null}
+            overridden={false}
+            toggle={{
+              checked: props.settings.controllerNavSwapAB(),
+              onChange: (v) => props.settings.setControllerNavSwapAB(v),
+            }}
+            description="When on, B confirms and A cancels — matches SNES/N64/DS-era Nintendo conventions."
+          />
+          <SettingRow
+            label="Animation budget"
+            inherited={null}
+            overridden={false}
+            select={{
+              value: String(props.settings.controllerNavAnimationMs()),
+              options: [
+                { value: "0", label: "Snappy (no animation)" },
+                { value: "120", label: "Subtle (120 ms)" },
+                { value: "250", label: "Animated (250 ms)" },
+              ],
+              onChange: (v) => {
+                const ms = Number(v);
+                if (Number.isFinite(ms)) props.settings.setControllerNavAnimationMs(ms);
+              },
+            }}
+            description="How long the focus ring transitions when moving between elements."
           />
         </DialogSection>
       </div>

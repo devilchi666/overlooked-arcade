@@ -13,6 +13,7 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import LibraryTile from "./LibraryTile";
 import type { EntryGroup } from "../library/filter";
 import type { RomEntry } from "../library/types";
+import { useFocusGroup } from "../nav/focus";
 
 type Props = {
   /** Pre-filtered + sorted + grouped list. Empty group label = render no
@@ -92,6 +93,30 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
   let scrollRef: HTMLDivElement | undefined;
   const [containerWidth, setContainerWidth] = createSignal(0);
 
+  // Flat list of entries across all groups — used by controller-nav
+  // focus model. Headers are skipped (focus only lands on tiles).
+  const flatEntries = createMemo<RomEntry[]>(() => {
+    const out: RomEntry[] = [];
+    for (const g of props.groups) out.push(...g.entries);
+    return out;
+  });
+
+  // Derive focused index from the parent-owned selectedId accessor.
+  // Keeps "selection" and "focused tile" as one concept; mouse hover +
+  // gamepad DPad both feed the same setFocusedEntry sink upstream.
+  const focusedIndex = createMemo(() => {
+    const sid = props.selectedId?.();
+    const list = flatEntries();
+    if (!sid || list.length === 0) return 0;
+    const i = list.findIndex((e) => e.id === sid);
+    return i >= 0 ? i : 0;
+  });
+
+  // Index → DOM element registry for the visible-virtualized subset.
+  // Doubles as the focus.ts bind() target AND the source of bounding
+  // rects for context-menu anchoring.
+  const tileEls = new Map<number, HTMLDivElement>();
+
   const tileTarget = () => props.tileWidth ?? 220;
   const gap = () => props.gap ?? 12;
   const aspect = () => props.minAspect ?? 0.75; // width / height
@@ -160,6 +185,62 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
     virtualizer.measure();
   });
 
+  // Map a flat entry index to its row index in the virtualizer's row
+  // list (headers interleave; tile rows hold up to `columnCount` entries).
+  const rowIndexForEntryIndex = (entryIdx: number): number => {
+    const r = rows();
+    let consumed = 0;
+    for (let i = 0; i < r.length; i++) {
+      const row = r[i];
+      if (row.kind === "header") continue;
+      const rowLen = row.entries.length;
+      if (entryIdx < consumed + rowLen) return i;
+      consumed += rowLen;
+    }
+    return -1;
+  };
+
+  const focusGroup = useFocusGroup({
+    id: "library-grid",
+    orientation: "grid",
+    itemCount: () => flatEntries().length,
+    columns: columnCount,
+    focusedIndex,
+    setFocusedIndex: (next) => {
+      const list = flatEntries();
+      if (list.length === 0) return;
+      const clamped = Math.max(0, Math.min(list.length - 1, next));
+      const entry = list[clamped];
+      if (entry) props.onFocus?.(entry);
+    },
+    onActivate: (i) => {
+      const e = flatEntries()[i];
+      if (e) props.onLaunch(e);
+    },
+    onSecondary: (i) => {
+      const e = flatEntries()[i];
+      const el = tileEls.get(i);
+      if (!e) return;
+      if (el && props.onPickContext) {
+        const r = el.getBoundingClientRect();
+        props.onPickContext(e, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }
+    },
+    neighbours: { left: "left-sidebar" },
+  });
+
+  // Keep the focused tile visible. `align: "auto"` scrolls only when
+  // the row isn't already on screen — mouse hover within the visible
+  // range is a no-op.
+  createEffect(() => {
+    const i = focusedIndex();
+    if (flatEntries().length === 0) return;
+    const rowIdx = rowIndexForEntryIndex(i);
+    if (rowIdx >= 0) {
+      virtualizer.scrollToIndex(rowIdx, { align: "auto" });
+    }
+  });
+
   return (
     <div
       ref={scrollRef!}
@@ -208,19 +289,43 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                     }}
                   >
                     <For each={(row() as Extract<GridRow, { kind: "tiles" }>).entries}>
-                      {(entry) => (
-                        <div style={{ "content-visibility": "auto", "contain-intrinsic-size": "auto 320px 360px" }}>
-                          <LibraryTile
-                            entry={entry}
-                            onLaunch={props.onLaunch}
-                            onShowSaves={props.onShowSaves}
-                            onPickContext={props.onPickContext}
-                            onFocus={props.onFocus}
-                            selected={props.selectedId?.() === entry.id}
-                            variantCount={props.variantCountFor?.(entry.id)}
-                          />
-                        </div>
-                      )}
+                      {(entry) => {
+                        const flatIdx = createMemo(() =>
+                          flatEntries().findIndex((e) => e.id === entry.id),
+                        );
+                        const isFocused = () =>
+                          flatIdx() >= 0 && focusedIndex() === flatIdx();
+                        return (
+                          <div
+                            ref={(el) => {
+                              if (el) {
+                                tileEls.set(flatIdx(), el);
+                                focusGroup.bind(flatIdx(), el);
+                              }
+                              onCleanup(() => {
+                                tileEls.delete(flatIdx());
+                                focusGroup.bind(flatIdx(), null);
+                              });
+                            }}
+                            data-oa-focus={isFocused() ? "true" : undefined}
+                            data-oa-focus-active={focusGroup.isActive() ? "true" : "false"}
+                            style={{ "content-visibility": "auto", "contain-intrinsic-size": "auto 320px 360px" }}
+                          >
+                            <LibraryTile
+                              entry={entry}
+                              onLaunch={props.onLaunch}
+                              onShowSaves={props.onShowSaves}
+                              onPickContext={props.onPickContext}
+                              onFocus={(e) => {
+                                focusGroup.activate();
+                                props.onFocus?.(e);
+                              }}
+                              selected={props.selectedId?.() === entry.id}
+                              variantCount={props.variantCountFor?.(entry.id)}
+                            />
+                          </div>
+                        );
+                      }}
                     </For>
                   </div>
                 </Show>

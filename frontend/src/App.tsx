@@ -89,6 +89,9 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
+import { setNavEnabled, setNavSource, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
+import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -267,6 +270,24 @@ const App: Component = () => {
     }).then((u) => { unlisten = u; });
     onCleanup(() => unlisten?.());
   });
+
+  // Controller-nav: start the Web Gamepad API poller. Emits NavEvents on
+  // the bus exposed by `frontend/src/nav/gamepad.ts`. The poller is rAF-
+  // driven so it suspends when the window is hidden, and only fires when
+  // the user is in the UI (the emulator's gilrs poller is gated to game-
+  // window focus, so the two never overlap).
+  onMount(() => {
+    startGamepadInput();
+    onCleanup(() => stopGamepadInput());
+  });
+
+  // Push controller-nav preferences into the gamepad poller + focus
+  // manager whenever the settings store mutates them. Three knobs:
+  // master enable (suppress all events), source (dpad / stick / both),
+  // A/B swap (Nintendo convention).
+  createEffect(() => setNavEnabled(settings.controllerNavEnabled()));
+  createEffect(() => setNavSource(settings.controllerNavSource()));
+  createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
   // Tools ▾ menu items request the overlay to land on a specific panel.
   // Cleared on close so a subsequent Esc-open lands on the action grid.
   const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
@@ -1954,6 +1975,21 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      <HintBar />
+      <Show when={!gameMode() && !isDirectLaunch()}>
+        <HintRegion
+          hints={(): Hints => {
+            switch (activeFocusGroupId()) {
+              case "left-sidebar":
+                return { a: "Open", x: "System menu", r1: "Library" };
+              case "library-grid":
+                return { a: "Launch", x: "Menu", l1: "Sidebar" };
+              default:
+                return {};
+            }
+          }}
+        />
+      </Show>
       </PlatformMediaProvider>
     </MediaProvider>
   );
