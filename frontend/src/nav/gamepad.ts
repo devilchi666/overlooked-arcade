@@ -48,6 +48,27 @@ const INITIAL_REPEAT_MS = 400;
 const REPEAT_INTERVAL_MS = 80;
 const STICK_DEADZONE = 0.4;
 
+/// Direction sources the operator can choose between in Settings →
+/// Display → Controller navigation. The poller silently ignores events
+/// from a source the operator has opted out of.
+export type NavSource = "dpad" | "stick-left" | "both";
+
+let inputEnabled = true;
+let navSource: NavSource = "both";
+
+/// Master enable / disable. Settings calls this when the operator
+/// flips the "Controller navigation" toggle. False suppresses all
+/// emit() calls — listeners stay subscribed but receive nothing.
+export function setNavEnabled(on: boolean): void {
+  inputEnabled = on;
+}
+
+/// Limit which control(s) drive direction navigation. Settings calls
+/// this when the operator picks DPad / left stick / both.
+export function setNavSource(source: NavSource): void {
+  navSource = source;
+}
+
 type ButtonState = { pressedAt: number; lastRepeatAt: number };
 type StickState = {
   direction: NavDirection | null;
@@ -162,6 +183,7 @@ function tick(now: DOMHighResTimeStamp): void {
 }
 
 function pollButtons(pad: Gamepad, now: number): void {
+  const dpadSourceOn = navSource === "dpad" || navSource === "both";
   for (let i = 0; i < pad.buttons.length; i++) {
     const isPressed = pad.buttons[i]?.pressed ?? false;
     const key = `${pad.index}:${i}`;
@@ -169,6 +191,8 @@ function pollButtons(pad: Gamepad, now: number): void {
     const buttonName = BUTTON_NAMES[i];
     const dpadDir = DPAD_DIRS[i];
     if (!buttonName && !dpadDir) continue;
+    // Suppress dpad events when source is stick-only.
+    if (dpadDir && !dpadSourceOn) continue;
 
     if (isPressed && !prev) {
       buttonStates.set(key, { pressedAt: now, lastRepeatAt: now });
@@ -196,7 +220,8 @@ function pollButtons(pad: Gamepad, now: number): void {
 }
 
 function pollStick(pad: Gamepad, now: number): void {
-  if (pad.axes.length < 2) return;
+  const stickSourceOn = navSource === "stick-left" || navSource === "both";
+  if (pad.axes.length < 2 || !stickSourceOn) return;
   const x = pad.axes[0] ?? 0;
   const y = pad.axes[1] ?? 0;
   const direction = stickToDirection(x, y);
@@ -238,6 +263,7 @@ export function stickToDirection(x: number, y: number): NavDirection | null {
 }
 
 function emitButton(button: NavButton, phase: NavPhase, gamepadIndex: number): void {
+  if (!inputEnabled) return;
   const event: NavEvent = { kind: "button", button, phase, gamepadIndex };
   for (const l of listeners) l(event);
 }
@@ -248,6 +274,7 @@ function emitDirection(
   source: "dpad" | "stick-left",
   gamepadIndex: number,
 ): void {
+  if (!inputEnabled) return;
   const event: NavEvent = { kind: "direction", direction, phase, source, gamepadIndex };
   for (const l of listeners) l(event);
 }

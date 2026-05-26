@@ -86,6 +86,15 @@ function createManager(): Manager {
 
 const manager = createManager();
 
+let swapAB = false;
+
+/// When true, A and B button events swap before dispatch — Nintendo-
+/// convention layout (B = confirm, A = back). Settings calls this when
+/// the operator flips the swap toggle.
+export function setSwapAB(on: boolean): void {
+  swapAB = on;
+}
+
 // Global event subscription — once, at module load. Routes every
 // NavEvent to whichever group is active. No-op if no group is active.
 onNavEvent((event) => {
@@ -100,7 +109,11 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
   if (event.kind === "button") {
     if (event.phase !== "down") return;
     const idx = handle.options.focusedIndex();
-    switch (event.button) {
+    // Nintendo-layout swap: rename A→B and B→A before semantic dispatch.
+    const button = swapAB && (event.button === "a" || event.button === "b")
+      ? (event.button === "a" ? "b" : "a")
+      : event.button;
+    switch (button) {
       case "a":
         handle.options.onActivate?.(idx);
         return;

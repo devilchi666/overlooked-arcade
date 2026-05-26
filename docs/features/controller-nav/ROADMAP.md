@@ -26,7 +26,7 @@ Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
 - ✅ Per-screen `<HintRegion hints={...}>` provider — innermost wins via module-level mount-order stack
 - ✅ Auto-hide when no gamepad has been seen this session (via `hasSeenGamepad` reactive accessor)
 - ✅ Auto-hide when no HintRegion is mounted (game running unmounts library → empty stack → bar hidden)
-- ⬜ ≤120ms animated label changes (current: instant — will revisit in Slice E once animation budget setting is wired)
+- ✅ Focus-ring transition respects `--oa-focus-anim-ms` (Slice E wires the settings → CSS var bridge)
 
 ## Slice D — POC wiring
 
@@ -41,14 +41,18 @@ Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
 
 ## Slice E — Settings → Controller-nav
 
-- ⬜ `Settings → Display → Controller navigation` panel
-- ⬜ Master toggle (controller-nav on/off entirely)
-- ⬜ Nav source: DPad / left stick / both (default: both)
-- ⬜ A/B swap (for Nintendo-convention users)
-- ⬜ Animation budget: snappy (0ms) / subtle (120ms, default) / animated (250ms)
-- ⬜ Persisted in settings store
+- ✅ `Settings → Display → Controller navigation` panel (in frontend/src/components/SettingsDialogs.tsx::DisplayDialog)
+- ✅ Master toggle — flips `setNavEnabled(...)` on the gamepad poller; all NavEvents suppressed when off
+- ✅ Nav source: DPad / left stick / both — `setNavSource(...)` filters poller emit
+- ✅ A/B swap — `setSwapAB(true)` in focus.ts renames the A↔B button before routing the switch
+- ✅ Animation budget: 0 / 120 / 250 ms — writes `--oa-focus-anim-ms` on documentElement; CSS transition reads it
+- ✅ Persisted under existing `oa.settings.v1` localStorage payload with validation in `load()` + emit on `save()`
 
 ## Gate to Phase 1
 
 When all five slices land + operator validates the POC with a real controller,
 Phase 0 closes and Phase 1 (wizard upgrade) can start.
+
+**Slice status (2026-05-26):** A/B/C/D/E shipped on
+`feat/controller-nav-primitives`; awaiting operator playtest with a
+real gamepad before the branch merges and the gate closes.

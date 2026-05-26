@@ -89,9 +89,9 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
-import { startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { setNavEnabled, setNavSource, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
-import { activeFocusGroupId } from "./nav/focus";
+import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -280,6 +280,14 @@ const App: Component = () => {
     startGamepadInput();
     onCleanup(() => stopGamepadInput());
   });
+
+  // Push controller-nav preferences into the gamepad poller + focus
+  // manager whenever the settings store mutates them. Three knobs:
+  // master enable (suppress all events), source (dpad / stick / both),
+  // A/B swap (Nintendo convention).
+  createEffect(() => setNavEnabled(settings.controllerNavEnabled()));
+  createEffect(() => setNavSource(settings.controllerNavSource()));
+  createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
   // Tools ▾ menu items request the overlay to land on a specific panel.
   // Cleared on close so a subsequent Esc-open lands on the action grid.
   const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
