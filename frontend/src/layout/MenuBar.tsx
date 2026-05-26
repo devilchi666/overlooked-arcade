@@ -203,9 +203,18 @@ export const Menu: Component<MenuProps> = (props) => {
     'button[role="menuitem"], button[role="menuitemradio"], button[role="menuitemcheckbox"]';
   const queryButtons = (): HTMLButtonElement[] => {
     if (!popoverRef) return [];
-    return Array.from(popoverRef.querySelectorAll<HTMLButtonElement>(menuItemSelector));
+    const all = Array.from(popoverRef.querySelectorAll<HTMLButtonElement>(menuItemSelector));
+    // Skip disabled rows. Browsers refuse to focus disabled buttons, and
+    // clicks on them no-op, so navigating to one would be a dead end.
+    // Filtering here keeps itemCount + binds + the focus-ring mirror in
+    // lockstep on the enabled set.
+    return all.filter((btn) => !btn.disabled);
   };
   const [itemCount, setItemCount] = createSignal(0);
+  // Bumped whenever the popover's DOM mutates (disabled-attr flip, Show
+  // toggle, etc) so the focus-ring mirror knows to re-paint.
+  const [domRev, setDomRev] = createSignal(0);
+  let observer: MutationObserver | null = null;
   const menuFocus = useFocusGroup({
     id: `menubar-menu-${id}`,
     orientation: "vertical",
@@ -229,19 +238,73 @@ export const Menu: Component<MenuProps> = (props) => {
   }
 
   // When the menu opens, activate the focus group, bind every visible
-  // button by DOM order, and reset the focused index. When it closes,
-  // transfer focus back to the library grid.
+  // enabled button by DOM order, and reset the focused index. While
+  // open, observe the popover for content changes (disabled-attr flips
+  // from background work, Show toggles) and re-bind so the focus group
+  // stays in lockstep with what's actually navigable. When it closes,
+  // disconnect the observer; the popover unmounts so per-button cleanup
+  // is implicit.
   createEffect(() => {
     if (!isOpen()) {
       setItemCount(0);
+      observer?.disconnect();
+      observer = null;
       return;
     }
     queueMicrotask(() => {
-      const btns = queryButtons();
-      setItemCount(btns.length);
-      btns.forEach((btn, i) => menuFocus.bind(i, btn));
+      // Guard against open-then-close-before-microtask races — if the
+      // menu closed while we were queued, skip setup entirely so we
+      // don't attach an observer to a detached popover node.
+      if (!isOpen() || !popoverRef || !popoverRef.isConnected) return;
+      const rebind = () => {
+        if (!popoverRef || !popoverRef.isConnected) return;
+        const btns = queryButtons();
+        setItemCount(btns.length);
+        btns.forEach((btn, i) => menuFocus.bind(i, btn));
+        setDomRev((r) => r + 1);
+      };
+      rebind();
       setFocusedIndex(0);
       menuFocus.activate();
+      observer = new MutationObserver(rebind);
+      observer.observe(popoverRef, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["disabled"],
+      });
+    });
+  });
+  onCleanup(() => {
+    observer?.disconnect();
+    observer = null;
+  });
+
+  // Visual focus ring: mirror focusedIndex into data-oa-focus on the
+  // bound buttons so the operator sees up/down moving. focus.ts also
+  // calls el.focus() but Tailwind's preflight removes the browser's
+  // default outline — OA's pattern is data-attribute-driven so the
+  // per-system accent + animation budget apply (in index.css
+  // [data-oa-focus="true"]). Re-runs on focusedIndex changes (cursor
+  // moves) and on domRev bumps (content changed mid-open) so the ring
+  // always lands on whichever button now holds the index.
+  createEffect(() => {
+    if (!isOpen()) return;
+    const idx = focusedIndex();
+    const active = menuFocus.isActive();
+    void domRev();
+    queueMicrotask(() => {
+      const btns = queryButtons();
+      const targetIdx = btns.length === 0 ? -1 : Math.min(idx, btns.length - 1);
+      btns.forEach((btn, i) => {
+        if (i === targetIdx) {
+          btn.setAttribute("data-oa-focus", "true");
+          btn.setAttribute("data-oa-focus-active", active ? "true" : "false");
+        } else {
+          btn.removeAttribute("data-oa-focus");
+          btn.removeAttribute("data-oa-focus-active");
+        }
+      });
     });
   });
   // Back-stack registration is conditional on isOpen; mount the inner
