@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   onCleanup,
@@ -12,6 +13,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
 import type { SettingsStore } from "../settings/store";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "./../nav/HintBar";
 
 // Phase 2.8 slice B (Quick Settings overlay) + Phase 4 slice B (rewind
 // scrubbing). Triggered by Escape during gameplay. Two-mode card:
@@ -591,43 +595,14 @@ const QuickSettings: Component<Props> = (props) => {
           </header>
 
           <Show when={view() === "actions"}>
-            <div class="flex flex-col gap-1.5 p-3">
-              <ActionRow icon="▶" label="Resume" hint="Esc" onClick={props.onClose} autoFocus />
-              <ActionRow
-                icon="⏱"
-                label="Save / Load states"
-                onClick={() => {
-                  if (props.entry) {
-                    props.onClose();
-                    props.onShowSaves(props.entry);
-                  }
-                }}
-              />
-              <ActionRow
-                icon="ⓘ"
-                label="Game info"
-                onClick={() => {
-                  if (props.entry) {
-                    props.onClose();
-                    props.onShowInfo(props.entry);
-                  }
-                }}
-              />
-              <div class="my-1 border-t border-white/5" />
-              <ActionRow
-                icon="🚪"
-                label={props.exitMode === "quit" ? "Quit" : "Exit to library"}
-                hint="Ctrl+W"
-                destructive
-                onClick={() => {
-                  props.onClose();
-                  props.onExitToLibrary();
-                }}
-              />
-              <p class="px-2 pt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                Rewind · TAS · Video · Memory → top bar <span class="text-(--color-oa-ink)">Tools</span> menu
-              </p>
-            </div>
+            <ActionsPanel
+              entry={props.entry}
+              exitMode={props.exitMode}
+              onClose={props.onClose}
+              onShowSaves={props.onShowSaves}
+              onShowInfo={props.onShowInfo}
+              onExitToLibrary={props.onExitToLibrary}
+            />
           </Show>
 
           <Show when={view() === "rewind" && rewindState() !== null}>
@@ -1490,6 +1465,99 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
   );
 };
 
+// Controller-nav: the actions view is a small vertical list. Owned by
+// its own component so the focus group + back handler scope cleanly to
+// "actions" view only — the rewind / TAS / memory sub-views have their
+// own UI and would need separate focus groups (deferred).
+const ActionsPanel: Component<{
+  entry: RomEntry | null;
+  exitMode?: "library" | "quit";
+  onClose: () => void;
+  onShowSaves: (entry: RomEntry) => void;
+  onShowInfo: (entry: RomEntry) => void;
+  onExitToLibrary: () => void;
+}> = (props) => {
+  type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; onActivate: () => void };
+  const actions = createMemo<Action[]>(() => {
+    const list: Action[] = [
+      { key: "resume", icon: "▶", label: "Resume", hint: "Esc", onActivate: props.onClose },
+      {
+        key: "saves",
+        icon: "⏱",
+        label: "Save / Load states",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onShowSaves(props.entry);
+          }
+        },
+      },
+      {
+        key: "info",
+        icon: "ⓘ",
+        label: "Game info",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onShowInfo(props.entry);
+          }
+        },
+      },
+      {
+        key: "exit",
+        icon: "🚪",
+        label: props.exitMode === "quit" ? "Quit" : "Exit to library",
+        hint: "Ctrl+W",
+        destructive: true,
+        onActivate: () => {
+          props.onClose();
+          props.onExitToLibrary();
+        },
+      },
+    ];
+    return list;
+  });
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "quick-settings-actions",
+    orientation: "vertical",
+    itemCount: () => actions().length,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => actions()[i]?.onActivate(),
+    onCancel: () => props.onClose(),
+  });
+  useBackHandler(() => props.onClose());
+  onMount(() => {
+    focusGroup.activate();
+    setFocusedIndex(0);
+  });
+  onCleanup(() => activateFocusGroup("library-grid"));
+  return (
+    <div class="flex flex-col gap-1.5 p-3">
+      <HintRegion hints={{ a: "Activate", b: "Resume" }} />
+      <For each={actions()}>
+        {(action, index) => (
+          <ActionRow
+            icon={action.icon}
+            label={action.label}
+            hint={action.hint}
+            destructive={action.destructive}
+            onClick={action.onActivate}
+            bind={(el) => focusGroup.bind(index(), el)}
+            focused={focusedIndex() === index()}
+            focusActive={focusGroup.isActive()}
+            onMouseEnter={() => setFocusedIndex(index())}
+          />
+        )}
+      </For>
+      <p class="px-2 pt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        Rewind · TAS · Video · Memory → top bar <span class="text-(--color-oa-ink)">Tools</span> menu
+      </p>
+    </div>
+  );
+};
+
 const ActionRow: Component<{
   icon: string;
   label: string;
@@ -1498,6 +1566,13 @@ const ActionRow: Component<{
   destructive?: boolean;
   autoFocus?: boolean;
   onClick: () => void;
+  /// Controller-nav: bind the rendered <button> to a focus group at the
+  /// given index. Optional — the existing mouse path uses ActionRow
+  /// without a bind callback.
+  bind?: (el: HTMLElement | null) => void;
+  focused?: boolean;
+  focusActive?: boolean;
+  onMouseEnter?: () => void;
 }> = (props) => {
   let ref: HTMLButtonElement | undefined;
   onMount(() => {
@@ -1512,10 +1587,16 @@ const ActionRow: Component<{
   };
   return (
     <button
-      ref={ref}
+      ref={(el) => {
+        ref = el;
+        props.bind?.(el);
+      }}
       type="button"
       data-quick-action
+      data-oa-focus={props.focused ? "true" : undefined}
+      data-oa-focus-active={props.focusActive ? "true" : undefined}
       disabled={props.disabled === true}
+      onMouseEnter={props.onMouseEnter}
       onClick={handler}
       class={BTN_BASE}
       classList={{

@@ -1,7 +1,10 @@
-import { createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { launchRom } from "../library/launch";
 import type { RomEntry } from "../library/types";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
+import { HintRegion } from "../nav/HintBar";
 
 type SaveSlot = {
   slot: number;
@@ -74,15 +77,48 @@ const SaveSlotsModal: Component<Props> = (props) => {
   onMount(() => window.addEventListener("keydown", escHandler, { capture: true }));
   onCleanup(() => window.removeEventListener("keydown", escHandler, { capture: true }));
 
+  // Controller-nav: grid of slot tiles. A launches the focused slot
+  // (no-op for empty slots); X deletes; B closes the modal via the
+  // back-stack. 5 columns at the widest breakpoint, 3 at md, 2 at base
+  // — pick a single grid column count for nav purposes; visual columns
+  // can differ. 5 matches the most common widescreen experience.
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const slotList = createMemo(() => slots() ?? []);
+  const focusGroup = useFocusGroup({
+    id: "save-slots-modal",
+    orientation: "grid",
+    itemCount: () => slotList().length,
+    columns: () => 5,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      const s = slotList()[i];
+      if (s && s.exists) void handleLaunchSlot(s.slot);
+    },
+    onSecondary: (i) => {
+      const s = slotList()[i];
+      if (s && s.exists) void handleDelete(s.slot);
+    },
+    onCancel: () => props.onClose(),
+  });
+
   return (
     <Show when={props.entry}>
-      {(entry) => (
+      {(entry) => {
+        useBackHandler(() => props.onClose());
+        onMount(() => {
+          focusGroup.activate();
+          setFocusedIndex(0);
+        });
+        onCleanup(() => activateFocusGroup("library-grid"));
+        return (
         <div
           class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
           onClick={(e) => {
             if (e.currentTarget === e.target) props.onClose();
           }}
         >
+          <HintRegion hints={{ a: "Launch slot", b: "Close", x: "Delete slot" }} />
           <div
             class="w-full max-w-3xl rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
             data-system={entry().systemId}
@@ -111,9 +147,13 @@ const SaveSlotsModal: Component<Props> = (props) => {
             </header>
 
             <section class="grid grid-cols-2 gap-3 px-6 py-6 sm:grid-cols-3 md:grid-cols-5">
-              <For each={slots() ?? []}>
-                {(s) => (
+              <For each={slotList()}>
+                {(s, index) => (
                   <article
+                    ref={(el) => focusGroup.bind(index(), el)}
+                    data-oa-focus={focusedIndex() === index() ? "true" : undefined}
+                    data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                    onMouseEnter={() => setFocusedIndex(index())}
                     class="group flex flex-col overflow-hidden rounded-md border border-white/5 bg-white/[0.03] transition"
                     classList={{
                       "opacity-50": !s.exists,
@@ -188,7 +228,8 @@ const SaveSlotsModal: Component<Props> = (props) => {
             </footer>
           </div>
         </div>
-      )}
+        );
+      }}
     </Show>
   );
 };
