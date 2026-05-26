@@ -12,22 +12,25 @@ When you close an item, the matching PR also flips the corresponding `⬜` to `�
 
 **Decided 2026-05-26.** Three major arcs below — Guided Setup, Per-System Custom UI, and Game Info Panel — share a foundation and can pipeline through subsequent stages.
 
-### The shared foundation: Phase 0 — Controller-nav primitives (~2-3 weeks)
+### The shared foundation: Phase 0 — Controller-nav primitives ✅ SHIPPED 2026-05-26
 
-Currently described in [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §13 as guided-setup's Phase 0, but functionally serves BOTH arcs:
+Merged to main as `feat/controller-nav-primitives` (5 phase commits). See
+[docs/features/controller-nav/](features/controller-nav/) for the slice
+breakdown + decisions. Five deliverables landed:
 
-- Focus manager (which element is currently focused; how DPad moves between elements)
-- Gamepad → UI event layer (A=confirm, B=back, Y=customize, Select=help)
-- Focus-ring component pattern (high-contrast outline; ≤120ms transition)
-- On-screen hint bar (persistent footer showing button hints for current screen)
-- Settings → Controller-nav (off / remap nav buttons)
+- ✅ Focus manager — `nav/focus.ts::useFocusGroup` (vertical / horizontal / grid)
+- ✅ Gamepad → UI event layer — `nav/gamepad.ts` Web Gamepad API rAF poller
+- ✅ Focus-ring component pattern — `[data-oa-focus="true"]` 2px outline (in frontend/src/index.css)
+- ✅ On-screen hint bar — `nav/HintBar.tsx` with `HintRegion` provider stack
+- ✅ Settings → Controller-nav — Display dialog gains a Controller navigation section
 
-Without Phase 0, neither arc can ship its controller-navigable experience. With Phase 0 done, both arcs unblock simultaneously.
+Both arcs (Guided Setup + Per-System UI) now unblocked. Per the
+pipelined sequence below, Per-System UI Stage 1 is next.
 
 ### Strict sequence to the inflection point
 
 ```
-Phase 0 (controller-nav, ~2-3w)
+Phase 0 ✓ (controller-nav, shipped 2026-05-26)
        ↓
 Per-System UI Stage 1 (polish layer, ~5-7w)
    - SystemUIConfig data model + registry

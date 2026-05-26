@@ -11,16 +11,25 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Controller navigation primitives (Phase 0)**
-  ([features/controller-nav/](features/controller-nav/)) — branch
-  `feat/controller-nav-primitives`. Shared foundation for the
-  Guided Setup arc + Per-System UI Stage 1. 5 slices: gamepad
-  event layer, focus manager + ring, hint bar, library/sidebar
-  POC wiring, Settings page. Currently working Slice A
-  (Web Gamepad API rAF poller). Plan source of truth in
-  `docs/PLANS/guided-setup.md` §10 + §13.
+(Nothing actively in flight.)
 
 ## Recently completed (this session)
+
+- **Controller navigation primitives (Phase 0)**
+  ([features/controller-nav/](features/controller-nav/)) — merged to
+  main 2026-05-26 (`--no-ff` from `feat/controller-nav-primitives`).
+  5 phase commits shipping the shared foundation for the Guided Setup
+  + Per-System UI arcs: Slice A `nav/gamepad.ts` Web Gamepad API
+  poller (`ca3dff9`); Slice B `nav/focus.ts` useFocusGroup hook with
+  vertical/horizontal/grid orientations + L1/R1 neighbour transfer
+  (`d8a5ffb`); Slice C `nav/HintBar.tsx` persistent footer + module-
+  stack HintRegion (`a3a54b3`); Slice D wired VirtualLibraryGrid +
+  LeftSidebar with DPad nav + A/X buttons + shoulder bumpers
+  (`49522ab`); Slice E `Settings → Display → Controller navigation`
+  panel with master toggle / source picker / A↔B swap / animation
+  budget (`f2501fb`). Operator-confirmed working before merge.
+  Phase 0 closes; Per-System UI Stage 1 unblocks per the pipelined
+  sequence in `docs/NEXT.md`.
 
 - **DOSBox + ScummVM onboarding** ([features/dosbox-and-scummvm/](features/dosbox-and-scummvm/))
   — shipped 2026-05-24 across two `--no-ff` merges. Phase 1
