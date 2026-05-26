@@ -226,9 +226,12 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    - New `ShaderPreset::VbMonochrome` variant. LED-grain noise + red-on-black tint + optional visor reflection.
    - Wants operator design input on noise intensity + grain pattern.
 
-3. **Per-system `lcd-handheld` default binding** (~30 lines, ready to ship).
-   - The shader preset exists (`ShaderPreset::LcdHandheld`, id 4). Wire `gb`/`gba`/`gamegear`/`ngp`/`wonderswan` to default to it via `frontend/src/themes/registry.ts` `defaultShaderPreset` slot.
-   - Wants operator validation against real handheld captures first.
+~~3. Per-system `lcd-handheld` default binding~~ — **SHIPPED 2026-05-24**
+   alongside the media-taxonomy wave. `defaultShaderPreset: "lcd-handheld"`
+   wired in `frontend/src/themes/registry.ts` for `gb` / `gbc` / `gba` /
+   `gamegear` / `ngp` / `wonderswan` / `pokemini` / `psp`. Per-core ROADMAPs
+   flipped ✅ for each. Operator validation against real handheld captures
+   remains a stretch polish item but doesn't gate the default.
 
 4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch** (~80 lines).
    - Bits 16-20 in `bindings.rs::jaguar` already exist. Wire libretro `RETRO_DEVICE_KEYBOARD` events from the upper-bit presses through to Virtual Jaguar.

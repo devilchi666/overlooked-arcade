@@ -636,8 +636,12 @@ pub mod jaguar {
     pub const KP6: u32     = 1 << 14;  // libretro L3 — keypad 6
     pub const KP7: u32     = 1 << 15;  // libretro R3 — keypad 7
     // Above-RetroPad keypad keys — surfaced in bindings module for the
-    // per-system page UI; Phase 2 work wires keyboard-passthrough
-    // dispatch to the core for these.
+    // per-system page UI; dispatched to Virtual Jaguar via
+    // `retro_keyboard_event_t` (see `jaguar_high_bit_to_retro_key` +
+    // the per-port edge-detection loop in `main.rs`). Pad-binding for
+    // these 5 bits is still unsupported (would need a "secondary pad
+    // bit-set" abstraction); keyboard-binding works through the same
+    // per-system Bindings UI as every other slot.
     pub const KP8: u32     = 1 << 16;
     pub const KP9: u32     = 1 << 17;
     pub const KP_STAR: u32 = 1 << 18;
@@ -2041,9 +2045,12 @@ pub fn gamecube_to_libretro_bits(b: u32) -> u32 {
 /// Atari Jaguar → libretro bit remap. Identity by construction for
 /// the lower 16 bits (RetroPad range); shell-reserved high bits
 /// (KP8 / KP9 / KP_STAR / KP0 / KP_HASH = bits 16-20) get masked off
-/// before reaching the core — keyboard-passthrough dispatch for those
-/// 5 keypad keys is Phase 2 work. The mask trims to the 16-bit
-/// RetroPad button set so high bits and other stray bits get dropped.
+/// before reaching the core's joypad mask — those 5 keys flow to
+/// Virtual Jaguar through `retro_keyboard_event_t` instead, via the
+/// per-port dispatch in `apps/oa-shell/src/main.rs` that consults
+/// [`jaguar_high_bit_to_retro_key`] for the keycode. The mask trims
+/// to the 16-bit RetroPad button set so high bits and other stray
+/// bits get dropped.
 pub fn jaguar_to_libretro_bits(b: u32) -> u32 {
     b & (jaguar::A
         | jaguar::B
@@ -2062,6 +2069,39 @@ pub fn jaguar_to_libretro_bits(b: u32) -> u32 {
         | jaguar::KP6
         | jaguar::KP7)
 }
+
+/// Translate a single Jaguar high-bit binding (KP8 / KP9 / KP_STAR /
+/// KP0 / KP_HASH = bits 16-20) to its libretro `RETROK_*` keycode for
+/// dispatch through `retro_keyboard_event_t`. Returns `None` for
+/// lower-16 RetroPad bits (those flow through the joypad mask via
+/// [`jaguar_to_libretro_bits`]) and for zero / multi-bit / unknown
+/// masks. The caller is responsible for edge-detecting press/release
+/// transitions and only calling the core's keyboard callback when a
+/// transition actually happened.
+///
+/// `#` maps to `RETROK_HASH` (35) rather than a keypad-specific code
+/// because libretro defines no `RETROK_KP_HASH`. Virtual Jaguar reads
+/// the keypad through standard keyboard scancodes; titles that watch
+/// for `#` (Iron Soldier weapon select, AvP map) parse the keycode
+/// without caring whether it came from the numeric keypad or the main
+/// keyboard row.
+pub fn jaguar_high_bit_to_retro_key(bit_mask: u32) -> Option<u32> {
+    match bit_mask {
+        m if m == jaguar::KP8     => Some(264), // RETROK_KP8
+        m if m == jaguar::KP9     => Some(265), // RETROK_KP9
+        m if m == jaguar::KP_STAR => Some(268), // RETROK_KP_MULTIPLY
+        m if m == jaguar::KP0     => Some(256), // RETROK_KP0
+        m if m == jaguar::KP_HASH => Some(35),  // RETROK_HASH (no KP-variant exists)
+        _ => None,
+    }
+}
+
+/// Bitmask covering every Jaguar high-bit binding routed through
+/// keyboard-event dispatch (KP8 / KP9 / KP_STAR / KP0 / KP_HASH).
+/// Useful for the emu-thread frame loop to cheaply isolate the
+/// keyboard-bound bits from the joypad-bound bits in one mask op.
+pub const JAGUAR_HIGH_BIT_MASK: u32 =
+    jaguar::KP8 | jaguar::KP9 | jaguar::KP_STAR | jaguar::KP0 | jaguar::KP_HASH;
 
 /// 3DO → libretro bit remap. Identity by construction; mask trims to
 /// the 11-bit 3DO button set so stray high bits get dropped.
@@ -4598,8 +4638,9 @@ mod tests {
                  | jaguar::KP5 | jaguar::KP6 | jaguar::KP7;
         assert_eq!(jaguar_to_libretro_bits(core), core);
         // KP8-KP_HASH live above the 16-bit RetroPad range — must
-        // get masked off so the core only sees RetroPad bits. Phase 2
-        // polish will route them through keyboard-passthrough instead.
+        // get masked off so the core's joypad mask only sees RetroPad
+        // bits. The 5 keys flow through `retro_keyboard_event_t`
+        // instead, dispatched per `jaguar_high_bit_to_retro_key`.
         let high_bit_keypad = jaguar::KP8 | jaguar::KP9
                             | jaguar::KP_STAR | jaguar::KP0 | jaguar::KP_HASH;
         assert_eq!(jaguar_to_libretro_bits(high_bit_keypad), 0);
@@ -4618,6 +4659,57 @@ mod tests {
         assert_eq!(bit_for("jaguar", "KP1"), Some(jaguar::KP1));
         assert_eq!(bit_for("jaguar", "KP_HASH"), Some(jaguar::KP_HASH));
         assert_eq!(to_libretro_bits("jaguar", jaguar::A), jaguar::A);
+    }
+
+    #[test]
+    fn jaguar_high_bit_to_retro_key_covers_every_keypad_top_row() {
+        // RETROK_KP0 = 256, RETROK_KP8 = 264, RETROK_KP9 = 265,
+        // RETROK_KP_MULTIPLY = 268, RETROK_HASH = 35
+        // (see crates/oa-libretro/src/ffi.rs).
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP8),     Some(264));
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP9),     Some(265));
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP_STAR), Some(268));
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP0),     Some(256));
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP_HASH), Some(35));
+    }
+
+    #[test]
+    fn jaguar_high_bit_rejects_lower_retropad_bits() {
+        // KP1-KP7 are bits 9-15 — joypad-routed, not keyboard-routed.
+        // Returning Some(…) for them would double-dispatch.
+        for low in &[jaguar::A, jaguar::B, jaguar::C, jaguar::PAUSE, jaguar::OPTION,
+                     jaguar::UP, jaguar::DOWN, jaguar::LEFT, jaguar::RIGHT,
+                     jaguar::KP1, jaguar::KP2, jaguar::KP3, jaguar::KP4,
+                     jaguar::KP5, jaguar::KP6, jaguar::KP7] {
+            assert_eq!(jaguar_high_bit_to_retro_key(*low), None,
+                "low bit 0x{:x} must not produce a keyboard keycode", low);
+        }
+    }
+
+    #[test]
+    fn jaguar_high_bit_rejects_zero_and_multi_bit() {
+        // Zero mask — nothing pressed.
+        assert_eq!(jaguar_high_bit_to_retro_key(0), None);
+        // Two high bits at once — caller must isolate single bits.
+        assert_eq!(jaguar_high_bit_to_retro_key(jaguar::KP8 | jaguar::KP9), None);
+        // Stray bit above the known set.
+        assert_eq!(jaguar_high_bit_to_retro_key(1 << 25), None);
+    }
+
+    #[test]
+    fn jaguar_high_bit_mask_covers_exactly_the_five_dispatch_bits() {
+        // Sanity: the const must equal the OR of the 5 individual
+        // bits, no more, no less. Used in the emu-thread fast path
+        // to isolate keyboard-bound bits from joypad-bound bits.
+        let expected = jaguar::KP8 | jaguar::KP9
+                     | jaguar::KP_STAR | jaguar::KP0 | jaguar::KP_HASH;
+        assert_eq!(JAGUAR_HIGH_BIT_MASK, expected);
+        // Each individual bit is covered.
+        for b in &[jaguar::KP8, jaguar::KP9, jaguar::KP_STAR, jaguar::KP0, jaguar::KP_HASH] {
+            assert_ne!(JAGUAR_HIGH_BIT_MASK & b, 0);
+        }
+        // And no lower-16 bit accidentally got included.
+        assert_eq!(JAGUAR_HIGH_BIT_MASK & 0xFFFF, 0);
     }
 
     #[test]

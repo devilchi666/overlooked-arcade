@@ -3733,6 +3733,17 @@ fn run_emu_render(
         );
     let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
 
+    // Per-port tracker for Jaguar's high-bit keypad keys (KP8 / KP9 /
+    // KP_STAR / KP0 / KP_HASH = bits 16-20). These live above the
+    // 16-bit RetroPad range and can't fit in the joypad mask, so when
+    // the operator's binding for one of them fires we route it to
+    // Virtual Jaguar through `retro_keyboard_event_t` instead. State
+    // is the set of high bits we reported as "down" last frame — used
+    // to edge-detect press / release transitions so a held key emits
+    // exactly one press. Single port: Jaguar keypad titles (Iron
+    // Soldier, AvP, Cybermorph) are uniformly single-player.
+    let mut prev_jaguar_high_bits: u32 = 0;
+
     // Phase 6 Cross-system slice 3 — rising-edge tracking for the Ctrl+G
     // Game-focus toggle hotkey. We can't use Scroll Lock because the
     // `device_query` crate doesn't expose a ScrollLock variant; Ctrl+G is
@@ -5794,6 +5805,44 @@ fn run_emu_render(
                 // in libretro's joypad bit layout.
                 let polled = input.poll(PortIndex::Port0);
                 let libretro_bits = bindings::to_libretro_bits(&current_system_id, polled.buttons);
+
+                // Jaguar keypad-passthrough dispatch — bits 16-20 in
+                // the polled mask represent KP8 / KP9 / KP_STAR / KP0 /
+                // KP_HASH, which live above RetroPad's 16-bit range.
+                // `jaguar_to_libretro_bits` already masked them out of
+                // `libretro_bits`; here we forward them to Virtual
+                // Jaguar through `retro_keyboard_event_t` instead.
+                // Gated on (a) jaguar system_id and (b) the core having
+                // registered a keyboard callback — without (b) the
+                // dispatch would no-op anyway. Iterates only bits
+                // 16-20 (5 bits) and only on transitions, so the cost
+                // when no key changes is one mask + one compare.
+                if current_system_id == "jaguar" && core_ref.has_keyboard_callback() {
+                    let current_high_bits = polled.buttons & bindings::JAGUAR_HIGH_BIT_MASK;
+                    if current_high_bits != prev_jaguar_high_bits {
+                        for bit_idx in 16..=20u32 {
+                            let mask = 1u32 << bit_idx;
+                            let was_held = (prev_jaguar_high_bits & mask) != 0;
+                            let now_held = (current_high_bits & mask) != 0;
+                            if was_held != now_held {
+                                if let Some(rk) = bindings::jaguar_high_bit_to_retro_key(mask) {
+                                    core_ref.send_keyboard_event(now_held, rk, 0, 0);
+                                }
+                            }
+                        }
+                        prev_jaguar_high_bits = current_high_bits;
+                    }
+                } else if prev_jaguar_high_bits != 0 {
+                    // Left jaguar (system change or core dropped its
+                    // keyboard callback). Don't emit releases — those
+                    // would target whatever core is loaded now, which
+                    // never saw the corresponding presses. Just clear
+                    // state so a return-to-jaguar starts from a known
+                    // baseline; any physically-held key will re-press
+                    // naturally on its first poll back in jaguar.
+                    prev_jaguar_high_bits = 0;
+                }
+
                 core_ref.set_input(PortIndex::Port0, oa_core::InputState {
                     buttons: libretro_bits,
                     axes: polled.axes,

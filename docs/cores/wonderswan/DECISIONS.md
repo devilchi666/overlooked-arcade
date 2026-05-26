@@ -65,3 +65,5 @@ The 20° gap to GBA on one side and the 20° gap to O2 (325° L=0.62 C=0.18 rose
 **Decision:** `systemThemes.wonderswan.defaultShaderPreset = "crt-lite"`.
 
 **Why:** Unlike Virtual Boy (LED projector — no scanlines period), the WonderSwan used a passive-matrix LCD. LCD source is closer to the "smooth, no scanlines" end of the spectrum than CRT, but `crt-lite` is still the OA-wide handheld convention (Lynx, GG, GB, GBA, WS) since the dedicated `lcd-handheld` shader preset hasn't shipped yet. Following the family convention.
+
+**2026-05-24 — Superseded.** Default flipped to `lcd-handheld` in `frontend/src/themes/registry.ts::systemThemes.wonderswan.defaultShaderPreset` as part of the handheld-family wave (gb / gbc / gba / gamegear / ngp / wonderswan / pokemini / psp). The 2026-05-20 reasoning — "passive-matrix LCD source is closer to smooth than CRT" — is exactly what `lcd-handheld` was built for; defaulting to it now is the correct successor decision, not a reversal.
