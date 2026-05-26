@@ -15,6 +15,29 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Controller navigation v2 polish**
+  ([features/controller-nav/](features/controller-nav/)) — branch
+  `feat/controller-nav-v2-polish`, three phase commits closing the
+  three LOWER-band items NEXT.md carried as "Controller-nav v2 polish
+  (operator-driven)." Slice 1 QuickSettings sub-views (`b87493d`):
+  rewind / TAS / video / memory / disc panels each gain a focus group
+  + back handler; most via a new `useDomQueryFocusGroup` helper in
+  `frontend/src/nav/focus.ts` (DOM-query + MutationObserver +
+  identity-tracked focused element, generalized from the MenuBar
+  pattern); the rewind scrubber uses an `onDirection` override so DPad
+  left/right scrubs the timeline. Slice 2 right-sidebar widget DPad
+  browse (`c883af3`): sidebar body becomes one DOM-query group keyed
+  by `data-oa-sidebar-row`, widget wrappers participate alongside the
+  action row, R1 from grid still lands on Play (createEffect snaps
+  focus to first action while inactive). Slice 3 MenuBar identity-
+  tracked focus (`567d0de`): closes Slice K's known limitation by
+  tracking the focused button by element identity through rebinds.
+  Branch is local-only as of 2026-05-26, awaiting operator playtest
+  before push + merge. Pin toggle + sidebar-hide button in the
+  right-sidebar header stay mouse-only by design (utility chrome,
+  not the play path) — one of the four LOWER-band #1 bullets remains
+  ⬜ for that reason.
+
 - **Controller navigation completion pass**
   ([features/controller-nav/](features/controller-nav/)) — merged to
   main 2026-05-26 (`--no-ff` from `feat/controller-nav-completion`).
