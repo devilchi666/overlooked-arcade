@@ -16,9 +16,10 @@ spanned every system but was filed under whichever core happened to be active.
 ## Recently completed (this session)
 
 - **Controller navigation v2 polish**
-  ([features/controller-nav/](features/controller-nav/)) — branch
-  `feat/controller-nav-v2-polish`, three phase commits closing the
-  three LOWER-band items NEXT.md carried as "Controller-nav v2 polish
+  ([features/controller-nav/](features/controller-nav/)) — merged to
+  main 2026-05-26 (`--no-ff` from `feat/controller-nav-v2-polish`).
+  Three phase commits + a docs commit closing three of the four
+  LOWER-band #1 items NEXT.md carried as "Controller-nav v2 polish
   (operator-driven)." Slice 1 QuickSettings sub-views (`b87493d`):
   rewind / TAS / video / memory / disc panels each gain a focus group
   + back handler; most via a new `useDomQueryFocusGroup` helper in
@@ -32,11 +33,12 @@ spanned every system but was filed under whichever core happened to be active.
   focus to first action while inactive). Slice 3 MenuBar identity-
   tracked focus (`567d0de`): closes Slice K's known limitation by
   tracking the focused button by element identity through rebinds.
-  Branch is local-only as of 2026-05-26, awaiting operator playtest
-  before push + merge. Pin toggle + sidebar-hide button in the
-  right-sidebar header stay mouse-only by design (utility chrome,
-  not the play path) — one of the four LOWER-band #1 bullets remains
-  ⬜ for that reason.
+  Pin toggle + sidebar-hide button in the right-sidebar header stay
+  mouse-only by design (utility chrome, not the play path) — one
+  of the four LOWER-band #1 bullets remains ⬜ for that reason. With
+  controller-nav now fully shipped (Phase 0 + completion pass + v2
+  polish), Per-System UI Stage 1 is the next major arc per the
+  pipelined sequence in `docs/NEXT.md`.
 
 - **Controller navigation completion pass**
   ([features/controller-nav/](features/controller-nav/)) — merged to

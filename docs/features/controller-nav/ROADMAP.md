@@ -199,5 +199,6 @@ LOWER band #1 closes (three of its four bullets — header utility
 chrome stays mouse-only by design).
 
 **Slice status (2026-05-26):** 1/2/3 shipped on
-`feat/controller-nav-v2-polish`; branch is local-only and tree is
-clean; awaiting operator playtest before push + merge.
+`feat/controller-nav-v2-polish`; merged `--no-ff` to main as
+`9326fa2`. Phase 0 + completion pass + v2 polish all closed.
+Per-System UI Stage 1 unblocks next per `docs/NEXT.md`.
