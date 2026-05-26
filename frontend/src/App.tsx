@@ -2054,7 +2054,9 @@ const App: Component = () => {
               case "left-sidebar":
                 return { a: "Open", x: "System menu", r1: "Library", start: "Menu bar" };
               case "library-grid":
-                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar", start: "Menu bar" };
+                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar", r1: "Widgets", start: "Menu bar" };
+              case "right-sidebar":
+                return { a: "Activate", b: "Library", l1: "Library", start: "Menu bar" };
               default:
                 return {};
             }

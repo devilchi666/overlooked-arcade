@@ -1,7 +1,8 @@
-import { For, Show, createMemo, type Accessor, type Component } from "solid-js";
+import { For, Show, createMemo, createSignal, type Accessor, type Component } from "solid-js";
 import type { RomEntry } from "../library/types";
 import { WIDGET_REGISTRY } from "./widgets";
 import type { LayoutStore } from "./state";
+import { activateFocusGroup, useFocusGroup } from "../nav/focus";
 
 type Props = {
   layout: LayoutStore;
@@ -48,6 +49,40 @@ const RightSidebar: Component<Props> = (props) => {
       props.layout.setRightSidebarPinnedGameId(f.id);
     }
   };
+
+  // Controller-nav: the action row at the bottom is the primary
+  // interactive surface. Three items in display order — Play / Saves /
+  // Game info. Read-only widgets above don't take focus in v1. L1 jumps
+  // back to the library-grid; B does the same so the operator can back
+  // out of the sidebar without grabbing a mouse.
+  type ActionKey = "play" | "saves" | "info";
+  const actions: ActionKey[] = ["play", "saves", "info"];
+  const actionEls = new Map<number, HTMLElement>();
+  const [focusedActionIndex, setFocusedActionIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "right-sidebar",
+    orientation: "vertical",
+    itemCount: () => (activeEntry() ? actions.length : 0),
+    focusedIndex: focusedActionIndex,
+    setFocusedIndex: setFocusedActionIndex,
+    onActivate: (i) => {
+      const entry = activeEntry();
+      if (!entry) return;
+      const key = actions[i];
+      if (key === "play") props.onLaunch(entry);
+      else if (key === "saves") props.onShowSaves(entry);
+      else if (key === "info") props.onShowInfo(entry);
+    },
+    onCancel: () => activateFocusGroup("library-grid"),
+    neighbours: { left: "library-grid" },
+  });
+  function bindAction(key: ActionKey, el: HTMLElement | null): void {
+    const i = actions.indexOf(key);
+    if (i < 0) return;
+    if (el) actionEls.set(i, el);
+    else actionEls.delete(i);
+    focusGroup.bind(i, el);
+  }
 
   const beginResize = (event: PointerEvent) => {
     event.preventDefault();
@@ -142,6 +177,10 @@ const RightSidebar: Component<Props> = (props) => {
                 <div class="flex flex-col gap-1.5">
                   <button
                     type="button"
+                    ref={(el) => bindAction("play", el)}
+                    data-oa-focus={focusedActionIndex() === 0 ? "true" : undefined}
+                    data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                    onMouseEnter={() => setFocusedActionIndex(0)}
                     onClick={(e) => {
                       e.currentTarget.blur();
                       props.onLaunch(entry());
@@ -153,6 +192,10 @@ const RightSidebar: Component<Props> = (props) => {
                   <div class="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
+                      ref={(el) => bindAction("saves", el)}
+                      data-oa-focus={focusedActionIndex() === 1 ? "true" : undefined}
+                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                      onMouseEnter={() => setFocusedActionIndex(1)}
                       onClick={(e) => {
                         e.currentTarget.blur();
                         props.onShowSaves(entry());
@@ -163,6 +206,10 @@ const RightSidebar: Component<Props> = (props) => {
                     </button>
                     <button
                       type="button"
+                      ref={(el) => bindAction("info", el)}
+                      data-oa-focus={focusedActionIndex() === 2 ? "true" : undefined}
+                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+                      onMouseEnter={() => setFocusedActionIndex(2)}
                       onClick={(e) => {
                         e.currentTarget.blur();
                         props.onShowInfo(entry());

@@ -233,7 +233,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
       const e = flatEntries()[i];
       if (e) props.onShowInfo?.(e);
     },
-    neighbours: { left: "left-sidebar" },
+    neighbours: { left: "left-sidebar", right: "right-sidebar" },
   });
 
   // Keep the focused tile visible. `align: "auto"` scrolls only when
