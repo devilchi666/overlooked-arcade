@@ -35,6 +35,33 @@ Dwarfs the MEDIUM band below — when implementation starts, this arc dominates 
 
 ---
 
+## NEXT MAJOR ARC — Per-System Custom UI
+
+**Planning locked 2026-05-25 → 2026-05-26.** Full plan at [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md).
+
+Make each system feel like its own mini-experience. Per-system audio, boot animations, navigation behavior, layout structure, tile flourishes. This is the **default OA experience** (not a power-user feature); a "Per-system experiences" toggle in Settings lets the minority who want a uniform plain library opt out.
+
+Shipped in three stages, each fully working:
+
+- **Stage 1 — Polish layer** (~5-7 weeks): `SystemUIConfig` data model + per-system SFX + boot animations + tile flourishes + per-system backgrounds + Settings toggle. 3 pilots fully built (Game Boy → NES → Vectrex); all 37 other systems get a tasteful baseline config so the whole library feels themed.
+- **Stage 2 — Behavior layer** (~4-6 weeks): per-system navigation (grid / carousel / list / wheel), per-system interaction style (instant / delayed / physical), per-system tile emphasis. Library view only; in-game UI uniform. 5-10 more systems tuned to showcase tier (Jaguar, PS1, Saturn, MAME, TG-16 candidates).
+- **Stage 3 — Experience layer** (~6-10 weeks): in-game overlays (pause, quick settings, save-state UI) themed per system. Library ↔ game transitions themed. Per-system metadata priorities. All ~40 systems tuned past baseline.
+
+**Architecture:** hybrid. Config-driven SystemUIConfig DSL for most systems; per-system Solid component escape hatch for signature cases (Vectrex confirmed; others TBD).
+
+**Audio sourcing:** multi-source. CC0 pack baseline + original recordings for pilots + AI-generated for hard-to-source synthesized sounds (Vectrex vector blips). No community submission on the desktop normal version (theme ecosystem WAIT lock unaffected).
+
+**Mode separation locked:**
+- **Themed** (default ON): per-system custom UI as designed
+- **No theme** (Settings toggle OFF): uniform plain library; no audio, no animations, no flourishes
+- **Kiosk** (future, separate plan): theme editor for power users; consumes built-in per-system experiences as starting defaults
+
+**Total estimate:** ~15-23 weeks across all three stages. Stage 1 alone is shippable as a real feature (~5-7 weeks). Awaiting operator green-light + scheduling decision vs guided-setup.
+
+**Order vs guided-setup is deferred.** Both arcs are multi-month. Options: (a) sequence — finish guided-setup first, then this; (b) parallel — pipeline if multiple sessions overlap, sharing controller-nav primitives between guided-setup Phase 0 and per-system-UI Stage 1; (c) inverse — this first, then guided-setup. Operator's call.
+
+---
+
 ## HIGH — ready to ship next
 
 These are operator-independent and the infrastructure they sit on already exists.

@@ -849,3 +849,133 @@ These came up in the advisor session as future-feature ideas. Catalogued in `doc
 
 None decided in scope yet. Operator opted to commit to guided-setup as the next major arc; the rest stay future-work.
 
+---
+
+## 2026-05-26 — Strategic locks for per-system custom UI (second major arc)
+
+**Context:** Operator + Claude planned the per-system custom UI feature in a follow-up session to the guided-setup planning. ChatGPT advisor had pitched "every system feels alive" as the killer differentiator vs LaunchBox / BigBox / RetroArch / Pegasus / ES-DE. Operator opted to plan it in depth; full implementation plan landed at [`docs/PLANS/per-system-ui.md`](PLANS/per-system-ui.md).
+
+The strategic locks here capture decisions made before any code is written. Some entries clarify or supersede earlier locks (specifically the kiosk shell relationship and the theme ecosystem boundary).
+
+### Decision I — Per-system custom UI is the DEFAULT OA experience
+
+**Decision:** Per-system custom UI (per-system audio, boot animations, navigation behavior, layout structure, tile flourishes) ships as the default user experience for desktop normal OA — not as a power-user feature, not opt-in. First-launch defaults the "Per-system experiences" toggle to ON. Most operators see this without configuring anything.
+
+**Why:** OA's positioning + per-system theming (since day 1) + curator-audience focus all point at this being the IDENTITY of the product, not a feature on top of it. Treating it as opt-in would bury the differentiator under defaults. ChatGPT's framing — "the only frontend where every system feels alive" — only works if every user actually experiences it.
+
+**Considered and rejected:**
+- **Opt-in feature.** Bury the differentiator; defeats the positioning.
+- **Power-user only.** Same problem; the audience for whom this matters most is the casual curator, not the configurator.
+
+### Decision J — Three-mode user separation: Themed / No theme / Kiosk
+
+**Decision:** Three top-level user paths, picked via Settings (and eventually kiosk shell's own mode):
+
+1. **Themed** (default): per-system custom UI as designed in this plan.
+2. **No theme**: uniform plain library, no per-system flair. Single toggle in Settings → Display.
+3. **Kiosk** (future, separate plan): full themable mode with built-in per-system experiences as starting defaults, plus optional theme authoring via the kiosk Theme Studio.
+
+**Why:** Three distinct audiences with three distinct needs. Themed for the curator default; No theme for the operator who wants OA's library + emulation without flair (accessibility, personal taste, low-end hardware); Kiosk for cabinet builders + power users who want full theming control. Trying to serve all three with one mode forces compromises that please none.
+
+**Considered and rejected:**
+- **Two modes (Themed + Kiosk).** Loses the operators who want a plain library without going full kiosk.
+- **One mode with many sub-toggles.** Configuration sprawl; default behavior becomes ambiguous; first-launch confusion.
+
+### Decision K — No theme editor on desktop normal — period
+
+**Decision:** Theme editing (TOML / Rhai / Theme Studio / `.oatheme` archives / federated index) is a kiosk-shell-exclusive feature. Desktop normal OA never gets a theme editor. Desktop operators get the choice of: Themed (built-in per-system experiences), No theme (uniform plain library), or eventually Kiosk (full editor with built-ins as defaults).
+
+**Why:** Confirms and concretizes the 2026-05-25 Decision G theme-ecosystem WAIT lock. Theme authoring is a separate audience need from "I just want OA to look great per-system." Cleaving them keeps the desktop experience predictable and the kiosk experience flexible. Avoids the maintenance trap of supporting power-user themes on the casual-user surface.
+
+**Considered and rejected:**
+- **Limited theme editing on desktop.** Half-measure that satisfies nobody. Adds complexity without unlocking the kiosk audience.
+- **Defer until kiosk shell ships.** Already the plan; this lock just makes it explicit.
+
+### Decision L — Hybrid architecture: SystemUIConfig DSL + per-system component escape hatch
+
+**Decision:** Most systems use a config-driven `SystemUIConfig` interface (enum-based DSL: layout, navigation, emphasis, background, audioProfile, interactionStyle, tileShape, transitionTiming, buttonLabels). A handful of "signature" systems (Vectrex confirmed; others TBD) override the config-driven library view with a custom Solid component when they need to render something the DSL can't express (e.g. Vectrex's vector-stroke library tiles).
+
+**Why:** Config-driven keeps 95% of systems trivially extensible (adding a system = filling out the config). Component escape hatch lets the 5% of systems that need genuinely unique rendering escape the DSL's limits without forcing every system through component-level code. Pure config would constrain creativity (Vectrex can't be expressed in enums); pure components would inflate the per-system maintenance burden 10×.
+
+**Considered and rejected:**
+- **Pure config-driven.** Can't express Vectrex; loses the signature feature.
+- **Pure per-system components.** Every system needs custom code; maintenance cost compounds with each system added.
+
+### Decision M — Pilot order: Game Boy → NES → Vectrex
+
+**Decision:** Stage 1 ships full showcase configurations for three pilot systems in this order: Game Boy first (smallest scope, "soft / minimal / personal" end of spectrum), NES second (validates pattern at medium complexity, "classic / bright / instant"), Vectrex third (escape-hatch escalation, "vector-rendered / signature").
+
+**Why:** Game Boy first lets us nail the minimal case before scaling up; if the project derails after Pilot 1, GB alone is shippable. NES second validates the config-driven pattern at medium complexity without yet needing the escape hatch. Vectrex third because it needs `customComponent` — proving config-driven on the prior two first means we know when we're escalating deliberately, not by accident.
+
+**Considered and rejected:**
+- **Jaguar first** (max aggressive). High-risk start; if the "loud" theming feels wrong, we'd lose Stage 1 momentum debugging it.
+- **Vectrex first** (max signature). Forces the escape hatch on day 1 before the config pattern exists; harder to know what's "config DSL" vs "Vectrex special."
+
+### Decision N — Multi-source audio asset strategy
+
+**Decision:** Per-system SFX combines three sources: CC0/royalty-free pack (baseline universal sounds for all 37 non-pilot systems), original recordings or commissioned audio (signature character for the 3 pilots), AI-generated procedural sounds (Vectrex synthesized vector-blips; future systems where hardware sound character is procedurally easier than recordable).
+
+**Explicitly excluded:** community-sourced sound packs on the desktop normal version. Community submission stays parked alongside the theme ecosystem (Decision G).
+
+**Why:** No single source produces good results across the spectrum. CC0 is cheap but generic; originals are best but expensive per pilot; AI is good for synthesized character but feels canned for natural sounds. Combining gives the right tool for each system.
+
+**Considered and rejected:**
+- **CC0 only.** Sounds generic; pilots can't communicate signature character.
+- **Originals only.** ~1-2 hours of recording per system × 40 systems = months of content production.
+- **Community sourcing.** Mission-aligned but slow + uneven + adds curation burden; defers to kiosk-shell theme substrate maturity.
+
+### Decision O — Boot animation policy: medium length, every entry, always skippable
+
+**Decision:** Boot animation when entering a system runs ~1-1.5 seconds, plays on every system entry (including switching back to a recently-left system), and is always skippable via any nav input mid-animation. Reduced-motion preferences (CSS media query or dedicated accessibility toggle) downgrade to a 200ms fade. Two related Settings toggles: master "Per-system experiences" + sub-toggle "Boot animations" for operators who want themes but not transitions.
+
+**Why:** Medium length feels deliberate without becoming annoying on repeated entry. Every-entry frequency keeps the experience predictable; once-per-session would feel arbitrary when operators switch back. Always-skippable respects operators who know what they're doing. Reduced-motion honoring is an accessibility floor.
+
+**Considered and rejected:**
+- **Long cinematic boot (3-5s, BigBox-style).** Annoying on repeat entry; cinematic effect doesn't justify the time cost for a library-launcher use case.
+- **Once-per-session.** Feels arbitrary when switching back to a recently-played system.
+- **Never skippable.** Defensible artistically; user-hostile in practice.
+
+### Decision P — Navigation pattern: BOTH (flat grid + explicit system-entry)
+
+**Decision:** Two coexisting library navigation paths. (1) **Flat grid** (existing behavior + enhanced) — sidebar can filter by system; tile-focus triggers light per-system retheme but no boot animation. (2) **Explicit system-entry** — operator deliberately "enters" a system via Sidebar manufacturer view or future system selector; boot animation plays; operator lands in full per-system themed library.
+
+Both modes coexist; operator chooses path moment-to-moment. The per-system theming is more pronounced in the entered state.
+
+**Why:** Flat grid is the muscle-memory pattern; removing it would break existing operators' flow. System-entry is where the per-system experience truly lands. Both is the kindest answer — existing flow preserved, new experience accessible deliberately.
+
+**Considered and rejected:**
+- **Flat grid only** (theming follows focused tile). Invisible to existing users but loses the boot-animation + full-immersion moment.
+- **System-entry only.** Forces a nav change on every operator; breaks the flat-library muscle memory.
+
+### Decision Q — Kiosk shell relationship — clarified, not changed
+
+**Decision:** The kiosk shell (planned at `docs/features/kiosk-shell/KIOSK_PLAN.md`) becomes the **theme editor + power-user mode** that consumes the built-in per-system experiences as its starting defaults. Kiosk shell still ships its Phase 2 theme substrate (TOML / Rhai / Theme Studio / `.oatheme` archive) but as power-user authoring ON TOP of the built-ins, not as the source of all theming.
+
+**Updated kiosk shell positioning:**
+- Operator in kiosk mode can: (a) use built-in per-system experiences as-is, (b) author new themes via the Theme Studio, (c) use NO theme (plain kiosk shell), or (d) import community themes (eventually).
+- Desktop normal users never see the kiosk theme editor.
+
+**Why:** Pre-this-plan, kiosk shell Phase 2 was framed as "the substrate that provides all theming." After this plan, that framing was wrong — the built-in per-system experiences in THIS plan provide the default theming, and kiosk shell becomes the editor for users who want to deviate. Cleaner separation; respects the audience cleavage between desktop curator and kiosk cabinet builder.
+
+**Supersedes:** the implicit framing in `docs/features/kiosk-shell/KIOSK_PLAN.md` Phase 2 that the theme substrate is the only theming source. Phase 2 still ships as designed (Rhai, TOML, Theme Studio, `.oatheme`), but the kiosk shell consumes built-in per-system experiences as default starting points rather than starting from blank.
+
+**Considered and rejected:**
+- **Move all theming to kiosk shell.** Locks desktop users out of per-system experience; would have made desktop OA strictly worse.
+- **Duplicate the work — per-system experiences in desktop AND in kiosk.** Wasted effort; both surfaces benefit from sharing the built-in catalogue.
+
+### Decision R — Staged ship: each stage fully working, next stage builds on top
+
+**Decision:** Per-system custom UI ships in three stages (polish layer → behavior layer → experience layer). Each stage is a complete, shippable product. Later stages add capability without rebuilding prior stages — `SystemUIConfig` is additive across stages; pilots tuned in Stage 1 deepen in Stage 2; Stage 3 in-game theming layers on top.
+
+**Why:** Multi-month features that ship in one big chunk risk slipping forever. Staged ship lets us validate the architecture + audience response at Stage 1 before committing to Stages 2-3. Operator can change priority between stages if the early stage reveals something unexpected.
+
+**Considered and rejected:**
+- **One big ship.** ~15-23 weeks before any user feedback; risks building the wrong thing.
+- **Single stage scope.** Loses the deeper "behavior" and "experience" wins; pilot would be 80% of the experience but stop at polish.
+
+### Additional decisions captured implicitly
+
+- **Coverage at Stage 1:** baseline `SystemUIConfig` for ALL ~40 wired systems + showcase tier for 3 pilots. No system stays at the pre-this-plan visual default once Stage 1 ships; every system gets at least the baseline themed treatment.
+- **Per-system asset budget:** ≤500 KB sounds + ≤2 MB visuals per system. Total addition ~100 MB worst case across 40 systems. Assets bundled with the installer; no first-launch download.
+- **Audio routing:** new per-system SFX flows through the existing 4-bus mixer (shipped 2026-05-24 in media-taxonomy) on the `ui-sounds` bus. No new audio infrastructure needed.
+
