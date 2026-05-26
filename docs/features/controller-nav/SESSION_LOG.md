@@ -1,5 +1,57 @@
 # Controller Navigation — Session Log
 
+## 2026-05-26 — v2 polish: QuickSettings sub-views + sidebar widgets + MenuBar identity
+
+Follow-on branch `feat/controller-nav-v2-polish` closes the three
+LOWER-band items NEXT.md carried as "Controller-nav v2 polish (operator-
+driven)." The completion-pass merge left these surfaces on mouse +
+keyboard so operator playtest could decide whether to invest the time;
+this branch ships all three as one batch.
+
+- **Shipped:**
+  - **Slice 1 — QuickSettings sub-views (`b87493d`):** rewind / TAS /
+    video / memory / disc panels each gain a focus group + back
+    handler. A new `nav/focus.ts::useDomQueryFocusGroup` helper
+    generalizes the MenuBar pattern (DOM-query + MutationObserver +
+    `data-oa-focus` mirror) with identity-tracked focused element, so
+    dynamic content like the TAS recordings list re-binds
+    automatically when rows appear / disappear. The rewind scrubber
+    is a fixed three-item group [strip, cancel, commit] with an
+    `onDirection` override so DPad left/right scrubs the timeline
+    when the slider is focused. TasPanel + VideoPanel mirror the
+    disabled Back button on B (operator must stop the operation
+    first, same as the mouse path). Text inputs (recording name,
+    capture name, hex offset) and the region `<select>` stay mouse +
+    keyboard — a gamepad can't usefully drive them.
+  - **Slice 2 — Right-sidebar widgets DPad browse (`c883af3`):** the
+    right-sidebar body becomes one DOM-query group keyed by
+    `data-oa-sidebar-row`. Read-only widget sections (cover / title /
+    metadata) get focusable wrappers; the existing Play / Saves /
+    Game-info action row keeps `data-oa-action="…"` markers and
+    `onActivate` routes by the attribute. R1 from the library grid
+    still lands on Play — a `createEffect` snaps `focusedIndex` to
+    `widgetCount()` while the group is inactive, so the next R1 hits
+    the first action rather than whichever row was last on. Operators
+    DPad up through widget rows to glance at cover / metadata; A on a
+    widget row is a no-op (read-only). Right-sidebar header utility
+    chrome (pin toggle, sidebar-hide button) stays mouse-only by
+    design — those aren't in the play path.
+  - **Slice 3 — MenuBar identity-tracked focus (`567d0de`):** the
+    `MutationObserver` rebind in `frontend/src/layout/MenuBar.tsx::Menu`
+    now captures the focused button element identity each time the
+    mirror effect lands the ring; on the next rebind it looks the
+    button up by `indexOf(lastFocusedBtn)` and updates `focusedIndex`
+    if its position shifted. Closes Slice K's known limitation —
+    when a disabled→enabled flip inserts a row before the focused
+    index, the ring follows the same logical button rather than
+    staying at the same numeric position. `lastFocusedBtn` clears on
+    menu close so the next open starts fresh.
+- **Almost:** Operator playtest with a real controller across all three
+  surfaces. Branch is local-only and clean.
+- **Next:** After operator validation, merge `feat/controller-nav-v2-polish`
+  `--no-ff` to main and close NEXT.md LOWER band #1 (three of its four
+  bullets — pin toggle + sidebar-hide button stay mouse-only by design).
+
 ## 2026-05-26 — Completion pass: Slices F–M cover the rest of the UI
 
 Phase 0 (A–E) merged earlier today; this entry covers the follow-on

@@ -1,8 +1,15 @@
-import { For, Show, createMemo, createSignal, type Accessor, type Component } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  type Accessor,
+  type Component,
+} from "solid-js";
 import type { RomEntry } from "../library/types";
 import { WIDGET_REGISTRY } from "./widgets";
 import type { LayoutStore } from "./state";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../nav/focus";
 
 type Props = {
   layout: LayoutStore;
@@ -50,39 +57,40 @@ const RightSidebar: Component<Props> = (props) => {
     }
   };
 
-  // Controller-nav: the action row at the bottom is the primary
-  // interactive surface. Three items in display order — Play / Saves /
-  // Game info. Read-only widgets above don't take focus in v1. L1 jumps
-  // back to the library-grid; B does the same so the operator can back
-  // out of the sidebar without grabbing a mouse.
-  type ActionKey = "play" | "saves" | "info";
-  const actions: ActionKey[] = ["play", "saves", "info"];
-  const actionEls = new Map<number, HTMLElement>();
-  const [focusedActionIndex, setFocusedActionIndex] = createSignal(0);
-  const focusGroup = useFocusGroup({
+  // Controller-nav v2: one DOM-query focus group spans every focusable
+  // row in the sidebar body — read-only widget sections (top) and the
+  // action row (bottom) — keyed by `data-oa-sidebar-row`. The primary
+  // play path is preserved: while the group is inactive, focus parks
+  // on the first action (Play), so the next R1-arrival from the
+  // library lands the ring there. Operators who want to glance at the
+  // cover or metadata can DPad up through the widget rows; A on a
+  // widget row is a no-op (the rows are read-only — `data-oa-action`
+  // only appears on the action buttons).
+  let bodyRef: HTMLDivElement | undefined;
+  const widgetCount = createMemo(() => visibleWidgets().length);
+  const focusGroup = useDomQueryFocusGroup({
     id: "right-sidebar",
-    orientation: "vertical",
-    itemCount: () => (activeEntry() ? actions.length : 0),
-    focusedIndex: focusedActionIndex,
-    setFocusedIndex: setFocusedActionIndex,
-    onActivate: (i) => {
+    containerRef: () => bodyRef,
+    selector: "[data-oa-sidebar-row]",
+    onActivate: (_i, el) => {
       const entry = activeEntry();
       if (!entry) return;
-      const key = actions[i];
-      if (key === "play") props.onLaunch(entry);
-      else if (key === "saves") props.onShowSaves(entry);
-      else if (key === "info") props.onShowInfo(entry);
+      const action = el.getAttribute("data-oa-action");
+      if (action === "play") props.onLaunch(entry);
+      else if (action === "saves") props.onShowSaves(entry);
+      else if (action === "info") props.onShowInfo(entry);
     },
     onCancel: () => activateFocusGroup("library-grid"),
     neighbours: { left: "library-grid" },
   });
-  function bindAction(key: ActionKey, el: HTMLElement | null): void {
-    const i = actions.indexOf(key);
-    if (i < 0) return;
-    if (el) actionEls.set(i, el);
-    else actionEls.delete(i);
-    focusGroup.bind(i, el);
-  }
+  // While the group is inactive, snap focus to the first action button
+  // so the next R1 from the grid lands on Play. The effect only fires
+  // on the inactive→active boundary; active navigation is left alone.
+  createEffect(() => {
+    if (!focusGroup.isActive()) {
+      focusGroup.setFocusedIndex(widgetCount());
+    }
+  });
 
   const beginResize = (event: PointerEvent) => {
     event.preventDefault();
@@ -151,7 +159,7 @@ const RightSidebar: Component<Props> = (props) => {
       </header>
 
       {/* Body — widgets or empty state */}
-      <div class="flex-1 overflow-y-auto overscroll-contain py-4">
+      <div ref={bodyRef} class="flex-1 overflow-y-auto overscroll-contain py-4">
         <Show
           when={activeEntry()}
           fallback={
@@ -166,9 +174,18 @@ const RightSidebar: Component<Props> = (props) => {
           {(entry) => (
             <div class="space-y-5">
               <For each={visibleWidgets()}>
-                {(widget) => {
+                {(widget, i) => {
                   const W = widget.component;
-                  return <W entry={entry()} />;
+                  return (
+                    <div
+                      data-oa-sidebar-row
+                      tabindex="-1"
+                      onMouseEnter={() => focusGroup.setFocusedIndex(i())}
+                      class="rounded-md outline-none"
+                    >
+                      <W entry={entry()} />
+                    </div>
+                  );
                 }}
               </For>
 
@@ -177,10 +194,9 @@ const RightSidebar: Component<Props> = (props) => {
                 <div class="flex flex-col gap-1.5">
                   <button
                     type="button"
-                    ref={(el) => bindAction("play", el)}
-                    data-oa-focus={focusedActionIndex() === 0 ? "true" : undefined}
-                    data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
-                    onMouseEnter={() => setFocusedActionIndex(0)}
+                    data-oa-sidebar-row
+                    data-oa-action="play"
+                    onMouseEnter={() => focusGroup.setFocusedIndex(widgetCount())}
                     onClick={(e) => {
                       e.currentTarget.blur();
                       props.onLaunch(entry());
@@ -192,10 +208,9 @@ const RightSidebar: Component<Props> = (props) => {
                   <div class="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
-                      ref={(el) => bindAction("saves", el)}
-                      data-oa-focus={focusedActionIndex() === 1 ? "true" : undefined}
-                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
-                      onMouseEnter={() => setFocusedActionIndex(1)}
+                      data-oa-sidebar-row
+                      data-oa-action="saves"
+                      onMouseEnter={() => focusGroup.setFocusedIndex(widgetCount() + 1)}
                       onClick={(e) => {
                         e.currentTarget.blur();
                         props.onShowSaves(entry());
@@ -206,10 +221,9 @@ const RightSidebar: Component<Props> = (props) => {
                     </button>
                     <button
                       type="button"
-                      ref={(el) => bindAction("info", el)}
-                      data-oa-focus={focusedActionIndex() === 2 ? "true" : undefined}
-                      data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
-                      onMouseEnter={() => setFocusedActionIndex(2)}
+                      data-oa-sidebar-row
+                      data-oa-action="info"
+                      onMouseEnter={() => focusGroup.setFocusedIndex(widgetCount() + 2)}
                       onClick={(e) => {
                         e.currentTarget.blur();
                         props.onShowInfo(entry());

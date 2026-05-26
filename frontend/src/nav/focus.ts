@@ -19,7 +19,7 @@
 // correctly; once the row scrolls into view + binds, the manager
 // catches up.
 
-import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js";
 import { popBack } from "./back";
 
 /// Either a Solid Setter (from createSignal) or a plain `next => void`
@@ -267,6 +267,154 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
 /// transfers to X.
 export function activateFocusGroup(id: string): void {
   manager.activate(id);
+}
+
+// --- DOM-query helper -------------------------------------------------
+//
+// Convenience wrapper around useFocusGroup for surfaces where the set of
+// focusable rows is dynamic (Show/For branches that mount + unmount
+// rows, disabled-attr flips from background work) and explicit
+// bind(i, el) plumbing would be awkward. Discovers buttons via a CSS
+// selector inside a container ref, watches the container with a
+// MutationObserver, and tracks the focused button by IDENTITY so a
+// later insertion before the focused row doesn't shift the visual ring
+// to a different button.
+
+export type DomQueryFocusGroupOptions = {
+  id: string;
+  /// Returns the container element to query inside. Called after mount;
+  /// safe to return undefined while the ref hasn't been bound yet.
+  containerRef: () => HTMLElement | undefined;
+  /// CSS selector for focusable rows. Defaults to all buttons inside the
+  /// container. The matched element type is HTMLElement (not just
+  /// buttons) so callers can use data-attribute selectors for mixed
+  /// surfaces (e.g. read-only widget rows + action buttons). Elements
+  /// with a truthy `.disabled` (i.e. real disabled buttons) are skipped
+  /// automatically.
+  selector?: string;
+  orientation?: FocusOrientation;
+  /// Fires when A is pressed. `el` is the live DOM node for the focused
+  /// row — callers usually call `el.click()` to keep the mouse + gamepad
+  /// paths identical.
+  onActivate?: (index: number, el: HTMLElement) => void;
+  onCancel?: () => void;
+  onShoulderL?: () => void;
+  onShoulderR?: () => void;
+  neighbours?: { left?: string; right?: string };
+};
+
+export type DomQueryFocusGroupApi = FocusGroupApi & {
+  focusedIndex: Accessor<number>;
+  setFocusedIndex: (next: number) => void;
+};
+
+export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQueryFocusGroupApi {
+  const selector = opts.selector ?? "button";
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const [itemCount, setItemCount] = createSignal(0);
+  // Bumped on every MutationObserver-driven rebind so the data-oa-focus
+  // mirror effect re-paints onto whichever rows are now mounted.
+  const [domRev, setDomRev] = createSignal(0);
+  // Identity-tracked focused row. Captured by the mirror effect after
+  // each focusedIndex change; consulted on rebind so a row inserted
+  // before the focused one doesn't visually shift the ring.
+  let lastFocusedEl: HTMLElement | null = null;
+  let observer: MutationObserver | null = null;
+
+  const queryItems = (): HTMLElement[] => {
+    const root = opts.containerRef();
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(
+      (el) => !(el as Partial<HTMLButtonElement>).disabled,
+    );
+  };
+
+  const group = useFocusGroup({
+    id: opts.id,
+    orientation: opts.orientation ?? "vertical",
+    itemCount,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      const el = queryItems()[i];
+      if (el) opts.onActivate?.(i, el);
+    },
+    onCancel: opts.onCancel,
+    onShoulderL: opts.onShoulderL,
+    onShoulderR: opts.onShoulderR,
+    neighbours: opts.neighbours,
+  });
+
+  const rebind = (): void => {
+    const root = opts.containerRef();
+    if (!root || !root.isConnected) return;
+    const items = queryItems();
+    // Identity tracking — if the previously-focused element is still
+    // present, keep focus on it (its index may have shifted because an
+    // item was inserted before or after it).
+    if (lastFocusedEl) {
+      const newIdx = items.indexOf(lastFocusedEl);
+      if (newIdx >= 0 && newIdx !== focusedIndex()) {
+        setFocusedIndex(newIdx);
+      }
+    }
+    setItemCount(items.length);
+    items.forEach((el, i) => group.bind(i, el));
+    setDomRev((r) => r + 1);
+  };
+
+  onMount(() => {
+    queueMicrotask(() => {
+      const root = opts.containerRef();
+      if (!root || !root.isConnected) return;
+      rebind();
+      group.activate();
+      observer = new MutationObserver(() => rebind());
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["disabled"],
+      });
+    });
+  });
+  onCleanup(() => {
+    observer?.disconnect();
+    observer = null;
+    lastFocusedEl = null;
+  });
+
+  // Mirror focusedIndex → data-oa-focus attributes. Re-runs on cursor
+  // moves and on domRev bumps (content changed mid-mount). Captures the
+  // current focused element into lastFocusedEl so the next rebind can
+  // track it by identity.
+  createEffect(() => {
+    const idx = focusedIndex();
+    const active = group.isActive();
+    void domRev();
+    queueMicrotask(() => {
+      const items = queryItems();
+      const targetIdx = items.length === 0 ? -1 : Math.min(Math.max(0, idx), items.length - 1);
+      lastFocusedEl = targetIdx >= 0 ? items[targetIdx] : null;
+      items.forEach((el, i) => {
+        if (i === targetIdx) {
+          el.setAttribute("data-oa-focus", "true");
+          el.setAttribute("data-oa-focus-active", active ? "true" : "false");
+        } else {
+          el.removeAttribute("data-oa-focus");
+          el.removeAttribute("data-oa-focus-active");
+        }
+      });
+    });
+  });
+
+  return {
+    isActive: group.isActive,
+    activate: group.activate,
+    bind: group.bind,
+    focusedIndex,
+    setFocusedIndex,
+  };
 }
 
 /// Read the currently active group id. Reactive — components that

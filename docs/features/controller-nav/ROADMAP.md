@@ -80,7 +80,7 @@ branch.
 - ✅ `SystemContextMenu` (frontend/src/components/SystemContextMenu.tsx): same refactor; "Move to category" sub-view feeds a different `items()` list; B steps Back from sub-view rather than closing the whole menu
 - ✅ `SaveSlotsModal` (frontend/src/components/SaveSlotsModal.tsx): grid focus group at 5 columns; A launches focused slot, X deletes, B closes
 - ✅ `QuickSettings` actions view (frontend/src/components/QuickSettings.tsx): new `ActionsPanel` sub-component owns its focus group + back handler
-- ⬜ QuickSettings sub-views (rewind / TAS / memory / video) stay mouse + keyboard for now — deferred
+- ✅ QuickSettings sub-views (rewind / TAS / video / memory / disc) take focus groups + back handlers (in frontend/src/components/QuickSettings.tsx) — most via the new `useDomQueryFocusGroup` helper (DOM-query + identity-tracked rebind); the rewind scrubber is a fixed three-item group [strip, cancel, commit] with an `onDirection` override so DPad left/right scrubs the timeline when the slider is focused. Text inputs (recording name, capture name, hex offset) and the region `<select>` stay mouse + keyboard. Shipped in v2 polish (`b87493d`, 2026-05-26).
 
 ## Slice H — Game info modal + Dialog primitive auto-back (in commit 6cb86d9)
 
@@ -104,7 +104,7 @@ branch.
 - ✅ Each `<Menu>` opens a focus group on mount: item count comes from a DOM query of `[role^="menuitem"]` inside the popover via `queueMicrotask`; A clicks focused button (existing handler closes + fires row action); B closes via back stack
 - ✅ HintRegion per menu: A / B / L1 prev menu / R1 next menu; sidebar + library-grid HintRegions add "Menu bar" to their start hint
 - ✅ Re-bind on dynamic-during-open menu content changes — shipped in `dc25ab4` via a `MutationObserver` on the popover (childList + subtree + `attributeFilter: ["disabled"]`) calling a `rebind()` closure that re-queries enabled buttons, sets itemCount, re-binds, and bumps a `domRev` signal so the focus-ring mirror repaints. Open-microtask race-guarded; `onCleanup` disconnects on dispose. Covered case: Library menu's "Scanning…" row flipping to enabled "Import folder…" when a background scan finishes.
-- ⬜ Known limitation: when the observer fires because a button appears **before** the focused index (e.g. a disabled→enabled flip at position 0), the focused index now points at a different button than it did before — visual ring appears to shift. Solving requires identity tracking, not just index tracking. Acceptable for v1 since the trigger (disabled-attr flips on visible menus) is rare and brief.
+- ✅ Identity-tracked focus — rebind captures the focused button element each cycle (in the `data-oa-focus` mirror effect) and re-derives `focusedIndex` by `indexOf(lastFocusedBtn)` on the next mutation. A disabled→enabled flip that inserts a row before the focused index no longer drags the visual ring onto a different logical button than the one the operator was looking at. Shipped in v2 polish (`567d0de`, 2026-05-26).
 
 ## Slice L — Chained popovers (in commit 8180a0e)
 
@@ -116,8 +116,8 @@ branch.
 
 - ✅ Right sidebar action row (Play / Saves / Game info) is a focus group (frontend/src/layout/RightSidebar.tsx); R1 from the library grid transfers in, L1 / B step back out to the grid
 - ✅ Library-grid HintRegion gains `r1: Widgets`; right-sidebar group publishes A "Activate" / B "Library" / L1 "Library"
-- ⬜ Read-only widgets above the action row (recently-played, system blurb, etc.) stay non-focusable in v1 — primary play path is "pick a tile → R1 → activate"
-- ⬜ Pin toggle + sidebar-hide button in the header stay mouse-only for v1 — utility / configuration, not part of the play path
+- ✅ Read-only widget rows DPad-browsable — sidebar body becomes one DOM-query group keyed by `data-oa-sidebar-row`; widget wrappers + action buttons both participate (in frontend/src/layout/RightSidebar.tsx). R1 from the library grid still lands on Play — a `createEffect` snaps `focusedIndex` to `widgetCount()` while the group is inactive so the next R1-arrival hits the first action rather than whichever row was last on. Operators DPad up through widget rows to glance at cover / metadata; A on a widget row is a no-op (read-only). Shipped in v2 polish (`c883af3`, 2026-05-26).
+- ⬜ Pin toggle + sidebar-hide button in the header stay mouse-only — utility / configuration, not part of the play path
 
 ## Gate to merge
 
@@ -127,5 +127,77 @@ controller, the branch merges `--no-ff` to main and `docs/ACTIVE_WORK.md`
 unblocks next per the pipelined sequence.
 
 **Slice status (2026-05-26):** F/G/H/fix/K/L/M shipped on
-`feat/controller-nav-completion`; branch is local-only and tree is clean;
-awaiting operator playtest before push + merge.
+`feat/controller-nav-completion`; merged `--no-ff` to main as
+`09de4d1`.
+
+---
+
+# v2 polish (post-completion pass)
+
+The completion pass deliberately left three LOWER-band surfaces on
+mouse + keyboard so operator playtest could decide whether to invest
+the time. Branch `feat/controller-nav-v2-polish` ships all three as
+one batch.
+
+## Slice 1 — QuickSettings sub-views (in commit b87493d)
+
+- ✅ New `useDomQueryFocusGroup` helper in `frontend/src/nav/focus.ts` —
+  generalizes the MenuBar pattern (DOM-query + MutationObserver +
+  data-oa-focus mirror) with identity-tracked focused element so
+  future surfaces can opt in with three lines of wiring
+- ✅ `RewindScrubber` (frontend/src/components/QuickSettings.tsx): fixed
+  three-item vertical group [strip, cancel, commit]; `onDirection`
+  override scrubs the timeline left/right when the strip is focused;
+  A on cancel/commit fires; B cancels via back stack
+- ✅ `DiscPanel`: DOM-query group walks every enabled Insert button +
+  Back; MutationObserver re-binds when Insert/Loaded/… labels flip
+  mid-swap so the focused row stays stable
+- ✅ `TasPanel`: DOM-query group walks every enabled button across the
+  idle / recording / replaying mode switches; B mirrors the disabled
+  Back button when mode !== idle so operators don't accidentally back
+  out mid-record
+- ✅ `VideoPanel`: same pattern as TasPanel, gated on `capturing`
+- ✅ `MemoryInspectorPanel`: small DOM-query group (Prev / Next / Back);
+  the region `<select>` and hex offset input stay mouse + keyboard
+
+## Slice 2 — Right-sidebar widget DPad browse (in commit c883af3)
+
+- ✅ Right-sidebar body (`frontend/src/layout/RightSidebar.tsx`) becomes
+  one DOM-query group keyed by `data-oa-sidebar-row`. Widget wrappers
+  + action buttons both participate. `onActivate` routes by
+  `data-oa-action="…"`; rows without that attribute are read-only
+  widget panels (A no-ops)
+- ✅ `createEffect` snaps `focusedIndex` to `widgetCount()` while the
+  group is inactive so R1 from the library grid still lands on Play
+  (primary play path preserved)
+- ✅ Widget count is dynamic (operator can hide/reorder via the widget
+  customizer); the snap memo + DOM-query rebind handle the count
+  change transparently
+- ⬜ Pin toggle + sidebar-hide button in the header stay mouse-only —
+  utility / configuration, not part of the play path
+
+## Slice 3 — MenuBar identity-tracked focus (in commit 567d0de)
+
+- ✅ `Menu` component in `frontend/src/layout/MenuBar.tsx` tracks the
+  focused button by element identity. The `data-oa-focus` mirror
+  effect captures `btns[targetIdx]` into a `lastFocusedBtn` local
+  each cycle; the rebind closure consults it via `indexOf` and
+  updates `focusedIndex` if the button's position shifted
+- ✅ Closes Slice K's known limitation — a disabled→enabled flip that
+  inserts a row before the focused index no longer drags the visual
+  ring onto a different logical button. The previously-rare trigger
+  (a background scan finishing mid-open and enabling an "Import
+  folder…" row) now keeps focus on the operator's intended button
+- ✅ `lastFocusedBtn` clears when the menu closes so the next open
+  starts fresh
+
+## Gate to merge
+
+When the operator has playtested the three v2 polish surfaces with a
+real controller, the branch merges `--no-ff` to main and `docs/NEXT.md`
+LOWER band #1 closes (three of its four bullets — header utility
+chrome stays mouse-only by design).
+
+**Slice status (2026-05-26):** 1/2/3 shipped on
+`feat/controller-nav-v2-polish`; branch is local-only and tree is
+clean; awaiting operator playtest before push + merge.

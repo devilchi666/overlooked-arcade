@@ -303,11 +303,32 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 
 ## LOWER — operator-driven or Phase 3+ stretch
 
-1. **Controller-nav v2 polish** — surfaces deliberately left on mouse + keyboard in v1 (see DECISIONS "Read-only / utility surfaces stay mouse-only in v1" entry). Pick up when operator playtest surfaces a real need rather than speculatively wiring all of them. Concrete inventory:
-   - QuickSettings sub-views — rewind / TAS / memory / video drawers inside `frontend/src/components/QuickSettings.tsx`. The top-level ActionsPanel is controller-navigable (Slice G); drilling into a sub-view drops the operator onto mouse + keyboard. Each sub-view needs its own focus group + back handler.
-   - Right-sidebar read-only widgets above the action row (recently-played, system blurb, etc. in `frontend/src/layout/RightSidebar.tsx`) — non-focusable in v1. If operator wants a "browse widgets via DPad" flow, each widget becomes a focus group with the action row as a neighbour.
-   - Right-sidebar header utility chrome (pin toggle + sidebar-hide button) — mouse-only by design; controller path is bumper-back-to-grid + Settings.
-   - MenuBar focus-index-shift edge case — when a MutationObserver fires because a disabled→enabled flip inserts a button before the focused index, the visual ring shifts to a different row than it did before. Fix needs identity tracking, not just index tracking. Trigger is rare (disabled-attr flips on a visible menu); ROADMAP carries this as a known limitation under Slice K.
+1. ~~**Controller-nav v2 polish**~~ — **SHIPPED 2026-05-26** on
+   `feat/controller-nav-v2-polish` (three commits, pending operator
+   playtest + merge). Closed three of the four bullets the LOWER band
+   originally tracked:
+   - ✅ QuickSettings sub-views (rewind / TAS / video / memory / disc) —
+     each gains a focus group + back handler. Slice 1 (`b87493d`)
+     uses a new `useDomQueryFocusGroup` helper in
+     `frontend/src/nav/focus.ts` (DOM-query + MutationObserver +
+     identity-tracked focused element, generalized from the MenuBar
+     pattern); the rewind scrubber uses an `onDirection` override so
+     DPad left/right scrubs the timeline when the slider is focused.
+   - ✅ Right-sidebar read-only widget rows — Slice 2 (`c883af3`)
+     makes the sidebar body one DOM-query group keyed by
+     `data-oa-sidebar-row`. R1 from the library grid still lands on
+     Play (createEffect snaps `focusedIndex` to `widgetCount()` while
+     inactive). Operators DPad up through widget rows; A on a widget
+     row is a no-op.
+   - ⬜ Right-sidebar header utility chrome (pin toggle +
+     sidebar-hide button) — mouse-only by design, not part of the
+     play path. Will stay this way unless operator playtest surfaces
+     a real need.
+   - ✅ MenuBar focus-index-shift edge case — Slice 3 (`567d0de`)
+     tracks the focused button by element identity through
+     MutationObserver rebinds, so a disabled→enabled flip that
+     inserts a row before the focused index no longer drags the ring
+     onto a different logical button.
 
 2. **SNES Mouse + Super Multitap** (~200 lines, niche). Mario Paint, Bomberman.
 3. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.

@@ -13,7 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
 import type { SettingsStore } from "../settings/store";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "./../nav/HintBar";
 
@@ -701,13 +701,27 @@ type DiscPanelProps = {
 /// eject → set_image_index → close sequence; the core resumes from the
 /// new disc on the next frame.
 const DiscPanel: Component<DiscPanelProps> = (props) => {
+  let rootRef: HTMLDivElement | undefined;
+  // Controller-nav: DOM-query group walks every enabled button in
+  // mount order — Insert buttons for non-loaded discs plus the trailing
+  // Back button. Disabled "Loaded" buttons are skipped automatically.
+  // The MutationObserver re-binds when the "Insert"/"Loaded"/"…" labels
+  // flip mid-swap so the focus stays on the row the operator was on.
+  useDomQueryFocusGroup({
+    id: "quick-settings-disc",
+    containerRef: () => rootRef,
+    onActivate: (_i, btn) => btn.click(),
+    onCancel: () => props.onBack(),
+  });
+  useBackHandler(() => props.onBack());
   const labelFor = (idx: number): string => {
     const fromCore = props.info.labels[idx];
     if (fromCore && fromCore.trim().length > 0) return fromCore;
     return `Disc ${idx + 1}`;
   };
   return (
-    <div class="flex flex-col gap-3 p-4">
+    <div ref={rootRef} class="flex flex-col gap-3 p-4">
+      <HintRegion hints={{ a: "Insert", b: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>Disc control</span>
         <span>
@@ -777,6 +791,41 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
   let stripRef: HTMLDivElement | undefined;
   const [dragging, setDragging] = createSignal(false);
 
+  // Controller-nav: vertical group with three items — the scrub strip
+  // (idx 0), the Cancel button (idx 1), the Commit button (idx 2). When
+  // the strip is focused, DPad left/right scrubs the timeline rather
+  // than moving the focus row; an `onDirection` override consumes those
+  // directions. A on the strip is a no-op (operator drives the strip
+  // via the cardinal axes); A on the buttons fires the respective
+  // action.
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusGroup = useFocusGroup({
+    id: "quick-settings-rewind",
+    orientation: "vertical",
+    itemCount: () => 3,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      if (i === 1) props.onCancel();
+      else if (i === 2 && props.scrubPosition !== 0) props.onCommit();
+    },
+    onCancel: () => props.onCancel(),
+    onDirection: (dir, idx) => {
+      if (idx === 0 && (dir === "left" || dir === "right")) {
+        // Left = older = more stepsBack; right = newer = fewer stepsBack.
+        const step = dir === "left" ? +1 : -1;
+        props.onSetPosition(props.scrubPosition + step);
+        return true;
+      }
+      return false;
+    },
+  });
+  useBackHandler(() => props.onCancel());
+  onMount(() => {
+    focusGroup.activate();
+    setFocusedIndex(0);
+  });
+
   // x-coordinate to steps_back. Left edge = oldest snapshot
   // (count - 1 steps back); right edge = newest (0 steps back).
   function xToStepsBack(clientX: number): number {
@@ -832,6 +881,7 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
 
   return (
     <div class="flex flex-col gap-3 p-4">
+      <HintRegion hints={{ a: "Resume", b: "Cancel" }} />
       <div class="flex items-baseline justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {props.scrubPosition === 0 ? "Live edge" : `-${positionSeconds().toFixed(2)}s`}
@@ -841,7 +891,12 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
 
       {/* Timeline strip. Left = oldest, right = newest. */}
       <div
-        ref={stripRef}
+        ref={(el) => {
+          stripRef = el;
+          focusGroup.bind(0, el);
+        }}
+        data-oa-focus={focusedIndex() === 0 ? "true" : undefined}
+        data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
         class="relative h-12 touch-none select-none rounded-md border border-white/10 bg-white/[0.03]"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -900,6 +955,10 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
       <div class="mt-1 flex gap-2">
         <button
           type="button"
+          ref={(el) => focusGroup.bind(1, el)}
+          data-oa-focus={focusedIndex() === 1 ? "true" : undefined}
+          data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+          onMouseEnter={() => setFocusedIndex(1)}
           onClick={props.onCancel}
           class={BTN_BASE + " flex-1 justify-center"}
         >
@@ -908,6 +967,10 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
         </button>
         <button
           type="button"
+          ref={(el) => focusGroup.bind(2, el)}
+          data-oa-focus={focusedIndex() === 2 ? "true" : undefined}
+          data-oa-focus-active={focusGroup.isActive() ? "true" : undefined}
+          onMouseEnter={() => setFocusedIndex(2)}
           onClick={props.onCommit}
           disabled={props.scrubPosition === 0}
           class={BTN_BASE + " flex-1 justify-center border-(--color-system-accent)/40 bg-(--color-system-accent)/15 text-(--color-oa-ink) hover:bg-(--color-system-accent)/25"}
@@ -966,8 +1029,32 @@ const TasPanel: Component<TasPanelProps> = (props) => {
   const totalFrames = (): number => props.tas?.totalFrames ?? 0;
   const displayName = (): string => props.tas?.displayName ?? "";
 
+  let rootRef: HTMLDivElement | undefined;
+  // Controller-nav: DOM-query group walks every enabled button — Start
+  // recording / Replay / Delete / Discard / Stop & save / Back. Mode
+  // flips between idle / recording / replaying re-mount different
+  // button sets and the MutationObserver re-binds automatically.
+  // Identity tracking keeps the focused row stable when a button's
+  // disabled-state flips mid-mount.
+  useDomQueryFocusGroup({
+    id: "quick-settings-tas",
+    containerRef: () => rootRef,
+    onActivate: (_i, btn) => btn.click(),
+    onCancel: () => {
+      // Mirror the Back button's disabled state — operator must stop the
+      // current TAS operation before backing out, same as the mouse path.
+      if (mode() !== "idle") return;
+      props.onBack();
+    },
+  });
+  useBackHandler(() => {
+    if (mode() !== "idle") return;
+    props.onBack();
+  });
+
   return (
-    <div class="flex flex-col gap-3 p-4">
+    <div ref={rootRef} class="flex flex-col gap-3 p-4">
+      <HintRegion hints={{ a: "Activate", b: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {mode() === "idle" && "TAS"}
@@ -1141,8 +1228,28 @@ const VideoPanel: Component<VideoPanelProps> = (props) => {
   const droppedCount = (): number => props.video?.droppedFrameCount ?? 0;
   const displayName = (): string => props.video?.displayName ?? "";
 
+  let rootRef: HTMLDivElement | undefined;
+  // Controller-nav: DOM-query group. Like TasPanel, mode flips between
+  // not-capturing / capturing re-mount different button sets. Per-clip
+  // rows expose WebM / Open / Delete buttons which the operator can
+  // walk linearly. Back is disabled while capturing — same gate on B.
+  useDomQueryFocusGroup({
+    id: "quick-settings-video",
+    containerRef: () => rootRef,
+    onActivate: (_i, btn) => btn.click(),
+    onCancel: () => {
+      if (capturing()) return;
+      props.onBack();
+    },
+  });
+  useBackHandler(() => {
+    if (capturing()) return;
+    props.onBack();
+  });
+
   return (
-    <div class="flex flex-col gap-3 p-4">
+    <div ref={rootRef} class="flex flex-col gap-3 p-4">
+      <HintRegion hints={{ a: "Activate", b: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {capturing()
@@ -1339,6 +1446,19 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
   // Keep the input in sync if the offset changes via paging buttons.
   createEffect(() => setOffsetInput(formatHex(props.offset, 4)));
 
+  let rootRef: HTMLDivElement | undefined;
+  // Controller-nav: small three-button group (Prev / Next / Back).
+  // Region picker + offset input stay mouse + keyboard — a gamepad can't
+  // usefully drive a <select> or hex-typed input. The MutationObserver
+  // re-binds when Prev/Next flip disabled at the region ends.
+  useDomQueryFocusGroup({
+    id: "quick-settings-memory",
+    containerRef: () => rootRef,
+    onActivate: (_i, btn) => btn.click(),
+    onCancel: () => props.onBack(),
+  });
+  useBackHandler(() => props.onBack());
+
   const rows = (): { offset: number; bytes: number[] }[] => {
     const info = props.info;
     if (!info || !info.available || info.bytes.length === 0) return [];
@@ -1366,7 +1486,8 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
   }
 
   return (
-    <div class="flex flex-col gap-3 p-4">
+    <div ref={rootRef} class="flex flex-col gap-3 p-4">
+      <HintRegion hints={{ a: "Activate", b: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>Memory inspector</span>
         <span>{props.info?.available ? `${props.info.totalSize.toLocaleString()} bytes` : "—"}</span>
