@@ -103,7 +103,8 @@ branch.
 - ✅ `MenuBarContext.registerMenu(id)` + `menuIds()` lets each `<Menu>` register in mount order; L1/R1 cycle through the list
 - ✅ Each `<Menu>` opens a focus group on mount: item count comes from a DOM query of `[role^="menuitem"]` inside the popover via `queueMicrotask`; A clicks focused button (existing handler closes + fires row action); B closes via back stack
 - ✅ HintRegion per menu: A / B / L1 prev menu / R1 next menu; sidebar + library-grid HintRegions add "Menu bar" to their start hint
-- ⬜ Re-bind on dynamic-during-open menu content changes — deferred polish
+- ✅ Re-bind on dynamic-during-open menu content changes — shipped in `dc25ab4` via a `MutationObserver` on the popover (childList + subtree + `attributeFilter: ["disabled"]`) calling a `rebind()` closure that re-queries enabled buttons, sets itemCount, re-binds, and bumps a `domRev` signal so the focus-ring mirror repaints. Open-microtask race-guarded; `onCleanup` disconnects on dispose. Covered case: Library menu's "Scanning…" row flipping to enabled "Import folder…" when a background scan finishes.
+- ⬜ Known limitation: when the observer fires because a button appears **before** the focused index (e.g. a disabled→enabled flip at position 0), the focused index now points at a different button than it did before — visual ring appears to shift. Solving requires identity tracking, not just index tracking. Acceptable for v1 since the trigger (disabled-attr flips on visible menus) is rare and brief.
 
 ## Slice L — Chained popovers (in commit 8180a0e)
 

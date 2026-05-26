@@ -303,17 +303,23 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 
 ## LOWER — operator-driven or Phase 3+ stretch
 
-1. **SNES Mouse + Super Multitap** (~200 lines, niche). Mario Paint, Bomberman.
-2. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.
-3. **Vectrex translucent overlay rendering + aspect override** (~250 lines combined). Plastic color-strip per-game PNG; Vectrex CRT portrait 3:4 default.
-4. **NDS microphone input** (~200 lines). Blow/voice puzzles. Deferred until operator playtest forces it.
-5. **NDS per-game touch overlay UI** (~250 lines). Visual stylus cursor.
-6. **NDS multi-touch** (~80 lines, niche). POINTER index 1+.
-7. **Sega CD 3-button vs 6-button pad mode override** (~100 lines + DATA work).
-8. **SMS Light Phaser** (~120 lines, shared light-gun infra).
-9. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
-10. **NGP-mono vs NGPC library-tile differentiation** (~60 lines). Badge or subtitle.
-11. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
+1. **Controller-nav v2 polish** — surfaces deliberately left on mouse + keyboard in v1 (see DECISIONS "Read-only / utility surfaces stay mouse-only in v1" entry). Pick up when operator playtest surfaces a real need rather than speculatively wiring all of them. Concrete inventory:
+   - QuickSettings sub-views — rewind / TAS / memory / video drawers inside `frontend/src/components/QuickSettings.tsx`. The top-level ActionsPanel is controller-navigable (Slice G); drilling into a sub-view drops the operator onto mouse + keyboard. Each sub-view needs its own focus group + back handler.
+   - Right-sidebar read-only widgets above the action row (recently-played, system blurb, etc. in `frontend/src/layout/RightSidebar.tsx`) — non-focusable in v1. If operator wants a "browse widgets via DPad" flow, each widget becomes a focus group with the action row as a neighbour.
+   - Right-sidebar header utility chrome (pin toggle + sidebar-hide button) — mouse-only by design; controller path is bumper-back-to-grid + Settings.
+   - MenuBar focus-index-shift edge case — when a MutationObserver fires because a disabled→enabled flip inserts a button before the focused index, the visual ring shifts to a different row than it did before. Fix needs identity tracking, not just index tracking. Trigger is rare (disabled-attr flips on a visible menu); ROADMAP carries this as a known limitation under Slice K.
+
+2. **SNES Mouse + Super Multitap** (~200 lines, niche). Mario Paint, Bomberman.
+3. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.
+4. **Vectrex translucent overlay rendering + aspect override** (~250 lines combined). Plastic color-strip per-game PNG; Vectrex CRT portrait 3:4 default.
+5. **NDS microphone input** (~200 lines). Blow/voice puzzles. Deferred until operator playtest forces it.
+6. **NDS per-game touch overlay UI** (~250 lines). Visual stylus cursor.
+7. **NDS multi-touch** (~80 lines, niche). POINTER index 1+.
+8. **Sega CD 3-button vs 6-button pad mode override** (~100 lines + DATA work).
+9. **SMS Light Phaser** (~120 lines, shared light-gun infra).
+10. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
+11. **NGP-mono vs NGPC library-tile differentiation** (~60 lines). Badge or subtitle.
+12. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
 
 ---
 
