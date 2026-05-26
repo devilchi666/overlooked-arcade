@@ -214,6 +214,12 @@ export const Menu: Component<MenuProps> = (props) => {
   // Bumped whenever the popover's DOM mutates (disabled-attr flip, Show
   // toggle, etc) so the focus-ring mirror knows to re-paint.
   const [domRev, setDomRev] = createSignal(0);
+  // Identity-tracked focused button. Updated by the mirror effect each
+  // time focusedIndex settles on a row; consulted by rebind() so that
+  // a button inserted before the focused index (e.g. a disabled→enabled
+  // flip at position 0) doesn't visually shift the ring to a different
+  // logical row.
+  let lastFocusedBtn: HTMLButtonElement | null = null;
   let observer: MutationObserver | null = null;
   const menuFocus = useFocusGroup({
     id: `menubar-menu-${id}`,
@@ -259,6 +265,20 @@ export const Menu: Component<MenuProps> = (props) => {
       const rebind = () => {
         if (!popoverRef || !popoverRef.isConnected) return;
         const btns = queryButtons();
+        // Identity tracking — if the previously-focused button is still
+        // mounted, follow it by element identity rather than by stale
+        // index. Handles the disabled→enabled flip case where a row
+        // appears BEFORE the focused index and would otherwise drag the
+        // visual ring onto a different button than the operator was
+        // looking at. If the previously-focused button is gone, fall
+        // through and let the mirror effect clamp to the same numeric
+        // position (existing v1 behaviour).
+        if (lastFocusedBtn) {
+          const newIdx = btns.indexOf(lastFocusedBtn);
+          if (newIdx >= 0 && newIdx !== focusedIndex()) {
+            setFocusedIndex(newIdx);
+          }
+        }
         setItemCount(btns.length);
         btns.forEach((btn, i) => menuFocus.bind(i, btn));
         setDomRev((r) => r + 1);
@@ -289,13 +309,21 @@ export const Menu: Component<MenuProps> = (props) => {
   // moves) and on domRev bumps (content changed mid-open) so the ring
   // always lands on whichever button now holds the index.
   createEffect(() => {
-    if (!isOpen()) return;
+    if (!isOpen()) {
+      // Menu closed — clear the identity tracker so the next open
+      // starts fresh rather than chasing a button from a prior session.
+      lastFocusedBtn = null;
+      return;
+    }
     const idx = focusedIndex();
     const active = menuFocus.isActive();
     void domRev();
     queueMicrotask(() => {
       const btns = queryButtons();
       const targetIdx = btns.length === 0 ? -1 : Math.min(idx, btns.length - 1);
+      // Capture the resolved focused button so the next rebind() can
+      // identity-track it through DOM mutations.
+      lastFocusedBtn = targetIdx >= 0 ? btns[targetIdx] : null;
       btns.forEach((btn, i) => {
         if (i === targetIdx) {
           btn.setAttribute("data-oa-focus", "true");
