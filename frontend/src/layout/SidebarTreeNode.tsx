@@ -38,6 +38,18 @@ export type SidebarTreeContext = {
   onNavigateToNode: (nodeId: string) => void;
   onLeafContextMenu?: (systemId: SystemId, position: { x: number; y: number }) => void;
   onContainerContextMenu?: (container: ContainerNode, position: { x: number; y: number }) => void;
+  /// Controller-nav binding for a given leaf id. Returns a small handle
+  /// the leaf row uses to (a) register its DOM element with the focus
+  /// manager and (b) reactively expose its focus state via data attrs.
+  /// Containers don't bind in v1 — DPad nav skips them and lands on
+  /// the next visible leaf.
+  focusBindingFor?: (nodeId: string) => LeafFocusBinding | null;
+};
+
+export type LeafFocusBinding = {
+  bind: (el: HTMLElement | null) => void;
+  focused: () => boolean;
+  active: () => boolean;
 };
 
 // ── Sortable top-level container ─────────────────────────────────────
@@ -118,11 +130,17 @@ export const SortableLeafNode: Component<{
   ctx: SidebarTreeContext;
 }> = (props) => {
   const sortable = createSortable(props.leaf.id);
+  const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.leaf.id) ?? null);
   return (
     <li
-      ref={sortable.ref}
+      ref={(el) => {
+        sortable.ref(el);
+        focusBinding()?.bind(el);
+      }}
       style={transformStyle(sortable.transform)}
       data-system={props.leaf.systemId}
+      data-oa-focus={focusBinding()?.focused() ? "true" : undefined}
+      data-oa-focus-active={focusBinding()?.active() ? "true" : undefined}
       class="relative"
       classList={{ "z-10": sortable.isActiveDraggable }}
     >

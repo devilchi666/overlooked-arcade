@@ -30,11 +30,14 @@ Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
 
 ## Slice D — POC wiring
 
-- ⬜ VirtualLibraryGrid: DPad moves tile selection, A launches, X opens TileContextMenu
-- ⬜ LeftSidebar tree: DPad navigates nodes, A activates view
-- ⬜ Shoulder bumpers (L/R) toggle focus between sidebar and grid
-- ⬜ B exits any open menu / cancels selection
-- ⬜ Mouse + keyboard still work alongside controller (no input mode lock-out)
+- ✅ VirtualLibraryGrid: DPad moves tile selection, A launches, X opens TileContextMenu (in frontend/src/components/VirtualLibraryGrid.tsx)
+- ✅ LeftSidebar: DPad navigates "All Games" + visible leaves, A opens, X opens system context menu (in frontend/src/layout/LeftSidebar.tsx)
+- ✅ Shoulder bumpers (L1/R1) transfer focus between sidebar and grid via `neighbours` config
+- ✅ HintRegion at App root publishes A/X/L1/R1 labels based on active group
+- ✅ Mouse hover + click still work — `onFocus` callback explicitly activates the group + updates focus
+- ✅ Focused tile scrolls into view via `virtualizer.scrollToIndex({align:"auto"})` — no-op when already visible
+- ⬜ Sidebar containers don't take focus (DPad nav skips them); deferred to a later polish — operators can still toggle expansion with mouse
+- ⬜ B (cancel) doesn't yet clear selection or close menus — needs Slice E global semantics decision
 
 ## Slice E — Settings → Controller-nav
 

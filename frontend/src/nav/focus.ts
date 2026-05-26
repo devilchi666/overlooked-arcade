@@ -20,6 +20,12 @@
 // catches up.
 
 import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js";
+
+/// Either a Solid Setter (from createSignal) or a plain `next => void`
+/// callback. Both work — Solid's Setter is structurally assignable to
+/// the callback form, and the manager only needs to push values, never
+/// read return values.
+export type IndexSink = (next: number) => void;
 import type { NavDirectionEvent, NavEvent } from "./types";
 import { onNavEvent } from "./gamepad";
 
@@ -36,7 +42,7 @@ export type FocusGroupOptions = {
   columns?: Accessor<number>;
   /** Parent-owned focused-index accessor. Use `createSignal(0)` typically. */
   focusedIndex: Accessor<number>;
-  setFocusedIndex: Setter<number>;
+  setFocusedIndex: IndexSink;
   /** A button on a focused row. */
   onActivate?: (index: number) => void;
   /** B button anywhere in the group. */

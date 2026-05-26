@@ -90,7 +90,8 @@ import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
 import { startGamepadInput, stopGamepadInput } from "./nav/gamepad";
-import { HintBar } from "./nav/HintBar";
+import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
+import { activeFocusGroupId } from "./nav/focus";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -1967,6 +1968,20 @@ const App: Component = () => {
       />
       <ToastStack />
       <HintBar />
+      <Show when={!gameMode() && !isDirectLaunch()}>
+        <HintRegion
+          hints={(): Hints => {
+            switch (activeFocusGroupId()) {
+              case "left-sidebar":
+                return { a: "Open", x: "System menu", r1: "Library" };
+              case "library-grid":
+                return { a: "Launch", x: "Menu", l1: "Sidebar" };
+              default:
+                return {};
+            }
+          }}
+        />
+      </Show>
       </PlatformMediaProvider>
     </MediaProvider>
   );
