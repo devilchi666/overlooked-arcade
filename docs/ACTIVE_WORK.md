@@ -11,7 +11,24 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-(Nothing actively in flight.)
+- **Controller navigation completion pass**
+  ([features/controller-nav/](features/controller-nav/)) — branch
+  `feat/controller-nav-completion`, local-only with clean working tree.
+  Extends Phase 0 (A–E, merged earlier today) to cover every remaining
+  interactive surface so the operator can run the whole shell from a
+  pad. Seven slices shipped: F critical polish + global back-stack
+  (`102eef8`); G context + overlay menus — TileContextMenu /
+  SystemContextMenu / SaveSlotsModal / QuickSettings (`8254aa1`);
+  H GameInfoModal + universal Dialog B-close via the primitive
+  (`6cb86d9`); a fix that gates the frontend Web Gamepad poller while
+  gilrs owns input via DOM focus on the library WebView (`662cd5a`);
+  K top toolbar menu bar with Start-to-open + L1/R1 menu cycling
+  (`d68ab7f`); L chained CorePicker + RegionPicker popovers
+  (`8180a0e`); M right sidebar widget actions row with R1-from-grid
+  transfer (`e721e7d`). Read-only widgets, utility chrome, and
+  QuickSettings sub-views deliberately stay mouse + keyboard in v1.
+  Next: operator playtest with a real controller across every newly-
+  wired surface, then push + merge `--no-ff`.
 
 ## Recently completed (this session)
 
