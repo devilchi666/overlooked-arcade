@@ -979,3 +979,150 @@ Both modes coexist; operator chooses path moment-to-moment. The per-system themi
 - **Per-system asset budget:** ≤500 KB sounds + ≤2 MB visuals per system. Total addition ~100 MB worst case across 40 systems. Assets bundled with the installer; no first-launch download.
 - **Audio routing:** new per-system SFX flows through the existing 4-bus mixer (shipped 2026-05-24 in media-taxonomy) on the `ui-sounds` bus. No new audio infrastructure needed.
 
+---
+
+## 2026-05-26 — Strategic locks for the Game Info Panel (third major arc)
+
+**Context:** Operator + Claude planned the Game Info Panel feature as a tighter alternative to ChatGPT's "Game Context System" pitch. Reframed from editorial-and-recommendations to structured-factual-reference. Full implementation plan landed at [`docs/PLANS/game-info-panel.md`](PLANS/game-info-panel.md).
+
+The strategic locks here capture decisions made before any code is written. The scope is deliberately tight for v1 with the full distribution + scraper + contribution architecture fully designed but deferred to v2.
+
+### Decision S — Reframe: Game Info PANEL, not Context SYSTEM
+
+**Decision:** The feature surfaces **structured factual reference data per game** — date, publisher, region, version, player count, controls supported, known bugs, best-emulator recommendations, and an operator-editable short summary. Explicitly NOT editorial commentary, NOT "fun facts" or "why it's important," and NOT a recommendations engine ("if you like X try this").
+
+**Why:** Operator's actual use case is "should I launch this specific game right now?" — answered by version + region + works-with-my-controller + known-issues + best-core. Editorial content has unclear sourcing, IP concerns, and feels like enthusiast-blog territory rather than launcher-tool territory. Recommendations belong in a future Play History Intelligence feature (the other ChatGPT pitch); they need the play-data layer this plan doesn't touch.
+
+**Considered and rejected:**
+- **Full ChatGPT framing** (importance + dev/year + recommendations + fun facts + known issues). Too sprawling; mixes editorial and reference; "fun facts" needs content sourcing that doesn't have a clean answer.
+- **Pure factual stripped of all narrative.** Operator wants a short-summary field for personal use; making it operator-editable + default-empty solves the IP question without giving up the slot.
+
+### Decision T — Field schema locked (9 fields, mostly already in OA)
+
+**Decision:** Nine structured fields:
+1. **Date** (release year) — sourced from existing metadata sync
+2. **Publisher** — sourced from existing metadata sync
+3. **Region** — sourced from existing metadata sync + DAT region tags
+4. **Version** — sourced from existing metadata sync + DAT rev tags
+5. **Player count** — sourced from existing metadata sync
+6. **Short summary** — operator-editable, default empty in v1
+7. **Controls supported** — empty by default v1; hand-curated v2
+8. **Game bugs** — migrated from `KNOWN_GAME_BUGS.md` files for v1
+9. **Best emulator per game** — migrated from KNOWN_GAME_BUGS where mentioned for v1; hand-curated v2
+
+**Why:** Five fields already exist in OA via metadata sync — v1 mostly surfaces them. Four fields need new infrastructure (structured per-game data format) but minimal new CONTENT (KNOWN_GAME_BUGS migration produces meaningful seed data). Tight v1 scope (~3-4 weeks) by deliberately scoping to what's already mostly there.
+
+**Considered and rejected:**
+- **Adding "genre" / "ESRB rating" / "approximate playtime"** to v1. Defer — easy to add later if requested; not load-bearing.
+- **Dropping "short summary"** entirely. Operator-editable + default-empty makes it cheap and operator-valuable; keep.
+
+### Decision U — Three-layer data architecture (scraper / hand-curated / operator local)
+
+**Decision:** Game info data lives in three layers at runtime:
+1. **Scraper output** (deferred to v2) — auto-generated objective fields from libretro-database DATs + future scraped sources
+2. **Hand-curated content** (deferred to v2) — project maintainer + community contributions; narrative summaries, refined best-emulator notes
+3. **Operator local overrides** (v1) — per-install SQLite table; never leaves the operator's machine unless they explicitly Submit correction
+
+**v1 ships layers 1 + 3.** Layer 1 in v1 is "what OA's existing metadata sync produces" + "KNOWN_GAME_BUGS migration result" — no separate scraper running. Layer 3 is the operator's local SQLite override table. Layer 2 ships in v2 alongside the data repo.
+
+**Why:** The three-layer model anticipates the v2 distribution architecture without forcing it into v1. Field-typed precedence (Decision W) defines how the three layers merge cleanly.
+
+**Considered and rejected:**
+- **Two layers (project + operator).** Loses the distinction between scraper-managed and curator-managed fields; makes the v2 scraper architecture harder to retrofit.
+- **One layer (everyone edits the same files).** Doesn't allow operator local edits without polluting upstream.
+
+### Decision V — Data format: YAML front-matter in per-system markdown
+
+**Decision:** Structured per-game entries live as YAML front-matter blocks separated by `---` in per-system markdown files. v1 location: `docs/cores/<id>/games-info.md` in the main OA repo. v2 location: separate `overlooked-arcade-game-info` data repo (move announced; not in v1).
+
+**Why:** YAML is human-readable for hand-edits; front-matter blocks parse cleanly into a structured index at OA startup; markdown wrapper keeps room for prose context per-system (system-wide notes that aren't per-game). Most retro-frontend data projects use similar formats; lower contribution bar than custom JSON/SQLite-only formats.
+
+**Considered and rejected:**
+- **Pure JSON files per system.** Less human-friendly for hand-edits; no room for prose; harder for non-technical contributors.
+- **SQLite database checked into the repo.** Fast to query but invisible to PR reviewers; opaque diffs; high friction for contributions.
+- **Per-game files in per-system folders.** Cleaner PR diffs (one file per game changed) but explodes the file count (40 systems × hundreds of games = thousands of files). Defer; revisit if PR-diff noise becomes a problem.
+
+### Decision W — Field-typed precedence for conflict resolution
+
+**Decision:** When the three layers disagree on a field's value, precedence depends on the field's nature:
+
+- **Always local wins** (narrative + operator preferences): short summary, controls supported, best emulator, operator-added bugs. Operator's words and discovered preferences are sacred.
+- **Always project / scraper wins** (objective facts): date, publisher, region, version, player count. These are read-only in the UI; if a scraper update finds a corrected publisher name, it overrides any stale local data.
+- **Three-way merge** (currently no fields, reserved for future).
+
+**Why:** Different fields have different ownership semantics. One-size-fits-all (always-local OR always-master) loses information; per-field precedence captures real-world ownership distinction between "facts the project curates" and "preferences the operator owns."
+
+**Considered and rejected:**
+- **Always local wins.** Loses scraper updates to corrected facts. Operator might have stale local data hiding important corrections.
+- **Always master wins on next sync.** Operator's effort on local edits gets clobbered; terrible UX.
+- **Three-way merge with operator approval per conflict.** Too disruptive; operator gets prompts on every sync. Reserved for future cases where neither precedence rule fits.
+
+### Decision X — v1 tight scope: supplied DATs only, no scraper, no community pipeline
+
+**Decision:** v1 ships:
+- Data model + parser (YAML front-matter from per-system markdown)
+- KNOWN_GAME_BUGS migration into structured entries (one-time pass)
+- Tile-hover compact card + long-press / `i` full panel + tile badge
+- Operator local edits via SQLite override table
+- Inline "Apply best emulator" + "Apply controls" actions wiring to existing `GameOverrides`
+- "Submit correction" surface stubbed for v1 (clipboard copy + "coming soon" toast)
+
+v1 does NOT ship:
+- Scraper running anywhere
+- Separate data repo
+- Daily auto-sync mechanism
+- Wikipedia / IGDB / TheGamesDB / ScreenScraper integration
+- GitHub Issue → auto-PR community contribution flow
+
+**Why:** Full distribution + scraper + contribution stack would dominate v1 implementation (estimated ~3-5 weeks ON TOP of v1's ~3-4 week scope). Better to ship the UI + data model with what we already have, prove the value, then layer distribution on later when actual operator demand justifies the infrastructure.
+
+**Considered and rejected:**
+- **Full v1 with scraper + data repo + contribution flow.** Doubles the v1 timeline; risks shipping nothing for ~2 months instead of something useful in ~3-4 weeks.
+- **Skip v1 entirely and only ship v2.** Loses the "ship something useful fast" win.
+
+### Decision Y — v2 architecture fully designed, deferred
+
+**Decision:** All v2 components are designed (and recorded in `docs/PLANS/game-info-panel.md` §11) but not in v1 scope:
+- Scheduled scraper running on GitHub Actions on the data repo
+- Separate `overlooked-arcade-game-info` GitHub data repo
+- Daily auto-sync with manual "Check now" button + off toggle
+- GitHub Issue → auto-PR community contribution flow with maintainer review
+- Field-source tagging evolution (PR-only initially → per-field auto-merge for tagged scraper fields)
+- Wikipedia / TheGamesDB / ScreenScraper richer-source integration paths
+
+**Why:** Locking the architecture now prevents relitigation when v2 starts. Future-Claude or future-you reads the plan, understands what was decided and why, and can pick up implementation without redesign.
+
+**Considered and rejected:**
+- **Leave v2 as an open design exercise for later.** Risks expensive redesign work later; current operator + Claude planning context fades.
+
+### Decision Z — Scheduling: Game Info Panel v1 as polish for Per-System UI Stage 1
+
+**Decision:** Game Info Panel v1 ships immediately after Per-System UI Stage 1 in the strict-sequence portion of the pipeline. Updated pipeline:
+
+```
+Phase 0 (controller-nav, ~2-3w)
+   → Per-System UI Stage 1 (polish layer, ~5-7w)
+   → Game Info Panel v1 (per-game depth, ~3-4w)
+   → [INFLECTION POINT — ~10-14 weeks from green-light]
+   → interleave Guided Setup Track + Per-System Stage 2+3 + Game Info Panel v2
+```
+
+**Why:** Per-System UI Stage 1 makes OA's library feel alive. Game Info Panel v1 is the practical complement — once every system has its own personality, the natural next ask is "what is THIS specific game about?" Shipping them adjacent lands the operator's first complete-feeling experience: themed library + per-game depth.
+
+Also: shared infrastructure makes adjacency cheaper. The structured per-game data Game Info Panel defines is consumed by Guided Setup Phase 2D (auto-apply per-game core overrides) and Per-System UI Stage 3 (`metadataPriority` field). Doing Game Info Panel v1 right after Per-System Stage 1 means Stage 2 and Stage 3 can lean on the data already populated.
+
+**Updated inflection point estimate:** ~10-14 weeks from green-light (was ~7-10 weeks before this scheduling decision). Larger inflection but richer inflection — operator gets identity + depth at the same milestone.
+
+**Considered and rejected:**
+- **Game Info Panel v1 first, before Per-System UI Stage 1.** Loses the "identity moment" first-impression. Per-system personality is the killer differentiator; lead with that.
+- **Game Info Panel v1 in the post-inflection interleave bucket.** Misses the benefit of having structured per-game data populated before Guided Setup Phase 2D and Per-System Stage 3 consume it. Adjacency saves rework.
+- **Skip Game Info Panel entirely until v2 distribution is ready.** Loses the ~3-4 week v1 win; operator waits months for any per-game depth.
+
+### Additional decisions captured implicitly
+
+- **v1 effort: ~3-4 weeks.** Significantly tighter than the full pitch because of deliberate scope deferral.
+- **Migration approach for KNOWN_GAME_BUGS:** scripted parser pass that reads the existing free-form markdown and emits structured front-matter entries. Imperfect but better than abandoning the existing knowledge. One-time at v1 build; subsequent edits happen in the new structured format.
+- **Action buttons in panel — "Apply best emulator" + "Apply controls":** both write to existing `GameOverrides` table (`libretro_core` + `libretro_device_port1..4`). No new override fields needed; just consumption.
+- **Tile badge styling:** subtle ⚠ N for known issues; single small icon for operator-has-local-edits. Don't crowd the tile.
+- **"Submit correction" v1 stub behavior:** clipboard copy of operator's local edits as JSON + informational toast ("Your changes are copied. We're not yet set up to receive submissions automatically — coming soon"). Makes the UI surface visible without committing to v2 backend infrastructure.
+

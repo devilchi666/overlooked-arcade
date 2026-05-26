@@ -8,9 +8,9 @@ When you close an item, the matching PR also flips the corresponding `⬜` to `�
 
 ---
 
-## Pipelined sequence (two major arcs interleaved)
+## Pipelined sequence (three major arcs interleaved)
 
-**Decided 2026-05-26.** Both major arcs below — Guided Setup and Per-System Custom UI — share a foundation and can pipeline through subsequent stages.
+**Decided 2026-05-26.** Three major arcs below — Guided Setup, Per-System Custom UI, and Game Info Panel — share a foundation and can pipeline through subsequent stages.
 
 ### The shared foundation: Phase 0 — Controller-nav primitives (~2-3 weeks)
 
@@ -36,27 +36,39 @@ Per-System UI Stage 1 (polish layer, ~5-7w)
    - Baseline SystemUIConfig for other 37 systems
    - Settings → Display → "Per-system experiences" toggle
        ↓
-[INFLECTION POINT — ≈ 7-10 weeks from green-light]
+Game Info Panel v1 (polish for Per-System Stage 1, ~3-4w)
+   - YAML front-matter data model + parser
+   - KNOWN_GAME_BUGS migration into structured per-game entries
+   - Tile-hover card + long-press full panel + tile badge
+   - Operator "Edit locally" via SQLite override table
+   - Inline "Apply best emulator" + "Apply controls" actions
+   - "Submit correction" surface (stubbed for v1 — clipboard copy)
+       ↓
+[INFLECTION POINT — ≈ 10-14 weeks from green-light]
 ```
 
-**Why this order:** Per-System Stage 1 is the identity moment. After it ships, OA is identifiably different from the field — "the only frontend where every system feels alive" is no longer a positioning claim, it's a working demo. Onboarding polish then lands against a richer product that already has its hook.
+**Why this order:** Per-System Stage 1 is the identity moment — it makes OA feel different from the field. Game Info Panel v1 is the **practical complement** — once every system feels alive, the natural next ask is "what is THIS specific game about, what version is it, will it work, which core is best?" Shipping the info panel as polish on top of Stage 1 lands the operator's first complete-feeling experience: themed library + per-game depth. Onboarding polish (guided setup) and behavior depth (Per-System Stages 2-3) come after, against a much richer product.
 
-**No interleaving until those two are done.** Discipline matters. Half-finishing both arcs is the failure mode this sequence avoids.
+**No interleaving until those three are done.** Discipline matters. Half-finishing multiple arcs is the failure mode this sequence avoids.
 
 ### After the inflection point — interleave by session feel
 
 ```
 Phase 0 ✓
 Per-System Stage 1 ✓
+Game Info Panel v1 ✓
        ↓
    ╔════════════════════════════════════════════════════════════╗
-   ║  Pick by session — both tracks pipeline freely             ║
+   ║  Pick by session — all tracks pipeline freely              ║
    ║                                                            ║
    ║  Guided Setup Track (~5-6w cumulative):                    ║
    ║    Phase 1B  Wizard upgrade (~3-4w)                        ║
    ║    Phase 2B  Curated core selection (~1w)                  ║
    ║    Phase 2C  Folder management (~1w)                       ║
    ║    Phase 2D  First-system bindings + KNOWN_GAME_BUGS (~1w) ║
+   ║                — auto-applies per-game core overrides from ║
+   ║                  the same KNOWN_GAME_BUGS data this plan   ║
+   ║                  migrated; shared infrastructure win       ║
    ║    Phase 2E  Help suppression (~3-4d)                      ║
    ║    Phase 2F  Existing-operator re-entry (~3-4d)            ║
    ║                                                            ║
@@ -70,8 +82,16 @@ Per-System Stage 1 ✓
    ║  Per-System UI Stage 3 — Experience layer (~6-10w):        ║
    ║    In-game overlays themed per system                      ║
    ║    Library ↔ game transitions themed                       ║
-   ║    Per-system metadata priorities                          ║
+   ║    Per-system metadata priorities (consumes Game Info      ║
+   ║      Panel fields for the per-system priority routing)     ║
    ║    All ~40 systems tuned past baseline                     ║
+   ║                                                            ║
+   ║  Game Info Panel v2 (~3-5w, infra-heavy):                  ║
+   ║    Scraper infrastructure (GitHub Actions on data repo)    ║
+   ║    Separate overlooked-arcade-game-info data repo          ║
+   ║    Daily auto-sync from data repo to OA installs           ║
+   ║    GitHub Issue → auto-PR community contribution flow      ║
+   ║    Wikipedia/etc richer-source integration (later)         ║
    ╚════════════════════════════════════════════════════════════╝
 ```
 
@@ -79,18 +99,19 @@ Each phase is a shippable PR. Pick whichever feels right session-to-session. Ord
 
 ### Total estimate
 
-- **Phase 0 + Per-System Stage 1 (the inflection point):** ~7-10 weeks. Foundation + identity-defining demo. Shippable as a complete inflection on its own.
-- **Full vision (all arcs through Per-System Stage 3):** ~22-32 weeks.
+- **Phase 0 + Per-System Stage 1 + Game Info Panel v1 (the inflection point):** ~10-14 weeks. Foundation + identity-defining demo + per-game depth. Shippable as a complete inflection on its own.
+- **Full vision (all three arcs through Per-System Stage 3 + Game Info Panel v2):** ~25-37 weeks.
 
 ### Shared-infrastructure savings
 
 Pipelining compounds code reuse:
-- Focus manager + hint bar + audio dispatcher built in Phase 0 power both arcs throughout
+- Focus manager + hint bar + audio dispatcher built in Phase 0 power all three arcs throughout
 - `SystemUIConfig` registry pattern (Per-System Stage 1) reuses the shape of `LIGHT_GUN_SYSTEMS` (shipped 2026-05-25) — same declarative-table pattern across systems
 - Per-system SFX (Per-System Stage 1) routes through the existing 4-bus audio mixer (shipped 2026-05-24 in media-taxonomy)
 - Per-system bindings card (Guided Setup Phase 2D) reuses the same per-system theming + audio that Per-System Stage 1 builds
+- **Structured per-game data format (Game Info Panel v1) is consumed by**: Guided Setup Phase 2D (auto-apply per-game core overrides from KNOWN_GAME_BUGS at import commit) AND Per-System UI Stage 3 (`metadataPriority` field drives per-system priority routing using the same fields). Three features share one structured source — defining it once unlocks all three.
 
-Probably 10-20% off the total vs running the two arcs as fully separate work streams.
+Probably 15-25% off the total vs running the three arcs as fully separate work streams.
 
 ### Kiosk shell scheduling — separate, after the full pipeline
 
@@ -149,6 +170,39 @@ Shipped in three stages, each fully working:
 **Total estimate:** ~15-23 weeks across all three stages. Stage 1 alone is shippable as a real feature (~5-7 weeks). Awaiting operator green-light + scheduling decision vs guided-setup.
 
 **Order vs guided-setup is deferred.** Both arcs are multi-month. Options: (a) sequence — finish guided-setup first, then this; (b) parallel — pipeline if multiple sessions overlap, sharing controller-nav primitives between guided-setup Phase 0 and per-system-UI Stage 1; (c) inverse — this first, then guided-setup. Operator's call.
+
+---
+
+## NEXT MAJOR ARC — Game Info Panel
+
+**Planning locked 2026-05-26.** Full plan at [docs/PLANS/game-info-panel.md](PLANS/game-info-panel.md).
+
+**Scheduling: ships as polish on top of Per-System UI Stage 1** in the strict-sequence portion of the pipeline (see "Pipelined sequence" above). Third step after Phase 0 + Per-System Stage 1.
+
+Surface structured reference data per game in OA's library — date, publisher, region, version, player count, controls supported, known bugs, best-emulator recommendations, operator-editable short summary. **Not editorial, not recommendations** (those would belong in a future Play History Intelligence feature).
+
+**v1 scope (tight, ~3-4 weeks):**
+- YAML front-matter data model in per-system markdown (`docs/cores/<id>/games-info.md`)
+- One-time migration: existing `KNOWN_GAME_BUGS.md` free-form markdown → structured entries
+- Tile-hover compact card + long-press / `i` full panel + tile badge for known issues
+- Operator local edits in SQLite override table; field-typed precedence merges sources
+- Inline "Apply best emulator" + "Apply controls" buttons wire to existing `GameOverrides`
+- "Submit correction" surface stubbed (clipboard copy + informational toast) for v1
+
+**v1 sources:** supplied `.dat` files (libretro-database) that OA already syncs + KNOWN_GAME_BUGS migration. No scraper running. No separate data repo. No community pipeline.
+
+**v2 architecture FULLY DESIGNED but DEFERRED** (~3-5 weeks when it lands):
+- Scheduled scraper in GitHub Actions on the data repo
+- Separate `overlooked-arcade-game-info` data repo (lower contribution bar, cleaner versioning)
+- Daily auto-sync from data repo to OA installs + manual "check now" button
+- GitHub Issue → auto-PR community contribution flow with maintainer review
+- Wikipedia / TheGamesDB / ScreenScraper richer-source integration paths
+
+**Shared infrastructure with other arcs:**
+- Guided Setup Phase 2D auto-applies per-game core overrides using the same structured KNOWN_GAME_BUGS data this v1 migrates — one structured source, two features consuming it
+- Per-System UI Stage 3 `metadataPriority` field drives per-system priority routing using the same fields this plan defines
+
+**Distinct from theme ecosystem WAIT lock (DECISIONS G).** Game info is a factual database, not a creative ecosystem. Dead-ecosystem trap doesn't apply — value exists at v1 even with zero community contributions because OA ships with seed data from existing `.dat` sources.
 
 ---
 
