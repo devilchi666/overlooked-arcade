@@ -22,10 +22,11 @@ Phase 0 of the guided-setup pipeline. Branch: `feat/controller-nav-primitives`.
 
 ## Slice C — On-screen hint bar
 
-- ⬜ `<HintBar>` component pinned to bottom of viewport
-- ⬜ Per-screen `<HintRegion>` provider — registers A/B/X/Y labels via context
-- ⬜ ≤120ms animated label changes
-- ⬜ Auto-hide when no gamepad has been seen this session
+- ✅ `<HintBar>` component pinned to bottom of viewport (in frontend/src/nav/HintBar.tsx, mounted at App root)
+- ✅ Per-screen `<HintRegion hints={...}>` provider — innermost wins via module-level mount-order stack
+- ✅ Auto-hide when no gamepad has been seen this session (via `hasSeenGamepad` reactive accessor)
+- ✅ Auto-hide when no HintRegion is mounted (game running unmounts library → empty stack → bar hidden)
+- ⬜ ≤120ms animated label changes (current: instant — will revisit in Slice E once animation budget setting is wired)
 
 ## Slice D — POC wiring
 

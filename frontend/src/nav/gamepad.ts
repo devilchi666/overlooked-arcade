@@ -16,7 +16,7 @@
 // per-pad stick direction. Edge-triggered down/up + auto-repeat for
 // directions only.
 
-import { onCleanup } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import type { NavButton, NavDirection, NavEvent, NavPhase } from "./types";
 
 /// Web Gamepad API "standard layout" mapping. Skips the dpad slots
@@ -63,7 +63,7 @@ const stickStates = new Map<number, StickState>(); // padIdx -> state
 let connectedPads = 0;
 let rafHandle: number | null = null;
 let started = false;
-let sessionEverSawGamepad = false;
+const [sessionEverSawGamepadSig, setSessionEverSawGamepad] = createSignal(false);
 
 /// Subscribe to nav events. Returns an unsubscribe function — call it
 /// on dispose to avoid leaks. Re-subscribing the same handler is a
@@ -82,12 +82,10 @@ export function useNavEvent(handler: Listener): void {
   onCleanup(dispose);
 }
 
-/// Has any gamepad been seen this session? Used by the hint bar to
-/// decide whether to render anything (auto-hide if no controller has
-/// ever appeared).
-export function hasSeenGamepad(): boolean {
-  return sessionEverSawGamepad;
-}
+/// Has any gamepad been seen this session? Reactive Solid accessor —
+/// the hint bar derives from this to decide whether to render at all
+/// (auto-hide if no controller has ever appeared).
+export const hasSeenGamepad = sessionEverSawGamepadSig;
 
 /// Start the poller. Idempotent — safe to call multiple times. Should
 /// be called once at app mount.
@@ -101,7 +99,7 @@ export function startGamepadInput(): void {
   const initial = navigator.getGamepads?.() ?? [];
   for (const pad of initial) {
     if (pad) {
-      sessionEverSawGamepad = true;
+      setSessionEverSawGamepad(true);
       connectedPads++;
     }
   }
@@ -128,7 +126,7 @@ export function stopGamepadInput(): void {
 
 function handleConnect(_e: GamepadEvent): void {
   connectedPads++;
-  sessionEverSawGamepad = true;
+  setSessionEverSawGamepad(true);
   if (rafHandle === null) {
     rafHandle = requestAnimationFrame(tick);
   }

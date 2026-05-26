@@ -90,6 +90,7 @@ import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
 import { startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { HintBar } from "./nav/HintBar";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -1965,6 +1966,7 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      <HintBar />
       </PlatformMediaProvider>
     </MediaProvider>
   );
