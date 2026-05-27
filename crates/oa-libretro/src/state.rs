@@ -69,12 +69,16 @@ pub(crate) struct State {
     /// RETRO_DEVICE_ANALOG queries. Set per frame via
     /// LibretroCore::set_input.
     pub input_axes: [[i16; 4]; 5],
-    /// Per-port pointer device state. Layout: `(x, y, pressed)` per
-    /// port. Used by Nintendo DS stylus, Saturn / Dreamcast / arcade
-    /// light-gun games. Set per frame via LibretroCore::set_input
-    /// from `InputState.pointer`; cb_input_state returns the right
-    /// component for RETRO_DEVICE_POINTER queries.
-    pub input_pointer: [(i16, i16, bool); 5],
+    /// Per-port pointer device state. Layout:
+    /// `(x, y, pressed, in_viewport)` per port. Used by Nintendo DS
+    /// stylus, Saturn / Dreamcast / arcade light-gun games. Set per
+    /// frame via LibretroCore::set_input from `InputState.pointer`;
+    /// cb_input_state returns the right component for
+    /// RETRO_DEVICE_POINTER queries (x/y/pressed) AND
+    /// RETRO_DEVICE_LIGHTGUN queries (the `in_viewport` flag drives
+    /// `RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN` so cores can detect
+    /// the reload-by-aim-off-screen gesture).
+    pub input_pointer: [(i16, i16, bool, bool); 5],
     /// Per-port analog-button pressure. Layout: `[port][button_id]`
     /// where `button_id` matches the RETRO_DEVICE_ID_JOYPAD_* bit
     /// position (0-15). Range 0..32767. Cores polling
@@ -217,7 +221,7 @@ impl State {
             audio: Vec::with_capacity(16384),
             input_bits: [0; 5],
             input_axes: [[0; 4]; 5],
-            input_pointer: [(0, 0, false); 5],
+            input_pointer: [(0, 0, false, false); 5],
             input_analog_buttons: [[0; 16]; 5],
             display_aspect: 0.0,
             system_dir: CString::new(".").unwrap(),
@@ -611,8 +615,8 @@ pub(crate) unsafe extern "C" fn cb_get_sensor_input(port: u32, id: u32) -> f32 {
 /// the dispatch table is unit-testable without manipulating the
 /// libretro singleton state. `count` reports 1 when pressed, 0
 /// otherwise — single-pointer model; multi-touch is Phase 2.5.
-pub(crate) fn pointer_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
-    let (x, y, pressed) = pointer;
+pub(crate) fn pointer_field_value(pointer: (i16, i16, bool, bool), id: u32) -> i16 {
+    let (x, y, pressed, _in_viewport) = pointer;
     match id {
         RETRO_DEVICE_ID_POINTER_X       => x,
         RETRO_DEVICE_ID_POINTER_Y       => y,
@@ -623,15 +627,14 @@ pub(crate) fn pointer_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
 }
 
 /// Pure helper: resolve a RETRO_DEVICE_ID_LIGHTGUN_* query against a
-/// stored `(x, y, pressed)` tuple. Wires the screen-coordinate +
-/// trigger + deprecated relative aliases; AUX/START/SELECT/DPAD/
-/// RELOAD return 0 at Phase 0. IS_OFFSCREEN also returns 0 (always
-/// on-screen) — the reload-by-aiming-off-screen gesture needs an
-/// in_viewport flag on InputState that hasn't been plumbed yet;
-/// games are playable without it. See `RETRO_DEVICE_ID_LIGHTGUN_*`
-/// in `ffi.rs` for the full id table.
-pub(crate) fn lightgun_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
-    let (x, y, pressed) = pointer;
+/// stored `(x, y, pressed, in_viewport)` tuple. Wires the screen-
+/// coordinate + trigger + deprecated relative aliases + the
+/// IS_OFFSCREEN reload-by-aim flag. AUX/START/SELECT/DPAD/RELOAD
+/// remain 0 (Phase 2 work — needs a bindings UI surface for the
+/// gun-side buttons). See `RETRO_DEVICE_ID_LIGHTGUN_*` in `ffi.rs`
+/// for the full id table.
+pub(crate) fn lightgun_field_value(pointer: (i16, i16, bool, bool), id: u32) -> i16 {
+    let (x, y, pressed, in_viewport) = pointer;
     match id {
         // Absolute screen coordinates — the modern way (post-2013).
         // All currently-maintained light-gun cores poll these.
@@ -644,12 +647,16 @@ pub(crate) fn lightgun_field_value(pointer: (i16, i16, bool), id: u32) -> i16 {
         RETRO_DEVICE_ID_LIGHTGUN_Y             => y,
         // Primary fire button.
         RETRO_DEVICE_ID_LIGHTGUN_TRIGGER       => if pressed { 1 } else { 0 },
-        // Phase 0 simplification: always on-screen. Plumbing an
-        // in_viewport flag through InputState.pointer is the Phase 2
-        // task; titles that REQUIRE off-screen reload (House of the
-        // Dead 2, Time Crisis series) still play with the reload bound
-        // to a keyboard key as an interim workaround.
-        RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN  => 0,
+        // Reload-by-aim-off-screen gesture. `in_viewport` is sourced
+        // from oa-input's poll_pointer — flips to false when the
+        // cursor is outside the game-output rectangle (sidebar /
+        // letterbox / chrome). Light-gun cores read this as "shoot
+        // off-screen to reload" which is the canonical UX for House
+        // of the Dead 2, Time Crisis series, Lethal Enforcers, etc.
+        // Without a viewport rectangle set (Phase 0 fallback path
+        // in poll_pointer) `in_viewport` is unconditionally true,
+        // matching the pre-2026-05-27 always-on-screen behaviour.
+        RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN  => if in_viewport { 0 } else { 1 },
         // AUX / START / SELECT / DPAD / RELOAD — Phase 2 will surface
         // these in the per-system Bindings UI as additional gun-side
         // buttons. Return 0 today so a core polling them sees an
@@ -1205,8 +1212,8 @@ mod tests {
 
     #[test]
     fn pointer_field_value_returns_stored_coords() {
-        // Mid-screen click, pressed.
-        let p = (1000i16, -2000i16, true);
+        // Mid-screen click, pressed, inside viewport.
+        let p = (1000i16, -2000i16, true, true);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       1000);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -2000);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
@@ -1216,7 +1223,7 @@ mod tests {
     #[test]
     fn pointer_field_value_unpressed_reports_zero_count() {
         // Pointer at min coords, released. COUNT must follow PRESSED.
-        let p = (-32768i16, -32768i16, false);
+        let p = (-32768i16, -32768i16, false, true);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       -32768);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -32768);
         assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 0);
@@ -1227,10 +1234,29 @@ mod tests {
     fn pointer_field_value_unknown_id_returns_zero() {
         // Anything outside the 4 documented IDs returns 0 — defensive
         // against future libretro spec additions.
-        let p = (100i16, 200i16, true);
+        let p = (100i16, 200i16, true, true);
         for id in [4u32, 7, 42, 9999] {
             assert_eq!(pointer_field_value(p, id), 0, "id {id} must return 0");
         }
+    }
+
+    #[test]
+    fn pointer_field_value_ignores_in_viewport_flag() {
+        // POINTER device polls don't read the in_viewport flag — that's
+        // the LIGHTGUN device's IS_OFFSCREEN territory. POINTER results
+        // must be identical whether the flag is true or false (so NDS
+        // stylus dispatch doesn't accidentally suppress when the cursor
+        // leaves the viewport).
+        let p_in  = (1000i16, -2000i16, true, true);
+        let p_out = (1000i16, -2000i16, true, false);
+        assert_eq!(
+            pointer_field_value(p_in,  RETRO_DEVICE_ID_POINTER_X),
+            pointer_field_value(p_out, RETRO_DEVICE_ID_POINTER_X),
+        );
+        assert_eq!(
+            pointer_field_value(p_in,  RETRO_DEVICE_ID_POINTER_PRESSED),
+            pointer_field_value(p_out, RETRO_DEVICE_ID_POINTER_PRESSED),
+        );
     }
 
     // ---- lightgun_field_value -----------------------------------------
@@ -1239,7 +1265,7 @@ mod tests {
     fn lightgun_field_value_screen_coords_match_pointer_state() {
         // The screen-coordinate IDs (modern) must return the same
         // coords as the underlying input_pointer state.
-        let p = (12345i16, -7890i16, true);
+        let p = (12345i16, -7890i16, true, true);
         assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X), 12345);
         assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y), -7890);
     }
@@ -1249,7 +1275,7 @@ mod tests {
         // Legacy LIGHTGUN_X / LIGHTGUN_Y aliases (id 0/1) must report
         // the same absolute coords. Some older cores (Genesis Plus GX
         // Light Phaser path) still poll the relative aliases.
-        let p = (-100i16, 200i16, false);
+        let p = (-100i16, 200i16, false, true);
         assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_X), -100);
         assert_eq!(lightgun_field_value(p, RETRO_DEVICE_ID_LIGHTGUN_Y), 200);
         // Confirm the alias matches the modern SCREEN_X result for
@@ -1263,31 +1289,51 @@ mod tests {
 
     #[test]
     fn lightgun_field_value_trigger_follows_pressed() {
-        let pressed = (0i16, 0i16, true);
-        let released = (0i16, 0i16, false);
+        let pressed  = (0i16, 0i16, true,  true);
+        let released = (0i16, 0i16, false, true);
         assert_eq!(lightgun_field_value(pressed,  RETRO_DEVICE_ID_LIGHTGUN_TRIGGER), 1);
         assert_eq!(lightgun_field_value(released, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER), 0);
     }
 
     #[test]
-    fn lightgun_field_value_is_offscreen_is_zero_phase_zero() {
-        // Phase 0 simplification: always on-screen. When the
-        // in_viewport plumbing lands (Phase 2 reload-by-aim work),
-        // this assertion will flip and the dispatch will source from
-        // a new state field. Until then the constant is the contract.
-        let p_outside = (0i16, 0i16, false);
-        let p_inside  = (100i16, 100i16, true);
-        assert_eq!(lightgun_field_value(p_outside, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN), 0);
+    fn lightgun_field_value_is_offscreen_inverts_in_viewport() {
+        // 2026-05-27: the in_viewport plumbing landed end-to-end
+        // (poll_pointer → InputState.pointer → input_pointer tuple
+        // → lightgun_field_value). Cursor inside the viewport reports
+        // IS_OFFSCREEN=0; cursor outside reports IS_OFFSCREEN=1 so
+        // light-gun cores see the reload-by-aim-off-screen gesture.
+        let p_inside  = (100i16, 100i16, true,  true);
+        let p_outside = (0i16,   0i16,   false, false);
         assert_eq!(lightgun_field_value(p_inside,  RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN), 0);
+        assert_eq!(lightgun_field_value(p_outside, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN), 1);
+    }
+
+    #[test]
+    fn lightgun_field_value_is_offscreen_independent_of_press_state() {
+        // The reload gesture must fire whether or not the operator is
+        // holding the trigger — some games accept "aim off-screen,
+        // release fire to reload" while others want "aim off-screen,
+        // press fire to reload." IS_OFFSCREEN reflects geometry only,
+        // not press state.
+        let off_unpressed = (0i16, 0i16, false, false);
+        let off_pressed   = (0i16, 0i16, true,  false);
+        assert_eq!(
+            lightgun_field_value(off_unpressed, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN),
+            lightgun_field_value(off_pressed,   RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN),
+        );
     }
 
     #[test]
     fn lightgun_field_value_aux_start_select_dpad_reload_are_zero() {
-        // Phase 0: every non-screen / non-trigger LIGHTGUN id returns
-        // 0. Cores polling AUX / START / SELECT / DPAD / RELOAD see
-        // unpressed-neutral, which is the correct default-binding
-        // semantic for a fresh light-gun setup.
-        let p = (500i16, -500i16, true);
+        // Phase 0: every non-screen / non-trigger / non-IS_OFFSCREEN
+        // LIGHTGUN id returns 0. Cores polling AUX / START / SELECT /
+        // DPAD / RELOAD see unpressed-neutral, which is the correct
+        // default-binding semantic for a fresh light-gun setup.
+        // (The dedicated RELOAD button is distinct from the
+        // IS_OFFSCREEN reload-by-aim gesture — RELOAD is a physical
+        // button on the gun that some operators bind to a keyboard
+        // key as an alternative reload UX.)
+        let p = (500i16, -500i16, true, true);
         for id in [
             RETRO_DEVICE_ID_LIGHTGUN_AUX_A,
             RETRO_DEVICE_ID_LIGHTGUN_AUX_B,
@@ -1311,7 +1357,7 @@ mod tests {
     fn lightgun_field_value_unknown_id_returns_zero() {
         // Spec compliance: any id outside the documented LIGHTGUN
         // table returns 0 rather than leaking stack / uninit.
-        let p = (1i16, 2i16, true);
+        let p = (1i16, 2i16, true, true);
         for id in [17u32, 50, 100, 9999, u32::MAX] {
             assert_eq!(lightgun_field_value(p, id), 0, "unknown id {id} must return 0");
         }
