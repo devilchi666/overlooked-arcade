@@ -33,6 +33,7 @@ Routing table. Read this first; it points to everything else.
 - [features/media-taxonomy/](features/media-taxonomy/) — full LaunchBox-shape art/audio/video/manual storage (✅ shipped 2026-05-24)
 - [features/dosbox-and-scummvm/](features/dosbox-and-scummvm/) — DOSBox + ScummVM onboarding plan (📐 planned, not yet implemented)
 - [features/controller-nav/](features/controller-nav/) — Phase 0 controller-nav primitives (focus manager + gamepad event layer + hint bar); shared foundation for guided-setup + per-system-UI
+- [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI (audio / boot animations / tile flourishes / backgrounds, eventually layout + in-game overlays); Stage 1 in flight
 
 ## Per-core docs
 

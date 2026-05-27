@@ -44,12 +44,21 @@ the next major arc.
 ```
 Phase 0 ✓ (controller-nav, shipped 2026-05-26)
        ↓
-Per-System UI Stage 1 (polish layer, ~5-7w)
-   - SystemUIConfig data model + registry
-   - Per-system SFX + boot animation + tile flourishes + backgrounds
-   - 3 pilots full builds (GB → NES → Vectrex)
-   - Baseline SystemUIConfig for other 37 systems
-   - Settings → Display → "Per-system experiences" toggle
+Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
+   - ✅ Slice 1 — SystemUIConfig data model + registry baseline +
+        Settings → Display "Per-system experiences" master toggle +
+        prefers-reduced-motion plumbing + feature-folder scaffold
+        (`feat/per-system-ui-stage-1-slice-1`, pending operator
+        playtest)
+   - ⬜ Slice 2 — Per-system SFX wiring through the 4-bus mixer
+   - ⬜ Slice 3 — Per-system background renderer
+   - ⬜ Slice 4 — Boot animation framework + Settings sub-toggle
+   - ⬜ Slice 5 — Tile flourish system
+   - ⬜ Slice 6 — Game Boy pilot full build
+   - ⬜ Slice 7 — NES pilot full build
+   - ⬜ Slice 8 — Vectrex pilot + custom-component escape hatch
+   - ⬜ Slice 9 — Per-core README "Per-system UI" sections
+   - See [features/per-system-ui/ROADMAP.md](features/per-system-ui/ROADMAP.md)
        ↓
 Game Info Panel v1 (polish for Per-System Stage 1, ~3-4w)
    - YAML front-matter data model + parser
@@ -182,7 +191,13 @@ Shipped in three stages, each fully working:
 - **No theme** (Settings toggle OFF): uniform plain library; no audio, no animations, no flourishes
 - **Kiosk** (future, separate plan): theme editor for power users; consumes built-in per-system experiences as starting defaults
 
-**Total estimate:** ~15-23 weeks across all three stages. Stage 1 alone is shippable as a real feature (~5-7 weeks). Awaiting operator green-light + scheduling decision vs guided-setup.
+**Total estimate:** ~15-23 weeks across all three stages. Stage 1 alone is shippable as a real feature (~5-7 weeks).
+
+**Status (2026-05-26):** Stage 1 is in flight on
+`feat/per-system-ui-stage-1-slice-1`; foundation slice (data model +
+toggle + reduced-motion plumbing) shipped, awaiting operator
+playtest before Slice 2. Tracked at
+[features/per-system-ui/](features/per-system-ui/).
 
 **Order vs guided-setup is deferred.** Both arcs are multi-month. Options: (a) sequence — finish guided-setup first, then this; (b) parallel — pipeline if multiple sessions overlap, sharing controller-nav primitives between guided-setup Phase 0 and per-system-UI Stage 1; (c) inverse — this first, then guided-setup. Operator's call.
 

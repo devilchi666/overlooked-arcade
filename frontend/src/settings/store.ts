@@ -115,6 +115,15 @@ const DEFAULT_CONTROLLER_NAV_SOURCE: ControllerNavSource = "both";
 const DEFAULT_CONTROLLER_NAV_SWAP_AB = false;
 const DEFAULT_CONTROLLER_NAV_ANIMATION_MS = 120;
 
+// Per-System Custom UI master toggle (Stage 1 of the per-system-ui
+// pipelined arc). Default ON — the plan positions per-system experiences
+// as the DEFAULT OA experience, not opt-in. Operators who want a
+// uniform plain library flip this off in Settings → Display. Slice 1
+// ships the toggle alone; no consumers yet — those land in slices 2-9
+// (per-system SFX, backgrounds, boot animations, tile flourishes,
+// pilot full builds).
+const DEFAULT_PER_SYSTEM_UI_ENABLED = true;
+
 export type ControllerNavSource = "dpad" | "stick-left" | "both";
 
 const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
@@ -142,6 +151,7 @@ type Persisted = {
   controllerNavSource: ControllerNavSource;
   controllerNavSwapAB: boolean;
   controllerNavAnimationMs: number;
+  perSystemUiEnabled: boolean;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -211,6 +221,7 @@ function load(): Persisted {
     controllerNavSource: DEFAULT_CONTROLLER_NAV_SOURCE,
     controllerNavSwapAB: DEFAULT_CONTROLLER_NAV_SWAP_AB,
     controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
+    perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -270,6 +281,10 @@ function load(): Persisted {
           && parsed.controllerNavAnimationMs <= 1000
           ? parsed.controllerNavAnimationMs
           : DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
+      perSystemUiEnabled:
+        typeof parsed.perSystemUiEnabled === "boolean"
+          ? parsed.perSystemUiEnabled
+          : DEFAULT_PER_SYSTEM_UI_ENABLED,
     };
   } catch {
     return fallback;
@@ -380,6 +395,8 @@ export function createSettingsStore() {
     createSignal<boolean>(initial.controllerNavSwapAB);
   const [controllerNavAnimationMs, setControllerNavAnimationMs] =
     createSignal<number>(initial.controllerNavAnimationMs);
+  const [perSystemUiEnabled, setPerSystemUiEnabled] =
+    createSignal<boolean>(initial.perSystemUiEnabled);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -410,6 +427,7 @@ export function createSettingsStore() {
       controllerNavSource: controllerNavSource(),
       controllerNavSwapAB: controllerNavSwapAB(),
       controllerNavAnimationMs: controllerNavAnimationMs(),
+      perSystemUiEnabled: perSystemUiEnabled(),
     });
   });
 
@@ -525,6 +543,7 @@ export function createSettingsStore() {
     controllerNavSource, setControllerNavSource,
     controllerNavSwapAB, setControllerNavSwapAB,
     controllerNavAnimationMs, setControllerNavAnimationMs,
+    perSystemUiEnabled, setPerSystemUiEnabled,
   };
 }
 
