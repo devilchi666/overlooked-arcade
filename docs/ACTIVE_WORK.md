@@ -11,6 +11,43 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **System fixes pass — MAME / light-gun IS_OFFSCREEN / Saturn 3D Pad +
+  Atari 7800 twin-stick labels / NDS stylus reticle** — branch
+  `feat/system-fixes-mame-lightgun-analog`, five commits closing a
+  handful of small-to-medium code gaps across the per-core ROADMAPs:
+  - **MAME Phase 1.5 clarification**: ROADMAP line 30 reframed from
+    "verify dispatch" ⬜ to clarified ✅ — MAME consumes Service /
+    Tab / P2 inputs via the keyboard-passthrough pump, not the
+    RetroPad bits the four MAME_BUTTONS entries map to. RetroPad
+    mappings stay as future-proofing; no code change.
+  - **Light-gun IS_OFFSCREEN flag (`696dc87`)**: real code gap. New
+    `in_viewport` field on `InputState.pointer` flows from
+    `InputPoller::poll_pointer` → `cb_input_state` →
+    `lightgun_field_value` → `RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN`.
+    Shoot-off-screen-to-reload now works across all 6 light-gun
+    systems (NES Zapper, SMS Phaser, Saturn Virtua Gun, PS1 GunCon
+    / Justifier, Dreamcast HotD / Confidential Mission, Atari 7800
+    XEGS Light Gun). Closes the 2026-05-25 light-gun arc's
+    remaining ⬜ note; 577 workspace tests green.
+  - **System-specific device-type labels (`5e60ae6`)**: cosmetic
+    polish — the per-game Input dialog dropdown now shows
+    "3D Pad / Analog" for Saturn, "Virtua Gun" for Saturn/STV
+    light-gun device, "Zapper" for NES, "Super Scope" for SNES,
+    "DualShock / Analog" + "GunCon / Justifier" for PSX, etc.
+    Plus help-text blocks in the Additional Ports section for
+    atari7800 (Robotron twin-stick recipe) + saturn / stv
+    (3D Pad setup). Underlying dispatch unchanged.
+  - **NDS stylus reticle (`9d04815`)**: visual cursor + tap
+    feedback overlay. Hollow accent-colored ring follows the OS
+    cursor while an NDS game is running; fills in + scales down
+    on left-mouse-down so the operator sees explicit stylus-tap
+    feedback the OS cursor doesn't provide. Per-game touch-area
+    hotspots remain ⬜ as a separate larger feature.
+
+  Per-core ROADMAP flips (saturn / atari7800 / nds / dreamcast / psx /
+  mame) reflect each of these closures. NEXT.md cross-system
+  inventory updated to record the in_viewport plumbing.
+
 - **Three new systems — jagcd / sega32xcd / stv** — merged to
   main 2026-05-27 (`--no-ff` from `feat/new-systems-jagcd-32xcd-stv`,
   merge `189c448`). Three phase commits + a docs commit lifting

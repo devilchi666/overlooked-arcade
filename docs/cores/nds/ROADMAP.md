@@ -43,7 +43,9 @@ a stylus-driven game (Phantom Hourglass works with mouse-as-touch).
 
 - ✅ **Window-relative pointer coordinates** — shipped via `InputPoller::set_pointer_viewport` + `Renderer::last_viewport()` + per-frame wiring in `apps/oa-shell/src/main.rs:5382-5393`.
 - ⬜ **Microphone input** for blow-puzzles + voice puzzles — gated on libretro mic device dispatch (deferred-until-forced).
-- ⬜ **Per-game touch overlay UI** — visual stylus cursor + touch-area indicator overlay — operator-driven polish.
+- 🟨 **Per-game touch overlay UI** — split:
+  - ✅ **Visual stylus reticle** — `StylusOverlay` component (frontend/src/components/StylusOverlay.tsx) renders a hollow accent-colored ring at the cursor position while an NDS game is running; fills in + scales down on left-mouse-down so the operator sees explicit tap feedback the OS cursor doesn't provide. Mounted alongside SystemBackground in App.tsx, gated on `runningEntry?.systemId === "nds"` and a `STYLUS_SYSTEMS` set that can extend to other stylus-using systems later. Shipped 2026-05-27 in the system-fixes branch.
+  - ⬜ **Per-game touch-area indicator overlay** — game-specific touch hotspots (Phantom Hourglass map screen, Mario Kart DS course-selection, Brain Age stylus zones, etc.). Needs per-game configuration data; out of scope for the visual-reticle slice.
 - ⬜ **DSi enhancements** for games with DSi-exclusive features (camera, DSiWare) — deferred (Phase 3+).
 - ⬜ **Multi-touch support** — POINTER device's index parameter (Phase 0 only handles index 0) — deferred (niche).
 

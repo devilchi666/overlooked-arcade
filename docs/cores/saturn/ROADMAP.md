@@ -66,10 +66,10 @@ audio + working 6-button pad at native 59.94 Hz NTSC.
 ## ⬜ Phase 2 — Polish
 
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::saturn` (reads SEGA SEGASATURN magic at disc header + T-/GS-prefix serial); `rom_hashes` points at `metadat/redump/Sega - Saturn`.
-- ⬜ **3D Pad analog stick support** — gated on shared analog-input device-type wiring (analog axes infra is shipped cross-system).
+- ✅ **3D Pad analog stick support** — closed by shared analog-input device-type wiring (analog axes infra is shipped cross-system). Operators set "3D Pad / Analog" on port 0 in the per-game Input dialog (system-aware label landed 2026-05-27 in the system-fixes branch); Beetle Saturn interprets device 5 as 3D Pad mode (analog stick + analog triggers).
 - ⬜ **6-button Saturn pad glyphs** for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `SystemBindingsEditor.tsx:226`).
 - ⬜ **Kronos vs Beetle Saturn vs YabaSanshiro** — operator-driven DECISIONS doc.
-- ⬜ **Light Gun support** — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`). Beetle Saturn + Kronos both poll RETRO_DEVICE_LIGHTGUN for the Virtua Gun; SCREEN_X/Y/TRIGGER reach the core. Flagship validation: Virtua Cop 1/2 / House of the Dead / Death Crimson 2 / Crypt Killer. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
+- ⬜ **Light Gun support** — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`); IS_OFFSCREEN reload-by-aim flag plumbed 2026-05-27 (`InputState.pointer` is now `(x, y, pressed, in_viewport)`). Beetle Saturn + Kronos both poll RETRO_DEVICE_LIGHTGUN for the Virtua Gun; SCREEN_X/Y/TRIGGER/IS_OFFSCREEN reach the core. Flagship validation: Virtua Cop 1/2 / House of the Dead / Death Crimson 2 / Crypt Killer. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
 
 ---
 
