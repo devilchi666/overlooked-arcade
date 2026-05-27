@@ -377,6 +377,27 @@ const App: Component = () => {
   // Last-focused library tile — drives the right sidebar widgets when nothing
   // is pinned. Sticky: cleared on library reload, not on tile leave.
   const [focusedEntry, setFocusedEntry] = createSignal<RomEntry | null>(null);
+  // Per-System UI Stage 1 Slice 3: mouse-hover preview signal for the
+  // SystemBackground. LibraryTile deliberately doesn't change focus on
+  // hover (selection is click-only — see LibraryTile.tsx:90-94), but
+  // the background is purely decorative and benefits from following
+  // the cursor. Walks `closest('[data-system]')` so it picks up tiles
+  // and sidebar leaves both — anything that already declared a
+  // per-system CSS scope.
+  const [hoveredSystemId, setHoveredSystemId] = createSignal<SystemId | null>(null);
+  onMount(() => {
+    const onOver = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const el = target?.closest("[data-system]");
+      if (!el) return; // empty-space hover — sticky on last value
+      const sys = el.getAttribute("data-system");
+      if (sys && sys !== hoveredSystemId()) {
+        setHoveredSystemId(sys as SystemId);
+      }
+    };
+    document.addEventListener("mouseover", onOver, { passive: true });
+    onCleanup(() => document.removeEventListener("mouseover", onOver));
+  });
   // Overflow menu state (toolbar … button).
   const [overflowOpen, setOverflowOpen] = createSignal(false);
   // Library menu deep-links into the Library Manager page. The page hosts
@@ -1741,19 +1762,26 @@ const App: Component = () => {
       >
         <main class="relative h-full">
           {/* Per-System UI Stage 1 Slice 3: per-system background
-              layer mounted behind the library content. Reads
-              SystemUIConfig.background for whichever tile is currently
-              focused; the background follows the operator's cursor /
-              gamepad through the library. RightSidebar uses
-              pinned-first for its details widgets, but the background
-              follows focused-first so it doesn't lock to one system
-              while the operator browses the whole library. Pinned
-              tile is the fallback when no tile is focused yet
-              (e.g. before first mouse hover on a fresh session).
+              layer mounted behind the library content. Source chain
+              follows "where is the operator looking right now?":
+                1. hoveredSystemId — mouse over any [data-system]
+                   element (tiles, sidebar leaves, …); updates live
+                   without changing tile selection
+                2. focusedEntry().systemId — click/gamepad-selected
+                   tile (sticky)
+                3. activeSystemId() — sidebar-filtered system view
+                   (e.g. operator clicked into NES from the sidebar
+                   but hasn't clicked a tile yet)
+                4. pinnedEntry().systemId — right-sidebar pin as the
+                   "nothing else applies" fallback
               Honors the perSystemUiEnabled master toggle. */}
           <SystemBackground
             systemId={() =>
-              (focusedEntry()?.systemId ?? pinnedEntry()?.systemId ?? null) as SystemId | null
+              (hoveredSystemId()
+                ?? (focusedEntry()?.systemId as SystemId | undefined)
+                ?? activeSystemId()
+                ?? (pinnedEntry()?.systemId as SystemId | undefined)
+                ?? null) as SystemId | null
             }
           />
           <div class="relative z-10 h-full">
