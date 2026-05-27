@@ -8,6 +8,7 @@ import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
 import SystemBackground from "./components/SystemBackground";
 import SystemBootAnimation from "./components/SystemBootAnimation";
+import StylusOverlay from "./components/StylusOverlay";
 import GamePropertiesDialog from "./components/GamePropertiesDialog";
 import {
   CheatsDialog,
@@ -1799,6 +1800,16 @@ const App: Component = () => {
               sidebar. Hover/focus changes don't fire the boot; only
               switching the library's active view does. */}
           <SystemBootAnimation activeSystemId={activeSystemId} />
+          {/* NDS Phase 2: visual stylus reticle. Tracks the OS cursor
+              while a stylus-using game is running and adds explicit
+              press feedback (the OS cursor doesn't change appearance
+              on click). Closes the docs/cores/nds/ROADMAP.md "Per-
+              game touch overlay UI — visual stylus cursor" bullet for
+              the cursor portion; per-game touch hotspots remain ⬜
+              as a separate larger feature. */}
+          <StylusOverlay
+            runningSystemId={() => (runningEntry()?.systemId ?? null) as SystemId | null}
+          />
           <div class="relative z-10 h-full">
           <Switch
             fallback={
