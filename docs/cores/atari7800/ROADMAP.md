@@ -34,8 +34,11 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ✅ Twin-stick (Robotron 2084 two-joystick mode) — closed by Phase E
   multi-port device-type override (`libretro_device_port1` field on
   `GameOverrides`, `arm_libretro_device` walks all 5 ports). Operator
-  sets port 0 = JOYPAD + port 1 = JOYPAD in per-game Input → Additional
-  ports. Operator playtest pending.
+  sets port 0 = Standard Pad + port 1 = Standard Pad in per-game
+  Input → Additional ports. A help-text hint block inside the
+  Additional Ports section explains this exact recipe whenever an
+  atari7800 game is in focus (added 2026-05-27 in the system-fixes
+  branch). Operator playtest pending.
 - ✅ Light gun games (XEGS Light Gun titles: Sentinel, Crossbow) —
   closed by Phase A LIGHTGUN device-type + the existing POINTER infra
   (window-relative mapping via `PointerViewport`). Operator playtest

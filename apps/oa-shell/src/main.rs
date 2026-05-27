@@ -5825,7 +5825,14 @@ fn run_emu_render(
                     // Saturn / Dreamcast light-gun replays reproduce
                     // the touch/aim coordinate. v1 recordings load with
                     // pointer zeroed (covered by TasInputFrame::default).
-                    let pointer = (f.pointer_x, f.pointer_y, f.pointer_pressed);
+                    // v2 doesn't carry the in_viewport flag (added
+                    // 2026-05-27 for the LIGHTGUN_IS_OFFSCREEN reload-
+                    // by-aim gesture); default to true so light-gun
+                    // replay reproduces the recorded on-screen aim.
+                    // Off-screen reload events from the original session
+                    // aren't reproducible until a v3 TAS format bumps
+                    // the frame schema.
+                    let pointer = (f.pointer_x, f.pointer_y, f.pointer_pressed, true);
                     // TAS frames don't carry per-button analog pressure
                     // today (the recording format predates the analog-
                     // button field); zero-fill so the replay matches the
@@ -5848,7 +5855,7 @@ fn run_emu_render(
                             oa_core::PortIndex::Port1,
                             oa_core::InputState {
                                 buttons: f.port1, axes: [0; 4],
-                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
                             },
                         );
                     }
@@ -5857,7 +5864,7 @@ fn run_emu_render(
                             oa_core::PortIndex::Port2,
                             oa_core::InputState {
                                 buttons: f.port2, axes: [0; 4],
-                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
                             },
                         );
                     }
@@ -5866,7 +5873,7 @@ fn run_emu_render(
                             oa_core::PortIndex::Port3,
                             oa_core::InputState {
                                 buttons: f.port3, axes: [0; 4],
-                                pointer: (0, 0, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
                             },
                         );
                     }

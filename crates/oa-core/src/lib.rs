@@ -350,14 +350,20 @@ pub struct InputState {
     pub buttons: u32,
     /// Analog axes in signed 16-bit range, 0 for unused.
     pub axes: [i16; 4],
-    /// Pointer device state. `(x, y, pressed)` where:
+    /// Pointer device state. `(x, y, pressed, in_viewport)` where:
     /// - `x` / `y` are signed 16-bit normalized coordinates in libretro's
     ///   POINTER range (-32768 = top-left edge, 32767 = bottom-right edge).
     /// - `pressed` is whether the pointer is currently "touching" the screen
     ///   (mouse button held for a mouse-as-touch input, finger down for a
     ///   real touch screen).
-    /// Set to `(0, 0, false)` for systems that don't use the pointer device.
-    pub pointer: (i16, i16, bool),
+    /// - `in_viewport` is whether the pointer is currently inside the
+    ///   game-output rectangle. When the operator aims the cursor off-
+    ///   screen this flag flips to false; light-gun cores read it via
+    ///   `RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN` to trigger the reload
+    ///   gesture (House of the Dead 2, Time Crisis series, etc.).
+    /// Set to `(0, 0, false, false)` for systems that don't use the
+    /// pointer device.
+    pub pointer: (i16, i16, bool, bool),
     /// Per-button analog pressure for cores that poll
     /// `RETRO_DEVICE_INDEX_ANALOG_BUTTON`. Slot `i` corresponds to
     /// `RETRO_DEVICE_ID_JOYPAD_<bit i>`. Range 0..32767 (positive only —
@@ -379,7 +385,7 @@ impl Default for InputState {
         Self {
             buttons: 0,
             axes: [0; 4],
-            pointer: (0, 0, false),
+            pointer: (0, 0, false, false),
             analog_buttons: [0; 16],
         }
     }

@@ -128,8 +128,8 @@ pub const LIGHT_GUN_SYSTEMS: &[LightGunSystem] = &[
                 Crisis 1/2, Point Blank trilogy) AND for the Konami \
                 Justifier (Lethal Enforcers, Crypt Killer). Time \
                 Crisis specifically uses off-screen aim for reload — \
-                IS_OFFSCREEN is hard-coded to 0 today (Phase 2 work) \
-                so reload may require a keyboard hotkey binding.",
+                IS_OFFSCREEN plumbed 2026-05-27 (in_viewport flag on \
+                InputState.pointer; off-viewport reports 1 to the core).",
     },
     LightGunSystem {
         system_id: "dreamcast",
@@ -140,8 +140,9 @@ pub const LIGHT_GUN_SYSTEMS: &[LightGunSystem] = &[
         notes: "Flycast polls LIGHTGUN for the DC light gun + the \
                 arcade-cabinet ports (HotD 2, Confidential Mission, \
                 Death Crimson OX, Maze of the Kings). Confidential \
-                Mission demands the reload gesture — same Phase 2 \
-                IS_OFFSCREEN gap as PSX Time Crisis.",
+                Mission's reload-by-aim now wired via IS_OFFSCREEN \
+                (in_viewport plumbed 2026-05-27 alongside PSX Time \
+                Crisis).",
     },
     LightGunSystem {
         system_id: "nds",

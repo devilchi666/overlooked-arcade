@@ -685,7 +685,15 @@ impl InputPoller {
     /// relative offsetting is Phase 2.5 polish — operators with
     /// different display resolutions may find touch positioning
     /// imprecise but the input model is functional.
-    fn poll_pointer(&self) -> (i16, i16, bool) {
+    ///
+    /// Return tuple: `(x, y, pressed, in_viewport)`. The fourth field
+    /// drives `RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN` — set to `false`
+    /// when the cursor is outside the game-output rectangle so
+    /// light-gun cores can detect the "shoot off-screen to reload"
+    /// gesture (House of the Dead 2, Time Crisis series). Without
+    /// the viewport path (Phase 0 fallback) `in_viewport` is always
+    /// `true` since there's no rectangle to be "outside" of.
+    fn poll_pointer(&self) -> (i16, i16, bool, bool) {
         let mouse = self.device_state.get_mouse();
         let pressed = mouse.button_pressed.get(1).copied().unwrap_or(false);
         let mx = mouse.coords.0 as f32;
@@ -693,34 +701,40 @@ impl InputPoller {
 
         // Viewport path (Phase 2.5): pixel-perfect mapping against the
         // game-output rectangle. Pointer outside the viewport reports
-        // (0, 0, false) so light-gun aim doesn't bleed over chrome /
-        // letterbox / sidebar regions.
+        // `(0, 0, false, false)` — coords clamped to neutral so a
+        // touch-shape core polling RETRO_DEVICE_POINTER sees an
+        // unpressed center-screen reading, AND `in_viewport=false` so a
+        // light-gun-shape core polling LIGHTGUN_IS_OFFSCREEN sees the
+        // reload-by-aim-off-screen gesture.
         if let Some(vp) = self.pointer_viewport {
             if vp.width <= 0.0 || vp.height <= 0.0 {
-                return (0, 0, false);
+                return (0, 0, false, false);
             }
             let rel_x = mx - vp.screen_x;
             let rel_y = my - vp.screen_y;
             if rel_x < 0.0 || rel_y < 0.0 || rel_x >= vp.width || rel_y >= vp.height {
-                return (0, 0, false);
+                return (0, 0, false, false);
             }
             let nx = ((rel_x / vp.width) * 65535.0 - 32768.0)
                 .clamp(-32768.0, 32767.0) as i16;
             let ny = ((rel_y / vp.height) * 65535.0 - 32768.0)
                 .clamp(-32768.0, 32767.0) as i16;
-            return (nx, ny, pressed);
+            return (nx, ny, pressed, true);
         }
 
         // Fallback (Phase 0): the 1920×1080 screen-relative approximation.
         // Operators on non-1080p displays get imprecise positioning until
-        // the shell pushes a viewport rectangle.
+        // the shell pushes a viewport rectangle. `in_viewport` is
+        // unconditionally true here — there's no rectangle to be
+        // "outside" of, so light-gun reload-by-aim is unavailable until
+        // the shell sets a viewport.
         const ASSUMED_SCREEN_W: f32 = 1920.0;
         const ASSUMED_SCREEN_H: f32 = 1080.0;
         let nx = ((mx / ASSUMED_SCREEN_W) * 65535.0 - 32768.0)
             .clamp(-32768.0, 32767.0) as i16;
         let ny = ((my / ASSUMED_SCREEN_H) * 65535.0 - 32768.0)
             .clamp(-32768.0, 32767.0) as i16;
-        (nx, ny, pressed)
+        (nx, ny, pressed, true)
     }
 
     fn pump_gilrs_events(&mut self) {
