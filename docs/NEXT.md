@@ -412,9 +412,23 @@ These wait for a single, larger infrastructure pass that benefits many systems a
 - **Custom-built Vectrex vector renderer** (~500 lines, Phase 3+). Replace vecx raster with native wgpu vector-stroke rendering.
 - **Modern VR for Virtual Boy via OpenXR** (~800 lines, Phase 2+). Side-by-side dual-perspective to a headset.
 - **Right D-pad bindings for Virtual Boy** (~150 lines). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force. (Was gated on "shared analog infra"; that infra is shipped, so this is now ready — moved up to MEDIUM if operator wants to pick it up.)
-- **Jaguar CD support** (~300 lines, Phase 3). Separate load path + BIOS.
-- **32X-CD games** (~300 lines, Phase 3+). Shared between sega32x + segacd.
-- **ST-V arcade variant** of Saturn (~250 lines, Phase 3+). Separate `stv` slug.
+- ~~**Jaguar CD support**~~ — **SHIPPED 2026-05-27** on
+  `feat/new-systems-jagcd-32xcd-stv`. New `jagcd` slug + Rust
+  `SystemId::JaguarCd` variant + `check_jagcd_bios` + CD-shape
+  dispatch arm + per-core docs. Operator playtest in flight
+  (BIOS + ROM in hand). See [docs/cores/jagcd/](cores/jagcd/).
+- ~~**32X-CD games**~~ — **SHIPPED (code-only) 2026-05-27** on the
+  same branch. New `sega32xcd` slug routing to
+  `oa_core::SystemId::SegaCd` (stacked-override pattern), default
+  core swapped to PicoDrive, BIOS check reuses
+  `check_sega_cd_bios`. Operator playtest deferred until BIOS +
+  ROM available. See [docs/cores/sega32xcd/](cores/sega32xcd/).
+- ~~**ST-V arcade variant** of Saturn~~ — **SHIPPED (code-only)
+  2026-05-27** on the same branch. New `stv` slug aliased to
+  `oa_core::SystemId::Mame` (pure alias — no new oa-core variant,
+  no separate BIOS check, MAME's stv driver handles everything).
+  Operator playtest deferred until BIOS + ROM set available.
+  See [docs/cores/stv/](cores/stv/).
 
 ---
 

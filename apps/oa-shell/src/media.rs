@@ -2139,6 +2139,13 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         "snes"      => &["Nintendo_-_Super_Nintendo_Entertainment_System"],
         "atari7800" => &["Atari_-_7800"],
         "mame"      => &["MAME"],
+        // Sega Titan Video (ST-V) — libretro-thumbnails ships a
+        // dedicated Sega_-_Titan_Video repo covering the ~80-title
+        // ST-V arcade library separately from general MAME. Falls
+        // back to the MAME repo if the operator's local sync misses
+        // (the MAME thumbnails repo covers some ST-V games too under
+        // arcade aliases).
+        "stv"       => &["Sega_-_Titan_Video", "MAME"],
         "genesis"   => &["Sega_-_Mega_Drive_-_Genesis"],
         // Sega CD / Mega-CD. libretro-thumbnails ships one combined repo
         // covering both regional namings ("Mega-CD" JP / EU + "Sega CD"
@@ -2146,6 +2153,13 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         "segacd"    => &["Sega_-_Mega-CD_-_Sega_CD"],
         // Sega 32X. Single thumbnails repo covers the small library.
         "sega32x"   => &["Sega_-_32X"],
+        // Sega 32X CD. No dedicated thumbnails repo exists upstream
+        // (libretro-thumbnails treats the ~6-game library as part of
+        // the cart 32X catalog). Cart-32X repo is the closest match
+        // for cover-art sync — the FMV titles (Night Trap, Corpse
+        // Killer, etc.) are usually cataloged under "Sega - 32X"
+        // alongside the cart games.
+        "sega32xcd" => &["Sega_-_32X"],
         // Sega Saturn. Single thumbnails repo covers the full retail +
         // homebrew library.
         "saturn"    => &["Sega_-_Saturn"],
@@ -2164,6 +2178,10 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         // Atari Jaguar. Single thumbnails repo covers the small library
         // (~50 retail releases + homebrew).
         "jaguar"    => &["Atari_-_Jaguar"],
+        // Atari Jaguar CD. Separate thumbnails repo from the cart
+        // Jaguar; covers the ~13-game retail CD library + the small
+        // homebrew scene.
+        "jagcd"     => &["Atari_-_Jaguar_CD"],
         // 3DO Interactive Multiplayer. libretro-thumbnails repo name
         // matches "The 3DO Company" branding.
         "3do"       => &["The_3DO_Company_-_3DO"],

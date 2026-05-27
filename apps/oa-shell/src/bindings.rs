@@ -3780,14 +3780,20 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "lynx" => Some(default_lynx_bindings()),
         "nes" => Some(default_nes_bindings()),
         "snes" => Some(default_snes_bindings()),
-        "mame" => Some(default_mame_bindings()),
+        // ST-V (Sega Titan Video) reuses MAME's arcade button layout —
+        // same default bindings since the launch path is also MAME.
+        "mame" | "stv" => Some(default_mame_bindings()),
         "atari7800" => Some(default_atari7800_bindings()),
-        "genesis" | "segacd" | "sega32x" => Some(default_genesis_bindings()),
+        // sega32xcd shares the Mega Drive 6-button controller layout
+        // with genesis / segacd / sega32x — single bindings module.
+        "genesis" | "segacd" | "sega32x" | "sega32xcd" => Some(default_genesis_bindings()),
         "saturn" => Some(default_saturn_bindings()),
         "psx" => Some(default_psx_bindings()),
         "neogeo" | "neocd" => Some(default_neogeo_bindings()),
         "ngp" => Some(default_ngp_bindings()),
-        "jaguar" => Some(default_jaguar_bindings()),
+        // jagcd shares the cart-Jaguar controller layout 1:1 — same
+        // Pro Controller (d-pad + A/B/C + OPTION/PAUSE + 12-key keypad).
+        "jaguar" | "jagcd" => Some(default_jaguar_bindings()),
         "3do" => Some(default_threedo_bindings()),
         "pcfx" => Some(default_pcfx_bindings()),
         "n64" => Some(default_n64_bindings()),

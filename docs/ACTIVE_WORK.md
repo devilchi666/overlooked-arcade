@@ -11,6 +11,27 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Three new systems — jagcd / sega32xcd / stv** — branch
+  `feat/new-systems-jagcd-32xcd-stv`, three phase commits.
+  Lifts all three from the `docs/NEXT.md` DEFERRED band.
+  - **jagcd** (`5ec0a57`): new oa-core `SystemId::JaguarCd`
+    variant + frontend slug + theme + BIOS check (jagboot.rom +
+    jagcd.rom) + bindings shared with cart Jaguar + Atari_-_Jaguar_CD
+    thumbnails repo. Operator playtests this commit (BIOS + ROM
+    in hand). See [docs/cores/jagcd/](features/.../docs/cores/jagcd/).
+  - **sega32xcd** (`de4335b`): new frontend slug routing to
+    `oa_core::SystemId::SegaCd` (stacked-override pattern, no new
+    Rust variant). Default core swapped to PicoDrive — the only
+    libretro core with 32X+CD combined-mode support. BIOS check
+    reuses `check_sega_cd_bios`. Code-only this session; operator
+    playtests later when 32X-CD BIOS + ROM in hand.
+  - **stv** (`f700f64`): pure alias slug routing to
+    `oa_core::SystemId::Mame`. MAME's stv driver handles BIOS
+    lookup + ROM-set loading internally; no separate BIOS check
+    function in OA. Bindings + media sync share MAME's. Code-only
+    this session; operator playtests later when ST-V BIOS + ROM
+    set in hand.
+
 - **Per-System Custom UI Stage 1 — code arc complete; content-side
   pause** ([features/per-system-ui/](features/per-system-ui/)).
   Slices 1-5 merged to main 2026-05-26 / 2026-05-27: the foundation

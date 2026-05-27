@@ -563,6 +563,15 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "nes" | "famicom" => oa_core::SystemId::Nes,
         "snes" | "super-famicom" => oa_core::SystemId::Snes,
         "mame" | "arcade" => oa_core::SystemId::Mame,
+        // Sega Titan Video (ST-V) — Saturn-derived arcade board
+        // (1994-1998). MAME has the mature stv driver; aliasing the
+        // frontend slug to oa_core::SystemId::Mame routes ST-V games
+        // through the MAME launch path (same .dll, same ROM-set
+        // .zip handling, same arcade controls). The slug stays
+        // distinct on the frontend for sidebar / theming purposes.
+        // Operators wanting Beetle Saturn's experimental STV mode
+        // can per-game core-override away from this default.
+        "stv" | "titan" | "sega-titan-video" => oa_core::SystemId::Mame,
         "genesis" | "megadrive" | "mega-drive" => oa_core::SystemId::Genesis,
         // Sega CD / Mega-CD. CD-shape Mega Drive addon. Accept the JP
         // "Mega-CD" branding + the "mega-cd" / "megacd" aliases that
@@ -572,6 +581,15 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         // ("Super 32X" / "Mega 32X") is rarely typed; accept the "32x"
         // shorthand for completeness.
         "sega32x" | "32x" | "sega-32x" => oa_core::SystemId::Sega32X,
+        // Sega 32X CD — CD images that drive BOTH the 32X cart slot AND
+        // the Sega CD addon. Routes to oa_core::SystemId::SegaCd (the
+        // CD-shape parent) per the "32x-cd goes through SegaCd with a
+        // stacked override" pattern documented on the Sega32X variant.
+        // The override lives in default_core_dll_for_system: regular
+        // segacd defaults to Genesis Plus GX, but sega32xcd swaps to
+        // picodrive_libretro.dll which is the only mainstream libretro
+        // core handling 32X+CD combined mode.
+        "sega32xcd" | "sega-32x-cd" | "32xcd" | "32x-cd" => oa_core::SystemId::SegaCd,
         // Sega Saturn. Accept the "sat" / "ss" shorthand operators
         // sometimes use in saved configs, plus the JP "satturn" alias.
         "saturn" | "sat" | "ss" | "sega-saturn" => oa_core::SystemId::Saturn,
@@ -588,6 +606,12 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         // Beetle NeoPop auto-detects mono vs color from ROM header.
         "ngp" | "ngpc" | "neopocket" | "neo-geo-pocket" => oa_core::SystemId::NeoGeoPocket,
         "jaguar" | "jag" | "atari-jaguar" => oa_core::SystemId::Jaguar,
+        // Atari Jaguar CD — CD-ROM expansion sitting on top of the
+        // Jaguar's cart slot. Separate SystemId from cart Jaguar
+        // because the load path differs (.cue / .chd images vs .j64
+        // carts) and BIOS requirements escalate (jagcd.rom is
+        // mandatory; jagboot.rom is also needed alongside it).
+        "jagcd" | "jaguar-cd" | "atari-jaguar-cd" => oa_core::SystemId::JaguarCd,
         // 3DO Interactive Multiplayer. Accept "3do" (canonical slug) and
         // a few common typed-in aliases — Rust identifier can't start
         // with a digit so the enum variant is `ThreeDo`.
@@ -639,6 +663,12 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // who want lighter perf-vs-compat tradeoffs (mame2003_plus_libretro,
         // mame2010_libretro, etc.) swap via the per-system Cores dialog.
         "mame" => "mame_libretro.dll",
+        // ST-V (Sega Titan Video) reuses MAME's mature stv driver —
+        // no separate libretro core. The MAME .dll handles BIOS
+        // lookup + ROM-set loading internally. Operators wanting
+        // Beetle Saturn's experimental STV mode can per-game
+        // core-override to `mednafen_saturn_libretro.dll`.
+        "stv" => "mame_libretro.dll",
         // ProSystem — the long-standing libretro Atari 7800 core. BIOS
         // (`7800 BIOS (U).rom`) optional but recommended; without it
         // games skip the boot logo but otherwise run. Operators who
@@ -789,6 +819,14 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // widely-shipped alternate — Genesis Plus GX doesn't do 32X,
         // ClownMDEmu is MD-only.
         "sega32x" => "picodrive_libretro.dll",
+        // Sega 32X CD — PicoDrive is the only mainstream libretro core
+        // with 32X+CD combined-mode support. Genesis Plus GX (segacd's
+        // default) doesn't do 32X at all, so this slug intentionally
+        // diverges from the segacd default core. BIOS check shares the
+        // segacd path (regional Sega CD BIOS required); the 32X cart
+        // BIOS is NOT required for these CD games (PicoDrive runs them
+        // without it).
+        "sega32xcd" => "picodrive_libretro.dll",
         // Beetle Saturn — the Mednafen-derived libretro Saturn default.
         // Heavyweight: dual SH-2 + VDP1/VDP2 + 68k sound CPU emulation
         // is genuinely CPU-intensive (needs a decent modern host).
@@ -847,6 +885,12 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // games that touch the BIOS, but most of the library boots
         // without it. No widely-shipped alternate libretro core.
         "jaguar" => "virtualjaguar_libretro.dll",
+        // Same Virtual Jaguar .dll covers both cart Jaguar and Jaguar
+        // CD — the core auto-detects from the supplied file format.
+        // The CD load path additionally requires `jagcd.rom` in
+        // `<exe_dir>/system/` (alongside the cart-side `jagboot.rom`);
+        // both pre-checked by `check_jagcd_bios` before the .dll loads.
+        "jagcd" => "virtualjaguar_libretro.dll",
         // Opera (formerly 4DO) — the canonical libretro 3DO core.
         // CD-shape. BIOS REQUIRED: a regional/manufacturer 3DO BIOS in
         // `<exe_dir>/system/` (Panasonic FZ-1 `panafz1.bin` / FZ-10
@@ -2033,6 +2077,48 @@ fn check_jaguar_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
         let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
 
         let exact_match = JAGUAR_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for the Jaguar CD boot ROM. Virtual Jaguar
+/// CD support hard-requires `jagcd.rom` in addition to the cart-side
+/// `jagboot.rom`; this table covers the CD-side dump only — the
+/// cart-side checks remain on `JAGUAR_BIOS_KNOWN_HASHES`. Sourced
+/// from libretro-database/dat/System.dat. Some dumps name the file
+/// `jaguar_cd.rom`; the alternate is recognized for operator
+/// convenience.
+const JAGCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,         SHA-1 uppercase,                            description)
+    ("jagcd.rom",      "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3", "Atari Jaguar CD boot ROM (~262 KB, canonical)"),
+    ("jaguar_cd.rom",  "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3", "Atari Jaguar CD boot ROM (alternate naming, same content)"),
+];
+
+/// Scan `<system_dir>` for the Jaguar CD BIOS. CD-shape dispatch
+/// counterpart of `check_jaguar_bios`. The cart-side `jagboot.rom`
+/// is also needed alongside but is checked by the cart path — this
+/// helper only validates the CD-side `jagcd.rom`. Blocks launch when
+/// missing (Virtual Jaguar's CD mode won't initialize without it).
+fn check_jagcd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in JAGCD_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = JAGCD_BIOS_KNOWN_HASHES
             .iter()
             .any(|(n, h, _)| *n == *name && *h == sha_str);
         if exact_match {
@@ -4157,6 +4243,19 @@ fn run_emu_render(
                                 "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED",
                                 "the canonical US Sega CD v1.10 dump (libretro-database)",
                             )),
+                            // Sega 32X CD reuses the Sega CD BIOS check —
+                            // 32X-CD games need a regional Sega CD BIOS
+                            // (same `bios_CD_*.bin` files), but the 32X
+                            // cart BIOS is NOT required (PicoDrive runs
+                            // these CD games without it). One BIOS check
+                            // covers the launch gate.
+                            "sega32xcd" => Some((
+                                "Sega 32X CD",
+                                "bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin",
+                                check_sega_cd_bios(&system_dir),
+                                "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED",
+                                "the canonical US Sega CD v1.10 dump (libretro-database)",
+                            )),
                             "saturn" => Some((
                                 "Saturn",
                                 "saturn_bios.bin / sega_100.bin / sega_101.bin / mpr-17933.bin",
@@ -4205,6 +4304,21 @@ fn run_emu_render(
                                 check_ps2_bios(&system_dir),
                                 "F9A5D629A036B99128F7CB530C6E3CA016E9C8B7",
                                 "the canonical US PS2 v1.60 BIOS (libretro-database)",
+                            )),
+                            // Jaguar CD shares the cart-Jaguar core
+                            // (virtualjaguar_libretro.dll) but loads
+                            // CD images instead — and additionally
+                            // requires jagcd.rom alongside the cart-
+                            // side jagboot.rom. The cart-side BIOS
+                            // check happens via the cart-shape
+                            // dispatch when carts launch; this entry
+                            // only validates the CD-side ROM.
+                            "jagcd" => Some((
+                                "Atari Jaguar CD",
+                                "jagcd.rom (+ jagboot.rom alongside)",
+                                check_jagcd_bios(&system_dir),
+                                "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3",
+                                "the canonical jagcd.rom CD-side boot ROM (libretro-database)",
                             )),
                             _ => None,
                         };
