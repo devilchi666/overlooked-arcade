@@ -2869,6 +2869,31 @@ fn main() {
                     }
                 }
 
+                // Per-System Custom UI (Stage 1 Slice 3+): widen the asset
+                // protocol scope to <exe_dir>/assets/ so the frontend's
+                // SystemBackground component can load bundled background
+                // images / videos via convertFileSrc. The tauri.conf.json
+                // scope only covers $APPDATA/**, which would otherwise
+                // 403 every per-system asset shipped next to the .exe.
+                // Always-on (release + dev + portable + AppData modes) —
+                // assets are installer-bundled, never user-supplied. The
+                // assets dir may not yet exist at first boot; the scope
+                // accepts the path either way.
+                if let Some(assets_dir) = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join("assets")))
+                {
+                    if let Err(e) = app
+                        .asset_protocol_scope()
+                        .allow_directory(&assets_dir, true)
+                    {
+                        log::error!(
+                            "oa-shell: failed to widen asset-protocol scope to {}: {e}",
+                            assets_dir.display()
+                        );
+                    }
+                }
+
                 // Phase E — multi-core boot. Fan out the four boot-time
                 // I/O loads to background workers and let them run while
                 // the main thread continues with shell-mode resolution +
