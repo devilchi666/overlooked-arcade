@@ -49,14 +49,20 @@ Slice 3 merge (`15a632a`) + status flip (`16ddfb0`).
     `<main>` alongside SystemBackground, fed by the existing
     `activeSystemId` memo (= `viewToSystemId(currentView())`). So
     sidebar nav drives the trigger; hover and tile clicks don't.
-- **Almost:** Operator playtest. Click any system in the left
-  sidebar from "All Games" — screen briefly washes with that
-  system's accent color (~1 s default). Flip Settings → Display →
-  Boot animations off — same trigger now compresses to 200 ms.
-  Flip Per-system experiences off — boot suppresses entirely. If
-  your OS has reduce-motion on, full path is unreachable
-  regardless of the sub-toggle. Per-pilot keyframe overrides
-  arrive in Slices 6-8.
+- **Playtest fix (same day, before merge):**
+  - `e04d68b`: toggle semantics refined to ON / OFF instead of
+    full-vs-compressed. Operator playtest revealed the
+    plan §10 "OFF drops to 200 ms" wording matched the binary
+    toggle UX poorly — a toggle labeled "Boot animations" reads
+    as on/off, not "duration switch". Sub-toggle OFF now skips
+    the overlay entirely; `prefers-reduced-motion` is the sole
+    path to the 200 ms compressed fade (accessibility floor,
+    orthogonal to the toggle). Operator preference still wins
+    over OS hint — OFF + reduced-motion still = no overlay.
+- **Shipped (merge close-out):** Branch merged `--no-ff` to main
+  as `feat/per-system-ui-stage-1-slice-4` (commit `5d97fe1`).
+  Operator playtested ON / OFF transitions; sub-toggle now
+  visibly fires / suppresses the overlay per the new semantics.
 - **Next:** Slice 5 — tile flourish system. `interactionStyle`
   (`instant` / `delayed` / `physical`) drives the focus animation;
   `tileShape` overrides the existing `tileAspect`. Stays in-config

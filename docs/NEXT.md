@@ -65,14 +65,15 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
         Slice 7 NES pilot content.
    - ✅ Slice 4 — Boot animation framework: SystemBootAnimation
         component triggered by `activeSystemId` transition (sidebar
-        entry), `oa-boot-fade` CSS keyframe (1 s full / 200 ms
-        compressed for sub-toggle-off + reduced-motion), per-system
-        `boot-intro` SFX dispatch on the full path, skippable on any
-        input. Settings → Display "Boot animations" sub-toggle gated
-        on the master toggle. `boot-intro` event added to
-        `resolve_ui_sound` so pilots can dispatch the SFX
-        (`feat/per-system-ui-stage-1-slice-4`, pending operator
-        playtest)
+        entry), `oa-boot-fade` CSS keyframe. Toggle semantics
+        (refined after playtest): sub-toggle OFF → no overlay
+        (instant), ON + no reduced-motion → 1 s full,
+        `prefers-reduced-motion` → 200 ms cross-fade as the
+        accessibility floor. Per-system `boot-intro` SFX dispatched
+        whenever the visual fires. Skippable on any input. Settings
+        sub-toggle gated on master. `boot-intro` event added to
+        `resolve_ui_sound` so pilots can dispatch the SFX. Merged
+        to main 2026-05-27.
    - ⬜ Slice 5 — Tile flourish system
    - ⬜ Slice 6 — Game Boy pilot full build
    - ⬜ Slice 7 — NES pilot full build
