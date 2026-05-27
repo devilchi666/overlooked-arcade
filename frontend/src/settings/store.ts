@@ -124,6 +124,13 @@ const DEFAULT_CONTROLLER_NAV_ANIMATION_MS = 120;
 // pilot full builds).
 const DEFAULT_PER_SYSTEM_UI_ENABLED = true;
 
+// Boot animations sub-toggle (Per-System UI Stage 1 Slice 4). Default
+// ON; only visible in Settings → Display when the master toggle is
+// also ON. Disabling drops to a 200 ms fade for system-entry events
+// (matches the reduced-motion path). Always-on at the dispatch layer
+// when prefers-reduced-motion is true.
+const DEFAULT_BOOT_ANIMATIONS_ENABLED = true;
+
 export type ControllerNavSource = "dpad" | "stick-left" | "both";
 
 const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
@@ -152,6 +159,7 @@ type Persisted = {
   controllerNavSwapAB: boolean;
   controllerNavAnimationMs: number;
   perSystemUiEnabled: boolean;
+  bootAnimationsEnabled: boolean;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -222,6 +230,7 @@ function load(): Persisted {
     controllerNavSwapAB: DEFAULT_CONTROLLER_NAV_SWAP_AB,
     controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
     perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
+    bootAnimationsEnabled: DEFAULT_BOOT_ANIMATIONS_ENABLED,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -285,6 +294,10 @@ function load(): Persisted {
         typeof parsed.perSystemUiEnabled === "boolean"
           ? parsed.perSystemUiEnabled
           : DEFAULT_PER_SYSTEM_UI_ENABLED,
+      bootAnimationsEnabled:
+        typeof parsed.bootAnimationsEnabled === "boolean"
+          ? parsed.bootAnimationsEnabled
+          : DEFAULT_BOOT_ANIMATIONS_ENABLED,
     };
   } catch {
     return fallback;
@@ -397,6 +410,8 @@ export function createSettingsStore() {
     createSignal<number>(initial.controllerNavAnimationMs);
   const [perSystemUiEnabled, setPerSystemUiEnabled] =
     createSignal<boolean>(initial.perSystemUiEnabled);
+  const [bootAnimationsEnabled, setBootAnimationsEnabled] =
+    createSignal<boolean>(initial.bootAnimationsEnabled);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -428,6 +443,7 @@ export function createSettingsStore() {
       controllerNavSwapAB: controllerNavSwapAB(),
       controllerNavAnimationMs: controllerNavAnimationMs(),
       perSystemUiEnabled: perSystemUiEnabled(),
+      bootAnimationsEnabled: bootAnimationsEnabled(),
     });
   });
 
@@ -544,6 +560,7 @@ export function createSettingsStore() {
     controllerNavSwapAB, setControllerNavSwapAB,
     controllerNavAnimationMs, setControllerNavAnimationMs,
     perSystemUiEnabled, setPerSystemUiEnabled,
+    bootAnimationsEnabled, setBootAnimationsEnabled,
   };
 }
 
