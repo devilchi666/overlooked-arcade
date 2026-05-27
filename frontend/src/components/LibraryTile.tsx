@@ -2,6 +2,30 @@ import { createEffect, createSignal, Show, type Component } from "solid-js";
 import type { RomEntry } from "../library/types";
 import { useMedia } from "../library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
+import { uiConfigFor, type UITileShape } from "../themes/systemUIConfigs";
+import { isPerSystemUiEnabled } from "../themes/systemUiSound";
+
+/// Per-System UI Stage 1 Slice 5 — map the `tileShape` enum to a CSS
+/// `aspect-ratio` value. `"auto"` returns null so the caller falls back
+/// to the existing `systemThemes[id].tileAspect`. `"circle"` shares the
+/// 1/1 aspect with `"square"` and additionally applies a border-radius
+/// override on the cover container.
+function aspectForTileShape(shape: UITileShape): string | null {
+  switch (shape) {
+    case "square":
+    case "circle":
+      return "1 / 1";
+    case "portrait-3:4":
+      return "3 / 4";
+    case "landscape-4:3":
+      return "4 / 3";
+    case "wide-16:9":
+      return "16 / 9";
+    case "auto":
+    default:
+      return null;
+  }
+}
 
 type Props = {
   entry: RomEntry;
@@ -42,6 +66,27 @@ const Placeholder: Component = () => (
 const LibraryTile: Component<Props> = (props) => {
   const theme = () => systemThemes[props.entry.systemId];
   const media = useMedia();
+  /// Per-System UI Stage 1 Slice 5: pull the per-system tileShape +
+  /// interactionStyle. When `perSystemUiEnabled` is OFF (uniform plain
+  /// library mode), both fall back to the existing theme aspect + the
+  /// default interaction feel.
+  const uiConfig = () => uiConfigFor(props.entry.systemId);
+  const tileAspectStyle = (): string => {
+    if (!isPerSystemUiEnabled()) return theme().tileAspect ?? DEFAULT_TILE_ASPECT;
+    const override = aspectForTileShape(uiConfig().tileShape);
+    return override ?? theme().tileAspect ?? DEFAULT_TILE_ASPECT;
+  };
+  const isCircle = () =>
+    isPerSystemUiEnabled() && uiConfig().tileShape === "circle";
+  /// Surfaced as a `data-oa-interaction` attribute on the tile button
+  /// so the CSS rules in index.css (`@layer base`) can swap transition
+  /// timing + add a click-bounce keyframe for the `physical` profile.
+  /// When the master toggle is off we publish `instant` so every tile
+  /// shares the baseline feel regardless of its config entry.
+  const interactionAttr = (): string => {
+    if (!isPerSystemUiEnabled()) return "instant";
+    return uiConfig().interactionStyle;
+  };
   /// Subsystem distinction for systems where a single OA system_id covers
   /// multiple hardware variants distinguishable from the ROM file (e.g.
   /// NGP mono vs NGPC color via `.ngp` vs `.ngc` extension). Returns the
@@ -113,10 +158,12 @@ const LibraryTile: Component<Props> = (props) => {
       }}
       aria-pressed={props.selected === true}
       data-system={props.entry.systemId}
+      data-oa-interaction={interactionAttr()}
     >
       <div
         class="relative w-full overflow-hidden bg-(--color-oa-bg-deep)"
-        style={{ "aspect-ratio": theme().tileAspect ?? DEFAULT_TILE_ASPECT }}
+        classList={{ "rounded-full": isCircle() }}
+        style={{ "aspect-ratio": tileAspectStyle() }}
       >
         {/* Cover area: the orange/system gradient placeholder ONLY shows
             when there's no cover (or the load errored) — when a cover IS

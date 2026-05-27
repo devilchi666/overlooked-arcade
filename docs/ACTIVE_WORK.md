@@ -14,10 +14,10 @@ spanned every system but was filed under whichever core happened to be active.
 - **Per-System Custom UI Stage 1**
   ([features/per-system-ui/](features/per-system-ui/)) — Slices 1
   (foundation), 2 (per-system SFX wiring), 3 (per-system background
-  renderer), 4 (boot animation framework) merged to main. Next
-  slice not yet started; Slice 5 (tile flourish system —
-  `interactionStyle` + `tileShape`) is next per ROADMAP. Stage 1
-  total ~5-7 weeks; plan locked at
+  renderer), 4 (boot animation framework) merged to main. Slice 5
+  (tile flourish system) on branch
+  `feat/per-system-ui-stage-1-slice-5`, pending operator playtest.
+  Stage 1 total ~5-7 weeks; plan locked at
   [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md). Slices 6-9
   add the three pilot full builds (GB / NES / Vectrex) and
   per-core README updates. See
