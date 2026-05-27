@@ -663,12 +663,30 @@ function systemSpecificDeviceLabel(systemId: string, deviceId: number): string |
     case "n64":
       if (deviceId === 5) return "Analog (N64 stick)";
       return null;
+    case "gamecube":
+      // For GC dumps the base RetroPad id maps to "GameCube
+      // Controller"; for Wii dumps it maps to a bare "Wii Remote".
+      // We can't easily tell GC vs Wii apart from the systemId
+      // alone (single Dolphin core covers both via runtime
+      // auto-detect) so the label calls out both modes.
+      if (deviceId === 1) return "GameCube Controller / Wii Remote";
+      // The Wii subclasses below are Dolphin's hand-encoded
+      // `((N << 8) | base)` values from
+      // Source/Core/DolphinLibretro/Input.cpp:48-54. Picking one
+      // forces the Dolphin core into that peripheral mode at
+      // retro_set_controller_port_device time.
+      if (deviceId === 513)  return "Wii Remote (sideways)";
+      if (deviceId === 769)  return "Wii Remote + Nunchuk";
+      if (deviceId === 1025) return "Wii Remote + Classic Controller";
+      if (deviceId === 1281) return "Wii Remote + Classic Controller Pro";
+      if (deviceId === 1537) return "GameCube Controller (Wii mode)";
+      return null;
     default:
       return null;
   }
 }
 
-const DEVICE_ID_OPTIONS: readonly { id: number; generic: string }[] = [
+const DEVICE_ID_OPTIONS_BASE: readonly { id: number; generic: string }[] = [
   { id: 1, generic: "Standard Pad (RetroPad)" },
   { id: 5, generic: "Analog Pad / Paddle" },
   { id: 2, generic: "Mouse" },
@@ -677,6 +695,42 @@ const DEVICE_ID_OPTIONS: readonly { id: number; generic: string }[] = [
   { id: 3, generic: "Keyboard" },
   { id: 0, generic: "Disconnected (no controller)" },
 ];
+
+/// GameCube / Wii peripheral subclasses registered by the Dolphin
+/// libretro core (Source/Core/DolphinLibretro/Input.cpp lines 48-54 +
+/// 922-967). Dolphin hand-encodes the values as `((N << 8) | base)`
+/// without the canonical libretro `RETRO_DEVICE_SUBCLASS` macro's
+/// `+1` convention — the u32 wire values here are what
+/// `retro_set_controller_port_device` actually receives. Operators
+/// pick these in the per-game Input dialog when a Wii title needs a
+/// specific peripheral (Skyward Sword → Wii Remote + Nunchuk,
+/// SSBB → Classic Controller, Mario Kart Wii multiplayer → GC
+/// Controller (Wii mode) for Wii U adapter slots, etc.). Real
+/// WiiMote / Bluetooth passthrough (1536) intentionally skipped —
+/// needs host-side Bluetooth pairing OA doesn't wire today.
+const DEVICE_ID_OPTIONS_GAMECUBE: readonly { id: number; generic: string }[] = [
+  { id: 513,  generic: "Wii Remote (sideways)" },
+  { id: 769,  generic: "Wii Remote + Nunchuk" },
+  { id: 1025, generic: "Wii Remote + Classic Controller" },
+  { id: 1281, generic: "Wii Remote + Classic Controller Pro" },
+  { id: 1537, generic: "GameCube Controller (Wii mode)" },
+];
+
+/// Per-system option-list resolution. Most systems just use the base
+/// seven libretro device types; GameCube/Wii layers Dolphin's
+/// Wii-peripheral subclasses on top so they appear in the dropdown
+/// only for GC system games. Future systems with custom subclasses
+/// (Saturn 3D Pad sits on the generic ANALOG id 5 today, so no
+/// extras needed; if Beetle Saturn ever adds Twin-Stick Pro as a
+/// subclass, this is the table to extend).
+function deviceOptionsForSystem(
+  systemId: string,
+): readonly { id: number; generic: string }[] {
+  if (systemId === "gamecube") {
+    return [...DEVICE_ID_OPTIONS_BASE, ...DEVICE_ID_OPTIONS_GAMECUBE];
+  }
+  return DEVICE_ID_OPTIONS_BASE;
+}
 
 /// Render the device-type option label for a (systemId, deviceId) pair,
 /// preferring the system-specific name when one exists.
@@ -736,7 +790,7 @@ export const GameInputDialog: Component<{
                 }}
               >
                 <option value="">— Inherit (Standard Pad) —</option>
-                <For each={DEVICE_ID_OPTIONS}>
+                <For each={deviceOptionsForSystem(e().systemId)}>
                   {(opt) => (
                     <option value={String(opt.id)}>
                       {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
@@ -775,6 +829,23 @@ export const GameInputDialog: Component<{
                       defaults automatically.
                     </p>
                   </Show>
+                  <Show when={e().systemId === "gamecube"}>
+                    <p class="rounded border border-(--color-system-accent)/30 bg-(--color-system-accent)/5 px-2 py-1.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span class="text-(--color-oa-ink)">Wii peripherals:</span> Dolphin auto-detects
+                      GC vs Wii from the disc, but Wii titles often
+                      need a specific controller mode. Skyward Sword
+                      + Twilight Princess + Galaxy 1/2 + RE4 Wii →
+                      Wii Remote + Nunchuk. Super Smash Bros Brawl +
+                      Monster Hunter Tri + Xenoblade Chronicles →
+                      Wii Remote + Classic Controller (Pro variant
+                      for newer titles). NSMB Wii + Excite Truck →
+                      Wii Remote (sideways). Mario Kart Wii
+                      multiplayer with the Wii U GC adapter →
+                      GameCube Controller (Wii mode). Pick on Port 0
+                      above; use additional ports below for 2-4
+                      player setups.
+                    </p>
+                  </Show>
                   <For each={[1, 2, 3, 4] as const}>
                     {(portIdx) => {
                       const key =
@@ -799,7 +870,7 @@ export const GameInputDialog: Component<{
                             }}
                           >
                             <option value="">— Inherit (Standard Pad) —</option>
-                            <For each={DEVICE_ID_OPTIONS}>
+                            <For each={deviceOptionsForSystem(e().systemId)}>
                               {(opt) => (
                                 <option value={String(opt.id)}>
                                   {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
