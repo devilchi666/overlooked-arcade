@@ -157,7 +157,7 @@ export const DisplayDialog: Component<{
                 checked: props.settings.bootAnimationsEnabled(),
                 onChange: (v) => props.settings.setBootAnimationsEnabled(v),
               }}
-              description="Brief overlay that plays when you enter a system from the sidebar — tints the library with the system's accent color for about a second. Disable for a snappier 200 ms cross-fade instead. Always respects the OS reduce-motion preference regardless of this toggle."
+              description="Brief overlay that plays when you enter a system from the sidebar — tints the library with the system's accent color for about a second. Disable for instant transitions with no overlay; re-enable to restore the full animation. The OS reduce-motion preference shortens the overlay to a 200 ms fade independently when active."
             />
           </Show>
         </DialogSection>

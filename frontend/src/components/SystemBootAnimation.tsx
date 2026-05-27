@@ -46,10 +46,11 @@ type Props = {
 /// enabled and reduced-motion is not in effect. Plan §10 medium tier.
 const BOOT_DURATION_MS = 1000;
 
-/// Short cross-fade fallback used when:
-///   - The boot-animations sub-toggle is OFF (operator opted for
-///     snappier transitions but still wants the system identity hint)
-///   - `prefers-reduced-motion: reduce` is on (accessibility floor)
+/// Short cross-fade used when `prefers-reduced-motion: reduce` is on
+/// (accessibility floor — operator hasn't opted out, the OS has
+/// communicated a motion-sensitivity preference). The
+/// "Boot animations" toggle being OFF is treated as "no animation at
+/// all" — see the trigger effect for the early-return.
 const BOOT_FADE_MS = 200;
 
 const SystemBootAnimation: Component<Props> = (props) => {
@@ -94,13 +95,16 @@ const SystemBootAnimation: Component<Props> = (props) => {
         if (active === lastActive) return;
         lastActive = active;
         if (!isPerSystemUiEnabled()) return;
-        // The boot-animations sub-toggle being off compresses to the
-        // short fade rather than skipping the overlay entirely — the
-        // system identity hint stays, just snappier. Reduced-motion
-        // ALSO compresses regardless of the toggle (accessibility
-        // floor). Plan §10 wires these two paths to the same duration.
-        const compressed = !isBootAnimationsEnabled() || prefersReducedMotion();
-        const duration = compressed ? BOOT_FADE_MS : BOOT_DURATION_MS;
+        // "Boot animations" toggle OFF → skip the overlay entirely
+        // (operator wants instant transitions). Re-enabling the
+        // toggle restores the full 1 s animation on the next entry.
+        if (!isBootAnimationsEnabled()) return;
+        // prefers-reduced-motion is the accessibility floor —
+        // orthogonal to the toggle, kicks in when the OS-level
+        // setting is on. Drops the full 1 s overlay to a 200 ms
+        // cross-fade so the system-identity hint still happens
+        // without the long animation.
+        const duration = prefersReducedMotion() ? BOOT_FADE_MS : BOOT_DURATION_MS;
         cancelTimeout();
         setAnimDuration(duration);
         setBootingSystemId(active);
@@ -111,12 +115,10 @@ const SystemBootAnimation: Component<Props> = (props) => {
         // Fire the per-system boot-intro SFX in parallel with the
         // visual. Pilot slices drop a boot-intro.<ext> per system;
         // resolver returns null + dispatch no-ops for systems
-        // without one. Compressed paths (toggle off or reduced
-        // motion) skip the SFX so the audio doesn't outlast the
-        // visual.
-        if (!compressed) {
-          void dispatchUiSound(active, "boot-intro");
-        }
+        // without one. Reduced-motion still fires the SFX since the
+        // visual still plays (just shorter); the toggle-off path
+        // returned earlier so the SFX never reaches here.
+        void dispatchUiSound(active, "boot-intro");
       },
     ),
   );
