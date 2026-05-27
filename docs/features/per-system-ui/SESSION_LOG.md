@@ -31,11 +31,11 @@ Slice 4 merge (`5d97fe1`) + status flip (`7281eb8`).
     `!important` on the override properties so they beat Tailwind's
     utility-layer classes; only attaches when the attribute is
     `delayed` or `physical`.
-- **Almost:** Operator playtest. Hovering a GB tile (delayed) vs a
-  baseline NES tile (instant) vs a Vectrex tile (physical) should
-  feel noticeably different. tileShape override most visible on
-  Vectrex (square) and GB (portrait-3:4) tiles. Per-pilot config
-  shipped with Slice 1; this slice makes them visibly active.
+- **Shipped (merge close-out):** Branch merged `--no-ff` to main
+  as `feat/per-system-ui-stage-1-slice-5` (commit `e164ee3`).
+  Operator confirmed the per-system tile differences are visible
+  across the three Stage 1 pilots (GB delayed + 3:4 portrait, NES
+  instant + auto, Vectrex physical + square).
 - **Next:** Slice 6 — Game Boy pilot full build. Drops the GB SFX
   bank, the DMG-greenish background gradient asset, and the
   CSS-keyframe boot animation. All asset paths already defined in

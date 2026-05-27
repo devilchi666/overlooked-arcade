@@ -80,9 +80,8 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
         attribute driving CSS transition timing + hover transform
         (delayed = 360 ms LCD-feel; physical = 220 ms spring +
         click pulse). Baseline `instant` keeps Tailwind defaults.
-        Master toggle off falls back to today's behaviour
-        (`feat/per-system-ui-stage-1-slice-5`, pending operator
-        playtest)
+        Master toggle off falls back to today's behaviour. Merged
+        to main 2026-05-27.
    - ⬜ Slice 6 — Game Boy pilot full build
    - ⬜ Slice 7 — NES pilot full build
    - ⬜ Slice 8 — Vectrex pilot + custom-component escape hatch
