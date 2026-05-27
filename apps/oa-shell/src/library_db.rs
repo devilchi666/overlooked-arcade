@@ -127,6 +127,22 @@ pub struct GameOverrides {
     /// - `None` — fall through to the system default (JOYPAD at load
     ///   time per `LibretroCore::load_rom`).
     ///
+    /// **Dolphin (GameCube / Wii) peripheral subclasses** (sourced from
+    /// `libretro/dolphin` `Source/Core/DolphinLibretro/Input.cpp:48-54`):
+    /// Dolphin hand-encodes its subclass values as `((N << 8) | base)`
+    /// without the canonical libretro `RETRO_DEVICE_SUBCLASS` macro's
+    /// `+1` convention — the u32 wire values here are what
+    /// `retro_set_controller_port_device` literally receives:
+    /// - `Some(513)`  — Wii Remote (sideways grip; NSMB Wii, Excite Truck)
+    /// - `Some(769)`  — Wii Remote + Nunchuk (Skyward Sword, Galaxy 1/2, RE4 Wii)
+    /// - `Some(1025)` — Wii Remote + Classic Controller (Brawl, Xenoblade)
+    /// - `Some(1281)` — Wii Remote + Classic Controller Pro (Monster Hunter Tri G)
+    /// - `Some(1537)` — GameCube Controller in Wii mode (MKWii with Wii U adapter)
+    ///
+    /// Real WiiMote / Bluetooth-passthrough subclass `1536` exists but
+    /// is intentionally not surfaced — needs host-side Bluetooth
+    /// pairing OA doesn't wire today.
+    ///
     /// Frontend's `arm_libretro_device(gameId)` command reads this on
     /// every launch and dispatches a `SetPortDevice` to the emu thread
     /// AFTER `retro_load_game` completes. Mednafen-derived cores

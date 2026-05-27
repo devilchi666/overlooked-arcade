@@ -33,7 +33,25 @@ Per-core phase tracking for ColecoVision. Status: ⬜ not started · 🟨 in pro
 
 ## ⬜ Phase 2 — Polish
 
-- ⬜ Per-game keypad mode override — **partial**: per-game `keypad_layout_note` field + drawer UI shipped in `GameOverrides`; full per-game bindings override still gated on per-game keypad-bindings work.
+- 🟨 Per-game keypad reference + note — split:
+  - ✅ `keypad_layout_note` text-area in the per-game Input dialog
+    ("KP1=climb-up, KP2=climb-down, …") — operator-recorded
+    documentation for the active game's overlay.
+  - ✅ Visual keypad reference panel
+    (`frontend/src/components/KeypadReference.tsx`, 2026-05-27) —
+    renders the physical 3×4 button layout next to the note with
+    each KP labeled by its current per-system keyboard / gamepad
+    mapping. Bridges "the note says KP1" to "my physical key 'Q'
+    fires KP1." Coleco-only today; Intv shares the 3×4 shape and
+    can adopt the same component with different button names.
+  - ⬜ **Per-game bindings override** — stretch. Existing design
+    intent (see `GameOverrides.keypad_layout_note` doc comment) is
+    that key-to-keypad bindings stay system-wide; per-game
+    documentation rides on the note + visual reference. Per-game
+    bindings would need parallel `set_game_binding(gameId, …)`
+    Tauri commands + per-game storage + launch-dispatch layering.
+    Defer until an operator surfaces a real need for different
+    keyboard mappings per game.
 - ✅ Super Action Controller (the Coleco's deluxe controller with spinner + extra buttons) — closed by Phase A PADDLE / ANALOG device-type + Phase C mouse-as-stick X for the spinner. Operator playtest pending.
 - ⬜ Coleco Adam computer mode — deferred (separate `adam` slug if ever onboarded).
 

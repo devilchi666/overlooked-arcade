@@ -11,6 +11,34 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **ColecoVision keypad reference + GameCube Wii peripherals** —
+  branch `feat/coleco-keypad-and-gamecube-wii`, two commits.
+  - **Coleco visual keypad reference** (`c4746d9`): new
+    `KeypadReference` component renders the physical 3×4 Coleco
+    controller keypad in the per-game Input dialog with each KP
+    labeled by its current per-system keyboard / gamepad mapping.
+    Bridges "keypad_layout_note says KP1" to "physical key 'Q'
+    fires KP1." Visible only for Coleco today; Intv shares the 3×4
+    shape and can adopt later. Per-game bindings override stays
+    ⬜ stretch (`coleco/ROADMAP.md:36`); current design keeps
+    bindings system-wide per the `GameOverrides.keypad_layout_note`
+    doc comment.
+  - **GameCube Wii peripheral subclasses**: un-deferred after
+    Dolphin libretro source research confirmed the 5 selectable
+    SUBCLASS values from `Source/Core/DolphinLibretro/Input.cpp:48-54`.
+    New `DEVICE_ID_OPTIONS_GAMECUBE` table in `GameDialogs.tsx`
+    adds Wii Remote (sideways) / + Nunchuk / + Classic Controller /
+    + Classic Pro / GC Controller (Wii mode). `deviceOptionsForSystem`
+    helper gates them so they only show in the dropdown for
+    GameCube system games. Per-game hint block names the Wii titles
+    each peripheral is for. No Rust changes — `arm_libretro_device`
+    already dispatches arbitrary u32s. `library_db.rs::GameOverrides::libretro_device`
+    doc comment extended with the Dolphin subclass table.
+    `gamecube/ROADMAP.md:44` flipped ⬜→✅.
+
+  **Dreamcast VMU peripheral** — still deferred to its own run
+  (Phase 2.5 secondary-screen plumbing).
+
 - **System fixes pass — MAME / light-gun IS_OFFSCREEN / Saturn 3D Pad +
   Atari 7800 twin-stick labels / NDS stylus reticle** — branch
   `feat/system-fixes-mame-lightgun-analog`, five commits closing a
