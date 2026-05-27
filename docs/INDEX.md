@@ -37,8 +37,9 @@ Routing table. Read this first; it points to everything else.
 
 ## Per-core docs
 
-All system-specific docs live under [docs/cores/&lt;id&gt;/](cores/) (38 systems
-with docs as of 2026-05-22). See [ACTIVE_WORK.md](ACTIVE_WORK.md) for which
+All system-specific docs live under [docs/cores/&lt;id&gt;/](cores/) (41 systems
+with docs as of 2026-05-27 — jagcd / sega32xcd / stv added). See
+[ACTIVE_WORK.md](ACTIVE_WORK.md) for which
 cores are currently being worked on.
 
 ## Research + plans (historical or pre-execution)
