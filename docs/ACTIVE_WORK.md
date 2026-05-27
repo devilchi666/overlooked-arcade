@@ -11,6 +11,26 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **ColecoVision keypad reference + GameCube Wii deferral** — branch
+  `feat/coleco-keypad-and-gamecube-wii`, one commit. New
+  `KeypadReference` component renders the physical 3×4 Coleco
+  controller keypad in the per-game Input dialog with each KP
+  labeled by its current per-system keyboard / gamepad mapping.
+  Bridges "keypad_layout_note says KP1" to "physical key 'Q'
+  fires KP1." Visible only for Coleco today; Intv shares the 3×4
+  shape and can adopt the same component later. ROADMAP at
+  `docs/cores/coleco/ROADMAP.md:36` split into shipped (note +
+  visual reference) and ⬜ stretch (per-game bindings override,
+  deferred until an operator surfaces a real need — current
+  design intent keeps bindings system-wide per the
+  `GameOverrides.keypad_layout_note` doc comment).
+
+  **GameCube Wii Remote / Nunchuk dispatch** — agreed to defer
+  to its own run alongside Dreamcast VMU once Dolphin libretro
+  subclass IDs are inspected. Both are "new device type in
+  libretro core" jobs that need code-side research to ship
+  safely.
+
 - **System fixes pass — MAME / light-gun IS_OFFSCREEN / Saturn 3D Pad +
   Atari 7800 twin-stick labels / NDS stylus reticle** — branch
   `feat/system-fixes-mame-lightgun-analog`, five commits closing a

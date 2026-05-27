@@ -34,6 +34,7 @@ import {
 } from "./SystemDialogs";
 import CoreOptionsPanel from "./CoreOptionsPanel";
 import AnalogBindingsSection from "./AnalogBindingsSection";
+import KeypadReference from "./KeypadReference";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -847,6 +848,9 @@ export const GameInputDialog: Component<{
                   }}
                 />
               </div>
+            </Show>
+            <Show when={e().systemId === "coleco"}>
+              <KeypadReference systemId={e().systemId} />
             </Show>
           </div>
         )}
