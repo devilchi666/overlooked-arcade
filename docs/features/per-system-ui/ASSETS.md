@@ -289,6 +289,13 @@ when you focus a tile from that system.
 
 ## Changelog
 
+- 2026-05-27 — Slice 4 ships the boot-animation framework. The
+  `<systemId>/boot-animation/` directories aren't loaded yet (pilot
+  slices 6-8 add per-system keyframe overrides); the default uses
+  an in-CSS `oa-boot-fade` keyframe tinted by the system accent
+  color. `boot-intro.<ext>` under `<systemId>/sounds/` is now wired
+  through `resolve_ui_sound` — pilots can drop a signature sound
+  per system and it fires alongside the full-path animation.
 - 2026-05-26 — Slice 3 ships the backgrounds cascade. The
   `<systemId>/backgrounds/` directories are now consumed by the
   `<SystemBackground>` component. Static + animated paths live; the
