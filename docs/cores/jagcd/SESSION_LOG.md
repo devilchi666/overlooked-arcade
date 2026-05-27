@@ -31,10 +31,12 @@ Code-side scaffolding for `jagcd` shipped as part of
     repo (separate from the cart-Jaguar thumbnails).
   - Per-core docs scaffolded — README + this SESSION_LOG + ROADMAP +
     KNOWN_GAME_BUGS shell.
-- **Almost:** Operator playtest with a real Jaguar CD image + the
-  `jagcd.rom` + `jagboot.rom` BIOS pair in `<exe_dir>/system/`.
-  Recommended first launch: Hover Strike: Unconquered Lands or
-  Battlemorph (most-playable retail; Virtual Jaguar's CD support
-  has historical compatibility quirks on some titles).
-- **Next:** Per-title KNOWN_GAME_BUGS triage as playtest surfaces
+- **Almost:** Operator playtest. Deferred until the operator has
+  legally acquired the `jagcd.rom` + `jagboot.rom` BIOS pair plus
+  a Jaguar CD image. Recommended first launch when content is in
+  hand: Hover Strike: Unconquered Lands or Battlemorph (most-
+  playable retail; Virtual Jaguar's CD support has historical
+  compatibility quirks on some titles).
+- **Next:** Phase 1 playtest when BIOSes + ROM are legally
+  available. Per-title KNOWN_GAME_BUGS triage as playtest surfaces
   real issues. Phase 1 ROADMAP bullets close as each lands.
