@@ -6,6 +6,7 @@ import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
+import SystemBackground from "./components/SystemBackground";
 import GamePropertiesDialog from "./components/GamePropertiesDialog";
 import {
   CheatsDialog,
@@ -1739,6 +1740,18 @@ const App: Component = () => {
         }
       >
         <main class="relative h-full">
+          {/* Per-System UI Stage 1 Slice 3: per-system background
+              layer mounted behind the library content. Reads
+              SystemUIConfig.background for whichever tile is focused
+              (or pinned) and renders the matching shape — accent
+              gradient + optional image / video overlay. Honors the
+              perSystemUiEnabled master toggle. */}
+          <SystemBackground
+            systemId={() =>
+              (pinnedEntry()?.systemId ?? focusedEntry()?.systemId ?? null) as SystemId | null
+            }
+          />
+          <div class="relative z-10 h-full">
           <Switch
             fallback={
               <Show when={!isDirectLaunch()}>
@@ -1794,6 +1807,7 @@ const App: Component = () => {
               Esc · library
             </div>
           </Show>
+          </div>
         </main>
         <Show when={dropOverlayVisible()}>
           {/* Folder-drop overlay. Pointer-events:none lets the underlying
