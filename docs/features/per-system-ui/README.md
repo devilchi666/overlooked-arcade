@@ -25,48 +25,27 @@ implemented vs what's still on paper.
 - [SESSION_LOG.md](SESSION_LOG.md) — Shipped / Almost / Next per session
 - [DECISIONS.md](DECISIONS.md) — implementation decisions made during
   the build (separate from the plan's strategic decisions)
+- [ASSETS.md](ASSETS.md) — operator-facing catalog of where every
+  sound / image / shader file goes on disk, with per-event filenames,
+  per-pilot specs, file-size targets, and CC0 sourcing guidance
 
-## Asset bundle layout
+## Asset bundle layout (quick reference)
 
-Per-system assets ship at `<exe_dir>/assets/system-ui/<systemId>/`.
-Slice 2 added the bundled-asset tier to the existing per-system
-`SystemSettings.ui_sound_<event>` operator-override path; the
-resolver cascades:
-
-```
-1. Operator override — SystemSettings.ui_sound_<event> (any absolute path)
-2. Per-system bundle — <exe_dir>/assets/system-ui/<systemId>/sounds/<event>.<ext>
-3. Universal baseline — <exe_dir>/assets/system-ui/_baseline/sounds/<event>.<ext>
-4. Silence
-```
-
-Supported extensions in priority order: `ogg`, `opus`, `wav`, `mp3`,
-`flac`, `m4a` (matches rodio's `symphonia-all` decoder set).
-
-Full asset directory shape (planned across stage 1; ships per slice):
+Per-system assets ship at `<exe_dir>/assets/system-ui/<systemId>/`
+with a `_baseline/` universal fallback alongside. Full path catalog,
+per-event filename map, and per-pilot specs live in
+[ASSETS.md](ASSETS.md); the high-level shape is:
 
 ```
-<exe_dir>/assets/system-ui/<systemId>/
-  ├─ sounds/
-  │   ├─ navigate.ogg     (cursor tile-to-tile, Slice 2)
-  │   ├─ click.ogg        (tile picked / confirm, Slice 2)
-  │   ├─ back.ogg         (cancel, Slice 2)
-  │   ├─ launch.ogg       (game starts loading, Slice 2)
-  │   ├─ boot-intro.ogg   (boot-animation accompaniment, Slice 4)
-  │   └─ boot-outro.ogg   (exit-system, Stage 3)
-  ├─ backgrounds/
-  │   ├─ default.png      (static, Slice 3)
-  │   ├─ animated.webm    (animated, Slice 3)
-  │   └─ shader.wgsl      (shader, Slice 3 + pilot 3)
-  └─ boot-animation/
-      ├─ keyframes.css    (CSS animation, Slice 4)
-      └─ effects.wgsl     (optional shader-based, Slice 4)
+<exe_dir>/assets/system-ui/
+├── _baseline/<sounds|backgrounds|boot-animation>/   (universal fallback)
+└── <systemId>/<sounds|backgrounds|boot-animation>/  (per-system bank)
 ```
 
-`_baseline` is the universal fallback for systems without a
-per-system asset bank. Stage 1 ships a single CC0 click pack at
-`_baseline/sounds/` so every system has at least a soft click for
-nav / select / back / launch.
+Resolver cascade: operator override → per-system bundle →
+`_baseline` → built-in default (e.g. accent-color gradient for
+backgrounds) → silence / no-op. Slice 2 ships the sounds cascade;
+backgrounds + boot-animation cascades land in Slices 3 + 4.
 
 ## Cross-arc relationships
 
