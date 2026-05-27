@@ -134,6 +134,22 @@ export const DisplayDialog: Component<{
         </DialogSection>
 
         <DialogSection
+          title="Per-system experiences"
+          description="Each system in your library can feel like its own mini-experience — per-system audio, boot animations, tile flourishes, backgrounds. Disable for a uniform plain library across every system. Stage 1 of the per-system-ui pipelined arc; later stages add per-system layout + behavior."
+        >
+          <SettingRow
+            label="Enabled"
+            inherited={null}
+            overridden={false}
+            toggle={{
+              checked: props.settings.perSystemUiEnabled(),
+              onChange: (v) => props.settings.setPerSystemUiEnabled(v),
+            }}
+            description="When off, every system shares one neutral library look — no per-system audio, no boot animations, no per-system flourishes. Cover art and tiles still show; only the per-system character disappears."
+          />
+        </DialogSection>
+
+        <DialogSection
           title="Controller navigation"
           description="Drive the library and menus with a gamepad. DPad or left stick moves focus; A activates, B cancels, X opens context menus, Y opens details, shoulder bumpers switch between panels."
         >

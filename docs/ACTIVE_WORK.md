@@ -11,7 +11,18 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-(Nothing actively in flight.)
+- **Per-System Custom UI Stage 1**
+  ([features/per-system-ui/](features/per-system-ui/)) — branch
+  `feat/per-system-ui-stage-1-slice-1`. Stage 1 of the per-system-ui
+  pipelined arc (plan locked at
+  [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md), ~5-7 weeks
+  total). Slice 1 (foundation) is the data-model + Settings-toggle
+  scaffold; no consumers yet. Slices 2-9 add per-system SFX,
+  backgrounds, boot animation framework, tile flourishes, the three
+  pilot full builds (GB / NES / Vectrex), and per-core README
+  updates. See
+  [features/per-system-ui/ROADMAP.md](features/per-system-ui/ROADMAP.md)
+  for the slice breakdown.
 
 ## Recently completed (this session)
 
