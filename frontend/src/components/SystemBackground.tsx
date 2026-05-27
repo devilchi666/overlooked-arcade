@@ -39,16 +39,38 @@ type Props = {
 
 type BackgroundKind = "default" | "animated";
 
+type ResolvedBackground = {
+  /// Resolved kind. Matches the requested kind unless the requested
+  /// kind was `animated` and no `animated.{webm,mp4}` existed — then
+  /// `default` so the renderer uses the static image path.
+  kind: BackgroundKind;
+  url: string;
+};
+
 async function resolveBackgroundUrl(
   systemId: SystemId,
   kind: BackgroundKind,
-): Promise<string | null> {
+): Promise<ResolvedBackground | null> {
   try {
-    const path = await invoke<string | null>("resolve_background_asset", {
+    const primary = await invoke<string | null>("resolve_background_asset", {
       systemId,
       kind,
     });
-    return path ? convertFileSrc(path) : null;
+    if (primary) return { kind, url: convertFileSrc(primary) };
+    // Forgiveness fallback: if the system is configured for `animated`
+    // but no animated asset exists, walk the static cascade so a
+    // dropped `default.{png,jpg,jpeg,webp}` still renders. Per-system
+    // experiences feel less broken when any single asset drop "just
+    // works" for casual testing; pilot slices (6-8) will populate the
+    // configured kinds properly.
+    if (kind === "animated") {
+      const fallback = await invoke<string | null>("resolve_background_asset", {
+        systemId,
+        kind: "default",
+      });
+      if (fallback) return { kind: "default", url: convertFileSrc(fallback) };
+    }
+    return null;
   } catch (e) {
     console.warn("[oa-bg] resolve failed:", e);
     return null;
@@ -71,7 +93,10 @@ const SystemBackground: Component<Props> = (props) => {
   // changes whenever the active system or its config.background flips.
   // Returning falsy from the source skips the fetcher (no asset lookup
   // while the master toggle is off or no system is focused).
-  const [assetUrl] = createResource<string | null, { systemId: SystemId; kind: BackgroundKind }>(
+  const [resolved] = createResource<
+    ResolvedBackground | null,
+    { systemId: SystemId; kind: BackgroundKind }
+  >(
     () => {
       const s = sid();
       if (!s) return null as never;
@@ -100,7 +125,7 @@ const SystemBackground: Component<Props> = (props) => {
             opacity: 0.5,
           }}
         />
-        <Show when={renderKind() === "default" && assetUrl()}>
+        <Show when={resolved()?.kind === "default" && resolved()?.url}>
           {(url) => (
             <div
               class="absolute inset-0"
@@ -113,7 +138,7 @@ const SystemBackground: Component<Props> = (props) => {
             />
           )}
         </Show>
-        <Show when={renderKind() === "animated" && assetUrl()}>
+        <Show when={resolved()?.kind === "animated" && resolved()?.url}>
           {(url) => (
             <video
               src={url()}
