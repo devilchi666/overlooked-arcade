@@ -93,6 +93,7 @@ import { onNavEvent, setNavEnabled, setNavSource, startGamepadInput, stopGamepad
 import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
 import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
+import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -341,6 +342,11 @@ const App: Component = () => {
   });
   createEffect(() => setNavSource(settings.controllerNavSource()));
   createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
+  // Per-System UI Stage 1 Slice 2: bridge the Settings master toggle
+  // to the per-system SFX dispatcher. When the operator flips
+  // "Per-system experiences" off, every per-system UI sound suppresses
+  // at the dispatch layer — uniform plain library mode.
+  createEffect(() => setPerSystemUiEnabled(settings.perSystemUiEnabled()));
 
   // Global Start button → open the menu bar. Bypasses the per-group
   // onStart routing in focus.ts so Start works from any active group
