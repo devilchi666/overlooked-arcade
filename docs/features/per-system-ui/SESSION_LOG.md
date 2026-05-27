@@ -1,5 +1,60 @@
 # Per-System Custom UI — Session Log
 
+## 2026-05-26 — Slice 3: Per-system background renderer
+
+Branch `feat/per-system-ui-stage-1-slice-3` cut from main after the
+Slice 2 merge (`8e26e79`) and the ASSETS.md catalog landing
+(`eee0b16`).
+
+- **Shipped:**
+  - **Rust resolver** (`apps/oa-shell/src/system_ui_assets.rs`,
+    `41d1c5b`). New module separate from `audio_player.rs` — audio
+    cascades stay with the rodio mixer state, this one owns
+    disk-only resolvers for non-audio per-system assets (backgrounds
+    in Slice 3; boot animations land here in Slice 4). Tauri command
+    `resolve_background_asset(systemId, kind)` cascades operator-
+    untouched per-system bundle →
+    `<exe_dir>/assets/system-ui/<systemId>/backgrounds/<basename>.<ext>`
+    → universal `_baseline/backgrounds/<basename>.<ext>` → None.
+    `kind = "default"` walks STATIC_EXTS [png, jpg, jpeg, webp];
+    `kind = "animated"` walks ANIMATED_EXTS [webm, mp4]. 8 new unit
+    tests cover the same shape as Slice 2's audio_player tests
+    (per-system precedence, baseline fallback, empty disk → None,
+    extension priority, extension walk, path-traversal guard, no
+    cross-contamination between static/animated cascades). Workspace
+    cargo test: 497 green (489 + 8).
+  - **SystemBackground component**
+    (`frontend/src/components/SystemBackground.tsx`, `1e8c6f2`).
+    Three rendering paths driven by `SystemUIConfig.background`:
+    `static` → CSS radial gradient base + optional image overlay
+    when `default.{png,jpg,jpeg,webp}` exists; `animated` → looping
+    `<video autoplay muted playsinline>` when
+    `animated.{webm,mp4}` exists; `shader` → falls back to `static`
+    until Slice 8 (Vectrex pilot) lands the shader-driven render
+    path. `createResource` keyed on `(systemId, kind)` so the
+    resolver fires once per active-system change. Honors
+    `isPerSystemUiEnabled()` master toggle. Pointer-events: none +
+    aria-hidden so it's purely decorative.
+  - **App.tsx mount**. SystemBackground mounted as the first child
+    of `<main>`; existing library / page content wrapped in
+    `<div class="relative z-10 h-full">` to stack above the
+    absolutely-positioned background. systemId source mirrors
+    RightSidebar's activeEntry pattern: `pinnedEntry?.systemId ??
+    focusedEntry?.systemId ?? null`.
+- **Almost:** Operator playtest. With no per-system assets dropped
+  on disk, the background renders as an accent-colored radial
+  gradient that subtly tints when the operator focuses a tile from
+  a different system. Drop a sample image at
+  `<exe_dir>/assets/system-ui/_baseline/backgrounds/default.png`
+  to see the bundled-asset path light up; drop one at
+  `<exe_dir>/assets/system-ui/nes/backgrounds/default.png` to see
+  per-system precedence over baseline. Drop `animated.webm` in
+  `nes/backgrounds/` to see the NES pilot's animated path (NES is
+  already configured for `background: "animated"` per plan §8).
+- **Next:** Slice 4 — boot animation framework + Settings sub-toggle
+  "Boot animations" (visible only when "Per-system experiences" is
+  ON). Honors `prefers-reduced-motion`; skippable on any input.
+
 ## 2026-05-26 — Slice 2: Per-system SFX wiring
 
 Branch `feat/per-system-ui-stage-1-slice-2` cut from main after the

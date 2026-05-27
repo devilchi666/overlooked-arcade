@@ -53,9 +53,15 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
         resolver cascade (operator override → per-system bundle →
         `_baseline` → silence), frontend `playSystemUiSound` helper
         gating on master toggle + audioProfile, library-grid
-        navigate / launch call sites (`feat/per-system-ui-stage-1-slice-2`,
-        pending operator playtest)
-   - ⬜ Slice 3 — Per-system background renderer
+        navigate / launch call sites (merged to main 2026-05-26)
+   - ✅ Slice 3 — Per-system background renderer: new
+        `apps/oa-shell/src/system_ui_assets.rs` Rust module with
+        `resolve_background_asset` cascade + `<SystemBackground>`
+        component rendering static (gradient + optional image),
+        animated (looping `<video>`), or shader (fallback to static
+        until Slice 8) paths
+        (`feat/per-system-ui-stage-1-slice-3`, pending operator
+        playtest)
    - ⬜ Slice 4 — Boot animation framework + Settings sub-toggle
    - ⬜ Slice 5 — Tile flourish system
    - ⬜ Slice 6 — Game Boy pilot full build

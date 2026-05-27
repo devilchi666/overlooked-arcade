@@ -289,5 +289,10 @@ when you focus a tile from that system.
 
 ## Changelog
 
+- 2026-05-26 — Slice 3 ships the backgrounds cascade. The
+  `<systemId>/backgrounds/` directories are now consumed by the
+  `<SystemBackground>` component. Static + animated paths live; the
+  shader path falls back to static until Slice 8 (Vectrex pilot)
+  ships the shader-driven render path.
 - 2026-05-26 — Slice 2 ships the sounds cascade; this file initialized
   alongside it.
