@@ -623,6 +623,66 @@ export const GameCoreOptionsDialog: Component<{
 
 // --- GameInputDialog ---------------------------------------------------
 
+/// Per-system label override for the libretro device-type select. Most
+/// cores accept the same device numbers but the system-canonical name
+/// differs — Beetle Saturn calls device 5 the "3D Pad" rather than
+/// the generic "Analog Pad", FCEUmm calls device 4 the "Zapper", etc.
+/// Operators reading the dropdown for a Saturn game shouldn't have to
+/// translate "Analog Pad / Paddle" to "3D Pad" in their head. Returns
+/// null when the system has no system-specific label for the device id,
+/// letting the caller fall back to the generic.
+function systemSpecificDeviceLabel(systemId: string, deviceId: number): string | null {
+  switch (systemId) {
+    case "saturn":
+    case "stv":
+      if (deviceId === 5) return "3D Pad / Analog";
+      if (deviceId === 4) return "Virtua Gun";
+      return null;
+    case "nes":
+      if (deviceId === 4) return "Zapper";
+      return null;
+    case "snes":
+      if (deviceId === 2) return "SNES Mouse";
+      if (deviceId === 4) return "Super Scope";
+      return null;
+    case "psx":
+      if (deviceId === 5) return "DualShock / Analog";
+      if (deviceId === 4) return "GunCon / Justifier";
+      return null;
+    case "dreamcast":
+      if (deviceId === 4) return "Light Gun (House of the Dead)";
+      return null;
+    case "atari7800":
+      if (deviceId === 4) return "XEGS Light Gun";
+      if (deviceId === 5) return "Analog (Trak-Ball / Paddle)";
+      return null;
+    case "sms":
+      if (deviceId === 4) return "Light Phaser";
+      return null;
+    case "n64":
+      if (deviceId === 5) return "Analog (N64 stick)";
+      return null;
+    default:
+      return null;
+  }
+}
+
+const DEVICE_ID_OPTIONS: readonly { id: number; generic: string }[] = [
+  { id: 1, generic: "Standard Pad (RetroPad)" },
+  { id: 5, generic: "Analog Pad / Paddle" },
+  { id: 2, generic: "Mouse" },
+  { id: 4, generic: "Light Gun" },
+  { id: 6, generic: "Pointer / Stylus" },
+  { id: 3, generic: "Keyboard" },
+  { id: 0, generic: "Disconnected (no controller)" },
+];
+
+/// Render the device-type option label for a (systemId, deviceId) pair,
+/// preferring the system-specific name when one exists.
+function deviceOptionLabel(systemId: string, deviceId: number, generic: string): string {
+  return systemSpecificDeviceLabel(systemId, deviceId) ?? generic;
+}
+
 export const GameInputDialog: Component<{
   open: boolean;
   entry: RomEntry | null;
@@ -675,13 +735,13 @@ export const GameInputDialog: Component<{
                 }}
               >
                 <option value="">— Inherit (Standard Pad) —</option>
-                <option value="1">Standard Pad (RetroPad)</option>
-                <option value="5">Analog Pad / Paddle</option>
-                <option value="2">Mouse</option>
-                <option value="4">Light Gun</option>
-                <option value="6">Pointer / Stylus</option>
-                <option value="3">Keyboard</option>
-                <option value="0">Disconnected (no controller)</option>
+                <For each={DEVICE_ID_OPTIONS}>
+                  {(opt) => (
+                    <option value={String(opt.id)}>
+                      {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
+                    </option>
+                  )}
+                </For>
               </select>
               <Show
                 when={showExtraPorts()}
@@ -696,6 +756,24 @@ export const GameInputDialog: Component<{
                 }
               >
                 <div class="mt-3 flex flex-col gap-2 border-t border-(--color-oa-bg-deep) pt-3">
+                  <Show when={e().systemId === "atari7800"}>
+                    <p class="rounded border border-(--color-system-accent)/30 bg-(--color-system-accent)/5 px-2 py-1.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span class="text-(--color-oa-ink)">Robotron 2084 + twin-stick games:</span> set
+                      Port 0 = Standard Pad AND Port 1 = Standard Pad. The
+                      second pad becomes the shooting joystick (right stick
+                      on a single physical controller, or a second physical
+                      controller for arcade-faithful play).
+                    </p>
+                  </Show>
+                  <Show when={e().systemId === "saturn" || e().systemId === "stv"}>
+                    <p class="rounded border border-(--color-system-accent)/30 bg-(--color-system-accent)/5 px-2 py-1.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span class="text-(--color-oa-ink)">Saturn 3D Pad:</span> set Port 0 = "3D Pad /
+                      Analog" above. Beetle Saturn interprets device 5 as
+                      3D Pad mode (analog stick + analog triggers). Picks
+                      up the Saturn-side `analog_routing` per-system
+                      defaults automatically.
+                    </p>
+                  </Show>
                   <For each={[1, 2, 3, 4] as const}>
                     {(portIdx) => {
                       const key =
@@ -720,13 +798,13 @@ export const GameInputDialog: Component<{
                             }}
                           >
                             <option value="">— Inherit (Standard Pad) —</option>
-                            <option value="1">Standard Pad (RetroPad)</option>
-                            <option value="5">Analog Pad / Paddle</option>
-                            <option value="2">Mouse</option>
-                            <option value="4">Light Gun</option>
-                            <option value="6">Pointer / Stylus</option>
-                            <option value="3">Keyboard</option>
-                            <option value="0">Disconnected</option>
+                            <For each={DEVICE_ID_OPTIONS}>
+                              {(opt) => (
+                                <option value={String(opt.id)}>
+                                  {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
+                                </option>
+                              )}
+                            </For>
                           </select>
                         </div>
                       );
