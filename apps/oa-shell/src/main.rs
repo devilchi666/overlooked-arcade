@@ -29,6 +29,7 @@ mod library_db;
 mod light_gun_systems;
 mod art_pack_importer;
 mod audio_player;
+mod system_ui_assets;
 mod library_groups;
 mod library_prefs;
 mod logger;
@@ -2796,6 +2797,7 @@ fn main() {
             audio_player::set_audio_volume,
             audio_player::resolve_platform_music,
             audio_player::resolve_ui_sound,
+            system_ui_assets::resolve_background_asset,
             platform_media::get_platform_media_index,
             platform_media::set_platform_media,
             platform_media::clear_platform_media,
