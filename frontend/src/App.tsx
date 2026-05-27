@@ -1742,13 +1742,18 @@ const App: Component = () => {
         <main class="relative h-full">
           {/* Per-System UI Stage 1 Slice 3: per-system background
               layer mounted behind the library content. Reads
-              SystemUIConfig.background for whichever tile is focused
-              (or pinned) and renders the matching shape — accent
-              gradient + optional image / video overlay. Honors the
-              perSystemUiEnabled master toggle. */}
+              SystemUIConfig.background for whichever tile is currently
+              focused; the background follows the operator's cursor /
+              gamepad through the library. RightSidebar uses
+              pinned-first for its details widgets, but the background
+              follows focused-first so it doesn't lock to one system
+              while the operator browses the whole library. Pinned
+              tile is the fallback when no tile is focused yet
+              (e.g. before first mouse hover on a fresh session).
+              Honors the perSystemUiEnabled master toggle. */}
           <SystemBackground
             systemId={() =>
-              (pinnedEntry()?.systemId ?? focusedEntry()?.systemId ?? null) as SystemId | null
+              (focusedEntry()?.systemId ?? pinnedEntry()?.systemId ?? null) as SystemId | null
             }
           />
           <div class="relative z-10 h-full">
