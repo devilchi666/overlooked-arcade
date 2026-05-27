@@ -29,6 +29,7 @@ mod library_db;
 mod light_gun_systems;
 mod art_pack_importer;
 mod audio_player;
+mod system_ui_assets;
 mod library_groups;
 mod library_prefs;
 mod logger;
@@ -2796,6 +2797,7 @@ fn main() {
             audio_player::set_audio_volume,
             audio_player::resolve_platform_music,
             audio_player::resolve_ui_sound,
+            system_ui_assets::resolve_background_asset,
             platform_media::get_platform_media_index,
             platform_media::set_platform_media,
             platform_media::clear_platform_media,
@@ -2863,6 +2865,31 @@ fn main() {
                         log::error!(
                             "oa-shell: failed to widen asset-protocol scope to {}: {e}",
                             app_data_dir.display()
+                        );
+                    }
+                }
+
+                // Per-System Custom UI (Stage 1 Slice 3+): widen the asset
+                // protocol scope to <exe_dir>/assets/ so the frontend's
+                // SystemBackground component can load bundled background
+                // images / videos via convertFileSrc. The tauri.conf.json
+                // scope only covers $APPDATA/**, which would otherwise
+                // 403 every per-system asset shipped next to the .exe.
+                // Always-on (release + dev + portable + AppData modes) —
+                // assets are installer-bundled, never user-supplied. The
+                // assets dir may not yet exist at first boot; the scope
+                // accepts the path either way.
+                if let Some(assets_dir) = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join("assets")))
+                {
+                    if let Err(e) = app
+                        .asset_protocol_scope()
+                        .allow_directory(&assets_dir, true)
+                    {
+                        log::error!(
+                            "oa-shell: failed to widen asset-protocol scope to {}: {e}",
+                            assets_dir.display()
                         );
                     }
                 }
