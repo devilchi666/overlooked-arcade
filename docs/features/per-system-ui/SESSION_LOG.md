@@ -41,16 +41,38 @@ Slice 2 merge (`8e26e79`) and the ASSETS.md catalog landing
     absolutely-positioned background. systemId source mirrors
     RightSidebar's activeEntry pattern: `pinnedEntry?.systemId ??
     focusedEntry?.systemId ?? null`.
-- **Almost:** Operator playtest. With no per-system assets dropped
-  on disk, the background renders as an accent-colored radial
-  gradient that subtly tints when the operator focuses a tile from
-  a different system. Drop a sample image at
-  `<exe_dir>/assets/system-ui/_baseline/backgrounds/default.png`
-  to see the bundled-asset path light up; drop one at
-  `<exe_dir>/assets/system-ui/nes/backgrounds/default.png` to see
-  per-system precedence over baseline. Drop `animated.webm` in
-  `nes/backgrounds/` to see the NES pilot's animated path (NES is
-  already configured for `background: "animated"` per plan §8).
+- **Playtest fixes (same day, before merge):**
+  - `2ee043f`: widen Tauri asset-protocol scope to
+    `<exe_dir>/assets/**` at runtime so `convertFileSrc` URLs under
+    the assets dir don't 403. The tauri.conf.json scope only covers
+    `$APPDATA/**` and operator dropped a release-build asset under
+    the exe dir; mirrors the existing portable-mode scope-widening
+    pattern next to it in main.rs.
+  - `f5551d6`: SystemBackground falls back from `animated` to
+    `default` when no animated asset exists. NES is configured
+    `background: "animated"` per plan §8, so a dropped `default.png`
+    would otherwise go unmatched and drop to gradient-only — the
+    fallback makes any single asset drop "just work" for testing.
+    Pilot slices 6-8 still ship the configured kind properly.
+  - `247353e`: SystemBackground systemId source switched from
+    pinned-first to focused-first. The earlier pinned-first pattern
+    mirrored RightSidebar's activeEntry, but a stale
+    `rightSidebarPinnedGameId` from a prior session was locking the
+    background to one system regardless of where the cursor was.
+    Pinned stays as a fallback only when nothing else applies.
+  - `c58493d`: document-level mouseover listener walks
+    `closest('[data-system]')` and feeds a new `hoveredSystemId`
+    signal, plus `activeSystemId` (sidebar-filtered system view)
+    enters the source chain. LibraryTile deliberately doesn't change
+    selection on hover (per LibraryTile.tsx:90-94 comment), but the
+    background is decorative — hover-following doesn't break the
+    "pick game, open settings" flow that decision protected. Final
+    source chain: hovered → focused → activeView → pinned → null.
+- **Shipped (merge close-out):** Branch merged `--no-ff` to main as
+  `feat/per-system-ui-stage-1-slice-3` (commit `15a632a`).
+  Static-path operator-validated. Animated-path code-complete
+  pending content; Slice 7 (NES pilot) ships the actual
+  scrolling-palette WebM.
 - **Next:** Slice 4 — boot animation framework + Settings sub-toggle
   "Boot animations" (visible only when "Per-system experiences" is
   ON). Honors `prefers-reduced-motion`; skippable on any input.

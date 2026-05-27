@@ -59,9 +59,10 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
         `resolve_background_asset` cascade + `<SystemBackground>`
         component rendering static (gradient + optional image),
         animated (looping `<video>`), or shader (fallback to static
-        until Slice 8) paths
-        (`feat/per-system-ui-stage-1-slice-3`, pending operator
-        playtest)
+        until Slice 8) paths. Source chain: hover → focused →
+        activeView → pinned. Merged to main 2026-05-27. Static path
+        operator-validated; animated path code-complete pending
+        Slice 7 NES pilot content.
    - ⬜ Slice 4 — Boot animation framework + Settings sub-toggle
    - ⬜ Slice 5 — Tile flourish system
    - ⬜ Slice 6 — Game Boy pilot full build

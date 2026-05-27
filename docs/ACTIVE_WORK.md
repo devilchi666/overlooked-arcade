@@ -13,13 +13,13 @@ spanned every system but was filed under whichever core happened to be active.
 
 - **Per-System Custom UI Stage 1**
   ([features/per-system-ui/](features/per-system-ui/)) — Slices 1
-  (foundation) + 2 (per-system SFX wiring) merged to main
-  2026-05-26. Slice 3 (per-system background renderer) on branch
-  `feat/per-system-ui-stage-1-slice-3`, pending operator playtest.
-  Stage 1 total ~5-7 weeks; plan locked at
-  [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md). Slices 4-9
-  add the boot animation framework, tile flourishes, the three pilot
-  full builds (GB / NES / Vectrex), and per-core README updates. See
+  (foundation), 2 (per-system SFX wiring), 3 (per-system background
+  renderer) merged to main. Next slice not yet started; Slice 4
+  (boot animation framework + Settings sub-toggle) is next per
+  ROADMAP. Stage 1 total ~5-7 weeks; plan locked at
+  [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md). Slices 5-9
+  add tile flourishes, the three pilot full builds (GB / NES /
+  Vectrex), and per-core README updates. See
   [features/per-system-ui/ROADMAP.md](features/per-system-ui/ROADMAP.md)
   for the slice breakdown and
   [features/per-system-ui/ASSETS.md](features/per-system-ui/ASSETS.md)
