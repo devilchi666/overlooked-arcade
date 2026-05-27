@@ -3782,7 +3782,9 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "snes" => Some(default_snes_bindings()),
         "mame" => Some(default_mame_bindings()),
         "atari7800" => Some(default_atari7800_bindings()),
-        "genesis" | "segacd" | "sega32x" => Some(default_genesis_bindings()),
+        // sega32xcd shares the Mega Drive 6-button controller layout
+        // with genesis / segacd / sega32x — single bindings module.
+        "genesis" | "segacd" | "sega32x" | "sega32xcd" => Some(default_genesis_bindings()),
         "saturn" => Some(default_saturn_bindings()),
         "psx" => Some(default_psx_bindings()),
         "neogeo" | "neocd" => Some(default_neogeo_bindings()),

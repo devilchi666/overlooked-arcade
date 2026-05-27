@@ -2146,6 +2146,13 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         "segacd"    => &["Sega_-_Mega-CD_-_Sega_CD"],
         // Sega 32X. Single thumbnails repo covers the small library.
         "sega32x"   => &["Sega_-_32X"],
+        // Sega 32X CD. No dedicated thumbnails repo exists upstream
+        // (libretro-thumbnails treats the ~6-game library as part of
+        // the cart 32X catalog). Cart-32X repo is the closest match
+        // for cover-art sync — the FMV titles (Night Trap, Corpse
+        // Killer, etc.) are usually cataloged under "Sega - 32X"
+        // alongside the cart games.
+        "sega32xcd" => &["Sega_-_32X"],
         // Sega Saturn. Single thumbnails repo covers the full retail +
         // homebrew library.
         "saturn"    => &["Sega_-_Saturn"],

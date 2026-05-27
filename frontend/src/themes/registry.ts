@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "jagcd" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "sega32xcd" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "jagcd" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
 
 /// Form-factor bucket — consumed by the sidebar's default Platforms view
 /// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
@@ -220,6 +220,28 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // 32X enhanced-mode 320×224 on CRT TVs — same crt-lite preset
     // Genesis ships, period-correct for the 1994 hardware.
     defaultShaderPreset: "crt-lite",
+  },
+  sega32xcd: {
+    id: "sega32xcd",
+    formFactor: "console",
+    manufacturer: "sega",
+    displayName: "Sega 32X CD",
+    shortName: "32X-CD",
+    // CD image containers — same shape as segacd. Tiny library
+    // (~6 retail releases: Corpse Killer, Fahrenheit, Night Trap,
+    // Slam City with Scottie Pippen, Supreme Warrior, Surgical
+    // Strike) — all FMV-heavy 1994/1995 releases. Disambiguation
+    // via per-folder Import Wizard rule (operator marks a folder as
+    // sega32xcd; matching extensions inside route here). Requires
+    // the Sega CD regional BIOS in `<exe_dir>/system/` —
+    // pre-checked by check_sega_cd_bios. 32X CART BIOSes are NOT
+    // required for these CD games (PicoDrive runs them without).
+    extensions: ["cue", "chd", "iso", "m3u", "ccd"],
+    tileAspect: "4/3",
+    // FMV-heavy — plain default keeps the video crisp (mirrors the
+    // segacd / pce-cd default rationale). Users wanting CRT halo
+    // drop into per-system.
+    defaultShaderPreset: "plain",
   },
   saturn: {
     id: "saturn",

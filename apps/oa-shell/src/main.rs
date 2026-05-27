@@ -572,6 +572,15 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         // ("Super 32X" / "Mega 32X") is rarely typed; accept the "32x"
         // shorthand for completeness.
         "sega32x" | "32x" | "sega-32x" => oa_core::SystemId::Sega32X,
+        // Sega 32X CD — CD images that drive BOTH the 32X cart slot AND
+        // the Sega CD addon. Routes to oa_core::SystemId::SegaCd (the
+        // CD-shape parent) per the "32x-cd goes through SegaCd with a
+        // stacked override" pattern documented on the Sega32X variant.
+        // The override lives in default_core_dll_for_system: regular
+        // segacd defaults to Genesis Plus GX, but sega32xcd swaps to
+        // picodrive_libretro.dll which is the only mainstream libretro
+        // core handling 32X+CD combined mode.
+        "sega32xcd" | "sega-32x-cd" | "32xcd" | "32x-cd" => oa_core::SystemId::SegaCd,
         // Sega Saturn. Accept the "sat" / "ss" shorthand operators
         // sometimes use in saved configs, plus the JP "satturn" alias.
         "saturn" | "sat" | "ss" | "sega-saturn" => oa_core::SystemId::Saturn,
@@ -795,6 +804,14 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // widely-shipped alternate — Genesis Plus GX doesn't do 32X,
         // ClownMDEmu is MD-only.
         "sega32x" => "picodrive_libretro.dll",
+        // Sega 32X CD — PicoDrive is the only mainstream libretro core
+        // with 32X+CD combined-mode support. Genesis Plus GX (segacd's
+        // default) doesn't do 32X at all, so this slug intentionally
+        // diverges from the segacd default core. BIOS check shares the
+        // segacd path (regional Sega CD BIOS required); the 32X cart
+        // BIOS is NOT required for these CD games (PicoDrive runs them
+        // without it).
+        "sega32xcd" => "picodrive_libretro.dll",
         // Beetle Saturn — the Mednafen-derived libretro Saturn default.
         // Heavyweight: dual SH-2 + VDP1/VDP2 + 68k sound CPU emulation
         // is genuinely CPU-intensive (needs a decent modern host).
@@ -4206,6 +4223,19 @@ fn run_emu_render(
                             )),
                             "segacd" => Some((
                                 "Sega CD",
+                                "bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin",
+                                check_sega_cd_bios(&system_dir),
+                                "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED",
+                                "the canonical US Sega CD v1.10 dump (libretro-database)",
+                            )),
+                            // Sega 32X CD reuses the Sega CD BIOS check —
+                            // 32X-CD games need a regional Sega CD BIOS
+                            // (same `bios_CD_*.bin` files), but the 32X
+                            // cart BIOS is NOT required (PicoDrive runs
+                            // these CD games without it). One BIOS check
+                            // covers the launch gate.
+                            "sega32xcd" => Some((
+                                "Sega 32X CD",
                                 "bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin",
                                 check_sega_cd_bios(&system_dir),
                                 "F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED",

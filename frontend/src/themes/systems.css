@@ -304,6 +304,16 @@
   --color-system-glow: oklch(0.68 0.22 42 / 0.35);
 }
 
+/* Sega 32X CD — same orange-red hue family as the cart 32X (42°) but
+   slightly darker (L 0.60) to read distinctly when both 32X variants
+   are in the library at once. CD-CDDA-era 32X packaging leaned
+   slightly more saturated + deeper than the cart cardboard sleeves. */
+[data-system="sega32xcd"] {
+  --color-system-accent: oklch(0.60 0.22 42);
+  --color-system-accent-soft: oklch(0.93 0.06 42);
+  --color-system-glow: oklch(0.60 0.22 42 / 0.35);
+}
+
 /* Sega Saturn — deepest purple in the violet cluster, period-accurate
    to the 1994-1996 Saturn launch palette (deep purple-on-black box art
    was the iconic Saturn marketing). Hue 275° sits 5° from SNES violet

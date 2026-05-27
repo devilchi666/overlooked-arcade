@@ -182,6 +182,7 @@ export const systemUIConfigs: Record<SystemId, SystemUIConfig> = {
   genesis: { ...BASELINE_UI },
   segacd: { ...BASELINE_UI },
   sega32x: { ...BASELINE_UI },
+  sega32xcd: { ...BASELINE_UI },
   saturn: { ...BASELINE_UI },
   psx: { ...BASELINE_UI },
   neogeo: { ...BASELINE_UI },
