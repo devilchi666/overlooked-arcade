@@ -74,7 +74,15 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
         sub-toggle gated on master. `boot-intro` event added to
         `resolve_ui_sound` so pilots can dispatch the SFX. Merged
         to main 2026-05-27.
-   - ⬜ Slice 5 — Tile flourish system
+   - ✅ Slice 5 — Tile flourish system: tileShape enum →
+        aspect-ratio override on the cover container (+ rounded-full
+        for circle); interactionStyle enum → `data-oa-interaction`
+        attribute driving CSS transition timing + hover transform
+        (delayed = 360 ms LCD-feel; physical = 220 ms spring +
+        click pulse). Baseline `instant` keeps Tailwind defaults.
+        Master toggle off falls back to today's behaviour
+        (`feat/per-system-ui-stage-1-slice-5`, pending operator
+        playtest)
    - ⬜ Slice 6 — Game Boy pilot full build
    - ⬜ Slice 7 — NES pilot full build
    - ⬜ Slice 8 — Vectrex pilot + custom-component escape hatch

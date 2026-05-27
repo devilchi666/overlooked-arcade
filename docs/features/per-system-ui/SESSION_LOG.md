@@ -1,5 +1,47 @@
 # Per-System Custom UI — Session Log
 
+## 2026-05-27 — Slice 5: Tile flourish system
+
+Branch `feat/per-system-ui-stage-1-slice-5` cut from main after the
+Slice 4 merge (`5d97fe1`) + status flip (`7281eb8`).
+
+- **Shipped:** (`6f051a2`)
+  - **tileShape consumer** in
+    `frontend/src/components/LibraryTile.tsx`. New
+    `aspectForTileShape(shape)` mapper converts the SystemUIConfig
+    enum to a CSS `aspect-ratio` string. `tileAspectStyle()`
+    accessor picks per-system override first, falls back to the
+    existing `systemThemes[id].tileAspect`, then to
+    `DEFAULT_TILE_ASPECT`. `"circle"` adds `rounded-full` on the
+    cover container alongside its 1/1 aspect. All accessors honor
+    `isPerSystemUiEnabled()` — master toggle off returns today's
+    behaviour exactly.
+  - **interactionStyle consumer**. New `data-oa-interaction`
+    attribute on the tile button, sourced from
+    `uiConfigFor(systemId).interactionStyle`. Three CSS rule blocks
+    in `index.css` (`@layer base`):
+      - `instant` (baseline) → no overrides; Tailwind's existing
+        `transition duration-200 hover:-translate-y-0.5` ships
+        today's crisp feel for the ~37 non-pilot systems.
+      - `delayed` → 360 ms transition + cubic-bezier(0.4, 0, 0.2, 1)
+        + extra -2 px hover lift. Handheld / LCD-feel.
+      - `physical` → 220 ms spring + cubic-bezier(0.34, 1.56,
+        0.64, 1) (overshoot) + larger hover scale + an
+        `oa-tile-pulse` keyframe on `:active` for a click bounce.
+    `!important` on the override properties so they beat Tailwind's
+    utility-layer classes; only attaches when the attribute is
+    `delayed` or `physical`.
+- **Almost:** Operator playtest. Hovering a GB tile (delayed) vs a
+  baseline NES tile (instant) vs a Vectrex tile (physical) should
+  feel noticeably different. tileShape override most visible on
+  Vectrex (square) and GB (portrait-3:4) tiles. Per-pilot config
+  shipped with Slice 1; this slice makes them visibly active.
+- **Next:** Slice 6 — Game Boy pilot full build. Drops the GB SFX
+  bank, the DMG-greenish background gradient asset, and the
+  CSS-keyframe boot animation. All asset paths already defined in
+  ASSETS.md; this is content + a `keyframes.css` loader on the
+  boot-animation framework.
+
 ## 2026-05-27 — Slice 4: Boot animation framework
 
 Branch `feat/per-system-ui-stage-1-slice-4` cut from main after the
