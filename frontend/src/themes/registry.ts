@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "sega32xcd" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "jagcd" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "sega32xcd" | "saturn" | "stv" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "jagcd" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
 
 /// Form-factor bucket — consumed by the sidebar's default Platforms view
 /// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
@@ -242,6 +242,24 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     // segacd / pce-cd default rationale). Users wanting CRT halo
     // drop into per-system.
     defaultShaderPreset: "plain",
+  },
+  stv: {
+    id: "stv",
+    formFactor: "arcade",
+    manufacturer: "sega",
+    displayName: "Sega Titan Video",
+    shortName: "ST-V",
+    // ST-V games ship as MAME ROM sets (.zip files containing
+    // per-board ROMs). Same .zip / .7z load shape as the parent
+    // mame system. MAME's stv driver handles BIOS lookup
+    // internally — no separate BIOS pre-check in OA.
+    extensions: ["zip", "7z"],
+    // Most ST-V titles run 320×224 or 320×240 — standard 4/3 arcade
+    // CRT geometry, same as the MAME default.
+    tileAspect: "4/3",
+    // ST-V cabinets ran on standard 15kHz arcade CRTs; the same
+    // crt-lite preset MAME ships is period-correct here.
+    defaultShaderPreset: "crt-lite",
   },
   saturn: {
     id: "saturn",

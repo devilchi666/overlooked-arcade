@@ -2139,6 +2139,13 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         "snes"      => &["Nintendo_-_Super_Nintendo_Entertainment_System"],
         "atari7800" => &["Atari_-_7800"],
         "mame"      => &["MAME"],
+        // Sega Titan Video (ST-V) — libretro-thumbnails ships a
+        // dedicated Sega_-_Titan_Video repo covering the ~80-title
+        // ST-V arcade library separately from general MAME. Falls
+        // back to the MAME repo if the operator's local sync misses
+        // (the MAME thumbnails repo covers some ST-V games too under
+        // arcade aliases).
+        "stv"       => &["Sega_-_Titan_Video", "MAME"],
         "genesis"   => &["Sega_-_Mega_Drive_-_Genesis"],
         // Sega CD / Mega-CD. libretro-thumbnails ships one combined repo
         // covering both regional namings ("Mega-CD" JP / EU + "Sega CD"

@@ -178,6 +178,7 @@ export const systemUIConfigs: Record<SystemId, SystemUIConfig> = {
   lynx: { ...BASELINE_UI },
   snes: { ...BASELINE_UI },
   mame: { ...BASELINE_UI },
+  stv: { ...BASELINE_UI },
   atari7800: { ...BASELINE_UI },
   genesis: { ...BASELINE_UI },
   segacd: { ...BASELINE_UI },

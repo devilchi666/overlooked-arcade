@@ -563,6 +563,15 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         "nes" | "famicom" => oa_core::SystemId::Nes,
         "snes" | "super-famicom" => oa_core::SystemId::Snes,
         "mame" | "arcade" => oa_core::SystemId::Mame,
+        // Sega Titan Video (ST-V) — Saturn-derived arcade board
+        // (1994-1998). MAME has the mature stv driver; aliasing the
+        // frontend slug to oa_core::SystemId::Mame routes ST-V games
+        // through the MAME launch path (same .dll, same ROM-set
+        // .zip handling, same arcade controls). The slug stays
+        // distinct on the frontend for sidebar / theming purposes.
+        // Operators wanting Beetle Saturn's experimental STV mode
+        // can per-game core-override away from this default.
+        "stv" | "titan" | "sega-titan-video" => oa_core::SystemId::Mame,
         "genesis" | "megadrive" | "mega-drive" => oa_core::SystemId::Genesis,
         // Sega CD / Mega-CD. CD-shape Mega Drive addon. Accept the JP
         // "Mega-CD" branding + the "mega-cd" / "megacd" aliases that
@@ -654,6 +663,12 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // who want lighter perf-vs-compat tradeoffs (mame2003_plus_libretro,
         // mame2010_libretro, etc.) swap via the per-system Cores dialog.
         "mame" => "mame_libretro.dll",
+        // ST-V (Sega Titan Video) reuses MAME's mature stv driver —
+        // no separate libretro core. The MAME .dll handles BIOS
+        // lookup + ROM-set loading internally. Operators wanting
+        // Beetle Saturn's experimental STV mode can per-game
+        // core-override to `mednafen_saturn_libretro.dll`.
+        "stv" => "mame_libretro.dll",
         // ProSystem — the long-standing libretro Atari 7800 core. BIOS
         // (`7800 BIOS (U).rom`) optional but recommended; without it
         // games skip the boot logo but otherwise run. Operators who

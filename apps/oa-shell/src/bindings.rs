@@ -3780,7 +3780,9 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "lynx" => Some(default_lynx_bindings()),
         "nes" => Some(default_nes_bindings()),
         "snes" => Some(default_snes_bindings()),
-        "mame" => Some(default_mame_bindings()),
+        // ST-V (Sega Titan Video) reuses MAME's arcade button layout —
+        // same default bindings since the launch path is also MAME.
+        "mame" | "stv" => Some(default_mame_bindings()),
         "atari7800" => Some(default_atari7800_bindings()),
         // sega32xcd shares the Mega Drive 6-button controller layout
         // with genesis / segacd / sega32x — single bindings module.

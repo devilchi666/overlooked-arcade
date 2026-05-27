@@ -332,6 +332,18 @@
   --color-system-glow: oklch(0.45 0.18 275 / 0.35);
 }
 
+/* Sega Titan Video (ST-V) — Saturn-derived arcade board. The ST-V
+   logo + cabinet artwork leaned cyan-blue (1994-1998 marketing
+   palette) rather than the deep purple of consumer Saturn. Hue 220°
+   sits in the same cyan-blue cluster as lynx (220° L 0.72) but
+   noticeably deeper (L 0.55) to read distinctly + carry an arcade
+   weight rather than handheld brightness. */
+[data-system="stv"] {
+  --color-system-accent: oklch(0.55 0.18 220);
+  --color-system-accent-soft: oklch(0.93 0.05 220);
+  --color-system-glow: oklch(0.55 0.18 220 / 0.35);
+}
+
 /* SNK Neo Geo (AES home + MVS arcade) — deepest, most-saturated red in
    the lineup, period-correct to SNK's 1990-2004 arcade marketing palette
    (the iconic "NEO GEO" logotype was cherry-red on black across boxart,
