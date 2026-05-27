@@ -14,6 +14,8 @@ import LibraryTile from "./LibraryTile";
 import type { EntryGroup } from "../library/filter";
 import type { RomEntry } from "../library/types";
 import { useFocusGroup } from "../nav/focus";
+import { playSystemUiSound } from "../themes/systemUiSound";
+import type { SystemId } from "../themes/registry";
 
 type Props = {
   /** Pre-filtered + sorted + grouped list. Empty group label = render no
@@ -214,11 +216,26 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
       if (list.length === 0) return;
       const clamped = Math.max(0, Math.min(list.length - 1, next));
       const entry = list[clamped];
-      if (entry) props.onFocus?.(entry);
+      if (entry) {
+        props.onFocus?.(entry);
+        // Per-System UI Stage 1 Slice 2: a DPad-driven cursor move
+        // fires the focused system's "navigate" SFX. Mouse hover is
+        // intentionally silent — sounds are gamepad-centric for couch
+        // play in v1. setFocusedIndex only fires from gamepad nav
+        // (mouse interactions flow through props.onFocus directly).
+        playSystemUiSound(entry.systemId as SystemId, "navigate");
+      }
     },
     onActivate: (i) => {
       const e = flatEntries()[i];
-      if (e) props.onLaunch(e);
+      if (e) {
+        // Per-System UI Stage 1 Slice 2: a gamepad A-press on a tile
+        // fires the system's "launch" SFX before the launch handler
+        // runs. Mouse click on a tile goes through a different path
+        // and stays silent in v1.
+        playSystemUiSound(e.systemId as SystemId, "launch");
+        props.onLaunch(e);
+      }
     },
     onSecondary: (i) => {
       const e = flatEntries()[i];

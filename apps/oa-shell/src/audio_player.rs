@@ -24,7 +24,7 @@
 //! - Crossfade between platform-music tracks on focus change.
 //! - Audio device picker (rodio uses the OS default).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
@@ -375,8 +375,24 @@ pub fn resolve_platform_music(
 /// platform music, but without a per-game tier (UI sounds are
 /// per-system or OA-wide, never per-game). `event` must be one of:
 /// "click" | "navigate" | "back" | "launch" | "error" | "scroll-tick".
-/// Returns None if the system has no override (UI is silent for that
-/// event on that system).
+///
+/// Resolution order:
+/// 1. Operator override in `SystemSettings.ui_sound_<event>` (per-system
+///    file path written through the per-system audio overrides UI).
+/// 2. Per-system bundled asset at
+///    `<exe_dir>/assets/system-ui/<systemId>/sounds/<event>.<ext>` for
+///    `ext` in `[ogg, opus, wav, mp3, flac, m4a]` (matching the
+///    formats rodio's `symphonia-all` feature decodes).
+/// 3. Universal baseline at
+///    `<exe_dir>/assets/system-ui/_baseline/sounds/<event>.<ext>` so
+///    every system gets at least a soft click even before a per-system
+///    asset bank exists.
+/// 4. None — frontend treats null as "skip the dispatch silently."
+///
+/// Per-System Custom UI Stage 1 Slice 2 introduced the bundled-asset
+/// tiers (2 + 3); tier 1 has shipped since the 2026-05-24 media-taxonomy
+/// wave. Slice 2's content work drops a CC0 click into the `_baseline`
+/// dir; pilot slices 6/7/8 add the system-specific banks.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn resolve_ui_sound(
@@ -385,7 +401,7 @@ pub fn resolve_ui_sound(
     app_data_dir: tauri::State<'_, crate::AppDataDir>,
 ) -> Result<Option<String>, String> {
     let sys = crate::system_settings::read_system_settings(&app_data_dir.0, &systemId);
-    let p = match event.as_str() {
+    let override_path = match event.as_str() {
         "click"       => sys.ui_sound_click,
         "navigate"    => sys.ui_sound_navigate,
         "back"        => sys.ui_sound_back,
@@ -394,7 +410,51 @@ pub fn resolve_ui_sound(
         "scroll-tick" => sys.ui_sound_scroll_tick,
         _ => return Err(format!("unknown ui sound event: {event}")),
     };
-    Ok(p.map(|pb| pb.to_string_lossy().to_string()))
+    if let Some(p) = override_path {
+        return Ok(Some(p.to_string_lossy().to_string()));
+    }
+    let assets_dir = resolve_assets_dir();
+    Ok(find_bundled_ui_sound_in_dir(&assets_dir, &systemId, &event)
+        .map(|pb| pb.to_string_lossy().to_string()))
+}
+
+/// Locate the `<exe_dir>/assets` directory the same way
+/// `resolve_cores_dir` locates `<exe_dir>/cores`: next to the .exe.
+fn resolve_assets_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .join("assets")
+}
+
+/// Audio file extensions checked in priority order. Mirrors what rodio
+/// can decode with the `symphonia-all` feature.
+const BUNDLED_UI_SOUND_EXTS: &[&str] = &["ogg", "opus", "wav", "mp3", "flac", "m4a"];
+
+/// Pure resolver — given an assets dir, system slug, and event name,
+/// return the first bundled UI sound file that exists. Checks the
+/// per-system directory first, then the `_baseline` fallback. Returns
+/// None if no candidate exists. Parameterized on `assets_dir` so unit
+/// tests can drop a tempdir's contents in and verify the cascade.
+fn find_bundled_ui_sound_in_dir(assets_dir: &Path, system_id: &str, event: &str) -> Option<PathBuf> {
+    // Defensive — refuse to do disk I/O with traversal-y inputs. Event
+    // names come from the resolver's match arm above (closed set) so
+    // they're safe; the system slug is operator-influenced via
+    // SystemId, so reject anything with path separators.
+    if system_id.contains('/') || system_id.contains('\\') || system_id == ".." {
+        return None;
+    }
+    for slug in [system_id, "_baseline"] {
+        let base = assets_dir.join("system-ui").join(slug).join("sounds");
+        for ext in BUNDLED_UI_SOUND_EXTS {
+            let p = base.join(format!("{event}.{ext}"));
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -456,5 +516,85 @@ mod tests {
         assert_eq!(json, "\"platform-music\"");
         let parsed: AudioBus = serde_json::from_str("\"snap-audio\"").expect("deserialize");
         assert_eq!(parsed, AudioBus::SnapAudio);
+    }
+
+    // --- Per-System UI Stage 1 Slice 2: bundled UI sound resolver ----
+
+    fn tempdir_for(tag: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("oa-shell-ui-sound-{tag}"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        tmp
+    }
+
+    fn drop_sound(assets_dir: &Path, system_slug: &str, event: &str, ext: &str) -> PathBuf {
+        let dir = assets_dir.join("system-ui").join(system_slug).join("sounds");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("{event}.{ext}"));
+        std::fs::write(&p, b"fake-audio").unwrap();
+        p
+    }
+
+    #[test]
+    fn bundled_resolver_finds_per_system_first() {
+        let tmp = tempdir_for("per-system-wins");
+        let per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
+        let _baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
+    }
+
+    #[test]
+    fn bundled_resolver_falls_back_to_baseline() {
+        let tmp = tempdir_for("baseline-fallback");
+        let baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(baseline.as_path()));
+    }
+
+    #[test]
+    fn bundled_resolver_returns_none_when_nothing_on_disk() {
+        let tmp = tempdir_for("empty");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn bundled_resolver_prefers_ogg_over_other_extensions() {
+        // Extension priority matters when a system bank ships multiple
+        // formats for the same event — operators dropping in both .ogg
+        // and .wav copies should see the .ogg play (smaller + lossless
+        // enough for short SFX). Locks BUNDLED_UI_SOUND_EXTS order.
+        let tmp = tempdir_for("ext-priority");
+        let ogg = drop_sound(&tmp, "nes", "navigate", "ogg");
+        let _wav = drop_sound(&tmp, "nes", "navigate", "wav");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(ogg.as_path()));
+    }
+
+    #[test]
+    fn bundled_resolver_walks_extension_list_when_ogg_missing() {
+        let tmp = tempdir_for("ext-walk");
+        let wav = drop_sound(&tmp, "_baseline", "click", "wav");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "click");
+        assert_eq!(resolved.as_deref(), Some(wav.as_path()));
+    }
+
+    #[test]
+    fn bundled_resolver_rejects_path_traversal_in_system_id() {
+        // Defensive — the system slug is operator-influenced (it
+        // matches SystemId from the frontend registry) so reject any
+        // path-separator content before it can land in std::fs::Path
+        // join.
+        let tmp = tempdir_for("traversal");
+        drop_sound(&tmp, "_baseline", "navigate", "ogg");
+
+        for evil in ["../nes", "..\\nes", "..", "nes/../etc", "nes\\..\\etc"] {
+            let resolved = find_bundled_ui_sound_in_dir(&tmp, evil, "navigate");
+            assert!(resolved.is_none(), "expected None for slug {evil:?}, got {resolved:?}");
+        }
     }
 }
