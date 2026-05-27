@@ -9,6 +9,7 @@
 import {
   createMemo,
   createResource,
+  Show,
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
@@ -147,6 +148,18 @@ export const DisplayDialog: Component<{
             }}
             description="When off, every system shares one neutral library look — no per-system audio, no boot animations, no per-system flourishes. Cover art and tiles still show; only the per-system character disappears."
           />
+          <Show when={props.settings.perSystemUiEnabled()}>
+            <SettingRow
+              label="Boot animations"
+              inherited={null}
+              overridden={false}
+              toggle={{
+                checked: props.settings.bootAnimationsEnabled(),
+                onChange: (v) => props.settings.setBootAnimationsEnabled(v),
+              }}
+              description="Brief overlay that plays when you enter a system from the sidebar — tints the library with the system's accent color for about a second. Disable for instant transitions with no overlay; re-enable to restore the full animation. The OS reduce-motion preference shortens the overlay to a 200 ms fade independently when active."
+            />
+          </Show>
         </DialogSection>
 
         <DialogSection

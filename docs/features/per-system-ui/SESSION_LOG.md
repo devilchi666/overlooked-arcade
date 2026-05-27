@@ -1,5 +1,67 @@
 # Per-System Custom UI — Session Log
 
+## 2026-05-27 — Slice 4: Boot animation framework
+
+Branch `feat/per-system-ui-stage-1-slice-4` cut from main after the
+Slice 3 merge (`15a632a`) + status flip (`16ddfb0`).
+
+- **Shipped:**
+  - **boot-intro SFX plumbing** (`b0735f5`). `audio_player::
+    resolve_ui_sound` event match grows a `"boot-intro"` arm that
+    skips the SystemSettings override tier (no UI surface for that
+    event in v1) and falls straight to the bundled-asset lookup at
+    `<systemId>/sounds/boot-intro.<ext>`. Frontend `UiSoundEvent`
+    type in `lib/audio.ts` gains the same variant so
+    `dispatchUiSound(systemId, "boot-intro")` typechecks for Slice
+    4b. No behaviour change on its own — pilot slices (6-8) drop
+    the actual .ogg files.
+  - **Settings + dispatcher bridge** (`9431051`).
+    `Settings.bootAnimationsEnabled` boolean persisted alongside
+    `perSystemUiEnabled`, default ON. Settings → Display → "Per-
+    system experiences" gains a "Boot animations" sub-toggle gated
+    on the master toggle via `<Show>`. `themes/systemBootAnimation.ts`
+    exports `setBootAnimationsEnabled` (bridge) +
+    `isBootAnimationsEnabled` (accessor); App.tsx `createEffect`
+    mirrors the store signal into the bridge.
+  - **SystemBootAnimation component** (`9431051`). Triggered by
+    `on(() => props.activeSystemId(), …)` so the trigger key is
+    explicitly activeSystemId — flipping the toggles or reduced-
+    motion doesn't re-fire the animation. Null and same-system
+    transitions no-op. Full path runs the `oa-boot-fade` keyframe
+    over 1000 ms with a radial gradient tinted by
+    `--color-system-accent`; compressed path (sub-toggle off OR
+    `prefers-reduced-motion`) collapses to 200 ms. The component
+    sets `--oa-boot-duration` per fire so the keyframe duration
+    matches. Master toggle off suppresses entirely. Dispatches the
+    per-system `"boot-intro"` SFX on the full path; compressed
+    paths skip the SFX so audio doesn't outlast the visual.
+    Skippable on mouse click / keypress / gamepad nav event;
+    `mousedown` (not `mousemove`) to avoid accidental skip when
+    the cursor moves into the OA window.
+  - **CSS** (`9431051`). New `.oa-boot-animation` class +
+    `@keyframes oa-boot-fade` in `index.css`. Radial gradient
+    fades in / holds at ~55% opacity / fades out over
+    `--oa-boot-duration`. Pilot slices (6-8) override per-system
+    via dropped `keyframes.css` files at
+    `<systemId>/boot-animation/` later — Slice 4 ships the
+    framework only.
+  - **App.tsx mount** (`9431051`). SystemBootAnimation mounted in
+    `<main>` alongside SystemBackground, fed by the existing
+    `activeSystemId` memo (= `viewToSystemId(currentView())`). So
+    sidebar nav drives the trigger; hover and tile clicks don't.
+- **Almost:** Operator playtest. Click any system in the left
+  sidebar from "All Games" — screen briefly washes with that
+  system's accent color (~1 s default). Flip Settings → Display →
+  Boot animations off — same trigger now compresses to 200 ms.
+  Flip Per-system experiences off — boot suppresses entirely. If
+  your OS has reduce-motion on, full path is unreachable
+  regardless of the sub-toggle. Per-pilot keyframe overrides
+  arrive in Slices 6-8.
+- **Next:** Slice 5 — tile flourish system. `interactionStyle`
+  (`instant` / `delayed` / `physical`) drives the focus animation;
+  `tileShape` overrides the existing `tileAspect`. Stays in-config
+  — no asset drops needed for Slice 5.
+
 ## 2026-05-26 — Slice 3: Per-system background renderer
 
 Branch `feat/per-system-ui-stage-1-slice-3` cut from main after the

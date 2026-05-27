@@ -7,6 +7,7 @@ import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import LibraryView from "./components/LibraryView";
 import SystemBackground from "./components/SystemBackground";
+import SystemBootAnimation from "./components/SystemBootAnimation";
 import GamePropertiesDialog from "./components/GamePropertiesDialog";
 import {
   CheatsDialog,
@@ -95,6 +96,7 @@ import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
 import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
+import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -348,6 +350,12 @@ const App: Component = () => {
   // "Per-system experiences" off, every per-system UI sound suppresses
   // at the dispatch layer — uniform plain library mode.
   createEffect(() => setPerSystemUiEnabled(settings.perSystemUiEnabled()));
+  // Per-System UI Stage 1 Slice 4: bridge the Boot-animations
+  // sub-toggle. Flipping it off keeps system-entry visual identity
+  // (a 200ms cross-fade) but skips the full ~1s boot. Reduced-motion
+  // collapses to the same short path orthogonally — accessibility
+  // floor regardless of this flag.
+  createEffect(() => setBootAnimationsEnabled(settings.bootAnimationsEnabled()));
 
   // Global Start button → open the menu bar. Bypasses the per-group
   // onStart routing in focus.ts so Start works from any active group
@@ -1784,6 +1792,13 @@ const App: Component = () => {
                 ?? null) as SystemId | null
             }
           />
+          {/* Per-System UI Stage 1 Slice 4: boot animation overlay
+              triggered by explicit system entry (sidebar nav).
+              activeSystemId() reflects "viewToSystemId(currentView())"
+              — i.e. the system the operator filtered to via the
+              sidebar. Hover/focus changes don't fire the boot; only
+              switching the library's active view does. */}
+          <SystemBootAnimation activeSystemId={activeSystemId} />
           <div class="relative z-10 h-full">
           <Switch
             fallback={

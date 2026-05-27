@@ -265,4 +265,31 @@
     0%   { background-position: 100% 0; }
     100% { background-position: -100% 0; }
   }
+
+  /* Per-System UI Stage 1 Slice 4 — boot-animation overlay. Fires
+     when the operator enters a system (sidebar nav → activeSystemId
+     transition). Radial gradient tinted by the destination system's
+     accent so the screen briefly washes in that system's color; full
+     duration ramps in / holds / out. The component sets
+     `--oa-boot-duration` per fire (full ~1s vs compressed 200ms when
+     the sub-toggle is off or reduced-motion is on). Pilot slices
+     (6-8) override the per-system feel via their own keyframes
+     dropped at <exe_dir>/assets/system-ui/<systemId>/boot-animation/;
+     this default keeps every system feeling alive on entry without
+     waiting for that content. */
+  .oa-boot-animation {
+    background: radial-gradient(
+      ellipse at center,
+      var(--color-system-accent, transparent) 0%,
+      var(--color-system-accent-soft, transparent) 30%,
+      transparent 75%
+    );
+    animation: oa-boot-fade var(--oa-boot-duration, 1000ms) ease-in-out forwards;
+  }
+  @keyframes oa-boot-fade {
+    0%   { opacity: 0; transform: scale(1.04); }
+    20%  { opacity: 0.55; transform: scale(1); }
+    70%  { opacity: 0.55; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1); }
+  }
 }
