@@ -48,9 +48,13 @@ Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
    - ✅ Slice 1 — SystemUIConfig data model + registry baseline +
         Settings → Display "Per-system experiences" master toggle +
         prefers-reduced-motion plumbing + feature-folder scaffold
-        (`feat/per-system-ui-stage-1-slice-1`, pending operator
-        playtest)
-   - ⬜ Slice 2 — Per-system SFX wiring through the 4-bus mixer
+        (merged to main 2026-05-26)
+   - ✅ Slice 2 — Per-system SFX wiring: Rust `resolve_ui_sound`
+        resolver cascade (operator override → per-system bundle →
+        `_baseline` → silence), frontend `playSystemUiSound` helper
+        gating on master toggle + audioProfile, library-grid
+        navigate / launch call sites (`feat/per-system-ui-stage-1-slice-2`,
+        pending operator playtest)
    - ⬜ Slice 3 — Per-system background renderer
    - ⬜ Slice 4 — Boot animation framework + Settings sub-toggle
    - ⬜ Slice 5 — Tile flourish system

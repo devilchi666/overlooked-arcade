@@ -10,8 +10,8 @@ slices.
 
 | Slice | Scope | Branch | Status |
 | --- | --- | --- | --- |
-| 1 | `SystemUIConfig` type + registry baseline for all 40+ systems + Settings → Display "Per-system experiences" master toggle + `prefers-reduced-motion` plumbing + feature-folder scaffold. No consumers yet — pure data model + toggle infrastructure. | `feat/per-system-ui-stage-1-slice-1` | shipping |
-| 2 | Per-system SFX wiring. Universal CC0 click sound on nav / select / back / launch routed through the existing `ui-sounds` mixer bus. Asset bundle structure at `<exe_dir>/assets/system-ui/<system>/sounds/`. Honors master toggle + reduced-motion. | TBD | pending |
+| 1 | `SystemUIConfig` type + registry baseline for all 40+ systems + Settings → Display "Per-system experiences" master toggle + `prefers-reduced-motion` plumbing + feature-folder scaffold. No consumers yet — pure data model + toggle infrastructure. | merged | ✅ shipped |
+| 2 | Per-system SFX wiring. Rust `resolve_ui_sound` resolver cascades operator override → per-system bundle at `<exe_dir>/assets/system-ui/<systemId>/sounds/<event>.<ext>` → universal baseline at `<exe_dir>/assets/system-ui/_baseline/sounds/<event>.<ext>` → silence. Frontend `playSystemUiSound` helper gates on the master toggle + per-system `audioProfile === "none"` opt-out; wired into `VirtualLibraryGrid` for gamepad-driven navigate + launch events. | `feat/per-system-ui-stage-1-slice-2` | shipping |
 | 3 | Per-system background renderer. Static gradient default (driven by existing `systemThemes[id].accent`); `background` enum gates which renderer path runs. | TBD | pending |
 | 4 | Boot animation framework + "Boot animations" Settings sub-toggle. Skippable on any input. Reduced-motion shortcuts to 200 ms fade. | TBD | pending |
 | 5 | Tile flourish system. `interactionStyle` (instant / delayed / physical) wires into focus animations; `tileShape` overrides the existing `tileAspect`. | TBD | pending |
