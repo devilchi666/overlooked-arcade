@@ -1,4 +1,4 @@
-export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
+export type SystemId = "tg16" | "pce-cd" | "lynx" | "nes" | "snes" | "mame" | "atari7800" | "genesis" | "segacd" | "sega32x" | "saturn" | "psx" | "neogeo" | "neocd" | "ngp" | "jaguar" | "jagcd" | "3do" | "pcfx" | "n64" | "gamecube" | "dreamcast" | "psp" | "ps2" | "nds" | "sms" | "gamegear" | "gb" | "gbc" | "gba" | "2600" | "5200" | "coleco" | "intv" | "o2" | "channelf" | "vectrex" | "virtualboy" | "wonderswan" | "pokemini" | "msx" | "msx2" | "scummvm" | "dosbox";
 
 /// Form-factor bucket — consumed by the sidebar's default Platforms view
 /// (Consoles / Handhelds / Computers / Arcade / Other). See SIDEBAR_TIER_PLAN
@@ -392,6 +392,26 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     extensions: ["j64", "jag"],
     // Jaguar boxes were landscape, Big Box era (1993-1996).
     tileAspect: "4/3",
+    defaultShaderPreset: "crt-lite",
+  },
+  jagcd: {
+    id: "jagcd",
+    formFactor: "console",
+    manufacturer: "atari",
+    displayName: "Atari Jaguar CD",
+    shortName: "Jag CD",
+    // CD image containers — same shape as other CD-shape systems.
+    // Disambiguation via per-folder Import Wizard rule (operator
+    // marks a folder as jagcd; matching extensions inside route here).
+    // Requires both jagboot.rom (cart-side boot) AND jagcd.rom
+    // (CD-side boot) in `<exe_dir>/system/` — pre-checked by
+    // check_jagcd_bios in main.rs.
+    extensions: ["cue", "chd", "iso", "m3u", "ccd"],
+    // Jaguar CD jewel cases were landscape, same Big Box-era retail
+    // packaging as the cart system.
+    tileAspect: "4/3",
+    // Same crt-lite default as Jaguar carts — the CD games drove the
+    // same 320×200-ish output on CRT TVs.
     defaultShaderPreset: "crt-lite",
   },
   "3do": {

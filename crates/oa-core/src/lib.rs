@@ -108,6 +108,18 @@ pub enum SystemId {
     /// OPTION/PAUSE + 12-key keypad (0-9 + * + #). Cart-shape, BIOS
     /// optional. Virtual Jaguar is the default libretro core.
     Jaguar,
+    /// Atari Jaguar CD (1995). CD-ROM expansion atop the Jaguar
+    /// cartridge slot — a separate SystemId from `Jaguar` because the
+    /// load path differs (CD images vs cart files) and the BIOS
+    /// requirement is mandatory rather than optional. Same Virtual
+    /// Jaguar core (`virtualjaguar_libretro.dll`); needs both
+    /// `jagboot.rom` (cart-side boot, also required for cart play)
+    /// and `jagcd.rom` (CD-side boot) in `<exe_dir>/system/`. Library
+    /// is small (~13 retail releases — Battlemorph, Highlander I,
+    /// Hover Strike: Unconquered Lands, etc.) plus a growing homebrew
+    /// scene. Shares the Jaguar controller layout 1:1 — same bindings
+    /// module covers both.
+    JaguarCd,
     /// 3DO Interactive Multiplayer (1993). CD-shape; the launch console
     /// was Panasonic's FZ-1, later joined by FZ-10 / GoldStar GDO-101M
     /// / Sanyo Try. Opera (formerly 4DO) is the default libretro core.

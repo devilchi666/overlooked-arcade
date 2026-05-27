@@ -452,6 +452,18 @@
   --color-system-glow: oklch(0.65 0.22 65 / 0.35);
 }
 
+/* Atari Jaguar CD — same hue family as cart Jaguar (gold-orange of
+   the 1993 logotype) but slightly deeper (L 0.58) and shifted toward
+   amber (75°). The CD-era marketing leaned into a slightly darker,
+   warmer palette than the launch cart materials; the L-drop also
+   visibly distinguishes the sidebar entries when both systems are
+   in the library at once. */
+[data-system="jagcd"] {
+  --color-system-accent: oklch(0.58 0.20 75);
+  --color-system-accent-soft: oklch(0.93 0.06 75);
+  --color-system-glow: oklch(0.58 0.20 75 / 0.35);
+}
+
 /* 3DO Interactive Multiplayer — deep 3DO purple-magenta in the tight
    gap between Lynx purple (290°) and WonderSwan pearl lavender (305°).
    Period-correct to the 3DO swirl logo's multi-color appearance —

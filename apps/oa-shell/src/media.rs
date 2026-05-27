@@ -2164,6 +2164,10 @@ fn repos_for_system_id(system_id: &str) -> &'static [&'static str] {
         // Atari Jaguar. Single thumbnails repo covers the small library
         // (~50 retail releases + homebrew).
         "jaguar"    => &["Atari_-_Jaguar"],
+        // Atari Jaguar CD. Separate thumbnails repo from the cart
+        // Jaguar; covers the ~13-game retail CD library + the small
+        // homebrew scene.
+        "jagcd"     => &["Atari_-_Jaguar_CD"],
         // 3DO Interactive Multiplayer. libretro-thumbnails repo name
         // matches "The 3DO Company" branding.
         "3do"       => &["The_3DO_Company_-_3DO"],

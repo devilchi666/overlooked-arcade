@@ -188,6 +188,7 @@ export const systemUIConfigs: Record<SystemId, SystemUIConfig> = {
   neocd: { ...BASELINE_UI },
   ngp: { ...BASELINE_UI },
   jaguar: { ...BASELINE_UI },
+  jagcd: { ...BASELINE_UI },
   "3do": { ...BASELINE_UI },
   pcfx: { ...BASELINE_UI },
   n64: { ...BASELINE_UI },

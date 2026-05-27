@@ -588,6 +588,12 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
         // Beetle NeoPop auto-detects mono vs color from ROM header.
         "ngp" | "ngpc" | "neopocket" | "neo-geo-pocket" => oa_core::SystemId::NeoGeoPocket,
         "jaguar" | "jag" | "atari-jaguar" => oa_core::SystemId::Jaguar,
+        // Atari Jaguar CD — CD-ROM expansion sitting on top of the
+        // Jaguar's cart slot. Separate SystemId from cart Jaguar
+        // because the load path differs (.cue / .chd images vs .j64
+        // carts) and BIOS requirements escalate (jagcd.rom is
+        // mandatory; jagboot.rom is also needed alongside it).
+        "jagcd" | "jaguar-cd" | "atari-jaguar-cd" => oa_core::SystemId::JaguarCd,
         // 3DO Interactive Multiplayer. Accept "3do" (canonical slug) and
         // a few common typed-in aliases — Rust identifier can't start
         // with a digit so the enum variant is `ThreeDo`.
@@ -847,6 +853,12 @@ fn default_core_dll_for_system(system_id: &str) -> &'static str {
         // games that touch the BIOS, but most of the library boots
         // without it. No widely-shipped alternate libretro core.
         "jaguar" => "virtualjaguar_libretro.dll",
+        // Same Virtual Jaguar .dll covers both cart Jaguar and Jaguar
+        // CD — the core auto-detects from the supplied file format.
+        // The CD load path additionally requires `jagcd.rom` in
+        // `<exe_dir>/system/` (alongside the cart-side `jagboot.rom`);
+        // both pre-checked by `check_jagcd_bios` before the .dll loads.
+        "jagcd" => "virtualjaguar_libretro.dll",
         // Opera (formerly 4DO) — the canonical libretro 3DO core.
         // CD-shape. BIOS REQUIRED: a regional/manufacturer 3DO BIOS in
         // `<exe_dir>/system/` (Panasonic FZ-1 `panafz1.bin` / FZ-10
@@ -2033,6 +2045,48 @@ fn check_jaguar_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
         let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
 
         let exact_match = JAGUAR_BIOS_KNOWN_HASHES
+            .iter()
+            .any(|(n, h, _)| *n == *name && *h == sha_str);
+        if exact_match {
+            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
+        }
+
+        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+    }
+    Err(BiosError::Missing)
+}
+
+/// Known-good SHA-1 hashes for the Jaguar CD boot ROM. Virtual Jaguar
+/// CD support hard-requires `jagcd.rom` in addition to the cart-side
+/// `jagboot.rom`; this table covers the CD-side dump only — the
+/// cart-side checks remain on `JAGUAR_BIOS_KNOWN_HASHES`. Sourced
+/// from libretro-database/dat/System.dat. Some dumps name the file
+/// `jaguar_cd.rom`; the alternate is recognized for operator
+/// convenience.
+const JAGCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
+    // (filename,         SHA-1 uppercase,                            description)
+    ("jagcd.rom",      "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3", "Atari Jaguar CD boot ROM (~262 KB, canonical)"),
+    ("jaguar_cd.rom",  "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3", "Atari Jaguar CD boot ROM (alternate naming, same content)"),
+];
+
+/// Scan `<system_dir>` for the Jaguar CD BIOS. CD-shape dispatch
+/// counterpart of `check_jaguar_bios`. The cart-side `jagboot.rom`
+/// is also needed alongside but is checked by the cart path — this
+/// helper only validates the CD-side `jagcd.rom`. Blocks launch when
+/// missing (Virtual Jaguar's CD mode won't initialize without it).
+fn check_jagcd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    use sha1::{Digest, Sha1};
+
+    for (name, _, _) in JAGCD_BIOS_KNOWN_HASHES {
+        let p = system_dir.join(name);
+        if !p.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
+        let hash = Sha1::digest(&bytes);
+        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+        let exact_match = JAGCD_BIOS_KNOWN_HASHES
             .iter()
             .any(|(n, h, _)| *n == *name && *h == sha_str);
         if exact_match {
@@ -4205,6 +4259,21 @@ fn run_emu_render(
                                 check_ps2_bios(&system_dir),
                                 "F9A5D629A036B99128F7CB530C6E3CA016E9C8B7",
                                 "the canonical US PS2 v1.60 BIOS (libretro-database)",
+                            )),
+                            // Jaguar CD shares the cart-Jaguar core
+                            // (virtualjaguar_libretro.dll) but loads
+                            // CD images instead — and additionally
+                            // requires jagcd.rom alongside the cart-
+                            // side jagboot.rom. The cart-side BIOS
+                            // check happens via the cart-shape
+                            // dispatch when carts launch; this entry
+                            // only validates the CD-side ROM.
+                            "jagcd" => Some((
+                                "Atari Jaguar CD",
+                                "jagcd.rom (+ jagboot.rom alongside)",
+                                check_jagcd_bios(&system_dir),
+                                "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3",
+                                "the canonical jagcd.rom CD-side boot ROM (libretro-database)",
                             )),
                             _ => None,
                         };

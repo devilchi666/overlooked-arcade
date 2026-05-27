@@ -3787,7 +3787,9 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
         "psx" => Some(default_psx_bindings()),
         "neogeo" | "neocd" => Some(default_neogeo_bindings()),
         "ngp" => Some(default_ngp_bindings()),
-        "jaguar" => Some(default_jaguar_bindings()),
+        // jagcd shares the cart-Jaguar controller layout 1:1 — same
+        // Pro Controller (d-pad + A/B/C + OPTION/PAUSE + 12-key keypad).
+        "jaguar" | "jagcd" => Some(default_jaguar_bindings()),
         "3do" => Some(default_threedo_bindings()),
         "pcfx" => Some(default_pcfx_bindings()),
         "n64" => Some(default_n64_bindings()),
