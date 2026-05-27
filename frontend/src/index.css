@@ -266,6 +266,48 @@
     100% { background-position: -100% 0; }
   }
 
+  /* Per-System UI Stage 1 Slice 5 — tile interaction-style variants.
+     The `data-oa-interaction` attribute is set on every LibraryTile
+     button by reading `systemUIConfigs[id].interactionStyle` (with the
+     `perSystemUiEnabled` master toggle gating it). `instant` is the
+     baseline — no overrides here; Tailwind's `transition duration-200
+     hover:-translate-y-0.5` on the button already gives a crisp,
+     immediate response. `delayed` slows the timing for handheld /
+     LCD-feel systems; `physical` springs with overshoot + a click
+     pulse for signature systems (Vectrex).
+
+     `!important` is needed because Tailwind utility classes
+     (`transition`, `duration-200`, `hover:-translate-y-0.5`) sit in
+     `@layer utilities` which beats `@layer base` rules by cascade
+     order. Without the bang, the per-system overrides would silently
+     no-op. Operator preference doesn't apply here — the styles only
+     attach when the data attribute is `delayed` or `physical`, which
+     only happens via the per-system config consumer. */
+  [data-oa-interaction="delayed"] {
+    transition-duration: 360ms !important;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  [data-oa-interaction="delayed"]:hover {
+    /* Slightly more lift than baseline (-0.5 → -2px) to match the
+       slower easing. */
+    transform: translateY(-2px) !important;
+  }
+  [data-oa-interaction="physical"] {
+    transition-duration: 220ms !important;
+    transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+  [data-oa-interaction="physical"]:hover {
+    transform: translateY(-3px) scale(1.025) !important;
+  }
+  [data-oa-interaction="physical"]:active {
+    animation: oa-tile-pulse 240ms ease-out;
+  }
+  @keyframes oa-tile-pulse {
+    0%   { transform: scale(0.96); }
+    50%  { transform: scale(1.03); }
+    100% { transform: scale(1); }
+  }
+
   /* Per-System UI Stage 1 Slice 4 — boot-animation overlay. Fires
      when the operator enters a system (sidebar nav → activeSystemId
      transition). Radial gradient tinted by the destination system's
