@@ -408,6 +408,15 @@ pub fn resolve_ui_sound(
         "launch"      => sys.ui_sound_launch,
         "error"       => sys.ui_sound_error,
         "scroll-tick" => sys.ui_sound_scroll_tick,
+        // Per-System UI Stage 1 Slice 4: boot-intro fires when the
+        // operator enters a system (sidebar nav → activeSystemId
+        // transition). No operator-override SystemSettings field for
+        // this event in v1 — it's a per-pilot signature sound, not
+        // something operators wire up via the per-system audio UI.
+        // None here means the resolver skips straight to the
+        // bundled-asset lookup at
+        // `<exe_dir>/assets/system-ui/<systemId>/sounds/boot-intro.<ext>`.
+        "boot-intro"  => None,
         _ => return Err(format!("unknown ui sound event: {event}")),
     };
     if let Some(p) = override_path {

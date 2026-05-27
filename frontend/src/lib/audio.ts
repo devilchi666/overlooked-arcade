@@ -25,7 +25,12 @@ export type UiSoundEvent =
   | "back"
   | "launch"
   | "error"
-  | "scroll-tick";
+  | "scroll-tick"
+  // Per-System UI Stage 1 Slice 4: fires when the boot animation
+  // starts on a system-entry transition. Resolver looks at the
+  // bundled asset at <systemId>/sounds/boot-intro.<ext> only (no
+  // SystemSettings override field in v1).
+  | "boot-intro";
 
 /// Play a file on the named bus. `looped = true` keeps the source
 /// running indefinitely — appropriate for BGM-shaped buses (platform-
