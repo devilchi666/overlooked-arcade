@@ -15,7 +15,7 @@
 // LIBRARY's real grid + sidebar + detail pane. Slice 7 adds the
 // footer hint bar.
 
-import { Match, onCleanup, onMount, Switch, type Component } from "solid-js";
+import { createSignal, Match, onCleanup, onMount, Switch, type Component } from "solid-js";
 import {
   currentRoute,
   setCurrentRoute,
@@ -25,6 +25,7 @@ import {
   type RetroverseRoute,
 } from "../../routing/currentRoute";
 import { onNavEvent } from "../../nav/gamepad";
+import { useRetroverse } from "../../routes/retroverse/context";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import HomePage from "../../routes/retroverse/HomePage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
@@ -52,6 +53,7 @@ const STUB_DESIGN_DOCS: Record<Exclude<RetroverseRoute, "library">, string> = {
 };
 
 const RetroverseShell: Component = () => {
+  const ctx = useRetroverse();
   const isActive = (r: RetroverseRoute) => currentRoute() === r;
 
   // Phase B Slice 7 — shell-level L1/R1 = cycle between tabs. Only
@@ -66,6 +68,27 @@ const RetroverseShell: Component = () => {
     });
     onCleanup(dispose);
   });
+
+  // Clock + date display — tick every 30s so the minute readout stays
+  // honest without burning CPU.
+  const [now, setNow] = createSignal(new Date());
+  onMount(() => {
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    onCleanup(() => window.clearInterval(id));
+  });
+  const timeStr = () =>
+    now().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const dateStr = () =>
+    now().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+  // Search input — wire to RetroverseContext's searchQuery + jump to
+  // LIBRARY on Enter so the operator can search from any tab.
+  const onSearchKey = (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      (e.currentTarget as HTMLInputElement).blur();
+      setCurrentRoute("library");
+    }
+  };
 
   return (
     <div
@@ -115,10 +138,35 @@ const RetroverseShell: Component = () => {
           <input
             type="search"
             placeholder="Search games…"
+            value={ctx.searchQuery()}
+            onInput={(e) => ctx.setSearchQuery(e.currentTarget.value)}
+            onKeyDown={onSearchKey}
             class="w-64 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim)/60 focus:border-(--color-system-accent) focus:outline-none"
-            disabled
-            title="Slice 6 will wire this to the existing searchQuery signal."
+            title="Type to filter — Enter jumps to LIBRARY with the active filter."
           />
+          {/* Clock + date — ticks every 30s. */}
+          <div class="flex flex-col items-end leading-tight">
+            <span class="text-[0.8rem] font-semibold tabular-nums text-(--color-oa-ink)">
+              {timeStr()}
+            </span>
+            <span class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              {dateStr()}
+            </span>
+          </div>
+          {/* Profile chip — placeholder avatar until SETTINGS → Profile
+              category lands with persistence for display name + image. */}
+          <button
+            type="button"
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 text-base text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            title="Profile (coming soon)"
+            aria-label="Profile"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setCurrentRoute("settings");
+            }}
+          >
+            👤
+          </button>
         </div>
       </header>
 
