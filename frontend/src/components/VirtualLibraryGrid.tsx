@@ -47,6 +47,10 @@ type Props = {
   /// function so the grid doesn't re-render every tile when a single
   /// group's pin changes.
   variantCountFor?: (id: string) => number | undefined;
+  /// Retroverse-UI Phase C3 — pass-through favorite toggle. Forwarded
+  /// to LibraryTile so the heart overlay can fire without the tile
+  /// reaching into the library store directly.
+  onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
 };
 
 type GridRow =
@@ -346,6 +350,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                               }}
                               selected={props.selectedId?.() === entry.id}
                               variantCount={props.variantCountFor?.(entry.id)}
+                              onToggleFavorite={props.onToggleFavorite}
                             />
                           </div>
                         );

@@ -32,6 +32,11 @@ type Props = {
   /// active pick.
   selectedId?: () => string | null;
   onPickFolder: () => void;
+  /// Retroverse-UI Phase C3 — pass-through favorite toggle. Forwarded
+  /// to VirtualLibraryGrid → LibraryTile. When omitted the heart
+  /// overlay hides (gracefully degrades for surfaces that don't wire
+  /// favorites).
+  onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
 };
 
 /**
@@ -173,6 +178,7 @@ const LibraryView: Component<Props> = (props) => {
                 variantCountFor={(id) =>
                   props.library.groupsByVariantId().get(id)?.variants.length
                 }
+                onToggleFavorite={props.onToggleFavorite}
               />
             }
           >

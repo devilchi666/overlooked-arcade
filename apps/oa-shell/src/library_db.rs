@@ -406,6 +406,36 @@ pub struct GameRow {
     /// after that, whether or not the disc-id matched a canonical entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc_id: Option<String>,
+    /// Retroverse-UI Phase C3 — operator-tagged favorite. Drives the
+    /// Favorites smart-list in the COLLECTIONS tab. Defaults `false`;
+    /// toggled via `update_favorite` from the tile heart overlay or
+    /// the tile context menu.
+    #[serde(default)]
+    pub favorite: bool,
+    /// Retroverse-UI Phase C3 — operator-marked completed. Drives the
+    /// Completed smart-list in the COLLECTIONS tab. Defaults `false`;
+    /// toggled via `update_completed` from the tile context menu.
+    #[serde(default)]
+    pub completed: bool,
+    /// Unix-seconds timestamp of the last session for this game.
+    /// Written by `update_play_session` in main.rs's close_active_session.
+    /// `None` until the operator plays the game at least once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_played_at: Option<i64>,
+    /// Total seconds played across all sessions. Incremented by
+    /// `update_play_session`. Defaults 0 for never-played games.
+    #[serde(default)]
+    pub play_time_secs: i64,
+    /// Maximum simultaneous players supported (1, 2, 4, …). Populated
+    /// by metadata enrichment; `None` when unknown. Drives the
+    /// Multi-Player smart-list in COLLECTIONS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<i64>,
+    /// Editorial rating 0.0–5.0 from metadata enrichment. `None`
+    /// when unknown. Will drive Hidden Gems smart-list in a follow-up
+    /// once a populated source exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -1114,7 +1144,9 @@ impl LibraryDb {
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
                         core_override, cover_path, seed, archive_inner_path,
-                        sha1, serial, disc_id
+                        sha1, serial, disc_id,
+                        favorite, completed, last_played_at, play_time_secs,
+                        players, rating
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -1134,6 +1166,12 @@ impl LibraryDb {
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
                     disc_id: row.get(11)?,
+                    favorite: row.get::<_, i64>(12)? != 0,
+                    completed: row.get::<_, i64>(13)? != 0,
+                    last_played_at: row.get(14)?,
+                    play_time_secs: row.get(15)?,
+                    players: row.get(16)?,
+                    rating: row.get(17)?,
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -1212,6 +1250,15 @@ impl LibraryDb {
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
                     disc_id: row.get(11)?,
+                    // Phase C3 — these aren't SELECTed by this query; consumer
+                    // doesn't need them. list_games is the canonical source for
+                    // smart-list data in the COLLECTIONS tab.
+                    favorite: false,
+                    completed: false,
+                    last_played_at: None,
+                    play_time_secs: 0,
+                    players: None,
+                    rating: None,
                 })
             })
             .map_err(|e| format!("query list_games_for_system: {e}"))?;
@@ -1239,6 +1286,32 @@ impl LibraryDb {
             params![value, id],
         )
         .map_err(|e| format!("update core_override: {e}"))?;
+        Ok(())
+    }
+
+    /// Retroverse-UI Phase C3 — flip the favorite flag for a single
+    /// game. Drives the Favorites smart-list in the COLLECTIONS tab.
+    /// Idempotent: writing the same value twice is harmless.
+    pub fn update_favorite(&self, id: &str, value: bool) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "UPDATE games SET favorite = ?1 WHERE id = ?2",
+            params![value as i64, id],
+        )
+        .map_err(|e| format!("update favorite: {e}"))?;
+        Ok(())
+    }
+
+    /// Retroverse-UI Phase C3 — flip the completed flag for a single
+    /// game. Drives the Completed smart-list in the COLLECTIONS tab.
+    /// Idempotent: writing the same value twice is harmless.
+    pub fn update_completed(&self, id: &str, value: bool) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "UPDATE games SET completed = ?1 WHERE id = ?2",
+            params![value as i64, id],
+        )
+        .map_err(|e| format!("update completed: {e}"))?;
         Ok(())
     }
 
@@ -1343,6 +1416,14 @@ impl LibraryDb {
                 sha1: row.get(9).map_err(|e| format!("col sha1: {e}"))?,
                 serial: row.get(10).map_err(|e| format!("col serial: {e}"))?,
                 disc_id: row.get(11).map_err(|e| format!("col disc_id: {e}"))?,
+                // Phase C3 — find_game_by_id doesn't SELECT these columns;
+                // callers (media path resolution etc.) don't need them.
+                favorite: false,
+                completed: false,
+                last_played_at: None,
+                play_time_secs: 0,
+                players: None,
+                rating: None,
             }))
         } else {
             Ok(None)
@@ -1402,6 +1483,14 @@ impl LibraryDb {
                 sha1: row.get(9).map_err(|e| format!("col sha1: {e}"))?,
                 serial: row.get(10).map_err(|e| format!("col serial: {e}"))?,
                 disc_id: row.get(11).map_err(|e| format!("col disc_id: {e}"))?,
+                // Phase C3 — find_game_by_sha1 doesn't SELECT these; same
+                // pattern as find_game_by_id.
+                favorite: false,
+                completed: false,
+                last_played_at: None,
+                play_time_secs: 0,
+                players: None,
+                rating: None,
             }))
         } else {
             Ok(None)
@@ -1489,6 +1578,14 @@ impl LibraryDb {
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
                     disc_id: row.get(11)?,
+                    // Phase C3 — helper used by the metadata-sync flow;
+                    // doesn't need the new fields.
+                    favorite: false,
+                    completed: false,
+                    last_played_at: None,
+                    play_time_secs: 0,
+                    players: None,
+                    rating: None,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -1957,6 +2054,15 @@ impl LibraryDb {
                         sha1: row.get(9)?,
                         serial: row.get(10)?,
                         disc_id: row.get(11)?,
+                        // Phase C3 — search results don't need smart-list data;
+                        // tile rendering reads from the LibraryStore which is
+                        // hydrated via list_games (which does carry them).
+                        favorite: false,
+                        completed: false,
+                        last_played_at: None,
+                        play_time_secs: 0,
+                        players: None,
+                        rating: None,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -1995,6 +2101,14 @@ impl LibraryDb {
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
                     disc_id: row.get(11)?,
+                    // Phase C3 — FTS search hits; smart-list data lives on the
+                    // LibraryStore's full entry, not search-result rows.
+                    favorite: false,
+                    completed: false,
+                    last_played_at: None,
+                    play_time_secs: 0,
+                    players: None,
+                    rating: None,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -2714,6 +2828,12 @@ mod tests {
             sha1: None,
             serial: None,
             disc_id: None,
+            favorite: false,
+            completed: false,
+            last_played_at: None,
+            play_time_secs: 0,
+            players: None,
+            rating: None,
         }
     }
 

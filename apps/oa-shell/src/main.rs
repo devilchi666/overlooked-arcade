@@ -2816,6 +2816,8 @@ fn main() {
             add_games,
             drop_seed_games,
             update_game_core_override,
+            update_game_favorite,
+            update_game_completed,
             get_game_overrides,
             set_game_overrides,
             delete_game,
@@ -8346,6 +8348,31 @@ fn update_game_core_override(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.update_core_override(&id, value.as_deref())
+}
+
+/// Retroverse-UI Phase C3 — flip the favorite flag for a single game.
+/// Drives the Favorites smart-list in COLLECTIONS + the heart overlay
+/// on LibraryTile. Frontend should optimistically update local state
+/// then await this for the persistence write.
+#[tauri::command]
+fn update_game_favorite(
+    id: String,
+    value: bool,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.update_favorite(&id, value)
+}
+
+/// Retroverse-UI Phase C3 — flip the completed flag for a single game.
+/// Drives the Completed smart-list in COLLECTIONS. Toggled from the
+/// tile context menu (no always-visible badge today).
+#[tauri::command]
+fn update_game_completed(
+    id: String,
+    value: bool,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.update_completed(&id, value)
 }
 
 #[tauri::command]

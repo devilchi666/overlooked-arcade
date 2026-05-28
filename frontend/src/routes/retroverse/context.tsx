@@ -46,6 +46,15 @@ export type RetroverseContextValue = {
   /// in sync. Tile-click launches don't need this — they go through
   /// `onLaunch` (App.handleLaunch) which already does the same work.
   onPostLaunch: (entry: RomEntry, slot?: number) => void;
+  /// Retroverse-UI Phase C3 — flip favorite state for a tile / detail-
+  /// panel game. Sourced from `library.setFavorite` in App.tsx; passed
+  /// through to LibraryView in LibraryPage and to CollectionsPage's
+  /// inline tile grid in the COLLECTIONS tab.
+  onToggleFavorite: (entry: RomEntry, value: boolean) => void;
+  /// Retroverse-UI Phase C3 — flip completed state. Same shape as
+  /// onToggleFavorite. Used by COLLECTIONS context menu + future
+  /// completion celebrations.
+  onToggleCompleted: (entry: RomEntry, value: boolean) => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

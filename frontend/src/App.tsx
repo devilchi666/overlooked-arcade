@@ -1930,6 +1930,7 @@ const App: Component = () => {
                     onShowInfo={(entry) => setGameInfoFor(entry)}
                     selectedId={() => focusedEntry()?.id ?? null}
                     onPickFolder={handlePickFolder}
+                    onToggleFavorite={(entry, value) => void library.setFavorite(entry.id, value)}
                   />
                 </div>
               </Show>
@@ -2000,6 +2001,8 @@ const App: Component = () => {
             onPickContext: (entry, position) => setContextMenuFor({ entry, position }),
             onPickFolder: handlePickFolder,
             onPostLaunch: postLaunchUiUpdate,
+            onToggleFavorite: (entry, value) => void library.setFavorite(entry.id, value),
+            onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed

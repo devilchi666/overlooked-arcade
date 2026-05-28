@@ -187,6 +187,25 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => void props.library.remove(props.entry!.id));
   }
 
+  /// Retroverse-UI Phase C3 — flip favorite. Closes the menu after firing
+  /// so the result is immediately visible (heart fill flips, smart-list
+  /// count updates). Library store handles optimistic update + Rust
+  /// persistence + revert-on-failure.
+  function toggleFavorite() {
+    if (!props.entry) return;
+    const next = !props.entry.favorite;
+    const id = props.entry.id;
+    closeAfter(() => void props.library.setFavorite(id, next));
+  }
+
+  /// Retroverse-UI Phase C3 — flip completed. Same shape as toggleFavorite.
+  function toggleCompleted() {
+    if (!props.entry) return;
+    const next = !props.entry.completed;
+    const id = props.entry.id;
+    closeAfter(() => void props.library.setCompleted(id, next));
+  }
+
   /// Flat ordered item list. Mirrors the rendered order; conditional
   /// sections fold in via if-guards rather than `<Show>` so the focus
   /// group's index → action mapping stays consistent. Returns empty
@@ -226,6 +245,19 @@ const TileContextMenu: Component<Props> = (props) => {
     });
     list.push({ key: "saves", label: "Save states…", onActivate: showSaves });
     list.push({ key: "info", label: "Game info…", onActivate: showGameInfo });
+    // Retroverse-UI Phase C3 — Favorite + Mark completed flags drive the
+    // COLLECTIONS smart-lists. Available from this menu in both legacy +
+    // Retroverse UIs (the same context menu is reused in both).
+    list.push({
+      key: "favorite",
+      label: props.entry?.favorite ? "Remove from favorites" : "Add to favorites",
+      onActivate: toggleFavorite,
+    });
+    list.push({
+      key: "completed",
+      label: props.entry?.completed ? "Mark as not completed" : "Mark as completed",
+      onActivate: toggleCompleted,
+    });
     list.push({
       key: "core",
       label: "Change core…",
