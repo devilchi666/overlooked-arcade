@@ -98,7 +98,8 @@ import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
-import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
+import { setRetroverseUiEnabled, isRetroverseUiEnabled } from "./lib/retroverseFlag";
+import RetroverseShell from "./layout/retroverse/RetroverseShell";
 import {
   currentRoute as currentRetroverseRoute,
   setCurrentRoute as setRetroverseRoute,
@@ -1782,6 +1783,14 @@ const App: Component = () => {
   return (
     <MediaProvider>
       <PlatformMediaProvider>
+      {/* Retroverse-UI Phase B Slice 5 — entire Shell swaps to
+          RetroverseShell when the experimental flag is ON. Two
+          distinct UIs, no hybrid state. Modals (ImportWizard /
+          GameInfoModal / etc.) below this Show stay accessible in
+          both modes. */}
+      <Show
+        when={isRetroverseUiEnabled()}
+        fallback={
       <Shell
         layout={layout}
         fullBleed={isDirectLaunch() || gameMode()}
@@ -1945,6 +1954,10 @@ const App: Component = () => {
           </div>
         </Show>
       </Shell>
+        }
+      >
+        <RetroverseShell />
+      </Show>
       <ImportWizard
         open={wizardOpen()}
         onClose={() => setWizardOpen(false)}
