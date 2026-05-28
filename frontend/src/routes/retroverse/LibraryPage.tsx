@@ -28,7 +28,7 @@
 import { Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
-import RightDetailPanel from "../../components/RightDetailPanel";
+import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
@@ -178,11 +178,14 @@ const LibraryPage: Component = () => {
             </div>
           }
         >
-          <RightDetailPanel
-            entry={ctx.focusedEntry()}
-            onClose={() => ctx.setFocusedEntry(null)}
-            onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
-          />
+          {(entry) => (
+            <GameDetailPanel
+              entry={entry()}
+              onLaunch={(e) => void ctx.onLaunch(e)}
+              onShowInfo={ctx.onShowInfo}
+              onToggleFavorite={ctx.onToggleFavorite}
+            />
+          )}
         </Show>
       </aside>
     </div>

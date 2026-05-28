@@ -38,7 +38,8 @@ import { useMedia } from "../../library/media";
 import { usePlatformMedia } from "../../library/platformMedia";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import type { RomEntry } from "../../library/types";
-import RightDetailPanel from "../../components/RightDetailPanel";
+import GameDetailPanel from "./GameDetailPanel";
+import SystemInfoPanel from "./SystemInfoPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
@@ -675,24 +676,23 @@ const HomePage: Component = () => {
           <Show
             when={ctx.focusedEntry()}
             fallback={
-              <div class="flex h-full items-center justify-center p-8">
-                <div class="max-w-xs text-center">
-                  <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                    No selection
-                  </p>
-                  <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-                    Click a card on the popular or recently-played rails to
-                    see its detail here.
-                  </p>
-                </div>
-              </div>
+              <SystemInfoPanel
+                systemId={activeSystemId()}
+                entries={entriesBySystem().get(activeSystemId()) ?? []}
+                onPickGame={(game) => {
+                  ctx.setFocusedEntry(game);
+                }}
+              />
             }
           >
-            <RightDetailPanel
-              entry={ctx.focusedEntry()}
-              onClose={() => ctx.setFocusedEntry(null)}
-              onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
-            />
+            {(entry) => (
+              <GameDetailPanel
+                entry={entry()}
+                onLaunch={(e) => void ctx.onLaunch(e)}
+                onShowInfo={ctx.onShowInfo}
+                onToggleFavorite={ctx.onToggleFavorite}
+              />
+            )}
           </Show>
         </div>
 

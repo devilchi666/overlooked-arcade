@@ -19,7 +19,7 @@
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
-import RightDetailPanel from "../../components/RightDetailPanel";
+import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
@@ -383,10 +383,13 @@ const CollectionsPage: Component = () => {
             </div>
           }
         >
-          <RightDetailPanel
-            entry={ctx.focusedEntry()}
-            onClose={() => ctx.setFocusedEntry(null)}
-            onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
+          {/* Show's fallback handles null; the Show body unwraps via
+              accessor so GameDetailPanel always gets a non-null entry. */}
+          <GameDetailPanel
+            entry={ctx.focusedEntry()!}
+            onLaunch={(e) => void ctx.onLaunch(e)}
+            onShowInfo={ctx.onShowInfo}
+            onToggleFavorite={ctx.onToggleFavorite}
           />
         </Show>
       </aside>
