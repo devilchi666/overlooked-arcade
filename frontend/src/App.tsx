@@ -98,7 +98,9 @@ import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
-import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
+import { setRetroverseUiEnabled, isRetroverseUiEnabled } from "./lib/retroverseFlag";
+import RetroverseShell from "./layout/retroverse/RetroverseShell";
+import { RetroverseProvider } from "./routes/retroverse/context";
 import {
   currentRoute as currentRetroverseRoute,
   setCurrentRoute as setRetroverseRoute,
@@ -910,6 +912,31 @@ const App: Component = () => {
       void autoSyncAfterIngest(summary.systemIds, summary.entries);
     }
     setBusy("idle");
+  }
+
+  /// Retroverse-UI Phase B Slice 6 — post-launch UI bridge. What App.tsx
+  /// does after a successful launch (status toast, gameRunning flip,
+  /// runningEntry capture, single-window library auto-hide). Called by:
+  ///   - GameInfoModal's `onLaunched` (existing) when the operator
+  ///     launches from the modal's Launch / Resume buttons.
+  ///   - RetroverseContext's `onPostLaunch` (Phase B Slice 6) so
+  ///     panel-mode RightDetailPanel in LibraryPage keeps shell state
+  ///     in sync the same way.
+  /// Tile-click launches go through `handleLaunch` directly and don't
+  /// need this — handleLaunch already does these updates inline.
+  function postLaunchUiUpdate(entry: RomEntry, slot?: number): void {
+    setStatus(
+      slot !== undefined
+        ? `Launched ${entry.title} (slot ${slot}).`
+        : `Launched ${entry.title}.`,
+    );
+    setGameRunning(true);
+    setCurrentRomTitle(entry.title);
+    setRunningEntry(entry);
+    if (shellMode() === "single-window") {
+      setLibraryVisible(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
   }
 
   async function handleLaunch(entry: RomEntry, slot?: number, stateFile?: string) {
@@ -1782,6 +1809,14 @@ const App: Component = () => {
   return (
     <MediaProvider>
       <PlatformMediaProvider>
+      {/* Retroverse-UI Phase B Slice 5 — entire Shell swaps to
+          RetroverseShell when the experimental flag is ON. Two
+          distinct UIs, no hybrid state. Modals (ImportWizard /
+          GameInfoModal / etc.) below this Show stay accessible in
+          both modes. */}
+      <Show
+        when={isRetroverseUiEnabled()}
+        fallback={
       <Shell
         layout={layout}
         fullBleed={isDirectLaunch() || gameMode()}
@@ -1945,6 +1980,41 @@ const App: Component = () => {
           </div>
         </Show>
       </Shell>
+        }
+      >
+        <RetroverseProvider
+          value={{
+            library,
+            layout,
+            views: viewsStore,
+            settings,
+            searchQuery,
+            setSearchQuery,
+            focusedEntry,
+            setFocusedEntry,
+            currentView,
+            setCurrentView,
+            onLaunch: handleLaunch,
+            onShowSaves: (e) => setSavesEntry(e),
+            onShowInfo: (e) => setGameInfoFor(e),
+            onPickContext: (entry, position) => setContextMenuFor({ entry, position }),
+            onPickFolder: handlePickFolder,
+            onPostLaunch: postLaunchUiUpdate,
+          }}
+        >
+          {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
+              gate: hide the entire Retroverse shell when the game is
+              "full bleed" (single-window with library hidden, OR
+              direct-launch boot). The wgpu emulator surface paints to
+              the WebView's transparent background; when no Retroverse
+              chrome is on top, emulator pixels show through. Esc /
+              Ctrl+W toggle libraryVisible back, gameMode goes false,
+              shell re-renders. */}
+          <Show when={!(isDirectLaunch() || gameMode())}>
+            <RetroverseShell />
+          </Show>
+        </RetroverseProvider>
+      </Show>
       <ImportWizard
         open={wizardOpen()}
         onClose={() => setWizardOpen(false)}
@@ -2086,20 +2156,7 @@ const App: Component = () => {
       <GameInfoModal
         entry={gameInfoFor()}
         onClose={() => setGameInfoFor(null)}
-        onLaunched={(entry, slot) => {
-          setStatus(
-            slot !== undefined
-              ? `Launched ${entry.title} (slot ${slot}).`
-              : `Launched ${entry.title}.`,
-          );
-          setGameRunning(true);
-          setCurrentRomTitle(entry.title);
-          setRunningEntry(entry);
-          if (shellMode() === "single-window") {
-            setLibraryVisible(false);
-            (document.activeElement as HTMLElement | null)?.blur();
-          }
-        }}
+        onLaunched={postLaunchUiUpdate}
       />
       <CorePickerMenu
         entry={coreMenuFor()?.entry ?? null}
