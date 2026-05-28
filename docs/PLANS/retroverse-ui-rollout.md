@@ -383,8 +383,27 @@ Current status (2026-05-28):
   WHY-line generator + 3 rails + mood sidebar. Operator-validated;
   merged `--no-ff` to main as `b2af79e`. 5 of 6 tabs now operator-
   facing.
-- ⬜ Phase C2 — HOME tab. Content dependency: per-system hero art
-  + blurbs + editorial metadata (year / architecture / media /
-  rating). See "HOME content gap analysis" below.
+- ✅ Phase C2 merged — code-first HOME skeleton + controller-nav
+  focus-group activation fix. Branch
+  `feat/retroverse-ui-phase-c2-home` shipped Slice 16 (`9b47227`
+  HOME skeleton + sysinfo dep) + controller-nav fix (`807915b`).
+  Operator-validated; merged `--no-ff` to main as `ca4ab04`.
+  All 6 Retroverse tabs are now operator-facing.
+
+  Content gap follow-ups (deferred):
+  - Per-system hero art — drop console + fanart files into the
+    existing PlatformMedia slots (infra ships; no code work).
+  - Per-system blurbs — needs a `blurb?: string` field on
+    SystemTheme + ~45 short paragraphs (operator-curated or
+    AI-baselined).
+  - Per-system release metadata — add `releasedYear` /
+    `architecture` / `mediaType` to SystemTheme + mine Wikipedia.
+
+  Controller-nav follow-up (operator spec):
+  - DPad / left-stick LEFT/RIGHT should transfer focus between
+    sidebars and grids; L1/R1 stays tab-cycle. Today's shoulder-
+    bumper-based neighbour transfer doesn't match; split each
+    Retroverse page into per-region focus groups with direction-
+    based transfer in a dedicated polish slice.
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending
   earlier phases.
