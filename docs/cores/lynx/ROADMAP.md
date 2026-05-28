@@ -22,9 +22,9 @@ Core comes online as part of the project's transition to a multi-core launcher. 
 
 ---
 
-## ⬜ Phase 1 — First Lynx ROM running
+## 🟨 Phase 1 — First Lynx ROM running
 
-- ⬜ Operator validation: launch a real `.lnx` ROM end-to-end (pixels + audio + controller) — operator playtest.
+- ✅ Operator validation: launch a real `.lnx` ROM end-to-end (pixels + audio + controller) — operator confirmed working 2026-05-27. Multi-region testing still open (Phase 1 not fully closed until USA / Europe / Japan all confirmed).
 - ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 - ⬜ Multi-region testing: load USA + Europe + Japan ROM dumps to confirm BIOS region handling — operator playtest.
 - ✅ Per-game cover sync via libretro-thumbnails — closed by cross-system media sync (`media::sync_media_for_system`).

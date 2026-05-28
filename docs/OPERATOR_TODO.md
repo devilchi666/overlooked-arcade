@@ -178,8 +178,9 @@ vs "no BIOS" so you can plan a session.
 
 ### No BIOS install needed (most accessible)
 
-- [ ] **lynx** (~30 min) — real `.lnx` ROM (California Games,
-  Chip's Challenge). _Source: `docs/cores/lynx/ROADMAP.md`._
+- [x] **lynx** ✅ 2026-05-27 — real `.lnx` ROM end-to-end confirmed
+  by operator. Multi-region (USA / Europe / Japan) testing still
+  open in the lynx ROADMAP Phase 1.
 - [ ] **2600** (~30 min) — Pitfall, Adventure, Combat. _Source:
   `docs/cores/2600/ROADMAP.md`._
 - [ ] **ngp** (~30 min) — SNK vs Capcom, Sonic Pocket. NGP mono
