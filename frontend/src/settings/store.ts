@@ -139,6 +139,13 @@ const DEFAULT_BOOT_ANIMATIONS_ENABLED = true;
 // reads it.
 const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = false;
 
+// Retroverse SETTINGS → Profile — display name + avatar. Drives the
+// top-right profile chip on the Retroverse shell and any future
+// "Hi, <name>" surfaces. Defaults to empty / generic so a fresh
+// install doesn't surface placeholder text.
+const DEFAULT_PROFILE_DISPLAY_NAME = "";
+const DEFAULT_PROFILE_AVATAR = "👤";
+
 export type ControllerNavSource = "dpad" | "stick-left" | "both";
 
 const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
@@ -169,6 +176,8 @@ type Persisted = {
   perSystemUiEnabled: boolean;
   bootAnimationsEnabled: boolean;
   experimentalRetroverseUi: boolean;
+  profileDisplayName: string;
+  profileAvatar: string;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -241,6 +250,8 @@ function load(): Persisted {
     perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
     bootAnimationsEnabled: DEFAULT_BOOT_ANIMATIONS_ENABLED,
     experimentalRetroverseUi: DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
+    profileDisplayName: DEFAULT_PROFILE_DISPLAY_NAME,
+    profileAvatar: DEFAULT_PROFILE_AVATAR,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -312,6 +323,14 @@ function load(): Persisted {
         typeof parsed.experimentalRetroverseUi === "boolean"
           ? parsed.experimentalRetroverseUi
           : DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
+      profileDisplayName:
+        typeof parsed.profileDisplayName === "string"
+          ? parsed.profileDisplayName
+          : DEFAULT_PROFILE_DISPLAY_NAME,
+      profileAvatar:
+        typeof parsed.profileAvatar === "string"
+          ? parsed.profileAvatar
+          : DEFAULT_PROFILE_AVATAR,
     };
   } catch {
     return fallback;
@@ -428,6 +447,10 @@ export function createSettingsStore() {
     createSignal<boolean>(initial.bootAnimationsEnabled);
   const [experimentalRetroverseUi, setExperimentalRetroverseUi] =
     createSignal<boolean>(initial.experimentalRetroverseUi);
+  const [profileDisplayName, setProfileDisplayName] =
+    createSignal<string>(initial.profileDisplayName);
+  const [profileAvatar, setProfileAvatar] =
+    createSignal<string>(initial.profileAvatar);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -461,6 +484,8 @@ export function createSettingsStore() {
       perSystemUiEnabled: perSystemUiEnabled(),
       bootAnimationsEnabled: bootAnimationsEnabled(),
       experimentalRetroverseUi: experimentalRetroverseUi(),
+      profileDisplayName: profileDisplayName(),
+      profileAvatar: profileAvatar(),
     });
   });
 
@@ -579,6 +604,8 @@ export function createSettingsStore() {
     perSystemUiEnabled, setPerSystemUiEnabled,
     bootAnimationsEnabled, setBootAnimationsEnabled,
     experimentalRetroverseUi, setExperimentalRetroverseUi,
+    profileDisplayName, setProfileDisplayName,
+    profileAvatar, setProfileAvatar,
   };
 }
 

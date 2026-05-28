@@ -18,11 +18,16 @@ import { HintRegion } from "../../nav/HintBar";
 import {
   AboutSettings,
   AudioSettings,
+  BiosSettings,
   ControllerNavSettings,
+  CoresCategorySettings,
   DisplayBaseSettings,
   ExperimentalSettings,
   GameplaySettings,
+  LibrarySettings,
+  MediaSettings,
   PerSystemUiSettings,
+  ProfileSettings,
   ShadersSettings,
   StorageSettings,
   ThemesSettings,
@@ -387,8 +392,23 @@ const SettingsPage: Component = () => {
           <Match when={activeCategoryId() === "themes"}>
             <ThemesSettings />
           </Match>
+          <Match when={activeCategoryId() === "library"}>
+            <LibrarySettings />
+          </Match>
+          <Match when={activeCategoryId() === "media"}>
+            <MediaSettings />
+          </Match>
+          <Match when={activeCategoryId() === "cores"}>
+            <CoresCategorySettings />
+          </Match>
+          <Match when={activeCategoryId() === "bios"}>
+            <BiosSettings />
+          </Match>
           <Match when={activeCategoryId() === "storage"}>
             <StorageSettings />
+          </Match>
+          <Match when={activeCategoryId() === "profile"}>
+            <ProfileSettings settings={ctx.settings} />
           </Match>
           <Match when={activeCategoryId() === "about"}>
             <AboutSettings />
