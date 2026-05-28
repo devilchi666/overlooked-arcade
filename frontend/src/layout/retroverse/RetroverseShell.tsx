@@ -153,19 +153,20 @@ const RetroverseShell: Component = () => {
               {dateStr()}
             </span>
           </div>
-          {/* Profile chip — placeholder avatar until SETTINGS → Profile
-              category lands with persistence for display name + image. */}
+          {/* Profile chip — avatar from Settings → Profile. Click
+              routes to SETTINGS so the operator can edit display name
+              + avatar there. */}
           <button
             type="button"
             class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 text-base text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
-            title="Profile (coming soon)"
+            title={ctx.settings.profileDisplayName() || "Profile"}
             aria-label="Profile"
             onClick={(e) => {
               e.currentTarget.blur();
               setCurrentRoute("settings");
             }}
           >
-            👤
+            {ctx.settings.profileAvatar() || "👤"}
           </button>
         </div>
       </header>

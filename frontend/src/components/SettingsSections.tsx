@@ -18,11 +18,13 @@
 import {
   createMemo,
   createResource,
+  For,
   Show,
   type Component,
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import CoresPage from "./CoresPage";
 import SettingRow from "./SettingRow";
 import {
   SCALING_MODE_LABELS,
@@ -422,6 +424,248 @@ export const ShadersSettings: Component<{ settings: SettingsStore }> = (props) =
           }}
           description="OA-wide source/blur mix. Only meaningful when the active preset's base is Phosphor. Per-system + per-game overrides take precedence."
         />
+      </SettingsCard>
+    </div>
+  );
+};
+
+// --- Profile -----------------------------------------------------------
+
+/// A small set of presets so the operator doesn't have to remember
+/// which emoji renders well at chip size. Custom emoji still works via
+/// the freeform input.
+const AVATAR_PRESETS = ["👤", "🎮", "👾", "🕹", "🤖", "🦊", "🐺", "⚡", "🌙", "🍄", "🦄", "🎯"];
+
+export const ProfileSettings: Component<{ settings: SettingsStore }> = (props) => {
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="Identity">
+        <div class="flex items-center gap-4">
+          <div class="grid h-16 w-16 shrink-0 place-items-center rounded-full border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 text-3xl">
+            {props.settings.profileAvatar() || "👤"}
+          </div>
+          <div class="min-w-0 flex-1">
+            <label class="block text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              Display name
+            </label>
+            <input
+              type="text"
+              value={props.settings.profileDisplayName()}
+              onInput={(e) => props.settings.setProfileDisplayName(e.currentTarget.value)}
+              placeholder="Your name"
+              maxLength={32}
+              class="mt-1 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim)/60 focus:border-(--color-system-accent) focus:outline-none"
+            />
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Avatar">
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-wrap gap-2">
+            <For each={AVATAR_PRESETS}>
+              {(preset) => {
+                const isActive = () => props.settings.profileAvatar() === preset;
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      props.settings.setProfileAvatar(preset);
+                    }}
+                    class="grid h-10 w-10 place-items-center rounded-full border text-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                    classList={{
+                      "border-(--color-system-accent) bg-(--color-system-accent)/15":
+                        isActive(),
+                      "border-white/10 bg-white/[0.04] hover:border-white/20": !isActive(),
+                    }}
+                    aria-pressed={isActive()}
+                  >
+                    {preset}
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              Or paste a custom emoji
+            </span>
+            <input
+              type="text"
+              value={props.settings.profileAvatar()}
+              onInput={(e) => {
+                // Limit to a single grapheme — emoji can be multi-codepoint
+                // but most chip-friendly avatars are single visible glyphs.
+                const raw = e.currentTarget.value;
+                const trimmed = [...raw][0] ?? "";
+                props.settings.setProfileAvatar(trimmed);
+              }}
+              maxLength={8}
+              class="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-(--color-oa-ink) focus:border-(--color-system-accent) focus:outline-none"
+            />
+          </label>
+          <p class="text-[0.65rem] text-(--color-oa-ink-dim)/70">
+            The avatar drives the top-right profile chip on the
+            Retroverse shell. Custom image uploads land in a future
+            slice once the content-packs avatar pipeline ships.
+          </p>
+        </div>
+      </SettingsCard>
+    </div>
+  );
+};
+
+// --- Cores -------------------------------------------------------------
+
+export const CoresCategorySettings: Component = () => {
+  // CoresPage embeds full-page chrome (header, etc.) — in the SETTINGS
+  // tab context we let it own the whole center pane. The onBack
+  // callback is a no-op because the SETTINGS sidebar handles
+  // navigation away from the category. Wrapping in a thin div keeps
+  // the page's height calc happy.
+  return (
+    <div class="h-full -mx-8 -my-6">
+      <CoresPage onBack={() => { /* no-op: SETTINGS sidebar owns nav */ }} />
+    </div>
+  );
+};
+
+// --- Library / Media / BIOS — informational cards ---------------------
+
+export const LibrarySettings: Component = () => (
+  <div class="flex flex-col gap-4">
+    <SettingsCard title="Library folders">
+      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
+        Library scanning, folder management, and the import wizard
+        currently live in the legacy menu bar's{" "}
+        <span class="text-(--color-system-accent)">Library → Library Manager…</span>{" "}
+        surface. Flip Settings → Display → Experimental → Retroverse UI
+        OFF to reach it, then back ON when you're done.
+      </p>
+      <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
+        Wrapping the Library Manager body into this category lands in
+        a follow-up slice — the legacy surface takes 5 store +
+        callback props that need plumbing through RetroverseContext
+        first.
+      </p>
+    </SettingsCard>
+  </div>
+);
+
+export const MediaSettings: Component = () => (
+  <div class="flex flex-col gap-4">
+    <SettingsCard title="Per-platform media">
+      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
+        Per-system art slots (banner / clear-logo / console / controller
+        / fanart / marquee / photo / wheel / background) are managed
+        from the legacy menu bar's{" "}
+        <span class="text-(--color-system-accent)">Library → Platform Media…</span>{" "}
+        surface. The HOME tab's hero already reads from those slots
+        immediately — files dropped under{" "}
+        <code class="rounded border border-white/10 bg-black/40 px-1 font-mono text-[0.65rem]">
+          {"<data_dir>/media/platform/<system_id>/"}
+        </code>{" "}
+        appear right away.
+      </p>
+      <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
+        Wrapping the PlatformMediaDialog body into this tab is a
+        follow-up; the existing component is modal-shaped and needs
+        the variant="panel" lift treatment GameInfoModal got in
+        Phase A Slice 3.
+      </p>
+    </SettingsCard>
+
+    <SettingsCard title="Per-game art (libretro-thumbnails sync)">
+      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
+        Per-game cover art syncs from the libretro-thumbnails repo per
+        system. Controlled from the menu bar's{" "}
+        <span class="text-(--color-system-accent)">Tools → Sync media…</span>{" "}
+        surface today.
+      </p>
+    </SettingsCard>
+  </div>
+);
+
+export const BiosSettings: Component = () => {
+  const [dataDir] = createResource(async () => {
+    try {
+      const mod = await import("../lib/dataDir");
+      return await mod.getDataDir();
+    } catch {
+      return "";
+    }
+  });
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="System directory">
+        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+          BIOS files live in:
+        </p>
+        <code class="mt-2 block break-all rounded border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[0.65rem] text-(--color-oa-ink)">
+          {dataDir() ? `${dataDir()}/system/` : "Loading…"}
+        </code>
+        <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)">
+          Drop the required BIOS files into this folder. OA verifies
+          each at launch time and refuses to start a system with a
+          missing / wrong BIOS (per-system sha-1 table). The pre-launch
+          check surfaces the exact required filenames in the error
+          toast if a BIOS is missing.
+        </p>
+      </SettingsCard>
+
+      <SettingsCard title="Systems that need BIOS">
+        <div class="space-y-2 text-[0.75rem] text-(--color-oa-ink-dim)">
+          <p>
+            <span class="text-(--color-oa-ink)">PCE-CD / TG-CD:</span>{" "}
+            syscard3.pce
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Sega CD:</span> bios_CD_E.bin /
+            bios_CD_J.bin / bios_CD_U.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Saturn:</span> sega_101.bin /
+            mpr-17933.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">PSX:</span> SCPH7001.bin /
+            SCPH7003.bin / SCPH1001.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Neo Geo CD:</span> neocd.bin /
+            neocd_z.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">3DO:</span> panafz1.bin /
+            panafz10.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">PC-FX:</span> pcfx.rom
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Dreamcast:</span> dc_boot.bin
+            + dc_flash.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">PS2:</span> SCPH-70004_BIOS_V12_PAL_200.BIN
+            (one of many — PCSX2 docs)
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">NDS:</span> bios7.bin / bios9.bin
+            / firmware.bin
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Atari Lynx / Jaguar:</span> lynxboot.img
+            / jagboot.rom
+          </p>
+        </div>
+        <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
+          A live "is each BIOS present?" status grid lands in a
+          follow-up — Rust gains a get_bios_status command that
+          aggregates the existing per-system check_*_bios functions
+          into one call.
+        </p>
       </SettingsCard>
     </div>
   );
