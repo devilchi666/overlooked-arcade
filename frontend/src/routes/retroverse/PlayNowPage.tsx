@@ -7,7 +7,7 @@
 //   - Center: massive hero card (cover hero + WHY line + Play Now + Reroll)
 //             + Netflix-style rails (Continue where you left off /
 //             Multi-player tonight / Favorites you haven't touched).
-//   - Right:  <RightDetailPanel> showing focusedEntry — same shape as
+//   - Right:  GameDetailPanel when an entry is focused — same shape as
 //             LIBRARY's right pane.
 //
 // Simple-heuristic recommender v1: active mood narrows the candidate pool,
@@ -22,7 +22,7 @@ import { createMemo, createSignal, For, Match, Show, Switch, type Component } fr
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
-import RightDetailPanel from "../../components/RightDetailPanel";
+import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes } from "../../themes/registry";
@@ -692,10 +692,11 @@ const PlayNowPage: Component = () => {
             </div>
           }
         >
-          <RightDetailPanel
-            entry={ctx.focusedEntry()}
-            onClose={() => ctx.setFocusedEntry(null)}
-            onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
+          <GameDetailPanel
+            entry={ctx.focusedEntry()!}
+            onLaunch={(e) => void ctx.onLaunch(e)}
+            onShowInfo={ctx.onShowInfo}
+            onToggleFavorite={ctx.onToggleFavorite}
           />
         </Show>
       </aside>

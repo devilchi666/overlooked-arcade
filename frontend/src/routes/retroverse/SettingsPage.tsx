@@ -13,7 +13,7 @@
 // modals. The other categories stay as "Coming in a follow-up" stubs
 // until each gets its own polish slice.
 
-import { createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createSignal, For, Match, Switch, type Component } from "solid-js";
 import { HintRegion } from "../../nav/HintBar";
 import {
   AudioSettings,
@@ -216,15 +216,14 @@ const SettingsPage: Component = () => {
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
 
-  // Retroverse-UI controller-nav v2 — per-region focus groups so
-  // DPad LEFT/RIGHT transfers category sidebar ↔ setting cards ↔
-  // live-preview pane. UP/DOWN stays within a region.
+  // Retroverse-UI controller-nav v2 — SETTINGS is 2-region only after
+  // the live-preview right pane was dropped (operator spec). DPad LEFT
+  // from center returns to left sidebar; UP/DOWN stays within a region;
+  // L1/R1 cycles tabs at the shell level.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
-  let rightRef: HTMLElement | undefined;
   const LEFT_ID = "retroverse-settings-left";
   const CENTER_ID = "retroverse-settings-center";
-  const RIGHT_ID = "retroverse-settings-right";
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
@@ -249,24 +248,6 @@ const SettingsPage: Component = () => {
         activateFocusGroup(LEFT_ID);
         return true;
       }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
-  });
-  useDomQueryFocusGroup({
-    id: RIGHT_ID,
-    containerRef: () => rightRef,
-    orientation: "vertical",
-    autoActivate: false,
-    onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
       return false;
     },
   });
@@ -275,7 +256,7 @@ const SettingsPage: Component = () => {
     <div
       class="grid h-full w-full"
       style={{
-        "grid-template-columns": "260px minmax(0,1fr) 320px",
+        "grid-template-columns": "260px minmax(0,1fr)",
       }}
     >
       {/* Phase C1 hints — keep stub-compatible nav + add Y reset. */}
@@ -402,36 +383,6 @@ const SettingsPage: Component = () => {
           </Match>
         </Switch>
       </section>
-
-      {/* Right pane — live preview placeholder (static help text in
-          Phase C1). Rich previews per category land as polish later. */}
-      <aside
-        ref={(el) => (rightRef = el)}
-        class="min-w-0 overflow-y-auto border-l border-white/5 px-6 py-6"
-      >
-        <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-          About this setting
-        </p>
-        <h2 class="mt-2 text-base font-semibold text-(--color-oa-ink)">
-          {activeCategory().label}
-        </h2>
-        <p class="mt-3 text-sm leading-relaxed text-(--color-oa-ink-dim)">
-          {activeCategory().helpText}
-        </p>
-        <Show
-          when={
-            activeCategory().id === "library" ||
-            activeCategory().id === "media" ||
-            activeCategory().id === "cores"
-          }
-        >
-          <p class="mt-4 rounded-md border border-(--color-system-accent)/20 bg-(--color-system-accent)/[0.04] p-3 text-[0.7rem] text-(--color-oa-ink-dim)">
-            Today's surface for this category lives in the menu bar
-            (Library Manager… / Cores Manager… / Platform Media…). The
-            Retroverse-UI port wraps each into this tab as its own slice.
-          </p>
-        </Show>
-      </aside>
     </div>
   );
 };

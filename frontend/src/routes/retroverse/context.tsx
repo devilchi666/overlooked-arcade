@@ -37,14 +37,13 @@ export type RetroverseContextValue = {
   onShowInfo: (entry: RomEntry) => void;
   onPickContext: (entry: RomEntry, position: { x: number; y: number }) => void;
   onPickFolder: () => Promise<unknown> | void;
-  /// Post-launch UI bridge — what App.tsx does after a successful launch
-  /// (sets gameRunning / runningEntry / currentRomTitle, hides the
-  /// library overlay in single-window mode, etc.). Mirrors what
-  /// App.tsx already passes to GameInfoModal as `onLaunched`. LIBRARY
-  /// tab passes this to RightDetailPanel's `onLaunched` so launching
-  /// from the persistent detail pane keeps the App-level shell state
-  /// in sync. Tile-click launches don't need this — they go through
-  /// `onLaunch` (App.handleLaunch) which already does the same work.
+  /// Post-launch UI bridge — sets gameRunning / runningEntry /
+  /// currentRomTitle, hides the library overlay in single-window mode.
+  /// Mirrors what App.tsx passes to GameInfoModal as `onLaunched`.
+  /// Tile-click launches go through `onLaunch` (App.handleLaunch)
+  /// which already does the same work inline; this exists for surfaces
+  /// where the launch sidesteps handleLaunch (e.g. the GameInfoModal's
+  /// own Launch / Resume buttons).
   onPostLaunch: (entry: RomEntry, slot?: number) => void;
   /// Retroverse-UI Phase C3 — flip favorite state for a tile / detail-
   /// panel game. Sourced from `library.setFavorite` in App.tsx; passed

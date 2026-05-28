@@ -914,16 +914,13 @@ const App: Component = () => {
     setBusy("idle");
   }
 
-  /// Retroverse-UI Phase B Slice 6 — post-launch UI bridge. What App.tsx
-  /// does after a successful launch (status toast, gameRunning flip,
-  /// runningEntry capture, single-window library auto-hide). Called by:
-  ///   - GameInfoModal's `onLaunched` (existing) when the operator
-  ///     launches from the modal's Launch / Resume buttons.
-  ///   - RetroverseContext's `onPostLaunch` (Phase B Slice 6) so
-  ///     panel-mode RightDetailPanel in LibraryPage keeps shell state
-  ///     in sync the same way.
-  /// Tile-click launches go through `handleLaunch` directly and don't
-  /// need this — handleLaunch already does these updates inline.
+  /// Post-launch UI bridge. Status toast, gameRunning flip, runningEntry
+  /// capture, single-window library auto-hide. Shared between
+  /// GameInfoModal's onLaunched callback (modal launch path) and
+  /// RetroverseContext's onPostLaunch (Retroverse GameDetailPanel
+  /// launch path). Tile-click launches go through handleLaunch
+  /// directly — handleLaunch does these updates inline so the
+  /// modal/panel callback isn't on the hot path.
   function postLaunchUiUpdate(entry: RomEntry, slot?: number): void {
     setStatus(
       slot !== undefined
