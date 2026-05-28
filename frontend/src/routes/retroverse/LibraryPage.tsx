@@ -22,6 +22,7 @@ import { Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
 import RightDetailPanel from "../../components/RightDetailPanel";
+import { HintRegion } from "../../nav/HintBar";
 import { useRetroverse } from "./context";
 
 const LibraryPage: Component = () => {
@@ -34,6 +35,20 @@ const LibraryPage: Component = () => {
         "grid-template-columns": "240px minmax(0,1fr) 360px",
       }}
     >
+      {/* Phase B Slice 7 — LIBRARY-tab hint bar. Shell-level L1/R1
+          cycle between Retroverse tabs (RetroverseShell owns the
+          wiring); page-level A/B/X/Y describe the LIBRARY surface
+          actions per docs/PLANS/retroverse-ui-rollout.md. */}
+      <HintRegion
+        hints={{
+          a: "Play",
+          b: "Back",
+          x: "Search",
+          y: "Filters",
+          l1: "Prev tab",
+          r1: "Next tab",
+        }}
+      />
       {/* Left: system filter sidebar — reuses the existing LeftSidebar
           so tier folders / per-system filters / drag-reorder all work
           unchanged. Visual polish vs the mockup happens in a follow-up. */}

@@ -10,6 +10,7 @@
 // once all five have shipped.
 
 import type { Component } from "solid-js";
+import { HintRegion } from "../../nav/HintBar";
 
 type Props = {
   /// Tab name as it appears in the top-tab strip (capitalized).
@@ -22,6 +23,10 @@ type Props = {
 const StubPage: Component<Props> = (props) => {
   return (
     <div class="flex h-full w-full items-center justify-center p-12">
+      {/* Phase B Slice 7 — minimal hint set for stub pages. L1/R1
+          inherit the shell-level tab cycling (wired in
+          RetroverseShell). */}
+      <HintRegion hints={{ l1: "Prev tab", r1: "Next tab" }} />
       <div class="max-w-md rounded-xl border border-white/10 bg-white/[0.03] px-10 py-12 text-center backdrop-blur">
         <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Retroverse UI · Phase B placeholder

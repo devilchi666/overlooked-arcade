@@ -15,13 +15,16 @@
 // LIBRARY's real grid + sidebar + detail pane. Slice 7 adds the
 // footer hint bar.
 
-import { Match, Switch, type Component } from "solid-js";
+import { Match, onCleanup, onMount, Switch, type Component } from "solid-js";
 import {
   currentRoute,
   setCurrentRoute,
+  cycleRouteForward,
+  cycleRouteBackward,
   RETROVERSE_ROUTES,
   type RetroverseRoute,
 } from "../../routing/currentRoute";
+import { onNavEvent } from "../../nav/gamepad";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import StubPage from "../../routes/retroverse/StubPage";
 
@@ -46,6 +49,19 @@ const STUB_DESIGN_DOCS: Record<Exclude<RetroverseRoute, "library">, string> = {
 
 const RetroverseShell: Component = () => {
   const isActive = (r: RetroverseRoute) => currentRoute() === r;
+
+  // Phase B Slice 7 — shell-level L1/R1 = cycle between tabs. Only
+  // mounted when the Retroverse flag is ON (App.tsx Show gate), so no
+  // explicit flag check needed here — flag flip OFF unmounts this
+  // component and cleans the listener up.
+  onMount(() => {
+    const dispose = onNavEvent((event) => {
+      if (event.kind !== "button" || event.phase !== "down") return;
+      if (event.button === "l1") cycleRouteBackward();
+      else if (event.button === "r1") cycleRouteForward();
+    });
+    onCleanup(dispose);
+  });
 
   return (
     <div
