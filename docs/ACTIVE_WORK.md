@@ -14,18 +14,19 @@ spanned every system but was filed under whichever core happened to be active.
 - **Retroverse UI rollout** — designs locked for all six top-toolbar
   tabs (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS)
   plus the cross-cutting content-pack mechanism. Phase A foundation
-  merged 2026-05-28 (`1c4dee7`); Phase B (RetroverseShell + LIBRARY
-  page + persistent right-side detail + L1/R1 tab cycling + fullBleed
-  gate) merged 2026-05-28 (`378863a`, `--no-ff` from
-  `feat/retroverse-ui-phase-b-library`). Operator can now toggle
-  Settings → Display → Experimental → Retroverse UI ON and use the
-  LIBRARY tab end-to-end (search, filter, sort, view-toggle, launch,
-  persistent detail panel, launch from detail). Other five tabs are
-  Coming-soon stubs naming their design docs. 577 workspace tests
-  green; flag OFF byte-identical with existing UI. Next: Phase C1
-  (SETTINGS tab — port the four modal SettingsDialogs into the
-  tab-category shape) on branch `feat/retroverse-ui-phase-c1-settings`.
-  See [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
+  merged 2026-05-28 (`1c4dee7`); Phase B LIBRARY merged 2026-05-28
+  (`378863a`); Phase C1 SETTINGS merged 2026-05-28 (`0671726`,
+  `--no-ff` from `feat/retroverse-ui-phase-c1-settings`). Operator
+  toggles Settings → Display → Experimental → Retroverse UI ON to
+  enter the new shell; LIBRARY + SETTINGS tabs are fully working
+  (7 of 14 settings categories wired; Experimental category hosts
+  the flag as the escape hatch). HOME / COLLECTIONS / PLAY NOW /
+  DISCOVER remain Coming-soon stubs. 577 workspace tests green;
+  flag OFF byte-identical with existing UI. Phase C2 (HOME tab)
+  has a content dependency (per-system hero art + blurbs); may
+  sequence after C3 (COLLECTIONS) or C4 (PLAY NOW) depending on
+  operator priorities. See
+  [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
   for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
   + `content-packs.md`.

@@ -362,6 +362,20 @@ Current status (2026-05-28):
   main as `378863a`. Operator can toggle Settings → Display →
   Experimental → Retroverse UI ON and see the new top-toolbar IA
   with a fully-working LIBRARY tab + persistent right-side detail.
-- 🟡 Phase C1 — SETTINGS tab. Next to start; branch
-  `feat/retroverse-ui-phase-c1-settings`.
-- ⬜ Phase C2-C6 — pending Phase C1 + content arcs.
+- ✅ Phase C1 merged — branch `feat/retroverse-ui-phase-c1-settings`
+  shipped in 2 commits (`39c191d` layout, `d27fc5c` real category
+  bodies). Operator-validated; merged `--no-ff` to main as
+  `0671726`. SETTINGS tab fully working for the 7 implemented
+  categories (Display / Audio / Shaders / Gameplay / Controller
+  nav / Per-system UI / Experimental). Other 7 categories
+  (Themes / Library / Media / Cores / BIOS / Storage / Profile /
+  About) show "Coming in a follow-up slice" placeholders pointing
+  at the legacy menu-bar surface.
+- 🟡 Phase C2 next — HOME tab. **Has a content dependency**:
+  needs per-system hero art + 3-sentence blurbs to land before
+  the visual delivers per the operator-supplied
+  default-theme-mockup. Procedural-gradient fallback is the
+  alternative for systems without art. May be sequenced after
+  the lower-content C3 (COLLECTIONS) or C4 (PLAY NOW) depending
+  on operator priorities.
+- ⬜ Phase C3-C6 — pending Phase C2 sequencing decision.
