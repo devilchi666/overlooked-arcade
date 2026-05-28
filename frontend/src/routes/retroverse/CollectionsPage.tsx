@@ -21,7 +21,7 @@ import { createMemo, createSignal, For, Match, Show, Switch, type Component } fr
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
 import type { RomEntry } from "../../library/types";
 import { useRetroverse } from "./context";
@@ -102,17 +102,61 @@ const CollectionsPage: Component = () => {
   const ctx = useRetroverse();
   const [activeSmartListId, setActiveSmartListId] = createSignal<SmartListId>("favorites");
 
-  // Retroverse-UI fix — controller-nav coverage. Single page-level
-  // focus group covers the sidebar smart-list buttons + the
-  // VirtualLibraryGrid tiles + the right-pane CTAs. The grid's own
-  // focus group exists but only auto-activates on click; this kicks
-  // a vertical walk that's at least reachable end-to-end.
-  let containerRef: HTMLDivElement | undefined;
+  // Retroverse-UI controller-nav v2 — per-region focus groups (per
+  // operator spec). DPad LEFT/RIGHT transfers sidebar ↔ center ↔
+  // right; UP/DOWN stays within. The grid's "library-grid" inner
+  // group still auto-activates on click but the page-level center
+  // group is the landing surface for DPad.
+  let leftRef: HTMLElement | undefined;
+  let centerRef: HTMLElement | undefined;
+  let rightRef: HTMLElement | undefined;
+  const LEFT_ID = "retroverse-collections-left";
+  const CENTER_ID = "retroverse-collections-center";
+  const RIGHT_ID = "retroverse-collections-right";
   useDomQueryFocusGroup({
-    id: "retroverse-collections",
-    containerRef: () => containerRef,
+    id: LEFT_ID,
+    containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "right") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: CENTER_ID,
+    containerRef: () => centerRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(LEFT_ID);
+        return true;
+      }
+      if (dir === "right") {
+        activateFocusGroup(RIGHT_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: RIGHT_ID,
+    containerRef: () => rightRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
   });
   const activeSmartList = () =>
     SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
@@ -141,7 +185,6 @@ const CollectionsPage: Component = () => {
 
   return (
     <div
-      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",
@@ -161,7 +204,10 @@ const CollectionsPage: Component = () => {
       />
 
       {/* Left: collection sidebar with three groups. */}
-      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
+      >
         {/* MY COLLECTIONS — empty + disabled new-button until Slice 12. */}
         <section>
           <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
@@ -240,7 +286,10 @@ const CollectionsPage: Component = () => {
       </aside>
 
       {/* Center: header card + tile grid. */}
-      <section class="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <section
+        ref={(el) => (centerRef = el)}
+        class="flex min-h-0 min-w-0 flex-col overflow-hidden"
+      >
         {/* Header card — name + count + flavor badge. */}
         <header class="border-b border-white/5 px-8 py-5">
           <div class="flex items-center gap-3">
@@ -315,7 +364,10 @@ const CollectionsPage: Component = () => {
       </section>
 
       {/* Right: focused-game detail. Same shape as LIBRARY's right pane. */}
-      <aside class="min-w-0 overflow-hidden border-l border-white/5">
+      <aside
+        ref={(el) => (rightRef = el)}
+        class="min-w-0 overflow-hidden border-l border-white/5"
+      >
         <Show
           when={ctx.focusedEntry()}
           fallback={

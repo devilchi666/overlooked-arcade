@@ -24,7 +24,7 @@ import {
   PerSystemUiSettings,
   ShadersSettings,
 } from "../../components/SettingsSections";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -216,21 +216,63 @@ const SettingsPage: Component = () => {
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
 
-  // Retroverse-UI fix — controller-nav coverage. Walks category-sidebar
-  // buttons → setting-card rows (SettingRow renders buttons + native
-  // inputs; the "button" selector picks up the toggle/select buttons
-  // it composes from).
-  let containerRef: HTMLDivElement | undefined;
+  // Retroverse-UI controller-nav v2 — per-region focus groups so
+  // DPad LEFT/RIGHT transfers category sidebar ↔ setting cards ↔
+  // live-preview pane. UP/DOWN stays within a region.
+  let leftRef: HTMLElement | undefined;
+  let centerRef: HTMLElement | undefined;
+  let rightRef: HTMLElement | undefined;
+  const LEFT_ID = "retroverse-settings-left";
+  const CENTER_ID = "retroverse-settings-center";
+  const RIGHT_ID = "retroverse-settings-right";
   useDomQueryFocusGroup({
-    id: "retroverse-settings",
-    containerRef: () => containerRef,
+    id: LEFT_ID,
+    containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "right") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: CENTER_ID,
+    containerRef: () => centerRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(LEFT_ID);
+        return true;
+      }
+      if (dir === "right") {
+        activateFocusGroup(RIGHT_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: RIGHT_ID,
+    containerRef: () => rightRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
   });
 
   return (
     <div
-      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 320px",
@@ -249,7 +291,10 @@ const SettingsPage: Component = () => {
       />
 
       {/* Left pane — category sidebar with grouped sections. */}
-      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
+      >
         <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Categories
         </p>
@@ -302,7 +347,10 @@ const SettingsPage: Component = () => {
 
       {/* Center pane — active category content. Phase C1 ships stubs;
           Slice 9 lifts the four existing dialog bodies in. */}
-      <section class="min-h-0 min-w-0 overflow-y-auto px-8 py-6">
+      <section
+        ref={(el) => (centerRef = el)}
+        class="min-h-0 min-w-0 overflow-y-auto px-8 py-6"
+      >
         <header class="mb-6">
           <div class="flex items-center gap-3">
             <span class="text-2xl text-(--color-system-accent)">
@@ -357,7 +405,10 @@ const SettingsPage: Component = () => {
 
       {/* Right pane — live preview placeholder (static help text in
           Phase C1). Rich previews per category land as polish later. */}
-      <aside class="min-w-0 overflow-y-auto border-l border-white/5 px-6 py-6">
+      <aside
+        ref={(el) => (rightRef = el)}
+        class="min-w-0 overflow-y-auto border-l border-white/5 px-6 py-6"
+      >
         <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           About this setting
         </p>

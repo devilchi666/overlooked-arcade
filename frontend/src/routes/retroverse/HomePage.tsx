@@ -40,7 +40,7 @@ import { systemThemes, type SystemId } from "../../themes/registry";
 import type { RomEntry } from "../../library/types";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import { useRetroverse } from "./context";
 
@@ -75,17 +75,61 @@ const HomePage: Component = () => {
   const media = useMedia();
   const platformMedia = usePlatformMedia();
 
-  // Retroverse-UI fix — controller-nav coverage. Single page-level
-  // DOM-query focus group walks every button on the page in DOM order
-  // (sidebar items → hero CTAs → rail cards → quick-launch buttons →
-  // recently-played cards → status footer). Auto-activates on mount;
-  // unmounts on tab switch.
-  let containerRef: HTMLDivElement | undefined;
+  // Retroverse-UI controller-nav v2 — per-region focus groups so
+  // DPad / left-stick LEFT/RIGHT transfers between sidebar ↔ center ↔
+  // right pane (operator spec). UP/DOWN stays within a region. L1/R1
+  // cycles Retroverse tabs at the shell level — these groups don't
+  // wire neighbours so shoulder bumpers don't double-fire here.
+  let leftRef: HTMLElement | undefined;
+  let centerRef: HTMLElement | undefined;
+  let rightRef: HTMLElement | undefined;
+  const LEFT_ID = "retroverse-home-left";
+  const CENTER_ID = "retroverse-home-center";
+  const RIGHT_ID = "retroverse-home-right";
   useDomQueryFocusGroup({
-    id: "retroverse-home",
-    containerRef: () => containerRef,
+    id: LEFT_ID,
+    containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "right") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: CENTER_ID,
+    containerRef: () => centerRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(LEFT_ID);
+        return true;
+      }
+      if (dir === "right") {
+        activateFocusGroup(RIGHT_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: RIGHT_ID,
+    containerRef: () => rightRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
   });
 
   // Per-system entry index — derived once from the LibraryStore. Used
@@ -328,7 +372,6 @@ const HomePage: Component = () => {
 
   return (
     <div
-      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",
@@ -347,7 +390,10 @@ const HomePage: Component = () => {
       />
 
       {/* Left: SYSTEMS sidebar. */}
-      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
+      >
         <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Systems
         </p>
@@ -392,7 +438,10 @@ const HomePage: Component = () => {
       </aside>
 
       {/* Center: hero + popular + quick launch + recent + status. */}
-      <section class="min-h-0 min-w-0 overflow-y-auto">
+      <section
+        ref={(el) => (centerRef = el)}
+        class="min-h-0 min-w-0 overflow-y-auto"
+      >
         {/* Hero panel. */}
         <article class="relative overflow-hidden border-b border-white/5">
           <Show
@@ -618,7 +667,10 @@ const HomePage: Component = () => {
 
       {/* Right: focused-card detail on top, System Status gauges
           pinned to the bottom (operator spec). */}
-      <aside class="flex h-full min-w-0 flex-col overflow-hidden border-l border-white/5">
+      <aside
+        ref={(el) => (rightRef = el)}
+        class="flex h-full min-w-0 flex-col overflow-hidden border-l border-white/5"
+      >
         <div class="min-h-0 flex-1 overflow-hidden">
           <Show
             when={ctx.focusedEntry()}
