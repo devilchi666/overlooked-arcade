@@ -99,6 +99,14 @@ import { requestOpenFirstMenu } from "./layout/MenuBar";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
+import {
+  currentRoute as currentRetroverseRoute,
+  setCurrentRoute as setRetroverseRoute,
+  cycleRouteForward as cycleRetroverseRouteForward,
+  cycleRouteBackward as cycleRetroverseRouteBackward,
+  RETROVERSE_ROUTES,
+  type RetroverseRoute,
+} from "./routing/currentRoute";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -363,6 +371,40 @@ const App: Component = () => {
   // the flag without consumers; Phase B's RetroverseShell is the
   // first surface that reads it. See docs/PLANS/retroverse-ui-rollout.md.
   createEffect(() => setRetroverseUiEnabled(settings.experimentalRetroverseUi()));
+
+  // Retroverse UI rollout Phase A Slice 4: install DevTools globals so
+  // the operator can exercise the route signal independent of UI
+  // consumers — Phase B's top-tab strip is the first surface that
+  // reads currentRoute(). Open DevTools (F12), then in the console:
+  //   __retroverse_debug.currentRoute()      → current route
+  //   __retroverse_debug.setRoute("home")    → jump to a specific tab
+  //   __retroverse_debug.cycleForward()      → next tab (wraps)
+  //   __retroverse_debug.cycleBackward()     → prev tab (wraps)
+  //   __retroverse_debug.routes              → all 6 route values
+  // Dev-only — guarded by import.meta.env.DEV so production builds
+  // don't expose the helper.
+  onMount(() => {
+    if (import.meta.env.DEV) {
+      (window as unknown as { __retroverse_debug?: unknown }).__retroverse_debug = {
+        currentRoute: () => currentRetroverseRoute(),
+        setRoute: (r: RetroverseRoute) => {
+          setRetroverseRoute(r);
+          console.log(`[retroverse] currentRoute = ${r}`);
+        },
+        cycleForward: () => {
+          const next = cycleRetroverseRouteForward();
+          console.log(`[retroverse] currentRoute = ${next}`);
+          return next;
+        },
+        cycleBackward: () => {
+          const next = cycleRetroverseRouteBackward();
+          console.log(`[retroverse] currentRoute = ${next}`);
+          return next;
+        },
+        routes: RETROVERSE_ROUTES,
+      };
+    }
+  });
 
   // Global Start button → open the menu bar. Bypasses the per-group
   // onStart routing in focus.ts so Start works from any active group
