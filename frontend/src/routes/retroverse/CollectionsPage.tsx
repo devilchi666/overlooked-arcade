@@ -21,6 +21,7 @@ import { createMemo, createSignal, For, Match, Show, Switch, type Component } fr
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
 import type { RomEntry } from "../../library/types";
 import { useRetroverse } from "./context";
@@ -100,6 +101,19 @@ const SMART_LISTS: readonly SmartListDef[] = [
 const CollectionsPage: Component = () => {
   const ctx = useRetroverse();
   const [activeSmartListId, setActiveSmartListId] = createSignal<SmartListId>("favorites");
+
+  // Retroverse-UI fix — controller-nav coverage. Single page-level
+  // focus group covers the sidebar smart-list buttons + the
+  // VirtualLibraryGrid tiles + the right-pane CTAs. The grid's own
+  // focus group exists but only auto-activates on click; this kicks
+  // a vertical walk that's at least reachable end-to-end.
+  let containerRef: HTMLDivElement | undefined;
+  useDomQueryFocusGroup({
+    id: "retroverse-collections",
+    containerRef: () => containerRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+  });
   const activeSmartList = () =>
     SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
 
@@ -127,6 +141,7 @@ const CollectionsPage: Component = () => {
 
   return (
     <div
+      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",

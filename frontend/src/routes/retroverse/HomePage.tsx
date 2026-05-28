@@ -40,6 +40,7 @@ import { systemThemes, type SystemId } from "../../themes/registry";
 import type { RomEntry } from "../../library/types";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import { useRetroverse } from "./context";
 
@@ -72,6 +73,19 @@ const HomePage: Component = () => {
   const ctx = useRetroverse();
   const media = useMedia();
   const platformMedia = usePlatformMedia();
+
+  // Retroverse-UI fix — controller-nav coverage. Single page-level
+  // DOM-query focus group walks every button on the page in DOM order
+  // (sidebar items → hero CTAs → rail cards → quick-launch buttons →
+  // recently-played cards → status footer). Auto-activates on mount;
+  // unmounts on tab switch.
+  let containerRef: HTMLDivElement | undefined;
+  useDomQueryFocusGroup({
+    id: "retroverse-home",
+    containerRef: () => containerRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+  });
 
   // Per-system entry index — derived once from the LibraryStore. Used
   // by the sidebar count badges + the popular games rail.
@@ -271,6 +285,7 @@ const HomePage: Component = () => {
 
   return (
     <div
+      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",

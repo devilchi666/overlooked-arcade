@@ -24,6 +24,7 @@ import {
   PerSystemUiSettings,
   ShadersSettings,
 } from "../../components/SettingsSections";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -215,8 +216,21 @@ const SettingsPage: Component = () => {
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
 
+  // Retroverse-UI fix — controller-nav coverage. Walks category-sidebar
+  // buttons → setting-card rows (SettingRow renders buttons + native
+  // inputs; the "button" selector picks up the toggle/select buttons
+  // it composes from).
+  let containerRef: HTMLDivElement | undefined;
+  useDomQueryFocusGroup({
+    id: "retroverse-settings",
+    containerRef: () => containerRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+  });
+
   return (
     <div
+      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 320px",

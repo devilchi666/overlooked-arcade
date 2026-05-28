@@ -18,15 +18,29 @@
 // system-label header on every tile, custom mini systems sidebar
 // styled per the mockup.
 
-import { Show, type Component } from "solid-js";
+import { onMount, Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
+import { activateFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
 
 const LibraryPage: Component = () => {
   const ctx = useRetroverse();
+
+  // Retroverse-UI fix — controller-nav coverage. LeftSidebar +
+  // VirtualLibraryGrid each register their own focus group ("left-sidebar"
+  // / "library-grid") with neighbour wiring in both directions (sidebar
+  // R1 → grid, grid L1 → sidebar). Without an initial activation kick
+  // the operator's DPad does nothing until they mouse-click into a
+  // surface — broken on a couch with a pad. Activate "left-sidebar" as
+  // the landing focus group; operator transfers to the grid via R1 or
+  // mouse-clicks a tile (which triggers VirtualLibraryGrid's own
+  // focusGroup.activate()).
+  onMount(() => {
+    queueMicrotask(() => activateFocusGroup("left-sidebar"));
+  });
 
   return (
     <div
