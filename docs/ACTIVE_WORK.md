@@ -15,17 +15,20 @@ spanned every system but was filed under whichever core happened to be active.
   tabs (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS)
   plus the cross-cutting content-pack mechanism. Phase A foundation
   merged 2026-05-28 (`1c4dee7`); Phase B LIBRARY merged 2026-05-28
-  (`378863a`); Phase C1 SETTINGS merged 2026-05-28 (`0671726`,
-  `--no-ff` from `feat/retroverse-ui-phase-c1-settings`). Operator
-  toggles Settings → Display → Experimental → Retroverse UI ON to
-  enter the new shell; LIBRARY + SETTINGS tabs are fully working
-  (7 of 14 settings categories wired; Experimental category hosts
-  the flag as the escape hatch). HOME / COLLECTIONS / PLAY NOW /
-  DISCOVER remain Coming-soon stubs. 577 workspace tests green;
-  flag OFF byte-identical with existing UI. Phase C2 (HOME tab)
-  has a content dependency (per-system hero art + blurbs); may
-  sequence after C3 (COLLECTIONS) or C4 (PLAY NOW) depending on
-  operator priorities. See
+  (`378863a`); Phase C1 SETTINGS merged 2026-05-28 (`0671726`);
+  Phase C3 COLLECTIONS merged 2026-05-28 (`715f639`, `--no-ff` from
+  `feat/retroverse-ui-phase-c3-collections`). Operator toggles
+  Settings → Display → Experimental → Retroverse UI ON to enter
+  the new shell; LIBRARY + SETTINGS + COLLECTIONS tabs are fully
+  working (4 wired smart lists in COLLECTIONS — Favorites /
+  Recently played / Completed / Multi-player). Favorite hearts +
+  context-menu toggles appear in both legacy + Retroverse UIs.
+  HOME / PLAY NOW / DISCOVER remain Coming-soon stubs. 577
+  workspace tests green; flag OFF byte-identical with existing UI
+  apart from the heart overlay on tiles. Phase C4 (PLAY NOW)
+  next — simple-heuristic recommender using existing data, no
+  content dependency. Custom-manual collections (C3 Slice 12)
+  + HOME (content cost) deferred to follow-ups. See
   [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
   for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`

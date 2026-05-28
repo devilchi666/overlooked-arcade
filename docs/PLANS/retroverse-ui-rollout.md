@@ -371,11 +371,20 @@ Current status (2026-05-28):
   (Themes / Library / Media / Cores / BIOS / Storage / Profile /
   About) show "Coming in a follow-up slice" placeholders pointing
   at the legacy menu-bar surface.
-- 🟡 Phase C2 next — HOME tab. **Has a content dependency**:
-  needs per-system hero art + 3-sentence blurbs to land before
-  the visual delivers per the operator-supplied
-  default-theme-mockup. Procedural-gradient fallback is the
-  alternative for systems without art. May be sequenced after
-  the lower-content C3 (COLLECTIONS) or C4 (PLAY NOW) depending
-  on operator priorities.
-- ⬜ Phase C3-C6 — pending Phase C2 sequencing decision.
+- ✅ Phase C3 merged — branch `feat/retroverse-ui-phase-c3-collections`
+  shipped Slice 11a (`96f6570` data layer — favorite + completed
+  columns wired end-to-end with LibraryTile heart overlay) +
+  Slice 11b (`8b8eadb` CollectionsPage 3-pane with 4 wired smart
+  lists + 2 placeholders). Operator-validated; merged `--no-ff`
+  to main as `715f639`. Slice 12 (custom-manual collections —
+  new SQLite tables + CRUD) deferred to a follow-up branch.
+- 🟡 Phase C4 next — PLAY NOW tab. Simple-heuristic recommender
+  using existing data (lastPlayedAt + favorite + players). "Why"
+  lines from a template table. Hero card + 3-4 rails + mood
+  sidebar. No external content needed. Branch
+  `feat/retroverse-ui-phase-c4-play-now`.
+- ⬜ Phase C2 — HOME tab. Content dependency (per-system hero
+  art + blurbs). Sequenced after C4 / Slice 12 per operator
+  priorities.
+- ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending
+  earlier phases.
