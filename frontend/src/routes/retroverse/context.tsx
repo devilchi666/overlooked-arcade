@@ -54,6 +54,16 @@ export type RetroverseContextValue = {
   /// onToggleFavorite. Used by COLLECTIONS context menu + future
   /// completion celebrations.
   onToggleCompleted: (entry: RomEntry, value: boolean) => void;
+  /// SETTINGS → Library wrap — invoked when the operator clicks the
+  /// "Add" button in the Library folders header. Opens the OS folder
+  /// picker; on selection adds + scans the folder. Sourced from
+  /// App.handleAddLibraryFolder so the embedded panel reuses the
+  /// same picker UX the legacy LibraryManagerPage entry uses.
+  onAddLibraryFolder: () => void;
+  /// SETTINGS → Library wrap — invoked when the operator clicks the
+  /// "Rescan all" button. Sourced from App.handleRescanLibraryFolders;
+  /// disabled by the page when no folders are tracked.
+  onRescanLibraryFolders: () => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

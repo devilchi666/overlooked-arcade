@@ -2000,6 +2000,8 @@ const App: Component = () => {
             onPostLaunch: postLaunchUiUpdate,
             onToggleFavorite: (entry, value) => void library.setFavorite(entry.id, value),
             onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
+            onAddLibraryFolder: handleAddLibraryFolder,
+            onRescanLibraryFolders: handleRescanLibraryFolders,
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
