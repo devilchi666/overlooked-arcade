@@ -14,16 +14,19 @@ spanned every system but was filed under whichever core happened to be active.
 - **Retroverse UI rollout** — designs locked for all six top-toolbar
   tabs (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS)
   plus the cross-cutting content-pack mechanism. Phase A foundation
-  merged to main 2026-05-28 (`1c4dee7`, `--no-ff` from
-  `feat/retroverse-ui-phase-a`) — `experimentalRetroverseUi` flag,
-  `play_time_secs` increment hooks, `GameInfoModal`→`RightDetailPanel`
-  lift, `currentRoute` signal at `frontend/src/routing/`. Invisible
-  to operator with flag OFF; 577 workspace tests green; existing UI
-  byte-identical. Next: Phase B (RetroverseShell layout + top-tab
-  strip + LIBRARY page re-skin) on branch
-  `feat/retroverse-ui-phase-b-library`. See
-  [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
-  for the full phase plan and the six per-tab design sketches at
+  merged 2026-05-28 (`1c4dee7`); Phase B (RetroverseShell + LIBRARY
+  page + persistent right-side detail + L1/R1 tab cycling + fullBleed
+  gate) merged 2026-05-28 (`378863a`, `--no-ff` from
+  `feat/retroverse-ui-phase-b-library`). Operator can now toggle
+  Settings → Display → Experimental → Retroverse UI ON and use the
+  LIBRARY tab end-to-end (search, filter, sort, view-toggle, launch,
+  persistent detail panel, launch from detail). Other five tabs are
+  Coming-soon stubs naming their design docs. 577 workspace tests
+  green; flag OFF byte-identical with existing UI. Next: Phase C1
+  (SETTINGS tab — port the four modal SettingsDialogs into the
+  tab-category shape) on branch `feat/retroverse-ui-phase-c1-settings`.
+  See [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
+  for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
   + `content-packs.md`.
 

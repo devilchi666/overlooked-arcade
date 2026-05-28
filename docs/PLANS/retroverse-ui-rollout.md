@@ -355,7 +355,13 @@ Current status (2026-05-28):
   in 4 commits (`9cb42fd` flag, `c845bd7` play_time hooks,
   `ac96452` RightDetailPanel lift, `943ce80` route model).
   Operator-validated; merged `--no-ff` to main as `1c4dee7`.
-  577 workspace tests green; UI byte-identical with flag OFF.
-- ⬜ Phase B — RetroverseShell + top-tab strip + LIBRARY page
-  re-skin. Next to start; branch `feat/retroverse-ui-phase-b-library`.
-- ⬜ Phase C1-C6 — pending Phase B merge.
+- ✅ Phase B merged — branch `feat/retroverse-ui-phase-b-library`
+  shipped in 4 commits (`b7bdb81` shell + routing, `5bb59fa`
+  LibraryPage real, `578052d` hints + tab cycling, `d444b4b`
+  fullBleed gate fix). Operator-validated; merged `--no-ff` to
+  main as `378863a`. Operator can toggle Settings → Display →
+  Experimental → Retroverse UI ON and see the new top-toolbar IA
+  with a fully-working LIBRARY tab + persistent right-side detail.
+- 🟡 Phase C1 — SETTINGS tab. Next to start; branch
+  `feat/retroverse-ui-phase-c1-settings`.
+- ⬜ Phase C2-C6 — pending Phase C1 + content arcs.
