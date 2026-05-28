@@ -13,8 +13,18 @@
 // modals. The other categories stay as "Coming in a follow-up" stubs
 // until each gets its own polish slice.
 
-import { createSignal, For, Show, type Component } from "solid-js";
+import { createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import { HintRegion } from "../../nav/HintBar";
+import {
+  AudioSettings,
+  ControllerNavSettings,
+  DisplayBaseSettings,
+  ExperimentalSettings,
+  GameplaySettings,
+  PerSystemUiSettings,
+  ShadersSettings,
+} from "../../components/SettingsSections";
+import { useRetroverse } from "./context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
 
@@ -25,6 +35,7 @@ type CategoryId =
   | "gameplay"
   | "controller-nav"
   | "per-system-ui"
+  | "experimental"
   | "themes"
   | "library"
   | "media"
@@ -103,13 +114,22 @@ const CATEGORIES: readonly CategoryDef[] = [
       "Master toggle + boot animations / tile flourishes / per-system SFX / background art sub-toggles. Turn the master off for a uniform plain library across every system.",
   },
   {
+    id: "experimental",
+    group: "oa-wide",
+    label: "Experimental",
+    glyph: "⚗",
+    description: "Preview-quality features under active development.",
+    helpText:
+      "Hosts the Retroverse UI master toggle. Flip it OFF to return to the legacy Shell layout immediately — no restart required. Useful as the escape hatch if you ever get stuck.",
+  },
+  {
     id: "themes",
     group: "oa-wide",
     label: "Themes",
     glyph: "▦",
     description: "Default OA theme picker.",
     helpText:
-      "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — operator can switch presentation modes via the menu bar's Tools menu.",
+      "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — operator can switch presentation modes via the menu bar's Tools menu (legacy Shell only).",
   },
   // CONTENT & LIBRARY.
   {
@@ -187,6 +207,7 @@ const GROUP_LABELS: Record<CategoryGroup, string> = {
 const GROUP_ORDER: readonly CategoryGroup[] = ["oa-wide", "content", "system"];
 
 const SettingsPage: Component = () => {
+  const ctx = useRetroverse();
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>("display");
   const activeCategory = () =>
     CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
@@ -282,17 +303,42 @@ const SettingsPage: Component = () => {
           </p>
         </header>
 
-        <div class="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
-          <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-            Coming in Slice 9
-          </p>
-          <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-            The Display / Audio / Gameplay / Shaders bodies port directly from
-            the existing modal dialogs (frontend/src/components/SettingsDialogs.tsx).
-            Other categories ship as their own polish slices once their data
-            paths exist.
-          </p>
-        </div>
+        <Switch
+          fallback={
+            <div class="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
+              <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                Coming in a follow-up slice
+              </p>
+              <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
+                This category's data path needs its own polish slice. Until
+                then the existing menu-bar surface (legacy Shell) remains
+                the canonical entry point.
+              </p>
+            </div>
+          }
+        >
+          <Match when={activeCategoryId() === "display"}>
+            <DisplayBaseSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "audio"}>
+            <AudioSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "shaders"}>
+            <ShadersSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "gameplay"}>
+            <GameplaySettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "controller-nav"}>
+            <ControllerNavSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "per-system-ui"}>
+            <PerSystemUiSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "experimental"}>
+            <ExperimentalSettings settings={ctx.settings} />
+          </Match>
+        </Switch>
       </section>
 
       {/* Right pane — live preview placeholder (static help text in
