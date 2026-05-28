@@ -587,15 +587,64 @@ export const MediaSettings: Component = () => (
   </div>
 );
 
+type BiosEntryStatus = "ok" | "unknownHash" | "missing" | "error";
+
+type BiosStatusEntry = {
+  slug: string;
+  label: string;
+  required: string;
+  status: BiosEntryStatus;
+  detail: string;
+};
+
+type BiosStatusResponse = {
+  systemDir: string;
+  entries: BiosStatusEntry[];
+};
+
+const BIOS_PILL_STYLES: Record<BiosEntryStatus, { ring: string; bg: string; text: string; label: string }> = {
+  ok: {
+    ring: "border-emerald-400/40",
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-300",
+    label: "Ready",
+  },
+  unknownHash: {
+    ring: "border-amber-400/40",
+    bg: "bg-amber-500/10",
+    text: "text-amber-300",
+    label: "Present · unknown hash",
+  },
+  missing: {
+    ring: "border-red-400/40",
+    bg: "bg-red-500/10",
+    text: "text-red-300",
+    label: "Missing",
+  },
+  error: {
+    ring: "border-amber-400/40",
+    bg: "bg-amber-500/10",
+    text: "text-amber-300",
+    label: "Read error",
+  },
+};
+
 export const BiosSettings: Component = () => {
-  const [dataDir] = createResource(async () => {
-    try {
-      const mod = await import("../lib/dataDir");
-      return await mod.getDataDir();
-    } catch {
-      return "";
-    }
+  const [status, { refetch }] = createResource(async () => {
+    return await invoke<BiosStatusResponse>("get_bios_status");
   });
+
+  const counts = createMemo(() => {
+    const list = status()?.entries ?? [];
+    return {
+      total: list.length,
+      ok: list.filter((e) => e.status === "ok").length,
+      unknownHash: list.filter((e) => e.status === "unknownHash").length,
+      missing: list.filter((e) => e.status === "missing").length,
+      error: list.filter((e) => e.status === "error").length,
+    };
+  });
+
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="System directory">
@@ -603,7 +652,7 @@ export const BiosSettings: Component = () => {
           BIOS files live in:
         </p>
         <code class="mt-2 block break-all rounded border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[0.65rem] text-(--color-oa-ink)">
-          {dataDir() ? `${dataDir()}/system/` : "Loading…"}
+          {status()?.systemDir ?? "Loading…"}
         </code>
         <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)">
           Drop the required BIOS files into this folder. OA verifies
@@ -614,57 +663,62 @@ export const BiosSettings: Component = () => {
         </p>
       </SettingsCard>
 
-      <SettingsCard title="Systems that need BIOS">
-        <div class="space-y-2 text-[0.75rem] text-(--color-oa-ink-dim)">
-          <p>
-            <span class="text-(--color-oa-ink)">PCE-CD / TG-CD:</span>{" "}
-            syscard3.pce
+      <SettingsCard title="BIOS status">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+            {status.loading
+              ? "Scanning…"
+              : `${counts().ok} ready · ${counts().unknownHash + counts().error} present-but-unrecognized · ${counts().missing} missing (of ${counts().total} systems).`}
           </p>
-          <p>
-            <span class="text-(--color-oa-ink)">Sega CD:</span> bios_CD_E.bin /
-            bios_CD_J.bin / bios_CD_U.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">Saturn:</span> sega_101.bin /
-            mpr-17933.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">PSX:</span> SCPH7001.bin /
-            SCPH7003.bin / SCPH1001.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">Neo Geo CD:</span> neocd.bin /
-            neocd_z.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">3DO:</span> panafz1.bin /
-            panafz10.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">PC-FX:</span> pcfx.rom
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">Dreamcast:</span> dc_boot.bin
-            + dc_flash.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">PS2:</span> SCPH-70004_BIOS_V12_PAL_200.BIN
-            (one of many — PCSX2 docs)
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">NDS:</span> bios7.bin / bios9.bin
-            / firmware.bin
-          </p>
-          <p>
-            <span class="text-(--color-oa-ink)">Atari Lynx / Jaguar:</span> lynxboot.img
-            / jagboot.rom
-          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={status.loading}
+            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink) transition hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent) disabled:opacity-50"
+          >
+            Refresh
+          </button>
         </div>
-        <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
-          A live "is each BIOS present?" status grid lands in a
-          follow-up — Rust gains a get_bios_status command that
-          aggregates the existing per-system check_*_bios functions
-          into one call.
+
+        <Show when={status()?.entries}>
+          {(entries) => (
+            <ul class="mt-2 flex flex-col gap-1.5">
+              <For each={entries()}>
+                {(entry) => {
+                  const style = BIOS_PILL_STYLES[entry.status];
+                  return (
+                    <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+                      <div class="min-w-0">
+                        <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+                          {entry.label}
+                        </p>
+                        <p class="mt-0.5 truncate text-[0.65rem] text-(--color-oa-ink-dim)" title={entry.required}>
+                          {entry.required}
+                        </p>
+                      </div>
+                      <span
+                        class={`self-start rounded border ${style.ring} ${style.bg} px-2 py-0.5 text-[0.55rem] uppercase tracking-widest ${style.text}`}
+                      >
+                        {style.label}
+                      </span>
+                      <Show when={entry.detail}>
+                        <p class="col-span-2 break-all border-t border-white/5 pt-1.5 font-mono text-[0.6rem] text-(--color-oa-ink-dim)">
+                          {entry.detail}
+                        </p>
+                      </Show>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          )}
+        </Show>
+        <p class="mt-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
+          Green = filename + content hash both match a known canonical
+          dump. Amber = file is present under a known name but its
+          content hash isn't in OA's table (the core usually still
+          boots; the launch path warns rather than refuses). Red = no
+          accepted filename found in <code class="font-mono">system/</code>.
         </p>
       </SettingsCard>
     </div>
