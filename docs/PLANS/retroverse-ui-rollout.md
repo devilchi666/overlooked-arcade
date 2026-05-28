@@ -388,16 +388,29 @@ Current status (2026-05-28):
   `feat/retroverse-ui-phase-c2-home` shipped Slice 16 (`9b47227`
   HOME skeleton + sysinfo dep) + controller-nav fix (`807915b`).
   Operator-validated; merged `--no-ff` to main as `ca4ab04`.
+  Followed by HOME v2 operator-supplied mockup redesign merged
+  2026-05-28 (`42da52f`, `feat/retroverse-ui-home-v2` →
+  `6aa4c15`): dense SYSTEM INFORMATION + TECHNICAL DETAILS +
+  SUPPORTED PERIPHERALS + ACHIEVEMENTS right pane (stub data),
+  bigger hero with stats grid + popular-cover carousel, Quick
+  Launch panel pinned at bottom-left of sidebar, Recently Played
+  separate panel.
+
   All 6 Retroverse tabs are now operator-facing.
 
   Content gap follow-ups (deferred):
   - Per-system hero art — drop console + fanart files into the
     existing PlatformMedia slots (infra ships; no code work).
-  - Per-system blurbs — needs a `blurb?: string` field on
-    SystemTheme + ~45 short paragraphs (operator-curated or
-    AI-baselined).
-  - Per-system release metadata — add `releasedYear` /
-    `architecture` / `mediaType` to SystemTheme + mine Wikipedia.
+  - Per-system specs — replace systemMetadataStubs.ts with a
+    real schema sourced from Wikipedia / TheGamesDB / etc. SNES
+    + 6 other priority systems are mockup-faithful stubs; rest
+    show "—" until populated.
+  - Per-system blurbs — currently embedded in
+    systemMetadataStubs.ts; could move to a separate
+    blurbs.json or stay as part of the specs schema once that
+    materializes.
+  - RetroAchievements integration — right pane's achievements
+    card is a placeholder with stub numbers.
 
   Controller-nav v2 (operator spec, merged 2026-05-28 `71816bf`):
   - DPad / left-stick LEFT/RIGHT now transfers between sidebar ↔

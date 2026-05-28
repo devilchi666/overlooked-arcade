@@ -24,15 +24,21 @@ spanned every system but was filed under whichever core happened to be active.
   Recently played / Completed / Multi-player). Favorite hearts +
   context-menu toggles appear in both legacy + Retroverse UIs.
   Phase C4 PLAY NOW merged 2026-05-28 (`b2af79e`); Phase C2 HOME
-  + controller-nav fix merged 2026-05-28 (`ca4ab04`). All 6
-  Retroverse tabs are now operator-facing — only DISCOVER stays
-  Coming-soon by design (depends on content-packs Phase C6).
-  577 workspace tests green; flag OFF still byte-identical apart
-  from the heart overlay on tiles. Remaining work: per-region
-  focus-group split (operator-spec controller-nav refinement),
-  HOME content (hero art + blurbs + release metadata), and
-  infrastructure (Slice 12 custom-manual collections, C6
-  content-packs). See
+  + controller-nav fix merged 2026-05-28 (`ca4ab04`); controller-
+  nav v2 per-region groups + System Status fix merged 2026-05-28
+  (`71816bf`); LibraryPage focus-group port merged 2026-05-28
+  (`6ea5e51`); right-pane redesign (GameDetailPanel +
+  SystemInfoPanel + SETTINGS 2-pane) merged 2026-05-28
+  (`6f24e4f`); HOME v2 operator-supplied mockup redesign merged
+  2026-05-28 (`42da52f`). All 6 Retroverse tabs are now
+  operator-facing — only DISCOVER stays Coming-soon by design
+  (depends on content-packs Phase C6). 577 workspace tests
+  green; flag OFF still byte-identical apart from the heart
+  overlay on tiles. Remaining work splits between content
+  (HOME hero art / system specs / blurbs / RetroAchievements)
+  and infrastructure (Slice 12 custom-manual collections,
+  Phase C5/C6 DISCOVER + content-packs, remaining SETTINGS
+  category fills, PLAY NOW data-blocked moods). See
   [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
   for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
