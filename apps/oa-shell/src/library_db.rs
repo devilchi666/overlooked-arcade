@@ -1349,6 +1349,30 @@ impl LibraryDb {
         }
     }
 
+    /// Record a finished play session against `id`: increment `play_time_secs`
+    /// by `delta_secs` and bump `last_played_at` to `last_played_unix_secs`.
+    /// Single UPDATE so both fields stay coherent. Idempotent at the row
+    /// level — a missing id is a quiet no-op (operator may have deleted the
+    /// row mid-session). Used by the Retroverse-UI Phase A Slice 2
+    /// `close_active_session` helper in main.rs.
+    pub fn update_play_session(
+        &self,
+        id: &str,
+        delta_secs: u64,
+        last_played_unix_secs: i64,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "UPDATE games
+                SET play_time_secs = play_time_secs + ?1,
+                    last_played_at = ?2
+              WHERE id = ?3",
+            params![delta_secs as i64, last_played_unix_secs, id],
+        )
+        .map_err(|e| format!("update_play_session: {e}"))?;
+        Ok(())
+    }
+
     pub fn find_game_by_sha1(&self, sha1: &str) -> Result<Option<GameRow>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn
