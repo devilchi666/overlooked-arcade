@@ -2002,7 +2002,17 @@ const App: Component = () => {
             onPostLaunch: postLaunchUiUpdate,
           }}
         >
-          <RetroverseShell />
+          {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
+              gate: hide the entire Retroverse shell when the game is
+              "full bleed" (single-window with library hidden, OR
+              direct-launch boot). The wgpu emulator surface paints to
+              the WebView's transparent background; when no Retroverse
+              chrome is on top, emulator pixels show through. Esc /
+              Ctrl+W toggle libraryVisible back, gameMode goes false,
+              shell re-renders. */}
+          <Show when={!(isDirectLaunch() || gameMode())}>
+            <RetroverseShell />
+          </Show>
         </RetroverseProvider>
       </Show>
       <ImportWizard
