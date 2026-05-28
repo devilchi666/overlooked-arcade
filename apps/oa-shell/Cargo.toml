@@ -64,3 +64,6 @@ tokio               = { workspace = true }
 rodio               = { workspace = true }
 clap                = { version = "4", features = ["derive"] }
 rayon               = { workspace = true }
+# Retroverse-UI Phase C2 — System Status gauges. Default features are
+# fine; we only need CPU/RAM + per-disk free space.
+sysinfo             = "0.32"

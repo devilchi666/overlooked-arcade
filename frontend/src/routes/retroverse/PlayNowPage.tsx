@@ -24,6 +24,7 @@ import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes } from "../../themes/registry";
 import { useRetroverse } from "./context";
 
@@ -179,6 +180,16 @@ const PlayNowPage: Component = () => {
   const ctx = useRetroverse();
   const media = useMedia();
   const [activeMoodId, setActiveMoodId] = createSignal<MoodId>("for-you");
+
+  // Retroverse-UI fix — controller-nav coverage. Walks mood buttons →
+  // hero CTAs → rail cards in DOM order.
+  let containerRef: HTMLDivElement | undefined;
+  useDomQueryFocusGroup({
+    id: "retroverse-play-now",
+    containerRef: () => containerRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+  });
   // Reroll seed — bumping it forces the hero memo to re-pick a fresh entry.
   const [rerollSeed, setRerollSeed] = createSignal(0);
 
@@ -382,6 +393,7 @@ const PlayNowPage: Component = () => {
 
   return (
     <div
+      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",

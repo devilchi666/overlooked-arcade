@@ -2883,6 +2883,7 @@ fn main() {
             get_core_pref,
             set_core_pref,
             quit_app,
+            get_system_status,
             unload_rom,
             media::get_media_index,
             media::get_region_priority,
@@ -9326,6 +9327,59 @@ fn graceful_exit(app: &tauri::AppHandle, code: i32) {
 fn quit_app(app: tauri::AppHandle) {
     log::info!("oa-shell: quit_app command — exiting");
     graceful_exit(&app, 0);
+}
+
+/// Retroverse-UI Phase C2 — Snapshot of host system load for the HOME tab's
+/// SYSTEM STATUS gauges. Numbers are point-in-time samples; the frontend
+/// polls every few seconds. Disk free targets the OA data dir so the
+/// reading is meaningful to the operator's emulation workflow (saves /
+/// states / scanned ROMs all live there).
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SystemStatus {
+    cpu_percent: f32,
+    ram_used_bytes: u64,
+    ram_total_bytes: u64,
+    /// Free bytes on the disk hosting the OA data directory. `None` when
+    /// the data dir's drive can't be matched against any sysinfo entry
+    /// (rare, e.g. exotic mount setups). Treat as missing data UI-side.
+    data_dir_free_bytes: Option<u64>,
+}
+
+#[tauri::command]
+fn get_system_status(state: tauri::State<'_, AppState>) -> Result<SystemStatus, String> {
+    use sysinfo::{Disks, System};
+
+    let mut sys = System::new();
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+    // sysinfo's CPU% reading is the average of all logical cores since the
+    // last refresh; first call returns 0. The frontend's 3s polling cadence
+    // means subsequent reads carry real data.
+    let cpu_percent = sys.global_cpu_usage();
+    let ram_used_bytes = sys.used_memory();
+    let ram_total_bytes = sys.total_memory();
+
+    // Match the data_dir path to a disk to read free bytes.
+    let disks = Disks::new_with_refreshed_list();
+    let data_dir_str = state.app_data_dir.to_string_lossy();
+    let data_dir_free_bytes = disks
+        .iter()
+        .filter(|d| {
+            let mount = d.mount_point().to_string_lossy();
+            data_dir_str.starts_with(mount.as_ref())
+        })
+        // When multiple mounts match (e.g. C:\ and C:\Users\... on Windows),
+        // prefer the deepest mount as the "owning" disk.
+        .max_by_key(|d| d.mount_point().to_string_lossy().len())
+        .map(|d| d.available_space());
+
+    Ok(SystemStatus {
+        cpu_percent,
+        ram_used_bytes,
+        ram_total_bytes,
+        data_dir_free_bytes,
+    })
 }
 
 /// Retroverse-UI Phase A Slice 2 — pop the in-flight `ActiveSession` and

@@ -26,6 +26,7 @@ import {
 } from "../../routing/currentRoute";
 import { onNavEvent } from "../../nav/gamepad";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
+import HomePage from "../../routes/retroverse/HomePage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import PlayNowPage from "../../routes/retroverse/PlayNowPage";
 import SettingsPage from "../../routes/retroverse/SettingsPage";
@@ -125,7 +126,7 @@ const RetroverseShell: Component = () => {
       <main style={{ "grid-area": "body" }} class="min-h-0 min-w-0 overflow-hidden">
         <Switch fallback={<LibraryPage />}>
           <Match when={currentRoute() === "home"}>
-            <StubPage title={ROUTE_LABELS.home} designDoc={STUB_DESIGN_DOCS.home} />
+            <HomePage />
           </Match>
           <Match when={currentRoute() === "library"}>
             <LibraryPage />
