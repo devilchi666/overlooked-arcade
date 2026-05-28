@@ -26,6 +26,7 @@ import {
 } from "../../routing/currentRoute";
 import { onNavEvent } from "../../nav/gamepad";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
+import SettingsPage from "../../routes/retroverse/SettingsPage";
 import StubPage from "../../routes/retroverse/StubPage";
 
 const ROUTE_LABELS: Record<RetroverseRoute, string> = {
@@ -137,7 +138,7 @@ const RetroverseShell: Component = () => {
             <StubPage title={ROUTE_LABELS.discover} designDoc={STUB_DESIGN_DOCS.discover} />
           </Match>
           <Match when={currentRoute() === "settings"}>
-            <StubPage title={ROUTE_LABELS.settings} designDoc={STUB_DESIGN_DOCS.settings} />
+            <SettingsPage />
           </Match>
         </Switch>
       </main>
