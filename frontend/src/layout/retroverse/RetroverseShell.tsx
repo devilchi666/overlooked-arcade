@@ -25,6 +25,7 @@ import {
   type RetroverseRoute,
 } from "../../routing/currentRoute";
 import { onNavEvent } from "../../nav/gamepad";
+import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import SettingsPage from "../../routes/retroverse/SettingsPage";
 import StubPage from "../../routes/retroverse/StubPage";
@@ -129,7 +130,7 @@ const RetroverseShell: Component = () => {
             <LibraryPage />
           </Match>
           <Match when={currentRoute() === "collections"}>
-            <StubPage title={ROUTE_LABELS.collections} designDoc={STUB_DESIGN_DOCS.collections} />
+            <CollectionsPage />
           </Match>
           <Match when={currentRoute() === "play-now"}>
             <StubPage title={ROUTE_LABELS["play-now"]} designDoc={STUB_DESIGN_DOCS["play-now"]} />
