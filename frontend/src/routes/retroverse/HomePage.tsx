@@ -40,7 +40,7 @@ import { systemThemes, type SystemId } from "../../themes/registry";
 import type { RomEntry } from "../../library/types";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import { useRetroverse } from "./context";
 
@@ -49,6 +49,7 @@ type SystemStatus = {
   ramUsedBytes: number;
   ramTotalBytes: number;
   dataDirFreeBytes: number | null;
+  dataDirTotalBytes: number | null;
 };
 
 function formatBytes(bytes: number): string {
@@ -74,17 +75,61 @@ const HomePage: Component = () => {
   const media = useMedia();
   const platformMedia = usePlatformMedia();
 
-  // Retroverse-UI fix — controller-nav coverage. Single page-level
-  // DOM-query focus group walks every button on the page in DOM order
-  // (sidebar items → hero CTAs → rail cards → quick-launch buttons →
-  // recently-played cards → status footer). Auto-activates on mount;
-  // unmounts on tab switch.
-  let containerRef: HTMLDivElement | undefined;
+  // Retroverse-UI controller-nav v2 — per-region focus groups so
+  // DPad / left-stick LEFT/RIGHT transfers between sidebar ↔ center ↔
+  // right pane (operator spec). UP/DOWN stays within a region. L1/R1
+  // cycles Retroverse tabs at the shell level — these groups don't
+  // wire neighbours so shoulder bumpers don't double-fire here.
+  let leftRef: HTMLElement | undefined;
+  let centerRef: HTMLElement | undefined;
+  let rightRef: HTMLElement | undefined;
+  const LEFT_ID = "retroverse-home-left";
+  const CENTER_ID = "retroverse-home-center";
+  const RIGHT_ID = "retroverse-home-right";
   useDomQueryFocusGroup({
-    id: "retroverse-home",
-    containerRef: () => containerRef,
+    id: LEFT_ID,
+    containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "right") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: CENTER_ID,
+    containerRef: () => centerRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(LEFT_ID);
+        return true;
+      }
+      if (dir === "right") {
+        activateFocusGroup(RIGHT_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: RIGHT_ID,
+    containerRef: () => rightRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
   });
 
   // Per-system entry index — derived once from the LibraryStore. Used
@@ -231,6 +276,48 @@ const HomePage: Component = () => {
     </button>
   );
 
+  // Colored horizontal gauge — green/amber/red bar with label + percent
+  // header + optional sublabel underneath. CPU + RAM use the high-is-bad
+  // colorway; Storage flips it via `invert` so low free = red.
+  const Gauge: Component<{
+    label: string;
+    percent: number;
+    sublabel?: string;
+    invert?: boolean;
+  }> = (gProps) => {
+    const bounded = () =>
+      Math.min(100, Math.max(0, Number.isFinite(gProps.percent) ? gProps.percent : 0));
+    const colorClass = () => {
+      const p = bounded();
+      const high = gProps.invert ? p < 15 : p > 85;
+      const mid = gProps.invert ? p < 40 : p > 60;
+      if (high) return "bg-red-500";
+      if (mid) return "bg-amber-500";
+      return "bg-emerald-500";
+    };
+    return (
+      <div class="flex flex-col gap-1">
+        <div class="flex items-baseline justify-between">
+          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            {gProps.label}
+          </span>
+          <span class="text-[0.7rem] font-semibold text-(--color-oa-ink)">
+            {Math.round(bounded())}%
+          </span>
+        </div>
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+          <div
+            class={`h-full rounded-full transition-[width] duration-500 ${colorClass()}`}
+            style={{ width: `${bounded()}%` }}
+          />
+        </div>
+        <Show when={gProps.sublabel}>
+          <p class="text-[0.55rem] text-(--color-oa-ink-dim)/70">{gProps.sublabel}</p>
+        </Show>
+      </div>
+    );
+  };
+
   const RailCard: Component<{ entry: RomEntry; reasonChip?: string }> = (cardProps) => {
     const coverSrc = () => media.coverUrl(cardProps.entry.systemId, cardProps.entry.id);
     const systemLabel = () =>
@@ -285,7 +372,6 @@ const HomePage: Component = () => {
 
   return (
     <div
-      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",
@@ -304,7 +390,10 @@ const HomePage: Component = () => {
       />
 
       {/* Left: SYSTEMS sidebar. */}
-      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
+      >
         <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Systems
         </p>
@@ -349,7 +438,10 @@ const HomePage: Component = () => {
       </aside>
 
       {/* Center: hero + popular + quick launch + recent + status. */}
-      <section class="min-h-0 min-w-0 overflow-y-auto">
+      <section
+        ref={(el) => (centerRef = el)}
+        class="min-h-0 min-w-0 overflow-y-auto"
+      >
         {/* Hero panel. */}
         <article class="relative overflow-hidden border-b border-white/5">
           <Show
@@ -568,15 +660,53 @@ const HomePage: Component = () => {
           </Show>
         </section>
 
-        {/* System Status footer. */}
-        <section class="border-t border-white/5 px-8 py-4">
-          <p class="mb-2 text-[0.6rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+        {/* System Status moved to the bottom of the right pane below
+            (operator spec, post-Phase-C2-validation). Center pane ends
+            with Recently played. */}
+      </section>
+
+      {/* Right: focused-card detail on top, System Status gauges
+          pinned to the bottom (operator spec). */}
+      <aside
+        ref={(el) => (rightRef = el)}
+        class="flex h-full min-w-0 flex-col overflow-hidden border-l border-white/5"
+      >
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <Show
+            when={ctx.focusedEntry()}
+            fallback={
+              <div class="flex h-full items-center justify-center p-8">
+                <div class="max-w-xs text-center">
+                  <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                    No selection
+                  </p>
+                  <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
+                    Click a card on the popular or recently-played rails to
+                    see its detail here.
+                  </p>
+                </div>
+              </div>
+            }
+          >
+            <RightDetailPanel
+              entry={ctx.focusedEntry()}
+              onClose={() => ctx.setFocusedEntry(null)}
+              onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
+            />
+          </Show>
+        </div>
+
+        {/* System Status gauges — always visible at the bottom of the
+            right pane. Colored bars: CPU/RAM green→amber→red, Storage
+            free inverted (low free = red). */}
+        <div class="shrink-0 border-t border-white/5 bg-(--color-oa-bg-deep)/60 px-5 py-4">
+          <p class="mb-3 text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
             System status
           </p>
           <Show
             when={systemStatus()}
             fallback={
-              <p class="text-[0.65rem] text-(--color-oa-ink-dim)/70">
+              <p class="text-[0.6rem] text-(--color-oa-ink-dim)/70">
                 Sampling host load…
               </p>
             }
@@ -584,83 +714,40 @@ const HomePage: Component = () => {
             {(status) => {
               const ramPercent = () =>
                 status().ramTotalBytes > 0
-                  ? Math.round(
-                      (status().ramUsedBytes / status().ramTotalBytes) * 100,
-                    )
+                  ? (status().ramUsedBytes / status().ramTotalBytes) * 100
                   : 0;
+              const freePercent = () => {
+                const free = status().dataDirFreeBytes;
+                const total = status().dataDirTotalBytes;
+                if (free === null || total === null || !total) return null;
+                return (free / total) * 100;
+              };
               return (
-                <div class="grid grid-cols-3 gap-3">
-                  <div class="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <p class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      CPU
-                    </p>
-                    <p class="mt-1 text-2xl font-semibold text-(--color-oa-ink)">
-                      {Math.round(status().cpuPercent)}%
-                    </p>
-                  </div>
-                  <div class="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <p class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      RAM
-                    </p>
-                    <p class="mt-1 text-2xl font-semibold text-(--color-oa-ink)">
-                      {ramPercent()}%
-                    </p>
-                    <p class="text-[0.6rem] text-(--color-oa-ink-dim)">
-                      {formatBytes(status().ramUsedBytes)} /{" "}
-                      {formatBytes(status().ramTotalBytes)}
-                    </p>
-                  </div>
-                  <div class="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <p class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Storage free
-                    </p>
-                    <Show
-                      when={status().dataDirFreeBytes !== null}
-                      fallback={
-                        <p class="mt-1 text-sm text-(--color-oa-ink-dim)">
-                          —
-                        </p>
-                      }
-                    >
-                      <p class="mt-1 text-2xl font-semibold text-(--color-oa-ink)">
-                        {formatBytes(status().dataDirFreeBytes ?? 0)}
-                      </p>
-                      <p class="text-[0.6rem] text-(--color-oa-ink-dim)">
-                        on data drive
-                      </p>
-                    </Show>
-                  </div>
+                <div class="flex flex-col gap-3">
+                  <Gauge label="CPU" percent={status().cpuPercent} />
+                  <Gauge
+                    label="RAM"
+                    percent={ramPercent()}
+                    sublabel={`${formatBytes(status().ramUsedBytes)} / ${formatBytes(status().ramTotalBytes)}`}
+                  />
+                  <Show
+                    when={freePercent() !== null}
+                    fallback={
+                      <Gauge label="Storage" percent={0} sublabel="—" invert />
+                    }
+                  >
+                    <Gauge
+                      label="Storage free"
+                      percent={freePercent() ?? 0}
+                      sublabel={`${formatBytes(status().dataDirFreeBytes ?? 0)} of ${formatBytes(status().dataDirTotalBytes ?? 0)}`}
+                      invert
+                    />
+                  </Show>
                 </div>
               );
             }}
           </Show>
-        </section>
-      </section>
-
-      {/* Right: focused-card detail. */}
-      <aside class="min-w-0 overflow-hidden border-l border-white/5">
-        <Show
-          when={ctx.focusedEntry()}
-          fallback={
-            <div class="flex h-full items-center justify-center p-8">
-              <div class="max-w-xs text-center">
-                <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                  No selection
-                </p>
-                <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-                  Click a card on the popular or recently-played rails to
-                  see its detail here.
-                </p>
-              </div>
-            </div>
-          }
-        >
-          <RightDetailPanel
-            entry={ctx.focusedEntry()}
-            onClose={() => ctx.setFocusedEntry(null)}
-            onLaunched={(entry, slot) => ctx.onPostLaunch(entry, slot)}
-          />
-        </Show>
+        </div>
       </aside>
     </div>
   );

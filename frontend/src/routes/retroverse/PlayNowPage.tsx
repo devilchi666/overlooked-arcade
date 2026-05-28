@@ -24,7 +24,7 @@ import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import RightDetailPanel from "../../components/RightDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes } from "../../themes/registry";
 import { useRetroverse } from "./context";
 
@@ -181,14 +181,58 @@ const PlayNowPage: Component = () => {
   const media = useMedia();
   const [activeMoodId, setActiveMoodId] = createSignal<MoodId>("for-you");
 
-  // Retroverse-UI fix — controller-nav coverage. Walks mood buttons →
-  // hero CTAs → rail cards in DOM order.
-  let containerRef: HTMLDivElement | undefined;
+  // Retroverse-UI controller-nav v2 — per-region focus groups so
+  // DPad LEFT/RIGHT transfers mood sidebar ↔ hero+rails ↔ right pane.
+  let leftRef: HTMLElement | undefined;
+  let centerRef: HTMLElement | undefined;
+  let rightRef: HTMLElement | undefined;
+  const LEFT_ID = "retroverse-play-now-left";
+  const CENTER_ID = "retroverse-play-now-center";
+  const RIGHT_ID = "retroverse-play-now-right";
   useDomQueryFocusGroup({
-    id: "retroverse-play-now",
-    containerRef: () => containerRef,
+    id: LEFT_ID,
+    containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "right") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: CENTER_ID,
+    containerRef: () => centerRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(LEFT_ID);
+        return true;
+      }
+      if (dir === "right") {
+        activateFocusGroup(RIGHT_ID);
+        return true;
+      }
+      return false;
+    },
+  });
+  useDomQueryFocusGroup({
+    id: RIGHT_ID,
+    containerRef: () => rightRef,
+    orientation: "vertical",
+    autoActivate: false,
+    onActivate: (_i, el) => el.click(),
+    onDirection: (dir) => {
+      if (dir === "left") {
+        activateFocusGroup(CENTER_ID);
+        return true;
+      }
+      return false;
+    },
   });
   // Reroll seed — bumping it forces the hero memo to re-pick a fresh entry.
   const [rerollSeed, setRerollSeed] = createSignal(0);
@@ -393,7 +437,6 @@ const PlayNowPage: Component = () => {
 
   return (
     <div
-      ref={(el) => (containerRef = el)}
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr) 360px",
@@ -412,7 +455,10 @@ const PlayNowPage: Component = () => {
       />
 
       {/* Left: mood sidebar. */}
-      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
+      >
         <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Moods
         </p>
@@ -488,7 +534,10 @@ const PlayNowPage: Component = () => {
       </aside>
 
       {/* Center: hero card + rails. */}
-      <section class="flex min-h-0 min-w-0 flex-col overflow-y-auto">
+      <section
+        ref={(el) => (centerRef = el)}
+        class="flex min-h-0 min-w-0 flex-col overflow-y-auto"
+      >
         <Show
           when={heroEntry()}
           fallback={
@@ -623,7 +672,10 @@ const PlayNowPage: Component = () => {
       </section>
 
       {/* Right: focused-game detail. */}
-      <aside class="min-w-0 overflow-hidden border-l border-white/5">
+      <aside
+        ref={(el) => (rightRef = el)}
+        class="min-w-0 overflow-hidden border-l border-white/5"
+      >
         <Show
           when={ctx.focusedEntry()}
           fallback={

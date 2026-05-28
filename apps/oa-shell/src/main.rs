@@ -2495,6 +2495,13 @@ struct AppState {
     /// last-played timestamp to `library_db`. Wrapped in Arc<Mutex<>>
     /// because graceful_exit reads it from a non-mut AppHandle borrow.
     active_session: Arc<Mutex<Option<ActiveSession>>>,
+    /// Retroverse-UI Phase C2 — persistent sysinfo System handle for the
+    /// HOME tab's SYSTEM STATUS gauges. Must be persistent (not built on
+    /// every call) because sysinfo's CPU% reading is a delta against the
+    /// previous refresh; a fresh System has no baseline so reads return
+    /// 0% or 100% nonsense. The constructor pre-warms with a single
+    /// refresh so the first frontend poll has a valid baseline.
+    system_status_handle: Arc<Mutex<sysinfo::System>>,
     /// Phase 4 slice B — published rewind ring stats. Writer = emu thread
     /// (updated after every capture / pop / scrub op). Reader = Tauri
     /// commands like `get_rewind_state`. Mutex is uncontended in practice.
@@ -3305,6 +3312,16 @@ fn main() {
                     game_focus: game_focus.clone(),
                     active_archive_entry_id: Arc::new(Mutex::new(None)),
                     active_session: Arc::new(Mutex::new(None)),
+                    system_status_handle: {
+                        // Pre-warm the sysinfo handle so the first HOME
+                        // poll has a CPU baseline to compute the delta
+                        // against. Without this the first reading is
+                        // either 0% or 100% depending on platform.
+                        let mut sys = sysinfo::System::new();
+                        sys.refresh_cpu_usage();
+                        sys.refresh_memory();
+                        Arc::new(Mutex::new(sys))
+                    },
                     rewind_state,
                     tas_state,
                     video_state,
@@ -9344,26 +9361,40 @@ struct SystemStatus {
     /// the data dir's drive can't be matched against any sysinfo entry
     /// (rare, e.g. exotic mount setups). Treat as missing data UI-side.
     data_dir_free_bytes: Option<u64>,
+    /// Total bytes on the data dir's drive. Used by the frontend to
+    /// render the "% used" bar (1 - free / total). Same `None` semantics
+    /// as data_dir_free_bytes.
+    data_dir_total_bytes: Option<u64>,
 }
 
 #[tauri::command]
 fn get_system_status(state: tauri::State<'_, AppState>) -> Result<SystemStatus, String> {
-    use sysinfo::{Disks, System};
+    use sysinfo::Disks;
 
-    let mut sys = System::new();
-    sys.refresh_cpu_usage();
-    sys.refresh_memory();
-    // sysinfo's CPU% reading is the average of all logical cores since the
-    // last refresh; first call returns 0. The frontend's 3s polling cadence
-    // means subsequent reads carry real data.
-    let cpu_percent = sys.global_cpu_usage();
-    let ram_used_bytes = sys.used_memory();
-    let ram_total_bytes = sys.total_memory();
+    // Lock the persistent sysinfo handle. Refresh in-place so CPU% can
+    // compute a delta against the previous refresh — the whole point of
+    // making this persistent on AppState. A fresh System::new() per call
+    // would always return 0% (no baseline) or 100% (the all-cores-saturated
+    // default sysinfo falls back to on first read).
+    let cpu_percent;
+    let ram_used_bytes;
+    let ram_total_bytes;
+    {
+        let mut sys = state
+            .system_status_handle
+            .lock()
+            .map_err(|_| "system_status_handle lock poisoned".to_string())?;
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        cpu_percent = sys.global_cpu_usage();
+        ram_used_bytes = sys.used_memory();
+        ram_total_bytes = sys.total_memory();
+    }
 
-    // Match the data_dir path to a disk to read free bytes.
+    // Match the data_dir path to a disk to read free + total bytes.
     let disks = Disks::new_with_refreshed_list();
     let data_dir_str = state.app_data_dir.to_string_lossy();
-    let data_dir_free_bytes = disks
+    let owning_disk = disks
         .iter()
         .filter(|d| {
             let mount = d.mount_point().to_string_lossy();
@@ -9371,14 +9402,16 @@ fn get_system_status(state: tauri::State<'_, AppState>) -> Result<SystemStatus, 
         })
         // When multiple mounts match (e.g. C:\ and C:\Users\... on Windows),
         // prefer the deepest mount as the "owning" disk.
-        .max_by_key(|d| d.mount_point().to_string_lossy().len())
-        .map(|d| d.available_space());
+        .max_by_key(|d| d.mount_point().to_string_lossy().len());
+    let data_dir_free_bytes = owning_disk.map(|d| d.available_space());
+    let data_dir_total_bytes = owning_disk.map(|d| d.total_space());
 
     Ok(SystemStatus {
         cpu_percent,
         ram_used_bytes,
         ram_total_bytes,
         data_dir_free_bytes,
+        data_dir_total_bytes,
     })
 }
 

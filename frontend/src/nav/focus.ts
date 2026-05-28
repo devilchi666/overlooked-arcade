@@ -301,6 +301,17 @@ export type DomQueryFocusGroupOptions = {
   onShoulderL?: () => void;
   onShoulderR?: () => void;
   neighbours?: { left?: string; right?: string };
+  /// Pre-handler for direction events. Return true to consume the event
+  /// (default movement skipped). Mirrors useFocusGroup's onDirection —
+  /// useful for Retroverse pages where DPad LEFT/RIGHT should transfer
+  /// to a neighbour region group instead of being ignored (vertical
+  /// orientation) or moving (horizontal).
+  onDirection?: (direction: NavDirection, currentIndex: number) => boolean;
+  /// When false the group registers but does not auto-activate on mount.
+  /// Useful when multiple sibling groups co-exist on one page and only
+  /// one should be the landing surface; the others activate via DPad /
+  /// onDirection transfer. Defaults `true`.
+  autoActivate?: boolean;
 };
 
 export type DomQueryFocusGroupApi = FocusGroupApi & {
@@ -343,6 +354,7 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
     onShoulderL: opts.onShoulderL,
     onShoulderR: opts.onShoulderR,
     neighbours: opts.neighbours,
+    onDirection: opts.onDirection,
   });
 
   const rebind = (): void => {
@@ -368,7 +380,12 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
       const root = opts.containerRef();
       if (!root || !root.isConnected) return;
       rebind();
-      group.activate();
+      // autoActivate: omit / true → claim active on mount. Pass false to
+      // register the group without stealing focus (e.g. sibling region
+      // groups where only one is the landing surface).
+      if (opts.autoActivate !== false) {
+        group.activate();
+      }
       observer = new MutationObserver(() => rebind());
       observer.observe(root, {
         childList: true,
