@@ -399,11 +399,22 @@ Current status (2026-05-28):
   - Per-system release metadata — add `releasedYear` /
     `architecture` / `mediaType` to SystemTheme + mine Wikipedia.
 
-  Controller-nav follow-up (operator spec):
-  - DPad / left-stick LEFT/RIGHT should transfer focus between
-    sidebars and grids; L1/R1 stays tab-cycle. Today's shoulder-
-    bumper-based neighbour transfer doesn't match; split each
-    Retroverse page into per-region focus groups with direction-
-    based transfer in a dedicated polish slice.
+  Controller-nav v2 (operator spec, merged 2026-05-28 `71816bf`):
+  - DPad / left-stick LEFT/RIGHT now transfers between sidebar ↔
+    center ↔ right pane on 4 of 5 Retroverse pages (HomePage /
+    CollectionsPage / PlayNowPage / SettingsPage). UP/DOWN walks
+    within a region; L1/R1 still cycles tabs at the shell level.
+    Framework gained `onDirection` + `autoActivate` on
+    `useDomQueryFocusGroup`. LibraryPage NOT yet ported —
+    embedded LeftSidebar + VirtualLibraryGrid carry their own
+    shoulder-bumper-neighbour-wired groups consumed by the legacy
+    UI too; aligning needs a Retroverse-mode override on those
+    component-level groups.
+
+  System Status fix (merged 2026-05-28 `71816bf`):
+  - Persistent sysinfo handle so CPU% reads a real delta.
+    Section relocated from center pane to bottom of right pane
+    as colored gauges (green/amber/red CPU+RAM, inverted for
+    storage free).
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending
   earlier phases.
