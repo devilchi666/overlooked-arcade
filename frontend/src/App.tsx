@@ -100,6 +100,7 @@ import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
 import { setRetroverseUiEnabled, isRetroverseUiEnabled } from "./lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
+import { RetroverseProvider } from "./routes/retroverse/context";
 import {
   currentRoute as currentRetroverseRoute,
   setCurrentRoute as setRetroverseRoute,
@@ -911,6 +912,31 @@ const App: Component = () => {
       void autoSyncAfterIngest(summary.systemIds, summary.entries);
     }
     setBusy("idle");
+  }
+
+  /// Retroverse-UI Phase B Slice 6 — post-launch UI bridge. What App.tsx
+  /// does after a successful launch (status toast, gameRunning flip,
+  /// runningEntry capture, single-window library auto-hide). Called by:
+  ///   - GameInfoModal's `onLaunched` (existing) when the operator
+  ///     launches from the modal's Launch / Resume buttons.
+  ///   - RetroverseContext's `onPostLaunch` (Phase B Slice 6) so
+  ///     panel-mode RightDetailPanel in LibraryPage keeps shell state
+  ///     in sync the same way.
+  /// Tile-click launches go through `handleLaunch` directly and don't
+  /// need this — handleLaunch already does these updates inline.
+  function postLaunchUiUpdate(entry: RomEntry, slot?: number): void {
+    setStatus(
+      slot !== undefined
+        ? `Launched ${entry.title} (slot ${slot}).`
+        : `Launched ${entry.title}.`,
+    );
+    setGameRunning(true);
+    setCurrentRomTitle(entry.title);
+    setRunningEntry(entry);
+    if (shellMode() === "single-window") {
+      setLibraryVisible(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
   }
 
   async function handleLaunch(entry: RomEntry, slot?: number, stateFile?: string) {
@@ -1956,7 +1982,28 @@ const App: Component = () => {
       </Shell>
         }
       >
-        <RetroverseShell />
+        <RetroverseProvider
+          value={{
+            library,
+            layout,
+            views: viewsStore,
+            settings,
+            searchQuery,
+            setSearchQuery,
+            focusedEntry,
+            setFocusedEntry,
+            currentView,
+            setCurrentView,
+            onLaunch: handleLaunch,
+            onShowSaves: (e) => setSavesEntry(e),
+            onShowInfo: (e) => setGameInfoFor(e),
+            onPickContext: (entry, position) => setContextMenuFor({ entry, position }),
+            onPickFolder: handlePickFolder,
+            onPostLaunch: postLaunchUiUpdate,
+          }}
+        >
+          <RetroverseShell />
+        </RetroverseProvider>
       </Show>
       <ImportWizard
         open={wizardOpen()}
@@ -2099,20 +2146,7 @@ const App: Component = () => {
       <GameInfoModal
         entry={gameInfoFor()}
         onClose={() => setGameInfoFor(null)}
-        onLaunched={(entry, slot) => {
-          setStatus(
-            slot !== undefined
-              ? `Launched ${entry.title} (slot ${slot}).`
-              : `Launched ${entry.title}.`,
-          );
-          setGameRunning(true);
-          setCurrentRomTitle(entry.title);
-          setRunningEntry(entry);
-          if (shellMode() === "single-window") {
-            setLibraryVisible(false);
-            (document.activeElement as HTMLElement | null)?.blur();
-          }
-        }}
+        onLaunched={postLaunchUiUpdate}
       />
       <CorePickerMenu
         entry={coreMenuFor()?.entry ?? null}

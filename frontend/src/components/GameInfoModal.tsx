@@ -251,12 +251,18 @@ const GameInfoModal: Component<Props> = (props) => {
   return (
     <Show when={props.entry}>
       {(entry) => {
-        useBackHandler(() => props.onClose());
-        onMount(() => {
-          infoFocusGroup.activate();
-          setInfoFocusIndex(0);
-        });
-        onCleanup(() => activateFocusGroup("library-grid"));
+        // Modal mode owns the back-stack + steals focus into the
+        // "game-info" group. Panel mode (Phase B LIBRARY tab) leaves
+        // both to the parent tab so focus stays in the library grid /
+        // tab strip while the panel just displays the focused entry.
+        if (isModal()) {
+          useBackHandler(() => props.onClose());
+          onMount(() => {
+            infoFocusGroup.activate();
+            setInfoFocusIndex(0);
+          });
+          onCleanup(() => activateFocusGroup("library-grid"));
+        }
         const box = (
           <div
             class={
