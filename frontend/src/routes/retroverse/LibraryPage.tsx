@@ -12,16 +12,53 @@
 // unless the operator mouse-clicks a tile (which auto-activates
 // "library-grid" and restores 2D nav for the mouse flow).
 
-import { Show, type Component } from "solid-js";
+import { createMemo, Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import { systemThemes, type SystemId } from "../../themes/registry";
+import { findNode } from "../../views/resolver";
 import { useRetroverse } from "./context";
 
 const LibraryPage: Component = () => {
   const ctx = useRetroverse();
+
+  // Header card title + count. When the operator filters by a system
+  // via the sidebar (view-node selection), title becomes the system's
+  // display name; otherwise "All games". Count is the launchable entry
+  // total (seed tiles excluded) — the visible grid below shows a
+  // search-filtered subset, but the header reads the system-level
+  // total for orientation. Matches the operator-supplied
+  // library-default-mockup.png header card.
+  // Resolve the active view-node selection (if any) to a single
+  // SystemId. Container nodes resolve to null — the header shows
+  // "All games" then.
+  const headerSystemId = createMemo<SystemId | null>(() => {
+    const cv = ctx.currentView();
+    if (cv.kind !== "view-node") return null;
+    const active = ctx.views.activeView();
+    if (!active || active.id !== cv.viewId) return null;
+    const node = findNode(active, cv.nodeId);
+    if (node && "kind" in node && node.kind === "platform") {
+      return node.systemId as SystemId;
+    }
+    return null;
+  });
+
+  const headerTitle = createMemo(() => {
+    const sys = headerSystemId();
+    if (!sys) return "All games";
+    return systemThemes[sys]?.displayName ?? sys;
+  });
+
+  const headerCount = createMemo(() => {
+    const entries = ctx.library.state.entries.filter((e) => !e.seed);
+    const sys = headerSystemId();
+    if (!sys) return entries.length;
+    return entries.filter((e) => e.systemId === sys).length;
+  });
 
   // Retroverse-UI controller-nav v2 — per-region focus groups so DPad
   // LEFT/RIGHT transfers sidebar ↔ grid ↔ right detail pane. UP/DOWN
@@ -117,28 +154,45 @@ const LibraryPage: Component = () => {
         />
       </aside>
 
-      {/* Center: existing LibraryView covers the entire filter + sort +
-          group + grid + detail-list pipeline. Reusing it sidesteps
-          re-implementing GridControls and the view-node resolver. */}
+      {/* Center: header card + existing LibraryView. The header card
+          surfaces title + count + flavor badge per the mockup; the
+          embedded LibraryView GridControls keeps sort/view/group
+          controls available below. */}
       <section
         ref={(el) => (centerRef = el)}
-        class="min-h-0 min-w-0 overflow-hidden"
+        class="flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
-        <LibraryView
-          library={ctx.library}
-          layout={ctx.layout}
-          views={ctx.views}
-          currentView={ctx.currentView()}
-          searchQuery={ctx.searchQuery()}
-          onLaunch={(entry) => void ctx.onLaunch(entry)}
-          onShowSaves={ctx.onShowSaves}
-          onPickContext={ctx.onPickContext}
-          onFocus={ctx.setFocusedEntry}
-          onShowInfo={ctx.onShowInfo}
-          selectedId={() => ctx.focusedEntry()?.id ?? null}
-          onPickFolder={() => void ctx.onPickFolder()}
-          onToggleFavorite={ctx.onToggleFavorite}
-        />
+        <header class="flex shrink-0 items-end justify-between gap-3 border-b border-white/5 px-8 py-4">
+          <div>
+            <h1 class="text-2xl font-semibold uppercase tracking-wide text-(--color-oa-ink)">
+              {headerTitle()}
+            </h1>
+            <p class="mt-0.5 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              {headerCount()}{" "}
+              <span class="text-(--color-system-accent)">
+                {headerCount() === 1 ? "game" : "games"}
+              </span>
+            </p>
+          </div>
+        </header>
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <LibraryView
+            library={ctx.library}
+            layout={ctx.layout}
+            views={ctx.views}
+            currentView={ctx.currentView()}
+            searchQuery={ctx.searchQuery()}
+            onLaunch={(entry) => void ctx.onLaunch(entry)}
+            onShowSaves={ctx.onShowSaves}
+            onPickContext={ctx.onPickContext}
+            onFocus={ctx.setFocusedEntry}
+            onShowInfo={ctx.onShowInfo}
+            selectedId={() => ctx.focusedEntry()?.id ?? null}
+            onPickFolder={() => void ctx.onPickFolder()}
+            onToggleFavorite={ctx.onToggleFavorite}
+            showSystemHeader
+          />
+        </div>
       </section>
 
       {/* Right: focused-game detail via GameDetailPanel. Empty-state

@@ -56,6 +56,12 @@ type Props = {
   /// item. When omitted the heart hides entirely (caller didn't wire
   /// favorites in this surface). Caller stops propagation as needed.
   onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
+  /// Retroverse-UI LIBRARY polish — when true, render a small system-
+  /// label header strip at the top of the cover area (system short
+  /// name on a backdrop-blur band). Matches the operator-supplied
+  /// library-default-mockup.png. Off by default — legacy LibraryView
+  /// callers don't pass this so behavior is unchanged.
+  showSystemHeader?: boolean;
 };
 
 const Placeholder: Component = () => (
@@ -220,9 +226,28 @@ const LibraryTile: Component<Props> = (props) => {
             Preview
           </span>
         </Show>
+        {/* Retroverse-UI LIBRARY polish — system-label header strip at
+            the top of the cover. Opt-in via `showSystemHeader` prop so
+            legacy UI unchanged. Sits behind the favorite heart + Saves
+            button (top-right corner overlay region); positioned on the
+            top-LEFT so they don't collide. */}
+        <Show when={props.showSystemHeader && !props.entry.seed}>
+          <span
+            class="absolute left-2 top-2 inline-flex items-center gap-1 rounded bg-black/55 px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-widest text-(--color-oa-ink) backdrop-blur"
+            title={theme().displayName}
+          >
+            <span class="text-(--color-system-accent)">◆</span>
+            {subsystemLabel() ?? theme().shortName}
+          </span>
+        </Show>
         <Show when={!props.entry.seed && props.entry.coreOverride}>
           <span
-            class="absolute left-2 top-2 rounded bg-black/65 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur"
+            class="absolute left-2 rounded bg-black/65 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur"
+            classList={{
+              // Stack under the system-header strip when both are shown.
+              "top-9": Boolean(props.showSystemHeader),
+              "top-2": !props.showSystemHeader,
+            }}
             title={`Custom core: ${props.entry.coreOverride}`}
           >
             Core ◆

@@ -426,3 +426,236 @@ export const ShadersSettings: Component<{ settings: SettingsStore }> = (props) =
     </div>
   );
 };
+
+// --- About -------------------------------------------------------------
+
+export const AboutSettings: Component = () => {
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="Overlooked Arcade">
+        <div class="space-y-3 text-sm">
+          <p class="text-[0.65rem] uppercase tracking-[0.3em] text-(--color-system-accent)">
+            Premium emulator frontend
+          </p>
+          <p class="text-(--color-oa-ink-dim)">
+            A dedicated home for the consoles modern emulators forgot —
+            TurboGrafx-16, Lynx, Atari 7800, SMS / Game Gear, MSX,
+            ColecoVision, Vectrex, Virtual Boy, WonderSwan, and friends.
+          </p>
+          <p class="text-(--color-oa-ink-dim)">
+            Non-commercial. A gift to the retro community. Built on
+            forked C cores (Beetle PCE Fast, Mednafen, MAME modules)
+            loaded as libretro .dlls. Shell is GPL-2.0; cores keep
+            their upstream licenses.
+          </p>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Credits">
+        <div class="space-y-2 text-[0.75rem] text-(--color-oa-ink-dim)">
+          <p>
+            <span class="text-(--color-oa-ink)">Cores:</span> Beetle PCE
+            Fast / Mednafen / Stella / Mesen / nestopia / fceumm /
+            snes9x / Genesis Plus GX / PicoDrive / Beetle Saturn /
+            mupen64plus / Dolphin / Flycast / PCSX2 / DOSBox-pure /
+            ScummVM and many more.
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Shell:</span> Rust +
+            Tauri 2 + wgpu (WGSL) + Solid + Tailwind. Libretro
+            integration via libloading.
+          </p>
+          <p>
+            <span class="text-(--color-oa-ink)">Art &amp; metadata:</span>{" "}
+            libretro-thumbnails + LaunchBox + EmuMovies community packs.
+          </p>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Report a bug">
+        <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
+          Found a crash or a bug? Open an issue on the project's
+          GitHub. Include the contents of{" "}
+          <span class="text-(--color-system-accent)">Help → Debug log…</span>{" "}
+          (legacy menu bar) if the bug surfaced at runtime —
+          frontend logs land in the same stream as Rust logs.
+        </p>
+      </SettingsCard>
+    </div>
+  );
+};
+
+// --- Storage -----------------------------------------------------------
+
+type StorageSystemStatus = {
+  cpuPercent: number;
+  ramUsedBytes: number;
+  ramTotalBytes: number;
+  dataDirFreeBytes: number | null;
+  dataDirTotalBytes: number | null;
+};
+
+function formatStorageBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  if (gb < 1024) return `${gb.toFixed(1)} GB`;
+  return `${(gb / 1024).toFixed(2)} TB`;
+}
+
+export const StorageSettings: Component = () => {
+  const [dataDir] = createResource(async () => {
+    try {
+      const mod = await import("../lib/dataDir");
+      return await mod.getDataDir();
+    } catch {
+      return "";
+    }
+  });
+  const [storageInfo] = createResource(async () => {
+    try {
+      return await invoke<StorageSystemStatus>("get_system_status");
+    } catch {
+      return null;
+    }
+  });
+
+  const isPortable = () => {
+    const d = dataDir();
+    if (!d) return false;
+    // Portable mode places the data dir under <exe_dir>/settings/.
+    // AppData mode places it under AppData/Roaming. A path-suffix
+    // heuristic is good enough for the indicator.
+    return /[\\\/]settings([\\\/]|$)/i.test(d) && !d.toLowerCase().includes("appdata");
+  };
+
+  const freePercent = () => {
+    const info = storageInfo();
+    if (!info || !info.dataDirFreeBytes || !info.dataDirTotalBytes) return null;
+    return Math.round((info.dataDirFreeBytes / info.dataDirTotalBytes) * 100);
+  };
+
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="Data directory">
+        <div class="space-y-2">
+          <div class="flex items-baseline justify-between gap-3 text-[0.75rem]">
+            <span class="shrink-0 text-(--color-oa-ink-dim)">Mode</span>
+            <span class="text-right text-(--color-oa-ink)">
+              {isPortable() ? "Portable" : "AppData"}
+            </span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              Path
+            </span>
+            <code class="break-all rounded border border-white/10 bg-black/40 px-2 py-1.5 font-mono text-[0.65rem] text-(--color-oa-ink)">
+              {dataDir() ?? "Loading…"}
+            </code>
+          </div>
+          <p class="text-[0.65rem] text-(--color-oa-ink-dim)/70">
+            Portable mode is opted-in by dropping a `portable.txt`
+            marker next to oa-shell.exe. Switching modes requires
+            restarting OA.
+          </p>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Free space">
+        <Show
+          when={storageInfo() && storageInfo()!.dataDirFreeBytes !== null}
+          fallback={
+            <p class="text-[0.7rem] text-(--color-oa-ink-dim)/70">
+              Couldn't match the data-dir drive against any sysinfo
+              disk entry. Rare; happens on exotic mount setups.
+            </p>
+          }
+        >
+          <div class="space-y-2">
+            <div class="flex items-baseline justify-between">
+              <span class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                On data drive
+              </span>
+              <span class="text-2xl font-semibold text-(--color-oa-ink)">
+                {formatStorageBytes(storageInfo()!.dataDirFreeBytes ?? 0)}
+              </span>
+            </div>
+            <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+              of {formatStorageBytes(storageInfo()!.dataDirTotalBytes ?? 0)}{" "}
+              total ({freePercent()}% free)
+            </p>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+              <div
+                class="h-full rounded-full bg-emerald-500"
+                style={{ width: `${freePercent() ?? 0}%` }}
+              />
+            </div>
+          </div>
+        </Show>
+      </SettingsCard>
+
+      <SettingsCard title="Subdirectories">
+        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+          Save states / saves / logs / per-game overrides / scanned
+          library / sync caches all live under the data directory.
+        </p>
+      </SettingsCard>
+    </div>
+  );
+};
+
+// --- Themes ------------------------------------------------------------
+
+export const ThemesSettings: Component = () => {
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="Default theme">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between rounded-lg border border-(--color-system-accent)/40 bg-(--color-system-accent)/[0.08] px-4 py-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-(--color-oa-ink)">
+                Retroverse
+              </p>
+              <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+                The current top-toolbar IA — HOME / LIBRARY /
+                COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS.
+                Experimental.
+              </p>
+            </div>
+            <span class="rounded border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-emerald-300">
+              Active
+            </span>
+          </div>
+          <div class="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 opacity-50">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-(--color-oa-ink)">
+                Legacy Shell
+              </p>
+              <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+                Sidebar-driven layout. Available by toggling
+                Settings → Experimental → Retroverse UI off.
+              </p>
+            </div>
+            <span class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              Switch via flag
+            </span>
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Future themes">
+        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+          Additional themes (Heroic-style / Kiosk cabinet) plus
+          community theme packs land once the content-packs
+          infrastructure ships (see Phase C6 in the rollout plan).
+          Until then, this category lists the two built-in shells
+          and lets the operator know to use the Experimental
+          toggle to switch between them.
+        </p>
+      </SettingsCard>
+    </div>
+  );
+};

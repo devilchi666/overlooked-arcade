@@ -16,6 +16,7 @@
 import { createSignal, For, Match, Switch, type Component } from "solid-js";
 import { HintRegion } from "../../nav/HintBar";
 import {
+  AboutSettings,
   AudioSettings,
   ControllerNavSettings,
   DisplayBaseSettings,
@@ -23,6 +24,8 @@ import {
   GameplaySettings,
   PerSystemUiSettings,
   ShadersSettings,
+  StorageSettings,
+  ThemesSettings,
 } from "../../components/SettingsSections";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
@@ -380,6 +383,15 @@ const SettingsPage: Component = () => {
           </Match>
           <Match when={activeCategoryId() === "experimental"}>
             <ExperimentalSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "themes"}>
+            <ThemesSettings />
+          </Match>
+          <Match when={activeCategoryId() === "storage"}>
+            <StorageSettings />
+          </Match>
+          <Match when={activeCategoryId() === "about"}>
+            <AboutSettings />
           </Match>
         </Switch>
       </section>
