@@ -11,6 +11,22 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Retroverse UI rollout** — designs locked for all six top-toolbar
+  tabs (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS)
+  plus the cross-cutting content-pack mechanism. Phase A foundation
+  merged to main 2026-05-28 (`1c4dee7`, `--no-ff` from
+  `feat/retroverse-ui-phase-a`) — `experimentalRetroverseUi` flag,
+  `play_time_secs` increment hooks, `GameInfoModal`→`RightDetailPanel`
+  lift, `currentRoute` signal at `frontend/src/routing/`. Invisible
+  to operator with flag OFF; 577 workspace tests green; existing UI
+  byte-identical. Next: Phase B (RetroverseShell layout + top-tab
+  strip + LIBRARY page re-skin) on branch
+  `feat/retroverse-ui-phase-b-library`. See
+  [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
+  for the full phase plan and the six per-tab design sketches at
+  `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
+  + `content-packs.md`.
+
 - **ColecoVision keypad reference + GameCube Wii peripherals** —
   branch `feat/coleco-keypad-and-gamecube-wii`, two commits.
   - **Coleco visual keypad reference** (`c4746d9`): new
