@@ -97,7 +97,7 @@ const LibraryPage: Component = () => {
     <div
       class="grid h-full w-full"
       style={{
-        "grid-template-columns": "240px minmax(0,1fr) 360px",
+        "grid-template-columns": "260px minmax(0,1fr) 360px",
       }}
     >
       {/* Phase B Slice 7 — LIBRARY-tab hint bar. Shell-level L1/R1
