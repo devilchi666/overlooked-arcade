@@ -37,6 +37,9 @@ type Props = {
   /// overlay hides (gracefully degrades for surfaces that don't wire
   /// favorites).
   onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
+  /// Retroverse-UI LIBRARY polish — pass-through for the per-tile
+  /// system-label header strip. See LibraryTile's prop docs.
+  showSystemHeader?: boolean;
 };
 
 /**
@@ -179,6 +182,7 @@ const LibraryView: Component<Props> = (props) => {
                   props.library.groupsByVariantId().get(id)?.variants.length
                 }
                 onToggleFavorite={props.onToggleFavorite}
+                showSystemHeader={props.showSystemHeader}
               />
             }
           >

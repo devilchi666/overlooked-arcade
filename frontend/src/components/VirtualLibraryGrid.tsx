@@ -51,6 +51,9 @@ type Props = {
   /// to LibraryTile so the heart overlay can fire without the tile
   /// reaching into the library store directly.
   onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
+  /// Retroverse-UI LIBRARY polish — pass-through for the per-tile
+  /// system-label header strip. See LibraryTile's prop docs.
+  showSystemHeader?: boolean;
 };
 
 type GridRow =
@@ -351,6 +354,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                               selected={props.selectedId?.() === entry.id}
                               variantCount={props.variantCountFor?.(entry.id)}
                               onToggleFavorite={props.onToggleFavorite}
+                              showSystemHeader={props.showSystemHeader}
                             />
                           </div>
                         );
