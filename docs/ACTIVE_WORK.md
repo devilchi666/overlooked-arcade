@@ -30,15 +30,37 @@ spanned every system but was filed under whichever core happened to be active.
   (`6ea5e51`); right-pane redesign (GameDetailPanel +
   SystemInfoPanel + SETTINGS 2-pane) merged 2026-05-28
   (`6f24e4f`); HOME v2 operator-supplied mockup redesign merged
-  2026-05-28 (`42da52f`). All 6 Retroverse tabs are now
-  operator-facing — only DISCOVER stays Coming-soon by design
-  (depends on content-packs Phase C6). 577 workspace tests
-  green; flag OFF still byte-identical apart from the heart
-  overlay on tiles. Remaining work splits between content
-  (HOME hero art / system specs / blurbs / RetroAchievements)
-  and infrastructure (Slice 12 custom-manual collections,
-  Phase C5/C6 DISCOVER + content-packs, remaining SETTINGS
-  category fills, PLAY NOW data-blocked moods). See
+  2026-05-28 (`42da52f`); polish pass (SETTINGS About/Storage/
+  Themes + top toolbar search/clock/profile + LIBRARY header card
+  + tile system header) merged 2026-05-28 (`0338501`); SETTINGS
+  expansion (Profile persistence + Cores wrap + BIOS info cards +
+  Library/Media placeholders) merged 2026-05-28 (`4a929bf`).
+
+  **Current state:** All 6 Retroverse tabs operator-facing. 12 of
+  14 SETTINGS categories have real content; Library + Media are
+  informational placeholders pointing at legacy menu-bar surfaces;
+  Per-system stays stubbed (needs SystemSettingsDialog body lift).
+  Operator-spec controller-nav (DPad L/R region transfer) on all
+  5 pages. 577 workspace tests green; flag OFF still byte-
+  identical apart from the heart overlay on tiles.
+
+  **Deferred work** (full list in
+  [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
+  §10 "Remaining work"): Slice 12 (custom collections), Phase C5
+  (DISCOVER), Phase C6 (content-packs infra), full
+  Library/Media/Per-system SETTINGS wraps, BIOS live-presence
+  grid, PLAY NOW data-blocked moods, RetroAchievements, HOME
+  carousel arrows, "Now playing" audio indicator, System Status
+  surface (was on HOME v1, removed in HOME v2 — TBD where it
+  goes), per-system hero art + specs + blurbs (content
+  workstream), Per-system-UI Stages 2+3, flag deprecation
+  endpoint. Approximate priority order:
+  1. Slice 12 — custom collections (code-only, well-scoped).
+  2. Phase C6 — content-packs infra (substantial but unlocks
+     DISCOVER + curated COLLECTIONS + theme packs).
+  3. SETTINGS → Per-system / Library / Media full wraps (closes
+     out the SETTINGS tab).
+  4. Content workstream (operator-side) for HOME polish. See
   [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
   for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`

@@ -428,6 +428,113 @@ Current status (2026-05-28):
   - Persistent sysinfo handle so CPU% reads a real delta.
     Section relocated from center pane to bottom of right pane
     as colored gauges (green/amber/red CPU+RAM, inverted for
-    storage free).
-- ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending
-  earlier phases.
+    storage free). System Status was later removed from HOME
+    entirely as part of HOME v2 (no longer shown in right pane).
+
+  LibraryPage focus-group port (merged 2026-05-28 `6ea5e51`):
+  - Aligned LibraryPage to the operator-spec controller-nav
+    behavior. Three page-level focus groups (retroverse-library-
+    left / -center / -right) with DPad LEFT/RIGHT region transfer.
+    Embedded LeftSidebar + VirtualLibraryGrid focus groups stay
+    dormant unless mouse-clicked.
+
+  Right-pane redesign + SETTINGS 2-pane (merged 2026-05-28
+  `6f24e4f`):
+  - SETTINGS dropped its live-preview right pane → 2-pane layout
+    (260/1fr). LibraryPage left sidebar unified to 260px (all
+    five tabs now consistent).
+  - GameDetailPanel + SystemInfoPanel ship as new components for
+    the right pane. GameDetailPanel matches the
+    library-default-mockup.png shape (cover hero + title +
+    conditional chip strip + description + screenshots row +
+    progress + PLAY GAME / MORE). SystemInfoPanel ships HOME's
+    default state.
+  - RightDetailPanel.tsx (the GameInfoModal-in-panel-mode
+    re-export) deleted. GameInfoModal still serves the legacy
+    tile-context "Game info…" surface in modal mode.
+
+  HOME v2 operator-supplied mockup (merged 2026-05-28
+  `42da52f`):
+  - Dense right pane: SYSTEM INFORMATION + TECHNICAL DETAILS +
+    SUPPORTED PERIPHERALS + ACHIEVEMENTS cards.
+  - Center hero: massive system name + tagline + flag + release +
+    blurb + bleeding console image + 6-card stats grid + popular
+    cover carousel.
+  - Left sidebar: systems list with era subline + VIEW ALL link +
+    Quick Launch panel pinned at bottom.
+  - Stub data file `systemMetadataStubs.ts` carries mockup-
+    faithful values for SNES + 6 priority systems; rest "—".
+  - Right pane stays on system info permanently; clicking covers
+    opens GameInfoModal.
+
+  Polish-pass (merged 2026-05-28 `0338501`):
+  - SETTINGS About / Storage / Themes categories filled in.
+  - Top toolbar wired: search → ctx.searchQuery (Enter → LIBRARY),
+    live clock + date, profile chip routes to SETTINGS.
+  - LIBRARY header card (title + count) + opt-in per-tile
+    system-label strip via showSystemHeader prop.
+
+  SETTINGS expansion (merged 2026-05-28 `4a929bf`):
+  - Profile: settings store gains profileDisplayName +
+    profileAvatar (localStorage round-trip). ProfileSettings UI
+    (avatar preset row + display name input). RetroverseShell
+    toolbar profile chip reads them.
+  - Cores: CoresPage embedded directly as category body.
+  - BIOS: informational card surface (system directory path +
+    per-system BIOS-filename reference table).
+  - Library + Media: explanatory placeholder cards pointing at
+    legacy menu-bar surfaces. Full wrap requires prop plumbing
+    (LibraryManagerPage) or variant="panel" lifting
+    (PlatformMediaDialog).
+  - Only Per-system category remains stubbed.
+
+- ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending its
+  own scope arc.
+
+### Remaining work (as of end-of-session 2026-05-28)
+
+**Code-only, no external content:**
+- Slice 12 — custom-manual collections (SQLite + CRUD + sidebar
+  dialog + TileContextMenu submenu).
+- SETTINGS → Per-system category (lift SystemSettingsDialog body).
+- SETTINGS → Library full wrap (plumb 5 store/callback props
+  through RetroverseContext).
+- SETTINGS → Media full wrap (variant="panel" lift on
+  PlatformMediaDialog).
+- BIOS live-presence grid (new get_bios_status Rust command
+  aggregating per-system check_*_bios functions).
+- PLAY NOW placeholder moods (Quick / Marathon / Challenge /
+  Daily roulette) — need session-length tracking.
+- COLLECTIONS Hidden Gems + Last Played smart-lists (need rating
+  data / chronological play-order log).
+- HOME popular + recently-played carousel arrows + dot pagination
+  (currently CSS horizontal scroll).
+- LibraryPage VirtualLibraryGrid 2D nav restoration in Retroverse
+  mode (currently lost — page-level vertical group overrides).
+- "Now playing" audio indicator in HintBar.
+- System Status panel — decide if/where to surface (was on HOME
+  v1 bottom-right, removed in HOME v2).
+
+**Infrastructure / substantial systems work:**
+- Phase C6 — content-packs infrastructure (oa-packs crate +
+  Privacy panel + SETTINGS → Content panel + sha256 install /
+  update / uninstall flows + registry hosting). Unlocks DISCOVER
+  + future curated COLLECTIONS + future theme packs.
+- Phase C5 — DISCOVER tab body (empty-state UI buildable in
+  advance; meaningful content after C6).
+- RetroAchievements integration OR local milestone tracking
+  (HOME ACHIEVEMENTS card is placeholder stub).
+
+**Content workstream (operator-side):**
+- Per-system hero art — drop console + fanart files in existing
+  PlatformMedia slots.
+- Per-system specs — refine `systemMetadataStubs.ts` for the ~38
+  systems beyond the 7 priority stubs (or replace stub schema
+  with real metadata enrichment).
+- Per-system blurbs — same file, same workstream.
+
+**Polish:**
+- Per-system UI Stage 2 (behavior layer) + Stage 3 (in-game
+  experience layer) — documented but not started.
+- Flag deprecation endpoint — once stable, flip default ON; after
+  one release cycle remove the flag + legacy Shell code paths.
