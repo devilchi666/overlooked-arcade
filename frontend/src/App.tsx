@@ -1784,22 +1784,33 @@ const App: Component = () => {
                 4. pinnedEntry().systemId — right-sidebar pin as the
                    "nothing else applies" fallback
               Honors the perSystemUiEnabled master toggle. */}
-          <SystemBackground
-            systemId={() =>
-              (hoveredSystemId()
-                ?? (focusedEntry()?.systemId as SystemId | undefined)
-                ?? activeSystemId()
-                ?? (pinnedEntry()?.systemId as SystemId | undefined)
-                ?? null) as SystemId | null
-            }
-          />
-          {/* Per-System UI Stage 1 Slice 4: boot animation overlay
-              triggered by explicit system entry (sidebar nav).
-              activeSystemId() reflects "viewToSystemId(currentView())"
-              — i.e. the system the operator filtered to via the
-              sidebar. Hover/focus changes don't fire the boot; only
-              switching the library's active view does. */}
-          <SystemBootAnimation activeSystemId={activeSystemId} />
+          {/* Suppress library-chrome overlays (background + boot
+              animation) when the game is "full bleed" — single-window
+              shell + game running + library hidden. In that state the
+              WebView is supposed to melt away so wgpu emulator pixels
+              show through; an opaque CSS background-image overlay
+              would visually cover the running game. StylusOverlay
+              below DOES render through gameMode because that's
+              literally its purpose (visual stylus feedback while
+              playing an NDS game). */}
+          <Show when={!gameMode()}>
+            <SystemBackground
+              systemId={() =>
+                (hoveredSystemId()
+                  ?? (focusedEntry()?.systemId as SystemId | undefined)
+                  ?? activeSystemId()
+                  ?? (pinnedEntry()?.systemId as SystemId | undefined)
+                  ?? null) as SystemId | null
+              }
+            />
+            {/* Per-System UI Stage 1 Slice 4: boot animation overlay
+                triggered by explicit system entry (sidebar nav).
+                activeSystemId() reflects "viewToSystemId(currentView())"
+                — i.e. the system the operator filtered to via the
+                sidebar. Hover/focus changes don't fire the boot; only
+                switching the library's active view does. */}
+            <SystemBootAnimation activeSystemId={activeSystemId} />
+          </Show>
           {/* NDS Phase 2: visual stylus reticle. Tracks the OS cursor
               while a stylus-using game is running and adds explicit
               press feedback (the OS cursor doesn't change appearance
