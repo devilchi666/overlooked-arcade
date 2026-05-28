@@ -32,6 +32,27 @@ export type RomEntry = {
   /// Region / catalog serial pulled from libretro-database on a hash
   /// match. Diagnostic for now.
   serial?: string;
+  /// Retroverse-UI Phase C3 — operator-tagged favorite. Drives the
+  /// Favorites smart-list in COLLECTIONS + the heart overlay on
+  /// LibraryTile. Optional in the type because pre-Phase-C3 lookups
+  /// (find_game_by_id / find_game_by_sha1 / search) don't SELECT
+  /// the column; the canonical source is `list_games` via the
+  /// LibraryStore hydration.
+  favorite?: boolean;
+  /// Retroverse-UI Phase C3 — operator-marked completed. Drives the
+  /// Completed smart-list in COLLECTIONS.
+  completed?: boolean;
+  /// Unix-seconds timestamp of the last session. Written by the Phase A
+  /// Slice 2 close_active_session helper.
+  lastPlayedAt?: number;
+  /// Total seconds played across all sessions. Phase A Slice 2.
+  playTimeSecs?: number;
+  /// Maximum simultaneous players supported. Populated by metadata
+  /// enrichment; drives the COLLECTIONS Multi-Player smart-list.
+  players?: number;
+  /// Editorial rating 0.0–5.0 from metadata enrichment. Will drive
+  /// Hidden Gems smart-list in a follow-up once populated.
+  rating?: number;
 };
 
 export type LibraryState = {

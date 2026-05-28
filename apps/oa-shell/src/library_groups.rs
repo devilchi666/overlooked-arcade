@@ -265,6 +265,12 @@ mod tests {
             sha1: None,
             serial: None,
             disc_id: None,
+            favorite: false,
+            completed: false,
+            last_played_at: None,
+            play_time_secs: 0,
+            players: None,
+            rating: None,
         }
     }
 

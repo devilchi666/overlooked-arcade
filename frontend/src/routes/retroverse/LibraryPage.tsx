@@ -79,6 +79,7 @@ const LibraryPage: Component = () => {
           onShowInfo={ctx.onShowInfo}
           selectedId={() => ctx.focusedEntry()?.id ?? null}
           onPickFolder={() => void ctx.onPickFolder()}
+          onToggleFavorite={ctx.onToggleFavorite}
         />
       </section>
 

@@ -51,6 +51,11 @@ type Props = {
   /// right-click menu offers "Run version ▸ ...". Single-file games
   /// pass `undefined` (or 1) — no badge rendered.
   variantCount?: number;
+  /// Retroverse-UI Phase C3 — flip favorite state. Fires from the heart
+  /// overlay (always-visible top-right) and the context-menu Favorite
+  /// item. When omitted the heart hides entirely (caller didn't wire
+  /// favorites in this surface). Caller stops propagation as needed.
+  onToggleFavorite?: (entry: RomEntry, value: boolean) => void;
 };
 
 const Placeholder: Component = () => (
@@ -239,10 +244,41 @@ const LibraryTile: Component<Props> = (props) => {
               e.currentTarget.blur();
               props.onShowSaves?.(props.entry);
             }}
-            class="absolute right-2 top-2 rounded bg-black/70 px-2 py-1 text-[0.6rem] font-medium uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-visible:opacity-100"
+            class="absolute top-2 rounded bg-black/70 px-2 py-1 text-[0.6rem] font-medium uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-visible:opacity-100"
+            classList={{
+              // Shift left when the heart is present so they don't collide.
+              "right-10": Boolean(props.onToggleFavorite) && !props.entry.seed,
+              "right-2": !props.onToggleFavorite || props.entry.seed,
+            }}
             aria-label="Open save states"
           >
             Saves
+          </button>
+        </Show>
+        {/* Retroverse-UI Phase C3 — favorite heart overlay. Always-visible
+            top-right corner (per docs/PLANS/collections-tab-retroverse.md +
+            library-default-mockup.png). Filled when favorited, outline when
+            not. Hidden entirely for seed tiles and when the parent didn't
+            wire `onToggleFavorite`. */}
+        <Show when={!props.entry.seed && props.onToggleFavorite}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+              props.onToggleFavorite?.(props.entry, !props.entry.favorite);
+            }}
+            class="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded bg-black/60 text-base leading-none backdrop-blur transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            classList={{
+              "text-(--color-system-accent)": Boolean(props.entry.favorite),
+              "text-(--color-oa-ink-dim) hover:text-(--color-system-accent-soft)":
+                !props.entry.favorite,
+            }}
+            aria-label={props.entry.favorite ? "Remove from favorites" : "Add to favorites"}
+            aria-pressed={Boolean(props.entry.favorite)}
+            title={props.entry.favorite ? "Remove from favorites" : "Add to favorites"}
+          >
+            {props.entry.favorite ? "♥" : "♡"}
           </button>
         </Show>
       </div>

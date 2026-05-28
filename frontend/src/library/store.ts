@@ -260,6 +260,40 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
         console.warn("[oa-library] update_game_core_override failed:", e);
       }
     },
+    /// Retroverse-UI Phase C3 — flip the favorite flag for a game.
+    /// Optimistic local update + persistence write; the COLLECTIONS
+    /// Favorites smart-list re-derives from `state.entries` so the
+    /// tile heart + the smart-list count update together. Idempotent
+    /// at the SQL level (writing the same value twice is a no-op).
+    async setFavorite(id: RomId, value: boolean): Promise<void> {
+      setState("entries", (prev) =>
+        prev.map((e) => (e.id === id ? { ...e, favorite: value } : e)),
+      );
+      try {
+        await invoke("update_game_favorite", { id, value });
+      } catch (e) {
+        console.warn("[oa-library] update_game_favorite failed:", e);
+        // Revert local state on Rust-side failure so UI matches DB.
+        setState("entries", (prev) =>
+          prev.map((e) => (e.id === id ? { ...e, favorite: !value } : e)),
+        );
+      }
+    },
+    /// Retroverse-UI Phase C3 — flip the completed flag. Same shape as
+    /// setFavorite; drives the COLLECTIONS Completed smart-list.
+    async setCompleted(id: RomId, value: boolean): Promise<void> {
+      setState("entries", (prev) =>
+        prev.map((e) => (e.id === id ? { ...e, completed: value } : e)),
+      );
+      try {
+        await invoke("update_game_completed", { id, value });
+      } catch (e) {
+        console.warn("[oa-library] update_game_completed failed:", e);
+        setState("entries", (prev) =>
+          prev.map((e) => (e.id === id ? { ...e, completed: !value } : e)),
+        );
+      }
+    },
     async clear(): Promise<void> {
       // Single DELETE statement — much faster than the per-row loop this
       // method previously did, and atomic. The setting page's "Reset
