@@ -219,6 +219,22 @@ export const DisplayDialog: Component<{
             description="How long the focus ring transitions when moving between elements."
           />
         </DialogSection>
+
+        <DialogSection
+          title="Experimental"
+          description="Preview-quality features still under active development. Safe to toggle; defaults preserve today's behavior. See docs/PLANS/retroverse-ui-rollout.md for the rollout plan."
+        >
+          <SettingRow
+            label="Retroverse UI"
+            inherited={null}
+            overridden={false}
+            toggle={{
+              checked: props.settings.experimentalRetroverseUi(),
+              onChange: (v) => props.settings.setExperimentalRetroverseUi(v),
+            }}
+            description="Top-toolbar tab IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS) replacing today's sidebar-driven layout. Phase A wires the flag without consumers — toggling has no visible effect yet. Phase B's LIBRARY page is the first surface that reads the flag."
+          />
+        </DialogSection>
       </div>
     </Dialog>
   );

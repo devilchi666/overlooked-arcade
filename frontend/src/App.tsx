@@ -98,6 +98,7 @@ import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
+import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -357,6 +358,11 @@ const App: Component = () => {
   // collapses to the same short path orthogonally — accessibility
   // floor regardless of this flag.
   createEffect(() => setBootAnimationsEnabled(settings.bootAnimationsEnabled()));
+  // Retroverse UI rollout Phase A Slice 1: bridge the experimental
+  // master toggle to the lib/retroverseFlag accessor. Phase A wires
+  // the flag without consumers; Phase B's RetroverseShell is the
+  // first surface that reads it. See docs/PLANS/retroverse-ui-rollout.md.
+  createEffect(() => setRetroverseUiEnabled(settings.experimentalRetroverseUi()));
 
   // Global Start button → open the menu bar. Bypasses the per-group
   // onStart routing in focus.ts so Start works from any active group

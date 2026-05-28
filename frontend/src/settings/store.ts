@@ -131,6 +131,14 @@ const DEFAULT_PER_SYSTEM_UI_ENABLED = true;
 // when prefers-reduced-motion is true.
 const DEFAULT_BOOT_ANIMATIONS_ENABLED = true;
 
+// Retroverse UI experimental toggle (Phase A of the Retroverse rollout
+// — see docs/PLANS/retroverse-ui-rollout.md). Default OFF; existing UI
+// stays byte-identical until the operator flips this in Settings →
+// Display → Experimental. Phase A wires the flag without any
+// consumers; Phase B's RetroverseShell is the first surface that
+// reads it.
+const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = false;
+
 export type ControllerNavSource = "dpad" | "stick-left" | "both";
 
 const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
@@ -160,6 +168,7 @@ type Persisted = {
   controllerNavAnimationMs: number;
   perSystemUiEnabled: boolean;
   bootAnimationsEnabled: boolean;
+  experimentalRetroverseUi: boolean;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -231,6 +240,7 @@ function load(): Persisted {
     controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
     perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
     bootAnimationsEnabled: DEFAULT_BOOT_ANIMATIONS_ENABLED,
+    experimentalRetroverseUi: DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -298,6 +308,10 @@ function load(): Persisted {
         typeof parsed.bootAnimationsEnabled === "boolean"
           ? parsed.bootAnimationsEnabled
           : DEFAULT_BOOT_ANIMATIONS_ENABLED,
+      experimentalRetroverseUi:
+        typeof parsed.experimentalRetroverseUi === "boolean"
+          ? parsed.experimentalRetroverseUi
+          : DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
     };
   } catch {
     return fallback;
@@ -412,6 +426,8 @@ export function createSettingsStore() {
     createSignal<boolean>(initial.perSystemUiEnabled);
   const [bootAnimationsEnabled, setBootAnimationsEnabled] =
     createSignal<boolean>(initial.bootAnimationsEnabled);
+  const [experimentalRetroverseUi, setExperimentalRetroverseUi] =
+    createSignal<boolean>(initial.experimentalRetroverseUi);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -444,6 +460,7 @@ export function createSettingsStore() {
       controllerNavAnimationMs: controllerNavAnimationMs(),
       perSystemUiEnabled: perSystemUiEnabled(),
       bootAnimationsEnabled: bootAnimationsEnabled(),
+      experimentalRetroverseUi: experimentalRetroverseUi(),
     });
   });
 
@@ -561,6 +578,7 @@ export function createSettingsStore() {
     controllerNavAnimationMs, setControllerNavAnimationMs,
     perSystemUiEnabled, setPerSystemUiEnabled,
     bootAnimationsEnabled, setBootAnimationsEnabled,
+    experimentalRetroverseUi, setExperimentalRetroverseUi,
   };
 }
 
