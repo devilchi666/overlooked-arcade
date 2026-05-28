@@ -71,3 +71,84 @@ the parent `ROADMAP.md` once that planning lands.
 
 For now this reference image anchors what "done" looks like so
 future slices can converge.
+
+## `library-default-mockup.png`
+
+Operator-supplied design reference for the **library view** in
+the default OA theme (2026-05-28). Companion to
+`default-theme-mockup.png` — that mock shows the HOME / system-
+hero view (hover or select a system in the left sidebar), this
+one shows what happens once the operator opens **LIBRARY** from
+the top toolbar.
+
+### Layout shape
+
+- **Top toolbar** — same shape as `default-theme-mockup.png`
+  (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER /
+  SETTINGS, search input, clock, profile chip). **LIBRARY** is
+  the active tab in this mock.
+- **Left sidebar — SYSTEMS filter list.** Cover icon + system
+  name + game count per row. Top row "ALL SYSTEMS · 3,074" is
+  the active filter; per-system rows below act as filters. A
+  `+ More Systems` expander suggests the list is paged.
+  **COLLECTIONS** section below the systems list — Favorites,
+  Recently Played, Completed, Hidden Gems, Multi-Player. Acts
+  like a Steam category list rather than tiered nav.
+- **Center — ALL GAMES grid.** Section header with title +
+  current-filter game count + Sort / View / Filters controls
+  (sort key, grid-density toggle, filter popover). Cover tiles
+  carry a mini system-label header row (system glyph + name,
+  e.g. "PlayStation.2"), star rating, and a heart favorite
+  toggle. Pagination strip at the bottom (page 1 of 62 with
+  ellipsis).
+- **Right sidebar — focused game detail.** Cover hero (full
+  bleed), title + subtitle, star rating + review count, genre
+  chip, metadata chip strip (Developer / Publisher / Release /
+  Players / Time Played), short description, horizontal
+  screenshot carousel, **YOUR PROGRESS** block (Achievements
+  count + % + Last Played), prominent **PLAY GAME** button +
+  **MORE** secondary action.
+- **Footer hint bar** — gamepad glyphs for SELECT / BACK /
+  SEARCH / FILTERS / VIEW (density toggle) / CHANGE SYSTEM /
+  FAVORITE. Matches the existing controller-nav HintBar
+  primitive.
+
+### Interaction model
+
+- **Click LIBRARY in the top toolbar** → this view renders for
+  whatever system filter is active (defaults to ALL SYSTEMS).
+- **Click a system in the left sidebar** → the grid re-filters
+  to that system; the focused-game detail panel updates when
+  the user selects a tile.
+- **VIEW toggle in the footer** (mapped to a stick / shoulder
+  in the mock) → cycles between Grid / Large Grid / List view
+  densities. The icon row near the Filters button mirrors this.
+- **CHANGE SYSTEM (RS)** → quick-swap focus to the next system
+  in the sidebar without leaving LIBRARY.
+
+### Relationship to existing implementation
+
+Same caveats as `default-theme-mockup.png` — this is more
+ambitious than today's library. Notable deltas:
+
+- **Cover tile system-label header** — today's `LibraryTile`
+  shows star + favorite + flag chips, but no system-glyph
+  header row. New addition.
+- **Right-side focused-game detail panel** — today the focused
+  game opens a modal (`GameInfoModal`); this mock keeps it
+  always-visible as a persistent third pane. Conceptually
+  closer to Steam's library layout.
+- **System Status / Quick Launch strips intentionally absent**
+  here — they live on HOME (`default-theme-mockup.png`) but
+  not on LIBRARY. Reinforces that the two views serve different
+  jobs: HOME is browse-the-shelf, LIBRARY is pick-a-title-and-
+  play.
+- **Pagination strip vs current virtualized grid** — the
+  existing `VirtualLibraryGrid` is virtualized, not paged.
+  Whether to keep virtualization or switch to pagination is its
+  own decision (likely keep virtualization; treat any paginator
+  as a visual element for very large collections only).
+
+Mapping these into shippable slices is its own planning pass.
+For now this image anchors the LIBRARY-view target alongside
+`default-theme-mockup.png`'s HOME-view target.
