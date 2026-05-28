@@ -378,13 +378,13 @@ Current status (2026-05-28):
   lists + 2 placeholders). Operator-validated; merged `--no-ff`
   to main as `715f639`. Slice 12 (custom-manual collections —
   new SQLite tables + CRUD) deferred to a follow-up branch.
-- 🟡 Phase C4 next — PLAY NOW tab. Simple-heuristic recommender
-  using existing data (lastPlayedAt + favorite + players). "Why"
-  lines from a template table. Hero card + 3-4 rails + mood
-  sidebar. No external content needed. Branch
-  `feat/retroverse-ui-phase-c4-play-now`.
-- ⬜ Phase C2 — HOME tab. Content dependency (per-system hero
-  art + blurbs). Sequenced after C4 / Slice 12 per operator
-  priorities.
+- ✅ Phase C4 merged — branch `feat/retroverse-ui-phase-c4-play-now`
+  shipped Slice 14 (`fd8684f`). PlayNowPage with hero card +
+  WHY-line generator + 3 rails + mood sidebar. Operator-validated;
+  merged `--no-ff` to main as `b2af79e`. 5 of 6 tabs now operator-
+  facing.
+- ⬜ Phase C2 — HOME tab. Content dependency: per-system hero art
+  + blurbs + editorial metadata (year / architecture / media /
+  rating). See "HOME content gap analysis" below.
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending
   earlier phases.

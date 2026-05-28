@@ -23,12 +23,14 @@ spanned every system but was filed under whichever core happened to be active.
   working (4 wired smart lists in COLLECTIONS — Favorites /
   Recently played / Completed / Multi-player). Favorite hearts +
   context-menu toggles appear in both legacy + Retroverse UIs.
-  HOME / PLAY NOW / DISCOVER remain Coming-soon stubs. 577
-  workspace tests green; flag OFF byte-identical with existing UI
-  apart from the heart overlay on tiles. Phase C4 (PLAY NOW)
-  next — simple-heuristic recommender using existing data, no
-  content dependency. Custom-manual collections (C3 Slice 12)
-  + HOME (content cost) deferred to follow-ups. See
+  Phase C4 PLAY NOW merged 2026-05-28 (`b2af79e`). 5 of 6 tabs
+  now operator-facing in Retroverse mode (LIBRARY / SETTINGS /
+  COLLECTIONS / PLAY NOW + Experimental SETTINGS escape hatch);
+  HOME + DISCOVER remain stubs. 577 workspace tests green; flag
+  OFF still byte-identical apart from the heart overlay on tiles.
+  Remaining work splits between content (HOME hero art + blurbs)
+  and infrastructure (Slice 12 custom-manual collections, C6
+  content-packs). See
   [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
   for the full phase plan + per-tab design sketches at
   `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
