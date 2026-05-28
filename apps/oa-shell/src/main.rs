@@ -2456,6 +2456,17 @@ impl ShellWindow {
     }
 }
 
+/// Retroverse-UI Phase A Slice 2 — in-flight play session bookkeeping.
+/// Set by `launch_rom` when a launch carries an `entryId`; consumed by
+/// `unload_rom` / `graceful_exit` / the next `launch_rom` to compute
+/// session duration and persist via `library_db::update_play_session`.
+/// `None` whenever no game is loaded or the launch lacked an entry_id
+/// (direct-launch CLI paths, etc.).
+struct ActiveSession {
+    entry_id: String,
+    started_at: std::time::Instant,
+}
+
 struct AppState {
     emu_tx: Mutex<mpsc::Sender<EmuCommand>>,
     shell_window: ShellWindow,
@@ -2478,6 +2489,12 @@ struct AppState {
     /// consumed by unload_rom for archive::cleanup_temp(). None when no ROM
     /// is loaded or when the loaded ROM isn't archived.
     active_archive_entry_id: Arc<Mutex<Option<String>>>,
+    /// Retroverse-UI Phase A Slice 2 — in-flight play session for the
+    /// currently-loaded game (when the launch carried an entry_id).
+    /// `close_active_session` takes this and writes the elapsed time +
+    /// last-played timestamp to `library_db`. Wrapped in Arc<Mutex<>>
+    /// because graceful_exit reads it from a non-mut AppHandle borrow.
+    active_session: Arc<Mutex<Option<ActiveSession>>>,
     /// Phase 4 slice B — published rewind ring stats. Writer = emu thread
     /// (updated after every capture / pop / scrub op). Reader = Tauri
     /// commands like `get_rewind_state`. Mutex is uncontended in practice.
@@ -3284,6 +3301,7 @@ fn main() {
                     ui_intercepting: ui_intercepting.clone(),
                     game_focus: game_focus.clone(),
                     active_archive_entry_id: Arc::new(Mutex::new(None)),
+                    active_session: Arc::new(Mutex::new(None)),
                     rewind_state,
                     tas_state,
                     video_state,
@@ -9259,6 +9277,12 @@ fn graceful_exit(app: &tauri::AppHandle, code: i32) {
     if let Some(state) = app.try_state::<AppState>() {
         let temp_root = state.app_data_dir.join("temp");
         archive::sweep_temp(&temp_root);
+        // Retroverse-UI Phase A Slice 2 — persist the in-flight play
+        // session before exit so quitting OA mid-game still counts the
+        // session against play_time_secs.
+        if let Some(db) = app.try_state::<library_db::LibraryDb>() {
+            close_active_session(&state.active_session, &db);
+        }
     }
     for (label, window) in app.webview_windows() {
         if let Err(e) = window.close() {
@@ -9277,13 +9301,63 @@ fn quit_app(app: tauri::AppHandle) {
     graceful_exit(&app, 0);
 }
 
+/// Retroverse-UI Phase A Slice 2 — pop the in-flight `ActiveSession` and
+/// persist its elapsed time + last-played timestamp via
+/// `library_db::update_play_session`. Idempotent: no-op when no session
+/// is in flight. Called from `unload_rom`, the head of `launch_rom`
+/// (for game-to-game switches that bypass explicit unload), and
+/// `graceful_exit` (so quitting OA mid-session still counts the time).
+///
+/// Failures are logged at WARN and swallowed — losing a few seconds of
+/// play time is better than blocking shutdown / next launch on a DB
+/// hiccup. A delta of 0s is also swallowed silently (treats trivially-
+/// short sessions as "didn't really play").
+fn close_active_session(
+    active_session: &Arc<Mutex<Option<ActiveSession>>>,
+    db: &library_db::LibraryDb,
+) {
+    let session = match active_session.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => {
+            log::warn!("oa-shell: close_active_session — active_session lock poisoned");
+            return;
+        }
+    };
+    let Some(session) = session else { return };
+    let delta_secs = session.started_at.elapsed().as_secs();
+    if delta_secs == 0 {
+        return;
+    }
+    let last_played_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match db.update_play_session(&session.entry_id, delta_secs, last_played_at) {
+        Ok(()) => log::info!(
+            "oa-shell: session ended for entry {} (+{}s play time, last_played_at={})",
+            session.entry_id, delta_secs, last_played_at
+        ),
+        Err(e) => log::warn!(
+            "oa-shell: update_play_session({}, +{}s): {e}",
+            session.entry_id, delta_secs
+        ),
+    }
+}
+
 /// Release the currently-loaded ROM. The core stays initialised — next
 /// `launch_rom` re-uses it without a full reload. `title` is the
 /// operator-visible name for the success toast (e.g. "Bonk's Adventure");
 /// pass `None` for a generic "Unloaded" toast. The renderer keeps presenting
 /// the last framebuffer until the next ROM loads.
 #[tauri::command]
-fn unload_rom(title: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn unload_rom(
+    title: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    // Retroverse-UI Phase A Slice 2 — record the elapsed session before
+    // tearing down the ROM so the operator's play-time stats persist.
+    close_active_session(&state.active_session, &db);
     let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
     tx.send(EmuCommand::UnloadRom { title })
         .map_err(|e| format!("emu thread closed: {e}"))?;
@@ -9320,6 +9394,10 @@ fn launch_rom(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     let system_id = systemId.unwrap_or_else(|| "tg16".to_string());
+    // Retroverse-UI Phase A Slice 2 — game-to-game switches don't go
+    // through an explicit unload_rom, so persist any in-flight session
+    // before starting a new one. Idempotent when no session is active.
+    close_active_session(&state.active_session, &db);
     // Three launch shapes:
     //   1. Raw cart ROM     — read bytes off disk → RomSource::Bytes.
     //   2. Raw CD container — pass path, core opens it → RomSource::Path.
@@ -9491,6 +9569,20 @@ fn launch_rom(
         system_id,
     })
         .map_err(|e| format!("emu thread closed: {e}"))?;
+
+    // Retroverse-UI Phase A Slice 2 — start tracking the new session.
+    // Library launches always carry an entryId; direct-launch CLI paths
+    // omit it, in which case the session is untracked (no DB row to
+    // attribute time to). Setting started_at here (post-dispatch) means
+    // pre-launch ROM-prep / extraction time doesn't count.
+    if let Some(id) = entryId.as_deref() {
+        if let Ok(mut guard) = state.active_session.lock() {
+            *guard = Some(ActiveSession {
+                entry_id: id.to_string(),
+                started_at: std::time::Instant::now(),
+            });
+        }
+    }
 
     state.shell_window.focus_game();
     Ok(())

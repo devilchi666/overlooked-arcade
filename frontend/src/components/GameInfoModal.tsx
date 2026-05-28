@@ -39,6 +39,16 @@ type Props = {
   /// Called after a successful launch (with or without a slot). Used by
   /// App.tsx to set gameRunning + collapse the library overlay etc.
   onLaunched?: (entry: RomEntry, slot?: number) => void;
+  /// Retroverse-UI Phase A Slice 3 — render mode. Default "modal"
+  /// preserves the existing GameInfoModal call site behavior (backdrop +
+  /// max-w-5xl box + Close button + HintRegion). "panel" omits the
+  /// backdrop, fills its container, drops the Close button and the
+  /// modal-mode HintRegion, and switches role from dialog → region —
+  /// suitable for Phase B's persistent right-side detail pane in the
+  /// Retroverse LIBRARY tab. `onClose` is still called in panel mode
+  /// (e.g. caller deselects the focused tile) so the prop stays
+  /// required.
+  variant?: "modal" | "panel";
 };
 
 type SaveSlot = {
@@ -233,6 +243,11 @@ const GameInfoModal: Component<Props> = (props) => {
     );
   }
 
+  // Retroverse-UI Phase A Slice 3 — render mode. Reactive (props.variant
+  // may swap if a future caller wants to toggle), but in practice each
+  // call site picks one and sticks with it.
+  const isModal = () => (props.variant ?? "modal") === "modal";
+
   return (
     <Show when={props.entry}>
       {(entry) => {
@@ -242,27 +257,22 @@ const GameInfoModal: Component<Props> = (props) => {
           setInfoFocusIndex(0);
         });
         onCleanup(() => activateFocusGroup("library-grid"));
-        return (
-        <div
-          class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
-          onClick={(e) => {
-            if (e.currentTarget === e.target) props.onClose();
-          }}
-        >
-          <HintRegion hints={() => {
-            const base = { a: "Launch", b: "Close", l1: "Prev tab", r1: "Next tab" } as Record<string, string>;
-            if (resumeSlot() !== undefined) base.y = "Resume";
-            return base as never;
-          }} />
+        const box = (
           <div
-            class="flex w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
-            style={{ height: "min(720px, 85vh)" }}
+            class={
+              isModal()
+                ? "flex w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
+                : "flex h-full w-full flex-col overflow-hidden bg-(--color-oa-bg-deep)"
+            }
+            style={isModal() ? { height: "min(720px, 85vh)" } : undefined}
             data-system={entry().systemId}
-            role="dialog"
-            aria-modal="true"
+            role={isModal() ? "dialog" : "region"}
+            aria-modal={isModal() ? "true" : undefined}
             aria-labelledby="game-info-title"
           >
-            {/* Header — title + close. Region badge / system name in subhead. */}
+            {/* Header — title + close (modal only — panel mode lets the
+                tab's hint bar handle backout). Region badge / system
+                name in subhead. */}
             <header class="flex items-center justify-between border-b border-white/5 px-6 py-3">
               <div class="min-w-0">
                 <p class="text-[0.6rem] uppercase tracking-[0.4em] text-(--color-system-accent)">
@@ -276,16 +286,18 @@ const GameInfoModal: Component<Props> = (props) => {
                   {entry().title}
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  props.onClose();
-                }}
-                class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
-              >
-                Close
-              </button>
+              <Show when={isModal()}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    props.onClose();
+                  }}
+                  class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                >
+                  Close
+                </button>
+              </Show>
             </header>
 
             {/* Body — split layout. Left ~40% hero, right metadata + tabs. */}
@@ -613,7 +625,25 @@ const GameInfoModal: Component<Props> = (props) => {
               </button>
             </footer>
           </div>
-        </div>
+        );
+        // Modal variant — wrap box in backdrop + HintRegion. Panel variant —
+        // return the box bare so the caller's container controls layout.
+        return isModal() ? (
+          <div
+            class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.currentTarget === e.target) props.onClose();
+            }}
+          >
+            <HintRegion hints={() => {
+              const base = { a: "Launch", b: "Close", l1: "Prev tab", r1: "Next tab" } as Record<string, string>;
+              if (resumeSlot() !== undefined) base.y = "Resume";
+              return base as never;
+            }} />
+            {box}
+          </div>
+        ) : (
+          box
         );
       }}
     </Show>
