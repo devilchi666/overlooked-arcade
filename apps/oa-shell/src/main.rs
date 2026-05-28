@@ -2130,6 +2130,113 @@ fn check_jagcd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
     Err(BiosError::Missing)
 }
 
+// Retroverse-UI Phase C1 follow-up — aggregate the 20 per-system
+// `check_*_bios` functions above into a single Tauri command the
+// SETTINGS → BIOS grid invokes. One filesystem stat + (at most) one
+// SHA-1 read per system; cheap enough to call on category-enter and on
+// a Refresh button without batching.
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BiosStatusEntry {
+    /// Frontend system slug — matches the keys used by `viewForSystem`
+    /// in the LIBRARY sidebar (e.g. "pce-cd", "segacd", "ps2"). Used as
+    /// the list key + as a future click-through target for "open this
+    /// system's view" once the BIOS row gets an action handler.
+    slug: String,
+    /// Display name for the row.
+    label: String,
+    /// Human-readable list of accepted filenames. Shown as the row
+    /// subline.
+    required: String,
+    /// One of: "ok" | "unknownHash" | "missing" | "error". Frontend
+    /// maps this to a green / amber / red / amber-with-tooltip pill.
+    status: &'static str,
+    /// For ok / unknownHash: matched filename + SHA-1 (or the multi-file
+    /// summary string in NDS's case).
+    /// For missing: empty.
+    /// For error: the io::Error string.
+    detail: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BiosStatusResponse {
+    /// Absolute path to `<exe_dir>/system/` — the directory the
+    /// operator drops BIOS files into. Surfaced so the SETTINGS card
+    /// can show it as a Copy-path target without a second command
+    /// round-trip.
+    system_dir: String,
+    entries: Vec<BiosStatusEntry>,
+}
+
+/// Snapshot of the BIOS-present-or-missing state across every system
+/// with a pre-launch BIOS check. Wired to SETTINGS → BIOS in the
+/// Retroverse UI; replaces the prior static reference table with a
+/// live grid.
+#[tauri::command]
+fn get_bios_status() -> Result<BiosStatusResponse, String> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let system_dir = exe_dir.join("system");
+
+    type CheckFn = fn(&Path) -> Result<BiosCheck, BiosError>;
+    // (slug, label, required-files summary, check fn). Order is
+    // CD-shape systems first (most operators land in this group),
+    // then cart-shape, then handhelds — matches the SETTINGS card
+    // grouping the frontend renders.
+    let checks: &[(&str, &str, &str, CheckFn)] = &[
+        ("pce-cd",    "PCE-CD / TG-CD",     "syscard3.pce (preferred) / syscard1/2 / gexpress",                check_pce_cd_bios),
+        ("segacd",    "Sega CD",            "bios_CD_U.bin / bios_CD_J.bin / bios_CD_E.bin",                   check_sega_cd_bios),
+        ("saturn",    "Saturn",             "sega_101.bin / mpr-17933.bin / saturn_bios.bin (regional)",       check_saturn_bios),
+        ("psx",       "PSX",                "scph5500/5501/5502/7001/7003/1001 (regional)",                    check_psx_bios),
+        ("neocd",     "Neo Geo CD",         "neocd.bin / neocd_z.rom (top-loader) / neocd_t.rom (front)",      check_neocd_bios),
+        ("3do",       "3DO",                "panafz1.bin / panafz10.bin / goldstar.bin / sanyotry.bin",        check_3do_bios),
+        ("pcfx",      "PC-FX",              "pcfx.rom / pcfxbios.bin",                                         check_pcfx_bios),
+        ("dreamcast", "Dreamcast",          "dc_boot.bin + dc_flash.bin",                                      check_dreamcast_bios),
+        ("ps2",       "PS2",                "scphXXXXX.bin or ps2-XXXX-YYYYMMDD.bin (regional)",               check_ps2_bios),
+        ("jagcd",     "Atari Jaguar CD",    "jagcd.rom (+ jagboot.rom from cart slot)",                        check_jagcd_bios),
+        ("nds",       "Nintendo DS",        "bios7.bin + bios9.bin + firmware.bin (all three required)",       check_nds_bios),
+        ("neogeo",    "Neo Geo (cart)",     "neogeo.zip (System BIOS + sm1.sm1 + 000-lo.lo)",                  check_neogeo_bios),
+        ("coleco",    "ColecoVision",       "coleco.rom",                                                      check_coleco_bios),
+        ("intv",      "Intellivision",      "exec.bin + grom.bin",                                             check_intv_bios),
+        ("o2",        "Odyssey² / Videopac","o2rom.bin / c52.bin / g7400.bin (regional)",                      check_o2_bios),
+        ("channelf",  "Channel F",          "sl31253.bin / sl31254.bin (both required)",                       check_channelf_bios),
+        ("5200",      "Atari 5200",         "5200.rom / atari5200.rom",                                        check_atari5200_bios),
+        ("pokemini",  "Pokémon Mini",       "bios.min",                                                        check_pokemini_bios),
+        ("gba",       "Game Boy Advance",   "gba_bios.bin",                                                    check_gba_bios),
+        ("jaguar",    "Atari Jaguar",       "jagboot.rom",                                                     check_jaguar_bios),
+    ];
+
+    let entries: Vec<BiosStatusEntry> = checks
+        .iter()
+        .map(|(slug, label, required, check_fn)| {
+            let (status, detail): (&'static str, String) = match check_fn(&system_dir) {
+                Ok(BiosCheck::OkCanonical { name, sha1 }) => ("ok", format!("{name} — {sha1}")),
+                Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                    ("unknownHash", format!("{name} — {sha1}"))
+                }
+                Err(BiosError::Missing) => ("missing", String::new()),
+                Err(BiosError::Io(e)) => ("error", e.to_string()),
+            };
+            BiosStatusEntry {
+                slug: slug.to_string(),
+                label: label.to_string(),
+                required: required.to_string(),
+                status,
+                detail,
+            }
+        })
+        .collect();
+
+    Ok(BiosStatusResponse {
+        system_dir: system_dir.to_string_lossy().into_owned(),
+        entries,
+    })
+}
+
 /// Map a ROM file path to a save-state directory name: take the filename
 /// stem (no extension) and replace any path-unsafe characters with `_`.
 /// `Bonk's Adventure (USA).pce` → `Bonk's Adventure (USA)` on most filesystems.
@@ -2891,6 +2998,7 @@ fn main() {
             set_core_pref,
             quit_app,
             get_system_status,
+            get_bios_status,
             unload_rom,
             media::get_media_index,
             media::get_region_priority,
