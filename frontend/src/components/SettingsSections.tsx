@@ -25,6 +25,8 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import CoresPage from "./CoresPage";
+import LibraryManagerPage from "./LibraryManagerPage";
+import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
 import {
   SCALING_MODE_LABELS,
@@ -533,25 +535,36 @@ export const CoresCategorySettings: Component = () => {
 
 // --- Library / Media / BIOS — informational cards ---------------------
 
-export const LibrarySettings: Component = () => (
-  <div class="flex flex-col gap-4">
-    <SettingsCard title="Library folders">
-      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
-        Library scanning, folder management, and the import wizard
-        currently live in the legacy menu bar's{" "}
-        <span class="text-(--color-system-accent)">Library → Library Manager…</span>{" "}
-        surface. Flip Settings → Display → Experimental → Retroverse UI
-        OFF to reach it, then back ON when you're done.
-      </p>
-      <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
-        Wrapping the Library Manager body into this category lands in
-        a follow-up slice — the legacy surface takes 5 store +
-        callback props that need plumbing through RetroverseContext
-        first.
-      </p>
-    </SettingsCard>
-  </div>
-);
+export const LibrarySettings: Component = () => {
+  // Lift the legacy LibraryManagerPage body into the SETTINGS pane
+  // via the variant="panel" prop. Page chrome (Back button + title)
+  // is suppressed — the SETTINGS sidebar already provides nav, and the
+  // category header above already says "Library". Tabs nav (Library /
+  // Views / Game media) + all per-tab bodies are byte-identical to
+  // the legacy menu-bar entry. The "Game media" tab also shows up
+  // here intentionally — its content is more capable than the
+  // SETTINGS → Media category (which stays as informational
+  // placeholder until PlatformMediaDialog gets its own variant="panel"
+  // lift), and operators expect Library Manager's Media tab to keep
+  // working from this surface.
+  const ctx = useRetroverse();
+  return (
+    <div class="-mx-8 -mb-6">
+      <LibraryManagerPage
+        variant="panel"
+        // onBack is unreachable in panel mode (no Back button, no
+        // Esc handler) — supply a no-op so the type is satisfied.
+        onBack={() => {}}
+        settings={ctx.settings}
+        library={ctx.library}
+        layout={ctx.layout}
+        views={ctx.views}
+        onAddLibraryFolder={ctx.onAddLibraryFolder}
+        onRescanLibraryFolders={ctx.onRescanLibraryFolders}
+      />
+    </div>
+  );
+};
 
 export const MediaSettings: Component = () => (
   <div class="flex flex-col gap-4">
