@@ -8,7 +8,7 @@
 //   - Center: collection header card (count + Built-in badge) + filtered
 //             tile grid via VirtualLibraryGrid. Empty-state card when the
 //             active smart-list has no matches.
-//   - Right:  <RightDetailPanel> showing focusedEntry — same shape as
+//   - Right:  GameDetailPanel when an entry is focused — same shape as
 //             LIBRARY's right pane.
 //
 // Smart-list predicates run over the existing LibraryStore — no separate

@@ -1,29 +1,16 @@
-// Retroverse-UI Phase B Slice 6 — real LIBRARY tab.
-//
-// Three-pane internal layout matching the operator-supplied
+// LIBRARY tab — three-pane layout matching the operator-supplied
 // library-default-mockup.png:
-//   - Left:  system filter sidebar (existing LeftSidebar, reused as-is)
-//   - Center: filtered grid via existing LibraryView (filter/sort/group
-//            pipeline + GridControls + VirtualLibraryGrid)
-//   - Right: <RightDetailPanel> showing focusedEntry() — always-visible,
-//            no more modal in this code path. Slice 3's variant="panel"
-//            is what makes this work.
+//   - Left:   LeftSidebar (system filters, reused from legacy).
+//   - Center: LibraryView (filter / sort / group pipeline + grid /
+//             detail list).
+//   - Right:  GameDetailPanel when an entry is focused, "No selection"
+//             placeholder otherwise.
 //
-// Reads everything from RetroverseContext (provided by App.tsx) so the
-// existing library state signals + handlers are reused 1:1 — no
-// duplication of filter pipeline, no separate launch flow.
-//
-// Controller-nav v2 (operator spec): 3 page-level Retroverse focus groups
-// (-left / -center / -right) with DPad LEFT/RIGHT region transfer + UP/
-// DOWN within-region. This mirrors HomePage / CollectionsPage /
-// PlayNowPage / SettingsPage. The embedded LeftSidebar +
-// VirtualLibraryGrid still register their own focus groups
-// ("left-sidebar" / "library-grid") — those stay dormant in Retroverse
-// mode unless the operator mouse-clicks into a tile (then
-// VirtualLibraryGrid's onFocus auto-activates the grid group, restoring
-// 2D nav). The tradeoff vs the legacy UI: gamepad DPad walks the grid
-// linearly (DOM order) in Retroverse mode rather than 2D; consistent
-// with the other Retroverse tabs.
+// Three page-level focus groups (left / center / right) with DPad
+// LEFT/RIGHT region transfer + UP/DOWN within. Embedded LeftSidebar +
+// VirtualLibraryGrid focus groups stay dormant in Retroverse mode
+// unless the operator mouse-clicks a tile (which auto-activates
+// "library-grid" and restores 2D nav for the mouse flow).
 
 import { Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
@@ -154,11 +141,8 @@ const LibraryPage: Component = () => {
         />
       </section>
 
-      {/* Right: persistent focused-game detail. Variant "panel" drops
-          the backdrop / Close button / modal HintRegion so the panel
-          sits flush against the tab content. Empty state when nothing
-          is focused — RightDetailPanel renders nothing on a null
-          entry, so we frame it with a placeholder card. */}
+      {/* Right: focused-game detail via GameDetailPanel. Empty-state
+          placeholder card when nothing is focused. */}
       <aside
         ref={(el) => (rightRef = el)}
         class="min-w-0 overflow-hidden border-l border-white/5"

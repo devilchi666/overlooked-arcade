@@ -1,27 +1,16 @@
-// Retroverse-UI right-pane redesign — focused-game detail panel.
+// Focused-game detail panel rendered in the right column of the
+// Retroverse LIBRARY / COLLECTIONS / PLAY NOW tabs and HOME(when a
+// game is focused).
 //
-// Replaces the modal-derived RightDetailPanel (which was a thin re-export
-// of GameInfoModal in panel mode) with a layout matching the operator-
-// supplied library-default-mockup.png: cover hero at top, title +
-// subtitle, star/review chip placeholder, genre chip, metadata strip
-// (developer / publisher / release / players / time played), short
-// description, screenshots row (3 thumbs), your-progress block
-// (achievements placeholder + last played), PLAY GAME + MORE actions.
+// Layout matches the operator-supplied library-default-mockup.png:
+// cover hero at top, system label + title, conditional chip strip,
+// description, screenshots row, your-progress block, PLAY GAME +
+// MORE actions pinned at the bottom.
 //
-// Used by LibraryPage / CollectionsPage / PlayNowPage and HomePage
-// when an entry is focused. HomePage shows SystemInfoPanel as the
-// default state; the others show the "No selection" placeholder.
-//
-// Data sources mirror GameInfoModal:
-//   - RomEntry — id / title / systemId / favorite / completed /
-//     lastPlayedAt / playTimeSecs / players (Phase A-C wired).
-//   - useMedia — coverUrl + media().metadata (year / genre / developer
-//     / publisher / description) + media().screenshotGameplay variants.
-//   - systemThemes — displayName / shortName.
-//
-// Missing data (star rating / achievement progress) renders as polite
-// placeholders rather than empty space — matches the "this row shows
-// what's there, nothing else" rule from the design plan.
+// Missing-data rule: chip rows render only when the source has data
+// (genre / publisher / release / etc. all hide when not synced) —
+// avoids the panel feeling "empty" because a metadata field hasn't
+// been enriched yet.
 
 import { For, Show, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";

@@ -13,8 +13,10 @@
 //               Last Played / Multiplayer / Achievements).
 //             * Recently Played rail (across all systems).
 //             * System Status footer (CPU / RAM / Storage gauges).
-//   - Right:  <RightDetailPanel> showing focusedEntry — kept for shell
-//             consistency with LIBRARY / COLLECTIONS / PLAY NOW.
+//   - Right:  SystemInfoPanel (active-system overview) by default,
+//             swapped for GameDetailPanel when a game is focused.
+//             System Status gauges pinned at the bottom of the
+//             right pane.
 //
 // Content gaps (per docs/PLANS/retroverse-ui-rollout.md HOME analysis):
 // hero art comes from PlatformMedia.console + .fanart slots (procedural

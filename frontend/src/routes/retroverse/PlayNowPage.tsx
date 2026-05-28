@@ -7,7 +7,7 @@
 //   - Center: massive hero card (cover hero + WHY line + Play Now + Reroll)
 //             + Netflix-style rails (Continue where you left off /
 //             Multi-player tonight / Favorites you haven't touched).
-//   - Right:  <RightDetailPanel> showing focusedEntry — same shape as
+//   - Right:  GameDetailPanel when an entry is focused — same shape as
 //             LIBRARY's right pane.
 //
 // Simple-heuristic recommender v1: active mood narrows the candidate pool,
