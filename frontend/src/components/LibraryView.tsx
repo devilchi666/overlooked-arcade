@@ -198,10 +198,12 @@ const LibraryView: Component<Props> = (props) => {
               onShowSaves={props.onShowSaves}
               onPickContext={props.onPickContext}
               onFocus={props.onFocus}
+              onShowInfo={props.onShowInfo}
               selectedId={props.selectedId}
               variantCountFor={(id) =>
                 props.library.groupsByVariantId().get(id)?.variants.length
               }
+              focusGroupNeighbours={props.gridFocusNeighbours}
             />
           </Show>
         </Show>

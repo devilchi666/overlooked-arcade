@@ -12,6 +12,7 @@ import type { EntryGroup } from "../library/filter";
 import { useMedia } from "../library/media";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
+import { useFocusGroup } from "../nav/focus";
 
 type Props = {
   groups: EntryGroup[];
@@ -19,11 +20,17 @@ type Props = {
   onShowSaves?: (entry: RomEntry) => void;
   onPickContext?: (entry: RomEntry, position: { x: number; y: number }) => void;
   onFocus?: (entry: RomEntry) => void;
+  /// Controller-nav Y handler — opens the game info modal for the
+  /// focused row. Same shape as VirtualLibraryGrid's onShowInfo.
+  onShowInfo?: (entry: RomEntry) => void;
   /// Currently-selected entry id (or null). Each row compares its own entry
   /// id to derive its `selected` state.
   selectedId?: () => string | null;
   /// Lookup for the variant count badge — see VirtualLibraryGrid.
   variantCountFor?: (id: string) => number | undefined;
+  /// Override neighbours for DPad edge-spillover and L1/R1 — defaults
+  /// match VirtualLibraryGrid (legacy `left-sidebar` / `right-sidebar`).
+  focusGroupNeighbours?: { left?: string; right?: string };
 };
 
 type ListRow =
@@ -47,6 +54,93 @@ const DetailListView: Component<Props> = (props) => {
       }
     }
     return result;
+  });
+
+  // Flat game-row list (headers stripped) for the focus group's
+  // index → entry mapping. Same shape as VirtualLibraryGrid's
+  // flatEntries — the focus group walks games only; the operator
+  // can't focus headers.
+  const flatGameEntries = createMemo<RomEntry[]>(() => {
+    const out: RomEntry[] = [];
+    for (const g of props.groups) out.push(...g.entries);
+    return out;
+  });
+
+  const focusedIndex = createMemo(() => {
+    const sid = props.selectedId?.();
+    if (sid === null || sid === undefined) return 0;
+    const idx = flatGameEntries().findIndex((e) => e.id === sid);
+    return idx >= 0 ? idx : 0;
+  });
+
+  // Shares the "library-grid" id with VirtualLibraryGrid — only one
+  // of the two renders at a time (capsule vs list view mode), so
+  // there's no collision. LibraryPage's delegating effect activates
+  // "library-grid" regardless of view mode and the matching component
+  // takes over.
+  const focusGroup = useFocusGroup({
+    id: "library-grid",
+    orientation: "vertical",
+    itemCount: () => flatGameEntries().length,
+    focusedIndex,
+    setFocusedIndex: (next) => {
+      const list = flatGameEntries();
+      if (list.length === 0) return;
+      const clamped = Math.max(0, Math.min(list.length - 1, next));
+      const entry = list[clamped];
+      if (entry) props.onFocus?.(entry);
+    },
+    onActivate: (i) => {
+      const e = flatGameEntries()[i];
+      if (e) props.onLaunch(e);
+    },
+    onSecondary: (i) => {
+      const e = flatGameEntries()[i];
+      if (!e) return;
+      const el = rowEls.get(i);
+      if (el && props.onPickContext) {
+        const r = el.getBoundingClientRect();
+        props.onPickContext(e, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }
+    },
+    onTertiary: (i) => {
+      const e = flatGameEntries()[i];
+      if (e) props.onShowInfo?.(e);
+    },
+    neighbours: {
+      left: props.focusGroupNeighbours?.left ?? "left-sidebar",
+      right: props.focusGroupNeighbours?.right ?? "right-sidebar",
+    },
+  });
+
+  // DOM-element registry by flat game index — used for both bind() to
+  // the focus manager and bounding-rect lookup on X-press
+  // (context-menu anchor).
+  const rowEls = new Map<number, HTMLButtonElement>();
+
+  // Keep the focused row scrolled into view. Use the virtualizer's
+  // own scrollToIndex so the row's virtual index (in `rows`, with
+  // headers interleaved) lines up with the visible viewport. The
+  // focus group works against flat game indices — we re-derive the
+  // row index here.
+  const rowIndexForGameIndex = (gameIdx: number): number => {
+    const r = rows();
+    let g = 0;
+    for (let i = 0; i < r.length; i++) {
+      if (r[i].kind === "game") {
+        if (g === gameIdx) return i;
+        g++;
+      }
+    }
+    return -1;
+  };
+  createEffect(() => {
+    const i = focusedIndex();
+    if (flatGameEntries().length === 0) return;
+    const rowIdx = rowIndexForGameIndex(i);
+    if (rowIdx >= 0) {
+      virtualizer.scrollToIndex(rowIdx, { align: "auto" });
+    }
   });
 
   const virtualizer = createVirtualizer({
@@ -105,19 +199,47 @@ const DetailListView: Component<Props> = (props) => {
                   </div>
                 </Show>
                 <Show when={row()?.kind === "game"}>
-                  <DetailRow
-                    entry={(row() as Extract<ListRow, { kind: "game" }>).entry}
-                    onLaunch={props.onLaunch}
-                    onShowSaves={props.onShowSaves}
-                    onPickContext={props.onPickContext}
-                    onFocus={props.onFocus}
-                    selectedId={props.selectedId}
-                    variantCount={
-                      props.variantCountFor?.(
-                        (row() as Extract<ListRow, { kind: "game" }>).entry.id,
-                      )
-                    }
-                  />
+                  {(() => {
+                    const r = row() as Extract<ListRow, { kind: "game" }>;
+                    // Map this row's entry id to its flat game index so the
+                    // focus manager binds the right slot. Captured at mount
+                    // via the ref callback below.
+                    const flatIdx = createMemo(() =>
+                      flatGameEntries().findIndex((e) => e.id === r.entry.id),
+                    );
+                    const isFocused = () =>
+                      flatIdx() >= 0 && focusedIndex() === flatIdx();
+                    return (
+                      <DetailRow
+                        entry={r.entry}
+                        onLaunch={props.onLaunch}
+                        onShowSaves={props.onShowSaves}
+                        onPickContext={props.onPickContext}
+                        onFocus={(e) => {
+                          // Mouse hover / focus claims active group so
+                          // subsequent DPad input goes to this list.
+                          focusGroup.activate();
+                          props.onFocus?.(e);
+                        }}
+                        selectedId={props.selectedId}
+                        variantCount={
+                          props.variantCountFor?.(r.entry.id)
+                        }
+                        focusedActive={isFocused() && focusGroup.isActive()}
+                        bindRef={(el) => {
+                          if (!el) return;
+                          const idx = flatIdx();
+                          if (idx < 0) return;
+                          rowEls.set(idx, el);
+                          focusGroup.bind(idx, el);
+                          onCleanup(() => {
+                            rowEls.delete(idx);
+                            focusGroup.bind(idx, null);
+                          });
+                        }}
+                      />
+                    );
+                  })()}
                 </Show>
               </div>
             );
@@ -136,6 +258,13 @@ const DetailRow: Component<{
   onFocus?: (e: RomEntry) => void;
   selectedId?: () => string | null;
   variantCount?: number;
+  /// True when this row is the active focus target via gamepad. The
+  /// `data-oa-focus*` attributes drive the same ring styling tiles use.
+  focusedActive?: boolean;
+  /// Ref hook called with the button element on mount + with null on
+  /// unmount. DetailListView's parent uses this to bind the button to
+  /// the focus group's index.
+  bindRef?: (el: HTMLButtonElement | null) => void;
 }> = (props) => {
   const media = useMedia();
   const theme = () => systemThemes[props.entry.systemId];
@@ -147,7 +276,10 @@ const DetailRow: Component<{
   return (
     <button
       type="button"
+      ref={(el) => props.bindRef?.(el)}
       data-system={props.entry.systemId}
+      data-oa-focus={props.focusedActive ? "true" : undefined}
+      data-oa-focus-active={props.focusedActive ? "true" : "false"}
       // Single click selects; double click launches. See LibraryTile.tsx for
       // the rationale (hover no longer drives selection).
       onClick={() => props.onFocus?.(props.entry)}
