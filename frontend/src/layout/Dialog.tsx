@@ -19,20 +19,50 @@ import {
   type JSX,
 } from "solid-js";
 import { useBackHandler } from "../nav/back";
-import { captureFocusReturn } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { HintRegion } from "../nav/HintBar";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
-/// Tiny helper component — pushes the dialog's onClose onto the back
-/// stack for the lifetime of the open dialog AND captures the active
-/// focus group at open time so the cleanup restores focus to that
-/// surface (works across legacy + Retroverse without per-consumer
-/// wiring). Mount/unmount tied to the parent `<Show when={open}>`
-/// block so both behaviours auto-unwind on close.
+// Monotonic counter so stacked dialogs each get a unique focus-group id
+// in the manager's map. Solid's reactive lifecycle on a same-id remount
+// would otherwise see two handles for one key.
+let dialogIdCounter = 0;
+
+/// Tiny helper component — for the lifetime of the open dialog:
+///   - pushes the dialog's onClose onto the back stack (B closes)
+///   - captures the previously active focus group so the cleanup
+///     restores it (works across legacy + Retroverse without per-
+///     consumer wiring)
+///   - owns an inert focus group that CLAIMS active while the dialog is
+///     up, so controller A/X/Y/Start presses don't leak through to
+///     whichever surface was active before (e.g. the library grid
+///     behind a Settings dialog would otherwise launch a tile on A).
+///     itemCount stays 0 so direction events bail in routeEvent's count
+///     guard; the button handlers are no-ops. B is consumed by the
+///     back stack before reaching onCancel.
 const DialogBackHandler: Component<{ onClose: () => void }> = (props) => {
   useBackHandler(() => props.onClose());
   const restoreFocus = captureFocusReturn();
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const dialogGroupId = `dialog-modal-${++dialogIdCounter}`;
+  const group = useFocusGroup({
+    id: dialogGroupId,
+    orientation: "vertical",
+    itemCount: () => 0,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: () => {},
+    onSecondary: () => {},
+    onTertiary: () => {},
+    onStart: () => {},
+    onCancel: () => props.onClose(),
+  });
+  // Explicit activate — autoClaim only fires when the current active is
+  // null or unregistered. Library-grid (or whichever surface launched
+  // the dialog) is typically still registered, so we transfer
+  // imperatively and let the cleanup restoreFocus put it back.
+  onMount(() => group.activate());
   onCleanup(restoreFocus);
   return null;
 };
