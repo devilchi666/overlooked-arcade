@@ -26,6 +26,9 @@ import { PlatformMediaDialog } from "./PlatformMediaDialog";
 type Props = {
   /// Navigate back to the previous view. Used by the header Back button
   /// and by the Escape key handler. Replaces the modal-era `onClose`.
+  /// In `variant="panel"` mode the header is hidden, so this is only
+  /// called by the Esc keyhandler — the embedding surface (Retroverse
+  /// SETTINGS) is expected to no-op or stay-put on Esc.
   onBack: () => void;
   settings: SettingsStore;
   library: LibraryStore;
@@ -36,6 +39,12 @@ type Props = {
   /// Optional deep-link target — Library menu items use this to land on
   /// "library" vs "media" instead of the persisted last-visited tab.
   initialTab?: "library" | "media" | "views";
+  /// "page" (default) renders the full chrome — header with Back
+  /// button + title, then tabs nav + body. "panel" drops the header
+  /// so the page can embed cleanly inside a parent shell that already
+  /// supplies its own header (Retroverse-UI SETTINGS → Library
+  /// category). Tabs nav + body are identical between variants.
+  variant?: "page" | "panel";
 };
 
 type SyncProgressPayload = {
@@ -255,7 +264,9 @@ const LibraryManagerPage: Component<Props> = (props) => {
 
   // Esc returns to the previous view. Page-mode equivalent of the modal's
   // close-on-Esc — the parent owns the navigation target (typically
-  // `setCurrentView({ kind: "all" })`).
+  // `setCurrentView({ kind: "all" })`). Skipped in panel mode: the
+  // embedding shell (Retroverse SETTINGS) owns Esc semantics and a
+  // capture-phase listener here would steal the event.
   const escHandler = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     const tag = (document.activeElement as HTMLElement | null)?.tagName;
@@ -263,7 +274,11 @@ const LibraryManagerPage: Component<Props> = (props) => {
     e.stopPropagation();
     props.onBack();
   };
-  onMount(() => window.addEventListener("keydown", escHandler, { capture: true }));
+  onMount(() => {
+    if (props.variant !== "panel") {
+      window.addEventListener("keydown", escHandler, { capture: true });
+    }
+  });
   onCleanup(() => window.removeEventListener("keydown", escHandler, { capture: true }));
 
   const systemIds = Object.keys(systemThemes) as SystemId[];
@@ -773,37 +788,46 @@ const LibraryManagerPage: Component<Props> = (props) => {
   return (
     <>
     <div
-      class="flex h-full w-full flex-col bg-(--color-oa-bg)"
+      class="flex w-full flex-col"
+      classList={{
+        // Page mode owns the full window — fills, paints, and gets
+        // an accessible label tied to the header above. Panel mode
+        // flows naturally inside the embedding SETTINGS pane and
+        // leaves background painting to the parent.
+        "h-full bg-(--color-oa-bg)": props.variant !== "panel",
+      }}
       role="region"
-      aria-labelledby="settings-title"
+      aria-labelledby={props.variant !== "panel" ? "settings-title" : undefined}
     >
-      <header class="flex items-center justify-between border-b border-white/5 bg-(--color-oa-bg-deep)/60 px-6 py-4">
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              props.onBack();
-            }}
-            class="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
-            title="Back (Esc)"
-            aria-label="Back"
-          >
-            ‹ Back
-          </button>
-          <div>
-            <h2
-              id="settings-title"
-              class="text-sm font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink)"
+      <Show when={props.variant !== "panel"}>
+        <header class="flex items-center justify-between border-b border-white/5 bg-(--color-oa-bg-deep)/60 px-6 py-4">
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                props.onBack();
+              }}
+              class="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+              title="Back (Esc)"
+              aria-label="Back"
             >
-              Library Manager
-            </h2>
-            <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-              {TAB_LABELS[activeTab()]} · {TAB_HINTS[activeTab()]}
-            </p>
+              ‹ Back
+            </button>
+            <div>
+              <h2
+                id="settings-title"
+                class="text-sm font-semibold uppercase tracking-[0.3em] text-(--color-oa-ink)"
+              >
+                Library Manager
+              </h2>
+              <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                {TAB_LABELS[activeTab()]} · {TAB_HINTS[activeTab()]}
+              </p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      </Show>
 
       <div class="flex min-h-0 flex-1">
             {/* Sidebar — vertical tab nav. Active tab gets a left-edge accent
