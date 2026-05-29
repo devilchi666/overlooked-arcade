@@ -27,6 +27,7 @@ import LibraryManagerPage from "./components/LibraryManagerPage";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
+import NewCollectionDialog, { type CollectionDialogMode } from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
 import Shell from "./layout/Shell";
 import TopToolbar from "./layout/TopToolbar";
@@ -88,6 +89,7 @@ import { launchRom, type LaunchResult } from "./library/launch";
 import { MediaProvider } from "./library/media";
 import { PlatformMediaProvider } from "./library/platformMedia";
 import { createLibraryStore } from "./library/store";
+import { createCustomCollectionsStore } from "./library/customCollections";
 import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
@@ -163,6 +165,7 @@ const App: Component = () => {
   const library = createLibraryStore({
     shouldBootstrap: directLaunchPromise.then((cfg) => cfg === null),
   });
+  const customCollections = createCustomCollectionsStore();
   const settings = createSettingsStore();
   const layout = createLayoutStore();
   const viewsStore = createViewsStore();
@@ -236,6 +239,12 @@ const App: Component = () => {
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
+  /// Phase C3 Slice 12 — NewCollectionDialog mode. `null` = closed.
+  /// Two open modes: `create` (optional seedRomId — non-null when the
+  /// dialog was launched from a tile context menu so the rom is
+  /// dropped in on create) and `rename` (relabel an existing list).
+  const [collectionDialogMode, setCollectionDialogMode] =
+    createSignal<CollectionDialogMode | null>(null);
   function openProperties(entry: RomEntry) {
     setPropertiesFor(entry);
   }
@@ -1982,6 +1991,7 @@ const App: Component = () => {
         <RetroverseProvider
           value={{
             library,
+            customCollections,
             layout,
             views: viewsStore,
             settings,
@@ -2001,6 +2011,10 @@ const App: Component = () => {
             onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
             onAddLibraryFolder: handleAddLibraryFolder,
             onRescanLibraryFolders: handleRescanLibraryFolders,
+            onOpenNewCollection: (seedRomId) =>
+              setCollectionDialogMode({ kind: "create", seedRomId }),
+            onOpenRenameCollection: (collectionId, currentName) =>
+              setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
@@ -2101,6 +2115,7 @@ const App: Component = () => {
         entry={contextMenuFor()?.entry ?? null}
         position={contextMenuFor()?.position ?? null}
         library={library}
+        customCollections={customCollections}
         onClose={() => setContextMenuFor(null)}
         onLaunch={(entry) => void handleLaunch(entry)}
         onShowSaves={(entry) => setSavesEntry(entry)}
@@ -2108,6 +2123,14 @@ const App: Component = () => {
         onPickRegion={(entry) => setRegionPickerFor(entry)}
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
+        onOpenNewCollection={(romId) =>
+          setCollectionDialogMode({ kind: "create", seedRomId: romId })
+        }
+      />
+      <NewCollectionDialog
+        mode={collectionDialogMode()}
+        customCollections={customCollections}
+        onClose={() => setCollectionDialogMode(null)}
       />
       <GamePropertiesDialog
         open={propertiesFor() !== null}

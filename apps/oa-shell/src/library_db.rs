@@ -21,7 +21,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 13;
+const SCHEMA_VERSION: i32 = 14;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -489,6 +489,26 @@ pub struct GameSerialRow {
     pub region: Option<String>,
 }
 
+/// Retroverse Phase C3 Slice 12 — operator-built collection metadata.
+/// One row per collection in the `custom_collections` table; member
+/// rom ids live in the junction table `custom_collection_members`.
+/// Returned by `list_custom_collections` so the frontend can render
+/// the MY COLLECTIONS sidebar group.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomCollectionRow {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    /// Live count of rows in `custom_collection_members` whose
+    /// `rom_id` still resolves to a row in `games`. Computed at query
+    /// time via a JOIN — stale memberships from deleted games don't
+    /// inflate the count.
+    pub member_count: i64,
+}
+
 pub struct LibraryDb {
     inner: Mutex<Connection>,
     #[allow(dead_code)] // diagnostics / future log-on-error
@@ -678,7 +698,52 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v13 (idx_games_missing_hash)");
         }
 
+        // v13 → v14: Retroverse Phase C3 Slice 12 — custom collections.
+        // Operator-built lists alongside the existing smart-lists in the
+        // COLLECTIONS tab. Two tables: a parent row per collection + a
+        // junction row per (collection, rom) pair. ON DELETE CASCADE on
+        // the FK so deleting a collection cleans up its members; the
+        // games table doesn't carry a reverse FK because rom rows can
+        // come and go (rescan, remove) and we tolerate orphan member
+        // rows for a frame — the next `list_collection_members` join
+        // filters them out, and a follow-up sweep prunes them on rom
+        // delete (see `delete_game`).
+        if current < 14 {
+            Self::migrate_v13_to_v14(conn)?;
+            conn.pragma_update(None, "user_version", 14)
+                .map_err(|e| format!("set user_version=14: {e}"))?;
+            log::info!("library_db: schema migrated to v14 (custom_collections)");
+        }
+
         Ok(())
+    }
+
+    fn migrate_v13_to_v14(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS custom_collections (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                sort_order    INTEGER NOT NULL DEFAULT 0,
+                created_at    INTEGER NOT NULL,
+                updated_at    INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_custom_collections_sort
+                ON custom_collections(sort_order);
+
+            CREATE TABLE IF NOT EXISTS custom_collection_members (
+                collection_id TEXT NOT NULL
+                    REFERENCES custom_collections(id) ON DELETE CASCADE,
+                rom_id        TEXT NOT NULL,
+                sort_order    INTEGER NOT NULL DEFAULT 0,
+                added_at      INTEGER NOT NULL,
+                PRIMARY KEY (collection_id, rom_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_custom_collection_members_rom
+                ON custom_collection_members(rom_id);
+            "#,
+        )
+        .map_err(|e| format!("create custom_collections schema: {e}"))
     }
 
     /// Add a complementary partial index for list_games_missing_hash.
@@ -2016,6 +2081,16 @@ impl LibraryDb {
 
     pub fn delete_game(&self, id: &str) -> Result<(), String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        // Sweep dangling custom-collection memberships first so a
+        // deleted game doesn't leave orphan rows that survive across
+        // sessions. The custom_collections FK only cascades on the
+        // collection side; there's no FK from games → members because
+        // games come and go independently of operator curation.
+        conn.execute(
+            "DELETE FROM custom_collection_members WHERE rom_id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("delete game memberships: {e}"))?;
         conn.execute("DELETE FROM games WHERE id = ?1", params![id])
             .map_err(|e| format!("delete game: {e}"))?;
         Ok(())
@@ -2794,6 +2869,226 @@ impl LibraryDb {
         })
         .optional()
         .map_err(|e| format!("get_cover_path: {e}"))
+    }
+
+    // --- Custom collections (Phase C3 Slice 12) --------------------------
+    //
+    // Operator-built lists alongside the smart-list COLLECTIONS shipped
+    // in Slice 11. The two-table shape (parent + junction) keeps the
+    // membership set independent from the game row so a future drag-
+    // reorder lands cleanly on `sort_order` without rewriting the
+    // collection row. `list_custom_collections` joins for the live
+    // count so stale memberships from deleted games don't inflate the
+    // sidebar badge.
+
+    /// All collections, ordered by `sort_order` then created_at. Each
+    /// row carries the live member count via a LEFT JOIN against
+    /// `games` so a member row whose rom was deleted between sessions
+    /// doesn't contribute. The empty case returns an empty Vec.
+    pub fn list_custom_collections(&self) -> Result<Vec<CustomCollectionRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT cc.id, cc.name, cc.sort_order, cc.created_at, cc.updated_at,
+                        COUNT(g.id) AS member_count
+                 FROM custom_collections cc
+                 LEFT JOIN custom_collection_members ccm
+                     ON ccm.collection_id = cc.id
+                 LEFT JOIN games g ON g.id = ccm.rom_id
+                 GROUP BY cc.id
+                 ORDER BY cc.sort_order ASC, cc.created_at ASC",
+            )
+            .map_err(|e| format!("prepare list_custom_collections: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CustomCollectionRow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    sort_order: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    member_count: row.get(5)?,
+                })
+            })
+            .map_err(|e| format!("query list_custom_collections: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("row list_custom_collections: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// Create a new collection with the given display name. The id is
+    /// generated server-side (Slice 11 pattern uses lowercase nanoid-
+    /// style hex; here we use the existing `Self::generate_id` shape).
+    /// Returns the new id so the frontend can attach members
+    /// immediately. `sort_order` defaults to the max+1 so freshly
+    /// created lists land at the bottom of the sidebar; the operator
+    /// can drag-reorder in a follow-up slice.
+    pub fn create_custom_collection(&self, name: &str) -> Result<String, String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("collection name cannot be empty".to_string());
+        }
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let next_sort: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM custom_collections",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let id = format!("col-{:x}-{:x}", now, next_sort);
+        conn.execute(
+            "INSERT INTO custom_collections (id, name, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![id, trimmed, next_sort, now],
+        )
+        .map_err(|e| format!("insert custom_collections: {e}"))?;
+        Ok(id)
+    }
+
+    /// Rename an existing collection. Empty name is rejected. Bumps
+    /// `updated_at` so a future "Recently edited" surface can sort on
+    /// it without a join.
+    pub fn rename_custom_collection(&self, id: &str, name: &str) -> Result<(), String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("collection name cannot be empty".to_string());
+        }
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let n = conn
+            .execute(
+                "UPDATE custom_collections
+                 SET name = ?1, updated_at = ?2
+                 WHERE id = ?3",
+                params![trimmed, now, id],
+            )
+            .map_err(|e| format!("update custom_collections name: {e}"))?;
+        if n == 0 {
+            return Err(format!("collection {id} not found"));
+        }
+        Ok(())
+    }
+
+    /// Delete a collection. ON DELETE CASCADE on the FK in
+    /// `custom_collection_members` cleans up the junction rows in the
+    /// same SQLite statement (no orphan sweep needed).
+    pub fn delete_custom_collection(&self, id: &str) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        // SQLite FKs are off by default; enable on this connection so
+        // the CASCADE on custom_collection_members fires. Cheap to
+        // re-set on each call.
+        conn.execute_batch("PRAGMA foreign_keys = ON")
+            .map_err(|e| format!("enable foreign_keys: {e}"))?;
+        let n = conn
+            .execute("DELETE FROM custom_collections WHERE id = ?1", params![id])
+            .map_err(|e| format!("delete custom_collections: {e}"))?;
+        if n == 0 {
+            return Err(format!("collection {id} not found"));
+        }
+        Ok(())
+    }
+
+    /// Add a rom to a collection. INSERT OR IGNORE keeps the call
+    /// idempotent — toggling "Add to X" twice doesn't error. `sort_order`
+    /// places new members at the bottom of the collection (max+1) so
+    /// add order is preserved by default; future drag-reorder lands on
+    /// the same column.
+    pub fn add_to_custom_collection(
+        &self,
+        collection_id: &str,
+        rom_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let next_sort: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), 0) + 1
+                 FROM custom_collection_members
+                 WHERE collection_id = ?1",
+                params![collection_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT OR IGNORE INTO custom_collection_members
+                (collection_id, rom_id, sort_order, added_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![collection_id, rom_id, next_sort, now],
+        )
+        .map_err(|e| format!("insert custom_collection_members: {e}"))?;
+        // Bump the parent's updated_at so a future "recently edited"
+        // sort sees the membership change.
+        conn.execute(
+            "UPDATE custom_collections SET updated_at = ?1 WHERE id = ?2",
+            params![now, collection_id],
+        )
+        .map_err(|e| format!("touch custom_collections updated_at: {e}"))?;
+        Ok(())
+    }
+
+    /// Remove a rom from a collection. Silent if the membership didn't
+    /// exist — the operator's expectation is "this game is no longer
+    /// in X," not "the membership row was deleted."
+    pub fn remove_from_custom_collection(
+        &self,
+        collection_id: &str,
+        rom_id: &str,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "DELETE FROM custom_collection_members
+             WHERE collection_id = ?1 AND rom_id = ?2",
+            params![collection_id, rom_id],
+        )
+        .map_err(|e| format!("delete custom_collection_members: {e}"))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "UPDATE custom_collections SET updated_at = ?1 WHERE id = ?2",
+            params![now, collection_id],
+        )
+        .map_err(|e| format!("touch custom_collections updated_at: {e}"))?;
+        Ok(())
+    }
+
+    /// List the rom ids that belong to a collection, sorted by
+    /// `sort_order` then `added_at`. Stale memberships pointing at
+    /// deleted games are filtered via an EXISTS check so the frontend
+    /// never has to defensively skip missing rows.
+    pub fn list_collection_members(&self, collection_id: &str) -> Result<Vec<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT ccm.rom_id
+                 FROM custom_collection_members ccm
+                 INNER JOIN games g ON g.id = ccm.rom_id
+                 WHERE ccm.collection_id = ?1
+                 ORDER BY ccm.sort_order ASC, ccm.added_at ASC",
+            )
+            .map_err(|e| format!("prepare list_collection_members: {e}"))?;
+        let rows = stmt
+            .query_map(params![collection_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query list_collection_members: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("row list_collection_members: {e}"))?);
+        }
+        Ok(out)
     }
 }
 
@@ -3955,5 +4250,137 @@ mod tests {
         .expect("upsert post-migrate");
         assert_eq!(db.count_rom_hashes("tg16").expect("count"), 1);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // --- Custom collections (Phase C3 Slice 12) ----------------------
+
+    #[test]
+    fn custom_collections_empty_by_default() {
+        let db = fresh_db();
+        let list = db.list_custom_collections().expect("list");
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn create_rename_delete_collection() {
+        let db = fresh_db();
+        let id = db.create_custom_collection("Co-op night").expect("create");
+        assert!(!id.is_empty());
+        let list = db.list_custom_collections().expect("list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Co-op night");
+        assert_eq!(list[0].member_count, 0);
+
+        db.rename_custom_collection(&id, "Saturday slate").expect("rename");
+        let list = db.list_custom_collections().expect("list");
+        assert_eq!(list[0].name, "Saturday slate");
+
+        db.delete_custom_collection(&id).expect("delete");
+        assert!(db.list_custom_collections().expect("list").is_empty());
+    }
+
+    #[test]
+    fn create_rejects_empty_or_whitespace_name() {
+        let db = fresh_db();
+        assert!(db.create_custom_collection("").is_err());
+        assert!(db.create_custom_collection("   ").is_err());
+        assert!(db.list_custom_collections().expect("list").is_empty());
+    }
+
+    #[test]
+    fn rename_unknown_collection_errors() {
+        let db = fresh_db();
+        let err = db.rename_custom_collection("nope", "X").unwrap_err();
+        assert!(err.contains("not found"));
+    }
+
+    #[test]
+    fn add_remove_members_round_trip() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha"), row("b", "Bravo")]).expect("seed games");
+        let id = db.create_custom_collection("Fav co-op").expect("create");
+
+        db.add_to_custom_collection(&id, "a").expect("add a");
+        db.add_to_custom_collection(&id, "b").expect("add b");
+        let members = db.list_collection_members(&id).expect("list members");
+        assert_eq!(members, vec!["a".to_string(), "b".to_string()]);
+
+        // Count surfaced via list_custom_collections.
+        let list = db.list_custom_collections().expect("list");
+        assert_eq!(list[0].member_count, 2);
+
+        db.remove_from_custom_collection(&id, "a").expect("remove a");
+        let members = db.list_collection_members(&id).expect("list members");
+        assert_eq!(members, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn add_member_is_idempotent() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha")]).expect("seed");
+        let id = db.create_custom_collection("Set").expect("create");
+        db.add_to_custom_collection(&id, "a").expect("add");
+        db.add_to_custom_collection(&id, "a").expect("add again");
+        assert_eq!(db.list_collection_members(&id).expect("list").len(), 1);
+    }
+
+    #[test]
+    fn deleting_collection_cascades_members() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha")]).expect("seed");
+        let id = db.create_custom_collection("Doomed").expect("create");
+        db.add_to_custom_collection(&id, "a").expect("add");
+        db.delete_custom_collection(&id).expect("delete");
+        // Re-creating a collection and listing members confirms the
+        // FK cascade removed the orphan junction row — list_collection_members
+        // for the new id returns empty rather than seeing the old member.
+        let new_id = db.create_custom_collection("Replacement").expect("recreate");
+        assert!(db.list_collection_members(&new_id).expect("list").is_empty());
+    }
+
+    #[test]
+    fn deleting_game_prunes_memberships() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha"), row("b", "Bravo")]).expect("seed");
+        let id = db.create_custom_collection("Set").expect("create");
+        db.add_to_custom_collection(&id, "a").expect("add a");
+        db.add_to_custom_collection(&id, "b").expect("add b");
+
+        // Deleting the game row sweeps the membership junction.
+        db.delete_game("a").expect("delete game a");
+        let members = db.list_collection_members(&id).expect("list");
+        assert_eq!(members, vec!["b".to_string()]);
+        // member_count uses an INNER JOIN against games so a stale
+        // membership for a deleted game wouldn't count anyway, but the
+        // junction sweep keeps the table from growing unbounded.
+        let list = db.list_custom_collections().expect("list");
+        assert_eq!(list[0].member_count, 1);
+    }
+
+    #[test]
+    fn list_filters_orphan_memberships_via_join() {
+        // Belt + suspenders: even if a future code path bypasses
+        // delete_game's sweep and leaves a dangling membership row,
+        // list_collection_members must not return ids that don't
+        // resolve to a games row.
+        let db = fresh_db();
+        db.add_games(&[row("a", "Alpha")]).expect("seed");
+        let id = db.create_custom_collection("Set").expect("create");
+        db.add_to_custom_collection(&id, "a").expect("add");
+        // Manually insert an orphan row pointing at a non-existent game.
+        {
+            let conn = db.inner.lock().expect("lock");
+            conn.execute(
+                "INSERT INTO custom_collection_members
+                    (collection_id, rom_id, sort_order, added_at)
+                 VALUES (?1, 'ghost', 99, 0)",
+                params![&id],
+            )
+            .expect("orphan insert");
+        }
+        let members = db.list_collection_members(&id).expect("list");
+        assert_eq!(members, vec!["a".to_string()]);
+        let list = db.list_custom_collections().expect("list");
+        assert_eq!(list[0].member_count, 1);
     }
 }

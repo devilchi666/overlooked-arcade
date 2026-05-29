@@ -15,6 +15,7 @@
 import { createContext, useContext, type ParentComponent } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { LibraryStore } from "../../library/store";
+import type { CustomCollectionsStore } from "../../library/customCollections";
 import type { LayoutStore } from "../../layout/state";
 import type { ViewsStore } from "../../views/store";
 import type { SettingsStore } from "../../settings/store";
@@ -23,6 +24,11 @@ import type { RomEntry } from "../../library/types";
 
 export type RetroverseContextValue = {
   library: LibraryStore;
+  /// Retroverse-UI Phase C3 Slice 12 — operator-built collections.
+  /// Companion to `library`; lives alongside so the TileContextMenu
+  /// + CollectionsPage can read membership state without prop-drilling
+  /// through every consumer.
+  customCollections: CustomCollectionsStore;
   layout: LayoutStore;
   views: ViewsStore;
   settings: SettingsStore;
@@ -64,6 +70,16 @@ export type RetroverseContextValue = {
   /// "Rescan all" button. Sourced from App.handleRescanLibraryFolders;
   /// disabled by the page when no folders are tracked.
   onRescanLibraryFolders: () => void;
+  /// Phase C3 Slice 12 — open the NewCollectionDialog. `seedRomId` is
+  /// non-null when the open call came from a tile-context-menu
+  /// "+ New collection…" tail entry, so the dialog seeds the new
+  /// collection with that rom on create. Used by CollectionsPage's
+  /// "+ New collection" sidebar button (passes null).
+  onOpenNewCollection: (seedRomId: string | null) => void;
+  /// Phase C3 Slice 12 — open the same dialog in rename mode for an
+  /// existing collection. Used by the right-click context menu on a
+  /// custom-collection sidebar row.
+  onOpenRenameCollection: (collectionId: string, currentName: string) => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();
