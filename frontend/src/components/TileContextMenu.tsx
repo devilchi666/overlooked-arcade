@@ -3,7 +3,7 @@ import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry, VariantInfo } from "../library/types";
 import { useMedia } from "../library/media";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -325,15 +325,16 @@ const TileContextMenu: Component<Props> = (props) => {
         const pos = props.position!;
         // Mount-scoped hooks: this branch only exists while the menu is
         // open, so the back handler + focus activation auto-clean on
-        // close. The cleanup explicitly transfers activation back to
-        // the library grid so a B-press doesn't strand focus in this
-        // (now-itemless) group.
+        // close. captureFocusReturn snapshots whichever group was active
+        // BEFORE we activate ours, so close-handlers return focus to
+        // that surface across all Retroverse tabs (not just LIBRARY).
         useBackHandler(() => props.onClose());
+        const restoreFocus = captureFocusReturn();
         onMount(() => {
           onMenuMount();
           setFocusedIndex(0);
         });
-        onCleanup(() => activateFocusGroup("library-grid"));
+        onCleanup(restoreFocus);
         return (
           <div
             data-tile-context-root

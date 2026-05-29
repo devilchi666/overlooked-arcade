@@ -4,7 +4,7 @@ import { getDataDir } from "../lib/dataDir";
 import type { RomEntry } from "../library/types";
 import { useMedia } from "../library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -87,11 +87,12 @@ const RegionPicker: Component<Props> = (props) => {
     <Show when={props.entry}>
       {(() => {
         useBackHandler(() => props.onClose());
+        const restoreFocus = captureFocusReturn();
         onMount(() => {
           focusGroup.activate();
           setFocusedIndex(0);
         });
-        onCleanup(() => activateFocusGroup("library-grid"));
+        onCleanup(restoreFocus);
         return null;
       })()}
       <HintRegion hints={{ a: "Pick", b: "Close" }} />

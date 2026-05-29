@@ -29,7 +29,7 @@ import { launchRom } from "../library/launch";
 import { useMedia, type MediaVariant } from "../library/media";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -257,11 +257,12 @@ const GameInfoModal: Component<Props> = (props) => {
         // tab strip while the panel just displays the focused entry.
         if (isModal()) {
           useBackHandler(() => props.onClose());
+          const restoreFocus = captureFocusReturn();
           onMount(() => {
             infoFocusGroup.activate();
             setInfoFocusIndex(0);
           });
-          onCleanup(() => activateFocusGroup("library-grid"));
+          onCleanup(restoreFocus);
         }
         const box = (
           <div
