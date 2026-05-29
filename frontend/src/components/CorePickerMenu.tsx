@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import { invoke } from "@tauri-apps/api/core";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -121,11 +121,12 @@ const CorePickerMenu: Component<Props> = (props) => {
       {(_) => {
         const pos = props.position!;
         useBackHandler(() => props.onClose());
+        const restoreFocus = captureFocusReturn();
         onMount(() => {
           focusGroup.activate();
           setFocusedIndex(0);
         });
-        onCleanup(() => activateFocusGroup("library-grid"));
+        onCleanup(restoreFocus);
         return (
           <div
             data-core-picker-root

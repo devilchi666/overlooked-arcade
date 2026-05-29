@@ -19,11 +19,16 @@
 // Last Played (every entry with a lastPlayedAt, full chronological
 // history — Recently played is its 30-day subset).
 
-import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import {
+  activateFocusGroup,
+  activeFocusGroupId,
+  groupsVersion,
+  useDomQueryFocusGroup,
+} from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
 import type { RomEntry } from "../../library/types";
 import { useRetroverse } from "./context";
@@ -124,11 +129,12 @@ const CollectionsPage: Component = () => {
   const ctx = useRetroverse();
   const [activeSmartListId, setActiveSmartListId] = createSignal<SmartListId>("favorites");
 
-  // Retroverse-UI controller-nav v2 — per-region focus groups (per
-  // operator spec). DPad LEFT/RIGHT transfers sidebar ↔ center ↔
-  // right; UP/DOWN stays within. The grid's "library-grid" inner
-  // group still auto-activates on click but the page-level center
-  // group is the landing surface for DPad.
+  // Per-region focus groups (unified-focus model). `neighbours` drives
+  // both DPad edge-spillover and L1/R1 shoulder-bumper transfer
+  // (RetroverseShell intercepts L1/R1 globally for tab cycling).
+  // The grid's "library-grid" inner group still auto-activates on
+  // mouse click for the mouse flow; controller flow stays on the
+  // page-level CENTER for COLLECTIONS smart-lists.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
@@ -140,13 +146,7 @@ const CollectionsPage: Component = () => {
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -154,17 +154,7 @@ const CollectionsPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -172,14 +162,21 @@ const CollectionsPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: CENTER_ID },
   });
+
+  // Same delegating pattern as LibraryPage — when CENTER becomes
+  // active and the COLLECTIONS grid (which also registers under
+  // "library-grid") is mounted, hand off so DPad walks the grid in
+  // 2D. groupsVersion re-fires the effect when the grid mounts or
+  // unmounts (e.g. switching smart-lists with vs without matches).
+  createEffect(() => {
+    groupsVersion();
+    if (activeFocusGroupId() === CENTER_ID) {
+      activateFocusGroup("library-grid");
+    }
+  });
+
   const activeSmartList = () =>
     SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
 
@@ -231,6 +228,8 @@ const CollectionsPage: Component = () => {
           since heart toggling is the dominant curatorial action here. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Search",
@@ -386,6 +385,7 @@ const CollectionsPage: Component = () => {
                   ctx.library.groupsByVariantId().get(id)?.variants.length
                 }
                 onToggleFavorite={ctx.onToggleFavorite}
+                focusGroupNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
               />
             </Match>
           </Switch>

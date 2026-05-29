@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import { invoke } from "@tauri-apps/api/core";
 import { launchRom } from "../library/launch";
 import type { RomEntry } from "../library/types";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -106,11 +106,12 @@ const SaveSlotsModal: Component<Props> = (props) => {
     <Show when={props.entry}>
       {(entry) => {
         useBackHandler(() => props.onClose());
+        const restoreFocus = captureFocusReturn();
         onMount(() => {
           focusGroup.activate();
           setFocusedIndex(0);
         });
-        onCleanup(() => activateFocusGroup("library-grid"));
+        onCleanup(restoreFocus);
         return (
         <div
           class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"

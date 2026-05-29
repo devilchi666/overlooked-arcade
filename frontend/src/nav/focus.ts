@@ -54,11 +54,18 @@ export type FocusGroupOptions = {
   onTertiary?: (index: number) => void;
   /** Start button anywhere in the group. */
   onStart?: () => void;
-  /** Neighbour group ids for shoulder-bumper transfer. `null` = nothing
-   *  there; navigation ignored. */
+  /** Neighbour group ids per direction. Drives DPad inter-region
+   *  transfer: pressing DPad <direction> activates `neighbours[direction]`
+   *  if declared. Left-stick (and any other "stick" source) walks
+   *  within the group — it never spills to a neighbour. Undeclared
+   *  directions fall back to within-group walking even on DPad, so
+   *  the operator on a controller without a stick can still navigate
+   *  vertically within a sidebar by pressing DPad UP/DOWN. */
   neighbours?: {
     left?: string;
     right?: string;
+    up?: string;
+    down?: string;
   };
   /** Pre-handler for direction events. Return true to consume the event
    *  (default movement skipped). Use this for orientation-specific
@@ -70,6 +77,13 @@ export type FocusGroupOptions = {
    *  want L1/R1 to cycle tabs rather than transfer focus. */
   onShoulderL?: () => void;
   onShoulderR?: () => void;
+  /** When false, the group registers without auto-claiming the active
+   *  slot on mount (even if `activeGroupId` is null). Use for sibling
+   *  region groups where one specific group should be the initial
+   *  landing surface — the others register with `autoClaim: false` so
+   *  registration order doesn't pick the active group arbitrarily.
+   *  Defaults true. */
+  autoClaim?: boolean;
 };
 
 type FocusGroupHandle = {
@@ -83,16 +97,66 @@ type Manager = {
   setActiveGroupId: Setter<string | null>;
   /** Set the active group. No-op if `id` isn't registered. */
   activate: (id: string) => void;
+  /** Called from useFocusGroup's onCleanup when the active group is
+   *  unmounting. Picks the most-recently-active still-registered
+   *  successor; falls back to the first registered group otherwise. */
+  demote: (unregisteringId: string) => void;
 };
+
+/// Bumps every time a group is registered or unregistered. Reactive —
+/// consumers that depend on "is group X registered yet?" can track this
+/// and re-evaluate their state. Used by LibraryPage's delegating effect
+/// so it re-fires when "library-grid" mounts later (empty library →
+/// imported games OR list-view → capsule-view).
+const [groupsVersionSig, setGroupsVersionSig] = createSignal(0);
+export const groupsVersion: Accessor<number> = groupsVersionSig;
 
 function createManager(): Manager {
   const [activeGroupId, setActiveGroupId] = createSignal<string | null>(null);
   const groups = new Map<string, FocusGroupHandle>();
+  // Most-recently-active history. When the active group unmounts, the
+  // demote logic walks this stack to find the youngest still-registered
+  // group instead of falling back to arbitrary Map insertion order
+  // (which used to teleport focus to whichever group happened to
+  // register first this session).
+  const activationHistory: string[] = [];
   function activate(id: string): void {
     if (!groups.has(id)) return;
+    const current = activeGroupId();
+    if (current !== null && current !== id) {
+      // Push the previous active onto the history so we can fall back
+      // to it later. Dedupe consecutive entries.
+      if (activationHistory[activationHistory.length - 1] !== current) {
+        activationHistory.push(current);
+        // Cap to prevent unbounded growth on long sessions — 32 is
+        // generous (operators rarely have nav chains > 4 deep).
+        if (activationHistory.length > 32) activationHistory.shift();
+      }
+    }
     setActiveGroupId(id);
   }
-  return { groups, activeGroupId, setActiveGroupId, activate };
+  function demote(unregisteringId: string): void {
+    // Walk history newest-first; pick the first still-registered id.
+    for (let i = activationHistory.length - 1; i >= 0; i--) {
+      const candidate = activationHistory[i];
+      if (candidate !== unregisteringId && groups.has(candidate)) {
+        activationHistory.length = i; // trim consumed entries
+        setActiveGroupId(candidate);
+        return;
+      }
+    }
+    // Nothing in history. Pick the MOST recently inserted registered
+    // group — that's typically the youngest mount and the one the
+    // operator most plausibly wants. Map iteration preserves insertion
+    // order, so the last key produced by the iterator is the newest.
+    // Setting null is a valid fallback if no groups are registered;
+    // the next `useFocusGroup.onMount` will then auto-claim because
+    // its "active is stale" check sees no active group.
+    let newest: string | null = null;
+    for (const key of groups.keys()) newest = key;
+    setActiveGroupId(newest);
+  }
+  return { groups, activeGroupId, setActiveGroupId, activate, demote };
 }
 
 const manager = createManager();
@@ -109,13 +173,33 @@ export function setSwapAB(on: boolean): void {
 }
 export const isSwapAB: Accessor<boolean> = swapABSig;
 
+// Diagnostic flag — defaults OFF for production. Flip via
+// `window.__oaFocusDebug = true` in DevTools to log every NavEvent
+// routing decision (event arrival, dpad transfer, walk / no-op, etc.).
+// The instrumentation stays compiled in so future regressions can be
+// diagnosed by flipping a single flag rather than re-shipping a
+// debug build.
+const FOCUS_DEBUG = () =>
+  (globalThis as { __oaFocusDebug?: boolean }).__oaFocusDebug === true;
+
+function focusLog(...args: unknown[]): void {
+  if (FOCUS_DEBUG()) console.log("[oa-focus]", ...args);
+}
+
 // Global event subscription — once, at module load. Routes every
 // NavEvent to whichever group is active. No-op if no group is active.
 onNavEvent((event) => {
   const id = manager.activeGroupId();
-  if (id === null) return;
+  if (id === null) {
+    focusLog("event dropped — no active group", event);
+    return;
+  }
   const handle = manager.groups.get(id);
-  if (!handle) return;
+  if (!handle) {
+    focusLog("event dropped — active group not in map", id, event);
+    return;
+  }
+  focusLog("event", { id, event });
   routeEvent(handle, event);
 });
 
@@ -147,24 +231,20 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
       case "start":
         handle.options.onStart?.();
         return;
-      case "l1": {
-        if (handle.options.onShoulderL) {
-          handle.options.onShoulderL();
-          return;
-        }
-        const left = handle.options.neighbours?.left;
-        if (left) manager.activate(left);
+      case "l1":
+        // Shoulder bumpers are EXPLICIT-OPT-IN now. The previous
+        // neighbours-based fallback collided with the new DPad =
+        // region-transfer model: DPad LEFT/RIGHT now does what L1/R1
+        // used to do for legacy sidebar↔grid jumps. L1/R1 is reserved
+        // for top-bar tab cycling (RetroverseShell intercepts
+        // globally) and for menus that want shoulder-cycle behaviour
+        // (MenuBar.cycleMenu, GameInfoModal.cycleTab — both wired via
+        // onShoulderL/R explicitly).
+        handle.options.onShoulderL?.();
         return;
-      }
-      case "r1": {
-        if (handle.options.onShoulderR) {
-          handle.options.onShoulderR();
-          return;
-        }
-        const right = handle.options.neighbours?.right;
-        if (right) manager.activate(right);
+      case "r1":
+        handle.options.onShoulderR?.();
         return;
-      }
       default:
         return;
     }
@@ -177,25 +257,64 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
 function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): void {
   const o = handle.options;
   const count = o.itemCount();
+  const cur = count > 0 ? clamp(o.focusedIndex(), 0, count - 1) : 0;
+
+  // Custom direction handler runs first (used by sidebar tree
+  // expand/collapse, rewind scrubber, etc.). Return true to consume.
+  if (o.onDirection?.(event.direction, cur)) {
+    focusLog("direction consumed by onDirection", {
+      id: o.id,
+      direction: event.direction,
+    });
+    return;
+  }
+
+  // DPad = inter-region transfer. Press DPad <dir> and activate the
+  // neighbour group declared for that direction. If no neighbour is
+  // declared on that direction the DPad press falls through to within-
+  // group walking — keeps a stickless controller usable: DPad UP/DOWN
+  // in a vertical sidebar walks rows even though no `up`/`down`
+  // neighbour is declared.
+  if (event.source === "dpad") {
+    const neighbour = o.neighbours?.[event.direction];
+    if (neighbour) {
+      focusLog("dpad transfer", {
+        from: o.id,
+        direction: event.direction,
+        to: neighbour,
+        registered: manager.groups.has(neighbour),
+      });
+      manager.activate(neighbour);
+      return;
+    }
+    focusLog("dpad fallback to walk — no neighbour", {
+      id: o.id,
+      direction: event.direction,
+      neighbours: o.neighbours,
+    });
+    // No neighbour in that direction → fall through to walk.
+  }
+
+  // Stick (any source other than DPad) walks within the group only —
+  // never spills. The grid's flat-list left/right behaviour stays so
+  // stick LEFT at column 0 of row N still wraps to column LAST of row
+  // N-1; only DPad LEFT at the absolute first tile triggers transfer
+  // (via the neighbour activation above).
   if (count <= 0) return;
-  const cur = clamp(o.focusedIndex(), 0, count - 1);
-  if (o.onDirection?.(event.direction, cur)) return;
   let next = cur;
 
   if (o.orientation === "vertical") {
     if (event.direction === "up") next = Math.max(0, cur - 1);
     else if (event.direction === "down") next = Math.min(count - 1, cur + 1);
-    // left/right ignored — vertical groups can opt to transfer focus
-    // via neighbours (handled by shoulder bumpers, not edge-of-list).
+    // left/right have no movement in a vertical group — bounded no-op.
   } else if (o.orientation === "horizontal") {
     if (event.direction === "left") next = Math.max(0, cur - 1);
     else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
   } else {
-    // grid — flat 1D list visually wrapped into columns. Left/right walk
-    // the list linearly (so left at column 0 lands on the previous row's
-    // last entry); up/down jump by `cols`. This matches Steam Big Picture
-    // / Xbox dashboard / every grid-shaped UI the operator's reflexes
-    // already know.
+    // grid — flat linear list visually wrapped into columns. Left/right
+    // walk the list linearly (left at column 0 of row N lands on
+    // column LAST of row N-1); up/down jump by `cols`. Matches Steam
+    // Big Picture / Xbox dashboard semantics.
     const cols = Math.max(1, o.columns?.() ?? 1);
     const row = Math.floor(cur / cols);
     const lastRow = Math.floor((count - 1) / cols);
@@ -208,8 +327,21 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
   }
 
   if (next !== cur) {
+    focusLog("walk", {
+      id: o.id,
+      direction: event.direction,
+      from: cur,
+      to: next,
+    });
     o.setFocusedIndex(next);
     focusDomFor(handle, next);
+  } else {
+    focusLog("walk no-op", {
+      id: o.id,
+      direction: event.direction,
+      cur,
+      count,
+    });
   }
 }
 
@@ -217,8 +349,14 @@ function focusDomFor(handle: FocusGroupHandle, index: number): void {
   const el = handle.binds.get(index);
   if (!el) return;
   // Move browser focus so screen readers + Tab continuity work too.
+  // preventScroll:true so we don't trigger a browser scroll that fights
+  // a virtualizer's scrollToIndex (the grid drives its own scroll via
+  // createEffect on focusedIndex). For non-virtualized lists, the
+  // consuming surface usually has `overflow-y:auto` on the row's
+  // ancestor — focus + the row's css transitions cover the rest. The
+  // previous unconditional `scrollIntoView` fought the virtualizer and
+  // is dropped.
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 /// Register a focus group. Call inside a Solid component / reactive
@@ -239,16 +377,33 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
 
   onMount(() => {
     manager.groups.set(options.id, handle);
-    if (manager.activeGroupId() === null) {
-      manager.setActiveGroupId(options.id);
+    setGroupsVersionSig((v) => v + 1);
+    if (options.autoClaim !== false) {
+      const currentActive = manager.activeGroupId();
+      // Auto-claim when either (a) nothing is active, OR (b) the
+      // current active id is stale — set to a group that's no longer
+      // registered. Stale ids accumulate when a page unmounts and the
+      // demote-history fallback picks a sibling that's also currently
+      // unmounting; the active id stays pointing at it even though
+      // the handle was deleted. Without this check, the next page's
+      // sidebar never wins activeGroupId on its `useFocusGroup`
+      // onMount (the `=== null` check failed because of the stale id),
+      // and the operator lands on a page where no group consumes
+      // their input.
+      const currentIsRegistered =
+        currentActive !== null && manager.groups.has(currentActive);
+      if (!currentIsRegistered) {
+        manager.setActiveGroupId(options.id);
+      }
     }
   });
   onCleanup(() => {
+    const wasActive = manager.activeGroupId() === options.id;
     manager.groups.delete(options.id);
-    if (manager.activeGroupId() === options.id) {
-      // Demote — next interaction picks a new active group.
-      const next = manager.groups.keys().next().value ?? null;
-      manager.setActiveGroupId(next);
+    setGroupsVersionSig((v) => v + 1);
+    if (wasActive) {
+      // Demote to the most-recently-active still-registered group.
+      manager.demote(options.id);
     }
   });
 
@@ -259,6 +414,25 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
       if (el) handle.binds.set(index, el);
       else handle.binds.delete(index);
     },
+  };
+}
+
+/// Snapshot the current active focus group id and return a function
+/// that restores it. Used by menus / modals to remember where the
+/// operator was BEFORE the overlay activated its own group, so
+/// closing the overlay returns focus to the original surface (works
+/// across Retroverse pages, not just LIBRARY).
+///
+/// Usage pattern (inside a menu / modal component):
+///   const restore = captureFocusReturn();
+///   onMount(() => focusGroup.activate());
+///   onCleanup(() => restore());
+export function captureFocusReturn(): () => void {
+  const saved = manager.activeGroupId();
+  return () => {
+    if (saved !== null && manager.groups.has(saved)) {
+      manager.setActiveGroupId(saved);
+    }
   };
 }
 
@@ -355,6 +529,10 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
     onShoulderR: opts.onShoulderR,
     neighbours: opts.neighbours,
     onDirection: opts.onDirection,
+    // Forward autoActivate to the inner useFocusGroup's autoClaim so
+    // sibling region groups with autoActivate:false don't accidentally
+    // win the "first registered claims active" race during mount.
+    autoClaim: opts.autoActivate !== false,
   });
 
   const rebind = (): void => {

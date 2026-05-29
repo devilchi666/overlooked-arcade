@@ -16,7 +16,13 @@ import type { NavButton } from "./types";
 import { hasSeenGamepad } from "./gamepad";
 import { isSwapAB } from "./focus";
 
-export type Hints = Partial<Record<NavButton, string>>;
+/// Pseudo-glyphs surfaced in the hint bar that don't correspond to
+/// a single NavButton — the DPad and the left stick each get a slot
+/// so pages can describe their navigation model ("DPad switch region",
+/// "Stick navigate") alongside the face-button glyphs.
+export type HintGlyph = NavButton | "dpad" | "stick";
+
+export type Hints = Partial<Record<HintGlyph, string>>;
 
 type StackEntry = { id: number; hints: Hints };
 
@@ -51,9 +57,12 @@ export const HintRegion: Component<{ hints: Hints | Accessor<Hints>; children?: 
   return <>{props.children}</>;
 };
 
-/// Order buttons appear in the bar. Reads left-to-right Xbox-style:
-/// A/B then X/Y then shoulder + start.
-const BUTTON_ORDER: NavButton[] = [
+/// Order glyphs appear in the bar. Reads left-to-right: navigation
+/// glyphs first (DPad + stick describing how to move), then A/B/X/Y,
+/// then shoulder + start.
+const HINT_ORDER: HintGlyph[] = [
+  "dpad",
+  "stick",
   "a",
   "b",
   "x",
@@ -64,11 +73,12 @@ const BUTTON_ORDER: NavButton[] = [
   "select",
 ];
 
-/// Display label for the button glyph. Xbox-style — Y top, A bottom,
-/// X left, B right. Operators on Nintendo-convention layouts can swap
-/// labels via Slice E's A/B swap setting (Phase 0 baseline keeps
-/// Xbox glyphs).
-const BUTTON_GLYPH: Record<NavButton, string> = {
+/// Display label for the glyph. Xbox-style — Y top, A bottom, X left,
+/// B right. Operators on Nintendo-convention layouts can swap labels
+/// via Slice E's A/B swap setting (Phase 0 baseline keeps Xbox glyphs).
+const HINT_GLYPH: Record<HintGlyph, string> = {
+  dpad: "✥",
+  stick: "○",
   a: "A",
   b: "B",
   x: "X",
@@ -96,7 +106,7 @@ export const HintBar: Component = () => {
     if (isSwapAB() && (hints.a !== undefined || hints.b !== undefined)) {
       hints = { ...hints, a: hints.b, b: hints.a };
     }
-    return BUTTON_ORDER.filter((b) => hints[b]).map((b) => ({ button: b, label: hints[b]! }));
+    return HINT_ORDER.filter((b) => hints[b]).map((b) => ({ button: b, label: hints[b]! }));
   });
   return (
     <Show when={hasSeenGamepad() && visibleEntries().length > 0}>
@@ -109,7 +119,7 @@ export const HintBar: Component = () => {
             {(entry) => (
               <div class="oa-hint-entry flex items-center gap-2">
                 <span class="oa-hint-glyph inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/15 px-1 text-[0.65rem] font-bold text-(--color-oa-ink)">
-                  {BUTTON_GLYPH[entry.button]}
+                  {HINT_GLYPH[entry.button]}
                 </span>
                 <span class="oa-hint-label text-(--color-oa-ink-dim)">{entry.label}</span>
               </div>

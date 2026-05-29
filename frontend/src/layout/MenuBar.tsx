@@ -24,7 +24,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -396,12 +396,14 @@ export const Menu: Component<MenuProps> = (props) => {
 };
 
 /// Tiny helper component — registers the menu's onClose with the back
-/// stack for the lifetime of the open popover. Also transfers active
-/// focus group back to library-grid on close so a B press doesn't strand
-/// the operator in an emptied menu group.
+/// stack for the lifetime of the open popover. captureFocusReturn
+/// snapshots whichever group was active when the menu opened so the
+/// cleanup restores that surface (works across Retroverse tabs, not
+/// just LIBRARY).
 const MenuOpenScope: Component<{ onClose: () => void }> = (props) => {
   useBackHandler(() => props.onClose());
-  onCleanup(() => activateFocusGroup("library-grid"));
+  const restoreFocus = captureFocusReturn();
+  onCleanup(restoreFocus);
   return null;
 };
 

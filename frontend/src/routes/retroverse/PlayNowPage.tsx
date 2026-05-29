@@ -24,7 +24,7 @@ import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import { useRetroverse } from "./context";
 
@@ -346,8 +346,9 @@ const PlayNowPage: Component = () => {
   const media = useMedia();
   const [activeMoodId, setActiveMoodId] = createSignal<MoodId>("for-you");
 
-  // Retroverse-UI controller-nav v2 — per-region focus groups so
-  // DPad LEFT/RIGHT transfers mood sidebar ↔ hero+rails ↔ right pane.
+  // Per-region focus groups (unified-focus model). `neighbours` drives
+  // both DPad edge-spillover and L1/R1 shoulder-bumper transfer
+  // (RetroverseShell intercepts L1/R1 globally for tab cycling).
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
@@ -359,13 +360,7 @@ const PlayNowPage: Component = () => {
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -373,17 +368,7 @@ const PlayNowPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -391,13 +376,7 @@ const PlayNowPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: CENTER_ID },
   });
   // Reroll seed — bumping it forces the hero memo to re-pick a fresh entry.
   const [rerollSeed, setRerollSeed] = createSignal(0);
@@ -634,6 +613,8 @@ const PlayNowPage: Component = () => {
       {/* Phase C4 hints — A Play / Y Reroll hero / X Surprise me. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Surprise me",

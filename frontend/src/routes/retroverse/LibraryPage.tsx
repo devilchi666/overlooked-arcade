@@ -1,23 +1,37 @@
 // LIBRARY tab — three-pane layout matching the operator-supplied
 // library-default-mockup.png:
 //   - Left:   LeftSidebar (system filters, reused from legacy).
+//             Wrapped by a page-level LEFT_ID `useDomQueryFocusGroup`
+//             — the SAME pattern HOME / COLLECTIONS / PLAY NOW /
+//             SETTINGS use for their sidebars. Stick walks systems;
+//             DPad-RIGHT transfers to CENTER. LeftSidebar's internal
+//             `"left-sidebar"` group stays registered for legacy-mode
+//             use but doesn't compete in Retroverse because the
+//             page-level LEFT_ID claims active first on mount.
 //   - Center: LibraryView (filter / sort / group pipeline + grid /
-//             detail list).
+//             detail list). Wrapped by a page-level CENTER group; a
+//             delegating effect hands off to `"library-grid"` for
+//             2D nav whenever it's registered (the ONE LIBRARY-
+//             specific behaviour beyond the unified region model).
 //   - Right:  GameDetailPanel when an entry is focused, "No selection"
 //             placeholder otherwise.
 //
-// Three page-level focus groups (left / center / right) with DPad
-// LEFT/RIGHT region transfer + UP/DOWN within. Embedded LeftSidebar +
-// VirtualLibraryGrid focus groups stay dormant in Retroverse mode
-// unless the operator mouse-clicks a tile (which auto-activates
-// "library-grid" and restores 2D nav for the mouse flow).
+// All three page-level groups use the same `useDomQueryFocusGroup`
+// pattern + neighbours wiring as the other Retroverse pages. The
+// only LIBRARY-specific behaviour is the delegating effect for grid
+// 2D nav.
 
-import { createMemo, Show, type Component } from "solid-js";
+import { createEffect, createMemo, Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import {
+  activateFocusGroup,
+  activeFocusGroupId,
+  groupsVersion,
+  useDomQueryFocusGroup,
+} from "../../nav/focus";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import { findNode } from "../../views/resolver";
 import { useRetroverse } from "./context";
@@ -60,29 +74,25 @@ const LibraryPage: Component = () => {
     return entries.filter((e) => e.systemId === sys).length;
   });
 
-  // Retroverse-UI controller-nav v2 — per-region focus groups so DPad
-  // LEFT/RIGHT transfers sidebar ↔ grid ↔ right detail pane. UP/DOWN
-  // stays within a region. L1/R1 cycles Retroverse tabs at the shell
-  // level — these groups don't wire shoulder neighbours so the shell
-  // handler isn't double-fired by an in-page transfer.
+  // Page-level region focus groups — same pattern as HOME /
+  // COLLECTIONS / PLAY NOW / SETTINGS. LEFT_ID wraps the
+  // `<aside>` containing LeftSidebar and auto-claims on mount.
+  // CENTER_ID and RIGHT_ID register with `autoActivate: false` so
+  // they're DPad-transfer targets but don't compete for the initial
+  // active slot.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
   const LEFT_ID = "retroverse-library-left";
   const CENTER_ID = "retroverse-library-center";
   const RIGHT_ID = "retroverse-library-right";
+  const GRID_ID = "library-grid";
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -90,17 +100,7 @@ const LibraryPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -108,13 +108,29 @@ const LibraryPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: CENTER_ID },
+  });
+
+  // Delegating effect — restore 2D grid nav. Whenever the page-level
+  // CENTER group becomes active AND the grid is registered, hand off
+  // to "library-grid" so DPad UP/DOWN walks rows + LEFT/RIGHT walks
+  // columns. The dependency on `groupsVersion` makes this re-fire
+  // when the grid mounts LATER (empty library → imported games OR
+  // list-view → capsule-view switch), so the operator gets 2D nav
+  // automatically without leaving + re-entering the tab.
+  //
+  // When the grid isn't registered (detail-list view, empty library)
+  // CENTER_ID stays active — operators can still walk header buttons
+  // and GridControls via the page-level DOM-query group.
+  createEffect(() => {
+    // Read groupsVersion so this effect re-runs on every register /
+    // unregister; the actual condition is the activeFocusGroupId match
+    // + grid being in the manager's map (encapsulated by activate's
+    // own `groups.has` gate).
+    groupsVersion();
+    if (activeFocusGroupId() === CENTER_ID) {
+      activateFocusGroup(GRID_ID);
+    }
   });
 
   return (
@@ -130,6 +146,8 @@ const LibraryPage: Component = () => {
           actions per docs/PLANS/retroverse-ui-rollout.md. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Search",
@@ -138,9 +156,12 @@ const LibraryPage: Component = () => {
           r1: "Next tab",
         }}
       />
-      {/* Left: system filter sidebar — reuses the existing LeftSidebar
-          so tier folders / per-system filters / drag-reorder all work
-          unchanged. Visual polish vs the mockup happens in a follow-up. */}
+      {/* Left: system filter sidebar — wrapped in the page-level
+          LEFT_ID DOM-query group, same as HOME / COLLECTIONS / PLAY
+          NOW / SETTINGS sidebars. LeftSidebar's internal
+          "left-sidebar" group stays for legacy-shell compatibility
+          but doesn't claim active in Retroverse because the page-
+          level LEFT_ID is registered first and claims on mount. */}
       <aside
         ref={(el) => (leftRef = el)}
         class="min-w-0 overflow-hidden border-r border-white/5"
@@ -191,6 +212,7 @@ const LibraryPage: Component = () => {
             onPickFolder={() => void ctx.onPickFolder()}
             onToggleFavorite={ctx.onToggleFavorite}
             showSystemHeader
+            gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
           />
         </div>
       </section>

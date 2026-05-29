@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import { systemThemes, type SystemId } from "../themes/registry";
-import { activateFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
 
@@ -179,11 +179,12 @@ const SystemContextMenu: Component<Props> = (props) => {
           }
           props.onClose();
         });
+        const restoreFocus = captureFocusReturn();
         onMount(() => {
           focusGroup.activate();
           setFocusedIndex(0);
         });
-        onCleanup(() => activateFocusGroup("left-sidebar"));
+        onCleanup(restoreFocus);
         return (
           <div
             data-system-context-root

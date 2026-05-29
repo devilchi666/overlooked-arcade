@@ -1,4 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
+import { useBackHandler } from "../nav/back";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
@@ -1057,8 +1059,33 @@ const ImportWizard: Component<Props> = (props) => {
     );
   };
 
+  // Controller-nav coverage. One DOM-query focus group spans every
+  // button inside the wizard panel; MutationObserver re-binds across
+  // step changes. B closes the wizard via the back-stack so the
+  // gamepad path mirrors Esc.
+  let wizardPanelRef: HTMLDivElement | undefined;
+  useDomQueryFocusGroup({
+    id: "import-wizard",
+    containerRef: () => wizardPanelRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+    onCancel: () => {
+      if (!scanRunning() && !committing()) props.onClose();
+    },
+  });
+
   return (
     <Show when={props.open}>
+      {(() => {
+        // Capture-restore + back-stack live inside the Show body so they
+        // mount/unmount with the modal — same pattern as other menus.
+        useBackHandler(() => {
+          if (!scanRunning() && !committing()) props.onClose();
+        });
+        const restoreFocus = captureFocusReturn();
+        onCleanup(restoreFocus);
+        return null;
+      })()}
       <div
         class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
         onClick={(e) => {
@@ -1068,6 +1095,7 @@ const ImportWizard: Component<Props> = (props) => {
         }}
       >
         <div
+          ref={(el) => (wizardPanelRef = el)}
           class="flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
           style={{ height: "min(640px, 85vh)" }}
           role="dialog"

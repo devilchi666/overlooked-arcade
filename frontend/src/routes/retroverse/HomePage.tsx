@@ -39,7 +39,7 @@ import { usePlatformMedia } from "../../library/platformMedia";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import type { RomEntry } from "../../library/types";
 import { HintRegion } from "../../nav/HintBar";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
 import { getSystemSpecs } from "./systemMetadataStubs";
@@ -198,10 +198,12 @@ const HomePage: Component = () => {
   const media = useMedia();
   const platformMedia = usePlatformMedia();
 
-  // Per-region focus groups (operator-spec controller-nav). Sidebar
-  // includes both Systems + Quick Launch since they're one column;
-  // center walks hero / popular / recent in DOM order; right walks
-  // the SystemInfoPanel cards.
+  // Per-region focus groups (unified-focus model). `neighbours` drives
+  // BOTH DPad edge-spillover and the L1/R1 shoulder-bumper transfer
+  // (which RetroverseShell still intercepts at the global level for
+  // tab cycling). UP/DOWN walks within a region; LEFT/RIGHT walks
+  // within (no movement for vertical), then spills to the neighbour
+  // at the container edge.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
@@ -213,13 +215,7 @@ const HomePage: Component = () => {
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -227,17 +223,7 @@ const HomePage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -245,13 +231,7 @@ const HomePage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: CENTER_ID },
   });
 
   const entriesBySystem = createMemo(() => {
@@ -459,6 +439,8 @@ const HomePage: Component = () => {
     >
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Select",
           b: "Back",
           x: "Search",

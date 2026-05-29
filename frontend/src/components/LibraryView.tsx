@@ -40,6 +40,11 @@ type Props = {
   /// Retroverse-UI LIBRARY polish — pass-through for the per-tile
   /// system-label header strip. See LibraryTile's prop docs.
   showSystemHeader?: boolean;
+  /// Retroverse-UI unified focus — passes through to VirtualLibraryGrid's
+  /// `focusGroupNeighbours` so the grid's DPad edge-spillover lands on
+  /// the Retroverse page's per-region groups instead of the legacy
+  /// left-sidebar / right-sidebar ids.
+  gridFocusNeighbours?: { left?: string; right?: string };
 };
 
 /**
@@ -183,6 +188,7 @@ const LibraryView: Component<Props> = (props) => {
                 }
                 onToggleFavorite={props.onToggleFavorite}
                 showSystemHeader={props.showSystemHeader}
+                focusGroupNeighbours={props.gridFocusNeighbours}
               />
             }
           >
@@ -192,10 +198,12 @@ const LibraryView: Component<Props> = (props) => {
               onShowSaves={props.onShowSaves}
               onPickContext={props.onPickContext}
               onFocus={props.onFocus}
+              onShowInfo={props.onShowInfo}
               selectedId={props.selectedId}
               variantCountFor={(id) =>
                 props.library.groupsByVariantId().get(id)?.variants.length
               }
+              focusGroupNeighbours={props.gridFocusNeighbours}
             />
           </Show>
         </Show>

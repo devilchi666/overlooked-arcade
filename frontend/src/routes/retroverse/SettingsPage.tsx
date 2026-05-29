@@ -32,7 +32,7 @@ import {
   StorageSettings,
   ThemesSettings,
 } from "../../components/SettingsSections";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import { useDomQueryFocusGroup } from "../../nav/focus";
 import { useRetroverse } from "./context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -224,10 +224,9 @@ const SettingsPage: Component = () => {
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
 
-  // Retroverse-UI controller-nav v2 — SETTINGS is 2-region only after
-  // the live-preview right pane was dropped (operator spec). DPad LEFT
-  // from center returns to left sidebar; UP/DOWN stays within a region;
-  // L1/R1 cycles tabs at the shell level.
+  // SETTINGS is 2-region only after the live-preview right pane was
+  // dropped (operator spec). Unified-focus model: `neighbours` drives
+  // DPad edge-spillover; RetroverseShell handles L1/R1 tab cycling.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   const LEFT_ID = "retroverse-settings-left";
@@ -237,13 +236,7 @@ const SettingsPage: Component = () => {
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -251,13 +244,9 @@ const SettingsPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      return false;
-    },
+    // No right neighbour — SETTINGS has no right pane. DPad RIGHT
+    // at the rightmost element is a no-op (intentional).
+    neighbours: { left: LEFT_ID },
   });
 
   return (
@@ -270,6 +259,8 @@ const SettingsPage: Component = () => {
       {/* Phase C1 hints — keep stub-compatible nav + add Y reset. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Select",
           b: "Back",
           x: "Search",

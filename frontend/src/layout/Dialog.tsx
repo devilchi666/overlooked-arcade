@@ -19,16 +19,21 @@ import {
   type JSX,
 } from "solid-js";
 import { useBackHandler } from "../nav/back";
+import { captureFocusReturn } from "../nav/focus";
 import { HintRegion } from "../nav/HintBar";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
 /// Tiny helper component — pushes the dialog's onClose onto the back
-/// stack for the lifetime of the open dialog. Mount/unmount tied to
-/// the parent `<Show when={open}>` block so the handler auto-pops on
-/// close. Renders nothing.
+/// stack for the lifetime of the open dialog AND captures the active
+/// focus group at open time so the cleanup restores focus to that
+/// surface (works across legacy + Retroverse without per-consumer
+/// wiring). Mount/unmount tied to the parent `<Show when={open}>`
+/// block so both behaviours auto-unwind on close.
 const DialogBackHandler: Component<{ onClose: () => void }> = (props) => {
   useBackHandler(() => props.onClose());
+  const restoreFocus = captureFocusReturn();
+  onCleanup(restoreFocus);
   return null;
 };
 

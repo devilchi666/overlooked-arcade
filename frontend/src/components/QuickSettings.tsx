@@ -13,7 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
 import type { SettingsStore } from "../settings/store";
-import { activateFocusGroup, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
+import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "./../nav/HintBar";
 
@@ -1649,11 +1649,12 @@ const ActionsPanel: Component<{
     onCancel: () => props.onClose(),
   });
   useBackHandler(() => props.onClose());
+  const restoreFocus = captureFocusReturn();
   onMount(() => {
     focusGroup.activate();
     setFocusedIndex(0);
   });
-  onCleanup(() => activateFocusGroup("library-grid"));
+  onCleanup(restoreFocus);
   return (
     <div class="flex flex-col gap-1.5 p-3">
       <HintRegion hints={{ a: "Activate", b: "Resume" }} />
