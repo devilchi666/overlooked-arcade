@@ -77,12 +77,64 @@ type StickState = {
   enteredAt: number;
   lastRepeatAt: number;
 };
+type HatState = {
+  direction: NavDirection | null;
+  enteredAt: number;
+  lastRepeatAt: number;
+};
+
+// HID HAT switch buckets — the 8 discrete fractional values an
+// analog axis emits when the controller reports its DPad as a
+// "POV hat" instead of buttons. Encoding `(n - 3.5) / 3.5` for
+// n = 0..7 (8 cardinal + diagonal directions). Idle sentinel sits
+// outside [-1, 1] — varies per controller (Faceoff Switch reports
+// 3.286), but anything beyond ±1.1 is treated as idle.
+//
+// Diagonals collapse to a cardinal so DPad-press-during-diagonal-mash
+// still produces a usable nav event. Choice of cardinal for each
+// diagonal: NE→up, SE→right, SW→down, NW→left (the more "first half"
+// of the diagonal).
+const HAT_BUCKETS: { value: number; dir: NavDirection }[] = [
+  { value: -1.000, dir: "up" },     // N
+  { value: -0.714, dir: "up" },     // NE → up
+  { value: -0.428, dir: "right" },  // E
+  { value: -0.143, dir: "right" },  // SE → right
+  { value:  0.143, dir: "down" },   // S
+  { value:  0.428, dir: "down" },   // SW → down
+  { value:  0.714, dir: "left" },   // W
+  { value:  1.000, dir: "left" },   // NW → left
+];
+
+function decodeHat(v: number): NavDirection | null {
+  // Idle sentinel — anything outside the [-1, 1] range can't be a
+  // valid HAT value, so we treat it as "no direction".
+  if (Math.abs(v) > 1.1) return null;
+  let bestDelta = Infinity;
+  let bestDir: NavDirection | null = null;
+  for (const b of HAT_BUCKETS) {
+    const d = Math.abs(b.value - v);
+    if (d < bestDelta) {
+      bestDelta = d;
+      bestDir = b.dir;
+    }
+  }
+  // Tolerance: HAT values are spaced ~0.286 apart, so 0.1 keeps us
+  // safely on the nearest bucket without ambiguity.
+  return bestDelta < 0.1 ? bestDir : null;
+}
 
 type Listener = (event: NavEvent) => void;
 
 const listeners = new Set<Listener>();
 const buttonStates = new Map<string, ButtonState>(); // `${padIdx}:${btnIdx}`
 const stickStates = new Map<number, StickState>(); // padIdx -> state
+const hatStates = new Map<string, HatState>(); // `${padIdx}:${axisIdx}` -> state
+// Set of (padIdx, axisIdx) we've detected as HAT axes — populated on
+// the first tick after connect by spotting axes with an idle value
+// outside [-1, 1] (real stick axes never produce out-of-range values;
+// HID HAT switches use sentinels like 3.286 / -3.0 / etc. for "idle").
+const hatAxes = new Map<number, Set<number>>(); // padIdx -> axisIdxs
+const hatAxesDetected = new Set<number>(); // padIdx — true after first detection pass
 let connectedPads = 0;
 let rafHandle: number | null = null;
 let started = false;
@@ -173,8 +225,13 @@ function handleDisconnect(e: GamepadEvent): void {
   // Drop state for the disconnected pad so a reconnect on the same
   // index starts clean.
   stickStates.delete(e.gamepad.index);
+  hatAxes.delete(e.gamepad.index);
+  hatAxesDetected.delete(e.gamepad.index);
   for (const key of Array.from(buttonStates.keys())) {
     if (key.startsWith(`${e.gamepad.index}:`)) buttonStates.delete(key);
+  }
+  for (const key of Array.from(hatStates.keys())) {
+    if (key.startsWith(`${e.gamepad.index}:`)) hatStates.delete(key);
   }
   if (connectedPads === 0 && rafHandle !== null) {
     cancelAnimationFrame(rafHandle);
@@ -187,13 +244,73 @@ function tick(now: DOMHighResTimeStamp): void {
   for (let i = 0; i < pads.length; i++) {
     const pad = pads[i];
     if (!pad) continue;
+    detectHatAxes(pad);
     pollButtons(pad, now);
     pollStick(pad, now);
+    pollHat(pad, now);
   }
   if (connectedPads > 0) {
     rafHandle = requestAnimationFrame(tick);
   } else {
     rafHandle = null;
+  }
+}
+
+/// Identify HAT-style axes on first tick after a pad connects. Any
+/// axis beyond the first two (left stick) whose value is outside the
+/// [-1, 1] range at detection time is treated as a HAT switch (real
+/// stick axes can't produce out-of-range values; HID HAT switches
+/// commonly report idle sentinels like 3.286 or similar). One-shot
+/// per pad — subsequent ticks don't re-scan.
+function detectHatAxes(pad: Gamepad): void {
+  if (hatAxesDetected.has(pad.index)) return;
+  hatAxesDetected.add(pad.index);
+  const set = new Set<number>();
+  for (let i = 2; i < pad.axes.length; i++) {
+    const v = pad.axes[i] ?? 0;
+    if (Math.abs(v) > 1.1) {
+      set.add(i);
+      console.log(
+        `[oa-gamepad] detected HAT axis ${i} on pad ${pad.index} (idle=${v.toFixed(3)})`,
+      );
+    }
+  }
+  if (set.size > 0) hatAxes.set(pad.index, set);
+}
+
+/// Read each detected HAT axis, decode to a NavDirection, and emit
+/// DPad-source events with the same down/up/repeat semantics as the
+/// analog stick. Operators with non-standard controllers (third-party
+/// Switch pads, generic USB pads, etc.) gain full DPad support.
+function pollHat(pad: Gamepad, now: number): void {
+  const axes = hatAxes.get(pad.index);
+  if (!axes) return;
+  for (const axisIdx of axes) {
+    const v = pad.axes[axisIdx] ?? 0;
+    const direction = decodeHat(v);
+    const key = `${pad.index}:${axisIdx}`;
+    let state = hatStates.get(key);
+    if (!state) {
+      state = { direction: null, enteredAt: 0, lastRepeatAt: 0 };
+      hatStates.set(key, state);
+    }
+    if (direction !== state.direction) {
+      if (state.direction !== null) {
+        emitDirection(state.direction, "up", "dpad", pad.index);
+      }
+      if (direction !== null) {
+        emitDirection(direction, "down", "dpad", pad.index);
+      }
+      state.direction = direction;
+      state.enteredAt = now;
+      state.lastRepeatAt = now;
+    } else if (direction !== null) {
+      const held = now - state.enteredAt;
+      if (held >= INITIAL_REPEAT_MS && now - state.lastRepeatAt >= REPEAT_INTERVAL_MS) {
+        state.lastRepeatAt = now;
+        emitDirection(direction, "repeat", "dpad", pad.index);
+      }
+    }
   }
 }
 
