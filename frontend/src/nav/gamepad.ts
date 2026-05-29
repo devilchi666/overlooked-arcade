@@ -147,9 +147,22 @@ export function stopGamepadInput(): void {
   connectedPads = 0;
 }
 
-function handleConnect(_e: GamepadEvent): void {
+function handleConnect(e: GamepadEvent): void {
   connectedPads++;
   setSessionEverSawGamepad(true);
+  // Diagnostic: log the pad's identity + mapping + raw button / axis
+  // counts on connect so we can spot non-standard layouts (DPad on
+  // axes instead of buttons, etc.). Once.
+  console.log(
+    "[oa-gamepad] connected",
+    JSON.stringify({
+      id: e.gamepad.id,
+      mapping: e.gamepad.mapping,
+      buttons: e.gamepad.buttons.length,
+      axes: e.gamepad.axes.length,
+      index: e.gamepad.index,
+    }),
+  );
   if (rafHandle === null) {
     rafHandle = requestAnimationFrame(tick);
   }
@@ -191,6 +204,12 @@ function pollButtons(pad: Gamepad, now: number): void {
     const prev = buttonStates.get(key);
     const buttonName = BUTTON_NAMES[i];
     const dpadDir = DPAD_DIRS[i];
+    // Diagnostic: log ANY button press at any index, even unmapped
+    // ones, so we can spot DPad on non-standard indices. Only logs on
+    // the down edge.
+    if (isPressed && !prev) {
+      console.log(`[oa-gamepad] raw button ${i} pressed`);
+    }
     if (!buttonName && !dpadDir) continue;
     // DPad and stick are no longer filtered by `navSource` — under the
     // new model (Phase 5) DPad transfers between regions and stick
@@ -223,8 +242,25 @@ function pollButtons(pad: Gamepad, now: number): void {
   }
 }
 
+// Tracks per-axis "have we logged this deflection yet?" so we surface
+// every distinct DPad/HAT axis at least once but don't spam the log.
+const seenAxisDeflection = new Set<string>();
+
 function pollStick(pad: Gamepad, now: number): void {
   if (pad.axes.length < 2) return;
+  // Diagnostic: log significant deflection on EVERY axis beyond the
+  // first two (left stick) once per axis. Surfaces DPad-on-axes
+  // layouts (axes 6/7 common on non-XInput pads).
+  for (let i = 2; i < pad.axes.length; i++) {
+    const v = pad.axes[i] ?? 0;
+    if (Math.abs(v) > 0.5) {
+      const key = `${pad.index}:${i}`;
+      if (!seenAxisDeflection.has(key)) {
+        seenAxisDeflection.add(key);
+        console.log(`[oa-gamepad] raw axis ${i} deflected to ${v.toFixed(2)}`);
+      }
+    }
+  }
   // Same as pollButtons: source filtering removed under the new
   // DPad-vs-stick model. The `navSource` legacy setting no longer
   // affects polling.
