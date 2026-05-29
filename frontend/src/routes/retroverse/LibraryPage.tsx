@@ -1,27 +1,25 @@
 // LIBRARY tab — three-pane layout matching the operator-supplied
 // library-default-mockup.png:
-//   - Left:   LeftSidebar (system filters, reused from legacy). The
-//             sidebar registers its OWN "left-sidebar" focus group
-//             which becomes the authoritative left region — no
-//             wrapping page-level group anymore (the previous one
-//             double-tracked indices and broke the sidebar's focus
-//             ring per the controller-pipeline audit).
+//   - Left:   LeftSidebar (system filters, reused from legacy).
+//             Wrapped by a page-level LEFT_ID `useDomQueryFocusGroup`
+//             — the SAME pattern HOME / COLLECTIONS / PLAY NOW /
+//             SETTINGS use for their sidebars. Stick walks systems;
+//             DPad-RIGHT transfers to CENTER. LeftSidebar's internal
+//             `"left-sidebar"` group stays registered for legacy-mode
+//             use but doesn't compete in Retroverse because the
+//             page-level LEFT_ID claims active first on mount.
 //   - Center: LibraryView (filter / sort / group pipeline + grid /
-//             detail list). Wrapped by a page-level CENTER group as
-//             the DPad transfer target; a delegating effect hands
-//             off to "library-grid" whenever it's registered so the
-//             operator gets 2D nav (UP/DOWN walks rows, LEFT/RIGHT
-//             walks columns; at the absolute top-left tile DPad
-//             LEFT spills to the sidebar, at the absolute bottom-
-//             right tile DPad RIGHT spills to the right pane).
+//             detail list). Wrapped by a page-level CENTER group; a
+//             delegating effect hands off to `"library-grid"` for
+//             2D nav whenever it's registered (the ONE LIBRARY-
+//             specific behaviour beyond the unified region model).
 //   - Right:  GameDetailPanel when an entry is focused, "No selection"
 //             placeholder otherwise.
 //
-// LeftSidebar's `focusGroupNeighbours.right` is overridden to point
-// at CENTER_ID so DPad-RIGHT from the sidebar lands on the right
-// neighbour the LibraryPage's center group manages. Grid's
-// `focusGroupNeighbours` re-point LEFT at `"left-sidebar"` so the
-// at-corner DPad exit transfers back to the sidebar.
+// All three page-level groups use the same `useDomQueryFocusGroup`
+// pattern + neighbours wiring as the other Retroverse pages. The
+// only LIBRARY-specific behaviour is the delegating effect for grid
+// 2D nav.
 
 import { createEffect, createMemo, Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
@@ -76,24 +74,33 @@ const LibraryPage: Component = () => {
     return entries.filter((e) => e.systemId === sys).length;
   });
 
-  // Center + right page-level focus groups. The left region is
-  // LeftSidebar's own "left-sidebar" group (no wrapping page-level
-  // group). CENTER_ID is the DPad transfer target from the sidebar;
-  // a delegating effect hands focus off to the grid when it's
-  // registered for 2D nav.
+  // Page-level region focus groups — same pattern as HOME /
+  // COLLECTIONS / PLAY NOW / SETTINGS. LEFT_ID wraps the
+  // `<aside>` containing LeftSidebar and auto-claims on mount.
+  // CENTER_ID and RIGHT_ID register with `autoActivate: false` so
+  // they're DPad-transfer targets but don't compete for the initial
+  // active slot.
+  let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
-  const SIDEBAR_ID = "left-sidebar";
+  const LEFT_ID = "retroverse-library-left";
   const CENTER_ID = "retroverse-library-center";
   const RIGHT_ID = "retroverse-library-right";
   const GRID_ID = "library-grid";
+  useDomQueryFocusGroup({
+    id: LEFT_ID,
+    containerRef: () => leftRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+    neighbours: { right: CENTER_ID },
+  });
   useDomQueryFocusGroup({
     id: CENTER_ID,
     containerRef: () => centerRef,
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    neighbours: { left: SIDEBAR_ID, right: RIGHT_ID },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -149,19 +156,22 @@ const LibraryPage: Component = () => {
           r1: "Next tab",
         }}
       />
-      {/* Left: system filter sidebar — LeftSidebar owns its own
-          "left-sidebar" focus group; the focusGroupNeighbours override
-          points its DPad-RIGHT spillover at the Retroverse CENTER
-          region. No page-level wrapping group so the sidebar's focus
-          ring is the single source of truth. */}
-      <aside class="min-w-0 overflow-hidden border-r border-white/5">
+      {/* Left: system filter sidebar — wrapped in the page-level
+          LEFT_ID DOM-query group, same as HOME / COLLECTIONS / PLAY
+          NOW / SETTINGS sidebars. LeftSidebar's internal
+          "left-sidebar" group stays for legacy-shell compatibility
+          but doesn't claim active in Retroverse because the page-
+          level LEFT_ID is registered first and claims on mount. */}
+      <aside
+        ref={(el) => (leftRef = el)}
+        class="min-w-0 overflow-hidden border-r border-white/5"
+      >
         <LeftSidebar
           layout={ctx.layout}
           library={ctx.library}
           views={ctx.views}
           currentView={ctx.currentView()}
           onNavigate={ctx.setCurrentView}
-          focusGroupNeighbours={{ right: CENTER_ID }}
         />
       </aside>
 
@@ -202,7 +212,7 @@ const LibraryPage: Component = () => {
             onPickFolder={() => void ctx.onPickFolder()}
             onToggleFavorite={ctx.onToggleFavorite}
             showSystemHeader
-            gridFocusNeighbours={{ left: SIDEBAR_ID, right: RIGHT_ID }}
+            gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
           />
         </div>
       </section>
