@@ -98,23 +98,15 @@ const LibraryPage: Component = () => {
     selector: "[data-oa-sidebar-row]",
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (direction, currentIndex) => {
-      // Restore the legacy LeftSidebar `"left-sidebar"` group's
-      // DPad tree expand/collapse behaviour on container rows, lost
-      // when LibraryPage's page-level LEFT_ID took over as the active
-      // sidebar group. Only LEFT/RIGHT on container rows are special;
-      // every other direction falls through to default walk + transfer.
-      //
-      //   LEFT  on expanded container  → collapse, consume.
-      //   LEFT  on collapsed container → fall through (no leftward
-      //                                  neighbour, so default no-op).
-      //   RIGHT on collapsed container → expand, consume.
-      //   RIGHT on expanded container  → fall through to DPad transfer
-      //                                  to CENTER (unified spillover).
-      //
-      // Leaf rows fall through entirely — DPad LEFT/RIGHT on a leaf
-      // transfers to CENTER (RIGHT) or no-ops (LEFT) per the page-
-      // level neighbours below.
+    onDirection: (direction, currentIndex, source) => {
+      // Stick LEFT/RIGHT on a container row expands/collapses the
+      // tree — matches the operator's mental model of "stick walks
+      // and explores within the region." DPad LEFT/RIGHT is reserved
+      // for region transfer and always falls through to the default
+      // (DPad-RIGHT activates `neighbours.right` = CENTER; DPad-LEFT
+      // has no leftward neighbour so it no-ops). Stick UP/DOWN walks
+      // normally; leaf rows + the All Games button never consume.
+      if (source !== "stick-left") return false;
       if (direction !== "left" && direction !== "right") return false;
       const root = leftRef;
       if (!root) return false;
