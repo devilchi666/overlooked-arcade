@@ -242,23 +242,31 @@ function pollButtons(pad: Gamepad, now: number): void {
   }
 }
 
-// Tracks per-axis "have we logged this deflection yet?" so we surface
-// every distinct DPad/HAT axis at least once but don't spam the log.
-const seenAxisDeflection = new Set<string>();
+// Track per-axis last-logged value so we surface every distinct DPad
+// or HAT-style axis position at least once but don't spam every frame
+// while it idles at the same value. Catches non-standard DPad
+// layouts where DPad reports as analog-axis values (typical on
+// third-party Switch controllers, HAT-style POV switches, etc.).
+const lastLoggedAxis = new Map<string, number>();
 
 function pollStick(pad: Gamepad, now: number): void {
   if (pad.axes.length < 2) return;
-  // Diagnostic: log significant deflection on EVERY axis beyond the
-  // first two (left stick) once per axis. Surfaces DPad-on-axes
-  // layouts (axes 6/7 common on non-XInput pads).
+  // Diagnostic: log every distinct value on axes beyond the first two
+  // (left stick). HAT-style DPads can report a single axis with one
+  // of 8 quantised positions (e.g. axis 9 on this controller); other
+  // layouts use two axes (6+7). Threshold lowered to 0.1 so even
+  // gentle DPad deflections surface, and the "distinct value" gate
+  // logs each new position rather than each frame.
   for (let i = 2; i < pad.axes.length; i++) {
     const v = pad.axes[i] ?? 0;
-    if (Math.abs(v) > 0.5) {
-      const key = `${pad.index}:${i}`;
-      if (!seenAxisDeflection.has(key)) {
-        seenAxisDeflection.add(key);
-        console.log(`[oa-gamepad] raw axis ${i} deflected to ${v.toFixed(2)}`);
-      }
+    if (Math.abs(v) <= 0.1) continue;
+    const key = `${pad.index}:${i}`;
+    const prev = lastLoggedAxis.get(key);
+    // Log if we've never logged this axis OR the value changed by > 0.1
+    // (so we capture HAT transitions like 1.0 → 0.43 → -0.14 → ...).
+    if (prev === undefined || Math.abs(prev - v) > 0.1) {
+      lastLoggedAxis.set(key, v);
+      console.log(`[oa-gamepad] raw axis ${i} = ${v.toFixed(3)}`);
     }
   }
   // Same as pollButtons: source filtering removed under the new
