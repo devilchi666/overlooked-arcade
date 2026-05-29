@@ -1,5 +1,117 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — Unified controller pipeline (DPad transfers / stick walks)
+
+Long-running arc fixing the controller-nav model end to end. Started
+from operator complaint "DPad does nothing on LIBRARY", widened into
+a full controller-pipeline audit, ended with an operator-approved
+unified model where DPad transfers regions and the left stick walks
+within regions. Merged as `1fcd522` (`--no-ff` from
+`feat/retroverse-ui-unified-focus-spillover`, 16 phase commits, 23
+files, +812 / -264 lines).
+
+**Shipped (in merge order):**
+
+- **Phase 1 framework** (`b972809`): `captureFocusReturn()` snapshot
+  helper for menus/modals; manager activation-history stack so
+  unmount picks last-known-good successor; `groupsVersion` reactive
+  signal; `focusDomFor` drops the duplicate `scrollIntoView` that
+  fought the virtualizer.
+- **Phase 2 menu/modal migration** (`45e1809`): 8 hardcoded
+  `activateFocusGroup("library-grid"/"left-sidebar")` cleanups
+  migrated to `captureFocusReturn` (TileContextMenu / CorePickerMenu
+  / RegionPicker / SaveSlotsModal / SystemContextMenu / QuickSettings
+  / GameInfoModal / MenuBar).
+- **Phase 3 per-page** (`85f394e`): LibraryPage initially dropped its
+  page-level LEFT in favor of LeftSidebar's internal group; CENTER →
+  library-grid delegating effect re-fires on `groupsVersion`;
+  LeftSidebar consumes DPad-RIGHT on expanded containers; grid bind
+  cleanup captures `flatIdx` at mount; CollectionsPage passes
+  `gridFocusNeighbours`.
+- **Phase 4 coverage** (`0587ac4`): DetailListView gains a focus
+  group (shares "library-grid" id); ImportWizard gains a DOM-query
+  focus group + `useBackHandler` + `captureFocusReturn`; Dialog
+  primitive's `DialogBackHandler` adds save/restore so every dialog
+  consumer inherits it.
+- **DPad regression fix** (`9206890`): restored empty-group
+  spillover, L1/R1 neighbours fallback, plumbed `autoClaim` through
+  `useDomQueryFocusGroup` so `autoActivate: false` siblings don't
+  win the first-registered race.
+- **Phase 5 split** (`afbea1b`): rewrote `applyDirection` to branch
+  on `event.source`. DPad activates `neighbours[direction]` (falls
+  back to walking if no neighbour). Left stick walks within only —
+  no spillover. L1/R1 explicit-opt-in (no neighbours fallback).
+  Updated `HintBar` with new `dpad` + `stick` pseudo-glyphs.
+  Controller-nav settings description updated.
+- **Source filter drop** (`b50cddd`): the persisted
+  `controllerNavSource = "stick-left"` was silencing every DPad press
+  at the gamepad poller before events reached the focus framework.
+  Removed the filter entirely under the new model — DPad and stick
+  carry different semantics, so suppressing one is never correct.
+  `setNavSource` becomes a no-op for settings round-trip.
+- **HAT-axis DPad support** (`7cdfacd`): operator's controller
+  (Faceoff Premiere Switch Pro, vendor 0e6f product 0184) advertises
+  `mapping: ""`, 14 buttons (no DPad slots 12-15), 10 axes. DPad
+  fires as a HID HAT switch on axis 9 with `(n-3.5)/3.5` encoding.
+  Added `decodeHat`, `detectHatAxes`, `pollHat`. Detection is
+  generic — any axis with idle value outside `[-1, 1]` at startup
+  is tagged as a HAT axis. See
+  [[reference_hid_hat_axis_decoding]].
+- **Stale-active-group fix** (`0ae2600`): on route changes, the
+  demote cascade left `activeGroupId` pointing at a stale
+  (unregistered) sibling. `useFocusGroup.onMount` now auto-claims
+  when `!currentIsRegistered` instead of `currentActive === null`.
+  `manager.demote`'s fallback picks the MOST recent inserted group
+  instead of the oldest. See
+  [[reference_focus_framework_stale_active_group]].
+- **LIBRARY unification** (`36fbbdb`): per operator request, LIBRARY
+  now uses the same page-level LEFT_ID / CENTER_ID / RIGHT_ID
+  pattern as HOME / COLLECTIONS / PLAY NOW / SETTINGS. LeftSidebar's
+  internal `"left-sidebar"` group stays registered for legacy-shell
+  use but doesn't compete because the page-level LEFT_ID claims
+  active first. Grid `focusGroupNeighbours.left` updated to point
+  at LEFT_ID. The delegating effect stays as the one LIBRARY-
+  specific behaviour.
+- **Diagnostic flag off** (`963a60e`): `FOCUS_DEBUG` defaults OFF
+  for production. Instrumentation stays compiled in — flip
+  `window.__oaFocusDebug = true` in DevTools to re-enable per-event
+  logging.
+
+**Key learnings (saved to memory):**
+
+- [[retroverse-controller-nav-spec]] updated to reflect the new
+  model. DPad = transfer, stick = walk. L1/R1 = tabs. B = back.
+  A = enter. Same on every page; emulator mode the only exception.
+- [[reference_hid_hat_axis_decoding]] documents the HAT axis pattern
+  for future non-standard controllers.
+- [[reference_focus_framework_stale_active_group]] documents the
+  auto-claim-on-stale fix + the newest-first demote fallback.
+
+**Almost / deferred to next session:**
+
+- Operator hint at end of session: "we have to work on other menus
+  down the road." Context menus (TileContextMenu / SystemContextMenu
+  / RegionPicker / CorePickerMenu) and dialogs (GameDialogs,
+  SettingsDialogs) work via the unified back-stack + `captureFocusReturn`
+  now, but their internal navigation may still feel different from
+  the page-level pattern. Polish pass needed: verify each menu's
+  open/close + within-menu nav matches the unified model.
+- LeftSidebar's tree expand/collapse via DPad on containers (was
+  handled by its internal group's `onDirection`) is lost in
+  Retroverse mode. Containers still expand via mouse click on the
+  twisty or A-press navigation. Re-wiring this through the page-
+  level LEFT_ID would need an `onDirection` that detects container
+  rows and toggles expand/collapse.
+- The `controllerNavSource` setting persists but is now a no-op.
+  Could be removed in a follow-up cleanup once we're confident no
+  operator wants the legacy behaviour.
+
+**Next:** Operator-chosen. Most likely the menu/dialog polish pass
+or returning to the deferred SETTINGS Per-system category lift +
+Slice 12 custom collections from the Retroverse rollout queue.
+
+— end of 2026-05-29 controller-pipeline session.
+
 ## 2026-05-28 — Full rollout to 6 operator-facing tabs + SETTINGS expansion
 
 Massive session — designed + built the entire Retroverse UI from
