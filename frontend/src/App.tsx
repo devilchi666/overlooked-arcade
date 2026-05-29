@@ -92,7 +92,7 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
-import { onNavEvent, setNavEnabled, setNavSource, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { onNavEvent, setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
 import { activeFocusGroupId, setSwapAB } from "./nav/focus";
 import { requestOpenFirstMenu } from "./layout/MenuBar";
@@ -355,7 +355,6 @@ const App: Component = () => {
     // is reliable.
     setNavEnabled(webviewFocused());
   });
-  createEffect(() => setNavSource(settings.controllerNavSource()));
   createEffect(() => setSwapAB(settings.controllerNavSwapAB()));
   // Per-System UI Stage 1 Slice 2: bridge the Settings master toggle
   // to the per-system SFX dispatcher. When the operator flips

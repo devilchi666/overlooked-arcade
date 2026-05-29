@@ -111,7 +111,6 @@ const DEFAULT_REWIND_BUFFER_MB = 64;
 // matches Steam Big Picture's snappy-but-visible 120ms; 0 disables the
 // transition for operators on very low-end hardware.
 const DEFAULT_CONTROLLER_NAV_ENABLED = true;
-const DEFAULT_CONTROLLER_NAV_SOURCE: ControllerNavSource = "both";
 const DEFAULT_CONTROLLER_NAV_SWAP_AB = false;
 const DEFAULT_CONTROLLER_NAV_ANIMATION_MS = 120;
 
@@ -146,18 +145,6 @@ const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = false;
 const DEFAULT_PROFILE_DISPLAY_NAME = "";
 const DEFAULT_PROFILE_AVATAR = "👤";
 
-export type ControllerNavSource = "dpad" | "stick-left" | "both";
-
-const CONTROLLER_NAV_SOURCE_OPTIONS: readonly ControllerNavSource[] = [
-  "dpad",
-  "stick-left",
-  "both",
-];
-
-function isControllerNavSource(v: unknown): v is ControllerNavSource {
-  return typeof v === "string" && (CONTROLLER_NAV_SOURCE_OPTIONS as readonly string[]).includes(v);
-}
-
 type Persisted = {
   scalingMode: ScalingMode;
   windowMode: WindowMode;
@@ -170,7 +157,6 @@ type Persisted = {
   rewindCaptureIntervalFrames: number;
   rewindBufferMegabytes: number;
   controllerNavEnabled: boolean;
-  controllerNavSource: ControllerNavSource;
   controllerNavSwapAB: boolean;
   controllerNavAnimationMs: number;
   perSystemUiEnabled: boolean;
@@ -244,7 +230,6 @@ function load(): Persisted {
     rewindCaptureIntervalFrames: DEFAULT_REWIND_INTERVAL,
     rewindBufferMegabytes: DEFAULT_REWIND_BUFFER_MB,
     controllerNavEnabled: DEFAULT_CONTROLLER_NAV_ENABLED,
-    controllerNavSource: DEFAULT_CONTROLLER_NAV_SOURCE,
     controllerNavSwapAB: DEFAULT_CONTROLLER_NAV_SWAP_AB,
     controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
     perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
@@ -297,9 +282,6 @@ function load(): Persisted {
         typeof parsed.controllerNavEnabled === "boolean"
           ? parsed.controllerNavEnabled
           : DEFAULT_CONTROLLER_NAV_ENABLED,
-      controllerNavSource: isControllerNavSource(parsed.controllerNavSource)
-        ? parsed.controllerNavSource
-        : DEFAULT_CONTROLLER_NAV_SOURCE,
       controllerNavSwapAB:
         typeof parsed.controllerNavSwapAB === "boolean"
           ? parsed.controllerNavSwapAB
@@ -435,8 +417,6 @@ export function createSettingsStore() {
     createSignal<number>(initial.rewindBufferMegabytes);
   const [controllerNavEnabled, setControllerNavEnabled] =
     createSignal<boolean>(initial.controllerNavEnabled);
-  const [controllerNavSource, setControllerNavSource] =
-    createSignal<ControllerNavSource>(initial.controllerNavSource);
   const [controllerNavSwapAB, setControllerNavSwapAB] =
     createSignal<boolean>(initial.controllerNavSwapAB);
   const [controllerNavAnimationMs, setControllerNavAnimationMs] =
@@ -478,7 +458,6 @@ export function createSettingsStore() {
       rewindCaptureIntervalFrames: rewindCaptureIntervalFrames(),
       rewindBufferMegabytes: rewindBufferMegabytes(),
       controllerNavEnabled: controllerNavEnabled(),
-      controllerNavSource: controllerNavSource(),
       controllerNavSwapAB: controllerNavSwapAB(),
       controllerNavAnimationMs: controllerNavAnimationMs(),
       perSystemUiEnabled: perSystemUiEnabled(),
@@ -598,7 +577,6 @@ export function createSettingsStore() {
     rewindCaptureIntervalFrames, setRewindCaptureIntervalFrames,
     rewindBufferMegabytes, setRewindBufferMegabytes,
     controllerNavEnabled, setControllerNavEnabled,
-    controllerNavSource, setControllerNavSource,
     controllerNavSwapAB, setControllerNavSwapAB,
     controllerNavAnimationMs, setControllerNavAnimationMs,
     perSystemUiEnabled, setPerSystemUiEnabled,
