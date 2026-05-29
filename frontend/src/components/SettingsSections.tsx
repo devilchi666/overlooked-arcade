@@ -26,6 +26,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
+import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
 import {
@@ -566,39 +567,58 @@ export const LibrarySettings: Component = () => {
   );
 };
 
-export const MediaSettings: Component = () => (
-  <div class="flex flex-col gap-4">
-    <SettingsCard title="Per-platform media">
-      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
-        Per-system art slots (banner / clear-logo / console / controller
-        / fanart / marquee / photo / wheel / background) are managed
-        from the legacy menu bar's{" "}
-        <span class="text-(--color-system-accent)">Library → Platform Media…</span>{" "}
-        surface. The HOME tab's hero already reads from those slots
-        immediately — files dropped under{" "}
-        <code class="rounded border border-white/10 bg-black/40 px-1 font-mono text-[0.65rem]">
-          {"<data_dir>/media/platform/<system_id>/"}
-        </code>{" "}
-        appear right away.
-      </p>
-      <p class="mt-3 text-[0.7rem] text-(--color-oa-ink-dim)/70">
-        Wrapping the PlatformMediaDialog body into this tab is a
-        follow-up; the existing component is modal-shaped and needs
-        the variant="panel" lift treatment GameInfoModal got in
-        Phase A Slice 3.
-      </p>
-    </SettingsCard>
+export const MediaSettings: Component = () => {
+  // Lift PlatformMediaDialog into the SETTINGS pane via the
+  // variant="panel" prop. Per-system art slots (banner / clear-logo /
+  // console / controller / fanart / marquee / photo / wheel /
+  // background) become editable directly here — same picker / clear
+  // affordances as the legacy Library Manager → Game media → Platform
+  // media… entry.
+  //
+  // Per-game cover art sync controls (libretro-thumbnails, region
+  // priority, identify ROMs, storage stats) stay on the SETTINGS →
+  // Library category's Game media tab — see the explanatory card
+  // below. We don't duplicate them here because:
+  //   1. They're already accessible from SETTINGS → Library → Game
+  //      media (the Library wrap that landed in the previous merge).
+  //   2. The Library Manager surface gives them better spatial
+  //      affordance — per-system rows with progress bars, sortable
+  //      region lists, etc. — which would clash with this category's
+  //      single-system focus.
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard title="Per-platform media">
+        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+          Pick a system, then assign images to each slot. The HOME
+          tab's hero, the LIBRARY tile header, and the kiosk wheel
+          all consume these files immediately — no rescan needed.
+          Operator-supplied art always wins over libretro-thumbnails
+          synced art.
+        </p>
+        <div class="-mx-5 -mb-5 mt-2">
+          <PlatformMediaDialog
+            variant="panel"
+            open
+            onClose={() => {}}
+          />
+        </div>
+      </SettingsCard>
 
-    <SettingsCard title="Per-game art (libretro-thumbnails sync)">
-      <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
-        Per-game cover art syncs from the libretro-thumbnails repo per
-        system. Controlled from the menu bar's{" "}
-        <span class="text-(--color-system-accent)">Tools → Sync media…</span>{" "}
-        surface today.
-      </p>
-    </SettingsCard>
-  </div>
-);
+      <SettingsCard title="Per-game art (libretro-thumbnails sync)">
+        <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
+          Per-game cover art syncs from the libretro-thumbnails repo
+          per system. Sync triggers, region priority, "only sync
+          identified" gate, hash-based ROM identification, and the
+          on-disk storage panel all live on the{" "}
+          <span class="text-(--color-system-accent)">Library</span>{" "}
+          category's <span class="text-(--color-oa-ink)">Game
+          media</span> tab — embedded above in SETTINGS →{" "}
+          <span class="text-(--color-system-accent)">Library</span>.
+        </p>
+      </SettingsCard>
+    </div>
+  );
+};
 
 type BiosEntryStatus = "ok" | "unknownHash" | "missing" | "error";
 

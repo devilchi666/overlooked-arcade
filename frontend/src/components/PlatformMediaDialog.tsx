@@ -33,6 +33,13 @@ type Props = {
   /// per-system page entry points; for now defaults to the first
   /// system in the registry.
   initialSystemId?: SystemId;
+  /// "dialog" (default) wraps the body in the Dialog primitive — the
+  /// legacy Library Manager → Game media → Platform media… entry.
+  /// "panel" drops the Dialog wrapper + the Close button so the body
+  /// embeds inside a parent shell that owns its own chrome
+  /// (Retroverse-UI SETTINGS → Media category). In panel mode `open`
+  /// and `onClose` are ignored.
+  variant?: "dialog" | "panel";
 };
 
 type MediaVariant = {
@@ -271,48 +278,43 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
     );
   };
 
-  return (
-    <Dialog
-      open={props.open}
-      onClose={props.onClose}
-      title="Platform media"
-      subtitle="Per-system hardware photos, controllers, wheel art, banners"
-      size="xl"
-    >
-      <div class="space-y-4 p-4">
-        {/* System picker */}
-        <div class="space-y-1">
-          <label class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-            System
-          </label>
-          <select
-            value={systemId()}
-            onChange={(e) => setSystemId(e.currentTarget.value as SystemId)}
-            class="w-full rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink)"
-          >
-            <For each={ALL_SYSTEM_IDS}>
-              {(sid) => (
-                <option value={sid}>
-                  {systemThemes[sid].displayName} ({sid})
-                </option>
-              )}
-            </For>
-          </select>
-        </div>
+  const body: JSX.Element = (
+    <div class="space-y-4 p-4">
+      {/* System picker */}
+      <div class="space-y-1">
+        <label class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+          System
+        </label>
+        <select
+          value={systemId()}
+          onChange={(e) => setSystemId(e.currentTarget.value as SystemId)}
+          class="w-full rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink)"
+        >
+          <For each={ALL_SYSTEM_IDS}>
+            {(sid) => (
+              <option value={sid}>
+                {systemThemes[sid].displayName} ({sid})
+              </option>
+            )}
+          </For>
+        </select>
+      </div>
 
-        {/* Error */}
-        <Show when={errMsg()}>
-          <p class="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-            {errMsg()}
-          </p>
-        </Show>
+      {/* Error */}
+      <Show when={errMsg()}>
+        <p class="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          {errMsg()}
+        </p>
+      </Show>
 
-        {/* Slot grid */}
-        <div class="grid gap-2 lg:grid-cols-2">
-          <For each={ALL_SLOTS}>{(slot) => slotRow(slot)}</For>
-        </div>
+      {/* Slot grid */}
+      <div class="grid gap-2 lg:grid-cols-2">
+        <For each={ALL_SLOTS}>{(slot) => slotRow(slot)}</For>
+      </div>
 
-        {/* Close */}
+      {/* Close — dialog only. In panel mode the embedding shell
+          (SETTINGS sidebar) owns navigation away from this category. */}
+      <Show when={props.variant !== "panel"}>
         <div class="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -322,7 +324,24 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
             Close
           </button>
         </div>
-      </div>
-    </Dialog>
+      </Show>
+    </div>
+  );
+
+  return (
+    <Show
+      when={props.variant !== "panel"}
+      fallback={body}
+    >
+      <Dialog
+        open={props.open}
+        onClose={props.onClose}
+        title="Platform media"
+        subtitle="Per-system hardware photos, controllers, wheel art, banners"
+        size="xl"
+      >
+        {body}
+      </Dialog>
+    </Show>
   );
 };
