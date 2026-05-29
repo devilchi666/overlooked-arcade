@@ -512,10 +512,11 @@ Four entries previously marked "open" had already shipped.
   click rename / delete. 506 oa-shell tests green.
 
 **Code-only, actually open (verified against code 2026-05-29):**
-- SETTINGS → Per-system drill-in group (`SettingsPage.tsx:317-325`
-  still says "Coming in a follow-up slice"). All 15 top-level
-  categories have real components; only the drill-into-a-single-
-  system path is missing.
+- ~~SETTINGS → Per-system drill-in group~~ — SHIPPED on
+  `feat/retroverse-ui-settings-per-system` (2 phase commits + docs).
+  Section components lifted into `perSystemSections.tsx`; sidebar
+  picker lists all 45 systems; center pane renders 4 inline cards
+  + Bindings / Core options launchers.
 - "Now playing" audio indicator in HintBar (`nav/HintBar.tsx` has
   no matching wiring).
 - LibraryPage VirtualLibraryGrid 2D nav restoration in Retroverse

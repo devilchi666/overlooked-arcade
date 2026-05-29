@@ -1,5 +1,72 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — SETTINGS Per-system drill-in (last open category)
+
+Closes the SETTINGS tab's last stub. Branch
+`feat/retroverse-ui-settings-per-system`, 2 phase commits.
+
+**Shipped:**
+
+- **F1 — Section lift** (`c155dc9`): pulled the Display / Rewind /
+  Shaders / Default-core section JSX out of `SystemDialogs.tsx` into
+  a new shared file `frontend/src/components/perSystemSections.tsx`
+  with a `usePerSystemOverrides` hook owning the fetch + patch
+  cycle. Legacy `SystemSettingsDialog` becomes a thin wrapper that
+  picks one section via the existing `section` prop. Bezel +
+  Overscan editors + RewindLiveStats moved alongside. Same UX, no
+  behavior change — the JSX moved verbatim. SystemDialogs.tsx
+  re-exports helper types so existing import sites stay untouched.
+
+- **F2 — Retroverse Per-system surface** (`7bb6fcf`):
+  - Sidebar: replaces the "Per-system ▾" stub with an interactive
+    expandable group. Click the header to toggle expand; when
+    expanded, shows all 45 registered systems sorted alphabetically
+    by display name, each with an accent dot + label. Clicking a
+    system row activates the "per-system" category with that system
+    picked.
+  - Center pane: new `PerSystemSettingsBody` component renders all 4
+    sections as inline cards plus two launcher buttons for the
+    bigger editors (`SystemBindingsDialog`, `SystemCoreOptionsDialog`).
+    Header card up top names the picked system + reminds the
+    operator about the inheritance chain.
+  - `CategoryId` gains `"per-system"`; the def lives outside the
+    GROUP_ORDER iteration since the sidebar entry doesn't render as
+    a flat button.
+  - `usePerSystemOverrides` re-fetches when the systemId changes so
+    swapping systems updates the cards in place. Monitors + cores
+    lists eagerly fetched once the surface becomes active.
+
+**Operator workflow now end-to-end:**
+
+  1. SETTINGS tab → "Per-system ▾" in sidebar → click to expand.
+  2. Pick any of the 45 systems.
+  3. Edit Display / Rewind / Shaders / Default core inline; each row
+     shows the inherited OA-wide value as a chip and flips to an
+     override-color treatment when the operator sets a value.
+  4. "Edit bindings…" + "Core options…" launchers open the existing
+     focused-editor dialogs.
+
+**Notes:**
+
+- All 15 SETTINGS top-level categories now have real bodies, and the
+  Per-system drill-in works for every registered system. The only
+  remaining SETTINGS gap is content-driven (theme packs, etc.) which
+  ships with Phase C6.
+- The lifted section components are reusable. A future "per-game" tab
+  could compose the same building blocks against a per-game override
+  hook with minimal new UI.
+- Bindings + Core options stay as dialogs by design — operator can
+  always swap back to a different system from the sidebar without
+  losing dialog state since the dialog mounts per-launch.
+
+**Next:** Operator-chosen. Per the post-audit §10:
+"Now playing" HintBar indicator (small, code-only),
+DISCOVER tab body (depends on C6 packs),
+Phase C6 content-packs infra (substantial),
+RetroAchievements integration (external service).
+
+— end of 2026-05-29 Per-system session.
+
 ## 2026-05-29 — Slice 12 custom collections (full feature)
 
 Operator-built collection lists alongside the smart-list COLLECTIONS
