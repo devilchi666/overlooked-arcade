@@ -491,44 +491,55 @@ Current status (2026-05-28):
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending its
   own scope arc.
 
-### Remaining work (as of end-of-session 2026-05-29)
+### Remaining work (as of end-of-session 2026-05-29, post-audit)
+
+Post-audit pass: re-derived every line from the code, not the doc.
+Four entries previously marked "open" had already shipped.
 
 **Recently closed (2026-05-29):**
 - ✅ Unified controller pipeline — DPad transfers regions, stick
   walks within; merged `1fcd522`.
 - ✅ Menu/dialog polish — Dialog primitive now claims active so
   A/X/Y don't leak behind modals; LIBRARY sidebar DPad expand /
-  collapse on container rows restored; legacy `controllerNavSource`
-  setting + plumbing removed. Branch
-  `feat/retroverse-ui-menu-polish`.
-
-**Code-only, no external content:**
-- ~~Slice 12 — custom-manual collections~~ — SHIPPED 2026-05-29 on
-  `feat/retroverse-ui-slice-12-custom-collections` (5 phase commits +
-  docs). v14 schema + Tauri commands + customCollections store +
+  collapse on container rows restored via stick-only `onDirection`;
+  legacy `controllerNavSource` setting + plumbing removed. Branch
+  `feat/retroverse-ui-menu-polish` merged `a211a2e`.
+- ✅ Slice 12 custom-manual collections — branch
+  `feat/retroverse-ui-slice-12-custom-collections` merged `d07cdff`.
+  v14 schema + Tauri commands + customCollections store +
   CollectionsPage MY COLLECTIONS sidebar + NewCollectionDialog +
-  TileContextMenu "Add to collection ▸" submenu + sidebar right-click
-  rename / delete. 506 oa-shell tests green.
-- SETTINGS → Per-system category (lift SystemSettingsDialog body).
-- ~~SETTINGS → Library full wrap~~ — SHIPPED `dbd7af4`
-  (LibraryManagerPage embedded as category body).
-- ~~SETTINGS → Media full wrap~~ — SHIPPED `4236bbd`
-  (PlatformMediaDialog variant="panel" lift).
-- ~~BIOS live-presence grid~~ — SHIPPED `cab4111`
-  (`get_bios_status` Tauri command + per-system Ready /
-  Present-unrecognized / Missing pills + sha-1 detail rows).
-- PLAY NOW placeholder moods (Quick / Marathon / Challenge /
-  Daily roulette) — need session-length tracking.
-- COLLECTIONS Hidden Gems + Last Played smart-lists (need rating
-  data / chronological play-order log).
-- HOME popular + recently-played carousel arrows + dot pagination
-  (currently CSS horizontal scroll).
+  TileContextMenu "Add to collection ▸" submenu + sidebar right-
+  click rename / delete. 506 oa-shell tests green.
+
+**Code-only, actually open (verified against code 2026-05-29):**
+- SETTINGS → Per-system drill-in group (`SettingsPage.tsx:317-325`
+  still says "Coming in a follow-up slice"). All 15 top-level
+  categories have real components; only the drill-into-a-single-
+  system path is missing.
+- "Now playing" audio indicator in HintBar (`nav/HintBar.tsx` has
+  no matching wiring).
 - LibraryPage VirtualLibraryGrid 2D nav restoration in Retroverse
   mode — superseded by the 2026-05-29 unified controller pipeline
   (page-level CENTER → "library-grid" delegating effect).
-- "Now playing" audio indicator in HintBar.
-- System Status panel — decide if/where to surface (was on HOME
-  v1 bottom-right, removed in HOME v2).
+
+**Closed but the doc carried them as open — fixed in this audit:**
+- ~~PLAY NOW Quick / Marathon / Challenge / Daily roulette / Surprise
+  me moods~~ — SHIPPED. `PlayNowPage.tsx:170-226` has all 9 moods
+  with working predicates (`isQuickEntry`, `isMarathonEntry`,
+  `isChallengeEntry`, `readDailyRoulette` with UTC-day lock).
+- ~~COLLECTIONS Hidden Gems + Last Played smart-lists~~ — SHIPPED.
+  `CollectionsPage.tsx:70-126` has all 6 lists with predicates,
+  including Hidden Gems (rating ≥ 4 OR favorite, < 30 min play) and
+  Last Played (full chronological history).
+- ~~HOME popular + recently-played carousel arrows + dot pagination~~
+  — SHIPPED. `HomePage.tsx:71-120` has arrow buttons + dot
+  pagination + ResizeObserver paging.
+- ~~System Status panel relocation~~ — SHIPPED. Relocated to
+  SETTINGS → Storage as `StorageSystemStatus`
+  (`SettingsSections.tsx:806`).
+- ~~SETTINGS → Library full wrap~~ — SHIPPED `dbd7af4`.
+- ~~SETTINGS → Media full wrap~~ — SHIPPED `4236bbd`.
+- ~~BIOS live-presence grid~~ — SHIPPED `cab4111`.
 
 **Infrastructure / substantial systems work:**
 - Phase C6 — content-packs infrastructure (oa-packs crate +
