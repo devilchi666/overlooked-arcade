@@ -54,6 +54,15 @@ type Props = {
   /// Retroverse-UI LIBRARY polish — pass-through for the per-tile
   /// system-label header strip. See LibraryTile's prop docs.
   showSystemHeader?: boolean;
+  /// Override the focus-group neighbours used for both DPad edge-
+  /// spillover (LEFT at the top-left tile, RIGHT at the bottom-right
+  /// tile) and the L1/R1 shoulder-bumper transfer. Defaults to the
+  /// legacy `left-sidebar` / `right-sidebar` ids; Retroverse mode
+  /// passes the per-page region group ids instead (e.g.
+  /// `retroverse-library-left` / `retroverse-library-right`) so
+  /// transfers land on the Retroverse page's regions rather than
+  /// the legacy Shell's sidebars (which aren't mounted in Retroverse).
+  focusGroupNeighbours?: { left?: string; right?: string };
 };
 
 type GridRow =
@@ -257,7 +266,10 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
       const e = flatEntries()[i];
       if (e) props.onShowInfo?.(e);
     },
-    neighbours: { left: "left-sidebar", right: "right-sidebar" },
+    neighbours: {
+      left: props.focusGroupNeighbours?.left ?? "left-sidebar",
+      right: props.focusGroupNeighbours?.right ?? "right-sidebar",
+    },
   });
 
   // Keep the focused tile visible. `align: "auto"` scrolls only when

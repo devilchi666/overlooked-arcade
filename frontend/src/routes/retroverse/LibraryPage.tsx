@@ -6,18 +6,25 @@
 //   - Right:  GameDetailPanel when an entry is focused, "No selection"
 //             placeholder otherwise.
 //
-// Three page-level focus groups (left / center / right) with DPad
-// LEFT/RIGHT region transfer + UP/DOWN within. Embedded LeftSidebar +
-// VirtualLibraryGrid focus groups stay dormant in Retroverse mode
-// unless the operator mouse-clicks a tile (which auto-activates
-// "library-grid" and restores 2D nav for the mouse flow).
+// Unified-focus model: three page-level region groups declare
+// `neighbours` for DPad edge-spillover. The grid's own "library-grid"
+// focus group is delegated to from CENTER via a createEffect so that
+// when the operator transfers into the center region, they land in
+// the grid for 2D navigation (UP/DOWN walks rows, LEFT/RIGHT walks
+// columns; at the absolute top-left tile DPad LEFT spills to the
+// sidebar, at the absolute bottom-right tile DPad RIGHT spills to
+// the right pane via the grid's overridden focusGroupNeighbours).
 
-import { createMemo, Show, type Component } from "solid-js";
+import { createEffect, createMemo, Show, type Component } from "solid-js";
 import LeftSidebar from "../../layout/LeftSidebar";
 import LibraryView from "../../components/LibraryView";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
+import {
+  activateFocusGroup,
+  activeFocusGroupId,
+  useDomQueryFocusGroup,
+} from "../../nav/focus";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import { findNode } from "../../views/resolver";
 import { useRetroverse } from "./context";
@@ -60,29 +67,25 @@ const LibraryPage: Component = () => {
     return entries.filter((e) => e.systemId === sys).length;
   });
 
-  // Retroverse-UI controller-nav v2 — per-region focus groups so DPad
-  // LEFT/RIGHT transfers sidebar ↔ grid ↔ right detail pane. UP/DOWN
-  // stays within a region. L1/R1 cycles Retroverse tabs at the shell
-  // level — these groups don't wire shoulder neighbours so the shell
-  // handler isn't double-fired by an in-page transfer.
+  // Per-region focus groups (unified-focus model). `neighbours` drives
+  // DPad edge-spillover. CENTER_ID is the page-level fallback for
+  // when the grid isn't mounted (empty library / detail-list view);
+  // a delegating effect below hands focus off to the grid's own
+  // "library-grid" group whenever CENTER becomes active and the grid
+  // is registered, restoring full 2D nav.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
   let rightRef: HTMLElement | undefined;
   const LEFT_ID = "retroverse-library-left";
   const CENTER_ID = "retroverse-library-center";
   const RIGHT_ID = "retroverse-library-right";
+  const GRID_ID = "library-grid";
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "right") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({
     id: CENTER_ID,
@@ -90,17 +93,7 @@ const LibraryPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(LEFT_ID);
-        return true;
-      }
-      if (dir === "right") {
-        activateFocusGroup(RIGHT_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: LEFT_ID, right: RIGHT_ID },
   });
   useDomQueryFocusGroup({
     id: RIGHT_ID,
@@ -108,13 +101,23 @@ const LibraryPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    onDirection: (dir) => {
-      if (dir === "left") {
-        activateFocusGroup(CENTER_ID);
-        return true;
-      }
-      return false;
-    },
+    neighbours: { left: CENTER_ID },
+  });
+
+  // Delegating effect — restore 2D grid nav. Whenever the page-level
+  // CENTER group becomes active, immediately hand off to the grid's
+  // own "library-grid" focus group (orientation: "grid") so DPad
+  // UP/DOWN walks rows + LEFT/RIGHT walks columns. The grid's
+  // focusGroupNeighbours override (passed in below) re-points
+  // LEFT/RIGHT spillover at LEFT_ID / RIGHT_ID so at-corner DPad
+  // exits land on the Retroverse regions instead of the legacy
+  // sidebars. `activateFocusGroup` is a no-op when "library-grid"
+  // isn't registered (grid not mounted — empty library or list view),
+  // so CENTER_ID stays active in that fallback case.
+  createEffect(() => {
+    if (activeFocusGroupId() === CENTER_ID) {
+      activateFocusGroup(GRID_ID);
+    }
   });
 
   return (
@@ -191,6 +194,7 @@ const LibraryPage: Component = () => {
             onPickFolder={() => void ctx.onPickFolder()}
             onToggleFavorite={ctx.onToggleFavorite}
             showSystemHeader
+            gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
           />
         </div>
       </section>
