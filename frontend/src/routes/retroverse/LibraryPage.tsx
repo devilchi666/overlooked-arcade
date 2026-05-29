@@ -90,8 +90,59 @@ const LibraryPage: Component = () => {
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
+    // Match only the LeftSidebar's primary navigation rows — twisty
+    // toggle buttons and the collapse/expand button at the bottom
+    // intentionally stay out of controller walk (the twisty is replaced
+    // by DPad LEFT/RIGHT on container rows via onDirection below; the
+    // collapse toggle is mouse-only utility chrome).
+    selector: "[data-oa-sidebar-row]",
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (direction, currentIndex) => {
+      // Restore the legacy LeftSidebar `"left-sidebar"` group's
+      // DPad tree expand/collapse behaviour on container rows, lost
+      // when LibraryPage's page-level LEFT_ID took over as the active
+      // sidebar group. Only LEFT/RIGHT on container rows are special;
+      // every other direction falls through to default walk + transfer.
+      //
+      //   LEFT  on expanded container  → collapse, consume.
+      //   LEFT  on collapsed container → fall through (no leftward
+      //                                  neighbour, so default no-op).
+      //   RIGHT on collapsed container → expand, consume.
+      //   RIGHT on expanded container  → fall through to DPad transfer
+      //                                  to CENTER (unified spillover).
+      //
+      // Leaf rows fall through entirely — DPad LEFT/RIGHT on a leaf
+      // transfers to CENTER (RIGHT) or no-ops (LEFT) per the page-
+      // level neighbours below.
+      if (direction !== "left" && direction !== "right") return false;
+      const root = leftRef;
+      if (!root) return false;
+      const items = Array.from(
+        root.querySelectorAll<HTMLElement>("[data-oa-sidebar-row]"),
+      ).filter((el) => !(el as Partial<HTMLButtonElement>).disabled);
+      const focused = items[currentIndex];
+      if (!focused) return false;
+      if (focused.getAttribute("data-oa-tree-node-kind") !== "container") {
+        return false;
+      }
+      const nodeId = focused.getAttribute("data-oa-tree-node-id");
+      if (!nodeId) return false;
+      const expanded = new Set(ctx.views.activeView()?.expandedNodes ?? []);
+      const isExpanded = expanded.has(nodeId);
+      if (direction === "left") {
+        if (isExpanded) {
+          ctx.views.toggleExpanded(nodeId);
+          return true;
+        }
+        return false;
+      }
+      if (!isExpanded) {
+        ctx.views.toggleExpanded(nodeId);
+        return true;
+      }
+      return false;
+    },
     neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({

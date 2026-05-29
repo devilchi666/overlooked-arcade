@@ -284,6 +284,9 @@ const ContainerRow: Component<{
       </button>
       <button
         type="button"
+        data-oa-sidebar-row
+        data-oa-tree-node-id={props.container.id}
+        data-oa-tree-node-kind="container"
         onClick={(e) => {
           e.currentTarget.blur();
           props.onNavigate();
@@ -357,6 +360,9 @@ const LeafRow: Component<{
       </Show>
       <button
         type="button"
+        data-oa-sidebar-row
+        data-oa-tree-node-id={props.leaf.id}
+        data-oa-tree-node-kind="leaf"
         onClick={(e) => {
           e.currentTarget.blur();
           props.onNavigate();

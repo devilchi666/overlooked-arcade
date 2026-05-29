@@ -798,6 +798,7 @@ const QuickItem: Component<{
   >
     <button
       type="button"
+      data-oa-sidebar-row
       onClick={(e) => {
         e.currentTarget.blur();
         if (!props.disabled) props.onClick();
@@ -852,6 +853,7 @@ const CollapsedLeaf: Component<{
     >
       <button
         type="button"
+        data-oa-sidebar-row
         onClick={(e) => {
           e.currentTarget.blur();
           props.onClick();
