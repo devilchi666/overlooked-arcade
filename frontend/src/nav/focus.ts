@@ -145,10 +145,16 @@ function createManager(): Manager {
         return;
       }
     }
-    // Nothing in history — fall through to "first registered" so we
-    // still pick something rather than nulling out the active group.
-    const next = groups.keys().next().value ?? null;
-    setActiveGroupId(next);
+    // Nothing in history. Pick the MOST recently inserted registered
+    // group — that's typically the youngest mount and the one the
+    // operator most plausibly wants. Map iteration preserves insertion
+    // order, so the last key produced by the iterator is the newest.
+    // Setting null is a valid fallback if no groups are registered;
+    // the next `useFocusGroup.onMount` will then auto-claim because
+    // its "active is stale" check sees no active group.
+    let newest: string | null = null;
+    for (const key of groups.keys()) newest = key;
+    setActiveGroupId(newest);
   }
   return { groups, activeGroupId, setActiveGroupId, activate, demote };
 }
@@ -370,8 +376,23 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
   onMount(() => {
     manager.groups.set(options.id, handle);
     setGroupsVersionSig((v) => v + 1);
-    if (manager.activeGroupId() === null && options.autoClaim !== false) {
-      manager.setActiveGroupId(options.id);
+    if (options.autoClaim !== false) {
+      const currentActive = manager.activeGroupId();
+      // Auto-claim when either (a) nothing is active, OR (b) the
+      // current active id is stale — set to a group that's no longer
+      // registered. Stale ids accumulate when a page unmounts and the
+      // demote-history fallback picks a sibling that's also currently
+      // unmounting; the active id stays pointing at it even though
+      // the handle was deleted. Without this check, the next page's
+      // sidebar never wins activeGroupId on its `useFocusGroup`
+      // onMount (the `=== null` check failed because of the stale id),
+      // and the operator lands on a page where no group consumes
+      // their input.
+      const currentIsRegistered =
+        currentActive !== null && manager.groups.has(currentActive);
+      if (!currentIsRegistered) {
+        manager.setActiveGroupId(options.id);
+      }
     }
   });
   onCleanup(() => {
