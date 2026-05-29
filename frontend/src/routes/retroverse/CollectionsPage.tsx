@@ -13,9 +13,11 @@
 //
 // Smart-list predicates run over the existing LibraryStore — no separate
 // fetch. Slice 11a wired the favorite + completed + last_played_at columns
-// into RomEntry; those + `players` drive the four implemented smart lists.
-// Hidden Gems + Last Played are documented placeholders (depend on rating
-// data + chronological play-order semantics not yet shipped).
+// into RomEntry. All six smart lists now ship real predicates: Favorites
+// / Recently played / Completed / Multi-player + the follow-up additions
+// Hidden Gems (rating ≥ 4 OR favorite, AND playTimeSecs < 30 min) and
+// Last Played (every entry with a lastPlayedAt, full chronological
+// history — Recently played is its 30-day subset).
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
@@ -48,6 +50,17 @@ type SmartListDef = {
 
 // 30-day recency window — matches the design doc's "rolling window."
 const RECENT_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+
+// Hidden Gems "barely touched" threshold. Under 30 minutes of total
+// play time across all sessions is the "you sampled it but never
+// really got into it" zone — the operator's existing rating /
+// favoriting then becomes the "this deserves another look" signal.
+const HIDDEN_GEM_PLAY_THRESHOLD_SECS = 30 * 60;
+// Hidden Gems rating cutoff. 4.0 / 5.0 covers "great" and above when
+// the metadata enrichment populates the rating field; libraries
+// without rating data fall back to the favorite-flagged half of the
+// OR (so the list still surfaces something useful).
+const HIDDEN_GEM_RATING_CUTOFF = 4.0;
 
 const SMART_LISTS: readonly SmartListDef[] = [
   {
@@ -86,15 +99,24 @@ const SMART_LISTS: readonly SmartListDef[] = [
     id: "hidden-gems",
     label: "Hidden gems",
     glyph: "💎",
-    description: "Highly rated but barely played — needs rating data not yet enriched.",
-    predicate: null,
+    description:
+      "Highly rated or favorited, but you've barely touched them (< 30 minutes total).",
+    predicate: (entry) => {
+      const playTime = entry.playTimeSecs ?? 0;
+      if (playTime >= HIDDEN_GEM_PLAY_THRESHOLD_SECS) return false;
+      const highlyRated =
+        typeof entry.rating === "number" &&
+        entry.rating >= HIDDEN_GEM_RATING_CUTOFF;
+      return highlyRated || Boolean(entry.favorite);
+    },
   },
   {
     id: "last-played",
     label: "Last played",
     glyph: "🏁",
-    description: "Chronological play-order — needs session-end log data.",
-    predicate: null,
+    description:
+      "Every game you've ever launched, most recent first. The full play history — Recently played is the 30-day rolling subset.",
+    predicate: (entry) => Boolean(entry.lastPlayedAt),
   },
 ];
 
@@ -161,15 +183,30 @@ const CollectionsPage: Component = () => {
   const activeSmartList = () =>
     SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
 
-  // Filtered entries for the active smart list. Sorting policy: Recently
-  // played descends on lastPlayedAt; everything else falls back on
-  // title-natural (the order the LibraryStore already returns).
+  // Filtered entries for the active smart list. Sorting policy:
+  //   Recently played + Last played: descending on lastPlayedAt
+  //     (both are chronological — the difference is the 30-day cap).
+  //   Hidden gems: descending on rating, falling back to favorite,
+  //     so the strongest signals lead the grid.
+  //   Everything else: title-natural (the order the LibraryStore
+  //     already returns).
   const filteredEntries = createMemo<RomEntry[]>(() => {
     const list = activeSmartList();
     if (!list.predicate) return [];
     const matches = ctx.library.state.entries.filter(list.predicate);
-    if (list.id === "recent") {
+    if (list.id === "recent" || list.id === "last-played") {
       return [...matches].sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0));
+    }
+    if (list.id === "hidden-gems") {
+      return [...matches].sort((a, b) => {
+        const ra = a.rating ?? 0;
+        const rb = b.rating ?? 0;
+        if (ra !== rb) return rb - ra;
+        // Favorited beats unfavorited at equal rating.
+        const fa = a.favorite ? 1 : 0;
+        const fb = b.favorite ? 1 : 0;
+        return fb - fa;
+      });
     }
     return matches;
   });
@@ -313,18 +350,6 @@ const CollectionsPage: Component = () => {
         {/* Grid — empty-state card when 0 matches. */}
         <div class="min-h-0 flex-1 overflow-hidden">
           <Switch>
-            <Match when={activeSmartList().predicate === null}>
-              <div class="flex h-full items-center justify-center p-12">
-                <div class="max-w-md rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
-                  <p class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                    Coming in a follow-up slice
-                  </p>
-                  <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-                    {activeSmartList().description}
-                  </p>
-                </div>
-              </div>
-            </Match>
             <Match when={filteredEntries().length === 0}>
               <div class="flex h-full items-center justify-center p-12">
                 <div class="max-w-md rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
@@ -338,7 +363,11 @@ const CollectionsPage: Component = () => {
                         ? "Mark a game complete from the tile context menu to add it here."
                         : activeSmartList().id === "recent"
                           ? "Play a game to populate this list. Sessions are tracked from launch to exit."
-                          : "No games match this filter yet."}
+                          : activeSmartList().id === "last-played"
+                            ? "Play any game to start tracking your history. Once a session ends the game shows up here."
+                            : activeSmartList().id === "hidden-gems"
+                              ? "Either heart a few games you've barely played, or run Sync metadata to enrich ratings — entries you've spent < 30 minutes with will surface here."
+                              : "No games match this filter yet."}
                   </p>
                 </div>
               </div>
