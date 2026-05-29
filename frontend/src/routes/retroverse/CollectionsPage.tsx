@@ -19,7 +19,7 @@
 // Last Played (every entry with a lastPlayedAt, full chronological
 // history — Recently played is its 30-day subset).
 
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
@@ -286,10 +286,53 @@ const CollectionsPage: Component = () => {
   /// Operator clicks "+ New collection" — defers to the App-level
   /// NewCollectionDialog (registered on the RetroverseContext) so
   /// every entry point uses the same Dialog primitive surface.
-  /// Rename / delete via right-click on the sidebar row land in
-  /// Slice E.
   function handleNewCollection() {
     ctx.onOpenNewCollection(null);
+  }
+
+  /// Right-click target for the per-row context menu (Rename /
+  /// Delete). `null` = no menu open. Position is the click coords
+  /// so the popover anchors to the click site.
+  const [rowContextFor, setRowContextFor] = createSignal<{
+    collectionId: string;
+    currentName: string;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  function openRowContext(
+    collectionId: string,
+    currentName: string,
+    e: MouseEvent,
+  ) {
+    e.preventDefault();
+    setRowContextFor({
+      collectionId,
+      currentName,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }
+  function closeRowContext() {
+    setRowContextFor(null);
+  }
+
+  function handleRename(target: { collectionId: string; currentName: string }) {
+    closeRowContext();
+    ctx.onOpenRenameCollection(target.collectionId, target.currentName);
+  }
+
+  async function handleDelete(target: { collectionId: string; currentName: string }) {
+    closeRowContext();
+    const ok = window.confirm(
+      `Delete \"${target.currentName}\"? Games stay in your library; the collection and its membership list are removed.`,
+    );
+    if (!ok) return;
+    // If the deleted collection is currently the active list, fall
+    // back to Favorites so the center pane keeps something rendered.
+    const cur = activeList();
+    if (cur.kind === "custom" && cur.id === target.collectionId) {
+      setActiveList({ kind: "smart", id: "favorites" });
+    }
+    await ctx.customCollections.deleteCollection(target.collectionId);
   }
 
   // After a new collection lands in the store (createCollection
@@ -365,6 +408,7 @@ const CollectionsPage: Component = () => {
                           e.currentTarget.blur();
                           setActiveList({ kind: "custom", id: col.id });
                         }}
+                        onContextMenu={(e) => openRowContext(col.id, col.name, e)}
                         class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                         classList={{
                           "bg-(--color-system-accent)/15 text-(--color-oa-ink)": isActive(),
@@ -372,7 +416,7 @@ const CollectionsPage: Component = () => {
                             !isActive(),
                         }}
                         aria-current={isActive() ? "page" : undefined}
-                        title={col.name}
+                        title={`${col.name}\n(Right-click for rename / delete)`}
                       >
                         <span class="w-4 text-center text-sm">📁</span>
                         <span class="truncate">{col.name}</span>
@@ -566,6 +610,86 @@ const CollectionsPage: Component = () => {
           />
         </Show>
       </aside>
+
+      {/* Slice 12E — right-click context popover for a custom-
+          collection sidebar row. Rename opens the Dialog primitive
+          in rename mode; Delete runs a confirm before firing. Closes
+          on outside-click + Escape via the global handlers below. */}
+      <Show when={rowContextFor()}>
+        {(target) => <CollectionRowContextMenu target={target()} onClose={closeRowContext} onRename={handleRename} onDelete={(t) => void handleDelete(t)} />}
+      </Show>
+    </div>
+  );
+};
+
+/// Tiny popover with Rename / Delete actions for one custom-
+/// collection row. Closes on Esc + outside click; keyboard A on the
+/// focused row activates it (same pattern TileContextMenu uses).
+const CollectionRowContextMenu: Component<{
+  target: { collectionId: string; currentName: string; position: { x: number; y: number } };
+  onClose: () => void;
+  onRename: (target: { collectionId: string; currentName: string }) => void;
+  onDelete: (target: { collectionId: string; currentName: string }) => void;
+}> = (props) => {
+  const t = () => ({
+    collectionId: props.target.collectionId,
+    currentName: props.target.currentName,
+  });
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === "Escape") props.onClose();
+  }
+  function onWindowClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (!target || !target.closest("[data-collection-row-ctx]")) {
+      props.onClose();
+    }
+  }
+  onMount(() => {
+    window.addEventListener("keydown", onWindowKey, true);
+    window.addEventListener("mousedown", onWindowClick, true);
+  });
+  onCleanup(() => {
+    window.removeEventListener("keydown", onWindowKey, true);
+    window.removeEventListener("mousedown", onWindowClick, true);
+  });
+  return (
+    <div
+      data-collection-row-ctx
+      class="fixed z-50 min-w-[12rem] overflow-hidden rounded-md border border-white/10 bg-(--color-oa-bg-deep)/95 text-sm shadow-2xl shadow-black/60 backdrop-blur"
+      style={{
+        left: `${props.target.position.x}px`,
+        top: `${props.target.position.y}px`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div class="border-b border-white/5 px-3 py-2">
+        <p class="truncate text-xs font-medium text-(--color-oa-ink)">
+          {props.target.currentName}
+        </p>
+        <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+          Custom collection
+        </p>
+      </div>
+      <ul class="py-1">
+        <li>
+          <button
+            type="button"
+            onClick={() => props.onRename(t())}
+            class="flex w-full items-center px-3 py-1.5 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06]"
+          >
+            Rename…
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            onClick={() => props.onDelete(t())}
+            class="flex w-full items-center px-3 py-1.5 text-left text-sm text-(--color-oa-ink-dim) hover:bg-red-500/10 hover:text-(--color-oa-ink)"
+          >
+            Delete…
+          </button>
+        </li>
+      </ul>
     </div>
   );
 };

@@ -1,28 +1,39 @@
-// Retroverse-UI Phase C3 Slice 12 — create-collection dialog.
+// Retroverse-UI Phase C3 Slice 12 — create / rename collection dialog.
 //
-// Opened from the COLLECTIONS sidebar "+ New collection" button and
-// from the TileContextMenu "Add to collection ▸" submenu's
-// "+ New collection…" tail entry. In the tile-menu path the caller
-// passes a `romId`, and on successful create the dialog also drops
-// that rom into the new collection so the operator's flow matches
-// "I'm right-clicking a tile because I want this game in a new list."
+// Two modes share the same Dialog surface so the operator gets a
+// consistent text-input UX whether they're naming a new list (create)
+// or relabeling an existing one (rename):
 //
-// Renders inside the Dialog primitive so it inherits the back-stack
-// + focus-restore + inert-overlay polish shipped in the menu-polish
-// pass.
+//   - create: shown from the COLLECTIONS sidebar "+ New collection"
+//     button and from the TileContextMenu "+ New collection…" tail
+//     entry. Optional `seedRomId` drops a rom into the new collection
+//     on successful create — used by the tile-menu path so the
+//     operator's "make a list and add this game to it" flow is a
+//     single dialog open.
+//
+//   - rename: shown from the right-click context menu on a custom
+//     collection sidebar row. Pre-populates the input with the
+//     current name; on submit calls renameCollection.
+//
+// Both run inside the Dialog primitive so they inherit the inert-
+// overlay + back-stack + focus-restore polish shipped in the menu-
+// polish pass.
 
 import { createEffect, createSignal, Show, type Component } from "solid-js";
 import { Dialog } from "../layout/Dialog";
 import type { CustomCollectionsStore } from "../library/customCollections";
 import type { RomId } from "../library/types";
 
+export type CollectionDialogMode =
+  | { kind: "create"; seedRomId: RomId | null }
+  | { kind: "rename"; collectionId: string; currentName: string };
+
 type Props = {
-  open: boolean;
+  /// Non-null = open in this mode. Null = closed. The mode shape
+  /// carries every piece of context the dialog needs so a single
+  /// signal in App.tsx controls both surfaces.
+  mode: CollectionDialogMode | null;
   onClose: () => void;
-  /// If non-null, the new collection automatically gets this rom as
-  /// its first member on successful create. Comes from the tile-
-  /// menu's "+ New collection…" path.
-  seedRomId: RomId | null;
   customCollections: CustomCollectionsStore;
 };
 
@@ -31,36 +42,50 @@ const NewCollectionDialog: Component<Props> = (props) => {
   const [busy, setBusy] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
 
-  // Reset the name field every time the dialog opens (so a previous
-  // session's stale value doesn't leak back), and focus the input
-  // after the Dialog has mounted its overlay.
+  const isRename = () => props.mode?.kind === "rename";
+  const title = () => (isRename() ? "Rename collection" : "New collection");
+  const submitLabel = () => (isRename() ? "Save" : "Create");
+  const busyLabel = () => (isRename() ? "Saving…" : "Creating…");
+
+  // Reset / hydrate the name field every time the dialog opens.
+  // Rename pre-fills with the current name; create starts empty.
   createEffect(() => {
-    if (props.open) {
-      setName("");
-      setBusy(false);
-      // Focus on the next microtask so the Dialog's mount completes
-      // and the inert focus group doesn't reclaim the browser focus.
-      queueMicrotask(() => inputRef?.focus());
-    }
+    const mode = props.mode;
+    if (mode === null) return;
+    setName(mode.kind === "rename" ? mode.currentName : "");
+    setBusy(false);
+    // Focus + select on next microtask so the Dialog overlay's mount
+    // completes first.
+    queueMicrotask(() => {
+      inputRef?.focus();
+      if (mode.kind === "rename") inputRef?.select();
+    });
   });
 
   async function submit() {
     const trimmed = name().trim();
-    if (!trimmed || busy()) return;
+    const mode = props.mode;
+    if (!trimmed || busy() || mode === null) return;
     setBusy(true);
-    const id = await props.customCollections.createCollection(trimmed);
-    if (id && props.seedRomId) {
-      await props.customCollections.addToCollection(id, props.seedRomId);
+    if (mode.kind === "create") {
+      const id = await props.customCollections.createCollection(trimmed);
+      if (id && mode.seedRomId) {
+        await props.customCollections.addToCollection(id, mode.seedRomId);
+      }
+      setBusy(false);
+      if (id) props.onClose();
+    } else {
+      await props.customCollections.renameCollection(mode.collectionId, trimmed);
+      setBusy(false);
+      props.onClose();
     }
-    setBusy(false);
-    if (id) props.onClose();
   }
 
   return (
     <Dialog
-      open={props.open}
+      open={props.mode !== null}
       onClose={props.onClose}
-      title="New collection"
+      title={title()}
       size="sm"
     >
       <form
@@ -85,7 +110,7 @@ const NewCollectionDialog: Component<Props> = (props) => {
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim) focus-visible:border-(--color-system-accent) focus-visible:outline-none disabled:opacity-50"
           />
         </label>
-        <Show when={props.seedRomId}>
+        <Show when={props.mode?.kind === "create" && (props.mode as { seedRomId: RomId | null }).seedRomId}>
           <p class="rounded-md border border-(--color-system-accent)/30 bg-(--color-system-accent)/10 px-3 py-2 text-[0.65rem] text-(--color-oa-ink-dim)">
             The game you right-clicked will be added to this collection on
             create.
@@ -108,7 +133,7 @@ const NewCollectionDialog: Component<Props> = (props) => {
             disabled={busy() || name().trim().length === 0}
             class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:bg-(--color-system-accent)/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy() ? "Creating…" : "Create"}
+            {busy() ? busyLabel() : submitLabel()}
           </button>
         </div>
       </form>

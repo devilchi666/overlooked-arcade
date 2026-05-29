@@ -76,6 +76,10 @@ export type RetroverseContextValue = {
   /// collection with that rom on create. Used by CollectionsPage's
   /// "+ New collection" sidebar button (passes null).
   onOpenNewCollection: (seedRomId: string | null) => void;
+  /// Phase C3 Slice 12 — open the same dialog in rename mode for an
+  /// existing collection. Used by the right-click context menu on a
+  /// custom-collection sidebar row.
+  onOpenRenameCollection: (collectionId: string, currentName: string) => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

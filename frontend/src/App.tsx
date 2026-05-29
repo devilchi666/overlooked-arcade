@@ -27,7 +27,7 @@ import LibraryManagerPage from "./components/LibraryManagerPage";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
-import NewCollectionDialog from "./components/NewCollectionDialog";
+import NewCollectionDialog, { type CollectionDialogMode } from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
 import Shell from "./layout/Shell";
 import TopToolbar from "./layout/TopToolbar";
@@ -239,12 +239,12 @@ const App: Component = () => {
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
-  /// Phase C3 Slice 12 — NewCollectionDialog open/closed + optional
-  /// seed rom. `null` = closed. `{ romId: null }` = open from the
-  /// COLLECTIONS sidebar's + New collection button. `{ romId: <id> }`
-  /// = open from a tile context menu, which adds that rom to the new
-  /// collection on create.
-  const [newCollectionFor, setNewCollectionFor] = createSignal<{ romId: string | null } | null>(null);
+  /// Phase C3 Slice 12 — NewCollectionDialog mode. `null` = closed.
+  /// Two open modes: `create` (optional seedRomId — non-null when the
+  /// dialog was launched from a tile context menu so the rom is
+  /// dropped in on create) and `rename` (relabel an existing list).
+  const [collectionDialogMode, setCollectionDialogMode] =
+    createSignal<CollectionDialogMode | null>(null);
   function openProperties(entry: RomEntry) {
     setPropertiesFor(entry);
   }
@@ -2012,7 +2012,9 @@ const App: Component = () => {
             onAddLibraryFolder: handleAddLibraryFolder,
             onRescanLibraryFolders: handleRescanLibraryFolders,
             onOpenNewCollection: (seedRomId) =>
-              setNewCollectionFor({ romId: seedRomId }),
+              setCollectionDialogMode({ kind: "create", seedRomId }),
+            onOpenRenameCollection: (collectionId, currentName) =>
+              setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
@@ -2121,13 +2123,14 @@ const App: Component = () => {
         onPickRegion={(entry) => setRegionPickerFor(entry)}
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
-        onOpenNewCollection={(romId) => setNewCollectionFor({ romId })}
+        onOpenNewCollection={(romId) =>
+          setCollectionDialogMode({ kind: "create", seedRomId: romId })
+        }
       />
       <NewCollectionDialog
-        open={newCollectionFor() !== null}
-        seedRomId={newCollectionFor()?.romId ?? null}
+        mode={collectionDialogMode()}
         customCollections={customCollections}
-        onClose={() => setNewCollectionFor(null)}
+        onClose={() => setCollectionDialogMode(null)}
       />
       <GamePropertiesDialog
         open={propertiesFor() !== null}
