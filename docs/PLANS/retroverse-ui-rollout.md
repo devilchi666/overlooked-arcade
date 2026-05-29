@@ -491,7 +491,16 @@ Current status (2026-05-28):
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending its
   own scope arc.
 
-### Remaining work (as of end-of-session 2026-05-28)
+### Remaining work (as of end-of-session 2026-05-29)
+
+**Recently closed (2026-05-29):**
+- ✅ Unified controller pipeline — DPad transfers regions, stick
+  walks within; merged `1fcd522`.
+- ✅ Menu/dialog polish — Dialog primitive now claims active so
+  A/X/Y don't leak behind modals; LIBRARY sidebar DPad expand /
+  collapse on container rows restored; legacy `controllerNavSource`
+  setting + plumbing removed. Branch
+  `feat/retroverse-ui-menu-polish`.
 
 **Code-only, no external content:**
 - Slice 12 — custom-manual collections (SQLite + CRUD + sidebar

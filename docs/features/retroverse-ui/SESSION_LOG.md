@@ -1,5 +1,74 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — Menu/dialog polish + sidebar DPad + dropped controllerNavSource
+
+Follow-up to the same-day unified controller pipeline arc. Operator
+queued three items as "polish where it still feels rough" and asked
+to ship them in branch order. Branch
+`feat/retroverse-ui-menu-polish`, 3 phase commits.
+
+**Shipped:**
+
+- **Phase 1 — Dialog primitive claims active** (`d619b7a`): the menu
+  audit found that Dialog consumers (SettingsDialogs, GameDialogs,
+  PlatformMediaDialog, GamePropertiesDialog, ScummvmDetectDialog,
+  ImportArtPackDialog, SystemDialogs, WidgetCustomizerDialog,
+  HelpDialogs, DebugLogDialog, ScreenshotGalleryDialog) used
+  `captureFocusReturn` + `useBackHandler` but never activated a focus
+  group, so while a Settings/Properties/Help dialog was up, A on the
+  controller would route to whichever surface was last active behind
+  the modal (typically the library grid → launching a tile). Added an
+  inert focus group in `DialogBackHandler` that itemCount=0 / no-op
+  handlers and an explicit `group.activate()` on mount; cleanup runs
+  LIFO so the captured surface is restored. Monotonic id counter for
+  stacked dialogs.
+
+- **Phase 2 — LIBRARY sidebar DPad tree expand/collapse** (`ddd76a1`):
+  with LibraryPage's page-level `LEFT_ID` claiming active in
+  Retroverse mode, the legacy `left-sidebar` group's `onDirection`
+  (DPad LEFT collapses / DPad RIGHT expands a container) no longer
+  fired. Added `data-oa-sidebar-row` to the All Games / leaf-label /
+  container-label / collapsed-leaf buttons + `data-oa-tree-node-id`
+  + `data-oa-tree-node-kind` on tree rows; narrowed `LEFT_ID`'s
+  selector to `[data-oa-sidebar-row]` so the walk skips twisty
+  toggle buttons + the collapse-utility button. New `onDirection`
+  on the page-level `LEFT_ID` reads the focused button's
+  `data-oa-tree-node-kind` — on container rows, LEFT collapses
+  expanded (consume) / RIGHT expands collapsed (consume); already-
+  expanded RIGHT and already-collapsed LEFT fall through to the
+  default DPad behaviour (RIGHT transfers to CENTER, LEFT no-ops).
+  Leaf rows always fall through.
+
+- **Phase 3 — Drop `controllerNavSource` setting** (`0931a41`):
+  the legacy DPad / stick-left / both source filter was already a
+  no-op after Phase 5 of the unified pipeline (each source carries
+  different semantics now). Removed end-to-end: settings store
+  type/persisted/signal/getter/setter/fallback/parser/save entry,
+  SettingsDialogs + SettingsSections rows, App.tsx setNavSource
+  round-trip, gamepad.ts NavSource type + setNavSource stub + two
+  stale source-filter comments. Persisted `"stick-left"` / `"dpad"`
+  values become inert on first save (key disappears from the
+  serialized blob).
+
+**Workspace tests:** 497 oa-shell + 19 + 20 + 24 + 16 + 1 across the
+crate suites, all green.
+
+**Notes for future polish:**
+
+- The page-level `LEFT_ID` selector narrowing (skip the twisty
+  buttons) doubles as a navigation ergonomics fix — operators now
+  walk container rows as ONE item instead of two (twisty + label).
+- `controllerNavSource` is gone but the broader
+  `controllerNavEnabled` + `controllerNavSwapAB` +
+  `controllerNavAnimationMs` settings stay — those still have meaningful
+  effects.
+
+**Next:** Operator-chosen from the Retroverse rollout queue —
+Slice 12 custom collections, SETTINGS Per-system lift, Phase C6
+content-packs infra, or content workstream.
+
+— end of 2026-05-29 menu-polish session.
+
 ## 2026-05-29 — Unified controller pipeline (DPad transfers / stick walks)
 
 Long-running arc fixing the controller-nav model end to end. Started
