@@ -613,6 +613,8 @@ const PlayNowPage: Component = () => {
       {/* Phase C4 hints — A Play / Y Reroll hero / X Surprise me. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Surprise me",

@@ -139,6 +139,8 @@ const LibraryPage: Component = () => {
           actions per docs/PLANS/retroverse-ui-rollout.md. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Search",

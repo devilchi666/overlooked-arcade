@@ -54,11 +54,18 @@ export type FocusGroupOptions = {
   onTertiary?: (index: number) => void;
   /** Start button anywhere in the group. */
   onStart?: () => void;
-  /** Neighbour group ids for shoulder-bumper transfer. `null` = nothing
-   *  there; navigation ignored. */
+  /** Neighbour group ids per direction. Drives DPad inter-region
+   *  transfer: pressing DPad <direction> activates `neighbours[direction]`
+   *  if declared. Left-stick (and any other "stick" source) walks
+   *  within the group — it never spills to a neighbour. Undeclared
+   *  directions fall back to within-group walking even on DPad, so
+   *  the operator on a controller without a stick can still navigate
+   *  vertically within a sidebar by pressing DPad UP/DOWN. */
   neighbours?: {
     left?: string;
     right?: string;
+    up?: string;
+    down?: string;
   };
   /** Pre-handler for direction events. Return true to consume the event
    *  (default movement skipped). Use this for orientation-specific
@@ -198,31 +205,20 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
       case "start":
         handle.options.onStart?.();
         return;
-      case "l1": {
-        if (handle.options.onShoulderL) {
-          handle.options.onShoulderL();
-          return;
-        }
-        // Fall back to neighbours-based transfer for legacy callers
-        // (LeftSidebar / RightSidebar / VirtualLibraryGrid rely on
-        // this for the legacy shell's L1/R1 sidebar↔grid jump). In
-        // Retroverse mode the shell intercepts L1/R1 globally for
-        // tab cycling; the focus-framework's neighbour activation
-        // becomes a moot intermediate before the route change
-        // unmounts the old page — invisible side-effect.
-        const left = handle.options.neighbours?.left;
-        if (left) manager.activate(left);
+      case "l1":
+        // Shoulder bumpers are EXPLICIT-OPT-IN now. The previous
+        // neighbours-based fallback collided with the new DPad =
+        // region-transfer model: DPad LEFT/RIGHT now does what L1/R1
+        // used to do for legacy sidebar↔grid jumps. L1/R1 is reserved
+        // for top-bar tab cycling (RetroverseShell intercepts
+        // globally) and for menus that want shoulder-cycle behaviour
+        // (MenuBar.cycleMenu, GameInfoModal.cycleTab — both wired via
+        // onShoulderL/R explicitly).
+        handle.options.onShoulderL?.();
         return;
-      }
-      case "r1": {
-        if (handle.options.onShoulderR) {
-          handle.options.onShoulderR();
-          return;
-        }
-        const right = handle.options.neighbours?.right;
-        if (right) manager.activate(right);
+      case "r1":
+        handle.options.onShoulderR?.();
         return;
-      }
       default:
         return;
     }
@@ -235,32 +231,47 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
 function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): void {
   const o = handle.options;
   const count = o.itemCount();
-  // Empty group — horizontal DPad still spills so a count==0 region
-  // (filtered grid, empty library, list view with no entries) doesn't
-  // trap the operator. UP/DOWN on an empty group is a no-op.
-  if (count <= 0) {
-    maybeSpillHorizontal(o, event.direction);
-    return;
-  }
-  const cur = clamp(o.focusedIndex(), 0, count - 1);
+  const cur = count > 0 ? clamp(o.focusedIndex(), 0, count - 1) : 0;
+
+  // Custom direction handler runs first (used by sidebar tree
+  // expand/collapse, rewind scrubber, etc.). Return true to consume.
   if (o.onDirection?.(event.direction, cur)) return;
+
+  // DPad = inter-region transfer. Press DPad <dir> and activate the
+  // neighbour group declared for that direction. If no neighbour is
+  // declared on that direction the DPad press falls through to within-
+  // group walking — keeps a stickless controller usable: DPad UP/DOWN
+  // in a vertical sidebar walks rows even though no `up`/`down`
+  // neighbour is declared.
+  if (event.source === "dpad") {
+    const neighbour = o.neighbours?.[event.direction];
+    if (neighbour) {
+      manager.activate(neighbour);
+      return;
+    }
+    // No neighbour in that direction → fall through to walk.
+  }
+
+  // Stick (any source other than DPad) walks within the group only —
+  // never spills. The grid's flat-list left/right behaviour stays so
+  // stick LEFT at column 0 of row N still wraps to column LAST of row
+  // N-1; only DPad LEFT at the absolute first tile triggers transfer
+  // (via the neighbour activation above).
+  if (count <= 0) return;
   let next = cur;
 
   if (o.orientation === "vertical") {
     if (event.direction === "up") next = Math.max(0, cur - 1);
     else if (event.direction === "down") next = Math.min(count - 1, cur + 1);
-    // left/right — no horizontal movement possible; falls through to
-    // the spillover guard below which activates the neighbour group
-    // when one is registered (universal unified-focus rule).
+    // left/right have no movement in a vertical group — bounded no-op.
   } else if (o.orientation === "horizontal") {
     if (event.direction === "left") next = Math.max(0, cur - 1);
     else if (event.direction === "right") next = Math.min(count - 1, cur + 1);
   } else {
-    // grid — flat 1D list visually wrapped into columns. Left/right walk
-    // the list linearly (so left at column 0 lands on the previous row's
-    // last entry); up/down jump by `cols`. This matches Steam Big Picture
-    // / Xbox dashboard / every grid-shaped UI the operator's reflexes
-    // already know.
+    // grid — flat linear list visually wrapped into columns. Left/right
+    // walk the list linearly (left at column 0 of row N lands on
+    // column LAST of row N-1); up/down jump by `cols`. Matches Steam
+    // Big Picture / Xbox dashboard semantics.
     const cols = Math.max(1, o.columns?.() ?? 1);
     const row = Math.floor(cur / cols);
     const lastRow = Math.floor((count - 1) / cols);
@@ -275,30 +286,6 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
   if (next !== cur) {
     o.setFocusedIndex(next);
     focusDomFor(handle, next);
-    return;
-  }
-
-  // Movement was not possible inside this group. For horizontal DPad
-  // presses, spill to the neighbour in that direction if one is set.
-  // Universal "spill at the absolute container edge" rule — works the
-  // same way for vertical (no horizontal walking possible), horizontal
-  // (cur == 0 going left or cur == count-1 going right), and grid
-  // (cur == 0 going left or cur == count-1 going right). UP/DOWN
-  // deliberately do NOT spill — the operator can use B / tab cycling
-  // to escape vertically.
-  maybeSpillHorizontal(o, event.direction);
-}
-
-/// Activate the left/right neighbour group when an at-edge DPad press
-/// can't move within the current group. UP/DOWN never spill. The
-/// `neighbours` map is the single source of truth for both edge-spill
-/// and the shoulder-bumper L1/R1 transfer — callers register one map
-/// and get both behaviours.
-function maybeSpillHorizontal(o: FocusGroupOptions, dir: NavDirection): void {
-  if (dir === "left" && o.neighbours?.left) {
-    manager.activate(o.neighbours.left);
-  } else if (dir === "right" && o.neighbours?.right) {
-    manager.activate(o.neighbours.right);
   }
 }
 

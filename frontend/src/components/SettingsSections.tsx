@@ -232,12 +232,13 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
           select={{
             value: props.settings.controllerNavSource(),
             options: [
-              { value: "both", label: "DPad + left stick" },
+              { value: "both", label: "DPad + left stick (recommended)" },
               { value: "dpad", label: "DPad only" },
               { value: "stick-left", label: "Left stick only" },
             ],
             onChange: (v) => props.settings.setControllerNavSource(v as ControllerNavSource),
           }}
+          description="DPad switches between regions (sidebar / center / right pane); the left stick navigates within the active region. Picking only one source loses one of these — 'Stick only' means you can't change regions; 'DPad only' falls back to within-region walking when no transfer is set."
         />
         <SettingRow
           label="Swap A and B"

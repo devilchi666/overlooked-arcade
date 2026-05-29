@@ -259,6 +259,8 @@ const SettingsPage: Component = () => {
       {/* Phase C1 hints — keep stub-compatible nav + add Y reset. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Select",
           b: "Back",
           x: "Search",

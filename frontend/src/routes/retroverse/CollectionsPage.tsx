@@ -228,6 +228,8 @@ const CollectionsPage: Component = () => {
           since heart toggling is the dominant curatorial action here. */}
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Play",
           b: "Back",
           x: "Search",

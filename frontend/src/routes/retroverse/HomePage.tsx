@@ -439,6 +439,8 @@ const HomePage: Component = () => {
     >
       <HintRegion
         hints={{
+          dpad: "Switch region",
+          stick: "Navigate",
           a: "Select",
           b: "Back",
           x: "Search",
