@@ -88,6 +88,7 @@ import { launchRom, type LaunchResult } from "./library/launch";
 import { MediaProvider } from "./library/media";
 import { PlatformMediaProvider } from "./library/platformMedia";
 import { createLibraryStore } from "./library/store";
+import { createCustomCollectionsStore } from "./library/customCollections";
 import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
@@ -163,6 +164,7 @@ const App: Component = () => {
   const library = createLibraryStore({
     shouldBootstrap: directLaunchPromise.then((cfg) => cfg === null),
   });
+  const customCollections = createCustomCollectionsStore();
   const settings = createSettingsStore();
   const layout = createLayoutStore();
   const viewsStore = createViewsStore();
@@ -1982,6 +1984,7 @@ const App: Component = () => {
         <RetroverseProvider
           value={{
             library,
+            customCollections,
             layout,
             views: viewsStore,
             settings,

@@ -15,6 +15,7 @@
 import { createContext, useContext, type ParentComponent } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { LibraryStore } from "../../library/store";
+import type { CustomCollectionsStore } from "../../library/customCollections";
 import type { LayoutStore } from "../../layout/state";
 import type { ViewsStore } from "../../views/store";
 import type { SettingsStore } from "../../settings/store";
@@ -23,6 +24,11 @@ import type { RomEntry } from "../../library/types";
 
 export type RetroverseContextValue = {
   library: LibraryStore;
+  /// Retroverse-UI Phase C3 Slice 12 — operator-built collections.
+  /// Companion to `library`; lives alongside so the TileContextMenu
+  /// + CollectionsPage can read membership state without prop-drilling
+  /// through every consumer.
+  customCollections: CustomCollectionsStore;
   layout: LayoutStore;
   views: ViewsStore;
   settings: SettingsStore;
