@@ -2935,6 +2935,13 @@ fn main() {
             get_game_overrides,
             set_game_overrides,
             delete_game,
+            list_custom_collections,
+            create_custom_collection,
+            rename_custom_collection,
+            delete_custom_collection,
+            add_to_custom_collection,
+            remove_from_custom_collection,
+            list_collection_members,
             find_game_id_by_path,
             delete_games_for_system,
             delete_all_games,
@@ -8504,6 +8511,74 @@ fn update_game_completed(
 #[tauri::command]
 fn delete_game(id: String, db: tauri::State<'_, library_db::LibraryDb>) -> Result<(), String> {
     db.delete_game(&id)
+}
+
+// --- Custom collections (Retroverse Phase C3 Slice 12) ---------------
+//
+// Operator-built collection lists alongside the existing smart-list
+// COLLECTIONS. Each command is a thin shim over the matching LibraryDb
+// method; persistence is SQLite-backed (v14 schema). Frontend stores
+// hydrate on init via list_custom_collections + per-collection
+// list_collection_members, then mutate optimistically + await the
+// command for the persistence write (mirrors the favorite / completed
+// pattern from Slice 11).
+
+#[tauri::command]
+fn list_custom_collections(
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<library_db::CustomCollectionRow>, String> {
+    db.list_custom_collections()
+}
+
+#[tauri::command]
+fn create_custom_collection(
+    name: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<String, String> {
+    db.create_custom_collection(&name)
+}
+
+#[tauri::command]
+fn rename_custom_collection(
+    id: String,
+    name: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.rename_custom_collection(&id, &name)
+}
+
+#[tauri::command]
+fn delete_custom_collection(
+    id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.delete_custom_collection(&id)
+}
+
+#[tauri::command]
+fn add_to_custom_collection(
+    collection_id: String,
+    rom_id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.add_to_custom_collection(&collection_id, &rom_id)
+}
+
+#[tauri::command]
+fn remove_from_custom_collection(
+    collection_id: String,
+    rom_id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.remove_from_custom_collection(&collection_id, &rom_id)
+}
+
+#[tauri::command]
+fn list_collection_members(
+    collection_id: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<String>, String> {
+    db.list_collection_members(&collection_id)
 }
 
 /// Look up a game's id by its file path. Returns null if no row matches.
