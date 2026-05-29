@@ -41,6 +41,14 @@ type SmartListId =
   | "hidden-gems"
   | "last-played";
 
+/// Slice 12 — the active sidebar entry now spans two kinds: the
+/// existing built-in smart-list set OR a custom collection by id.
+/// `kind` discriminates; `id` is the matching identifier in each
+/// case (SmartListId vs the SQLite-side collection row id).
+type ActiveList =
+  | { kind: "smart"; id: SmartListId }
+  | { kind: "custom"; id: string };
+
 type SmartListDef = {
   id: SmartListId;
   label: string;
@@ -127,7 +135,20 @@ const SMART_LISTS: readonly SmartListDef[] = [
 
 const CollectionsPage: Component = () => {
   const ctx = useRetroverse();
-  const [activeSmartListId, setActiveSmartListId] = createSignal<SmartListId>("favorites");
+  const [activeList, setActiveList] = createSignal<ActiveList>({
+    kind: "smart",
+    id: "favorites",
+  });
+
+  // When a custom collection becomes active, hydrate its member id
+  // set on first selection. `ensureMembers` is idempotent — repeat
+  // selections of the same collection are O(1) cache hits.
+  createEffect(() => {
+    const list = activeList();
+    if (list.kind === "custom") {
+      void ctx.customCollections.ensureMembers(list.id);
+    }
+  });
 
   // Per-region focus groups (unified-focus model). `neighbours` drives
   // both DPad edge-spillover and L1/R1 shoulder-bumper transfer
@@ -177,35 +198,52 @@ const CollectionsPage: Component = () => {
     }
   });
 
-  const activeSmartList = () =>
-    SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
+  const activeSmartList = () => {
+    const cur = activeList();
+    if (cur.kind !== "smart") return null;
+    return SMART_LISTS.find((l) => l.id === cur.id) ?? null;
+  };
 
-  // Filtered entries for the active smart list. Sorting policy:
-  //   Recently played + Last played: descending on lastPlayedAt
-  //     (both are chronological — the difference is the 30-day cap).
-  //   Hidden gems: descending on rating, falling back to favorite,
-  //     so the strongest signals lead the grid.
-  //   Everything else: title-natural (the order the LibraryStore
-  //     already returns).
+  const activeCustomCollection = () => {
+    const cur = activeList();
+    if (cur.kind !== "custom") return null;
+    return ctx.customCollections.state.collections.find((c) => c.id === cur.id) ?? null;
+  };
+
+  // Filtered entries for the active list. Smart lists run their
+  // predicate over `library.state.entries`. Custom collections filter
+  // the same entries by membership lookup against the hydrated Set.
+  // Sorting policy:
+  //   Smart Recently played + Last played: descending on lastPlayedAt.
+  //   Smart Hidden gems: descending on rating, then favorite.
+  //   Smart everything else: title-natural (library order).
+  //   Custom: collection sort_order (Rust-side ORDER BY); local order
+  //     follows the Set's insertion order which mirrors add order.
   const filteredEntries = createMemo<RomEntry[]>(() => {
-    const list = activeSmartList();
-    if (!list.predicate) return [];
-    const matches = ctx.library.state.entries.filter(list.predicate);
-    if (list.id === "recent" || list.id === "last-played") {
-      return [...matches].sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0));
+    const cur = activeList();
+    if (cur.kind === "smart") {
+      const list = activeSmartList();
+      if (!list || !list.predicate) return [];
+      const matches = ctx.library.state.entries.filter(list.predicate);
+      if (list.id === "recent" || list.id === "last-played") {
+        return [...matches].sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0));
+      }
+      if (list.id === "hidden-gems") {
+        return [...matches].sort((a, b) => {
+          const ra = a.rating ?? 0;
+          const rb = b.rating ?? 0;
+          if (ra !== rb) return rb - ra;
+          const fa = a.favorite ? 1 : 0;
+          const fb = b.favorite ? 1 : 0;
+          return fb - fa;
+        });
+      }
+      return matches;
     }
-    if (list.id === "hidden-gems") {
-      return [...matches].sort((a, b) => {
-        const ra = a.rating ?? 0;
-        const rb = b.rating ?? 0;
-        if (ra !== rb) return rb - ra;
-        // Favorited beats unfavorited at equal rating.
-        const fa = a.favorite ? 1 : 0;
-        const fb = b.favorite ? 1 : 0;
-        return fb - fa;
-      });
-    }
-    return matches;
+    // Custom collection — filter library entries by membership Set.
+    const memberIds = ctx.customCollections.state.members[cur.id];
+    if (!memberIds || memberIds.size === 0) return [];
+    return ctx.library.state.entries.filter((e) => memberIds.has(e.id));
   });
 
   // Wrap the filtered entries in a single EntryGroup so VirtualLibraryGrid
@@ -214,8 +252,47 @@ const CollectionsPage: Component = () => {
   const groups = createMemo<EntryGroup[]>(() => {
     const entries = filteredEntries();
     if (entries.length === 0) return [];
-    return [{ id: activeSmartList().id, label: "", entries }];
+    const cur = activeList();
+    return [{ id: cur.id, label: "", entries }];
   });
+
+  // Header display info — name / glyph / description / badge / count.
+  // Unified across smart + custom so the JSX below stays compact.
+  const headerInfo = createMemo(() => {
+    const cur = activeList();
+    if (cur.kind === "smart") {
+      const list = activeSmartList();
+      return {
+        name: list?.label ?? "Collection",
+        glyph: list?.glyph ?? "★",
+        description: list?.description ?? "",
+        badge: "Built-in · read-only",
+      };
+    }
+    const col = activeCustomCollection();
+    return {
+      name: col?.name ?? "Collection",
+      glyph: "📁",
+      description:
+        col === null
+          ? ""
+          : col.memberCount === 0
+            ? "No games yet. Right-click any tile in LIBRARY → Add to collection ▸ to drop entries in."
+            : "Operator-built collection. Add or remove games from the tile context menu in any tab.",
+      badge: "Custom · editable",
+    };
+  });
+
+  /// Operator clicks "+ New collection". v1 uses window.prompt for the
+  /// name — Slice D upgrades this to the Dialog primitive + supports
+  /// rename / delete from a context menu on the sidebar row. The
+  /// prompt is a placeholder, not the final UX.
+  async function handleNewCollection() {
+    const name = window.prompt("Name this collection:", "");
+    if (!name || !name.trim()) return;
+    const id = await ctx.customCollections.createCollection(name.trim());
+    if (id) setActiveList({ kind: "custom", id });
+  }
 
   return (
     <div
@@ -244,21 +321,63 @@ const CollectionsPage: Component = () => {
         ref={(el) => (leftRef = el)}
         class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
       >
-        {/* MY COLLECTIONS — empty + disabled new-button until Slice 12. */}
+        {/* MY COLLECTIONS — operator-built lists from Slice 12. */}
         <section>
           <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
             My collections
           </p>
-          <p class="mt-2 px-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
-            No custom lists yet. Custom collections — manual and smart-query —
-            land in a follow-up slice.
-          </p>
+          <Show
+            when={ctx.customCollections.state.collections.length > 0}
+            fallback={
+              <p class="mt-2 px-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
+                No custom lists yet. Click + New collection below, then
+                right-click any tile to add games.
+              </p>
+            }
+          >
+            <ul class="mt-1.5 flex flex-col gap-0.5">
+              <For each={ctx.customCollections.state.collections}>
+                {(col) => {
+                  const isActive = () => {
+                    const cur = activeList();
+                    return cur.kind === "custom" && cur.id === col.id;
+                  };
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          setActiveList({ kind: "custom", id: col.id });
+                        }}
+                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                        classList={{
+                          "bg-(--color-system-accent)/15 text-(--color-oa-ink)": isActive(),
+                          "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)":
+                            !isActive(),
+                        }}
+                        aria-current={isActive() ? "page" : undefined}
+                        title={col.name}
+                      >
+                        <span class="w-4 text-center text-sm">📁</span>
+                        <span class="truncate">{col.name}</span>
+                        <span class="ml-auto text-[0.6rem] text-(--color-oa-ink-dim)">
+                          {col.memberCount}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
           <button
             type="button"
-            disabled
-            class="mt-2 w-full rounded-md border border-dashed border-white/10 px-2 py-1.5 text-left text-xs text-(--color-oa-ink-dim)/60 transition"
-            aria-disabled="true"
-            title="Custom collection persistence ships in Phase C3 Slice 12."
+            onClick={(e) => {
+              e.currentTarget.blur();
+              void handleNewCollection();
+            }}
+            class="mt-2 w-full rounded-md border border-dashed border-white/15 px-2 py-1.5 text-left text-xs text-(--color-oa-ink-dim) transition hover:border-(--color-system-accent)/50 hover:bg-white/[0.04] hover:text-(--color-oa-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
           >
             + New collection
           </button>
@@ -272,7 +391,10 @@ const CollectionsPage: Component = () => {
           <ul class="mt-1.5 flex flex-col gap-0.5">
             <For each={SMART_LISTS}>
               {(list) => {
-                const isActive = () => activeSmartListId() === list.id;
+                const isActive = () => {
+                  const cur = activeList();
+                  return cur.kind === "smart" && cur.id === list.id;
+                };
                 const isPlaceholder = () => list.predicate === null;
                 const count = createMemo(() =>
                   list.predicate
@@ -285,7 +407,7 @@ const CollectionsPage: Component = () => {
                       type="button"
                       onClick={(e) => {
                         e.currentTarget.blur();
-                        setActiveSmartListId(list.id);
+                        setActiveList({ kind: "smart", id: list.id });
                       }}
                       class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                       classList={{
@@ -329,16 +451,16 @@ const CollectionsPage: Component = () => {
         {/* Header card — name + count + flavor badge. */}
         <header class="border-b border-white/5 px-8 py-5">
           <div class="flex items-center gap-3">
-            <span class="text-2xl text-(--color-system-accent)">{activeSmartList().glyph}</span>
+            <span class="text-2xl text-(--color-system-accent)">{headerInfo().glyph}</span>
             <h1 class="text-xl font-semibold uppercase tracking-widest text-(--color-oa-ink)">
-              {activeSmartList().label}
+              {headerInfo().name}
             </h1>
             <span class="ml-auto rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-              Built-in · read-only
+              {headerInfo().badge}
             </span>
           </div>
           <p class="mt-2 text-sm text-(--color-oa-ink-dim)">
-            {activeSmartList().description}
+            {headerInfo().description}
           </p>
           <p class="mt-1 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)/60">
             {filteredEntries().length}{" "}
@@ -356,17 +478,24 @@ const CollectionsPage: Component = () => {
                     Empty
                   </p>
                   <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-                    {activeSmartList().id === "favorites"
-                      ? "Heart a game from any tile (or the right-click menu) to add it to Favorites."
-                      : activeSmartList().id === "completed"
-                        ? "Mark a game complete from the tile context menu to add it here."
-                        : activeSmartList().id === "recent"
-                          ? "Play a game to populate this list. Sessions are tracked from launch to exit."
-                          : activeSmartList().id === "last-played"
-                            ? "Play any game to start tracking your history. Once a session ends the game shows up here."
-                            : activeSmartList().id === "hidden-gems"
-                              ? "Either heart a few games you've barely played, or run Sync metadata to enrich ratings — entries you've spent < 30 minutes with will surface here."
-                              : "No games match this filter yet."}
+                    {(() => {
+                      const cur = activeList();
+                      if (cur.kind === "custom") {
+                        return "This collection is empty. Right-click a tile in any tab and pick Add to collection ▸ to drop entries in.";
+                      }
+                      const id = cur.id;
+                      return id === "favorites"
+                        ? "Heart a game from any tile (or the right-click menu) to add it to Favorites."
+                        : id === "completed"
+                          ? "Mark a game complete from the tile context menu to add it here."
+                          : id === "recent"
+                            ? "Play a game to populate this list. Sessions are tracked from launch to exit."
+                            : id === "last-played"
+                              ? "Play any game to start tracking your history. Once a session ends the game shows up here."
+                              : id === "hidden-gems"
+                                ? "Either heart a few games you've barely played, or run Sync metadata to enrich ratings — entries you've spent < 30 minutes with will surface here."
+                                : "No games match this filter yet.";
+                    })()}
                   </p>
                 </div>
               </div>
