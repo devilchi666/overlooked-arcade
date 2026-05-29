@@ -167,13 +167,31 @@ export function setSwapAB(on: boolean): void {
 }
 export const isSwapAB: Accessor<boolean> = swapABSig;
 
+// Diagnostic flag — flip via window.__oaFocusDebug = false in DevTools
+// to silence. Default ON while we hunt the DPad regression so the
+// operator's session log captures every event-routing decision.
+(globalThis as { __oaFocusDebug?: boolean }).__oaFocusDebug ??= true;
+const FOCUS_DEBUG = () =>
+  (globalThis as { __oaFocusDebug?: boolean }).__oaFocusDebug === true;
+
+function focusLog(...args: unknown[]): void {
+  if (FOCUS_DEBUG()) console.log("[oa-focus]", ...args);
+}
+
 // Global event subscription — once, at module load. Routes every
 // NavEvent to whichever group is active. No-op if no group is active.
 onNavEvent((event) => {
   const id = manager.activeGroupId();
-  if (id === null) return;
+  if (id === null) {
+    focusLog("event dropped — no active group", event);
+    return;
+  }
   const handle = manager.groups.get(id);
-  if (!handle) return;
+  if (!handle) {
+    focusLog("event dropped — active group not in map", id, event);
+    return;
+  }
+  focusLog("event", { id, event });
   routeEvent(handle, event);
 });
 
@@ -235,7 +253,13 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
 
   // Custom direction handler runs first (used by sidebar tree
   // expand/collapse, rewind scrubber, etc.). Return true to consume.
-  if (o.onDirection?.(event.direction, cur)) return;
+  if (o.onDirection?.(event.direction, cur)) {
+    focusLog("direction consumed by onDirection", {
+      id: o.id,
+      direction: event.direction,
+    });
+    return;
+  }
 
   // DPad = inter-region transfer. Press DPad <dir> and activate the
   // neighbour group declared for that direction. If no neighbour is
@@ -246,9 +270,20 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
   if (event.source === "dpad") {
     const neighbour = o.neighbours?.[event.direction];
     if (neighbour) {
+      focusLog("dpad transfer", {
+        from: o.id,
+        direction: event.direction,
+        to: neighbour,
+        registered: manager.groups.has(neighbour),
+      });
       manager.activate(neighbour);
       return;
     }
+    focusLog("dpad fallback to walk — no neighbour", {
+      id: o.id,
+      direction: event.direction,
+      neighbours: o.neighbours,
+    });
     // No neighbour in that direction → fall through to walk.
   }
 
@@ -284,8 +319,21 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
   }
 
   if (next !== cur) {
+    focusLog("walk", {
+      id: o.id,
+      direction: event.direction,
+      from: cur,
+      to: next,
+    });
     o.setFocusedIndex(next);
     focusDomFor(handle, next);
+  } else {
+    focusLog("walk no-op", {
+      id: o.id,
+      direction: event.direction,
+      cur,
+      count,
+    });
   }
 }
 
