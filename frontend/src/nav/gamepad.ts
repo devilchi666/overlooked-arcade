@@ -48,13 +48,14 @@ const INITIAL_REPEAT_MS = 400;
 const REPEAT_INTERVAL_MS = 80;
 const STICK_DEADZONE = 0.4;
 
-/// Direction sources the operator can choose between in Settings →
-/// Display → Controller navigation. The poller silently ignores events
-/// from a source the operator has opted out of.
+/// Direction-source preference. Retained for settings round-trip
+/// compatibility but no longer affects polling — both DPad and stick
+/// always fire events under the Phase 5 model, where each source
+/// carries different semantics (DPad transfers regions; stick walks
+/// within).
 export type NavSource = "dpad" | "stick-left" | "both";
 
 let inputEnabled = true;
-let navSource: NavSource = "both";
 
 /// Master enable / disable. Settings calls this when the operator
 /// flips the "Controller navigation" toggle. False suppresses all
@@ -63,10 +64,11 @@ export function setNavEnabled(on: boolean): void {
   inputEnabled = on;
 }
 
-/// Limit which control(s) drive direction navigation. Settings calls
-/// this when the operator picks DPad / left stick / both.
-export function setNavSource(source: NavSource): void {
-  navSource = source;
+/// Legacy setter — no longer suppresses events. Kept as a no-op so
+/// settings round-trip code in App.tsx doesn't error and so existing
+/// persisted values stay compatible during the transition.
+export function setNavSource(_source: NavSource): void {
+  // intentionally empty
 }
 
 type ButtonState = { pressedAt: number; lastRepeatAt: number };
@@ -183,7 +185,6 @@ function tick(now: DOMHighResTimeStamp): void {
 }
 
 function pollButtons(pad: Gamepad, now: number): void {
-  const dpadSourceOn = navSource === "dpad" || navSource === "both";
   for (let i = 0; i < pad.buttons.length; i++) {
     const isPressed = pad.buttons[i]?.pressed ?? false;
     const key = `${pad.index}:${i}`;
@@ -191,8 +192,11 @@ function pollButtons(pad: Gamepad, now: number): void {
     const buttonName = BUTTON_NAMES[i];
     const dpadDir = DPAD_DIRS[i];
     if (!buttonName && !dpadDir) continue;
-    // Suppress dpad events when source is stick-only.
-    if (dpadDir && !dpadSourceOn) continue;
+    // DPad and stick are no longer filtered by `navSource` — under the
+    // new model (Phase 5) DPad transfers between regions and stick
+    // walks within, so each source carries different semantics and
+    // there's no reason to gate one off. The setting is retained as a
+    // legacy compatibility knob but doesn't suppress events anymore.
 
     if (isPressed && !prev) {
       buttonStates.set(key, { pressedAt: now, lastRepeatAt: now });
@@ -220,8 +224,10 @@ function pollButtons(pad: Gamepad, now: number): void {
 }
 
 function pollStick(pad: Gamepad, now: number): void {
-  const stickSourceOn = navSource === "stick-left" || navSource === "both";
-  if (pad.axes.length < 2 || !stickSourceOn) return;
+  if (pad.axes.length < 2) return;
+  // Same as pollButtons: source filtering removed under the new
+  // DPad-vs-stick model. The `navSource` legacy setting no longer
+  // affects polling.
   const x = pad.axes[0] ?? 0;
   const y = pad.axes[1] ?? 0;
   const direction = stickToDirection(x, y);
