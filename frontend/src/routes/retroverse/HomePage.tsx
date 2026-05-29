@@ -27,8 +27,11 @@ import {
   createMemo,
   createSignal,
   For,
+  onCleanup,
+  onMount,
   Show,
   type Component,
+  type JSX,
 } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useMedia } from "../../library/media";
@@ -64,6 +67,131 @@ function formatDate(unixSecs?: number): string {
     return "—";
   }
 }
+
+// Lightweight horizontal-scroll carousel with overlay arrows + dot
+// pagination beneath. Used by HOME's popular + recently-played rails.
+// Page math: scroll by viewport width per page, dot count = ceil of
+// total scrollable width over viewport. The ResizeObserver path keeps
+// dots accurate across window resizes + sidebar pin/unpin without
+// re-renders. Arrows hide when there's nothing to scroll in that
+// direction so the rail stays clean for short carousels (the popular
+// list often has < 14 entries and fits in one viewport on wide
+// monitors).
+const Carousel: Component<{
+  ariaLabel: string;
+  children: JSX.Element;
+}> = (props) => {
+  let scrollerRef: HTMLDivElement | undefined;
+  const [scrollPos, setScrollPos] = createSignal(0);
+  const [maxScroll, setMaxScroll] = createSignal(0);
+  const [viewportWidth, setViewportWidth] = createSignal(0);
+
+  const pageCount = createMemo(() => {
+    const vw = viewportWidth();
+    if (vw <= 0) return 1;
+    const total = maxScroll() + vw;
+    return Math.max(1, Math.ceil(total / vw));
+  });
+
+  const activePage = createMemo(() => {
+    const vw = viewportWidth();
+    if (vw <= 0) return 0;
+    return Math.min(pageCount() - 1, Math.round(scrollPos() / vw));
+  });
+
+  onMount(() => {
+    if (!scrollerRef) return;
+    const update = () => {
+      if (!scrollerRef) return;
+      setScrollPos(scrollerRef.scrollLeft);
+      setMaxScroll(Math.max(0, scrollerRef.scrollWidth - scrollerRef.clientWidth));
+      setViewportWidth(scrollerRef.clientWidth);
+    };
+    update();
+    scrollerRef.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(scrollerRef);
+    onCleanup(() => {
+      scrollerRef?.removeEventListener("scroll", update);
+      ro.disconnect();
+    });
+  });
+
+  const scrollByPage = (dir: 1 | -1) => {
+    if (!scrollerRef) return;
+    scrollerRef.scrollBy({ left: dir * viewportWidth(), behavior: "smooth" });
+  };
+
+  const scrollToPage = (page: number) => {
+    if (!scrollerRef) return;
+    scrollerRef.scrollTo({ left: page * viewportWidth(), behavior: "smooth" });
+  };
+
+  // Edge tolerance — browsers often round scrollLeft so a "fully
+  // scrolled" carousel may report a couple px short of maxScroll.
+  const canScrollLeft = createMemo(() => scrollPos() > 4);
+  const canScrollRight = createMemo(() => scrollPos() < maxScroll() - 4);
+
+  return (
+    <div class="relative">
+      <div
+        ref={scrollerRef}
+        class="flex gap-3 overflow-x-auto scroll-smooth pb-2"
+        aria-label={props.ariaLabel}
+      >
+        {props.children}
+      </div>
+      <Show when={canScrollLeft()}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            scrollByPage(-1);
+          }}
+          aria-label="Previous"
+          class="absolute left-1 top-[88px] grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-black/60 text-base text-(--color-oa-ink) backdrop-blur transition hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+        >
+          ‹
+        </button>
+      </Show>
+      <Show when={canScrollRight()}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            scrollByPage(1);
+          }}
+          aria-label="Next"
+          class="absolute right-1 top-[88px] grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-black/60 text-base text-(--color-oa-ink) backdrop-blur transition hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+        >
+          ›
+        </button>
+      </Show>
+      <Show when={pageCount() > 1}>
+        <div class="mt-1 flex items-center justify-center gap-1.5">
+          <For each={Array.from({ length: pageCount() })}>
+            {(_, i) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  scrollToPage(i());
+                }}
+                aria-label={`Go to page ${i() + 1} of ${pageCount()}`}
+                aria-current={activePage() === i() ? "true" : undefined}
+                class="h-1.5 rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                classList={{
+                  "w-6 bg-(--color-system-accent)": activePage() === i(),
+                  "w-2 bg-white/20 hover:bg-white/40": activePage() !== i(),
+                }}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+};
 
 const HomePage: Component = () => {
   const ctx = useRetroverse();
@@ -549,10 +677,10 @@ const HomePage: Component = () => {
             />
           </div>
 
-          {/* Popular cover carousel — horizontal scroll. */}
+          {/* Popular cover carousel — horizontal scroll with arrows + dots. */}
           <Show when={popularGames().length > 0}>
             <div class="relative px-8 pb-6">
-              <div class="flex gap-3 overflow-x-auto pb-2">
+              <Carousel ariaLabel="Popular games carousel">
                 <For each={popularGames()}>
                   {(entry) => {
                     const sub = () => {
@@ -563,7 +691,7 @@ const HomePage: Component = () => {
                     return <CoverCard entry={entry} sublabel={sub()} />;
                   }}
                 </For>
-              </div>
+              </Carousel>
             </div>
           </Show>
         </article>
@@ -587,7 +715,7 @@ const HomePage: Component = () => {
               </p>
             }
           >
-            <div class="flex gap-3 overflow-x-auto pb-2">
+            <Carousel ariaLabel="Recently played carousel">
               <For each={recentlyPlayed()}>
                 {(entry) => {
                   const days = entry.lastPlayedAt
@@ -607,7 +735,7 @@ const HomePage: Component = () => {
                   return <CoverCard entry={entry} sublabel={sub} />;
                 }}
               </For>
-            </div>
+            </Carousel>
           </Show>
         </section>
       </section>
