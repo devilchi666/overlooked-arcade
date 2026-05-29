@@ -51,6 +51,13 @@ type Props = {
   /// there in v1.
   onSystemContext?: (id: SystemId, position: { x: number; y: number }) => void;
   onContainerContext?: (container: ContainerNode, position: { x: number; y: number }) => void;
+  /// Override the "left-sidebar" focus group's DPad edge-spillover
+  /// neighbours. Defaults to `right: "library-grid"` for the legacy
+  /// Shell; Retroverse LIBRARY page overrides to point at its center
+  /// region group id so DPad-RIGHT at the sidebar's right edge spills
+  /// to the Retroverse center pane (which then delegates to the grid
+  /// via LibraryPage's effect).
+  focusGroupNeighbours?: { left?: string; right?: string };
 };
 
 /**
@@ -328,17 +335,24 @@ const LeftSidebar: Component<Props> = (props) => {
         return true;
       }
       if (direction === "right") {
-        // Expand if collapsed; if already expanded, fall through to
-        // default movement (down into first child).
+        // Expand if collapsed; if already expanded, consume the event
+        // so the new edge-spillover doesn't yank focus out of the
+        // sidebar (regression flagged in the controller-pipeline
+        // audit). Operator can press DPad-RIGHT once on a collapsed
+        // container to expand, then again on a child to walk in;
+        // pressing RIGHT on an already-expanded container is now a
+        // no-op rather than a spill.
         if (!expandedSet().has(item.nodeId)) {
           props.views.toggleExpanded(item.nodeId);
-          return true;
         }
-        return false;
+        return true;
       }
       return false;
     },
-    neighbours: { right: "library-grid" },
+    neighbours: {
+      left: props.focusGroupNeighbours?.left,
+      right: props.focusGroupNeighbours?.right ?? "library-grid",
+    },
   });
 
   // Reverse lookup: nodeId → index in navItems ("all" is 0; containers

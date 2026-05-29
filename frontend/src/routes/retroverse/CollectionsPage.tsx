@@ -19,11 +19,16 @@
 // Last Played (every entry with a lastPlayedAt, full chronological
 // history — Recently played is its 30-day subset).
 
-import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import {
+  activateFocusGroup,
+  activeFocusGroupId,
+  groupsVersion,
+  useDomQueryFocusGroup,
+} from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
 import type { RomEntry } from "../../library/types";
 import { useRetroverse } from "./context";
@@ -159,6 +164,19 @@ const CollectionsPage: Component = () => {
     onActivate: (_i, el) => el.click(),
     neighbours: { left: CENTER_ID },
   });
+
+  // Same delegating pattern as LibraryPage — when CENTER becomes
+  // active and the COLLECTIONS grid (which also registers under
+  // "library-grid") is mounted, hand off so DPad walks the grid in
+  // 2D. groupsVersion re-fires the effect when the grid mounts or
+  // unmounts (e.g. switching smart-lists with vs without matches).
+  createEffect(() => {
+    groupsVersion();
+    if (activeFocusGroupId() === CENTER_ID) {
+      activateFocusGroup("library-grid");
+    }
+  });
+
   const activeSmartList = () =>
     SMART_LISTS.find((l) => l.id === activeSmartListId()) ?? SMART_LISTS[0]!;
 
@@ -365,6 +383,7 @@ const CollectionsPage: Component = () => {
                   ctx.library.groupsByVariantId().get(id)?.variants.length
                 }
                 onToggleFavorite={ctx.onToggleFavorite}
+                focusGroupNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
               />
             </Match>
           </Switch>

@@ -341,13 +341,21 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                         return (
                           <div
                             ref={(el) => {
-                              if (el) {
-                                tileEls.set(flatIdx(), el);
-                                focusGroup.bind(flatIdx(), el);
-                              }
+                              if (!el) return;
+                              // Capture flatIdx at mount time. The
+                              // memo can re-evaluate to a different
+                              // value (search/filter shifts entries)
+                              // OR transiently to -1 before
+                              // flatEntries() settles; if the cleanup
+                              // reads `flatIdx()` lazily it would
+                              // delete the wrong bind entry.
+                              const idx = flatIdx();
+                              if (idx < 0) return;
+                              tileEls.set(idx, el);
+                              focusGroup.bind(idx, el);
                               onCleanup(() => {
-                                tileEls.delete(flatIdx());
-                                focusGroup.bind(flatIdx(), null);
+                                tileEls.delete(idx);
+                                focusGroup.bind(idx, null);
                               });
                             }}
                             data-oa-focus={isFocused() ? "true" : undefined}
