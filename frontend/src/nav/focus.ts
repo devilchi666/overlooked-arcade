@@ -173,10 +173,12 @@ export function setSwapAB(on: boolean): void {
 }
 export const isSwapAB: Accessor<boolean> = swapABSig;
 
-// Diagnostic flag — flip via window.__oaFocusDebug = false in DevTools
-// to silence. Default ON while we hunt the DPad regression so the
-// operator's session log captures every event-routing decision.
-(globalThis as { __oaFocusDebug?: boolean }).__oaFocusDebug ??= true;
+// Diagnostic flag — defaults OFF for production. Flip via
+// `window.__oaFocusDebug = true` in DevTools to log every NavEvent
+// routing decision (event arrival, dpad transfer, walk / no-op, etc.).
+// The instrumentation stays compiled in so future regressions can be
+// diagnosed by flipping a single flag rather than re-shipping a
+// debug build.
 const FOCUS_DEBUG = () =>
   (globalThis as { __oaFocusDebug?: boolean }).__oaFocusDebug === true;
 
