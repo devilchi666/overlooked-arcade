@@ -83,16 +83,60 @@ type Manager = {
   setActiveGroupId: Setter<string | null>;
   /** Set the active group. No-op if `id` isn't registered. */
   activate: (id: string) => void;
+  /** Called from useFocusGroup's onCleanup when the active group is
+   *  unmounting. Picks the most-recently-active still-registered
+   *  successor; falls back to the first registered group otherwise. */
+  demote: (unregisteringId: string) => void;
 };
+
+/// Bumps every time a group is registered or unregistered. Reactive —
+/// consumers that depend on "is group X registered yet?" can track this
+/// and re-evaluate their state. Used by LibraryPage's delegating effect
+/// so it re-fires when "library-grid" mounts later (empty library →
+/// imported games OR list-view → capsule-view).
+const [groupsVersionSig, setGroupsVersionSig] = createSignal(0);
+export const groupsVersion: Accessor<number> = groupsVersionSig;
 
 function createManager(): Manager {
   const [activeGroupId, setActiveGroupId] = createSignal<string | null>(null);
   const groups = new Map<string, FocusGroupHandle>();
+  // Most-recently-active history. When the active group unmounts, the
+  // demote logic walks this stack to find the youngest still-registered
+  // group instead of falling back to arbitrary Map insertion order
+  // (which used to teleport focus to whichever group happened to
+  // register first this session).
+  const activationHistory: string[] = [];
   function activate(id: string): void {
     if (!groups.has(id)) return;
+    const current = activeGroupId();
+    if (current !== null && current !== id) {
+      // Push the previous active onto the history so we can fall back
+      // to it later. Dedupe consecutive entries.
+      if (activationHistory[activationHistory.length - 1] !== current) {
+        activationHistory.push(current);
+        // Cap to prevent unbounded growth on long sessions — 32 is
+        // generous (operators rarely have nav chains > 4 deep).
+        if (activationHistory.length > 32) activationHistory.shift();
+      }
+    }
     setActiveGroupId(id);
   }
-  return { groups, activeGroupId, setActiveGroupId, activate };
+  function demote(unregisteringId: string): void {
+    // Walk history newest-first; pick the first still-registered id.
+    for (let i = activationHistory.length - 1; i >= 0; i--) {
+      const candidate = activationHistory[i];
+      if (candidate !== unregisteringId && groups.has(candidate)) {
+        activationHistory.length = i; // trim consumed entries
+        setActiveGroupId(candidate);
+        return;
+      }
+    }
+    // Nothing in history — fall through to "first registered" so we
+    // still pick something rather than nulling out the active group.
+    const next = groups.keys().next().value ?? null;
+    setActiveGroupId(next);
+  }
+  return { groups, activeGroupId, setActiveGroupId, activate, demote };
 }
 
 const manager = createManager();
@@ -147,24 +191,17 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
       case "start":
         handle.options.onStart?.();
         return;
-      case "l1": {
-        if (handle.options.onShoulderL) {
-          handle.options.onShoulderL();
-          return;
-        }
-        const left = handle.options.neighbours?.left;
-        if (left) manager.activate(left);
+      case "l1":
+        // Shoulder bumpers are EXPLICIT-OPT-IN only. Previously L1/R1
+        // fell back to neighbours which double-fired with the
+        // RetroverseShell tab-cycling listener; now consumers that want
+        // L1/R1 transfer must define onShoulderL / onShoulderR. The
+        // neighbours map is for DPad edge-spillover only.
+        handle.options.onShoulderL?.();
         return;
-      }
-      case "r1": {
-        if (handle.options.onShoulderR) {
-          handle.options.onShoulderR();
-          return;
-        }
-        const right = handle.options.neighbours?.right;
-        if (right) manager.activate(right);
+      case "r1":
+        handle.options.onShoulderR?.();
         return;
-      }
       default:
         return;
     }
@@ -177,13 +214,12 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
 function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): void {
   const o = handle.options;
   const count = o.itemCount();
-  // Empty group — horizontal DPad still spills so an empty region
-  // (e.g. library with no entries) doesn't trap the operator. UP/DOWN
-  // on an empty group is a no-op.
-  if (count <= 0) {
-    maybeSpillHorizontal(o, event.direction);
-    return;
-  }
+  // Empty groups — no spillover. Two mutually-empty sibling regions
+  // (e.g. an empty grid + an empty right detail pane) used to ping-pong
+  // horizontal presses between each other; without spillover here the
+  // operator just sees a no-op press, then uses L1/R1 to escape via
+  // tab cycling.
+  if (count <= 0) return;
   const cur = clamp(o.focusedIndex(), 0, count - 1);
   if (o.onDirection?.(event.direction, cur)) return;
   let next = cur;
@@ -248,8 +284,13 @@ function focusDomFor(handle: FocusGroupHandle, index: number): void {
   const el = handle.binds.get(index);
   if (!el) return;
   // Move browser focus so screen readers + Tab continuity work too.
-  el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // preventScroll:false lets the browser scroll the element into view
+  // naturally for non-virtualized lists (sidebars, menu rows, etc.).
+  // Virtualized consumers (VirtualLibraryGrid) own their own scrollTo
+  // path via TanStack's scrollToIndex — they don't need a duplicate
+  // scrollIntoView and the previous one fought the virtualizer's
+  // alignment choice.
+  el.focus({ preventScroll: false });
 }
 
 /// Register a focus group. Call inside a Solid component / reactive
@@ -270,16 +311,18 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
 
   onMount(() => {
     manager.groups.set(options.id, handle);
+    setGroupsVersionSig((v) => v + 1);
     if (manager.activeGroupId() === null) {
       manager.setActiveGroupId(options.id);
     }
   });
   onCleanup(() => {
+    const wasActive = manager.activeGroupId() === options.id;
     manager.groups.delete(options.id);
-    if (manager.activeGroupId() === options.id) {
-      // Demote — next interaction picks a new active group.
-      const next = manager.groups.keys().next().value ?? null;
-      manager.setActiveGroupId(next);
+    setGroupsVersionSig((v) => v + 1);
+    if (wasActive) {
+      // Demote to the most-recently-active still-registered group.
+      manager.demote(options.id);
     }
   });
 
@@ -290,6 +333,25 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
       if (el) handle.binds.set(index, el);
       else handle.binds.delete(index);
     },
+  };
+}
+
+/// Snapshot the current active focus group id and return a function
+/// that restores it. Used by menus / modals to remember where the
+/// operator was BEFORE the overlay activated its own group, so
+/// closing the overlay returns focus to the original surface (works
+/// across Retroverse pages, not just LIBRARY).
+///
+/// Usage pattern (inside a menu / modal component):
+///   const restore = captureFocusReturn();
+///   onMount(() => focusGroup.activate());
+///   onCleanup(() => restore());
+export function captureFocusReturn(): () => void {
+  const saved = manager.activeGroupId();
+  return () => {
+    if (saved !== null && manager.groups.has(saved)) {
+      manager.setActiveGroupId(saved);
+    }
   };
 }
 
