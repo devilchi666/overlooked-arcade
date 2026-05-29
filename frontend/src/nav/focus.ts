@@ -70,6 +70,13 @@ export type FocusGroupOptions = {
    *  want L1/R1 to cycle tabs rather than transfer focus. */
   onShoulderL?: () => void;
   onShoulderR?: () => void;
+  /** When false, the group registers without auto-claiming the active
+   *  slot on mount (even if `activeGroupId` is null). Use for sibling
+   *  region groups where one specific group should be the initial
+   *  landing surface — the others register with `autoClaim: false` so
+   *  registration order doesn't pick the active group arbitrarily.
+   *  Defaults true. */
+  autoClaim?: boolean;
 };
 
 type FocusGroupHandle = {
@@ -191,17 +198,31 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
       case "start":
         handle.options.onStart?.();
         return;
-      case "l1":
-        // Shoulder bumpers are EXPLICIT-OPT-IN only. Previously L1/R1
-        // fell back to neighbours which double-fired with the
-        // RetroverseShell tab-cycling listener; now consumers that want
-        // L1/R1 transfer must define onShoulderL / onShoulderR. The
-        // neighbours map is for DPad edge-spillover only.
-        handle.options.onShoulderL?.();
+      case "l1": {
+        if (handle.options.onShoulderL) {
+          handle.options.onShoulderL();
+          return;
+        }
+        // Fall back to neighbours-based transfer for legacy callers
+        // (LeftSidebar / RightSidebar / VirtualLibraryGrid rely on
+        // this for the legacy shell's L1/R1 sidebar↔grid jump). In
+        // Retroverse mode the shell intercepts L1/R1 globally for
+        // tab cycling; the focus-framework's neighbour activation
+        // becomes a moot intermediate before the route change
+        // unmounts the old page — invisible side-effect.
+        const left = handle.options.neighbours?.left;
+        if (left) manager.activate(left);
         return;
-      case "r1":
-        handle.options.onShoulderR?.();
+      }
+      case "r1": {
+        if (handle.options.onShoulderR) {
+          handle.options.onShoulderR();
+          return;
+        }
+        const right = handle.options.neighbours?.right;
+        if (right) manager.activate(right);
         return;
+      }
       default:
         return;
     }
@@ -214,12 +235,13 @@ function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
 function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): void {
   const o = handle.options;
   const count = o.itemCount();
-  // Empty groups — no spillover. Two mutually-empty sibling regions
-  // (e.g. an empty grid + an empty right detail pane) used to ping-pong
-  // horizontal presses between each other; without spillover here the
-  // operator just sees a no-op press, then uses L1/R1 to escape via
-  // tab cycling.
-  if (count <= 0) return;
+  // Empty group — horizontal DPad still spills so a count==0 region
+  // (filtered grid, empty library, list view with no entries) doesn't
+  // trap the operator. UP/DOWN on an empty group is a no-op.
+  if (count <= 0) {
+    maybeSpillHorizontal(o, event.direction);
+    return;
+  }
   const cur = clamp(o.focusedIndex(), 0, count - 1);
   if (o.onDirection?.(event.direction, cur)) return;
   let next = cur;
@@ -284,13 +306,14 @@ function focusDomFor(handle: FocusGroupHandle, index: number): void {
   const el = handle.binds.get(index);
   if (!el) return;
   // Move browser focus so screen readers + Tab continuity work too.
-  // preventScroll:false lets the browser scroll the element into view
-  // naturally for non-virtualized lists (sidebars, menu rows, etc.).
-  // Virtualized consumers (VirtualLibraryGrid) own their own scrollTo
-  // path via TanStack's scrollToIndex — they don't need a duplicate
-  // scrollIntoView and the previous one fought the virtualizer's
-  // alignment choice.
-  el.focus({ preventScroll: false });
+  // preventScroll:true so we don't trigger a browser scroll that fights
+  // a virtualizer's scrollToIndex (the grid drives its own scroll via
+  // createEffect on focusedIndex). For non-virtualized lists, the
+  // consuming surface usually has `overflow-y:auto` on the row's
+  // ancestor — focus + the row's css transitions cover the rest. The
+  // previous unconditional `scrollIntoView` fought the virtualizer and
+  // is dropped.
+  el.focus({ preventScroll: true });
 }
 
 /// Register a focus group. Call inside a Solid component / reactive
@@ -312,7 +335,7 @@ export function useFocusGroup(options: FocusGroupOptions): FocusGroupApi {
   onMount(() => {
     manager.groups.set(options.id, handle);
     setGroupsVersionSig((v) => v + 1);
-    if (manager.activeGroupId() === null) {
+    if (manager.activeGroupId() === null && options.autoClaim !== false) {
       manager.setActiveGroupId(options.id);
     }
   });
@@ -448,6 +471,10 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
     onShoulderR: opts.onShoulderR,
     neighbours: opts.neighbours,
     onDirection: opts.onDirection,
+    // Forward autoActivate to the inner useFocusGroup's autoClaim so
+    // sibling region groups with autoActivate:false don't accidentally
+    // win the "first registered claims active" race during mount.
+    autoClaim: opts.autoActivate !== false,
   });
 
   const rebind = (): void => {
