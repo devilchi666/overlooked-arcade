@@ -25,8 +25,121 @@ import type { RomEntry } from "../../library/types";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { activateFocusGroup, useDomQueryFocusGroup } from "../../nav/focus";
-import { systemThemes } from "../../themes/registry";
+import { systemThemes, type SystemId } from "../../themes/registry";
 import { useRetroverse } from "./context";
+
+// Per-system classification for the Quick / Marathon / Challenge moods.
+// We don't track session length per launch, so we use the system as a
+// coarse proxy: handhelds + arcades skew quick, fixed-console JRPG /
+// adventure machines skew marathon, classic arcade + early-cart hardware
+// skews hard. Membership is informed but loose — operators can override
+// by re-rolling the hero or browsing the rails.
+
+const QUICK_SYSTEMS = new Set<SystemId>([
+  // Handhelds — designed for short stints on the bus.
+  "lynx", "gb", "gbc", "gba", "gamegear", "ngp", "wonderswan",
+  "pokemini", "virtualboy",
+  // Arcade — credit-feed pacing.
+  "mame", "neogeo", "stv",
+  // Pre-NES carts — score-attack era.
+  "2600", "5200", "atari7800", "coleco", "intv", "o2", "channelf",
+  "vectrex",
+]);
+
+const MARATHON_SYSTEMS = new Set<SystemId>([
+  // 32-bit + later disc consoles dominate JRPG / adventure long-form.
+  "psx", "ps2", "saturn", "dreamcast", "gamecube", "n64", "psp",
+  // CD-shape add-ons.
+  "pcfx", "3do", "neocd", "segacd", "sega32xcd",
+  // 16-bit JRPG / strategy heartlands.
+  "snes", "genesis", "tg16", "pce-cd",
+  // Handheld with notable RPG library (Pokemon / Final Fantasy / etc.).
+  "nds",
+]);
+
+const CHALLENGE_SYSTEMS = new Set<SystemId>([
+  // Arcade — quarter-eating pacing.
+  "mame", "neogeo", "stv",
+  // Early-cart hardware — limited save support + raw-knuckle difficulty.
+  "2600", "5200", "atari7800", "coleco", "intv", "o2", "channelf",
+  "vectrex",
+  // Handhelds known for crunchy challenge (Lynx shooters, GG, WS).
+  "lynx", "gamegear", "wonderswan",
+  // Jaguar — small library, infamously difficult titles dominate.
+  "jaguar", "jagcd",
+]);
+
+const ONE_HOUR_SECS = 60 * 60;
+
+function isQuickEntry(entry: RomEntry): boolean {
+  // System class is the strongest signal. Inside it, slightly prefer
+  // entries the operator has barely touched — Quick mood pulls toward
+  // discoverable short bursts, not deep wells of completed games.
+  if (!QUICK_SYSTEMS.has(entry.systemId)) return false;
+  const total = entry.playTimeSecs ?? 0;
+  // Cap at 5 hours — if you've sunk a full afternoon into a "quick"
+  // system entry, it's not a quick mood pick anymore.
+  return total <= 5 * ONE_HOUR_SECS;
+}
+
+function isMarathonEntry(entry: RomEntry): boolean {
+  // Inverse of quick — long-form systems are the spine. Bonus signal:
+  // games you've already invested >1h in are prime resumption candidates
+  // regardless of system class.
+  if (MARATHON_SYSTEMS.has(entry.systemId)) return true;
+  return (entry.playTimeSecs ?? 0) >= ONE_HOUR_SECS;
+}
+
+function isChallengeEntry(entry: RomEntry): boolean {
+  // System class is the seed. Bonus: not-completed + at-least-tried
+  // entries lean "tough — go back at it". Pure system class without
+  // any play time is fine too (covers brand-new Challenge library).
+  if (CHALLENGE_SYSTEMS.has(entry.systemId)) return true;
+  // Across systems: tried > 5 min, not completed, no recent play —
+  // candidate for a "couldn't crack it last time" return.
+  const tried = (entry.playTimeSecs ?? 0) >= 5 * 60;
+  if (tried && entry.completed === false) {
+    return true;
+  }
+  return false;
+}
+
+// Daily roulette — UTC-day lock so the same pick comes back on every
+// visit until the next midnight UTC. Persisted in localStorage so the
+// lock survives shell restarts but not OA reinstalls. Re-rolls the
+// pick on date change OR when the persisted entry id is no longer in
+// the library (game deleted / library reset).
+
+const DAILY_ROULETTE_KEY = "oa.retroverse.dailyRoulette";
+
+function todayUtc(): string {
+  // Use YYYY-MM-DD form. Date.toISOString returns the date in UTC.
+  return new Date().toISOString().slice(0, 10);
+}
+
+function readDailyRoulette(): { date: string; entryId: string } | null {
+  try {
+    const raw = localStorage.getItem(DAILY_ROULETTE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { date?: string; entryId?: string };
+    if (!parsed.date || !parsed.entryId) return null;
+    return { date: parsed.date, entryId: parsed.entryId };
+  } catch {
+    return null;
+  }
+}
+
+function writeDailyRoulette(entryId: string): void {
+  try {
+    localStorage.setItem(
+      DAILY_ROULETTE_KEY,
+      JSON.stringify({ date: todayUtc(), entryId }),
+    );
+  } catch {
+    // Quota / private-mode failures are non-fatal — the lock just
+    // doesn't persist this session; the hero still renders.
+  }
+}
 
 type MoodId =
   | "for-you"
@@ -43,8 +156,11 @@ type MoodDef = {
   id: MoodId;
   label: string;
   glyph: string;
-  /// Candidate-pool filter. `null` means placeholder (Quick / Marathon /
-  /// Challenge / Daily roulette — needs data that doesn't exist yet).
+  /// Candidate-pool filter. Every shipping mood has one — Quick /
+  /// Marathon / Challenge use per-system class heuristics, Daily
+  /// roulette accepts the whole library and locks the pick for 24h,
+  /// Surprise me launches immediately. The `null` slot is reserved
+  /// for future moods that need data we don't have yet.
   pool: ((entry: RomEntry) => boolean) | null;
   /// True for moods that LAUNCH immediately on selection instead of
   /// re-rendering (Surprise me).
@@ -80,19 +196,19 @@ const MOODS: readonly MoodDef[] = [
     id: "quick",
     label: "Quick",
     glyph: "⚡",
-    pool: null,
+    pool: isQuickEntry,
   },
   {
     id: "marathon",
     label: "Marathon",
     glyph: "⌛",
-    pool: null,
+    pool: isMarathonEntry,
   },
   {
     id: "challenge",
     label: "Challenge",
     glyph: "⚔",
-    pool: null,
+    pool: isChallengeEntry,
   },
   {
     id: "surprise-me",
@@ -105,7 +221,7 @@ const MOODS: readonly MoodDef[] = [
     id: "daily-roulette",
     label: "Daily roulette",
     glyph: "🎲",
-    pool: null,
+    pool: () => true,
   },
 ];
 
@@ -118,9 +234,58 @@ type WhyLine = {
 
 /// Pick the best WHY-line for an entry. Returns null when no template
 /// matches (i.e. nothing notable to say); caller falls back to random.
-function whyLineFor(entry: RomEntry): WhyLine | null {
+/// When `mood` is supplied, mood-specific templates are checked first
+/// — Quick / Marathon / Challenge / Daily roulette each have phrasing
+/// that explains why the pick fits the mood rather than reusing the
+/// generic "continue where you left off" / "from your favorites" lines.
+function whyLineFor(entry: RomEntry, mood?: MoodId): WhyLine | null {
   const nowSecs = Math.floor(Date.now() / 1000);
   const day = 24 * 60 * 60;
+  const systemName =
+    systemThemes[entry.systemId]?.shortName ??
+    systemThemes[entry.systemId]?.displayName ??
+    entry.systemId;
+
+  // Mood-specific top-priority lines. They short-circuit the generic
+  // template chain so the WHY line stays on-topic for the mood the
+  // operator picked.
+  if (mood === "quick") {
+    return {
+      text: `Bite-sized session · ${systemName}`,
+      priority: 200,
+    };
+  }
+  if (mood === "marathon") {
+    const hours = Math.floor((entry.playTimeSecs ?? 0) / 3600);
+    if (hours >= 1) {
+      return {
+        text: `Settle in · ${hours}h already logged · ${systemName}`,
+        priority: 200,
+      };
+    }
+    return {
+      text: `Settle in for the long haul · ${systemName}`,
+      priority: 200,
+    };
+  }
+  if (mood === "challenge") {
+    if (entry.completed === false && (entry.playTimeSecs ?? 0) > 0) {
+      return {
+        text: `Unfinished business · you tried, didn't crack it · ${systemName}`,
+        priority: 200,
+      };
+    }
+    return {
+      text: `Hard mode · ${systemName}`,
+      priority: 200,
+    };
+  }
+  if (mood === "daily-roulette") {
+    return {
+      text: `Today's spin · resets at midnight UTC · ${systemName}`,
+      priority: 200,
+    };
+  }
 
   // 1. Continue where you left off — within 14 days, with play time.
   if (entry.lastPlayedAt && nowSecs - entry.lastPlayedAt < 14 * day) {
@@ -252,16 +417,40 @@ const PlayNowPage: Component = () => {
   /// Hero = highest-priority WHY-line winner in the pool, with a fallback
   /// to a random pick. rerollSeed is a dependency so "Show another" can
   /// shuffle the result.
+  ///
+  /// Daily roulette is special-cased: the pick is locked to a single
+  /// random entry per UTC day via localStorage. Re-rolling inside the
+  /// same day re-uses the same pick; midnight UTC unlocks a fresh one.
+  /// Re-roll on this mood is intentionally a no-op (the WHY line says
+  /// "resets at midnight UTC" so the operator knows). If the locked
+  /// pick references a since-deleted game, fall through to a fresh
+  /// pick + persist it.
   const heroEntry = createMemo<RomEntry | null>(() => {
-    // Touch rerollSeed for reactivity.
+    // Touch rerollSeed for reactivity even when daily-roulette ignores
+    // it — keeps the memo dependency graph stable across mood switches.
     rerollSeed();
+    const mood = activeMood();
     const pool = candidatePool();
     if (pool.length === 0) return null;
+
+    if (mood.id === "daily-roulette") {
+      const today = todayUtc();
+      const stored = readDailyRoulette();
+      if (stored && stored.date === today) {
+        const match = pool.find((e) => e.id === stored.entryId);
+        if (match) return match;
+        // Stale id (game deleted / library reset) — fall through to a
+        // fresh pick and overwrite the lock.
+      }
+      const fresh = pickRandom(pool);
+      if (fresh) writeDailyRoulette(fresh.id);
+      return fresh;
+    }
 
     let bestEntry: RomEntry | null = null;
     let bestPriority = -1;
     for (const entry of pool) {
-      const why = whyLineFor(entry);
+      const why = whyLineFor(entry, mood.id);
       const p = why?.priority ?? 0;
       if (p > bestPriority) {
         bestEntry = entry;
@@ -278,7 +467,7 @@ const PlayNowPage: Component = () => {
   const heroWhy = createMemo(() => {
     const e = heroEntry();
     if (!e) return null;
-    return whyLineFor(e)?.text ?? "Daily random pick";
+    return whyLineFor(e, activeMoodId())?.text ?? "Daily random pick";
   });
 
   const heroCoverSrc = () => {
@@ -528,8 +717,10 @@ const PlayNowPage: Component = () => {
           </ul>
         </section>
         <p class="mt-6 px-2 text-[0.6rem] leading-relaxed text-(--color-oa-ink-dim)/60">
-          Recommendations adapt to time of day + your recent play. Quick /
-          Marathon / Challenge ship once session-length data is tracked.
+          Picks adapt to your library + recent play. Quick / Marathon /
+          Challenge use a per-system class heuristic; refinements land
+          once per-launch session lengths are tracked. Daily roulette
+          locks for 24h.
         </p>
       </aside>
 
@@ -548,10 +739,6 @@ const PlayNowPage: Component = () => {
                 </p>
                 <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
                   <Switch fallback="No games match this mood yet.">
-                    <Match when={activeMood().pool === null}>
-                      This mood ships in a follow-up — needs data that
-                      doesn't exist yet (session-length / difficulty).
-                    </Match>
                     <Match when={launchableEntries().length === 0}>
                       Your library is empty. Import some games first.
                     </Match>
