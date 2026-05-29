@@ -1,6 +1,7 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { LibraryStore } from "../library/store";
+import type { CustomCollectionsStore } from "../library/customCollections";
 import type { RomEntry, VariantInfo } from "../library/types";
 import { useMedia } from "../library/media";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
@@ -11,6 +12,11 @@ type Props = {
   entry: RomEntry | null;
   position: { x: number; y: number } | null;
   library: LibraryStore;
+  /// Slice 12 — Retroverse custom collections. The "Add to collection ▸"
+  /// submenu reads + mutates this store. Optional so the legacy /
+  /// non-Retroverse code paths can opt out by not passing it; absent
+  /// store hides the menu entry.
+  customCollections?: CustomCollectionsStore;
   onClose: () => void;
   /// Re-launch the ROM (same as left-click on the tile).
   onLaunch: (entry: RomEntry) => void;
@@ -24,6 +30,10 @@ type Props = {
   onPickCore: (entry: RomEntry, position: { x: number; y: number }) => void;
   /// Open the per-game settings drawer (Phase 2.8 slice D).
   onOpenProperties: (entry: RomEntry) => void;
+  /// Slice 12 — open the NewCollectionDialog seeded with this rom.
+  /// Wired by App.tsx when customCollections is in play. Absent =
+  /// "+ New collection…" tail entry in the submenu is hidden.
+  onOpenNewCollection?: (romId: string) => void;
 };
 
 type MenuItem = {
@@ -37,6 +47,10 @@ type MenuItem = {
   disabled?: boolean;
   /// Danger styling for destructive actions ("Remove from library").
   danger?: boolean;
+  /// Slice 12 — leading checkmark column for the Add-to-collection
+  /// submenu rows so the operator can see at a glance which lists a
+  /// game is already in.
+  leadingGlyph?: string;
   onActivate: () => void;
   /// Optional secondary action — currently only used by the per-variant
   /// rows to expose the pin/unpin star (X on controller).
@@ -44,6 +58,12 @@ type MenuItem = {
   secondaryGlyph?: string;
   secondaryTitle?: string;
 };
+
+/// Slice 12 — top-level vs Add-to-collection sub-view. Mirrors
+/// SystemContextMenu's main / move-category pattern. The list itself
+/// is rebuilt per view (no nesting through `<Show>`) so the focus
+/// group's index → action mapping stays consistent.
+type MenuView = "main" | "add-to-collection";
 
 const ITEM_CLASS =
   "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06] disabled:cursor-default disabled:text-(--color-oa-ink-dim) disabled:hover:bg-transparent";
@@ -206,6 +226,33 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => void props.library.setCompleted(id, next));
   }
 
+  // Slice 12 — Add to collection ▸ sub-view state. Only mounts while
+  // the menu is open (the outer keyed Show body re-runs on every
+  // open). Reset to "main" on close so a re-open lands on the top
+  // level even if the operator was deep in the sub-view.
+  const [menuView, setMenuView] = createSignal<MenuView>("main");
+
+  /// Slice 12 — toggle collection membership. Optimistic via the store;
+  /// after firing we stay in the sub-view so the operator can drop the
+  /// game into multiple lists in one menu opening. B (or clicking
+  /// "← Back") returns to the main view.
+  async function toggleCollectionMembership(collectionId: string) {
+    if (!props.customCollections || !props.entry) return;
+    const romId = props.entry.id;
+    const isMember = props.customCollections.state.members[collectionId]?.has(romId) === true;
+    if (isMember) {
+      await props.customCollections.removeFromCollection(collectionId, romId);
+    } else {
+      await props.customCollections.addToCollection(collectionId, romId);
+    }
+  }
+
+  function openNewCollectionFromMenu() {
+    if (!props.onOpenNewCollection || !props.entry) return;
+    const romId = props.entry.id;
+    closeAfter(() => props.onOpenNewCollection!(romId));
+  }
+
   /// Flat ordered item list. Mirrors the rendered order; conditional
   /// sections fold in via if-guards rather than `<Show>` so the focus
   /// group's index → action mapping stays consistent. Returns empty
@@ -213,6 +260,42 @@ const TileContextMenu: Component<Props> = (props) => {
   /// 0 and the manager won't dispatch nav events into the void.
   const items = createMemo<MenuItem[]>(() => {
     if (!props.entry) return [];
+    // Slice 12 — Add to collection sub-view renders an entirely
+    // different list. Top "← Back" returns to main, then one row per
+    // existing collection (checkmark if the game is already in it),
+    // then a trailing "+ New collection…" entry.
+    if (menuView() === "add-to-collection") {
+      const list: MenuItem[] = [];
+      list.push({
+        key: "add-back",
+        label: "← Back",
+        onActivate: () => setMenuView("main"),
+      });
+      const entry = props.entry;
+      const store = props.customCollections;
+      if (store) {
+        for (const col of store.state.collections) {
+          const isMember = store.state.members[col.id]?.has(entry.id) === true;
+          list.push({
+            key: `add-${col.id}`,
+            label: col.name,
+            leadingGlyph: isMember ? "✓" : "○",
+            badge: String(col.memberCount),
+            onActivate: () => void toggleCollectionMembership(col.id),
+          });
+        }
+      }
+      if (props.onOpenNewCollection) {
+        list.push({
+          key: "add-new",
+          label: "+ New collection…",
+          badgeAccent: true,
+          onActivate: openNewCollectionFromMenu,
+        });
+      }
+      return list;
+    }
+
     const list: MenuItem[] = [];
     list.push({ key: "launch", label: "Launch", badge: "Enter", onActivate: launch });
     if (hasGameVariants()) {
@@ -258,6 +341,20 @@ const TileContextMenu: Component<Props> = (props) => {
       label: props.entry?.completed ? "Mark as not completed" : "Mark as completed",
       onActivate: toggleCompleted,
     });
+    // Slice 12 — Add to collection ▸ submenu entry. Only shown when
+    // the customCollections store is plumbed (Retroverse mode); the
+    // legacy-mode shell doesn't surface custom collections so the
+    // entry is hidden to avoid a dead end.
+    if (props.customCollections) {
+      const count = props.customCollections.state.collections.length;
+      list.push({
+        key: "add-to-collection",
+        label: "Add to collection",
+        badge: count > 0 ? `${count} ›` : "›",
+        badgeAccent: true,
+        onActivate: () => setMenuView("add-to-collection"),
+      });
+    }
     list.push({
       key: "core",
       label: "Change core…",
@@ -290,7 +387,24 @@ const TileContextMenu: Component<Props> = (props) => {
       const it = items()[i];
       if (it && !it.disabled) it.onSecondary?.();
     },
-    onCancel: () => props.onClose(),
+    onCancel: () => {
+      // B in the Add-to-collection sub-view returns to the top level
+      // instead of closing the whole menu — mirrors the unified spec
+      // operators have for sub-region menus.
+      if (menuView() === "add-to-collection") {
+        setMenuView("main");
+        return;
+      }
+      props.onClose();
+    },
+  });
+
+  // Reset focus to the first row whenever the sub-view changes so the
+  // operator lands on "← Back" / "Launch" rather than wherever the
+  // previous view's cursor was.
+  createEffect(() => {
+    void menuView();
+    setFocusedIndex(0);
   });
 
   // Activate the menu's focus group on mount + register as the back
@@ -328,10 +442,18 @@ const TileContextMenu: Component<Props> = (props) => {
         // close. captureFocusReturn snapshots whichever group was active
         // BEFORE we activate ours, so close-handlers return focus to
         // that surface across all Retroverse tabs (not just LIBRARY).
-        useBackHandler(() => props.onClose());
+        useBackHandler(() => {
+          // Same sub-view → main step-back as onCancel above.
+          if (menuView() === "add-to-collection") {
+            setMenuView("main");
+            return;
+          }
+          props.onClose();
+        });
         const restoreFocus = captureFocusReturn();
         onMount(() => {
           onMenuMount();
+          setMenuView("main");
           setFocusedIndex(0);
         });
         onCleanup(restoreFocus);
@@ -343,7 +465,11 @@ const TileContextMenu: Component<Props> = (props) => {
             onClick={(e) => e.stopPropagation()}
             data-system={props.entry!.systemId}
           >
-            <HintRegion hints={{ a: "Activate", b: "Close", x: "Pin/Unpin" }} />
+            <HintRegion hints={{
+              a: menuView() === "add-to-collection" ? "Toggle" : "Activate",
+              b: menuView() === "add-to-collection" ? "Back" : "Close",
+              x: "Pin/Unpin",
+            }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">{props.entry!.title}</p>
               <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
@@ -370,6 +496,18 @@ const TileContextMenu: Component<Props> = (props) => {
                       onMouseEnter={() => setFocusedIndex(index())}
                       onClick={item.onActivate}
                     >
+                      <Show when={item.leadingGlyph}>
+                        <span
+                          class="w-3 shrink-0 text-center text-[0.7rem]"
+                          classList={{
+                            "text-(--color-system-accent)": item.leadingGlyph === "✓",
+                            "text-(--color-oa-ink-dim)": item.leadingGlyph !== "✓",
+                          }}
+                          aria-hidden="true"
+                        >
+                          {item.leadingGlyph}
+                        </span>
+                      </Show>
                       <span class="truncate">{item.label}</span>
                       <Show when={item.badge}>
                         <span

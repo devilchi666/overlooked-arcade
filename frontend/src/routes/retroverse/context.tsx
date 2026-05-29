@@ -70,6 +70,12 @@ export type RetroverseContextValue = {
   /// "Rescan all" button. Sourced from App.handleRescanLibraryFolders;
   /// disabled by the page when no folders are tracked.
   onRescanLibraryFolders: () => void;
+  /// Phase C3 Slice 12 — open the NewCollectionDialog. `seedRomId` is
+  /// non-null when the open call came from a tile-context-menu
+  /// "+ New collection…" tail entry, so the dialog seeds the new
+  /// collection with that rom on create. Used by CollectionsPage's
+  /// "+ New collection" sidebar button (passes null).
+  onOpenNewCollection: (seedRomId: string | null) => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

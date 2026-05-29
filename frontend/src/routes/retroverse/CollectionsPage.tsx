@@ -283,16 +283,31 @@ const CollectionsPage: Component = () => {
     };
   });
 
-  /// Operator clicks "+ New collection". v1 uses window.prompt for the
-  /// name — Slice D upgrades this to the Dialog primitive + supports
-  /// rename / delete from a context menu on the sidebar row. The
-  /// prompt is a placeholder, not the final UX.
-  async function handleNewCollection() {
-    const name = window.prompt("Name this collection:", "");
-    if (!name || !name.trim()) return;
-    const id = await ctx.customCollections.createCollection(name.trim());
-    if (id) setActiveList({ kind: "custom", id });
+  /// Operator clicks "+ New collection" — defers to the App-level
+  /// NewCollectionDialog (registered on the RetroverseContext) so
+  /// every entry point uses the same Dialog primitive surface.
+  /// Rename / delete via right-click on the sidebar row land in
+  /// Slice E.
+  function handleNewCollection() {
+    ctx.onOpenNewCollection(null);
   }
+
+  // After a new collection lands in the store (createCollection
+  // resolved server-side and refresh() updated `collections`), jump
+  // the sidebar selection to it so the operator immediately sees the
+  // empty-state copy nudging them toward Add to collection ▸. We
+  // detect "new collection just appeared" by tracking the count
+  // delta — simpler than threading a promise back through the
+  // dialog.
+  let prevCount = ctx.customCollections.state.collections.length;
+  createEffect(() => {
+    const cur = ctx.customCollections.state.collections;
+    if (cur.length > prevCount) {
+      const latest = cur[cur.length - 1];
+      if (latest) setActiveList({ kind: "custom", id: latest.id });
+    }
+    prevCount = cur.length;
+  });
 
   return (
     <div

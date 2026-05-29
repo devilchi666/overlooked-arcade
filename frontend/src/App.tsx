@@ -27,6 +27,7 @@ import LibraryManagerPage from "./components/LibraryManagerPage";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
+import NewCollectionDialog from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
 import Shell from "./layout/Shell";
 import TopToolbar from "./layout/TopToolbar";
@@ -238,6 +239,12 @@ const App: Component = () => {
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
+  /// Phase C3 Slice 12 — NewCollectionDialog open/closed + optional
+  /// seed rom. `null` = closed. `{ romId: null }` = open from the
+  /// COLLECTIONS sidebar's + New collection button. `{ romId: <id> }`
+  /// = open from a tile context menu, which adds that rom to the new
+  /// collection on create.
+  const [newCollectionFor, setNewCollectionFor] = createSignal<{ romId: string | null } | null>(null);
   function openProperties(entry: RomEntry) {
     setPropertiesFor(entry);
   }
@@ -2004,6 +2011,8 @@ const App: Component = () => {
             onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
             onAddLibraryFolder: handleAddLibraryFolder,
             onRescanLibraryFolders: handleRescanLibraryFolders,
+            onOpenNewCollection: (seedRomId) =>
+              setNewCollectionFor({ romId: seedRomId }),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
@@ -2104,6 +2113,7 @@ const App: Component = () => {
         entry={contextMenuFor()?.entry ?? null}
         position={contextMenuFor()?.position ?? null}
         library={library}
+        customCollections={customCollections}
         onClose={() => setContextMenuFor(null)}
         onLaunch={(entry) => void handleLaunch(entry)}
         onShowSaves={(entry) => setSavesEntry(entry)}
@@ -2111,6 +2121,13 @@ const App: Component = () => {
         onPickRegion={(entry) => setRegionPickerFor(entry)}
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
+        onOpenNewCollection={(romId) => setNewCollectionFor({ romId })}
+      />
+      <NewCollectionDialog
+        open={newCollectionFor() !== null}
+        seedRomId={newCollectionFor()?.romId ?? null}
+        customCollections={customCollections}
+        onClose={() => setNewCollectionFor(null)}
       />
       <GamePropertiesDialog
         open={propertiesFor() !== null}
