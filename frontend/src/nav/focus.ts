@@ -70,8 +70,15 @@ export type FocusGroupOptions = {
   /** Pre-handler for direction events. Return true to consume the event
    *  (default movement skipped). Use this for orientation-specific
    *  behaviour like "left collapses a sidebar container" or "right
-   *  expands a tree node before descending." */
-  onDirection?: (direction: NavDirection, currentIndex: number) => boolean;
+   *  expands a tree node before descending." `source` is `"dpad"` or
+   *  `"stick-left"` — gate on it when the desired behaviour differs
+   *  between sources (e.g. stick L/R expands a tree container while
+   *  DPad L/R should fall through to region transfer). */
+  onDirection?: (
+    direction: NavDirection,
+    currentIndex: number,
+    source: NavDirectionEvent["source"],
+  ) => boolean;
   /** Overrides for the shoulder bumpers. When defined, the handler runs
    *  instead of jumping to a neighbour group — useful for modals that
    *  want L1/R1 to cycle tabs rather than transfer focus. */
@@ -261,10 +268,14 @@ function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): voi
 
   // Custom direction handler runs first (used by sidebar tree
   // expand/collapse, rewind scrubber, etc.). Return true to consume.
-  if (o.onDirection?.(event.direction, cur)) {
+  // Source is forwarded so handlers can gate per-source — e.g. the
+  // LIBRARY sidebar expands containers on stick L/R but lets DPad L/R
+  // fall through to region transfer.
+  if (o.onDirection?.(event.direction, cur, event.source)) {
     focusLog("direction consumed by onDirection", {
       id: o.id,
       direction: event.direction,
+      source: event.source,
     });
     return;
   }
@@ -476,11 +487,14 @@ export type DomQueryFocusGroupOptions = {
   onShoulderR?: () => void;
   neighbours?: { left?: string; right?: string };
   /// Pre-handler for direction events. Return true to consume the event
-  /// (default movement skipped). Mirrors useFocusGroup's onDirection —
-  /// useful for Retroverse pages where DPad LEFT/RIGHT should transfer
-  /// to a neighbour region group instead of being ignored (vertical
-  /// orientation) or moving (horizontal).
-  onDirection?: (direction: NavDirection, currentIndex: number) => boolean;
+  /// (default movement skipped). Mirrors useFocusGroup's onDirection,
+  /// including the `source` parameter for per-source gating
+  /// (stick-only tree expand/collapse vs DPad region transfer).
+  onDirection?: (
+    direction: NavDirection,
+    currentIndex: number,
+    source: NavDirectionEvent["source"],
+  ) => boolean;
   /// When false the group registers but does not auto-activate on mount.
   /// Useful when multiple sibling groups co-exist on one page and only
   /// one should be the landing surface; the others activate via DPad /

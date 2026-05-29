@@ -90,8 +90,51 @@ const LibraryPage: Component = () => {
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
+    // Match only the LeftSidebar's primary navigation rows — twisty
+    // toggle buttons and the collapse/expand button at the bottom
+    // intentionally stay out of controller walk (the twisty is replaced
+    // by DPad LEFT/RIGHT on container rows via onDirection below; the
+    // collapse toggle is mouse-only utility chrome).
+    selector: "[data-oa-sidebar-row]",
     orientation: "vertical",
     onActivate: (_i, el) => el.click(),
+    onDirection: (direction, currentIndex, source) => {
+      // Stick LEFT/RIGHT on a container row expands/collapses the
+      // tree — matches the operator's mental model of "stick walks
+      // and explores within the region." DPad LEFT/RIGHT is reserved
+      // for region transfer and always falls through to the default
+      // (DPad-RIGHT activates `neighbours.right` = CENTER; DPad-LEFT
+      // has no leftward neighbour so it no-ops). Stick UP/DOWN walks
+      // normally; leaf rows + the All Games button never consume.
+      if (source !== "stick-left") return false;
+      if (direction !== "left" && direction !== "right") return false;
+      const root = leftRef;
+      if (!root) return false;
+      const items = Array.from(
+        root.querySelectorAll<HTMLElement>("[data-oa-sidebar-row]"),
+      ).filter((el) => !(el as Partial<HTMLButtonElement>).disabled);
+      const focused = items[currentIndex];
+      if (!focused) return false;
+      if (focused.getAttribute("data-oa-tree-node-kind") !== "container") {
+        return false;
+      }
+      const nodeId = focused.getAttribute("data-oa-tree-node-id");
+      if (!nodeId) return false;
+      const expanded = new Set(ctx.views.activeView()?.expandedNodes ?? []);
+      const isExpanded = expanded.has(nodeId);
+      if (direction === "left") {
+        if (isExpanded) {
+          ctx.views.toggleExpanded(nodeId);
+          return true;
+        }
+        return false;
+      }
+      if (!isExpanded) {
+        ctx.views.toggleExpanded(nodeId);
+        return true;
+      }
+      return false;
+    },
     neighbours: { right: CENTER_ID },
   });
   useDomQueryFocusGroup({

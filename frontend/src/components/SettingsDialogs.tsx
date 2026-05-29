@@ -23,7 +23,6 @@ import {
   WINDOW_MODE_LABELS,
   WINDOW_OPTIONS,
   type AudioDeviceInfo,
-  type ControllerNavSource,
   type MonitorInfo,
   type ScalingMode,
   type SettingsStore,
@@ -173,20 +172,6 @@ export const DisplayDialog: Component<{
             toggle={{
               checked: props.settings.controllerNavEnabled(),
               onChange: (v) => props.settings.setControllerNavEnabled(v),
-            }}
-          />
-          <SettingRow
-            label="Navigation source"
-            inherited={null}
-            overridden={false}
-            select={{
-              value: props.settings.controllerNavSource(),
-              options: [
-                { value: "both", label: "DPad + left stick" },
-                { value: "dpad", label: "DPad only" },
-                { value: "stick-left", label: "Left stick only" },
-              ],
-              onChange: (v) => props.settings.setControllerNavSource(v as ControllerNavSource),
             }}
           />
           <SettingRow

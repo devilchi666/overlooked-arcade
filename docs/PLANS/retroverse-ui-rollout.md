@@ -491,18 +491,28 @@ Current status (2026-05-28):
 - ⬜ Phase C5-C6 — DISCOVER + content-packs infra. Pending its
   own scope arc.
 
-### Remaining work (as of end-of-session 2026-05-28)
+### Remaining work (as of end-of-session 2026-05-29)
+
+**Recently closed (2026-05-29):**
+- ✅ Unified controller pipeline — DPad transfers regions, stick
+  walks within; merged `1fcd522`.
+- ✅ Menu/dialog polish — Dialog primitive now claims active so
+  A/X/Y don't leak behind modals; LIBRARY sidebar DPad expand /
+  collapse on container rows restored; legacy `controllerNavSource`
+  setting + plumbing removed. Branch
+  `feat/retroverse-ui-menu-polish`.
 
 **Code-only, no external content:**
 - Slice 12 — custom-manual collections (SQLite + CRUD + sidebar
   dialog + TileContextMenu submenu).
 - SETTINGS → Per-system category (lift SystemSettingsDialog body).
-- SETTINGS → Library full wrap (plumb 5 store/callback props
-  through RetroverseContext).
-- SETTINGS → Media full wrap (variant="panel" lift on
-  PlatformMediaDialog).
-- BIOS live-presence grid (new get_bios_status Rust command
-  aggregating per-system check_*_bios functions).
+- ~~SETTINGS → Library full wrap~~ — SHIPPED `dbd7af4`
+  (LibraryManagerPage embedded as category body).
+- ~~SETTINGS → Media full wrap~~ — SHIPPED `4236bbd`
+  (PlatformMediaDialog variant="panel" lift).
+- ~~BIOS live-presence grid~~ — SHIPPED `cab4111`
+  (`get_bios_status` Tauri command + per-system Ready /
+  Present-unrecognized / Missing pills + sha-1 detail rows).
 - PLAY NOW placeholder moods (Quick / Marathon / Challenge /
   Daily roulette) — need session-length tracking.
 - COLLECTIONS Hidden Gems + Last Played smart-lists (need rating
@@ -510,7 +520,8 @@ Current status (2026-05-28):
 - HOME popular + recently-played carousel arrows + dot pagination
   (currently CSS horizontal scroll).
 - LibraryPage VirtualLibraryGrid 2D nav restoration in Retroverse
-  mode (currently lost — page-level vertical group overrides).
+  mode — superseded by the 2026-05-29 unified controller pipeline
+  (page-level CENTER → "library-grid" delegating effect).
 - "Now playing" audio indicator in HintBar.
 - System Status panel — decide if/where to surface (was on HOME
   v1 bottom-right, removed in HOME v2).

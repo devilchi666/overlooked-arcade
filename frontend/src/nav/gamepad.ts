@@ -48,13 +48,6 @@ const INITIAL_REPEAT_MS = 400;
 const REPEAT_INTERVAL_MS = 80;
 const STICK_DEADZONE = 0.4;
 
-/// Direction-source preference. Retained for settings round-trip
-/// compatibility but no longer affects polling — both DPad and stick
-/// always fire events under the Phase 5 model, where each source
-/// carries different semantics (DPad transfers regions; stick walks
-/// within).
-export type NavSource = "dpad" | "stick-left" | "both";
-
 let inputEnabled = true;
 
 /// Master enable / disable. Settings calls this when the operator
@@ -62,13 +55,6 @@ let inputEnabled = true;
 /// emit() calls — listeners stay subscribed but receive nothing.
 export function setNavEnabled(on: boolean): void {
   inputEnabled = on;
-}
-
-/// Legacy setter — no longer suppresses events. Kept as a no-op so
-/// settings round-trip code in App.tsx doesn't error and so existing
-/// persisted values stay compatible during the transition.
-export function setNavSource(_source: NavSource): void {
-  // intentionally empty
 }
 
 type ButtonState = { pressedAt: number; lastRepeatAt: number };
@@ -328,12 +314,6 @@ function pollButtons(pad: Gamepad, now: number): void {
       console.log(`[oa-gamepad] raw button ${i} pressed`);
     }
     if (!buttonName && !dpadDir) continue;
-    // DPad and stick are no longer filtered by `navSource` — under the
-    // new model (Phase 5) DPad transfers between regions and stick
-    // walks within, so each source carries different semantics and
-    // there's no reason to gate one off. The setting is retained as a
-    // legacy compatibility knob but doesn't suppress events anymore.
-
     if (isPressed && !prev) {
       buttonStates.set(key, { pressedAt: now, lastRepeatAt: now });
       if (buttonName) {
@@ -386,9 +366,6 @@ function pollStick(pad: Gamepad, now: number): void {
       console.log(`[oa-gamepad] raw axis ${i} = ${v.toFixed(3)}`);
     }
   }
-  // Same as pollButtons: source filtering removed under the new
-  // DPad-vs-stick model. The `navSource` legacy setting no longer
-  // affects polling.
   const x = pad.axes[0] ?? 0;
   const y = pad.axes[1] ?? 0;
   const direction = stickToDirection(x, y);
