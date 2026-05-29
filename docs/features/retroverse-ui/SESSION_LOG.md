@@ -1,5 +1,96 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — Slice 12 custom collections (full feature)
+
+Operator-built collection lists alongside the smart-list COLLECTIONS
+surface shipped in Slice 11. Full feature in one branch
+(`feat/retroverse-ui-slice-12-custom-collections`, 5 phase commits).
+
+**Shipped:**
+
+- **Slice 12A — Rust schema + Tauri commands** (`acb9877`). v14
+  migration adds two SQLite tables: `custom_collections` (id PK, name,
+  sort_order, created_at, updated_at) + `custom_collection_members`
+  (collection_id FK ON DELETE CASCADE, rom_id, sort_order, added_at —
+  composite PK). LibraryDb methods: list/create/rename/delete/add/
+  remove + list_collection_members. INNER JOIN against games in the
+  member-list query so dangling memberships from deleted roms don't
+  surface. `delete_game` sweeps the junction. 8 unit tests cover the
+  happy path + idempotent add + FK CASCADE + game-delete sweep +
+  orphan filter via JOIN. 506 oa-shell tests green (was 497).
+
+- **Slice 12B — frontend store** (`5bb60d2`).
+  `createCustomCollectionsStore` in
+  `frontend/src/library/customCollections.ts` mirrors the favorite /
+  completed pattern: optimistic update + revert on failure. Member
+  ids stored as `Map<collectionId, Set<romId>>` for O(1) "is X in
+  collection Y?" lookups (TileContextMenu uses that per render).
+  Plumbed through `RetroverseContext` so any future surface (HOME
+  quick action, PLAY NOW filter) can read membership without prop-
+  drilling.
+
+- **Slice 12C — CollectionsPage MY COLLECTIONS sidebar + center pane**
+  (`9136876`). Active-list state widens to a tagged union
+  (`smart | custom`). MY COLLECTIONS sidebar group renders the
+  custom list via `<For>`, with active highlight + member-count
+  badge. Header card name / glyph / description / badge derive from
+  a unified `headerInfo` memo — custom collections show "Custom ·
+  editable" instead of "Built-in · read-only". Empty-state copy
+  branches per active kind. v1 used `window.prompt` for the create
+  flow — replaced in Slice D.
+
+- **Slice 12D — NewCollectionDialog + TileContextMenu submenu**
+  (`5baf42d`). New `NewCollectionDialog` component inside the Dialog
+  primitive (inherits the menu-polish inert overlay + back-stack +
+  focus restore). Auto-focuses the input on open. `seedRomId` prop
+  lets the tile-menu path drop the right-clicked rom into the new
+  collection on create — "make a list and add this game to it" in one
+  dialog open. TileContextMenu gains an "Add to collection ▸"
+  sub-view mirroring SystemContextMenu's main/move-category pattern:
+  rows show ✓/○ for current membership; A toggles in place; tail
+  entry "+ New collection…" opens the dialog seeded with this rom; B
+  in sub-view returns to main (back-stack + onCancel both branch).
+  Focus resets on view change; HintRegion adapts.
+
+- **Slice 12E — Rename / Delete via sidebar right-click**
+  (`dbdb5be`). NewCollectionDialog extends to a tagged `mode` prop
+  (create | rename). Rename pre-fills + selects the current name.
+  New `CollectionRowContextMenu` popover anchors on row right-click
+  with Rename… and Delete… entries. Delete guards via
+  `window.confirm`; if the deleted collection was the active list the
+  view falls back to Favorites so the center pane keeps rendering.
+
+**Operator workflow now end-to-end:**
+
+  1. Right-click a tile in LIBRARY → Add to collection ▸ → + New
+     collection… → name + Create. Game lands in the new list.
+  2. Switch to COLLECTIONS tab → MY COLLECTIONS section shows the new
+     list with a count badge → click to view members.
+  3. Right-click the sidebar row → Rename… / Delete…
+  4. Right-click any other tile → Add to collection ▸ → click an
+     existing list to toggle membership in place.
+
+**Notes:**
+
+- Stale memberships are filtered in two places (delete_game sweep +
+  INNER JOIN at list time) so the operator never sees a dangling row
+  in the sidebar count or the center pane grid.
+- Persisted member ordering follows add order via the `sort_order`
+  column. Drag-reorder of memberships is a follow-up (the column is
+  ready; the UI is not).
+- The legacy (Retroverse OFF) shell doesn't surface the custom-
+  collections UI — TileContextMenu hides the "Add to collection ▸"
+  entry when the prop is absent. Slice 11's heart overlay + completed
+  toggle stay legacy-visible.
+
+**Next:** Operator-chosen. Open items in the rollout queue:
+PLAY NOW placeholder moods (blocked on session-length tracking),
+COLLECTIONS Hidden Gems + Last Played smart-lists (blocked on rating
+data / play-order log), HOME carousel arrows / dot pagination,
+SETTINGS Per-system category lift, Phase C6 content-packs infra.
+
+— end of 2026-05-29 Slice 12 session.
+
 ## 2026-05-29 — Menu/dialog polish + sidebar DPad + dropped controllerNavSource
 
 Follow-up to the same-day unified controller pipeline arc. Operator

@@ -503,8 +503,12 @@ Current status (2026-05-28):
   `feat/retroverse-ui-menu-polish`.
 
 **Code-only, no external content:**
-- Slice 12 — custom-manual collections (SQLite + CRUD + sidebar
-  dialog + TileContextMenu submenu).
+- ~~Slice 12 — custom-manual collections~~ — SHIPPED 2026-05-29 on
+  `feat/retroverse-ui-slice-12-custom-collections` (5 phase commits +
+  docs). v14 schema + Tauri commands + customCollections store +
+  CollectionsPage MY COLLECTIONS sidebar + NewCollectionDialog +
+  TileContextMenu "Add to collection ▸" submenu + sidebar right-click
+  rename / delete. 506 oa-shell tests green.
 - SETTINGS → Per-system category (lift SystemSettingsDialog body).
 - ~~SETTINGS → Library full wrap~~ — SHIPPED `dbd7af4`
   (LibraryManagerPage embedded as category body).
