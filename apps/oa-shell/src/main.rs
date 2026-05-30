@@ -2963,6 +2963,7 @@ fn main() {
             set_game_info_override,
             delete_game_info_override,
             list_game_info_overridden,
+            list_game_info_badges,
             arm_cheats,
             start_cheat_search,
             filter_cheat_search,
@@ -7579,6 +7580,25 @@ fn list_game_info_overridden(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<Vec<(String, String)>, String> {
     db.list_game_info_overridden()
+}
+
+/// Compute tile-badge data for every game in `entries`. Caller passes
+/// the library list it already has (from list_games + LibraryStore on
+/// the frontend); we merge against the file-layer index + bulk-loaded
+/// overrides in-memory and return only entries with at least one bug
+/// or local edit. Sized for ~10k library entries.
+#[tauri::command]
+fn list_game_info_badges(
+    entries: Vec<game_info::LibraryEntryForBadges>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<game_info::GameInfoBadge>, String> {
+    let overrides = db.list_all_game_info_overrides()?;
+    let overrides_map: std::collections::HashMap<(String, String), game_info::GameInfoOverride> =
+        overrides
+            .into_iter()
+            .map(|(sys, rom, ov)| ((sys, rom), ov))
+            .collect();
+    Ok(game_info::compute_game_info_badges(&entries, &overrides_map))
 }
 
 /// Per-system cheat-code format declarations. Frontend's CheatsDialog

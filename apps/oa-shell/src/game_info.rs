@@ -507,6 +507,93 @@ pub fn merge_game_info(
     })
 }
 
+// ---- tile-badge bulk computation (Phase 6) ---------------------------
+//
+// The tile-badge layer needs per-(system_id, rom_id) signals at scale
+// — a typical library can be thousands of entries. Per-tile `getGameInfo`
+// invocations would be N round-trips, so we compute badges in bulk:
+//
+//   1. Frontend hands us the operator's library list (id, system_id,
+//      title, sha1) via the existing list_games command.
+//   2. We bulk-load all overrides into a HashMap.
+//   3. We walk the library list, doing in-memory file-layer + override
+//      merges, and emit only entries that have a non-trivial badge
+//      (at least one bug OR has_local_edits).
+//
+// Sized for ~10k entries with ~100 indexed file-layer records — runs in
+// single-digit milliseconds. Frontend caches the result once per
+// library refresh.
+
+/// Reduced shape the tile-badge UI consumes — only the fields needed
+/// to render the `⚠ N` / `✎` indicators. Skips the full merge result
+/// (description, controls, etc.) so the payload over the Tauri bridge
+/// stays small even for libraries with thousands of badges.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoBadge {
+    pub system_id: String,
+    pub rom_id: String,
+    /// Count of bugs after the file + override merge. Zero is filtered
+    /// out by the producer (compute_game_info_badges only emits entries
+    /// with bugs OR local edits).
+    pub bug_count: u32,
+    /// Max severity across the merged bug list. None when bug_count is
+    /// zero — drives the warning glyph's tint (red for blocker, amber
+    /// for major, neutral for minor / cosmetic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_severity: Option<BugSeverity>,
+    /// True when the operator has at least one local override on this
+    /// game. Drives the `✎` indicator alongside the bug badge.
+    pub has_local_edits: bool,
+}
+
+/// Minimal view of a library entry the badge computer needs. Frontend
+/// passes this from its already-loaded library cache; Rust doesn't
+/// re-query the games table.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryEntryForBadges {
+    pub id: String,
+    pub system_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub sha1: Option<String>,
+}
+
+/// Walk a library entry list against the global file-layer index +
+/// pre-loaded override map; emit badges for entries that have at least
+/// one bug OR one local edit. Sort order matches the input order — the
+/// frontend already has the entries in display order from list_games.
+pub fn compute_game_info_badges(
+    entries: &[LibraryEntryForBadges],
+    overrides: &std::collections::HashMap<(String, String), GameInfoOverride>,
+) -> Vec<GameInfoBadge> {
+    let index = global_index();
+    let mut out = Vec::new();
+    for entry in entries {
+        let file = index.lookup(&entry.system_id, entry.sha1.as_deref(), Some(&entry.title));
+        let key = (entry.system_id.clone(), entry.id.clone());
+        let ov = overrides.get(&key).cloned().unwrap_or_default();
+        let Some(merged) = merge_game_info(&entry.system_id, file, &ov) else {
+            continue;
+        };
+        let has_local = merged.has_local_edits;
+        let bug_count = merged.bugs.len() as u32;
+        if bug_count == 0 && !has_local {
+            continue;
+        }
+        let max_severity = merged.bugs.iter().map(|b| b.severity).max();
+        out.push(GameInfoBadge {
+            system_id: entry.system_id.clone(),
+            rom_id: entry.id.clone(),
+            bug_count,
+            max_severity,
+            has_local_edits: has_local,
+        });
+    }
+    out
+}
+
 // ---- in-memory index --------------------------------------------------
 //
 // Phase 2 lifts the parser into a load-at-startup index. Files live at

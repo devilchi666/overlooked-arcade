@@ -105,3 +105,32 @@ export async function deleteGameInfoOverride(args: {
 export async function listGameInfoOverridden(): Promise<Array<[string, string]>> {
   return invoke("list_game_info_overridden");
 }
+
+/// Reduced shape the tile-badge UI consumes — bug count + max severity
+/// for the `⚠ N` overlay, plus the local-edits flag for the `✎` mark.
+export type GameInfoBadge = {
+  systemId: string;
+  romId: string;
+  bugCount: number;
+  maxSeverity?: BugSeverity;
+  hasLocalEdits: boolean;
+};
+
+/// Minimal library-entry view the bulk-badge command needs. Same
+/// shape as a slice of `RomEntry`; the caller transforms.
+export type LibraryEntryForBadges = {
+  id: string;
+  systemId: string;
+  title: string;
+  sha1?: string;
+};
+
+/// Bulk-compute tile-badge data for `entries`. Only entries with at
+/// least one bug OR a local override appear in the result — callers
+/// build a Map keyed by `${systemId}:${romId}` and treat missing
+/// entries as "no badge."
+export async function listGameInfoBadges(
+  entries: LibraryEntryForBadges[],
+): Promise<GameInfoBadge[]> {
+  return invoke("list_game_info_badges", { entries });
+}

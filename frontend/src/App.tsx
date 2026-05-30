@@ -88,6 +88,7 @@ import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from 
 import { launchRom, type LaunchResult } from "./library/launch";
 import { MediaProvider } from "./library/media";
 import { PlatformMediaProvider } from "./library/platformMedia";
+import { GameInfoBadgesProvider } from "./library/gameInfoBadges";
 import { createLibraryStore } from "./library/store";
 import { createCustomCollectionsStore } from "./library/customCollections";
 import type { RomEntry } from "./library/types";
@@ -1814,6 +1815,7 @@ const App: Component = () => {
   return (
     <MediaProvider>
       <PlatformMediaProvider>
+      <GameInfoBadgesProvider entries={() => library.state.entries}>
       {/* Retroverse-UI Phase B Slice 5 — entire Shell swaps to
           RetroverseShell when the experimental flag is ON. Two
           distinct UIs, no hybrid state. Modals (ImportWizard /
@@ -2282,6 +2284,7 @@ const App: Component = () => {
           }}
         />
       </Show>
+      </GameInfoBadgesProvider>
       </PlatformMediaProvider>
     </MediaProvider>
   );

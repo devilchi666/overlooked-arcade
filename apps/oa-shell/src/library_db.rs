@@ -2509,6 +2509,61 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// Bulk load every operator override row as full
+    /// `(system_id, rom_id, GameInfoOverride)` tuples. Used by the
+    /// tile-badge query path to merge file-layer + override-layer in
+    /// one pass over the library rather than N queries.
+    pub fn list_all_game_info_overrides(
+        &self,
+    ) -> Result<Vec<(String, String, crate::game_info::GameInfoOverride)>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT system_id, rom_id, short_summary, controls_supported,
+                        best_emulator, best_emulator_reason, bugs,
+                        applied_best_emulator, applied_controls
+                 FROM game_info_overrides",
+            )
+            .map_err(|e| format!("list_all_game_info_overrides prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let system_id: String = row.get(0)?;
+                let rom_id: String = row.get(1)?;
+                let short_summary: Option<String> = row.get(2)?;
+                let controls_json: Option<String> = row.get(3)?;
+                let best_emulator: Option<String> = row.get(4)?;
+                let best_emulator_reason: Option<String> = row.get(5)?;
+                let bugs_json: Option<String> = row.get(6)?;
+                let applied_best_emulator: i64 = row.get(7)?;
+                let applied_controls: i64 = row.get(8)?;
+                let controls_supported = controls_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
+                let bugs = bugs_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<crate::game_info::GameBug>>(s).ok());
+                Ok((
+                    system_id,
+                    rom_id,
+                    crate::game_info::GameInfoOverride {
+                        short_summary,
+                        controls_supported,
+                        best_emulator,
+                        best_emulator_reason,
+                        bugs,
+                        applied_best_emulator: applied_best_emulator != 0,
+                        applied_controls: applied_controls != 0,
+                    },
+                ))
+            })
+            .map_err(|e| format!("list_all_game_info_overrides query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_all_game_info_overrides row: {e}"))?);
+        }
+        Ok(out)
+    }
+
     /// List `(system_id, rom_id)` pairs for every game with at least
     /// one operator override. Used by the tile-badge layer to mark
     /// locally-edited games with the `✎` indicator. Cheap: covers an

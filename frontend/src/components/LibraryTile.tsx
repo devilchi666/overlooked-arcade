@@ -1,6 +1,7 @@
 import { createEffect, createSignal, Show, type Component } from "solid-js";
 import type { RomEntry } from "../library/types";
 import { useMedia } from "../library/media";
+import { useGameInfoBadges } from "../library/gameInfoBadges";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
 import { uiConfigFor, type UITileShape } from "../themes/systemUIConfigs";
 import { isPerSystemUiEnabled } from "../themes/systemUiSound";
@@ -77,6 +78,12 @@ const Placeholder: Component = () => (
 const LibraryTile: Component<Props> = (props) => {
   const theme = () => systemThemes[props.entry.systemId];
   const media = useMedia();
+  /// Game Info Panel v1 Phase 6 — pull this tile's badge (bug count +
+  /// has-local-edits) from the global store. Returns undefined for the
+  /// vast majority of tiles that have no badge data; only games with
+  /// known issues OR operator overrides render the overlay.
+  const badges = useGameInfoBadges();
+  const tileBadge = () => badges.badgeFor(props.entry.systemId, props.entry.id);
   /// Per-System UI Stage 1 Slice 5: pull the per-system tileShape +
   /// interactionStyle. When `perSystemUiEnabled` is OFF (uniform plain
   /// library mode), both fall back to the existing theme aspect + the
@@ -260,6 +267,41 @@ const LibraryTile: Component<Props> = (props) => {
           >
             ▼ {props.variantCount}
           </span>
+        </Show>
+        {/* Game Info Panel v1 — tile badges (bottom-right corner). The
+            warning indicator surfaces known-issue count, tinted by max
+            severity (red for blocker, amber for major, neutral for
+            minor/cosmetic). The pencil glyph marks operator-locally-
+            edited games — both indicators visible together when both
+            conditions hold. */}
+        <Show when={!props.entry.seed && tileBadge()}>
+          <div class="absolute bottom-2 right-2 flex items-center gap-1">
+            <Show when={(tileBadge()!.bugCount) > 0}>
+              <span
+                class="rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest backdrop-blur"
+                classList={{
+                  "text-red-300":   tileBadge()!.maxSeverity === "blocker",
+                  "text-amber-300": tileBadge()!.maxSeverity === "major",
+                  "text-(--color-oa-ink-dim)":
+                    tileBadge()!.maxSeverity === "minor" ||
+                    tileBadge()!.maxSeverity === "cosmetic",
+                }}
+                title={`${tileBadge()!.bugCount} known issue${
+                  tileBadge()!.bugCount === 1 ? "" : "s"
+                } — ${tileBadge()!.maxSeverity ?? "none"} severity`}
+              >
+                ⚠ {tileBadge()!.bugCount}
+              </span>
+            </Show>
+            <Show when={tileBadge()!.hasLocalEdits}>
+              <span
+                class="rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] text-(--color-system-accent-soft) backdrop-blur"
+                title="Operator has edited this game's info locally"
+              >
+                ✎
+              </span>
+            </Show>
+          </div>
         </Show>
         <Show when={!props.entry.seed && props.onShowSaves}>
           <button
