@@ -1,5 +1,35 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — Now-playing chip clears on playback failure (PARKING_LOT closeout)
+
+Small follow-up to G1: the HintBar now-playing chip was tracking
+dispatch only — if Rust failed to open / decode / allocate a sink
+for the requested platform-music file, the chip stayed on
+indefinitely with no audible audio. Operator-visible but rare;
+parked at end of G1, picked up the same day.
+
+**Shipped on `feat/now-playing-failure-event` (`388a90a`):**
+
+- Rust `audio_thread_main` now holds an `Option<AppHandle>` and a
+  closure that emits `oa://audio-playback-failed { bus, reason }`
+  on the three Play-command failure branches (file open / rodio
+  decode / sink alloc) plus the cold-start no-default-device drain
+  path.
+- `AudioPlayerHandle::spawn(Option<AppHandle>)` signature widened.
+  `main.rs` passes `Some(app.handle().clone())`. `None` keeps emission
+  off for headless test contexts.
+- Frontend `lib/audio.ts` registers a module-level listen() at
+  startup. Payload.bus === "platform-music" clears the `nowPlaying`
+  signal so the chip disappears at the moment playback actually
+  fails. Other buses are silent (no UI state to clear).
+
+506 oa-shell tests green; frontend typecheck clean.
+
+PARKING_LOT entry struck through ("SHIPPED 2026-05-29"). Closes the
+last entry from G1's deferred-polish list.
+
+— end of 2026-05-29 audio-failed-event session.
+
 ## 2026-05-29 — Now-playing chip + DISCOVER body (4 data-driven axes)
 
 Two follow-on items from the post-audit open list. Branch

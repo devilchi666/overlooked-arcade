@@ -3254,7 +3254,13 @@ fn main() {
                 // files), and spawns the file-driven audio player thread
                 // that owns rodio's OutputStream.
                 app.manage(AppDataDir(app_data_dir.clone()));
-                let audio_handle = audio_player::AudioPlayerHandle::spawn();
+                // Pass an AppHandle into the audio thread so it can
+                // emit `oa://audio-playback-failed` when a Play
+                // command fails at open / decode / sink-allocation.
+                // Frontend's now-playing chip listens to this so a
+                // missing or unreadable music file doesn't leave the
+                // chip stuck on indefinitely.
+                let audio_handle = audio_player::AudioPlayerHandle::spawn(Some(app.handle().clone()));
                 app.manage(audio_handle.player());
                 // Hold the handle itself in app state so Drop fires on
                 // shutdown and the audio thread joins cleanly.

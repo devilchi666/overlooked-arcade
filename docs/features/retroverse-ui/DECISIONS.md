@@ -162,6 +162,40 @@ visually misleading but not destructive.
   for a passive UI cue).
 
 **Implementation.** `nowPlaying` accessor exported from
-`lib/audio.ts`; HintBar subscribes. Merged in `cbbd818`. Future
-polish: subscribe to a Rust-side "playback failed" event when one
-exists ([[PARKING_LOT: now-playing failed-event subscription]]).
+`lib/audio.ts`; HintBar subscribes. Merged in `cbbd818`.
+
+**Superseded same-day** — see next entry.
+
+---
+
+## 2026-05-29 — Now-playing chip subscribes to Rust playback-failed event
+
+**Decided.** Supersedes the prior "tracks dispatch only" decision.
+The audio thread now holds an `Option<AppHandle>` and emits
+`oa://audio-playback-failed { bus, reason }` on file-open / decode
+/ sink-alloc failures. Frontend `lib/audio.ts` listens at module
+load and clears the `nowPlaying` signal when payload.bus matches
+`"platform-music"`. The chip disappears at the moment playback
+actually fails rather than sitting on indefinitely.
+
+**Why.** The prior decision noted "needs an event + emitter on the
+audio_player side; out of scope for the small chip." Operator
+revisited that scope decision in the same session — the wiring is
+small (~30 lines Rust + ~20 lines frontend) and the failure case
+is operator-visible enough to justify it now rather than later.
+
+**What we considered and rejected.**
+- Poll a `get_audio_state` command at 1 Hz (still rejected — IPC
+  churn for a passive UI cue, especially now that the event path
+  exists).
+- Emit a generic "audio-state-changed" event with the full bus
+  state (rejected — bigger payload, more churn; the chip only
+  cares about failures).
+- Track per-bus playback state in Rust as the canonical source +
+  expose via a query command (rejected — same churn problem, plus
+  the dispatch-tracking model is correct in the happy path).
+
+**Implementation.** `audio_thread_main` gains an `emit_failed`
+closure. `AudioPlayerHandle::spawn` widened to
+`spawn(Option<AppHandle>)`; `None` keeps emission off for headless
+test contexts. Merged in `388a90a`.
