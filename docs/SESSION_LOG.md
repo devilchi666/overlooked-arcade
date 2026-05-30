@@ -6,6 +6,58 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-30 — libretro env-callback batch (four gaps closed)
+
+Closes four high-leverage libretro `cb_environment` arms that were previously
+unhandled or accept-ignored. Single feature branch
+`feat/libretro-env-callbacks-batch`, four phase commits, merged `--no-ff` as
+`3b35a41`.
+
+- **Shipped (`SET_MEMORY_MAPS` storage):**
+  - New `oa_core::MemoryDescriptor` (metadata only — `flags` / `offset` /
+    `start` / `select` / `disconnect` / `len` / `addrspace`) + `Core::memory_map()`
+    trait method.
+  - `crates/oa-libretro/src/state.rs` parses the descriptor array; metadata
+    stored in `State.memory_descriptors`, host base pointers separately in
+    `State.memory_map_ptrs` as `usize` so State stays `Send`.
+  - Cleared on `load_rom` alongside rotation so back-to-back swaps don't
+    inherit stale state.
+  - 3 unit tests cover null pointer / zero count / 2-region NES-shape map.
+  - Unblocks future RetroAchievements rcheevos integration, cheat-search
+    address translation, AI/scripting memory reads.
+- **Shipped (`SET_MESSAGE` / `SET_MESSAGE_EXT` → toast):**
+  - New `oa_core::CoreMessage` + `CoreMessageLevel` + `Core::drain_messages()`.
+  - Env arms for env 6 (legacy frames-based) + env 60 (modern with level /
+    target / priority); `GET_MESSAGE_INTERFACE_VERSION` (env 59) returns v1
+    so modern cores prefer the richer path.
+  - Shell drains per render frame in `run_emu_render`, emits each entry as
+    `oa://toast` via existing `emit_toast(level, system, text)`.
+  - `target=LOG` messages log-only (skip toast); cores' OSD on save state /
+    disc swap / cheat apply / BIOS fallback now surface visually.
+- **Shipped (`SET_SUPPORT_NO_GAME` + `load_no_rom()`):**
+  - Env arm 18 captures the bool into `State.supports_no_game`;
+    `LibretroCore::supports_no_game()` accessor + `LibretroCore::load_no_rom()`
+    calls `retro_load_game(NULL)` for DOSBox-Pure / ScummVM bootless mode.
+  - Refactored shared post-load work into `finish_load()` so `load_rom` and
+    `load_no_rom` stay in lockstep.
+- **Shipped (disc-control v2 extras):**
+  - `LibretroCore::add_disc_image()`, `replace_disc_image(idx, path)`,
+    `set_initial_disc_image(idx, path)`, `disc_image_path(idx)`.
+  - `oa_core::DiscInfo` gains `paths: Vec<String>` populated from
+    `get_image_path` for v2 cores; v1 fallback returns empty.
+  - `read_disc_string_field` helper collapses label / path buffer-fill
+    duplication.
+  - Frontend `QuickSettings.tsx` `DiscInfo` type extended with `paths`
+    field for future tooltip polish.
+- **Almost:** UI hook for `load_no_rom()` — bootless launch button for DOSBox
+  / ScummVM. Infrastructure is in; operator-facing wiring is its own ~30-line
+  follow-up if the bootless workflow becomes a real ask.
+- **Next:** the remaining big libretro infra gap is `SET_HW_RENDER` — the
+  multi-week task that unblocks Beetle PSX HW / Mupen64Plus-Next /
+  PPSSPP / Beetle Saturn HW / Flycast at their real quality tier.
+
+---
+
 ## 2026-05-21 — Direct-launch Phase I — explicit #inner, CD-in-archive, --state-file restore
 
 Three follow-ups to direct-launch shipped on top of `main`. Closes
