@@ -1,5 +1,87 @@
 # Retroverse UI — Session Log
 
+## 2026-05-29 — Now-playing chip + DISCOVER body (4 data-driven axes)
+
+Two follow-on items from the post-audit open list. Branch
+`feat/retroverse-ui-now-playing-and-discover`, 2 phase commits + docs.
+
+**Shipped:**
+
+- **G1 — Now-playing HintBar chip** (`cbbd818`): small chip on the
+  left of the HintBar shows which system's music is currently riding
+  the platform-music bus. Three animated equalizer bars (system
+  accent color, 900ms staggered) give the chip a passive "audio
+  playing" cue. Wiring: new `nowPlaying` reactive accessor in
+  `lib/audio.ts`, written by `dispatchPlatformMusic` (on non-null
+  resolve) and `stopAudio("platform-music")` (explicit clear). HintBar
+  now mounts whenever EITHER controller hints OR a now-playing chip
+  wants to render, so mouse-only operators see the music feedback
+  even before a controller is connected. `prefers-reduced-motion`
+  degrades the eq animation to a static state.
+
+- **G2 — DISCOVER body** (`4da2c17`): replaces the StubPage routed
+  at `/discover` with a real 3-pane DiscoverPage matching the design
+  doc. Sidebar lists all 9 designed axes; v1 ships four powered by
+  data we already collect plus stub empty states for the rest:
+    Working — By era (year binned into 7 hardware-era buckets);
+              By genre; By region; By developer.
+    Stub    — Featured / On this day / System dive / Cult classics /
+              Lost games — each renders an EmptyCard pointing at
+              Phase C6 content-packs; sidebar rows dim to 60% with
+              a "soon" pill.
+  Each wired axis renders a facet picker (chip row, sorted by count
+  desc) above the grid. Picking a facet fills the grid with library
+  entries matching. Right pane reuses `GameDetailPanel`.
+
+  Plumbing required: `list_games` + `GameRow` + `RomEntry` extended
+  to surface year/genre/region/developer (columns existed in the
+  schema since v1, just not selected). 6 other `GameRow` construction
+  sites updated with `None` defaults
+  (`find_game_by_id`, `search_games` empty branch,
+  `list_games_for_system`, `list_games_missing_hash`,
+  library_groups test helper, data_dir test helper).
+
+  `RetroverseShell` drops the `StubPage` import + the
+  `STUB_DESIGN_DOCS` map since all 6 tabs are real now.
+
+**Operator workflow now end-to-end:**
+
+  1. DISCOVER tab → sidebar shows 9 axes, the wired four highlighted.
+  2. Click "By genre" → chip row populates with all genres in the
+     library, sorted by count.
+  3. Click a chip → grid fills with the games in that genre. Focus a
+     tile → right pane shows GameDetailPanel.
+  4. Try "By era" → chip row shows era buckets; "Unknown / not
+     enriched" catches rows without a `year`.
+  5. Click "Featured" → empty-state card pointing at Phase C6.
+  6. Launch any game with platform music wired → bottom hint bar
+     gains the now-playing chip with the system display name + 3
+     animated equalizer bars.
+
+**Notes:**
+
+- DISCOVER's facet axes derive in-memory off the LibraryStore at
+  render time (single `filter` pass per chip click). At OA library
+  scale (<10K rows) this is well under a millisecond; no separate
+  aggregation Tauri command needed.
+- The "Featured / On this day / System dive / Cult classics /
+  Lost games" axes all wait on Phase C6 content-packs. The v1 stub
+  empty-state text explicitly names that arc so the operator knows
+  what unblocks them.
+- Now-playing chip tracks what we ASKED to play; if Rust fails to
+  open the file the chip still shows. Future polish could subscribe
+  to a Rust-side "playback failed" event and clear the signal then.
+
+**Next:** Operator-chosen. Remaining Retroverse code work per the
+post-audit §10: Phase C6 content-packs infrastructure (substantial,
+unlocks DISCOVER's other 5 axes + curated COLLECTIONS + theme
+packs), RetroAchievements integration. Outside Retroverse: Vectrex
+`vector-phosphor` shader (MEDIUM band, ~250 lines WGSL), Right
+D-pad bindings for Virtual Boy (MEDIUM band, ~150 lines, unlocks 5
+games).
+
+— end of 2026-05-29 Now-playing + DISCOVER session.
+
 ## 2026-05-29 — SETTINGS Per-system drill-in (last open category)
 
 Closes the SETTINGS tab's last stub. Branch

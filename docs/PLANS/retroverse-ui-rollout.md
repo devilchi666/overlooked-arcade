@@ -514,11 +514,17 @@ Four entries previously marked "open" had already shipped.
 **Code-only, actually open (verified against code 2026-05-29):**
 - ~~SETTINGS → Per-system drill-in group~~ — SHIPPED on
   `feat/retroverse-ui-settings-per-system` (2 phase commits + docs).
-  Section components lifted into `perSystemSections.tsx`; sidebar
-  picker lists all 45 systems; center pane renders 4 inline cards
-  + Bindings / Core options launchers.
-- "Now playing" audio indicator in HintBar (`nav/HintBar.tsx` has
-  no matching wiring).
+- ~~"Now playing" audio indicator in HintBar~~ — SHIPPED on
+  `feat/retroverse-ui-now-playing-and-discover` G1 (`cbbd818`).
+  `nowPlaying` reactive accessor in `lib/audio.ts` written by
+  `dispatchPlatformMusic` / `stopAudio("platform-music")`; HintBar
+  renders a left-side chip with 3 animated equalizer bars.
+- ~~Phase C5 DISCOVER body~~ — partial. v1 ships 4 data-driven axes
+  (era / genre / region / developer) using existing library_db
+  columns; 5 editorial axes (featured / on-this-day / system-dive /
+  cult-classics / lost-games) stub-render an EmptyCard pointing at
+  Phase C6 content-packs. Merged via the same branch (G2,
+  `4da2c17`).
 - LibraryPage VirtualLibraryGrid 2D nav restoration in Retroverse
   mode — superseded by the 2026-05-29 unified controller pipeline
   (page-level CENTER → "library-grid" delegating effect).
