@@ -286,6 +286,79 @@ fn skip_pre_yaml(content: &str) -> &str {
     content
 }
 
+// ---- operator local overrides ----------------------------------------
+//
+// Layer 3 of the three-layer data model (plan §4). Operator's per-game
+// edits live in the local SQLite `game_info_overrides` table, keyed by
+// `(system_id, rom_id)`. Scalar fields get individual columns;
+// array fields (controls_supported, bugs) stay as JSON blobs because
+// the cardinality is small + the queries don't need to filter on
+// array contents.
+//
+// `applied_best_emulator` / `applied_controls` are provenance flags
+// the "Apply" buttons set when they write into `GameOverrides`. The
+// "Reset to default" affordance reads these to know which overrides
+// the operator explicitly applied (so resetting takes them back to
+// the file/scraper defaults rather than blanking everything).
+
+/// Operator's local edits for one game. All scalar fields are
+/// `Option` so the caller can distinguish "no override" (use file/
+/// scraper value) from "intentionally cleared" (operator set it to
+/// empty string).
+///
+/// Array fields use `Option<Vec<_>>` for the same reason — `None`
+/// means "no override," `Some(vec![])` means "operator cleared the
+/// list."
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoOverride {
+    /// Operator's short summary. None = no override; Some("") = blank.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_summary: Option<String>,
+    /// Operator's controls-supported list override. None = use file
+    /// value; Some(vec) replaces the file value entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controls_supported: Option<Vec<String>>,
+    /// Operator's best-emulator override (`recommended` field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_emulator: Option<String>,
+    /// Operator's best-emulator reason override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_emulator_reason: Option<String>,
+    /// Operator's bug-list override. None = use file value; Some(vec)
+    /// replaces. Operators can add their own findings or remove
+    /// entries that don't repro on their setup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bugs: Option<Vec<GameBug>>,
+    /// Set true when the "Apply best emulator" panel button writes
+    /// into `GameOverrides.libretro_core`. The "Reset to default"
+    /// affordance reads this to know the override came from the
+    /// Game Info Panel (vs the operator setting it manually in
+    /// per-game settings).
+    #[serde(default)]
+    pub applied_best_emulator: bool,
+    /// Same provenance marker for the "Apply controls" panel button
+    /// that writes `GameOverrides.libretro_device_port1..4`.
+    #[serde(default)]
+    pub applied_controls: bool,
+}
+
+impl GameInfoOverride {
+    /// True when no field carries a meaningful edit — used to decide
+    /// whether to DELETE the override row vs UPSERT it. Keeps the
+    /// table sparse: a default-constructed override doesn't pollute
+    /// the DB.
+    pub fn is_empty(&self) -> bool {
+        self.short_summary.is_none()
+            && self.controls_supported.is_none()
+            && self.best_emulator.is_none()
+            && self.best_emulator_reason.is_none()
+            && self.bugs.is_none()
+            && !self.applied_best_emulator
+            && !self.applied_controls
+    }
+}
+
 // ---- in-memory index --------------------------------------------------
 //
 // Phase 2 lifts the parser into a load-at-startup index. Files live at

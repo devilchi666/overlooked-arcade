@@ -715,6 +715,48 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v14 (custom_collections)");
         }
 
+        // v14 → v15: Game Info Panel v1 — operator local overrides
+        // table. Layer 3 of the plan's three-layer data model (file
+        // scraper / hand-curated content / local edits). Keyed by
+        // (system_id, rom_id) for direct lookup in the query path.
+        // Scalar fields get columns; array fields (controls, bugs)
+        // stay as JSON blobs because their cardinality is small + no
+        // queries need to filter by element.
+        if current < 15 {
+            Self::migrate_v14_to_v15(conn)?;
+            conn.pragma_update(None, "user_version", 15)
+                .map_err(|e| format!("set user_version=15: {e}"))?;
+            log::info!("library_db: schema migrated to v15 (game_info_overrides)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v14_to_v15(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS game_info_overrides (
+                system_id              TEXT    NOT NULL,
+                rom_id                 TEXT    NOT NULL,
+                short_summary          TEXT,
+                controls_supported     TEXT,
+                best_emulator          TEXT,
+                best_emulator_reason   TEXT,
+                bugs                   TEXT,
+                applied_best_emulator  INTEGER NOT NULL DEFAULT 0,
+                applied_controls       INTEGER NOT NULL DEFAULT 0,
+                created_at             INTEGER NOT NULL,
+                updated_at             INTEGER NOT NULL,
+                PRIMARY KEY (system_id, rom_id)
+            );
+
+            -- Index for the tile-badge "is this game locally-edited?"
+            -- query that scans by system_id during a library refresh.
+            CREATE INDEX IF NOT EXISTS idx_game_info_overrides_system
+                ON game_info_overrides (system_id);
+            "#,
+        )
+        .map_err(|e| format!("v14→v15 migration: {e}"))?;
         Ok(())
     }
 
@@ -2314,6 +2356,176 @@ impl LibraryDb {
         )
         .map_err(|e| format!("write overrides: {e}"))?;
         Ok(())
+    }
+
+    // --- Game info overrides (Game Info Panel v1, Phase 3) ---------------
+    //
+    // Layer 3 of the data model. Lives in a dedicated columnar table
+    // `game_info_overrides` keyed by (system_id, rom_id). Field-typed
+    // precedence merging with the file-layer (Phase 4) produces the
+    // final per-game record the UI shows.
+
+    /// Read the operator's local overrides for one game. Returns
+    /// [`crate::game_info::GameInfoOverride::default`] when no row
+    /// exists — the "no overrides" case is the common path, not an
+    /// error.
+    pub fn get_game_info_override(
+        &self,
+        system_id: &str,
+        rom_id: &str,
+    ) -> Result<crate::game_info::GameInfoOverride, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT short_summary, controls_supported, best_emulator,
+                        best_emulator_reason, bugs,
+                        applied_best_emulator, applied_controls
+                 FROM game_info_overrides
+                 WHERE system_id = ?1 AND rom_id = ?2",
+                params![system_id, rom_id],
+                |row| {
+                    let short_summary: Option<String> = row.get(0)?;
+                    let controls_json: Option<String> = row.get(1)?;
+                    let best_emulator: Option<String> = row.get(2)?;
+                    let best_emulator_reason: Option<String> = row.get(3)?;
+                    let bugs_json: Option<String> = row.get(4)?;
+                    let applied_best_emulator: i64 = row.get(5)?;
+                    let applied_controls: i64 = row.get(6)?;
+                    Ok((
+                        short_summary,
+                        controls_json,
+                        best_emulator,
+                        best_emulator_reason,
+                        bugs_json,
+                        applied_best_emulator != 0,
+                        applied_controls != 0,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_game_info_override query: {e}"))?;
+
+        let Some((
+            short_summary,
+            controls_json,
+            best_emulator,
+            best_emulator_reason,
+            bugs_json,
+            applied_best_emulator,
+            applied_controls,
+        )) = row
+        else {
+            return Ok(crate::game_info::GameInfoOverride::default());
+        };
+
+        // Malformed JSON in either array column degrades to None (no
+        // override) rather than failing the read. Matches the
+        // game_overrides_json pattern — corrupt overrides shouldn't
+        // brick the panel.
+        let controls_supported = controls_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
+        let bugs = bugs_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<crate::game_info::GameBug>>(s).ok());
+
+        Ok(crate::game_info::GameInfoOverride {
+            short_summary,
+            controls_supported,
+            best_emulator,
+            best_emulator_reason,
+            bugs,
+            applied_best_emulator,
+            applied_controls,
+        })
+    }
+
+    /// Upsert the operator's local overrides for one game. Passing a
+    /// default-constructed (empty) override deletes the row so the
+    /// table stays sparse.
+    pub fn set_game_info_override(
+        &self,
+        system_id: &str,
+        rom_id: &str,
+        ov: &crate::game_info::GameInfoOverride,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+
+        if ov.is_empty() {
+            conn.execute(
+                "DELETE FROM game_info_overrides WHERE system_id = ?1 AND rom_id = ?2",
+                params![system_id, rom_id],
+            )
+            .map_err(|e| format!("delete game_info_override: {e}"))?;
+            return Ok(());
+        }
+
+        let controls_json = ov
+            .controls_supported
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".into()));
+        let bugs_json = ov
+            .bugs
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".into()));
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        conn.execute(
+            r#"
+            INSERT INTO game_info_overrides (
+                system_id, rom_id,
+                short_summary, controls_supported,
+                best_emulator, best_emulator_reason,
+                bugs, applied_best_emulator, applied_controls,
+                created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+            ON CONFLICT(system_id, rom_id) DO UPDATE SET
+                short_summary         = excluded.short_summary,
+                controls_supported    = excluded.controls_supported,
+                best_emulator         = excluded.best_emulator,
+                best_emulator_reason  = excluded.best_emulator_reason,
+                bugs                  = excluded.bugs,
+                applied_best_emulator = excluded.applied_best_emulator,
+                applied_controls      = excluded.applied_controls,
+                updated_at            = excluded.updated_at
+            "#,
+            params![
+                system_id,
+                rom_id,
+                ov.short_summary,
+                controls_json,
+                ov.best_emulator,
+                ov.best_emulator_reason,
+                bugs_json,
+                if ov.applied_best_emulator { 1i64 } else { 0i64 },
+                if ov.applied_controls { 1i64 } else { 0i64 },
+                now,
+            ],
+        )
+        .map_err(|e| format!("upsert game_info_override: {e}"))?;
+        Ok(())
+    }
+
+    /// List `(system_id, rom_id)` pairs for every game with at least
+    /// one operator override. Used by the tile-badge layer to mark
+    /// locally-edited games with the `✎` indicator. Cheap: covers an
+    /// index on `system_id` + returns just two columns.
+    pub fn list_game_info_overridden(&self) -> Result<Vec<(String, String)>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT system_id, rom_id FROM game_info_overrides")
+            .map_err(|e| format!("list_game_info_overridden prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|e| format!("list_game_info_overridden query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_game_info_overridden row: {e}"))?);
+        }
+        Ok(out)
     }
 
     // --- Milestones CRUD (Phase 4 slice F) -------------------------------
@@ -4382,5 +4594,177 @@ mod tests {
         assert_eq!(members, vec!["a".to_string()]);
         let list = db.list_custom_collections().expect("list");
         assert_eq!(list[0].member_count, 1);
+    }
+
+    // ---- game info overrides (Phase 3) -------------------------------
+
+    #[test]
+    fn game_info_override_default_when_absent() {
+        let db = fresh_db();
+        let ov = db
+            .get_game_info_override("psx", "tomb_raider_usa")
+            .expect("get");
+        assert_eq!(ov, crate::game_info::GameInfoOverride::default());
+    }
+
+    #[test]
+    fn game_info_override_roundtrip_and_delete() {
+        let db = fresh_db();
+        let pref = crate::game_info::GameInfoOverride {
+            short_summary: Some("Played it as a kid. Memorable cutscenes.".into()),
+            controls_supported: Some(vec![
+                "Standard gamepad".into(),
+                "DualShock vibration".into(),
+                "PSP via PS-on-PSP".into(),
+            ]),
+            best_emulator: Some("beetle_psx_hw_libretro.dll".into()),
+            best_emulator_reason: Some("Vulkan + PGXP".into()),
+            bugs: Some(vec![
+                crate::game_info::GameBug {
+                    description: "Operator-observed: crash on save in Hub 3".into(),
+                    severity: crate::game_info::BugSeverity::Major,
+                    workaround: Some("Save in Hub 2 instead".into()),
+                },
+            ]),
+            applied_best_emulator: true,
+            applied_controls: false,
+        };
+        db.set_game_info_override("psx", "tomb_raider_usa", &pref)
+            .expect("set");
+        let after = db
+            .get_game_info_override("psx", "tomb_raider_usa")
+            .expect("get after");
+        assert_eq!(after, pref);
+
+        // Clearing — pass a default-constructed override; row should
+        // be DELETEd so the table stays sparse.
+        db.set_game_info_override(
+            "psx",
+            "tomb_raider_usa",
+            &crate::game_info::GameInfoOverride::default(),
+        )
+        .expect("clear");
+        let cleared = db
+            .get_game_info_override("psx", "tomb_raider_usa")
+            .expect("get after clear");
+        assert_eq!(cleared, crate::game_info::GameInfoOverride::default());
+
+        // Unknown game id reads as default with no error.
+        let unknown = db
+            .get_game_info_override("psx", "nonexistent")
+            .expect("unknown");
+        assert_eq!(unknown, crate::game_info::GameInfoOverride::default());
+    }
+
+    #[test]
+    fn game_info_override_upsert_updates_existing_row() {
+        // Second set against the same (system_id, rom_id) must UPDATE
+        // not duplicate; readback shows the new values.
+        let db = fresh_db();
+        let initial = crate::game_info::GameInfoOverride {
+            short_summary: Some("v1 summary".into()),
+            ..Default::default()
+        };
+        db.set_game_info_override("psx", "tomb_raider_usa", &initial)
+            .expect("set initial");
+
+        let updated = crate::game_info::GameInfoOverride {
+            short_summary: Some("v2 — operator edited".into()),
+            applied_best_emulator: true,
+            ..Default::default()
+        };
+        db.set_game_info_override("psx", "tomb_raider_usa", &updated)
+            .expect("set updated");
+
+        let after = db
+            .get_game_info_override("psx", "tomb_raider_usa")
+            .expect("get");
+        assert_eq!(after.short_summary.as_deref(), Some("v2 — operator edited"));
+        assert!(after.applied_best_emulator);
+    }
+
+    #[test]
+    fn game_info_override_list_overridden() {
+        let db = fresh_db();
+        // Two real overrides + one that's empty (won't appear).
+        db.set_game_info_override(
+            "psx",
+            "tr_usa",
+            &crate::game_info::GameInfoOverride {
+                short_summary: Some("note 1".into()),
+                ..Default::default()
+            },
+        )
+        .expect("set 1");
+        db.set_game_info_override(
+            "nes",
+            "smb",
+            &crate::game_info::GameInfoOverride {
+                applied_best_emulator: true,
+                ..Default::default()
+            },
+        )
+        .expect("set 2");
+        db.set_game_info_override(
+            "snes",
+            "smw",
+            &crate::game_info::GameInfoOverride::default(),
+        )
+        .expect("set empty");
+
+        let listed = db.list_game_info_overridden().expect("list");
+        assert_eq!(listed.len(), 2);
+        assert!(listed.contains(&("psx".into(), "tr_usa".into())));
+        assert!(listed.contains(&("nes".into(), "smb".into())));
+        // The empty override case must NOT appear in the list — the
+        // set_game_info_override path deleted the row at write time.
+        assert!(!listed.contains(&("snes".into(), "smw".into())));
+    }
+
+    #[test]
+    fn game_info_override_scopes_by_system_id() {
+        // Same rom_id in two different systems is two separate rows.
+        let db = fresh_db();
+        let a = crate::game_info::GameInfoOverride {
+            short_summary: Some("psx note".into()),
+            ..Default::default()
+        };
+        let b = crate::game_info::GameInfoOverride {
+            short_summary: Some("nes note".into()),
+            ..Default::default()
+        };
+        db.set_game_info_override("psx", "same_rom_id", &a).expect("set a");
+        db.set_game_info_override("nes", "same_rom_id", &b).expect("set b");
+
+        let from_psx = db.get_game_info_override("psx", "same_rom_id").expect("psx");
+        let from_nes = db.get_game_info_override("nes", "same_rom_id").expect("nes");
+        assert_eq!(from_psx.short_summary.as_deref(), Some("psx note"));
+        assert_eq!(from_nes.short_summary.as_deref(), Some("nes note"));
+    }
+
+    #[test]
+    fn game_info_override_handles_corrupt_json_gracefully() {
+        // Manually plant a corrupt JSON value in the controls_supported
+        // column. The reader must degrade to None (no override) rather
+        // than failing the whole get_game_info_override call.
+        let db = fresh_db();
+        {
+            let conn = db.inner.lock().expect("lock");
+            conn.execute(
+                r#"INSERT INTO game_info_overrides
+                    (system_id, rom_id, short_summary, controls_supported, bugs,
+                     applied_best_emulator, applied_controls, created_at, updated_at)
+                   VALUES ('psx', 'broken', NULL, 'not valid json {[', '[also broken',
+                           0, 0, 0, 0)"#,
+                [],
+            )
+            .expect("manual insert");
+        }
+        let ov = db.get_game_info_override("psx", "broken").expect("read");
+        // Row exists (we'd return default if it didn't) — short_summary
+        // is None per the column. But controls + bugs degraded to None
+        // because the JSON parse failed.
+        assert!(ov.controls_supported.is_none());
+        assert!(ov.bugs.is_none());
     }
 }
