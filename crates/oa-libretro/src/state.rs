@@ -188,6 +188,13 @@ pub(crate) struct State {
     /// WarioWare Twisted! are playable without an OS-level
     /// accelerometer. Real motion is a separate later phase.
     pub sensor_values: [[f32; 7]; 5],
+    /// OSD-style status messages the core has pushed via
+    /// `SET_MESSAGE` / `SET_MESSAGE_EXT`. Drained per frame by the
+    /// emu thread, which fires each entry as a `oa://toast` event to
+    /// the frontend. Stays small — most cores send <1 message/sec on
+    /// state changes; we cap implicitly at whatever a frame's worth
+    /// of bursts could produce.
+    pub pending_messages: Vec<oa_core::CoreMessage>,
     /// Parsed memory descriptors from the core's `SET_MEMORY_MAPS`
     /// call. Empty for cores that never publish one. Host pointers
     /// stay private to oa-libretro (stored in `memory_map_ptrs`); only
@@ -258,6 +265,7 @@ impl State {
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
+            pending_messages: Vec::new(),
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
@@ -1110,6 +1118,90 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         | RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
         | RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
         | RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE => true,
+
+        // SET_MESSAGE (env 6) — legacy OSD text + duration-in-frames.
+        // Most pre-2020 cores still use this form. We parse it as an
+        // Info-level message and ignore the frames field; the toast
+        // stack has its own dismiss schedule. Log the text at info
+        // level too so it's visible in the log file even if the user
+        // missed the toast.
+        RETRO_ENVIRONMENT_SET_MESSAGE => {
+            if data.is_null() {
+                return false;
+            }
+            let msg = unsafe { &*(data as *const retro_message) };
+            let Some(text) = (unsafe { cstr_to_string(msg.msg) }) else {
+                return false;
+            };
+            if text.is_empty() {
+                return false;
+            }
+            log::info!("core OSD: {text}");
+            with_state(|s| {
+                s.pending_messages.push(oa_core::CoreMessage {
+                    text,
+                    level: oa_core::CoreMessageLevel::Info,
+                    log_only: false,
+                });
+            });
+            true
+        }
+
+        // GET_MESSAGE_INTERFACE_VERSION (env 59) — cores ask which OSD
+        // API version we support before choosing between SET_MESSAGE
+        // (v0) and SET_MESSAGE_EXT (v1). Report v1 so modern cores
+        // route through the richer path.
+        RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION => {
+            if data.is_null() {
+                return false;
+            }
+            unsafe {
+                *(data as *mut u32) = RETRO_MESSAGE_INTERFACE_VERSION;
+            }
+            true
+        }
+
+        // SET_MESSAGE_EXT (env 60) — modern OSD with duration in ms,
+        // priority, log level, target (OSD vs LOG vs ALL), and message
+        // type. We honor: text + log-level → toast tint, target = LOG
+        // → log-only (no toast), target = OSD/ALL → toast. We ignore
+        // duration (toast stack has its own schedule), priority (we
+        // don't preempt — first-in shows), and type (NOTIFICATION vs
+        // STATUS vs PROGRESS — all surface as the same toast shape;
+        // future polish could route PROGRESS to a progress-bar widget).
+        RETRO_ENVIRONMENT_SET_MESSAGE_EXT => {
+            if data.is_null() {
+                return false;
+            }
+            let m = unsafe { &*(data as *const retro_message_ext) };
+            let Some(text) = (unsafe { cstr_to_string(m.msg) }) else {
+                return false;
+            };
+            if text.is_empty() {
+                return false;
+            }
+            // Mirror to log at the requested level so the message is
+            // visible in the log file alongside the toast.
+            match m.level {
+                0 => log::debug!("core OSD: {text}"),
+                1 => log::info!("core OSD: {text}"),
+                2 => log::warn!("core OSD: {text}"),
+                _ => log::error!("core OSD: {text}"),
+            }
+            // LOG-target messages skip the toast surface — they're
+            // intended only for the log file (cores sometimes use this
+            // for verbose status that would spam the OSD).
+            let log_only = m.target == RETRO_MESSAGE_TARGET_LOG;
+            let level = match m.level {
+                2 => oa_core::CoreMessageLevel::Warn,
+                3 => oa_core::CoreMessageLevel::Error,
+                _ => oa_core::CoreMessageLevel::Info, // Debug + Info both surface as Info
+            };
+            with_state(|s| {
+                s.pending_messages.push(oa_core::CoreMessage { text, level, log_only });
+            });
+            true
+        }
 
         // SET_MEMORY_MAPS — parse + store the descriptor array. Cores
         // publish their guest-address-space layout here so future

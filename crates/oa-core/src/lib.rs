@@ -479,6 +479,44 @@ pub struct CoreOptionCategory {
     pub info: Option<String>,
 }
 
+/// Severity hint for a [`CoreMessage`]. Maps onto the toast-stack
+/// levels in the shell — Info / Warn / Error pick the matching tint.
+/// libretro's Debug-level messages fold into Info.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CoreMessageLevel {
+    /// Routine OSD ("Save state slot 1 saved", "Disc 2 inserted").
+    Info,
+    /// Soft warning ("BIOS missing, falling back to HLE").
+    Warn,
+    /// Hard error ("ROM rejected: bad checksum").
+    Error,
+}
+
+/// One OSD-style status string surfaced by the core.
+///
+/// Cores call libretro's `SET_MESSAGE` (legacy, frames-based duration)
+/// or `SET_MESSAGE_EXT` (modern, ms-based + priority + target) to push
+/// short user-visible status updates. The wrapper layer normalizes the
+/// two formats into this shape and queues them; the shell drains the
+/// queue per frame and renders via the toast stack.
+///
+/// `log_only` is set by cores that explicitly target the log channel
+/// instead of the OSD (SET_MESSAGE_EXT target = LOG). The shell skips
+/// toasting those — the underlying `log::info!` line is already
+/// emitted at parse time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreMessage {
+    /// UTF-8 message body.
+    pub text: String,
+    /// Severity hint for the toast tint.
+    pub level: CoreMessageLevel,
+    /// True when the core specifically targeted the LOG channel (not
+    /// the OSD). The shell logs the text but skips toasting.
+    pub log_only: bool,
+}
+
 /// A single descriptor from the core's published memory map.
 ///
 /// Cores call libretro's `SET_MEMORY_MAPS` once during init (after
@@ -700,6 +738,15 @@ pub trait Core: Send {
     /// that system.
     fn memory_region_mut(&mut self, _id: MemoryRegionId) -> Option<&mut [u8]> {
         None
+    }
+
+    /// Drain OSD-style status messages the core has queued via
+    /// libretro's `SET_MESSAGE` / `SET_MESSAGE_EXT`. The shell calls
+    /// this each frame after `run_frame` and routes the entries to
+    /// the toast stack. Returns an empty Vec for cores that don't push
+    /// messages — most pre-NES systems never do.
+    fn drain_messages(&mut self) -> Vec<CoreMessage> {
+        Vec::new()
     }
 
     /// Memory map descriptors as registered by the core via

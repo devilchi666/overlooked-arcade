@@ -780,6 +780,10 @@ impl Core for LibretroCore {
         state::with_state(|s| s.memory_descriptors.clone()).unwrap_or_default()
     }
 
+    fn drain_messages(&mut self) -> Vec<oa_core::CoreMessage> {
+        state::with_state(|s| std::mem::take(&mut s.pending_messages)).unwrap_or_default()
+    }
+
     fn memory_region(&self, id: MemoryRegionId) -> Option<&[u8]> {
         if !self.rom_loaded {
             return None;
