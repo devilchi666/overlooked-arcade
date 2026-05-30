@@ -29,6 +29,28 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+
+/// Tauri event name emitted by the audio thread when a Play command
+/// fails at file-open, decode, or sink-allocation. Frontend listens
+/// for this on `oa://audio-playback-failed` and clears any UI state
+/// that was optimistically tracking the bus as active (e.g. the
+/// HintBar now-playing chip on the platform-music bus).
+pub const EVENT_AUDIO_PLAYBACK_FAILED: &str = "oa://audio-playback-failed";
+
+/// Payload for [`EVENT_AUDIO_PLAYBACK_FAILED`]. `bus` matches the
+/// kebab-case AudioBus serde encoding so frontend code can compare
+/// directly without re-mapping.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackFailedPayload {
+    /// e.g. `"platform-music"`, `"ui-sounds"`, `"ceremony"`,
+    /// `"snap-audio"`.
+    pub bus: String,
+    /// Free-form reason from the rodio error / std::io::Error display
+    /// impl. Surfaced for debug logs / future operator-facing toast.
+    pub reason: String,
+}
 
 /// One of the four file-driven audio buses. Each bus has its own
 /// `rodio::Sink` so volumes + play/stop are independent. The fifth
@@ -158,11 +180,17 @@ impl AudioPlayerHandle {
     /// can't open a default output device (no speakers, audio
     /// service down) — the rest of the app keeps running silently
     /// rather than crashing at startup.
-    pub fn spawn() -> Self {
+    ///
+    /// `app_handle` is held by the audio thread so it can emit
+    /// `oa://audio-playback-failed` events when a Play command can't
+    /// open, decode, or allocate a sink for the requested file. Pass
+    /// `None` from unit tests / headless contexts to disable event
+    /// emission; production callers should always pass `Some(handle)`.
+    pub fn spawn(app_handle: Option<AppHandle>) -> Self {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
         let join = std::thread::Builder::new()
             .name("oa-audio-player".to_string())
-            .spawn(move || audio_thread_main(rx))
+            .spawn(move || audio_thread_main(rx, app_handle))
             .expect("spawn oa-audio-player thread");
         let player = AudioPlayer { tx: tx.clone() };
         AudioPlayerHandle { player, join: Some(join), tx }
@@ -185,8 +213,23 @@ impl Drop for AudioPlayerHandle {
     }
 }
 
-fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>) {
+fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>, app_handle: Option<AppHandle>) {
     use std::collections::HashMap;
+
+    // Helper closure — emit the failure event when an AppHandle is
+    // available, log + no-op otherwise. Keeps the per-command branches
+    // tight and avoids duplicating the event payload construction.
+    let emit_failed = |bus: AudioBus, reason: String| {
+        if let Some(ref h) = app_handle {
+            let payload = PlaybackFailedPayload {
+                bus: bus.as_str().to_string(),
+                reason: reason.clone(),
+            };
+            if let Err(e) = h.emit(EVENT_AUDIO_PLAYBACK_FAILED, payload) {
+                log::warn!("oa-audio-player: emit failed event failed: {e}");
+            }
+        }
+    };
 
     let (_stream, stream_handle) = match rodio::OutputStream::try_default() {
         Ok(p) => p,
@@ -197,7 +240,21 @@ fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>) {
             // Drain the channel as a no-op so senders' send() calls
             // don't fail (which would surface in user logs as
             // distracting warnings on every UI sound dispatch).
-            while rx.recv().is_ok() {}
+            // Also emit a failed event for the platform-music bus
+            // immediately so any UI state that came up before the
+            // audio thread initialized (race condition on cold start)
+            // gets cleared rather than showing stale chips forever.
+            // We can't tell what was requested from here — emit only
+            // when we see actual Play commands.
+            while let Ok(cmd) = rx.recv() {
+                if let AudioCommand::Play { bus, path, .. } = &cmd {
+                    let _ = (path,); // keep clippy happy on the unused binding
+                    emit_failed(
+                        *bus,
+                        format!("no output device available: {e:?}"),
+                    );
+                }
+            }
             return;
         }
     };
@@ -241,6 +298,7 @@ fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>) {
                             "oa-audio-player: open {} on bus {:?} failed: {e}",
                             path.display(), bus,
                         );
+                        emit_failed(bus, format!("open failed: {e}"));
                         continue;
                     }
                 };
@@ -252,6 +310,7 @@ fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>) {
                             "oa-audio-player: decode {} on bus {:?} failed: {e}",
                             path.display(), bus,
                         );
+                        emit_failed(bus, format!("decode failed: {e}"));
                         continue;
                     }
                 };
@@ -262,6 +321,7 @@ fn audio_thread_main(rx: mpsc::Receiver<AudioCommand>) {
                             "oa-audio-player: sink alloc on bus {:?} failed: {e}",
                             bus,
                         );
+                        emit_failed(bus, format!("sink alloc failed: {e}"));
                         continue;
                     }
                 };

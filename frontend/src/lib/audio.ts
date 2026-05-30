@@ -14,6 +14,7 @@
 
 import { createSignal, type Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type AudioBus = "platform-music" | "ui-sounds" | "ceremony" | "snap-audio";
 
@@ -30,6 +31,35 @@ export type NowPlaying = {
 };
 const [nowPlayingSig, setNowPlayingSig] = createSignal<NowPlaying | null>(null);
 export const nowPlaying: Accessor<NowPlaying | null> = nowPlayingSig;
+
+/// Payload for the Rust-side `oa://audio-playback-failed` event.
+/// `bus` matches the kebab-case AudioBus serde encoding so a direct
+/// string compare against AudioBus values works.
+type PlaybackFailedPayload = {
+  bus: AudioBus;
+  reason: string;
+};
+
+// Subscribe to playback failures from the Rust audio thread. When a
+// Play command can't open / decode / allocate a sink for the
+// requested file, the audio thread emits this event with the bus
+// that failed. We clear the now-playing signal when the failing bus
+// matches platform-music so the HintBar chip doesn't sit there
+// indefinitely showing a song that never plays.
+//
+// The listen() call is fire-and-forget — it returns an unlisten
+// function but we want this for the entire app lifetime. Errors are
+// non-fatal: the chip just degrades to dispatch-tracking-only.
+void listen<PlaybackFailedPayload>("oa://audio-playback-failed", (event) => {
+  if (event.payload.bus === "platform-music") {
+    setNowPlayingSig(null);
+  }
+  // ui-sounds / ceremony / snap-audio failures are silent at the
+  // chip level (no UI state to clear) — the audio dispatch helpers
+  // log the warning and move on.
+}).catch((e) => {
+  console.warn("[oa-audio] failed-event listener setup failed:", e);
+});
 
 /// Discrete UI-sound events the per-system override map keys on.
 /// Matches the SystemSettings.ui_sound_* field names + the
