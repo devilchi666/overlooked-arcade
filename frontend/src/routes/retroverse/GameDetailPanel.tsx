@@ -19,6 +19,10 @@ import { createResource } from "solid-js";
 import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import { systemThemes } from "../../themes/registry";
+import {
+  getGameInfo,
+  type BugSeverity,
+} from "../../library/gameInfo";
 
 type Props = {
   entry: RomEntry;
@@ -55,6 +59,35 @@ function formatDate(unixSecs?: number): string {
   }
 }
 
+/// Glyph + tint for a single bug severity. Blockers get a red alert
+/// triangle; major + minor share an amber warning glyph at different
+/// emphasis; cosmetic shows as a neutral dot. Used by the KNOWN ISSUES
+/// section.
+function severityGlyph(s: BugSeverity): string {
+  switch (s) {
+    case "blocker": return "⚠";
+    case "major":   return "⚠";
+    case "minor":   return "•";
+    case "cosmetic": return "·";
+  }
+}
+function severityTintClass(s: BugSeverity): string {
+  switch (s) {
+    case "blocker":  return "text-red-300";
+    case "major":    return "text-amber-300";
+    case "minor":    return "text-(--color-oa-ink-dim)";
+    case "cosmetic": return "text-(--color-oa-ink-dim)/60";
+  }
+}
+function severityRank(s: BugSeverity): number {
+  switch (s) {
+    case "blocker":  return 3;
+    case "major":    return 2;
+    case "minor":    return 1;
+    case "cosmetic": return 0;
+  }
+}
+
 const GameDetailPanel: Component<Props> = (props) => {
   const media = useMedia();
   const [appDataPath] = createResource(async () => {
@@ -64,6 +97,38 @@ const GameDetailPanel: Component<Props> = (props) => {
       return "";
     }
   });
+
+  // Fetch the merged Game Info record (file layer + operator overrides)
+  // for the focused entry. Re-fetches when the operator focuses a
+  // different tile — the createResource source closure depends on the
+  // identifying fields. Returns null when neither the file layer nor
+  // operator overrides have any content, in which case the new
+  // sections silently hide.
+  const [merged] = createResource(
+    () => ({
+      systemId: props.entry.systemId,
+      romId: props.entry.id,
+      romHash: props.entry.sha1,
+      romTitle: props.entry.title,
+    }),
+    async (args) => {
+      try {
+        return await getGameInfo(args);
+      } catch (e) {
+        console.warn("[GameDetailPanel] get_game_info failed:", e);
+        return null;
+      }
+    },
+  );
+
+  // Bugs sorted by severity (blocker first). The tile-badge layer
+  // also picks the max severity, but here we want operator-visible
+  // ordering inside the panel.
+  const sortedBugs = () => {
+    const m = merged();
+    if (!m) return [];
+    return [...m.bugs].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  };
 
   const metadata = () => media.media(props.entry.id)?.metadata;
   const themeName = () =>
@@ -194,11 +259,31 @@ const GameDetailPanel: Component<Props> = (props) => {
         </Show>
       </div>
 
-      {/* Description — graceful fallback when metadata isn't synced. */}
-      <Show when={metadata()?.description}>
-        <p class="px-5 pt-4 text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
-          {metadata()!.description}
-        </p>
+      {/* Description — graceful fallback when metadata isn't synced.
+          Operator's Game Info Panel shortSummary (when present) takes
+          the place of the libretro-database description. Local-source
+          summaries surface with an "(operator note)" mini-label so the
+          reader can tell they're operator-authored vs scraped content. */}
+      <Show
+        when={merged()?.shortSummary}
+        fallback={
+          <Show when={metadata()?.description}>
+            <p class="px-5 pt-4 text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
+              {metadata()!.description}
+            </p>
+          </Show>
+        }
+      >
+        <div class="flex flex-col gap-1 px-5 pt-4">
+          <Show when={merged()?.shortSummaryIsLocal}>
+            <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-system-accent-soft)">
+              Operator note
+            </p>
+          </Show>
+          <p class="text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
+            {merged()!.shortSummary}
+          </p>
+        </div>
       </Show>
 
       {/* Screenshots row — 3 thumbs, hidden when not synced. */}
@@ -248,6 +333,113 @@ const GameDetailPanel: Component<Props> = (props) => {
           <span class="text-[0.6rem] text-(--color-oa-ink-dim)/60">—</span>
         </div>
       </div>
+
+      {/* Controls supported — chip strip. Hidden when the merged record
+          has no entries (file layer empty + no operator override). Each
+          chip uses the neutral white/10 border so they don't compete
+          with the accent-tinted chips in the header chip strip. */}
+      <Show when={(merged()?.controlsSupported ?? []).length > 0}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+            Controls
+          </p>
+          <div class="flex flex-wrap gap-1.5">
+            <For each={merged()!.controlsSupported}>
+              {(c) => (
+                <span class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  {c}
+                </span>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
+
+      {/* Recommended core — the file/operator-curated best emulator
+          for this game. The Apply button is wired in Phase 8 (writes
+          GameOverrides.libretro_core). For Phase 5 it surfaces as a
+          disabled placeholder so the section reads correctly while
+          the action plumbing lands. When the operator has already
+          applied (provenance flag set), the button reflects the
+          "Applied" state. */}
+      <Show when={merged()?.bestEmulator}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+            Recommended core
+          </p>
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-1 flex-col gap-1">
+              <p class="font-mono text-[0.75rem] text-(--color-oa-ink)">
+                {merged()!.bestEmulator!.recommended}
+              </p>
+              <Show when={merged()!.bestEmulator!.reason}>
+                <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)">
+                  {merged()!.bestEmulator!.reason}
+                </p>
+              </Show>
+            </div>
+            <button
+              type="button"
+              disabled
+              title="Wiring in Phase 8 — sets GameOverrides.libretro_core for this game"
+              class="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)/60"
+              classList={{
+                "border-(--color-system-accent)/40 bg-(--color-system-accent)/10 text-(--color-system-accent-soft)":
+                  merged()?.appliedBestEmulator ?? false,
+              }}
+            >
+              {merged()?.appliedBestEmulator ? "Applied" : "Apply"}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      {/* Known issues — operator-visible bug list. Sorted by severity
+          descending (blockers first). Each entry shows a severity glyph
+          tinted by severity, the description, and an optional workaround
+          line indented underneath. */}
+      <Show when={sortedBugs().length > 0}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <div class="flex items-center justify-between">
+            <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+              Known issues
+            </p>
+            <span class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)/60">
+              {sortedBugs().length}
+            </span>
+          </div>
+          <div class="flex flex-col gap-2">
+            <For each={sortedBugs()}>
+              {(bug) => (
+                <div class="flex items-start gap-2">
+                  <span
+                    class={`mt-px shrink-0 text-sm leading-none ${severityTintClass(bug.severity)}`}
+                    aria-label={bug.severity}
+                  >
+                    {severityGlyph(bug.severity)}
+                  </span>
+                  <div class="flex flex-1 flex-col gap-0.5">
+                    <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span
+                        class={`mr-1 text-[0.55rem] uppercase tracking-widest ${severityTintClass(bug.severity)}`}
+                      >
+                        {bug.severity}
+                      </span>
+                      {bug.description}
+                    </p>
+                    <Show when={bug.workaround}>
+                      <p class="text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)/70">
+                        <span class="text-(--color-oa-ink-dim)/60">Workaround: </span>
+                        {bug.workaround}
+                      </p>
+                    </Show>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
 
       {/* Action buttons — pinned at the bottom via mt-auto + padding. */}
       <div class="mt-auto flex gap-2 px-5 py-5">
