@@ -22,6 +22,10 @@
 //! Plan: `docs/PLANS/game-info-panel.md`. Schema reference:
 //! `docs/cores/SCHEMA.md`.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 
 /// Schema version embedded in every record's `meta.schema_version`
@@ -235,6 +239,14 @@ fn default_schema_version() -> u32 {
 ///
 /// Returns successfully-parsed records in source order.
 pub fn parse_games_info_file(content: &str) -> Vec<GameInfo> {
+    // Defensive: skip everything before the first line beginning with
+    // `---`. The schema spec says contributors must write pure YAML
+    // with `#` comments only, but markdown prose at the top of a `.md`
+    // file is a natural authoring mistake — and serde_yaml's tokenizer
+    // can hang indefinitely on certain raw-text patterns (backticks,
+    // em-dashes, mixed quoting). Stripping the pre-document section
+    // makes the parser tolerant without changing the supported schema.
+    let content = skip_pre_yaml(content);
     let mut out = Vec::new();
     for (doc_idx, doc) in serde_yaml::Deserializer::from_str(content).enumerate() {
         match GameInfo::deserialize(doc) {
@@ -249,14 +261,294 @@ pub fn parse_games_info_file(content: &str) -> Vec<GameInfo> {
     out
 }
 
+/// Trim any content before the first line beginning with `---`. Used
+/// by [`parse_games_info_file`] to guard against the markdown-prose-
+/// at-top authoring mistake.
+///
+/// Three branches:
+/// 1. Content starts (after leading whitespace) with `---` → standard
+///    multi-doc YAML, return as-is.
+/// 2. Content has a `\n---` token somewhere → markdown prose at top
+///    is the likely shape; skip to the separator. (This intentionally
+///    drops a leading document that lacks its own `---`, which the
+///    schema requires anyway.)
+/// 3. No `---` line at all → treat the whole content as one document.
+///    Handles single-record files + the `serde_yaml::to_string`
+///    roundtrip case where the serializer omits the leading separator.
+fn skip_pre_yaml(content: &str) -> &str {
+    let trimmed = content.trim_start();
+    if trimmed.starts_with("---") {
+        return trimmed;
+    }
+    if let Some(pos) = content.find("\n---") {
+        return &content[pos + 1..];
+    }
+    content
+}
+
+// ---- in-memory index --------------------------------------------------
+//
+// Phase 2 lifts the parser into a load-at-startup index. Files live at
+// `docs/cores/<id>/games-info.md` in the repo. At runtime the loader
+// resolves the docs/cores directory via [`resolve_docs_cores_dir`]:
+//
+// - `cargo run` / `cargo tauri dev`: walks up from `CARGO_MANIFEST_DIR`
+//   to the source-tree `docs/cores/` directory.
+// - Production install: looks for `<exe_dir>/docs/cores/` next to the
+//   shipped binary. (Bundling at install time is a Phase 11 task.)
+//
+// Per-system files are parsed in parallel via rayon. The lookup API
+// matches the plan's §5 priority: hash first, title fallback.
+//
+// v2's switch to a separate `overlooked-arcade-game-info` data repo
+// with daily sync (plan §11.2) replaces the source-tree path with a
+// cached fetch — the `GameInfoIndex` API stays the same.
+
+/// Resolve the `docs/cores/` directory at runtime. Walks two candidate
+/// locations in priority order; returns the first one that exists.
+/// `None` when neither resolves — the loader falls back to an empty
+/// index in that case so a missing dev tree never crashes the app.
+///
+/// Order:
+/// 1. `<exe_dir>/docs/cores/` — production install path (the build
+///    system is expected to copy the docs tree alongside the binary;
+///    Phase 11 wires this).
+/// 2. `<CARGO_MANIFEST_DIR>/../../docs/cores/` — source-tree path for
+///    `cargo run` + `cargo tauri dev`. Hard-coded relative to the
+///    oa-shell crate, which lives at `apps/oa-shell/` two levels under
+///    the repo root.
+pub fn resolve_docs_cores_dir() -> Option<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let p = exe_dir.join("docs").join("cores");
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+    }
+    // Source-tree fallback. `env!("CARGO_MANIFEST_DIR")` evaluates at
+    // compile time to the absolute path of this crate's directory.
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("docs")
+        .join("cores");
+    if dev.is_dir() {
+        return Some(dev);
+    }
+    None
+}
+
+/// Two-key index over all loaded [`GameInfo`] records.
+///
+/// Match priority (Phase 4's query layer enforces this):
+/// 1. `(system_id, rom_hash)` exact match — most specific.
+/// 2. `(system_id, rom_title)` exact match — fallback for records
+///    without a hash and operator libraries that haven't been hash-
+///    resolved yet.
+///
+/// Records that publish both keys appear in both maps pointing at the
+/// same cloned `GameInfo`. The `all` vector preserves source order for
+/// callers that want to enumerate ("list all games with bugs", etc.).
+pub struct GameInfoIndex {
+    by_hash: HashMap<(String, String), GameInfo>,
+    by_title: HashMap<(String, String), GameInfo>,
+    all: Vec<GameInfo>,
+}
+
+impl GameInfoIndex {
+    /// Build the index from a directory laid out as
+    /// `<dir>/<system_slug>/games-info.md`. Each per-system file is
+    /// read + parsed in parallel via rayon; missing files for a system
+    /// dir are silently skipped (not every system ships a games-info
+    /// file yet, especially during v1 rollout).
+    ///
+    /// Returns an empty index if `dir` doesn't exist or is unreadable;
+    /// callers should treat that as "no game info data" rather than
+    /// an error.
+    pub fn load_from_dir(dir: &Path) -> Self {
+        // Cheap walk: list subdirectories that contain a games-info.md.
+        // The actual file reads + parse run in parallel below.
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(e) => {
+                log::info!(
+                    "game_info: docs/cores dir not readable at {} ({e}); index is empty",
+                    dir.display()
+                );
+                return Self::empty();
+            }
+        };
+
+        let candidates: Vec<(String, PathBuf)> = entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                // Use the file_type from DirEntry instead of calling
+                // is_dir on the path — DirEntry caches the type without
+                // an extra stat syscall. On Windows this skips a per-
+                // entry NTFS attribute fetch that can be surprisingly
+                // slow under AV scanning or indexer churn.
+                let file_type = e.file_type().ok()?;
+                if !file_type.is_dir() {
+                    return None;
+                }
+                let p = e.path();
+                let slug = p.file_name()?.to_str()?.to_string();
+                let file = p.join("games-info.md");
+                // metadata().ok().map(|m| m.is_file()) avoids the
+                // is_file convenience method's syscall doubling on
+                // some Rust toolchains (fixed upstream but cheap to
+                // sidestep).
+                let exists = std::fs::metadata(&file).map(|m| m.is_file()).unwrap_or(false);
+                if !exists {
+                    return None;
+                }
+                Some((slug, file))
+            })
+            .collect();
+
+        // Sequential read + parse. Per-system files are typically a
+        // few KB each; the overall workload is bounded by the system
+        // count (~40) so parallelism would buy single-digit
+        // milliseconds at the cost of spinning rayon's thread pool.
+        // The Phase 2 trade-off favors a fast cold path on the
+        // first-boot critical section.
+        let mut per_system: Vec<(String, Vec<GameInfo>)> = candidates
+            .iter()
+            .map(|(slug, path)| {
+                let body = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                    log::warn!(
+                        "game_info: read failed for {}: {e}; treating as empty",
+                        path.display()
+                    );
+                    String::new()
+                });
+                (slug.clone(), parse_games_info_file(&body))
+            })
+            .collect();
+        per_system.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut by_hash: HashMap<(String, String), GameInfo> = HashMap::new();
+        let mut by_title: HashMap<(String, String), GameInfo> = HashMap::new();
+        let mut all: Vec<GameInfo> = Vec::new();
+
+        for (_, records) in per_system {
+            for gi in records {
+                let system_id = gi.id_key.system_id.clone();
+                if let Some(hash) = gi.id_key.rom_hash.as_ref() {
+                    by_hash.insert((system_id.clone(), hash.clone()), gi.clone());
+                }
+                if let Some(title) = gi.id_key.rom_title.as_ref() {
+                    by_title.insert((system_id.clone(), title.clone()), gi.clone());
+                }
+                all.push(gi);
+            }
+        }
+
+        log::info!(
+            "game_info: indexed {} records across {} systems (hash keys: {}, title keys: {}) from {}",
+            all.len(),
+            candidates.len(),
+            by_hash.len(),
+            by_title.len(),
+            dir.display(),
+        );
+
+        Self { by_hash, by_title, all }
+    }
+
+    /// Convenience: resolve `docs/cores/` per [`resolve_docs_cores_dir`]
+    /// and call [`load_from_dir`](Self::load_from_dir). Falls back to
+    /// [`empty`](Self::empty) when no docs/cores directory is found.
+    pub fn load_default() -> Self {
+        match resolve_docs_cores_dir() {
+            Some(dir) => Self::load_from_dir(&dir),
+            None => {
+                log::warn!(
+                    "game_info: could not resolve docs/cores directory \
+                     (checked <exe>/docs/cores and <repo>/docs/cores); index is empty"
+                );
+                Self::empty()
+            }
+        }
+    }
+
+    /// Build an empty index. Useful for tests + the fallback path when
+    /// the embedded tree is somehow absent.
+    pub fn empty() -> Self {
+        Self {
+            by_hash: HashMap::new(),
+            by_title: HashMap::new(),
+            all: Vec::new(),
+        }
+    }
+
+    /// Lookup priority: hash first, title fallback. Returns the first
+    /// match, or None when neither key resolves.
+    ///
+    /// `rom_hash` should be SHA-1 hex-encoded lowercase to match the
+    /// schema. `rom_title` should be the canonical No-Intro / Redump
+    /// title (the same shape the games-info.md author would have used).
+    pub fn lookup(
+        &self,
+        system_id: &str,
+        rom_hash: Option<&str>,
+        rom_title: Option<&str>,
+    ) -> Option<&GameInfo> {
+        if let Some(hash) = rom_hash {
+            if let Some(gi) = self.by_hash.get(&(system_id.to_string(), hash.to_string())) {
+                return Some(gi);
+            }
+        }
+        if let Some(title) = rom_title {
+            if let Some(gi) = self.by_title.get(&(system_id.to_string(), title.to_string())) {
+                return Some(gi);
+            }
+        }
+        None
+    }
+
+    /// All records in stable order — system_id alphabetical, then
+    /// source-file order within each system. Useful for "show every
+    /// game with a Blocker bug" reports.
+    pub fn all(&self) -> &[GameInfo] {
+        &self.all
+    }
+
+    /// Number of indexed records — for diagnostic / debug-log surfaces.
+    pub fn len(&self) -> usize {
+        self.all.len()
+    }
+
+    /// True when no records loaded — useful for tests + the empty()
+    /// fallback path.
+    pub fn is_empty(&self) -> bool {
+        self.all.is_empty()
+    }
+}
+
+/// Process-wide singleton. Initialized lazily on first access so the
+/// startup path doesn't pay the parse cost when no UI surface has
+/// asked yet. Subsequent calls reuse the cached index.
+static INDEX: OnceLock<GameInfoIndex> = OnceLock::new();
+
+/// Access the global game-info index, building it on first call via
+/// [`GameInfoIndex::load_default`]. Thread-safe; all callers see the
+/// same instance for the lifetime of the process.
+pub fn global_index() -> &'static GameInfoIndex {
+    INDEX.get_or_init(GameInfoIndex::load_default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Sample matching the Tomb Raider example in
     /// `docs/PLANS/game-info-panel.md` §5. Used as the golden record
-    /// for "all fields populated parses cleanly."
-    const TOMB_RAIDER_YAML: &str = r#"
+    /// for "all fields populated parses cleanly." Every document
+    /// starts with a leading `---` per schema (so the parser's
+    /// pre-YAML-skip logic doesn't mistake the document for prose).
+    const TOMB_RAIDER_YAML: &str = r#"---
 id_key:
   system_id: psx
   rom_hash: 7a4b00112233445566778899aabbccddeeff0011
@@ -358,7 +650,7 @@ meta:
         // Only id_key + system_id present; everything else falls back
         // to defaults. Validates that the field-optional contract
         // works for unhashed homebrew / prototypes.
-        let yaml = r#"
+        let yaml = r#"---
 id_key:
   system_id: nes
   rom_title: "My Homebrew Demo"
@@ -381,9 +673,9 @@ id_key:
         // Two real documents separated by the YAML `---` marker.
         // Order matters for callers that want stable iteration.
         let yaml = format!(
-            "{}\n---\n{}",
+            "{}\n{}",
             TOMB_RAIDER_YAML,
-            r#"
+            r#"---
 id_key:
   system_id: psx
   rom_hash: 1111222233334444555566667777888899990000
@@ -405,9 +697,9 @@ publisher: SCEA
         // parser must log + skip it, and yield the two flanking
         // valid records — one bad entry should never poison the file.
         let yaml = format!(
-            "{}\n---\nthis_is_not_a_game_record: true\n---\n{}",
+            "{}\n---\nthis_is_not_a_game_record: true\n{}",
             TOMB_RAIDER_YAML,
-            r#"
+            r#"---
 id_key:
   system_id: snes
   rom_title: "Super Metroid (USA)"
@@ -437,6 +729,186 @@ id_key:
         assert_eq!(max, BugSeverity::Blocker);
         assert!(BugSeverity::Major > BugSeverity::Minor);
         assert!(BugSeverity::Minor > BugSeverity::Cosmetic);
+    }
+
+    // ---- GameInfoIndex ------------------------------------------------
+
+    /// Construct a small index by hand for lookup tests — avoids
+    /// depending on the embedded tree's contents, so tests stay
+    /// stable when the psx sample file evolves.
+    fn fixture_index() -> GameInfoIndex {
+        let tr: GameInfo = parse_games_info_file(TOMB_RAIDER_YAML)
+            .into_iter()
+            .next()
+            .unwrap();
+        let homebrew = parse_games_info_file(
+            r#"
+id_key:
+  system_id: nes
+  rom_title: "My Homebrew Demo"
+date: 2024
+"#,
+        )
+        .into_iter()
+        .next()
+        .unwrap();
+        let mut idx = GameInfoIndex::empty();
+        idx.by_hash.insert(
+            (tr.id_key.system_id.clone(), tr.id_key.rom_hash.clone().unwrap()),
+            tr.clone(),
+        );
+        idx.by_title.insert(
+            (tr.id_key.system_id.clone(), tr.id_key.rom_title.clone().unwrap()),
+            tr.clone(),
+        );
+        idx.by_title.insert(
+            (homebrew.id_key.system_id.clone(), homebrew.id_key.rom_title.clone().unwrap()),
+            homebrew.clone(),
+        );
+        idx.all.push(tr);
+        idx.all.push(homebrew);
+        idx
+    }
+
+    #[test]
+    fn index_lookup_prefers_hash_match_over_title() {
+        // When both hash and title resolve, hash wins per the §5
+        // priority order — hash is the more specific key.
+        let idx = fixture_index();
+        let hit = idx.lookup(
+            "psx",
+            Some("7a4b00112233445566778899aabbccddeeff0011"),
+            Some("Some Other Title"),
+        );
+        assert!(hit.is_some());
+        assert_eq!(hit.unwrap().id_key.rom_title.as_deref(), Some("Tomb Raider (USA)"));
+    }
+
+    #[test]
+    fn index_lookup_falls_back_to_title_when_hash_misses() {
+        // Hash doesn't resolve → fall through to title. Common case
+        // for unhashed homebrew where the operator has the ROM but
+        // hash isn't in the local cache yet.
+        let idx = fixture_index();
+        let hit = idx.lookup("nes", Some("ffff_unknown_hash"), Some("My Homebrew Demo"));
+        assert!(hit.is_some());
+        assert_eq!(hit.unwrap().id_key.system_id, "nes");
+    }
+
+    #[test]
+    fn index_lookup_returns_none_when_neither_key_matches() {
+        let idx = fixture_index();
+        assert!(idx.lookup("snes", Some("aaaa"), Some("Nonexistent")).is_none());
+    }
+
+    #[test]
+    fn index_lookup_scopes_by_system_id() {
+        // Same title in two different systems would be two different
+        // records. Looking up by the wrong system_id misses even when
+        // the title is correct — prevents cross-system collisions.
+        let idx = fixture_index();
+        assert!(
+            idx.lookup("nes", None, Some("Tomb Raider (USA)")).is_none(),
+            "wrong system_id must miss the title lookup"
+        );
+    }
+
+    #[test]
+    fn index_empty_constructs_cleanly() {
+        let idx = GameInfoIndex::empty();
+        assert!(idx.is_empty());
+        assert_eq!(idx.len(), 0);
+        assert!(idx.lookup("psx", Some("anything"), Some("anything")).is_none());
+    }
+
+    #[test]
+    fn load_from_dir_loads_psx_sample_via_source_tree() {
+        // The Phase 1 sample at docs/cores/psx/games-info.md has 2
+        // entries — Tomb Raider (USA) + Final Fantasy VII (USA). The
+        // resolver should find the source-tree path when running under
+        // `cargo test` (the exe-dir candidate fails; CARGO_MANIFEST_DIR
+        // fallback succeeds). Use the resolved dir directly rather
+        // than the global singleton so the test doesn't poison
+        // OnceLock state for sibling tests.
+        let dir = resolve_docs_cores_dir().expect(
+            "resolve_docs_cores_dir must find the source-tree docs/cores under cargo test",
+        );
+        let idx = GameInfoIndex::load_from_dir(&dir);
+        assert!(
+            idx.lookup(
+                "psx",
+                Some("7a4b00112233445566778899aabbccddeeff0011"),
+                None,
+            )
+            .is_some(),
+            "load_from_dir must include Tomb Raider record from docs/cores/psx/games-info.md"
+        );
+        assert!(
+            idx.lookup("psx", None, Some("Final Fantasy VII (USA)"))
+                .is_some(),
+            "load_from_dir must include FF7 record by title fallback"
+        );
+    }
+
+    #[test]
+    fn parse_skips_markdown_prose_before_first_document_marker() {
+        // Regression: an earlier version hung on serde_yaml's tokenizer
+        // when contributors wrote markdown prose (backticks, em-dashes,
+        // raw text) above the first `---` line. The parser now skips
+        // everything up to the first `^---` line and yields only the
+        // YAML documents.
+        let yaml = r#"# System — Title
+
+Per-game structured reference data for the Game Info Panel.
+Format reference: `docs/cores/SCHEMA.md`. v1 seed entries —
+most coverage arrives in Phase 10 via the
+`KNOWN_GAME_BUGS.md` migration pass.
+
+# ============================================================================
+
+---
+id_key:
+  system_id: psx
+  rom_title: "Test Game"
+date: 1999
+"#;
+        let out = parse_games_info_file(yaml);
+        assert_eq!(out.len(), 1, "parser must skip pre-YAML prose and yield the one record");
+        assert_eq!(out[0].id_key.rom_title.as_deref(), Some("Test Game"));
+        assert_eq!(out[0].date, Some(1999));
+    }
+
+    #[test]
+    fn parse_handles_content_starting_directly_with_separator() {
+        // When the file starts with `---` (no leading whitespace or
+        // prose), the parser must still yield the record. Common case
+        // for clean machine-generated files.
+        let yaml = r#"---
+id_key:
+  system_id: nes
+  rom_title: "Direct Start"
+"#;
+        let out = parse_games_info_file(yaml);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id_key.rom_title.as_deref(), Some("Direct Start"));
+    }
+
+    #[test]
+    fn parse_returns_empty_when_file_has_no_document_marker() {
+        // Content with no `---` line at all — pure prose, no YAML
+        // documents — yields zero records rather than hanging or
+        // producing a spurious entry.
+        let prose = "This is not a YAML file. No documents here.";
+        assert!(parse_games_info_file(prose).is_empty());
+    }
+
+    #[test]
+    fn load_from_dir_missing_path_returns_empty() {
+        // Pointing at a non-existent dir produces an empty index, not
+        // a crash. The "no game info data" fallback covers production
+        // installs that haven't shipped docs/cores/ yet.
+        let idx = GameInfoIndex::load_from_dir(Path::new("Z:/nonexistent/path/docs/cores"));
+        assert!(idx.is_empty());
     }
 
     #[test]

@@ -11,7 +11,12 @@ format for human contributors.
 
 Each file is **multi-document YAML** with the standard `---` separator. One
 YAML document per game record. The `.md` extension is for editor / GitHub
-display friendliness; the content itself is pure YAML.
+display friendliness; the content itself must be pure YAML.
+
+**Every record MUST start with a `---` line on its own**, including the first
+one. The parser uses the first `^---` line as a defensive anchor: anything
+before it is treated as prose and skipped. Without leading `---` on the first
+doc, a file's opening record may be silently dropped.
 
 ```yaml
 ---
@@ -29,6 +34,13 @@ id_key:
 date: 1997
 # ...
 ```
+
+YAML comments (lines starting with `#`) are fine anywhere. Lines that are
+NOT comments and NOT valid YAML (raw markdown prose, backtick spans,
+em-dashes outside quoted strings) will either parse as scalar strings —
+producing a malformed record that's logged and skipped — or in pathological
+cases hang the upstream tokenizer. The "skip everything before the first
+`---`" rule protects against accidental prose at the top of the file.
 
 Records that fail to parse are logged and skipped; one bad record doesn't
 poison the file. Adjacent valid records continue to load.

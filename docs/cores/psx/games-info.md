@@ -1,10 +1,8 @@
 # PlayStation — Game Info
-
-Per-game structured reference data for the Game Info Panel. Format reference:
-`docs/cores/SCHEMA.md`. v1 seed entries — most coverage arrives in Phase 10
-via the `KNOWN_GAME_BUGS.md` migration pass.
-
-# ============================================================================
+# Per-game structured reference data for the Game Info Panel.
+# Format reference: docs/cores/SCHEMA.md
+# v1 seed entries — most coverage arrives in Phase 10 via the
+# KNOWN_GAME_BUGS.md migration pass.
 
 ---
 id_key:
