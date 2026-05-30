@@ -13,7 +13,7 @@
 // modals. The other categories stay as "Coming in a follow-up" stubs
 // until each gets its own polish slice.
 
-import { createSignal, For, Match, Switch, type Component } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import { HintRegion } from "../../nav/HintBar";
 import {
   AboutSettings,
@@ -32,7 +32,9 @@ import {
   StorageSettings,
   ThemesSettings,
 } from "../../components/SettingsSections";
+import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import { useDomQueryFocusGroup } from "../../nav/focus";
+import { systemThemes, type SystemId } from "../../themes/registry";
 import { useRetroverse } from "./context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -52,7 +54,8 @@ type CategoryId =
   | "bios"
   | "storage"
   | "profile"
-  | "about";
+  | "about"
+  | "per-system";
 
 type CategoryDef = {
   id: CategoryId;
@@ -207,6 +210,20 @@ const CATEGORIES: readonly CategoryDef[] = [
   },
 ];
 
+/// Per-system category — special-cased because its sidebar entry is an
+/// expandable group with a system picker rather than a flat button,
+/// and the center pane content depends on which system the operator
+/// picked. Not part of the GROUP_ORDER iteration.
+const PER_SYSTEM_CATEGORY: CategoryDef = {
+  id: "per-system",
+  group: "system",
+  label: "Per-system",
+  glyph: "▥",
+  description: "Per-system overrides — display / rewind / shaders / default core / bindings.",
+  helpText:
+    "Per-system overrides override OA-wide defaults; per-game settings override per-system in turn. Empty rows fall through to the inherited value. Bindings + Core options open as focused editors since they're large enough to warrant their own dialog UI.",
+};
+
 const GROUP_LABELS: Record<CategoryGroup, string> = {
   "oa-wide": "OA-WIDE",
   content: "CONTENT",
@@ -218,11 +235,34 @@ const GROUP_ORDER: readonly CategoryGroup[] = ["oa-wide", "content", "system"];
 const SettingsPage: Component = () => {
   const ctx = useRetroverse();
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>("display");
-  const activeCategory = () =>
-    CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
+  const [perSystemExpanded, setPerSystemExpanded] = createSignal(false);
+  const [perSystemActiveId, setPerSystemActiveId] = createSignal<SystemId | null>(null);
+  const activeCategory = () => {
+    if (activeCategoryId() === "per-system") return PER_SYSTEM_CATEGORY;
+    return CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
+  };
 
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
+
+  /// All registered systems sorted by display name for the Per-system
+  /// picker. Memo so the sort runs once per registry change (the
+  /// registry itself is static today but a future content-pack might
+  /// extend it).
+  const allSystems = createMemo<{ id: SystemId; displayName: string }[]>(() => {
+    const ids = Object.keys(systemThemes) as SystemId[];
+    const rows = ids.map((id) => ({
+      id,
+      displayName: systemThemes[id]?.displayName ?? id,
+    }));
+    rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return rows;
+  });
+
+  function pickSystem(id: SystemId) {
+    setPerSystemActiveId(id);
+    setActiveCategoryId("per-system");
+  }
 
   // SETTINGS is 2-region only after the live-preview right pane was
   // dropped (operator spec). Unified-focus model: `neighbours` drives
@@ -315,13 +355,72 @@ const SettingsPage: Component = () => {
           )}
         </For>
         <section class="mt-6 border-t border-white/5 pt-4">
-          <p class="px-2 text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)/60">
-            Per-system ▾
-          </p>
-          <p class="mt-1.5 px-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
-            Expand to drop into a single system's override tier.
-            Coming in a follow-up slice.
-          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setPerSystemExpanded((v) => !v);
+            }}
+            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            aria-expanded={perSystemExpanded()}
+          >
+            <span
+              class="text-[0.55rem] text-(--color-oa-ink-dim)"
+              aria-hidden="true"
+            >
+              {perSystemExpanded() ? "▾" : "▸"}
+            </span>
+            <span class="text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+              Per-system
+            </span>
+            <span class="ml-auto text-[0.55rem] text-(--color-oa-ink-dim)/60">
+              {allSystems().length}
+            </span>
+          </button>
+          <Show
+            when={perSystemExpanded()}
+            fallback={
+              <p class="mt-1.5 px-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
+                Expand to pick a system and edit its override tier.
+              </p>
+            }
+          >
+            <ul class="mt-1 flex max-h-[420px] flex-col gap-0.5 overflow-y-auto">
+              <For each={allSystems()}>
+                {(sys) => {
+                  const isActive = () =>
+                    activeCategoryId() === "per-system" &&
+                    perSystemActiveId() === sys.id;
+                  return (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          pickSystem(sys.id);
+                        }}
+                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                        classList={{
+                          "bg-(--color-system-accent)/15 text-(--color-oa-ink)": isActive(),
+                          "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)":
+                            !isActive(),
+                        }}
+                        aria-current={isActive() ? "page" : undefined}
+                        data-system={sys.id}
+                        title={sys.displayName}
+                      >
+                        <span
+                          class="inline-block h-2 w-2 shrink-0 rounded-full bg-(--color-system-accent)"
+                          aria-hidden="true"
+                        />
+                        <span class="truncate">{sys.displayName}</span>
+                      </button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
         </section>
       </aside>
 
@@ -403,6 +502,12 @@ const SettingsPage: Component = () => {
           </Match>
           <Match when={activeCategoryId() === "about"}>
             <AboutSettings />
+          </Match>
+          <Match when={activeCategoryId() === "per-system"}>
+            <PerSystemSettingsBody
+              systemId={perSystemActiveId}
+              settings={ctx.settings}
+            />
           </Match>
         </Switch>
       </section>
