@@ -310,14 +310,58 @@ impl LibretroCore {
             ));
         }
         self.rom_loaded = true;
+        self.finish_load();
+        Ok(())
+    }
 
-        // Wire controller port 0 AFTER load — Mednafen-derived cores clobber
-        // their input data_ptr table during MDFNI_LoadGame, so pre-load
-        // configuration silently disconnects.
-        // See: reference_libretro_controller_after_load_game memory.
+    /// Boot the core without any content — the libretro spec calls
+    /// this `retro_load_game(NULL)`. Only valid against cores that
+    /// advertised [`supports_no_game`](Self::supports_no_game) =
+    /// `true` during init; everything else returns
+    /// `CoreError::InvalidRom`.
+    ///
+    /// Targeted use case: DOSBox-Pure boots into its own DOS-game
+    /// browser when launched bootless; ScummVM boots into the engine
+    /// launcher with its built-in game list. Lets the operator browse
+    /// content from inside the core rather than picking a game from
+    /// OA's library first.
+    ///
+    /// Does the same post-load work as [`load_rom`](Self::load_rom):
+    /// wires controller port 0 to JOYPAD, snapshots the av_info, and
+    /// pushes the aspect ratio to the renderer.
+    pub fn load_no_rom(&mut self) -> Result<(), CoreError> {
+        if self.rom_loaded {
+            unsafe { (self.lib.fns.unload_game)() };
+            self.rom_loaded = false;
+        }
+        // Same per-load reset as load_rom — clear rotation + memory
+        // descriptors so a back-to-back swap doesn't inherit state from
+        // the previous game.
+        state::with_state(|s| {
+            s.rotation = 0;
+            s.memory_descriptors.clear();
+            s.memory_map_ptrs.clear();
+        });
+
+        let ok = unsafe { (self.lib.fns.load_game)(std::ptr::null()) };
+        if !ok {
+            return Err(CoreError::InvalidRom(
+                "retro_load_game(NULL) returned false — core may not support no-game launch"
+                    .into(),
+            ));
+        }
+        self.rom_loaded = true;
+        self.finish_load();
+        Ok(())
+    }
+
+    /// Post-load common work shared by `load_rom` + `load_no_rom`. Wires
+    /// controller port 0 to RETRO_DEVICE_JOYPAD (Mednafen-derived cores
+    /// clobber data_ptr[] during MDFNI_LoadGame so this MUST run AFTER
+    /// retro_load_game) and snapshots real av_info into `self.timing`.
+    fn finish_load(&mut self) {
         unsafe { (self.lib.fns.set_controller_port_device)(0, RETRO_DEVICE_JOYPAD) };
 
-        // Snapshot real timing now that the core knows what it's running.
         let mut av = retro_system_av_info {
             geometry: retro_game_geometry {
                 base_width: 0,
@@ -339,8 +383,14 @@ impl LibretroCore {
             sample_rate: av.timing.sample_rate.round() as u32,
         };
         state::with_state(|s| s.display_aspect = av.geometry.aspect_ratio);
+    }
 
-        Ok(())
+    /// True if the core advertised `SET_SUPPORT_NO_GAME = true` during
+    /// init — see [`load_no_rom`](Self::load_no_rom) for the targeted
+    /// use case. Captured once during `retro_set_environment`; cores
+    /// can't change their mind later.
+    pub fn supports_no_game(&self) -> bool {
+        state::with_state(|s| s.supports_no_game).unwrap_or(false)
     }
 
     /// True once `load_rom` has returned Ok.

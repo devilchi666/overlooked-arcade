@@ -188,6 +188,18 @@ pub(crate) struct State {
     /// WarioWare Twisted! are playable without an OS-level
     /// accelerometer. Real motion is a separate later phase.
     pub sensor_values: [[f32; 7]; 5],
+    /// Whether the core advertised `SET_SUPPORT_NO_GAME = true` during
+    /// init. Cores like DOSBox-Pure (built-in DOS-game browser) and
+    /// ScummVM (engine launcher with built-in game list) set this to
+    /// signal "you may call `retro_load_game(NULL)` and I'll boot into
+    /// my own menu / browser." Cores that need content always leave
+    /// this `false`; calling `load_no_rom()` against one of those
+    /// returns an error from `retro_load_game`.
+    ///
+    /// The flag is captured once during `retro_set_environment` (the
+    /// only time SET_SUPPORT_NO_GAME is allowed per spec); it does
+    /// not reset between loads.
+    pub supports_no_game: bool,
     /// OSD-style status messages the core has pushed via
     /// `SET_MESSAGE` / `SET_MESSAGE_EXT`. Drained per frame by the
     /// emu thread, which fires each entry as a `oa://toast` event to
@@ -265,6 +277,7 @@ impl State {
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
+            supports_no_game: false,
             pending_messages: Vec::new(),
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
@@ -1118,6 +1131,22 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         | RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
         | RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
         | RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE => true,
+
+        // SET_SUPPORT_NO_GAME (env 18) — core declares it can boot
+        // without content. DOSBox-Pure (built-in DOS-game browser),
+        // ScummVM (engine launcher with game list), 2048-libretro and
+        // similar standalone-as-a-core titles all set this true. The
+        // shell consults `LibretroCore::supports_no_game()` to decide
+        // whether `load_no_rom()` is a valid action.
+        RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME => {
+            if data.is_null() {
+                return false;
+            }
+            let flag = unsafe { *(data as *const bool) };
+            log::info!("oa-libretro: SET_SUPPORT_NO_GAME = {flag}");
+            with_state(|s| s.supports_no_game = flag);
+            true
+        }
 
         // SET_MESSAGE (env 6) — legacy OSD text + duration-in-frames.
         // Most pre-2020 cores still use this form. We parse it as an
