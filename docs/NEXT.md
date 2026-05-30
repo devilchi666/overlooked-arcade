@@ -276,9 +276,18 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 
 ## MEDIUM — Phase 3+ polish
 
-1. **Dedicated `vector-phosphor` shader preset for Vectrex** (~250 lines WGSL + UI).
-   - New `ShaderPreset::VectorPhosphor` variant + WGSL branch. Gaussian glow on bright pixels (vector lines), optional persistence trail.
-   - Wants operator design input on glow radius + persistence half-life.
+~~1. Dedicated `vector-phosphor` shader preset for Vectrex~~ —
+   **SHIPPED 2026-05-29** on `feat/vectrex-vector-phosphor-shader`.
+   New `ShaderPreset::VectorPhosphor` (id=5) + wider-σ (9-tap σ≈2.5)
+   Gaussian bloom with luminance bright-pass + persistent ping-pong
+   history accumulator at ~80ms half-life. New files:
+   `crates/oa-render/shaders/vector_blur.wgsl`,
+   `crates/oa-render/shaders/persistence.wgsl`,
+   `shaders/presets/vector-phosphor.preset.toml`. Vectrex's
+   `defaultShaderPreset` flipped `crt-lite` → `vector-phosphor`.
+   Operator design input locked: white tint, σ≈2.5 bloom, ~80ms
+   persistence. Per-`docs/cores/vectrex/SESSION_LOG.md` 2026-05-29
+   entry + ROADMAP flip.
 
 2. **Dedicated `vb-monochrome` shader for Virtual Boy** (~120 lines WGSL).
    - New `ShaderPreset::VbMonochrome` variant. LED-grain noise + red-on-black tint + optional visor reflection.

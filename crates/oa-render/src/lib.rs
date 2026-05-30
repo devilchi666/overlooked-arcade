@@ -159,6 +159,17 @@ pub enum ShaderPreset {
     /// LCDs don't have them. Single-pass — effect lives in the
     /// final-blit shader's preset branch.
     LcdHandheld,
+    /// Vectrex vector-phosphor preset. Targets the Vectrex's monochrome
+    /// CRT vector display: bright vector strokes against pure black.
+    /// Bright-pass filter extracts only luminance above a threshold,
+    /// then a wider-σ separable Gaussian blooms those bright pixels,
+    /// then a persistent history accumulator decays the previous
+    /// frame's glow at ~80ms half-life so vector strokes leave a
+    /// short fading echo (the signature Vectrex "ghosting"). Final
+    /// blit composites source + tinted-glow. Multi-pass — uses the
+    /// EffectPass chain + an extra persistent ping-pong pair the
+    /// other presets don't need.
+    VectorPhosphor,
 }
 
 impl Default for ShaderPreset {
@@ -180,6 +191,7 @@ impl ShaderPreset {
             Self::CrtLite => 2,
             Self::Phosphor => 3,
             Self::LcdHandheld => 4,
+            Self::VectorPhosphor => 5,
         }
     }
 
@@ -191,6 +203,7 @@ impl ShaderPreset {
             "crt-lite" => Self::CrtLite,
             "phosphor" => Self::Phosphor,
             "lcd-handheld" => Self::LcdHandheld,
+            "vector-phosphor" => Self::VectorPhosphor,
             _ => Self::Plain,
         }
     }
@@ -203,6 +216,7 @@ impl ShaderPreset {
             Self::CrtLite => "crt-lite",
             Self::Phosphor => "phosphor",
             Self::LcdHandheld => "lcd-handheld",
+            Self::VectorPhosphor => "vector-phosphor",
         }
     }
 
@@ -210,7 +224,15 @@ impl ShaderPreset {
     /// `effect_chain`) to be populated before the final blit reads them.
     /// Used by `present()` to decide whether to allocate + run the chain.
     pub fn is_multipass(self) -> bool {
-        matches!(self, Self::Phosphor)
+        matches!(self, Self::Phosphor | Self::VectorPhosphor)
+    }
+
+    /// True for presets that need a PERSISTENT render-target pair (the
+    /// history textures) that survives across frames. The Vectrex
+    /// vector-phosphor accumulates the prior frame's glow into the
+    /// current frame's bloom; Phosphor and the rest are frame-local.
+    pub fn uses_persistence(self) -> bool {
+        matches!(self, Self::VectorPhosphor)
     }
 }
 
@@ -248,6 +270,22 @@ pub struct Renderer {
     /// intermediate. Empty Vec = no chain (Plain / Scanlines / CrtLite —
     /// they apply effects in the final-blit fragment shader directly).
     effect_chain: Vec<EffectPass>,
+    /// VectorPhosphor — persistent history ping-pong pair. Survives
+    /// across frames so the persistence pass can read the prior frame's
+    /// glow accumulation. Allocated lazily when the active preset
+    /// `uses_persistence()` and the framebuffer dimensions settle.
+    /// `None` for every other preset; cleared when the preset switches
+    /// to one that doesn't need persistence (next allocation rebuilds
+    /// it cleanly at the new dimensions).
+    history_textures: Option<(IntermediateTexture, IntermediateTexture)>,
+    /// Index of the history slot the next persistence pass will write
+    /// INTO (the prior frame's read source is `1 - history_write_index`).
+    /// Flipped each frame after the persistence pass runs. Persists
+    /// across frames; clears to 0 alongside `history_textures`.
+    history_write_index: usize,
+    /// VectorPhosphor — the persistence-blend pipeline. Built once when
+    /// the preset becomes VectorPhosphor; reused per frame.
+    persistence_pass: Option<PersistencePass>,
     /// Ping-pong intermediates sized to the framebuffer. Lazily allocated
     /// when the first multi-pass preset runs; reallocated if the
     /// framebuffer mode changes dimensions.
@@ -310,6 +348,17 @@ struct EffectPass {
     /// Layout depends on the shader — for the blur pass it's
     /// `[direction_is_x, fb_width, fb_height, _pad]` as u32.
     uniform_bytes: [u32; 4],
+}
+
+/// VectorPhosphor — persistence-blend pass. Reads (current_glow,
+/// history_prev) and writes history_curr. Pipeline reuses the
+/// `final_blit_bgl` layout (5 entries) since it has the same primary +
+/// secondary texture shape; the persistence shader at
+/// `shaders/persistence.wgsl` ignores rotation / overscan / etc. and
+/// only consumes the decay constant from the uniform.
+struct PersistencePass {
+    pipeline: wgpu::RenderPipeline,
+    uniform_buffer: wgpu::Buffer,
 }
 
 struct IntermediateTexture {
@@ -681,6 +730,9 @@ impl Renderer {
             fb_texture: None,
             effect_chain: Vec::new(),
             intermediates: None,
+            history_textures: None,
+            history_write_index: 0,
+            persistence_pass: None,
             bezel: None,
             bezel_pipeline,
             bezel_bgl,
@@ -791,6 +843,20 @@ impl Renderer {
             log::info!("oa-render: shader preset {:?} -> {:?}", self.shader_preset, preset);
             self.shader_preset = preset;
             self.effect_chain = self.build_effect_chain(preset);
+            // VectorPhosphor — build the persistence pipeline lazily
+            // when the preset first activates; switching back to a
+            // non-persistence preset drops both the pipeline and the
+            // history pair so the next persistence-preset selection
+            // gets a clean ping-pong + zeroed history.
+            if preset.uses_persistence() {
+                if self.persistence_pass.is_none() {
+                    self.persistence_pass = Some(self.build_persistence_pass());
+                }
+            } else {
+                self.persistence_pass = None;
+                self.history_textures = None;
+                self.history_write_index = 0;
+            }
         }
     }
 
@@ -802,6 +868,17 @@ impl Renderer {
                 let mut chain = Vec::with_capacity(2);
                 chain.push(self.create_blur_pass("phosphor h-blur", true));
                 chain.push(self.create_blur_pass("phosphor v-blur", false));
+                chain
+            }
+            ShaderPreset::VectorPhosphor => {
+                // 9-tap σ≈2.5 Gaussian with a bright-pass on the H pass
+                // (V pass sees the H pass's already-filtered output, so
+                // re-thresholding would over-cull). Default threshold
+                // 0.5 separates Vectrex vector strokes (luminance > 0.7)
+                // from background (luminance ~ 0).
+                let mut chain = Vec::with_capacity(2);
+                chain.push(self.create_vector_blur_pass("vector-phosphor h-blur", true, 0.5));
+                chain.push(self.create_vector_blur_pass("vector-phosphor v-blur", false, 0.5));
                 chain
             }
             // Single-pass presets — effects apply in the final-blit shader's
@@ -875,6 +952,83 @@ impl Renderer {
         }
     }
 
+    /// Build a wider-σ separable Gaussian pass with an optional bright-pass
+    /// filter — used by the VectorPhosphor preset. Same shader source for
+    /// both H and V (`direction_is_x` picks the axis); `glow_threshold` is
+    /// only consulted by the H pass since the V pass sees the H pass's
+    /// already-filtered output.
+    fn create_vector_blur_pass(
+        &self,
+        label: &'static str,
+        direction_is_x: bool,
+        glow_threshold: f32,
+    ) -> EffectPass {
+        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("oa-render vector blur shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/vector_blur.wgsl"))),
+        });
+        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("oa-render vector blur pipeline layout"),
+            bind_group_layouts: &[&self.bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                // Linear intermediate textures — matches the Phosphor
+                // path so the final blit's sRGB encode stays the only
+                // gamma transition.
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("oa-render vector blur uniform"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Layout: [direction_is_x, fb_width, fb_height, glow_threshold].
+        // fb_width / fb_height are rewritten each present() per the
+        // existing loop; direction_is_x + glow_threshold stay constant
+        // after build. We pack the f32 threshold into the u32 slot via
+        // to_bits() — the uniform write is a 16-byte memcpy that doesn't
+        // care about typed contents.
+        EffectPass {
+            label,
+            pipeline,
+            uniform_buffer,
+            uniform_bytes: [
+                if direction_is_x { 1 } else { 0 },
+                0,
+                0,
+                glow_threshold.to_bits(),
+            ],
+        }
+    }
+
     /// Allocate (or reallocate) the ping-pong intermediate pair at the
     /// supplied framebuffer dimensions. Idempotent on dimension match.
     fn ensure_intermediates(&mut self, width: u32, height: u32) {
@@ -889,6 +1043,172 @@ impl Renderer {
         let b = self.create_intermediate("oa-render intermediate B", width, height);
         log::info!("oa-render: intermediates allocated {}x{} (RGBA8 linear)", width, height);
         self.intermediates = Some((a, b));
+    }
+
+    /// VectorPhosphor — ensure the persistent history ping-pong pair
+    /// is allocated at the current framebuffer dimensions. Idempotent
+    /// on dimension match. Resets `history_write_index` and CLEARS the
+    /// pair to black on (re)alloc so the first frame after a preset
+    /// change / fb-resize doesn't read garbage out of an uninitialized
+    /// previous-history slot.
+    fn ensure_history(&mut self, width: u32, height: u32) {
+        let needs_alloc = match &self.history_textures {
+            Some((a, _)) => a.width != width || a.height != height,
+            None => true,
+        };
+        if !needs_alloc {
+            return;
+        }
+        let a = self.create_intermediate("oa-render history A", width, height);
+        let b = self.create_intermediate("oa-render history B", width, height);
+        // Clear both slots to black so the first persistence-blend's
+        // read of "prior history" returns 0 (only the current glow
+        // contributes on frame 0; the trail accumulates from there).
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("oa-render history clear encoder") });
+        for view in [&a.view, &b.view] {
+            let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("oa-render history clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        log::info!("oa-render: history allocated {}x{} (RGBA8 linear)", width, height);
+        self.history_textures = Some((a, b));
+        self.history_write_index = 0;
+    }
+
+    /// VectorPhosphor — build the persistence-blend pipeline. Called
+    /// from set_shader_preset when the new preset uses_persistence and
+    /// the pipeline isn't built yet. Reuses final_blit_bgl since both
+    /// inputs (current glow + prior history) fit the 5-entry layout.
+    fn build_persistence_pass(&self) -> PersistencePass {
+        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("oa-render persistence shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/persistence.wgsl"))),
+        });
+        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("oa-render persistence pipeline layout"),
+            // Reuses final_blit_bgl (5 entries: tex0 / sampler0 / uniform /
+            // tex1 / sampler1) since the shape matches.
+            bind_group_layouts: &[&self.final_blit_bgl],
+            push_constant_ranges: &[],
+        });
+        let pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("oa-render persistence pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("oa-render persistence uniform"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Write the decay constant once: 0.5^(16.67/80) ≈ 0.866 for
+        // ~80ms half-life at 60fps. Future "persistence half-life"
+        // override can rewrite this at runtime.
+        let decay: f32 = 0.866;
+        let bytes: [u8; 16] = {
+            let mut b = [0u8; 16];
+            b[0..4].copy_from_slice(&decay.to_le_bytes());
+            b
+        };
+        self.queue.write_buffer(&uniform_buffer, 0, &bytes);
+        PersistencePass { pipeline, uniform_buffer }
+    }
+
+    /// VectorPhosphor — run the persistence blend. Reads from
+    /// `chain_output_view` (the wider-blur output, written by the
+    /// EffectPass chain in run_effect_chain) and the prior history
+    /// slot; writes to the current history slot. Flips
+    /// `history_write_index` after the pass. Returns the view the
+    /// final blit should sample for the secondary input (the just-
+    /// written history slot).
+    fn run_persistence(&mut self, chain_output_was_a: bool) {
+        let pass = self.persistence_pass.as_ref().expect("persistence_pass built");
+        let (h_a, h_b) = self.history_textures.as_ref().expect("history allocated");
+        let (a, b) = self.intermediates.as_ref().expect("intermediates allocated");
+        let chain_output_view = if chain_output_was_a { &a.view } else { &b.view };
+
+        let prev_index = 1 - self.history_write_index;
+        let prev_view = if prev_index == 0 { &h_a.view } else { &h_b.view };
+        let curr_view = if self.history_write_index == 0 { &h_a.view } else { &h_b.view };
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("oa-render persistence bind group"),
+            layout: &self.final_blit_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(chain_output_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: pass.uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(prev_view) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("oa-render persistence encoder") });
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("oa-render persistence pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: curr_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rp.set_pipeline(&pass.pipeline);
+            rp.set_bind_group(0, &bind_group, &[]);
+            rp.draw(0..3, 0..1);
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Next frame reads from history[history_write_index], writes to
+        // history[1 - history_write_index].
+        self.history_write_index = 1 - self.history_write_index;
     }
 
     fn create_intermediate(&self, label: &'static str, width: u32, height: u32) -> IntermediateTexture {
@@ -1133,6 +1453,17 @@ impl Renderer {
             false
         };
 
+        // VectorPhosphor — persistence pass runs AFTER the wider-blur
+        // chain. Reads (chain_output, history[prev]) → writes
+        // history[curr]. Final blit then samples history[curr] as the
+        // secondary input instead of the chain output directly. For
+        // every other preset history_textures stays None and this is a
+        // no-op.
+        if self.shader_preset.uses_persistence() && !self.effect_chain.is_empty() {
+            self.ensure_history(fb.width, fb.height);
+            self.run_persistence(last_intermediate_was_a);
+        }
+
         // === Final blit to swapchain ====================================
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -1163,7 +1494,25 @@ impl Renderer {
             // to do with the two textures, not this binding.
             let fb_tex = self.fb_texture.as_ref().expect("fb_texture ready");
             let (a, b) = self.intermediates.as_ref().expect("ensure_intermediates ran");
-            let chain_output_view = if last_intermediate_was_a { &a.view } else { &b.view };
+            // VectorPhosphor — sample the just-written history slot
+            // (which the persistence pass produced from chain output +
+            // prior history * decay). Note `history_write_index` was
+            // already flipped at the end of run_persistence, so the
+            // slot we WROTE to this frame is now at `1 - write_index`.
+            // For non-persistence chains we sample the chain output
+            // directly (Phosphor's existing behaviour).
+            let chain_output_view = if self.shader_preset.uses_persistence() {
+                if let Some((h_a, h_b)) = self.history_textures.as_ref() {
+                    let just_written = 1 - self.history_write_index;
+                    if just_written == 0 { &h_a.view } else { &h_b.view }
+                } else {
+                    // History not yet allocated — fall back to chain
+                    // output. Visually equivalent to "no persistence
+                    // yet" on the first frame; subsequent frames have
+                    // history allocated.
+                    if last_intermediate_was_a { &a.view } else { &b.view }
+                }
+            } else if last_intermediate_was_a { &a.view } else { &b.view };
             Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("oa-render final-blit bind group (source + chain output)"),
                 layout: &self.final_blit_bgl,

@@ -1,0 +1,28 @@
+# Vector-Phosphor — Vectrex's monochrome vector CRT.
+#
+# Bright vector strokes over a pure-black background. A wider-σ
+# Gaussian bloom (9-tap, σ ≈ 2.5) extracts the bright strokes via a
+# luminance bright-pass and paints a halo around them — what the
+# real Vectrex's P31 / P39 phosphor scatters when an electron beam
+# draws a stroke. A persistent ping-pong history accumulates the
+# previous frame's glow at ~80ms half-life so vector strokes leave a
+# short, visible echo as they move (the signature Vectrex
+# "ghosting" / persistence trail). Final composite is additive over
+# the source so strokes stay crisp inside the halo.
+#
+# Set as the per-system default for `vectrex` via the per-system
+# theme registry; selectable globally from the Settings → Shaders
+# dropdown.
+
+display_name = "Vector-Phosphor (Vectrex)"
+description = "Wider-σ Gaussian bloom + ~80ms phosphor persistence — Vectrex's vector CRT."
+
+base = "vector-phosphor"
+
+[params]
+# Glow strength — doubles as the composite amount in the additive
+# final blit. 0 = no halo (effectively Plain over the same source);
+# 1.0 = the recommended Vectrex sweet spot; up to 2.0 for extra
+# punch on very dark scenes. The Settings → Display per-system
+# bloom slider drives this value at runtime.
+bloom_amount = 1.0

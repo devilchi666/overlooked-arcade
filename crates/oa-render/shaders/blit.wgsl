@@ -33,6 +33,13 @@
 //                      grid to hint at the matrix gap. NO scanlines — LCDs
 //                      don't have them. Designed for gb (160x144), gba
 //                      (240x160), gg (160x144), ngp (160x152), ws (224x144).
+//   5 = VectorPhosphor — Vectrex vector-CRT. Slot 3 carries the wider-σ
+//                      bright-pass blur output from vector_blur.wgsl (and
+//                      will carry the persistence-accumulated history in
+//                      P2). Final composite is `source + glow * bloom_amount`,
+//                      additive so bright vector strokes punch over the
+//                      black background; bloom_amount doubles as the glow
+//                      strength knob (default 1.0 = full halo).
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -194,6 +201,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let grid = 1.0 - 0.25 * max(grid_x, grid_y);
         let lifted = min(tinted * grid * 1.3, vec3<f32>(1.0));
         return vec4<f32>(lifted, base.a);
+    }
+    if (u.preset_id == 5u) {
+        // VectorPhosphor — additive glow composite. `base` is the
+        // source (Vectrex's pure-black background + bright vector
+        // strokes); `glow` is the wider-σ bright-passed blur from
+        // vector_blur.wgsl. Additive over the source keeps strokes
+        // crisp while painting a halo around them. `bloom_amount`
+        // doubles as the glow strength knob — 0 = no halo (effectively
+        // Plain), 1 = full Vectrex halo, >1 = extra punch.
+        let glow = textureSample(secondary, secondary_sampler, sample_uv).rgb;
+        let amt = clamp(u.bloom_amount, 0.0, 2.0);
+        let composited = base.rgb + glow * amt;
+        return vec4<f32>(min(composited, vec3<f32>(1.5)), base.a);
     }
     return base;
 }
