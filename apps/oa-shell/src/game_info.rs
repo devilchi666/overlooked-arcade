@@ -359,6 +359,154 @@ impl GameInfoOverride {
     }
 }
 
+// ---- merged record + field-typed precedence (Phase 4) ----------------
+//
+// The query layer combines file-layer data (layer 1, the `GameInfo`
+// records loaded from `docs/cores/<id>/games-info.md`) with operator
+// local overrides (layer 3, the SQLite `game_info_overrides` table).
+// Field-typed precedence per plan §8:
+//
+//   - Facts (date / publisher / region / version / player_count /
+//     genre) → file always wins. The operator can't override factual
+//     fields in v1; the UI shows them as read-only.
+//   - Narrative (short_summary / controls_supported / best_emulator /
+//     bugs) → operator override wins when present. Falls back to file
+//     value when the override is None / absent.
+//
+// `MergedGameInfo` is the shape the UI consumes — already flattened
+// per the precedence rules so the frontend doesn't repeat the merge
+// logic. The few `_is_local` flags surface provenance for tooltips
+// / mini-labels (plan §7 "Edit locally" surface).
+
+/// Final per-game record after field-typed merge — the shape the UI
+/// renders in tile-hover card / GameDetailPanel sections / modal Game
+/// Info tab. All narrative fields already resolved through precedence;
+/// frontend doesn't reapply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergedGameInfo {
+    /// OA system slug — echoed back so the frontend doesn't have to
+    /// thread it separately.
+    pub system_id: String,
+
+    // --- Facts (file always wins) ---
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+
+    // --- Narrative (operator wins when present) ---
+    /// Final summary text. Empty / missing → UI hides the section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_summary: Option<String>,
+    /// True when `short_summary` came from the operator's local
+    /// override. Drives the "(operator note)" mini-label per Q5.
+    #[serde(default)]
+    pub short_summary_is_local: bool,
+    /// Controls supported. Empty vec → UI hides the section.
+    #[serde(default)]
+    pub controls_supported: Vec<String>,
+    /// Best emulator recommendation (with optional reason).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_emulator: Option<BestEmulator>,
+    /// Known issues. Empty vec → UI hides the section.
+    #[serde(default)]
+    pub bugs: Vec<GameBug>,
+
+    // --- Status flags (provenance for the tile badge + Apply state) ---
+    /// True when the operator has at least one local override on this
+    /// game. Drives the `✎` tile-badge indicator.
+    #[serde(default)]
+    pub has_local_edits: bool,
+    /// True when the "Apply best emulator" panel button was used —
+    /// the per-game `libretro_core` override came from this surface,
+    /// not manual entry in per-game settings. Reset-to-default reads
+    /// this to know whether to unwind.
+    #[serde(default)]
+    pub applied_best_emulator: bool,
+    /// Same provenance marker for the "Apply controls" action against
+    /// `libretro_device_port1..4`.
+    #[serde(default)]
+    pub applied_controls: bool,
+}
+
+/// Merge file-layer + local override per the field-typed precedence
+/// rules. Returns `None` when neither layer has any content (the UI
+/// hides the panel sections entirely in that case).
+///
+/// `system_id` is required because the operator can author a local
+/// override against a game that has no file-layer record — common
+/// for unhashed homebrew. In that case `file` is None and the
+/// merged record exists solely on the override.
+pub fn merge_game_info(
+    system_id: &str,
+    file: Option<&GameInfo>,
+    ov: &GameInfoOverride,
+) -> Option<MergedGameInfo> {
+    // Nothing to render — short-circuit. UI shows the existing
+    // metadata-only chip strip without the new sections.
+    if file.is_none() && ov.is_empty() {
+        return None;
+    }
+
+    // Resolve narrative fields with override-wins semantics. None on
+    // both sides → None on the merged record.
+    let short_summary_is_local = ov.short_summary.is_some();
+    let short_summary = ov
+        .short_summary
+        .clone()
+        .or_else(|| file.and_then(|f| f.short_summary.clone()));
+
+    let controls_supported = ov
+        .controls_supported
+        .clone()
+        .unwrap_or_else(|| file.map(|f| f.controls_supported.clone()).unwrap_or_default());
+
+    // best_emulator override: when the operator set EITHER the
+    // recommended core OR the reason, the override wins (both fields
+    // become the merged record's BestEmulator). File-layer value is
+    // dropped in that case. When neither is set, fall through to file.
+    let best_emulator = if ov.best_emulator.is_some() || ov.best_emulator_reason.is_some() {
+        Some(BestEmulator {
+            recommended: ov.best_emulator.clone().unwrap_or_default(),
+            reason: ov.best_emulator_reason.clone(),
+        })
+    } else {
+        file.and_then(|f| f.best_emulator.clone())
+    };
+
+    let bugs = ov
+        .bugs
+        .clone()
+        .unwrap_or_else(|| file.map(|f| f.bugs.clone()).unwrap_or_default());
+
+    Some(MergedGameInfo {
+        system_id: system_id.to_string(),
+        date: file.and_then(|f| f.date),
+        publisher: file.and_then(|f| f.publisher.clone()),
+        region: file.and_then(|f| f.region.clone()),
+        version: file.and_then(|f| f.version.clone()),
+        player_count: file.and_then(|f| f.player_count),
+        genre: file.and_then(|f| f.genre.clone()),
+        short_summary,
+        short_summary_is_local,
+        controls_supported,
+        best_emulator,
+        bugs,
+        has_local_edits: !ov.is_empty(),
+        applied_best_emulator: ov.applied_best_emulator,
+        applied_controls: ov.applied_controls,
+    })
+}
+
 // ---- in-memory index --------------------------------------------------
 //
 // Phase 2 lifts the parser into a load-at-startup index. Files live at
@@ -982,6 +1130,157 @@ id_key:
         // installs that haven't shipped docs/cores/ yet.
         let idx = GameInfoIndex::load_from_dir(Path::new("Z:/nonexistent/path/docs/cores"));
         assert!(idx.is_empty());
+    }
+
+    // ---- merge_game_info (Phase 4) -----------------------------------
+
+    fn tomb_raider_file_record() -> GameInfo {
+        parse_games_info_file(TOMB_RAIDER_YAML)
+            .into_iter()
+            .next()
+            .expect("TOMB_RAIDER_YAML must parse")
+    }
+
+    #[test]
+    fn merge_returns_none_when_both_layers_empty() {
+        // No file record + empty override → None. UI hides the new
+        // panel sections entirely.
+        let merged = merge_game_info("psx", None, &GameInfoOverride::default());
+        assert!(merged.is_none());
+    }
+
+    #[test]
+    fn merge_facts_always_from_file_layer() {
+        // Operator override can never set date/publisher/region/version/
+        // player_count/genre in v1 (no fields on GameInfoOverride for
+        // them). File-layer facts must surface unchanged when the
+        // override is empty.
+        let file = tomb_raider_file_record();
+        let merged = merge_game_info("psx", Some(&file), &GameInfoOverride::default())
+            .expect("file-only merge yields a record");
+        assert_eq!(merged.date, Some(1996));
+        assert_eq!(merged.publisher.as_deref(), Some("Eidos Interactive"));
+        assert_eq!(merged.region.as_deref(), Some("USA"));
+        assert_eq!(merged.version.as_deref(), Some("1.0"));
+        assert_eq!(merged.player_count, Some(1));
+        assert_eq!(merged.genre.as_deref(), Some("Action-Adventure"));
+        // No local edits → status flags all false.
+        assert!(!merged.has_local_edits);
+        assert!(!merged.short_summary_is_local);
+    }
+
+    #[test]
+    fn merge_narrative_override_wins_short_summary() {
+        let file = tomb_raider_file_record();
+        let ov = GameInfoOverride {
+            short_summary: Some("Operator's own take.".into()),
+            ..Default::default()
+        };
+        let merged = merge_game_info("psx", Some(&file), &ov).unwrap();
+        assert_eq!(merged.short_summary.as_deref(), Some("Operator's own take."));
+        assert!(merged.short_summary_is_local, "operator-set → is_local flag flips");
+        assert!(merged.has_local_edits);
+    }
+
+    #[test]
+    fn merge_narrative_falls_back_to_file_when_no_override() {
+        // File has short_summary = ""; operator override is None for
+        // the field. Merged value is Some("") (the file's empty string
+        // surfaces — provenance preserved per the missing/null/empty
+        // rule in plan §5). is_local stays false.
+        let file = tomb_raider_file_record();
+        assert_eq!(file.short_summary.as_deref(), Some(""));
+        let merged =
+            merge_game_info("psx", Some(&file), &GameInfoOverride::default()).unwrap();
+        assert_eq!(merged.short_summary.as_deref(), Some(""));
+        assert!(!merged.short_summary_is_local);
+    }
+
+    #[test]
+    fn merge_controls_supported_override_replaces_file_list() {
+        let file = tomb_raider_file_record();
+        let ov = GameInfoOverride {
+            controls_supported: Some(vec!["Mouse".into()]),
+            ..Default::default()
+        };
+        let merged = merge_game_info("psx", Some(&file), &ov).unwrap();
+        assert_eq!(merged.controls_supported, vec!["Mouse".to_string()]);
+        // File-layer's "Standard gamepad" + "DualShock vibration" do
+        // NOT show through — operator replaces, doesn't merge.
+        assert!(!merged.controls_supported.contains(&"Standard gamepad".to_string()));
+    }
+
+    #[test]
+    fn merge_best_emulator_override_supplies_both_fields() {
+        // When the operator sets a recommended core in their override,
+        // the file-layer recommendation is dropped entirely (override
+        // owns both `recommended` + `reason`, even if reason is None).
+        let file = tomb_raider_file_record();
+        let ov = GameInfoOverride {
+            best_emulator: Some("pcsx_rearmed_libretro.dll".into()),
+            best_emulator_reason: Some("Operator prefers pcsx_rearmed on this title".into()),
+            ..Default::default()
+        };
+        let merged = merge_game_info("psx", Some(&file), &ov).unwrap();
+        let be = merged.best_emulator.expect("override surfaces best_emulator");
+        assert_eq!(be.recommended, "pcsx_rearmed_libretro.dll");
+        assert_eq!(
+            be.reason.as_deref(),
+            Some("Operator prefers pcsx_rearmed on this title")
+        );
+    }
+
+    #[test]
+    fn merge_bugs_override_replaces_file_list() {
+        let file = tomb_raider_file_record();
+        assert_eq!(file.bugs.len(), 2, "fixture has 2 bugs");
+        let ov = GameInfoOverride {
+            bugs: Some(vec![]), // operator says "no bugs reproduce on my install"
+            ..Default::default()
+        };
+        let merged = merge_game_info("psx", Some(&file), &ov).unwrap();
+        assert!(merged.bugs.is_empty(), "operator's empty list replaces file's bugs");
+    }
+
+    #[test]
+    fn merge_works_with_override_only_no_file_record() {
+        // Operator authors notes for a game with no file-layer entry
+        // (homebrew, unindexed prototype). Merged record exists; facts
+        // are all None.
+        let ov = GameInfoOverride {
+            short_summary: Some("Notes for this homebrew.".into()),
+            applied_best_emulator: true,
+            ..Default::default()
+        };
+        let merged = merge_game_info("nes", None, &ov).unwrap();
+        assert_eq!(merged.system_id, "nes");
+        assert!(merged.date.is_none());
+        assert!(merged.publisher.is_none());
+        assert_eq!(merged.short_summary.as_deref(), Some("Notes for this homebrew."));
+        assert!(merged.short_summary_is_local);
+        assert!(merged.has_local_edits);
+        assert!(merged.applied_best_emulator);
+        assert!(!merged.applied_controls);
+    }
+
+    #[test]
+    fn merge_applied_flags_pass_through_provenance() {
+        // The applied_* flags on the override must echo into the merged
+        // record without modification — the panel reads them to know
+        // which Apply actions were used.
+        let file = tomb_raider_file_record();
+        let ov = GameInfoOverride {
+            applied_best_emulator: true,
+            applied_controls: true,
+            ..Default::default()
+        };
+        let merged = merge_game_info("psx", Some(&file), &ov).unwrap();
+        assert!(merged.applied_best_emulator);
+        assert!(merged.applied_controls);
+        // Setting the flags alone (without an explicit override value
+        // for a field) still counts as "has_local_edits" — the
+        // provenance marker is meaningful state.
+        assert!(merged.has_local_edits);
     }
 
     #[test]
