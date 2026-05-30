@@ -213,7 +213,16 @@ impl LibretroCore {
         // Cores that need rotation set it via RETRO_ENVIRONMENT_SET_ROTATION
         // during load; cores that don't never call the env, so the previous
         // game's rotation would leak through without this reset.
-        state::with_state(|s| { s.rotation = 0; });
+        //
+        // Same reasoning for memory descriptors: SET_MEMORY_MAPS fires from
+        // inside retro_load_game on cores that publish a map. Clearing here
+        // ensures a non-publishing core doesn't inherit the previous game's
+        // descriptors after a back-to-back swap.
+        state::with_state(|s| {
+            s.rotation = 0;
+            s.memory_descriptors.clear();
+            s.memory_map_ptrs.clear();
+        });
 
         let ext_cstr = CString::new(extension.as_bytes())
             .map_err(|_| CoreError::InvalidRom("extension contains NUL".into()))?;
@@ -765,6 +774,10 @@ impl Core for LibretroCore {
         // cheat runtime writes into this region.
         let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size) };
         Some(slice)
+    }
+
+    fn memory_map(&self) -> Vec<oa_core::MemoryDescriptor> {
+        state::with_state(|s| s.memory_descriptors.clone()).unwrap_or_default()
     }
 
     fn memory_region(&self, id: MemoryRegionId) -> Option<&[u8]> {
