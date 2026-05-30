@@ -120,9 +120,15 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
   Commercialization-risk read: commercial actors will copy regardless of license; OA's defense is vision + execution speed + non-commercial intent, not legal walls. Mission-aligned: a permissive license matches "gift to the retro community" more cleanly than copyleft enforcement.
 
 
-- 2026-05-29 — Now-playing chip "playback failed" subscription
-  Why it came up: Slice G1 ships a HintBar chip that tracks the platform-music bus, but the signal is dispatch-tracking rather than Rust-side state. If Rust fails to open the audio file, the chip still shows for the music's intended duration with no audible audio. Operator-visible but rare.
-  Why deferred: needs a Rust-side event channel (`apps/oa-shell/src/audio_player.rs` would emit "playback failed" / "track ended" → frontend listens via `@tauri-apps/api/event::listen`). Out of scope for the small chip; reconsider when audio_player needs an event channel for another reason. Cross-ref: `docs/features/retroverse-ui/DECISIONS.md` 2026-05-29 "Now-playing chip tracks dispatch, not Rust-side state."
+- ~~2026-05-29 — Now-playing chip "playback failed" subscription~~ —
+  **SHIPPED 2026-05-29** on `feat/now-playing-failure-event`. Rust
+  `audio_thread_main` now holds `Option<AppHandle>` + emits
+  `oa://audio-playback-failed { bus, reason }` on file-open / decode
+  / sink-alloc failures (all three Play-command branches + cold-
+  start no-default-device drain). Frontend `lib/audio.ts` listens at
+  startup; payload.bus === "platform-music" clears the `nowPlaying`
+  signal. `AudioPlayerHandle::spawn` signature widened to accept the
+  handle; `None` keeps emission off for headless test contexts.
 
 - 2026-05-29 — Drag-reorder for custom collection members
   Why it came up: Slice 12's `custom_collection_members` table carries a `sort_order` column populated on add but no UI surfaces drag-reorder. The schema is ready; only the UI is missing.
