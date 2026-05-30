@@ -112,7 +112,7 @@ const GameDetailPanel: Component<Props> = (props) => {
         >
           {(src) => (
             <img
-              src={convertFileSrc(src())}
+              src={src()}
               alt={props.entry.title}
               class="absolute inset-0 h-full w-full object-cover"
               draggable={false}

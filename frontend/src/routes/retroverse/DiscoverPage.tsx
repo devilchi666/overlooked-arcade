@@ -23,6 +23,7 @@ import {
   useDomQueryFocusGroup,
 } from "../../nav/focus";
 import type { EntryGroup } from "../../library/filter";
+import { useMedia, type GameMetadata } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import { useRetroverse } from "./context";
 
@@ -31,7 +32,7 @@ type AxisId =
   | "on-this-day"
   | "by-era"
   | "by-genre"
-  | "by-region"
+  | "by-publisher"
   | "by-developer"
   | "system-dive"
   | "cult-classics"
@@ -82,11 +83,10 @@ const AXES: readonly AxisDef[] = [
     wired: true,
   },
   {
-    id: "by-region",
-    label: "By region",
-    glyph: "🌏",
-    description:
-      "Browse the library by release region — USA-only / JP-only / EU PAL / worldwide.",
+    id: "by-publisher",
+    label: "By publisher",
+    glyph: "🏷",
+    description: "Browse the library grouped by publisher.",
     wired: true,
   },
   {
@@ -143,6 +143,7 @@ const ERA_BUCKETS: readonly EraBucket[] = [
 
 const DiscoverPage: Component = () => {
   const ctx = useRetroverse();
+  const media = useMedia();
   const [activeAxisId, setActiveAxisId] = createSignal<AxisId>("by-genre");
   /// Picked facet within the active axis — collects "current genre"
   /// for By genre, "current region" for By region, etc. Reset when
@@ -201,7 +202,11 @@ const DiscoverPage: Component = () => {
 
   /// Facet list for the active axis. Empty for stub axes (which render
   /// their empty-state card instead). Sorted by count descending so
-  /// the most populous facet sits at the top.
+  /// the most populous facet sits at the top. Reads from MediaContext
+  /// metadata (year / genre / developer / publisher) — that's where
+  /// the libretro-database sync writes enriched fields, not the
+  /// games-table columns. `media.media(romId)?.metadata` returns the
+  /// canonical GameMetadata for the row.
   const facetList = createMemo<{ value: string; count: number }[]>(() => {
     const axis = activeAxis();
     if (!axis.wired) return [];
@@ -209,7 +214,8 @@ const DiscoverPage: Component = () => {
     const entries = ctx.library.state.entries;
     for (const e of entries) {
       if (e.seed) continue;
-      const value = facetValueFor(axis.id, e);
+      const meta = media.media(e.id)?.metadata;
+      const value = facetValueFor(axis.id, meta);
       if (value === null) continue;
       counts.set(value, (counts.get(value) ?? 0) + 1);
     }
@@ -227,7 +233,8 @@ const DiscoverPage: Component = () => {
     if (!facet) return [];
     return ctx.library.state.entries.filter((e) => {
       if (e.seed) return false;
-      return facetValueFor(axis.id, e) === facet;
+      const meta = media.media(e.id)?.metadata;
+      return facetValueFor(axis.id, meta) === facet;
     });
   });
 
@@ -440,18 +447,20 @@ const DiscoverPage: Component = () => {
 
 // --- Helpers ----------------------------------------------------------
 
-/// Pull the facet value off a RomEntry for a given axis. Returns null
-/// when the field is missing — the entry is skipped in counts / lists.
-function facetValueFor(axis: AxisId, entry: RomEntry): string | null {
+/// Pull the facet value off MediaContext metadata for a given axis.
+/// Returns null when the field is missing — the entry is skipped in
+/// counts / lists. By-era special-cases the Unknown bucket so rows
+/// without a year aren't dropped entirely.
+function facetValueFor(axis: AxisId, meta: GameMetadata | undefined): string | null {
   switch (axis) {
     case "by-genre":
-      return entry.genre?.trim() || null;
-    case "by-region":
-      return entry.region?.trim() || null;
+      return meta?.genre?.trim() || null;
+    case "by-publisher":
+      return meta?.publisher?.trim() || null;
     case "by-developer":
-      return entry.developer?.trim() || null;
+      return meta?.developer?.trim() || null;
     case "by-era": {
-      const y = entry.year;
+      const y = meta?.year;
       if (y === undefined || y === null) {
         return ERA_BUCKETS[ERA_BUCKETS.length - 1]?.id ?? null;
       }
@@ -469,8 +478,8 @@ function facetCountWord(axis: AxisId): string {
   switch (axis) {
     case "by-genre":
       return "genres";
-    case "by-region":
-      return "regions";
+    case "by-publisher":
+      return "publishers";
     case "by-developer":
       return "developers";
     case "by-era":

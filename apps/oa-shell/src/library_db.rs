@@ -436,23 +436,6 @@ pub struct GameRow {
     /// once a populated source exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
-    /// Release year from metadata enrichment. Drives the DISCOVER
-    /// By era axis (grouped into decades / hardware generations).
-    /// `None` when unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub year: Option<i64>,
-    /// Genre string from metadata enrichment (e.g. "Action", "RPG").
-    /// Drives the DISCOVER By genre axis. `None` when unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub genre: Option<String>,
-    /// Region from metadata enrichment. Drives the DISCOVER By region
-    /// axis. `None` when unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub region: Option<String>,
-    /// Developer from metadata enrichment. Drives the DISCOVER By
-    /// developer axis. `None` when unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub developer: Option<String>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -1228,8 +1211,7 @@ impl LibraryDb {
                         core_override, cover_path, seed, archive_inner_path,
                         sha1, serial, disc_id,
                         favorite, completed, last_played_at, play_time_secs,
-                        players, rating,
-                        year, genre, region, developer
+                        players, rating
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -1255,10 +1237,6 @@ impl LibraryDb {
                     play_time_secs: row.get(15)?,
                     players: row.get(16)?,
                     rating: row.get(17)?,
-                    year: row.get(18)?,
-                    genre: row.get(19)?,
-                    region: row.get(20)?,
-                    developer: row.get(21)?,
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -1346,10 +1324,6 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
-                    year: None,
-                    genre: None,
-                    region: None,
-                    developer: None,
                 })
             })
             .map_err(|e| format!("query list_games_for_system: {e}"))?;
@@ -1515,10 +1489,6 @@ impl LibraryDb {
                 play_time_secs: 0,
                 players: None,
                 rating: None,
-                year: None,
-                genre: None,
-                region: None,
-                developer: None,
             }))
         } else {
             Ok(None)
@@ -1586,10 +1556,6 @@ impl LibraryDb {
                 play_time_secs: 0,
                 players: None,
                 rating: None,
-                year: None,
-                genre: None,
-                region: None,
-                developer: None,
             }))
         } else {
             Ok(None)
@@ -1685,10 +1651,6 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
-                    year: None,
-                    genre: None,
-                    region: None,
-                    developer: None,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -2176,10 +2138,6 @@ impl LibraryDb {
                         play_time_secs: 0,
                         players: None,
                         rating: None,
-                        year: None,
-                        genre: None,
-                        region: None,
-                        developer: None,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -2226,10 +2184,6 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
-                    year: None,
-                    genre: None,
-                    region: None,
-                    developer: None,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -3175,10 +3129,6 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
-            year: None,
-            genre: None,
-            region: None,
-            developer: None,
         }
     }
 
