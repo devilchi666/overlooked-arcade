@@ -11,60 +11,64 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Retroverse UI rollout** — designs locked for all six top-toolbar
-  tabs (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS)
-  plus the cross-cutting content-pack mechanism. Phase A foundation
-  merged 2026-05-28 (`1c4dee7`); Phase B LIBRARY merged 2026-05-28
-  (`378863a`); Phase C1 SETTINGS merged 2026-05-28 (`0671726`);
-  Phase C3 COLLECTIONS merged 2026-05-28 (`715f639`, `--no-ff` from
-  `feat/retroverse-ui-phase-c3-collections`). Operator toggles
-  Settings → Display → Experimental → Retroverse UI ON to enter
-  the new shell; LIBRARY + SETTINGS + COLLECTIONS tabs are fully
-  working (4 wired smart lists in COLLECTIONS — Favorites /
-  Recently played / Completed / Multi-player). Favorite hearts +
-  context-menu toggles appear in both legacy + Retroverse UIs.
-  Phase C4 PLAY NOW merged 2026-05-28 (`b2af79e`); Phase C2 HOME
-  + controller-nav fix merged 2026-05-28 (`ca4ab04`); controller-
-  nav v2 per-region groups + System Status fix merged 2026-05-28
-  (`71816bf`); LibraryPage focus-group port merged 2026-05-28
-  (`6ea5e51`); right-pane redesign (GameDetailPanel +
-  SystemInfoPanel + SETTINGS 2-pane) merged 2026-05-28
-  (`6f24e4f`); HOME v2 operator-supplied mockup redesign merged
-  2026-05-28 (`42da52f`); polish pass (SETTINGS About/Storage/
-  Themes + top toolbar search/clock/profile + LIBRARY header card
-  + tile system header) merged 2026-05-28 (`0338501`); SETTINGS
-  expansion (Profile persistence + Cores wrap + BIOS info cards +
-  Library/Media placeholders) merged 2026-05-28 (`4a929bf`).
+- **Retroverse UI rollout** — all six top-toolbar tabs operator-
+  facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
+  + SETTINGS expansion; 2026-05-29 closed the unified controller
+  pipeline + menu/dialog polish + Slice 12 custom collections +
+  Per-system SETTINGS drill-in + Now-playing chip + DISCOVER body.
+  Toggle Settings → Display → Experimental → Retroverse UI ON to
+  enter; flag OFF stays byte-identical with the legacy Shell apart
+  from the heart overlay on tiles + the custom-collections submenu
+  in TileContextMenu (Retroverse-only).
 
-  **Current state:** All 6 Retroverse tabs operator-facing. 12 of
-  14 SETTINGS categories have real content; Library + Media are
-  informational placeholders pointing at legacy menu-bar surfaces;
-  Per-system stays stubbed (needs SystemSettingsDialog body lift).
-  Operator-spec controller-nav (DPad L/R region transfer) on all
-  5 pages. 577 workspace tests green; flag OFF still byte-
-  identical apart from the heart overlay on tiles.
+  **Current state (2026-05-29 end of day):**
+  - HOME — v2 dense mockup (system spotlight + carousel arrows +
+    dot pagination + Recently Played panel; right pane = SYSTEM
+    INFORMATION / TECHNICAL DETAILS / PERIPHERALS / ACHIEVEMENTS).
+  - LIBRARY — header card + system-label tile headers; reuses
+    LeftSidebar + VirtualLibraryGrid + GameDetailPanel.
+  - COLLECTIONS — 3-pane; ALL 6 smart-lists wired (Favorites /
+    Recently played / Completed / Multi-player / Hidden gems /
+    Last played) PLUS Slice 12 custom collections (create / rename
+    / delete / membership submenu in TileContextMenu).
+  - PLAY NOW — hero + WHY-line + 3 rails + 9-mood sidebar (For
+    you / Continue / With a friend / Nostalgia / Quick / Marathon
+    / Challenge / Surprise me / Daily roulette with UTC-day lock).
+  - DISCOVER — 3-pane with 4 data-driven axes (By era / By genre /
+    By publisher / By developer) reading from `useMedia().media(
+    romId)?.metadata`; 5 editorial axes (Featured / On this day /
+    System dive / Cult classics / Lost games) render empty-state
+    cards pointing at Phase C6 content-packs.
+  - SETTINGS — ALL 15 top-level categories have real bodies PLUS
+    the Per-system drill-in (sidebar group expands to 45-system
+    picker; center pane composes Display / Rewind / Shaders /
+    Default core inline + Bindings / Core options launchers).
+    Section bodies shared with legacy SystemSettingsDialog via
+    `components/perSystemSections.tsx`.
+  - Now-playing chip in HintBar shows current platform-music
+    system with animated equalizer bars.
+  - Operator-locked controller-nav: L1/R1 cycle tabs; DPad
+    LEFT/RIGHT transfers regions; stick walks within (LIBRARY
+    sidebar containers expand/collapse on stick L/R via
+    source-gated `onDirection`). See
+    [features/retroverse-ui/DECISIONS.md](features/retroverse-ui/DECISIONS.md).
+  - 506 oa-shell tests green; frontend `npm run typecheck` silent.
 
-  **Deferred work** (full list in
+  **Genuinely open work** (full §10 list in
   [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
-  §10 "Remaining work"): Slice 12 (custom collections), Phase C5
-  (DISCOVER), Phase C6 (content-packs infra), full
-  Library/Media/Per-system SETTINGS wraps, BIOS live-presence
-  grid, PLAY NOW data-blocked moods, RetroAchievements, HOME
-  carousel arrows, "Now playing" audio indicator, System Status
-  surface (was on HOME v1, removed in HOME v2 — TBD where it
-  goes), per-system hero art + specs + blurbs (content
-  workstream), Per-system-UI Stages 2+3, flag deprecation
-  endpoint. Approximate priority order:
-  1. Slice 12 — custom collections (code-only, well-scoped).
-  2. Phase C6 — content-packs infra (substantial but unlocks
-     DISCOVER + curated COLLECTIONS + theme packs).
-  3. SETTINGS → Per-system / Library / Media full wraps (closes
-     out the SETTINGS tab).
-  4. Content workstream (operator-side) for HOME polish. See
-  [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md)
-  for the full phase plan + per-tab design sketches at
-  `docs/PLANS/{settings,play-now,discover,collections}-tab-retroverse.md`
-  + `content-packs.md`.
+  §10, audited 2026-05-29):
+  - Phase C6 — content-packs infrastructure (substantial; unlocks
+    DISCOVER's 5 stub axes + curated COLLECTIONS + theme packs).
+  - RetroAchievements integration OR local milestone tracking
+    (HOME ACHIEVEMENTS card + GameDetailPanel / SystemInfoPanel
+    sections are placeholders).
+  - Per-System UI Stage 2 + Stage 3 — separate plan.
+  - Flag deprecation endpoint — eventual.
+
+  **Content workstream (operator-side):** per-system hero art (drop
+  console + fanart into existing PlatformMedia slots),
+  `systemMetadataStubs.ts` refinement for ~38 systems beyond the 7
+  priority stubs, per-system blurbs.
 
 - **ColecoVision keypad reference + GameCube Wii peripherals** —
   branch `feat/coleco-keypad-and-gamecube-wii`, two commits.
