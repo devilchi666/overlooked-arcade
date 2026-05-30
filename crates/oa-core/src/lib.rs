@@ -595,6 +595,12 @@ pub struct DiscInfo {
     /// Empty Vec for v1 cores; the UI falls back to "Disc 1", "Disc 2", etc.
     /// Length equals `num_discs` when present.
     pub labels: Vec<String>,
+    /// Filesystem paths for each disc image (v2 cores only). Empty
+    /// Vec for v1 cores or when the core declined to fill the path
+    /// buffer. Length equals `num_discs` when present. Useful for
+    /// "show me where this disc lives" tooltips + as a label fallback
+    /// when the core didn't populate `labels`.
+    pub paths: Vec<String>,
 }
 
 /// The interface every emulator core implements.
