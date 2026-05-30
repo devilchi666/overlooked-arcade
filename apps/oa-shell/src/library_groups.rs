@@ -271,6 +271,10 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
+            year: None,
+            genre: None,
+            region: None,
+            developer: None,
         }
     }
 

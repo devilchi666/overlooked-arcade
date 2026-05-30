@@ -53,6 +53,18 @@ export type RomEntry = {
   /// Editorial rating 0.0–5.0 from metadata enrichment. Will drive
   /// Hidden Gems smart-list in a follow-up once populated.
   rating?: number;
+  /// Release year (4 digit). Populated by metadata enrichment.
+  /// Drives the DISCOVER By era axis.
+  year?: number;
+  /// Genre label. Populated by metadata enrichment. Drives the
+  /// DISCOVER By genre axis.
+  genre?: string;
+  /// Region label (USA, Japan, Europe, ...). Populated by metadata
+  /// enrichment. Drives the DISCOVER By region axis.
+  region?: string;
+  /// Developer name. Populated by metadata enrichment. Drives the
+  /// DISCOVER By developer axis.
+  developer?: string;
 };
 
 export type LibraryState = {

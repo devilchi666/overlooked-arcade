@@ -676,6 +676,10 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
+            year: None,
+            genre: None,
+            region: None,
+            developer: None,
         };
         library.add_games(&[row]).expect("seed row");
         rom_id.to_string()
