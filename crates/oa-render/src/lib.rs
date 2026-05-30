@@ -170,6 +170,16 @@ pub enum ShaderPreset {
     /// EffectPass chain + an extra persistent ping-pong pair the
     /// other presets don't need.
     VectorPhosphor,
+    /// Virtual Boy monochrome preset. Real VB hardware drew via a
+    /// spinning-mirror LED column scanner — players saw faint vertical
+    /// line artifacts as the mirror swept. Plus the headset's two
+    /// eyepieces gave the image a soft circular framing. This preset
+    /// captures both: vertical scanline darkening locked to the source-
+    /// pixel column rate + soft radial vignette + a small red
+    /// saturation lift that crushes any residual green/blue out so the
+    /// palette stays pure red-on-black. Single-pass — branches in the
+    /// final-blit shader.
+    VbMonochrome,
 }
 
 impl Default for ShaderPreset {
@@ -192,6 +202,7 @@ impl ShaderPreset {
             Self::Phosphor => 3,
             Self::LcdHandheld => 4,
             Self::VectorPhosphor => 5,
+            Self::VbMonochrome => 6,
         }
     }
 
@@ -204,6 +215,7 @@ impl ShaderPreset {
             "phosphor" => Self::Phosphor,
             "lcd-handheld" => Self::LcdHandheld,
             "vector-phosphor" => Self::VectorPhosphor,
+            "vb-monochrome" => Self::VbMonochrome,
             _ => Self::Plain,
         }
     }
@@ -217,6 +229,7 @@ impl ShaderPreset {
             Self::Phosphor => "phosphor",
             Self::LcdHandheld => "lcd-handheld",
             Self::VectorPhosphor => "vector-phosphor",
+            Self::VbMonochrome => "vb-monochrome",
         }
     }
 
@@ -886,7 +899,8 @@ impl Renderer {
             ShaderPreset::Plain
             | ShaderPreset::Scanlines
             | ShaderPreset::CrtLite
-            | ShaderPreset::LcdHandheld => Vec::new(),
+            | ShaderPreset::LcdHandheld
+            | ShaderPreset::VbMonochrome => Vec::new(),
         }
     }
 
