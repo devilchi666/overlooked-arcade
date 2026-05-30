@@ -597,12 +597,15 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     extensions: ["vb"],
     // VB box art was landscape, showing the headset unit.
     tileAspect: "4/3",
-    // The Virtual Boy was monochrome RED on black — the OA dark surface
-    // already provides the black; CRT scanlines + bloom would muddy the
-    // crisp red-on-black LED palette. Plain default keeps the era-correct
-    // monochrome aesthetic visible. Operators wanting anaglyph 3D mode
-    // configure that via Beetle VB's core options.
-    defaultShaderPreset: "plain",
+    // The Virtual Boy was monochrome RED on black drawn by a spinning-
+    // mirror LED column scanner — players saw faint vertical line
+    // artifacts as the mirror swept, plus eyepiece-shaped framing
+    // through the headset. The dedicated `vb-monochrome` shader (ships
+    // 2026-05-30) captures both: vertical scanline darkening locked to
+    // the source-column rate + soft radial vignette + a red-saturation
+    // lift that crushes any residual green/blue. Operators wanting
+    // anaglyph 3D mode configure that via Beetle VB's core options.
+    defaultShaderPreset: "vb-monochrome",
   },
   wonderswan: {
     id: "wonderswan",

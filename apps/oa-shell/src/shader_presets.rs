@@ -113,6 +113,11 @@ const BUILTIN_PRESETS: &[(&str, &str)] = &[
     // ~80ms phosphor persistence. Set as the per-system default for
     // `vectrex` via the theme registry; also selectable globally.
     ("vector-phosphor", include_str!("../../../shaders/presets/vector-phosphor.preset.toml")),
+    // VbMonochrome — Virtual Boy LED scanner. Vertical scanline darken
+    // + soft eyepiece vignette + pure-red palette. Set as the per-system
+    // default for `virtualboy` via the theme registry; also selectable
+    // globally.
+    ("vb-monochrome", include_str!("../../../shaders/presets/vb-monochrome.preset.toml")),
 ];
 
 /// Built-ins only — used by tests + as the fallback path if exe_dir
@@ -234,9 +239,9 @@ mod tests {
     #[test]
     fn builtins_parse_and_have_unique_names() {
         let defs = builtins();
-        assert_eq!(defs.len(), 6, "shipping 6 built-in presets (incl. vector-phosphor)");
+        assert_eq!(defs.len(), 7, "shipping 7 built-in presets (incl. vb-monochrome)");
         let names: std::collections::HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names.len(), 6, "built-in names must be unique");
+        assert_eq!(names.len(), 7, "built-in names must be unique");
         // Every built-in base must be a valid renderer preset string (round-
         // trip through `ShaderPreset::parse` returns the same value as
         // re-parsing the .as_str() output).
@@ -296,7 +301,7 @@ mod tests {
         assert_eq!(phos.display_name, "Phosphor (custom)");
         assert_eq!(phos.params.bloom_amount, Some(0.3));
         // Other built-ins still appear.
-        assert_eq!(defs.len(), 6, "user override doesn't add or drop entries");
+        assert_eq!(defs.len(), 7, "user override doesn't add or drop entries");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -322,7 +327,7 @@ mod tests {
         let defs = load_all(&tmp);
         // Built-ins still load; broken file is dropped silently (with a
         // warning logged — not asserted here).
-        assert_eq!(defs.len(), 6);
+        assert_eq!(defs.len(), 7);
         assert!(defs.iter().all(|d| d.name != "broken"));
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -24,6 +24,7 @@ const FALLBACK_PRESETS: ShaderPresetEntry[] = [
   { name: "phosphor", displayName: "Phosphor (soft bloom)", description: "Separable Gaussian blur composited with the source.", base: "phosphor" },
   { name: "lcd-handheld", displayName: "LCD Handheld", description: "R/G/B subpixel triplet + inter-pixel grid for small panels.", base: "lcd-handheld" },
   { name: "vector-phosphor", displayName: "Vector-Phosphor (Vectrex)", description: "Wider-σ bloom + ~80ms phosphor persistence — Vectrex vector CRT.", base: "vector-phosphor" },
+  { name: "vb-monochrome", displayName: "VB Monochrome (Virtual Boy)", description: "Vertical LED scanlines + circular eyepiece vignette + red-only palette.", base: "vb-monochrome" },
 ];
 
 const [presets, setPresets] = createSignal<ShaderPresetEntry[]>(FALLBACK_PRESETS);

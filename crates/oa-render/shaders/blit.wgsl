@@ -40,6 +40,12 @@
 //                      additive so bright vector strokes punch over the
 //                      black background; bloom_amount doubles as the glow
 //                      strength knob (default 1.0 = full halo).
+//   6 = VbMonochrome — Virtual Boy LED scanner. Vertical scanline darken
+//                      (mimics the VB's spinning-mirror LED column) +
+//                      soft circular vignette (mimics the headset eyepiece
+//                      framing) + a red-saturation lift that crushes any
+//                      residual green/blue out so the palette stays pure
+//                      red-on-black. Single-pass; no chain or persistence.
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -214,6 +220,42 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let amt = clamp(u.bloom_amount, 0.0, 2.0);
         let composited = base.rgb + glow * amt;
         return vec4<f32>(min(composited, vec3<f32>(1.5)), base.a);
+    }
+    if (u.preset_id == 6u) {
+        // VbMonochrome — Virtual Boy LED scanner aesthetic.
+        //
+        // Step 1: Pure-red palette enforcement. Mednafen VB renders in
+        // red but the framebuffer is still RGB. Crush green/blue so a
+        // future palette tweak or core option that introduces any
+        // residual color doesn't violate the era-correct monochrome
+        // look. The max() against the existing R channel keeps bright
+        // pixels bright while ensuring G/B drop to zero.
+        let red_only = vec3<f32>(base.r, 0.0, 0.0);
+        // Step 2: Vertical scanline darkening — every other source
+        // COLUMN gets dimmed to ~0.82× to mimic the spinning-mirror
+        // LED column scanner. Locked to the source pixel rate via
+        // textureDimensions so the artifact stays crisp at any output
+        // resolution. VB native is 384×224; even columns are bright,
+        // odd columns are the scanned-past dim state.
+        let src_w = f32(textureDimensions(framebuffer).x);
+        let src_col = u32(sample_uv.x * src_w);
+        let col_dim = select(0.82, 1.0, (src_col % 2u) == 0u);
+        let scanned = red_only * col_dim;
+        // Step 3: Soft circular vignette — eyepiece framing. Smooth
+        // radial falloff around the visible viewport center; ~0.7 at
+        // the corners. Soft enough that gameplay reads clearly; just
+        // enough to sell the "wearing the headset" framing.
+        //
+        // We use the screen-space in.uv (not sample_uv) so the
+        // vignette stays centered on the visible viewport regardless
+        // of overscan crop.
+        let cx = in.uv.x - 0.5;
+        let cy = in.uv.y - 0.5;
+        let r = sqrt(cx * cx + cy * cy);
+        // smoothstep falls from 1.0 inside r=0.35 to ~0.7 at r=0.7
+        // (the corner of a unit square is r=sqrt(2)/2 ≈ 0.707).
+        let vignette = 1.0 - smoothstep(0.35, 0.7, r) * 0.3;
+        return vec4<f32>(scanned * vignette, base.a);
     }
     return base;
 }

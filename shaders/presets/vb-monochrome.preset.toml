@@ -1,0 +1,24 @@
+# Vb-Monochrome — Virtual Boy LED scanner aesthetic.
+#
+# The real VB display used a spinning-mirror LED column scanner —
+# players saw faint vertical line artifacts as the mirror swept. Plus
+# the headset's two eyepieces gave the image a soft circular framing.
+# This preset captures both: vertical scanline darkening locked to the
+# source-pixel column rate + soft radial vignette + a red-saturation
+# lift that crushes any residual green/blue out so the palette stays
+# pure red-on-black.
+#
+# Set as the per-system default for `virtualboy` via the theme
+# registry; also selectable globally from the Settings → Shaders
+# dropdown.
+
+display_name = "VB Monochrome (Virtual Boy)"
+description = "Vertical LED scanlines + circular eyepiece vignette + red-only palette."
+
+base = "vb-monochrome"
+
+# No tunable params today — the vignette radius and scanline dim
+# constants are baked in the WGSL. Future polish could expose a
+# `vignette_strength` slider; for now the defaults are operator-
+# locked from the 2026-05-30 design conversation.
+[params]
