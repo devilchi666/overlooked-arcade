@@ -334,4 +334,18 @@
     70%  { opacity: 0.55; transform: scale(1); }
     100% { opacity: 0; transform: scale(1); }
   }
+  /* Now-playing equalizer bars in the HintBar. Three columns scale
+     between 30% and 100% on staggered offsets so the chip reads as
+     "audio playing." Honors prefers-reduced-motion: at-rule below
+     drops the animation. */
+  @keyframes oa-eq {
+    0%, 100% { transform: scaleY(0.3); }
+    50%      { transform: scaleY(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-\[oa-eq_900ms_ease-in-out_infinite\] {
+      animation: none !important;
+      transform: scaleY(0.7);
+    }
+  }
 }

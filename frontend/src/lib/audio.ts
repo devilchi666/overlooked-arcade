@@ -12,9 +12,24 @@
 // device at startup, every command silently drops. Never blocks the
 // UI; never throws on missing files.
 
+import { createSignal, type Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 
 export type AudioBus = "platform-music" | "ui-sounds" | "ceremony" | "snap-audio";
+
+/// Reactive "now playing" descriptor for the platform-music bus. Set
+/// when `dispatchPlatformMusic` resolves a non-null path; cleared when
+/// it resolves null OR when `stopAudio("platform-music")` runs. The
+/// HintBar subscribes to this to render a small chip while music
+/// plays. Tracks only what we asked the bus to play — if the Rust
+/// side fails to open the file the optimistic state still shows the
+/// chip; the dispatch warns to console but doesn't unwind here.
+export type NowPlaying = {
+  systemId: string;
+  gameId: string | null;
+};
+const [nowPlayingSig, setNowPlayingSig] = createSignal<NowPlaying | null>(null);
+export const nowPlaying: Accessor<NowPlaying | null> = nowPlayingSig;
 
 /// Discrete UI-sound events the per-system override map keys on.
 /// Matches the SystemSettings.ui_sound_* field names + the
@@ -50,6 +65,7 @@ export async function stopAudio(bus: AudioBus): Promise<void> {
   } catch (e) {
     console.warn("[oa-audio] stop failed:", e);
   }
+  if (bus === "platform-music") setNowPlayingSig(null);
 }
 
 export async function setAudioVolume(bus: AudioBus, gain: number): Promise<void> {
@@ -75,8 +91,10 @@ export async function dispatchPlatformMusic(
     });
     if (path) {
       await playAudio("platform-music", path, true);
+      setNowPlayingSig({ systemId, gameId });
     } else {
       await stopAudio("platform-music");
+      // stopAudio above already clears the signal — no double-write.
     }
   } catch (e) {
     console.warn("[oa-audio] dispatch platform music failed:", e);
