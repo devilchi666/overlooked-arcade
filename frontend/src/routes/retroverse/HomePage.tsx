@@ -33,7 +33,6 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useMedia } from "../../library/media";
 import { usePlatformMedia } from "../../library/platformMedia";
 import { systemThemes, type SystemId } from "../../themes/registry";
@@ -362,7 +361,7 @@ const HomePage: Component = () => {
           >
             {(src) => (
               <img
-                src={convertFileSrc(src())}
+                src={src()}
                 alt={cardProps.entry.title}
                 class="absolute inset-0 h-full w-full object-cover"
                 draggable={false}
@@ -582,7 +581,7 @@ const HomePage: Component = () => {
           <Show when={heroFanartSrc()}>
             {(src) => (
               <img
-                src={convertFileSrc(src())}
+                src={src()}
                 alt=""
                 class="absolute inset-0 h-full w-full object-cover opacity-20"
                 draggable={false}
@@ -627,7 +626,7 @@ const HomePage: Component = () => {
               >
                 {(src) => (
                   <img
-                    src={convertFileSrc(src())}
+                    src={src()}
                     alt={activeTheme()?.displayName ?? activeSystemId()}
                     class="max-h-[220px] w-auto object-contain drop-shadow-2xl"
                     draggable={false}

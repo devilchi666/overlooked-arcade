@@ -19,7 +19,6 @@
 // placeholder until session-length / difficulty data exists.
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import GameDetailPanel from "./GameDetailPanel";
@@ -541,7 +540,7 @@ const PlayNowPage: Component = () => {
           >
             {(src) => (
               <img
-                src={convertFileSrc(src())}
+                src={src()}
                 alt={cardProps.entry.title}
                 class="absolute inset-0 h-full w-full object-cover"
                 draggable={false}
@@ -748,7 +747,7 @@ const PlayNowPage: Component = () => {
                     >
                       {(src) => (
                         <img
-                          src={convertFileSrc(src())}
+                          src={src()}
                           alt={entry().title}
                           class="absolute inset-0 h-full w-full object-cover"
                           draggable={false}

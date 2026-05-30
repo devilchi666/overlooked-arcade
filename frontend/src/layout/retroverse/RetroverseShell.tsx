@@ -27,11 +27,11 @@ import {
 import { onNavEvent } from "../../nav/gamepad";
 import { useRetroverse } from "../../routes/retroverse/context";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
+import DiscoverPage from "../../routes/retroverse/DiscoverPage";
 import HomePage from "../../routes/retroverse/HomePage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import PlayNowPage from "../../routes/retroverse/PlayNowPage";
 import SettingsPage from "../../routes/retroverse/SettingsPage";
-import StubPage from "../../routes/retroverse/StubPage";
 
 const ROUTE_LABELS: Record<RetroverseRoute, string> = {
   home: "HOME",
@@ -42,15 +42,10 @@ const ROUTE_LABELS: Record<RetroverseRoute, string> = {
   settings: "SETTINGS",
 };
 
-// Per-tab design doc references for the StubPage footer text. LIBRARY
-// has no entry here because LibraryPage is the real surface (not a stub).
-const STUB_DESIGN_DOCS: Record<Exclude<RetroverseRoute, "library">, string> = {
-  home: "docs/features/per-system-ui/assets/default-theme-mockup.png",
-  collections: "docs/PLANS/collections-tab-retroverse.md",
-  "play-now": "docs/PLANS/play-now-tab-retroverse.md",
-  discover: "docs/PLANS/discover-tab-retroverse.md",
-  settings: "docs/PLANS/settings-tab-retroverse.md",
-};
+// Per-tab design doc references used to live here for the StubPage
+// footer. All 6 tabs are real now — STUB_DESIGN_DOCS removed alongside
+// the StubPage import. The per-tab plans still live at
+// `docs/PLANS/*-tab-retroverse.md`.
 
 const RetroverseShell: Component = () => {
   const ctx = useRetroverse();
@@ -187,7 +182,7 @@ const RetroverseShell: Component = () => {
             <PlayNowPage />
           </Match>
           <Match when={currentRoute() === "discover"}>
-            <StubPage title={ROUTE_LABELS.discover} designDoc={STUB_DESIGN_DOCS.discover} />
+            <DiscoverPage />
           </Match>
           <Match when={currentRoute() === "settings"}>
             <SettingsPage />

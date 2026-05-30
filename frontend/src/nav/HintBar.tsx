@@ -15,6 +15,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Acce
 import type { NavButton } from "./types";
 import { hasSeenGamepad } from "./gamepad";
 import { isSwapAB } from "./focus";
+import { nowPlaying } from "../lib/audio";
+import { systemThemes, type SystemId } from "../themes/registry";
 
 /// Pseudo-glyphs surfaced in the hint bar that don't correspond to
 /// a single NavButton — the DPad and the left stick each get a slot
@@ -108,23 +110,62 @@ export const HintBar: Component = () => {
     }
     return HINT_ORDER.filter((b) => hints[b]).map((b) => ({ button: b, label: hints[b]! }));
   });
+  /// Now-playing label sourced from the platform-music bus signal.
+  /// Empty string when nothing is playing → the chip stays hidden.
+  const nowPlayingLabel = createMemo<string>(() => {
+    const np = nowPlaying();
+    if (!np) return "";
+    const theme = systemThemes[np.systemId as SystemId];
+    return theme?.displayName ?? np.systemId;
+  });
+  // The bar mounts whenever EITHER hints OR a now-playing chip wants
+  // to render, so launching a game that triggers platform music makes
+  // the bar materialize on its own even if no controller is connected
+  // yet (mouse-only operators still see "now playing" feedback).
+  const shouldRender = createMemo(
+    () => (hasSeenGamepad() && visibleEntries().length > 0) || nowPlayingLabel() !== "",
+  );
   return (
-    <Show when={hasSeenGamepad() && visibleEntries().length > 0}>
+    <Show when={shouldRender()}>
       <div
         class="oa-hint-bar pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-3"
         aria-hidden="true"
       >
         <div class="oa-hint-bar-inner flex items-center gap-4 rounded-full border border-white/10 bg-black/60 px-4 py-1.5 text-[0.75rem] font-medium text-(--color-oa-ink) backdrop-blur-md">
-          <For each={visibleEntries()}>
-            {(entry) => (
-              <div class="oa-hint-entry flex items-center gap-2">
-                <span class="oa-hint-glyph inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/15 px-1 text-[0.65rem] font-bold text-(--color-oa-ink)">
-                  {HINT_GLYPH[entry.button]}
-                </span>
-                <span class="oa-hint-label text-(--color-oa-ink-dim)">{entry.label}</span>
-              </div>
-            )}
-          </For>
+          {/* Now-playing chip — sits on the left of the bar with its
+              own equalizer-bar pulse so the operator gets a passive
+              "the system is alive" cue without having to focus the
+              audio settings. Hidden when no platform music is on the
+              bus. */}
+          <Show when={nowPlayingLabel() !== ""}>
+            <div class="oa-now-playing-entry flex items-center gap-2 border-r border-white/10 pr-3">
+              <span
+                class="oa-now-playing-glyph relative inline-flex h-5 w-6 items-center justify-end gap-[2px]"
+                aria-hidden="true"
+              >
+                <span class="block h-2 w-[2px] animate-[oa-eq_900ms_ease-in-out_infinite] rounded-sm bg-(--color-system-accent)" style={{ "animation-delay": "0ms" }} />
+                <span class="block h-3 w-[2px] animate-[oa-eq_900ms_ease-in-out_infinite] rounded-sm bg-(--color-system-accent)" style={{ "animation-delay": "120ms" }} />
+                <span class="block h-2 w-[2px] animate-[oa-eq_900ms_ease-in-out_infinite] rounded-sm bg-(--color-system-accent)" style={{ "animation-delay": "240ms" }} />
+              </span>
+              <span class="oa-now-playing-label text-(--color-oa-ink-dim)">
+                {nowPlayingLabel()}
+              </span>
+            </div>
+          </Show>
+          {/* Existing button hints. Only show when a gamepad has been
+              seen — otherwise the now-playing chip floats on its own. */}
+          <Show when={hasSeenGamepad()}>
+            <For each={visibleEntries()}>
+              {(entry) => (
+                <div class="oa-hint-entry flex items-center gap-2">
+                  <span class="oa-hint-glyph inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/15 px-1 text-[0.65rem] font-bold text-(--color-oa-ink)">
+                    {HINT_GLYPH[entry.button]}
+                  </span>
+                  <span class="oa-hint-label text-(--color-oa-ink-dim)">{entry.label}</span>
+                </div>
+              )}
+            </For>
+          </Show>
         </div>
       </div>
     </Show>
