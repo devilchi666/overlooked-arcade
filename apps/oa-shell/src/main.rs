@@ -21,6 +21,7 @@ mod cheat_formats;
 mod cheat_search;
 mod cli;
 mod data_dir;
+mod game_info;
 mod http_retry;
 mod core_installer;
 mod core_options;

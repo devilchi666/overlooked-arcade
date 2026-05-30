@@ -46,6 +46,11 @@ env_logger          = { workspace = true }
 time                = { version = "0.3", default-features = false, features = ["formatting", "macros", "local-offset"] }
 serde               = { workspace = true }
 serde_json          = { workspace = true }
+# Game Info Panel v1 — multi-document YAML in docs/cores/<id>/games-info.md.
+# serde_yaml is technically deprecated upstream but remains the de-facto
+# YAML implementation in the Rust ecosystem; the API is stable and shipping
+# fixed versions removes the maintenance question.
+serde_yaml          = "0.9"
 toml                = { workspace = true }
 png                 = "0.17"
 base64              = "0.22"
