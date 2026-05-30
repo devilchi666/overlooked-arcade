@@ -508,6 +508,122 @@ pub struct retro_disk_control_ext_callback {
     pub get_image_label: Option<retro_get_image_label_t>,
 }
 
+// ---------- memory map (env 36, SET_MEMORY_MAPS) --------------------
+//
+// Cores call this once during init (typically inside retro_load_game)
+// to describe how their guest address space maps onto host buffers.
+// We store the descriptors as metadata so future RetroAchievements /
+// cheat-search consumers can translate guest addresses → host bytes.
+// Host pointers stay inside oa-libretro; only the metadata (start,
+// len, masks, addrspace tag) crosses into oa-core.
+
+/// One region of the core's memory map. Mirrors libretro.h's
+/// `retro_memory_descriptor` byte-for-byte.
+///
+/// Field semantics (verbatim from spec):
+/// - `flags`: `RETRO_MEMDESC_*` bitmask — access bits + type bits.
+/// - `ptr`: host base pointer for this region. May alias other
+///   descriptors (mirrors share a ptr).
+/// - `offset`: byte offset into `ptr` where this region's logical
+///   contents begin.
+/// - `start`: guest address where this region begins.
+/// - `select`: address-bit mask. Bits set here are checked against
+///   `start` to determine if a guest address matches this descriptor.
+/// - `disconnect`: address bits the chip doesn't actually wire (e.g.
+///   NES PRG mirroring).
+/// - `len`: region length in bytes.
+/// - `addrspace`: optional single-letter address-space tag.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_memory_descriptor {
+    pub flags: u64,
+    pub ptr: *mut c_void,
+    pub offset: usize,
+    pub start: usize,
+    pub select: usize,
+    pub disconnect: usize,
+    pub len: usize,
+    pub addrspace: *const c_char,
+}
+
+/// The map itself — sentinel-less because `num_descriptors` carries
+/// the count. Mirrors libretro.h's `retro_memory_map`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_memory_map {
+    pub descriptors: *const retro_memory_descriptor,
+    pub num_descriptors: u32,
+}
+
+// MEMDESC bit semantics (from libretro.h). We store flags opaquely
+// and don't filter on them today — kept here for consumers that decode
+// (e.g. rcheevos checks SYSTEM_RAM via RETRO_MEMDESC_SYSTEM_RAM).
+pub const RETRO_MEMDESC_CONST:      u64 = 1 << 0;
+pub const RETRO_MEMDESC_BIGENDIAN:  u64 = 1 << 1;
+pub const RETRO_MEMDESC_SYSTEM_RAM: u64 = 1 << 2;
+pub const RETRO_MEMDESC_SAVE_RAM:   u64 = 1 << 3;
+pub const RETRO_MEMDESC_VIDEO_RAM:  u64 = 1 << 4;
+pub const RETRO_MEMDESC_ALIGN_2:    u64 = 1 << 16;
+pub const RETRO_MEMDESC_ALIGN_4:    u64 = 2 << 16;
+pub const RETRO_MEMDESC_ALIGN_8:    u64 = 3 << 16;
+pub const RETRO_MEMDESC_MINSIZE_2:  u64 = 1 << 24;
+pub const RETRO_MEMDESC_MINSIZE_4:  u64 = 2 << 24;
+pub const RETRO_MEMDESC_MINSIZE_8:  u64 = 3 << 24;
+
+// ---------- message (env 6 + env 60) --------------------------------
+//
+// Cores call SET_MESSAGE / SET_MESSAGE_EXT to surface OSD-style status
+// strings ("Save state slot 1 saved", "Disc 2 inserted", "Cheat
+// applied"). We forward to the shell which routes to the toast layer.
+
+/// Plain text + duration. Mirrors libretro.h's `retro_message`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_message {
+    /// UTF-8 NUL-terminated text.
+    pub msg: *const c_char,
+    /// Display lifetime in frames (cores send 60-180 typically).
+    pub frames: u32,
+}
+
+/// Extended variant — duration in milliseconds, priority, log level,
+/// rendering target hint. Mirrors libretro.h's `retro_message_ext`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_message_ext {
+    /// UTF-8 NUL-terminated text.
+    pub msg: *const c_char,
+    /// Display lifetime in milliseconds.
+    pub duration: u32,
+    /// Priority hint — higher pre-empts lower when the queue is full.
+    /// Typical values: status (1), info (1), notification (2),
+    /// alert (3).
+    pub priority: u32,
+    /// libretro log level (Debug/Info/Warn/Error) — controls toast tint.
+    pub level: u32,
+    /// Rendering target hint (NOTIFICATION / OSD_STATUS / LOG / ALL).
+    pub target: u32,
+    /// Message type (NOTIFICATION / NOTIFICATION_ALT / STATUS / PROGRESS).
+    pub kind: u32,
+    /// Progress 0..=100, -1 for "no progress bar". Used by PROGRESS kind.
+    pub progress: i8,
+}
+
+// Message-interface version — cores ask GET_MESSAGE_INTERFACE_VERSION
+// to decide whether to use the modern ext variant or the legacy form.
+pub const RETRO_MESSAGE_INTERFACE_VERSION: u32 = 1;
+
+// Target hints.
+pub const RETRO_MESSAGE_TARGET_ALL:          u32 = 0;
+pub const RETRO_MESSAGE_TARGET_OSD:          u32 = 1;
+pub const RETRO_MESSAGE_TARGET_LOG:          u32 = 2;
+
+// Message kinds.
+pub const RETRO_MESSAGE_TYPE_NOTIFICATION:     u32 = 0;
+pub const RETRO_MESSAGE_TYPE_NOTIFICATION_ALT: u32 = 1;
+pub const RETRO_MESSAGE_TYPE_STATUS:           u32 = 2;
+pub const RETRO_MESSAGE_TYPE_PROGRESS:         u32 = 3;
+
 pub type retro_log_printf_t = unsafe extern "C" fn(level: u32, fmt: *const c_char, ...);
 
 #[repr(C)]

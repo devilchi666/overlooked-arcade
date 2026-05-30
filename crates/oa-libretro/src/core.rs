@@ -90,6 +90,27 @@ unsafe fn c_str_to_owned(p: *const c_char) -> String {
     unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
 }
 
+/// Call a libretro disc-control getter that writes a NUL-terminated
+/// C string into a caller-supplied buffer (the `get_image_label` and
+/// `get_image_path` shape — both have signature
+/// `fn(index, *mut c_char, usize) -> bool`). Returns the empty String
+/// on either a `false` return or a malformed payload. `cap` is the
+/// buffer size to allocate; 256 covers labels comfortably, 1024 covers
+/// paths.
+fn read_disc_string_field(
+    index: u32,
+    f: unsafe extern "C" fn(u32, *mut c_char, usize) -> bool,
+    cap: usize,
+) -> String {
+    let mut buf = vec![0i8; cap];
+    let ok = unsafe { f(index, buf.as_mut_ptr() as *mut c_char, buf.len()) };
+    if !ok {
+        return String::new();
+    }
+    let cstr = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };
+    cstr.to_string_lossy().into_owned()
+}
+
 /// Errors from loading or driving a libretro core.
 #[derive(Debug, thiserror::Error)]
 pub enum LibretroError {
@@ -213,7 +234,16 @@ impl LibretroCore {
         // Cores that need rotation set it via RETRO_ENVIRONMENT_SET_ROTATION
         // during load; cores that don't never call the env, so the previous
         // game's rotation would leak through without this reset.
-        state::with_state(|s| { s.rotation = 0; });
+        //
+        // Same reasoning for memory descriptors: SET_MEMORY_MAPS fires from
+        // inside retro_load_game on cores that publish a map. Clearing here
+        // ensures a non-publishing core doesn't inherit the previous game's
+        // descriptors after a back-to-back swap.
+        state::with_state(|s| {
+            s.rotation = 0;
+            s.memory_descriptors.clear();
+            s.memory_map_ptrs.clear();
+        });
 
         let ext_cstr = CString::new(extension.as_bytes())
             .map_err(|_| CoreError::InvalidRom("extension contains NUL".into()))?;
@@ -301,14 +331,58 @@ impl LibretroCore {
             ));
         }
         self.rom_loaded = true;
+        self.finish_load();
+        Ok(())
+    }
 
-        // Wire controller port 0 AFTER load — Mednafen-derived cores clobber
-        // their input data_ptr table during MDFNI_LoadGame, so pre-load
-        // configuration silently disconnects.
-        // See: reference_libretro_controller_after_load_game memory.
+    /// Boot the core without any content — the libretro spec calls
+    /// this `retro_load_game(NULL)`. Only valid against cores that
+    /// advertised [`supports_no_game`](Self::supports_no_game) =
+    /// `true` during init; everything else returns
+    /// `CoreError::InvalidRom`.
+    ///
+    /// Targeted use case: DOSBox-Pure boots into its own DOS-game
+    /// browser when launched bootless; ScummVM boots into the engine
+    /// launcher with its built-in game list. Lets the operator browse
+    /// content from inside the core rather than picking a game from
+    /// OA's library first.
+    ///
+    /// Does the same post-load work as [`load_rom`](Self::load_rom):
+    /// wires controller port 0 to JOYPAD, snapshots the av_info, and
+    /// pushes the aspect ratio to the renderer.
+    pub fn load_no_rom(&mut self) -> Result<(), CoreError> {
+        if self.rom_loaded {
+            unsafe { (self.lib.fns.unload_game)() };
+            self.rom_loaded = false;
+        }
+        // Same per-load reset as load_rom — clear rotation + memory
+        // descriptors so a back-to-back swap doesn't inherit state from
+        // the previous game.
+        state::with_state(|s| {
+            s.rotation = 0;
+            s.memory_descriptors.clear();
+            s.memory_map_ptrs.clear();
+        });
+
+        let ok = unsafe { (self.lib.fns.load_game)(std::ptr::null()) };
+        if !ok {
+            return Err(CoreError::InvalidRom(
+                "retro_load_game(NULL) returned false — core may not support no-game launch"
+                    .into(),
+            ));
+        }
+        self.rom_loaded = true;
+        self.finish_load();
+        Ok(())
+    }
+
+    /// Post-load common work shared by `load_rom` + `load_no_rom`. Wires
+    /// controller port 0 to RETRO_DEVICE_JOYPAD (Mednafen-derived cores
+    /// clobber data_ptr[] during MDFNI_LoadGame so this MUST run AFTER
+    /// retro_load_game) and snapshots real av_info into `self.timing`.
+    fn finish_load(&mut self) {
         unsafe { (self.lib.fns.set_controller_port_device)(0, RETRO_DEVICE_JOYPAD) };
 
-        // Snapshot real timing now that the core knows what it's running.
         let mut av = retro_system_av_info {
             geometry: retro_game_geometry {
                 base_width: 0,
@@ -330,8 +404,123 @@ impl LibretroCore {
             sample_rate: av.timing.sample_rate.round() as u32,
         };
         state::with_state(|s| s.display_aspect = av.geometry.aspect_ratio);
+    }
 
-        Ok(())
+    /// True if the core advertised `SET_SUPPORT_NO_GAME = true` during
+    /// init — see [`load_no_rom`](Self::load_no_rom) for the targeted
+    /// use case. Captured once during `retro_set_environment`; cores
+    /// can't change their mind later.
+    pub fn supports_no_game(&self) -> bool {
+        state::with_state(|s| s.supports_no_game).unwrap_or(false)
+    }
+
+    /// Append an empty disc slot to the core's image list. The newly-
+    /// allocated index needs to be filled with
+    /// [`replace_disc_image`](Self::replace_disc_image) before it can
+    /// be inserted into the tray. Supported by both v1 and v2 disc-
+    /// control interfaces — `add_image_index` is part of the v1 struct.
+    ///
+    /// Use case: the operator forgot a disc when launching an `.m3u`
+    /// playlist and wants to add it after the core is already running.
+    /// Returns false if the core declined or if no disc-control
+    /// interface was ever registered.
+    pub fn add_disc_image(&mut self) -> bool {
+        state::with_state(|s| {
+            let cb = s
+                .disk_v2
+                .as_ref()
+                .and_then(|c| c.add_image_index)
+                .or_else(|| s.disk_v1.as_ref().and_then(|c| c.add_image_index));
+            match cb {
+                Some(f) => unsafe { f() },
+                None => false,
+            }
+        })
+        .unwrap_or(false)
+    }
+
+    /// Point disc slot `index` at the image file at `path`. Used to
+    /// fill a slot just created by [`add_disc_image`](Self::add_disc_image),
+    /// or to swap content for an existing index (the operator points
+    /// disc 2 at a different rip of the same game). Both v1 and v2
+    /// cores support `replace_image_index`.
+    ///
+    /// Returns false if path encoding fails (interior NUL), the core
+    /// declined, or no disc-control interface was registered.
+    pub fn replace_disc_image(&mut self, index: u32, path: &Path) -> bool {
+        let Ok(path_cstr) = CString::new(path.to_string_lossy().as_bytes()) else {
+            log::warn!("oa-libretro: replace_disc_image rejected — path contained interior NUL");
+            return false;
+        };
+        let info = retro_game_info {
+            path: path_cstr.as_ptr(),
+            data: std::ptr::null(),
+            size: 0,
+            meta: std::ptr::null(),
+        };
+        state::with_state(|s| {
+            let cb = s
+                .disk_v2
+                .as_ref()
+                .and_then(|c| c.replace_image_index)
+                .or_else(|| s.disk_v1.as_ref().and_then(|c| c.replace_image_index));
+            match cb {
+                Some(f) => unsafe { f(index, &info) },
+                None => false,
+            }
+        })
+        .unwrap_or(false)
+    }
+
+    /// Tell the core which disc to load first when retro_load_game
+    /// runs — multi-disc resume support. v2 cores only (v1 cores can't
+    /// resume mid-playlist).
+    ///
+    /// Per libretro spec this MUST run BEFORE `load_rom`: the core
+    /// reads the value during its load path. Cores typically register
+    /// their disc-control interface during `retro_set_environment`
+    /// (which runs inside [`LibretroCore::load`]), so calling this
+    /// between `load` and `load_rom` is the intended window. Cores
+    /// that register late (inside retro_load_game itself) won't have
+    /// the callback available yet — in that case this returns false
+    /// and the operator silently starts on disc 0.
+    ///
+    /// `path` should match the disc image's path inside the `.m3u`
+    /// playlist (the core matches by string).
+    pub fn set_initial_disc_image(&mut self, index: u32, path: &Path) -> bool {
+        let Ok(path_cstr) = CString::new(path.to_string_lossy().as_bytes()) else {
+            log::warn!("oa-libretro: set_initial_disc_image rejected — path contained interior NUL");
+            return false;
+        };
+        state::with_state(|s| {
+            let cb = s.disk_v2.as_ref().and_then(|c| c.set_initial_image);
+            match cb {
+                Some(f) => unsafe { f(index, path_cstr.as_ptr()) },
+                None => false,
+            }
+        })
+        .unwrap_or(false)
+    }
+
+    /// Look up the filesystem path the core has recorded for disc
+    /// `index`. v2 cores only. Returns None for v1 cores, when the
+    /// core declined to fill the buffer, or when the path string was
+    /// empty / malformed.
+    ///
+    /// This is a single-disc convenience around the bulk `paths`
+    /// vector already populated by `disc_state()`; useful when the
+    /// caller only needs one entry.
+    pub fn disc_image_path(&self, index: u32) -> Option<String> {
+        state::with_state(|s| {
+            let cb = s.disk_v2.as_ref().and_then(|c| c.get_image_path)?;
+            let s = read_disc_string_field(index, cb, 1024);
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })
+        .flatten()
     }
 
     /// True once `load_rom` has returned Ok.
@@ -650,7 +839,7 @@ impl Core for LibretroCore {
 
     fn disc_state(&self) -> Option<oa_core::DiscInfo> {
         state::with_state(|s| {
-            // Prefer v2 (carries labels). Fall back to v1.
+            // Prefer v2 (carries labels + paths). Fall back to v1.
             if let Some(cb) = s.disk_v2.as_ref() {
                 let num_discs = cb.get_num_images.map(|f| unsafe { f() }).unwrap_or(0);
                 if num_discs == 0 {
@@ -660,20 +849,28 @@ impl Core for LibretroCore {
                 let ejected = cb.get_eject_state.map(|f| unsafe { f() }).unwrap_or(false);
                 let labels: Vec<String> = if let Some(get_label) = cb.get_image_label {
                     (0..num_discs)
-                        .map(|i| {
-                            let mut buf = [0i8; 256];
-                            let ok = unsafe { get_label(i, buf.as_mut_ptr() as *mut _, buf.len()) };
-                            if !ok {
-                                return String::new();
-                            }
-                            let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-                            cstr.to_string_lossy().into_owned()
-                        })
+                        .map(|i| read_disc_string_field(i, get_label, 256))
                         .collect()
                 } else {
                     Vec::new()
                 };
-                return Some(oa_core::DiscInfo { num_discs, current_index, ejected, labels });
+                // get_image_path — v2 extra. 1024 cap matches PATH_MAX
+                // on common platforms; cores typically write short
+                // relative paths (the m3u entry).
+                let paths: Vec<String> = if let Some(get_path) = cb.get_image_path {
+                    (0..num_discs)
+                        .map(|i| read_disc_string_field(i, get_path, 1024))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                return Some(oa_core::DiscInfo {
+                    num_discs,
+                    current_index,
+                    ejected,
+                    labels,
+                    paths,
+                });
             }
             let cb = s.disk_v1.as_ref()?;
             let num_discs = cb.get_num_images.map(|f| unsafe { f() }).unwrap_or(0);
@@ -687,6 +884,7 @@ impl Core for LibretroCore {
                 current_index,
                 ejected,
                 labels: Vec::new(),
+                paths: Vec::new(),
             })
         })
         .flatten()
@@ -765,6 +963,14 @@ impl Core for LibretroCore {
         // cheat runtime writes into this region.
         let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size) };
         Some(slice)
+    }
+
+    fn memory_map(&self) -> Vec<oa_core::MemoryDescriptor> {
+        state::with_state(|s| s.memory_descriptors.clone()).unwrap_or_default()
+    }
+
+    fn drain_messages(&mut self) -> Vec<oa_core::CoreMessage> {
+        state::with_state(|s| std::mem::take(&mut s.pending_messages)).unwrap_or_default()
     }
 
     fn memory_region(&self, id: MemoryRegionId) -> Option<&[u8]> {

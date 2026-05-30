@@ -479,6 +479,96 @@ pub struct CoreOptionCategory {
     pub info: Option<String>,
 }
 
+/// Severity hint for a [`CoreMessage`]. Maps onto the toast-stack
+/// levels in the shell — Info / Warn / Error pick the matching tint.
+/// libretro's Debug-level messages fold into Info.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CoreMessageLevel {
+    /// Routine OSD ("Save state slot 1 saved", "Disc 2 inserted").
+    Info,
+    /// Soft warning ("BIOS missing, falling back to HLE").
+    Warn,
+    /// Hard error ("ROM rejected: bad checksum").
+    Error,
+}
+
+/// One OSD-style status string surfaced by the core.
+///
+/// Cores call libretro's `SET_MESSAGE` (legacy, frames-based duration)
+/// or `SET_MESSAGE_EXT` (modern, ms-based + priority + target) to push
+/// short user-visible status updates. The wrapper layer normalizes the
+/// two formats into this shape and queues them; the shell drains the
+/// queue per frame and renders via the toast stack.
+///
+/// `log_only` is set by cores that explicitly target the log channel
+/// instead of the OSD (SET_MESSAGE_EXT target = LOG). The shell skips
+/// toasting those — the underlying `log::info!` line is already
+/// emitted at parse time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreMessage {
+    /// UTF-8 message body.
+    pub text: String,
+    /// Severity hint for the toast tint.
+    pub level: CoreMessageLevel,
+    /// True when the core specifically targeted the LOG channel (not
+    /// the OSD). The shell logs the text but skips toasting.
+    pub log_only: bool,
+}
+
+/// A single descriptor from the core's published memory map.
+///
+/// Cores call libretro's `SET_MEMORY_MAPS` once during init (after
+/// `retro_load_game`) to describe how their guest address space maps
+/// onto host buffers. Each descriptor names a region: a `start` guest
+/// address, a `len` byte count, plus `select` / `disconnect` masks that
+/// describe address-line mirroring (NES PRG mirroring, SNES bank
+/// folding, etc.). The host-side base pointer is intentionally NOT
+/// surfaced here — [`Core::memory_region`] is the safe accessor for
+/// raw bytes. Memory descriptors are metadata, useful for:
+///
+/// - **RetroAchievements** rcheevos integration (translates achievement
+///   conditions written against guest addresses → host bytes).
+/// - **Cheat search UIs** (operator picks an address range; the
+///   descriptor's `len` + `addrspace` tag makes the choices readable).
+/// - **AI / scripting layers** that want to read game state by symbolic
+///   guest address rather than raw region offsets.
+///
+/// Empty Vec for cores that don't publish a memory map (most pre-NES
+/// hardware, lightweight cores, anything where `SET_MEMORY_MAPS` was
+/// never called).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryDescriptor {
+    /// Bitmask of `RETRO_MEMDESC_*` access / type flags from libretro.
+    /// We don't decode the bits — consumers that care (rcheevos) read
+    /// them directly. Stored opaquely so future libretro spec additions
+    /// pass through without a wrapper-layer update.
+    pub flags: u64,
+    /// Offset into the host buffer (the libretro spec's "where in the
+    /// underlying ptr does this region start"). Combined with
+    /// [`Core::memory_region`] data when the host needs to read bytes.
+    pub offset: u64,
+    /// Guest address where this region begins.
+    pub start: u64,
+    /// Address-bit mask that selects this descriptor when matching a
+    /// guest address. See libretro spec for the (somewhat involved)
+    /// resolution rules — most descriptors set `select = 0` to mean
+    /// "single contiguous region."
+    pub select: u64,
+    /// Address bits the chip ignores (e.g. NES PRG mirroring at
+    /// `$C000-$FFFF` when only `$8000-$BFFF` is wired). Zero for
+    /// non-mirrored regions.
+    pub disconnect: u64,
+    /// Region length in bytes.
+    pub len: u64,
+    /// Optional address-space tag — single-letter conventions like
+    /// `"S"` for system bus, `"V"` for VRAM. None when the core didn't
+    /// declare one.
+    pub addrspace: Option<String>,
+}
+
 /// Disc control snapshot for multi-disc games.
 ///
 /// Cores supporting multi-disc images (PCE-CD with `.m3u`, PSX, Saturn,
@@ -505,6 +595,12 @@ pub struct DiscInfo {
     /// Empty Vec for v1 cores; the UI falls back to "Disc 1", "Disc 2", etc.
     /// Length equals `num_discs` when present.
     pub labels: Vec<String>,
+    /// Filesystem paths for each disc image (v2 cores only). Empty
+    /// Vec for v1 cores or when the core declined to fill the path
+    /// buffer. Length equals `num_discs` when present. Useful for
+    /// "show me where this disc lives" tooltips + as a label fallback
+    /// when the core didn't populate `labels`.
+    pub paths: Vec<String>,
 }
 
 /// The interface every emulator core implements.
@@ -648,6 +744,29 @@ pub trait Core: Send {
     /// that system.
     fn memory_region_mut(&mut self, _id: MemoryRegionId) -> Option<&mut [u8]> {
         None
+    }
+
+    /// Drain OSD-style status messages the core has queued via
+    /// libretro's `SET_MESSAGE` / `SET_MESSAGE_EXT`. The shell calls
+    /// this each frame after `run_frame` and routes the entries to
+    /// the toast stack. Returns an empty Vec for cores that don't push
+    /// messages — most pre-NES systems never do.
+    fn drain_messages(&mut self) -> Vec<CoreMessage> {
+        Vec::new()
+    }
+
+    /// Memory map descriptors as registered by the core via
+    /// libretro's `SET_MEMORY_MAPS`. Empty Vec for cores that don't
+    /// publish a memory map (most pre-NES hardware, lightweight cores,
+    /// anything where the env was never called).
+    ///
+    /// Stored as metadata only — host-side raw pointers stay inside
+    /// the Core implementation. To read bytes from a region named here,
+    /// pair the descriptor with [`Core::memory_region`] (when the
+    /// region maps onto a libretro standard region) or a future
+    /// rcheevos-style helper.
+    fn memory_map(&self) -> Vec<MemoryDescriptor> {
+        Vec::new()
     }
 
     /// Clear every libretro-format cheat the core knows about. Called by

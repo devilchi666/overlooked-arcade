@@ -188,6 +188,38 @@ pub(crate) struct State {
     /// WarioWare Twisted! are playable without an OS-level
     /// accelerometer. Real motion is a separate later phase.
     pub sensor_values: [[f32; 7]; 5],
+    /// Whether the core advertised `SET_SUPPORT_NO_GAME = true` during
+    /// init. Cores like DOSBox-Pure (built-in DOS-game browser) and
+    /// ScummVM (engine launcher with built-in game list) set this to
+    /// signal "you may call `retro_load_game(NULL)` and I'll boot into
+    /// my own menu / browser." Cores that need content always leave
+    /// this `false`; calling `load_no_rom()` against one of those
+    /// returns an error from `retro_load_game`.
+    ///
+    /// The flag is captured once during `retro_set_environment` (the
+    /// only time SET_SUPPORT_NO_GAME is allowed per spec); it does
+    /// not reset between loads.
+    pub supports_no_game: bool,
+    /// OSD-style status messages the core has pushed via
+    /// `SET_MESSAGE` / `SET_MESSAGE_EXT`. Drained per frame by the
+    /// emu thread, which fires each entry as a `oa://toast` event to
+    /// the frontend. Stays small — most cores send <1 message/sec on
+    /// state changes; we cap implicitly at whatever a frame's worth
+    /// of bursts could produce.
+    pub pending_messages: Vec<oa_core::CoreMessage>,
+    /// Parsed memory descriptors from the core's `SET_MEMORY_MAPS`
+    /// call. Empty for cores that never publish one. Host pointers
+    /// stay private to oa-libretro (stored in `memory_map_ptrs`); only
+    /// the metadata copies cross to oa-core via `Core::memory_map()`.
+    /// Cleared on `load_rom` so stale descriptors from a previous game
+    /// don't leak through.
+    pub memory_descriptors: Vec<oa_core::MemoryDescriptor>,
+    /// Host base pointers for each descriptor in `memory_descriptors`,
+    /// indexed in parallel. Stored as `usize` so the State stays `Send`
+    /// (raw pointers aren't auto-Send). Reserved for future rcheevos
+    /// or scripting integration that wants to translate a guest
+    /// address → host byte; the current shell doesn't read these.
+    pub memory_map_ptrs: Vec<usize>,
     /// Display rotation set by the core via
     /// `RETRO_ENVIRONMENT_SET_ROTATION`. Units of 90° clockwise:
     ///   0 = no rotation (default)
@@ -245,6 +277,10 @@ impl State {
             disk_v1: None,
             disk_v2: None,
             keyboard_cb: None,
+            supports_no_game: false,
+            pending_messages: Vec::new(),
+            memory_descriptors: Vec::new(),
+            memory_map_ptrs: Vec::new(),
             rotation: 0,
         }
     }
@@ -434,6 +470,41 @@ unsafe fn parse_core_options_v2(arr: *const retro_core_option_v2_definition) -> 
         i += 1;
     }
     out
+}
+
+/// Walk the `retro_memory_descriptor` array and copy out the metadata
+/// fields into owned [`oa_core::MemoryDescriptor`] values. The host
+/// base pointers are returned in a parallel `Vec<usize>` so the State
+/// stays `Send` (raw pointers aren't auto-Send) and so consumers that
+/// don't need them never see them.
+///
+/// SAFETY: caller must ensure `arr` points at `n` valid
+/// `retro_memory_descriptor` entries. The pointed-to `addrspace`
+/// strings are read with `CStr::from_ptr` so they must be NUL-
+/// terminated; `addrspace = NULL` is allowed and yields `None`.
+unsafe fn parse_memory_descriptors(
+    arr: *const retro_memory_descriptor,
+    n: u32,
+) -> (Vec<oa_core::MemoryDescriptor>, Vec<usize>) {
+    let mut descs = Vec::with_capacity(n as usize);
+    let mut ptrs = Vec::with_capacity(n as usize);
+    if arr.is_null() || n == 0 {
+        return (descs, ptrs);
+    }
+    for i in 0..n as isize {
+        let d = unsafe { &*arr.offset(i) };
+        descs.push(oa_core::MemoryDescriptor {
+            flags: d.flags,
+            offset: d.offset as u64,
+            start: d.start as u64,
+            select: d.select as u64,
+            disconnect: d.disconnect as u64,
+            len: d.len as u64,
+            addrspace: unsafe { cstr_to_string(d.addrspace) },
+        });
+        ptrs.push(d.ptr as usize);
+    }
+    (descs, ptrs)
 }
 
 unsafe fn parse_v2_categories(arr: *const retro_core_option_v2_category) -> Vec<CoreOptionCategory> {
@@ -1057,10 +1128,135 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
         | RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO
         | RETRO_ENVIRONMENT_SET_CONTROLLER_INFO
-        | RETRO_ENVIRONMENT_SET_MEMORY_MAPS
         | RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
         | RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
         | RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE => true,
+
+        // SET_SUPPORT_NO_GAME (env 18) — core declares it can boot
+        // without content. DOSBox-Pure (built-in DOS-game browser),
+        // ScummVM (engine launcher with game list), 2048-libretro and
+        // similar standalone-as-a-core titles all set this true. The
+        // shell consults `LibretroCore::supports_no_game()` to decide
+        // whether `load_no_rom()` is a valid action.
+        RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME => {
+            if data.is_null() {
+                return false;
+            }
+            let flag = unsafe { *(data as *const bool) };
+            log::info!("oa-libretro: SET_SUPPORT_NO_GAME = {flag}");
+            with_state(|s| s.supports_no_game = flag);
+            true
+        }
+
+        // SET_MESSAGE (env 6) — legacy OSD text + duration-in-frames.
+        // Most pre-2020 cores still use this form. We parse it as an
+        // Info-level message and ignore the frames field; the toast
+        // stack has its own dismiss schedule. Log the text at info
+        // level too so it's visible in the log file even if the user
+        // missed the toast.
+        RETRO_ENVIRONMENT_SET_MESSAGE => {
+            if data.is_null() {
+                return false;
+            }
+            let msg = unsafe { &*(data as *const retro_message) };
+            let Some(text) = (unsafe { cstr_to_string(msg.msg) }) else {
+                return false;
+            };
+            if text.is_empty() {
+                return false;
+            }
+            log::info!("core OSD: {text}");
+            with_state(|s| {
+                s.pending_messages.push(oa_core::CoreMessage {
+                    text,
+                    level: oa_core::CoreMessageLevel::Info,
+                    log_only: false,
+                });
+            });
+            true
+        }
+
+        // GET_MESSAGE_INTERFACE_VERSION (env 59) — cores ask which OSD
+        // API version we support before choosing between SET_MESSAGE
+        // (v0) and SET_MESSAGE_EXT (v1). Report v1 so modern cores
+        // route through the richer path.
+        RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION => {
+            if data.is_null() {
+                return false;
+            }
+            unsafe {
+                *(data as *mut u32) = RETRO_MESSAGE_INTERFACE_VERSION;
+            }
+            true
+        }
+
+        // SET_MESSAGE_EXT (env 60) — modern OSD with duration in ms,
+        // priority, log level, target (OSD vs LOG vs ALL), and message
+        // type. We honor: text + log-level → toast tint, target = LOG
+        // → log-only (no toast), target = OSD/ALL → toast. We ignore
+        // duration (toast stack has its own schedule), priority (we
+        // don't preempt — first-in shows), and type (NOTIFICATION vs
+        // STATUS vs PROGRESS — all surface as the same toast shape;
+        // future polish could route PROGRESS to a progress-bar widget).
+        RETRO_ENVIRONMENT_SET_MESSAGE_EXT => {
+            if data.is_null() {
+                return false;
+            }
+            let m = unsafe { &*(data as *const retro_message_ext) };
+            let Some(text) = (unsafe { cstr_to_string(m.msg) }) else {
+                return false;
+            };
+            if text.is_empty() {
+                return false;
+            }
+            // Mirror to log at the requested level so the message is
+            // visible in the log file alongside the toast.
+            match m.level {
+                0 => log::debug!("core OSD: {text}"),
+                1 => log::info!("core OSD: {text}"),
+                2 => log::warn!("core OSD: {text}"),
+                _ => log::error!("core OSD: {text}"),
+            }
+            // LOG-target messages skip the toast surface — they're
+            // intended only for the log file (cores sometimes use this
+            // for verbose status that would spam the OSD).
+            let log_only = m.target == RETRO_MESSAGE_TARGET_LOG;
+            let level = match m.level {
+                2 => oa_core::CoreMessageLevel::Warn,
+                3 => oa_core::CoreMessageLevel::Error,
+                _ => oa_core::CoreMessageLevel::Info, // Debug + Info both surface as Info
+            };
+            with_state(|s| {
+                s.pending_messages.push(oa_core::CoreMessage { text, level, log_only });
+            });
+            true
+        }
+
+        // SET_MEMORY_MAPS — parse + store the descriptor array. Cores
+        // publish their guest-address-space layout here so future
+        // RetroAchievements / cheat-search consumers can translate
+        // guest addresses → host bytes. We store only the metadata in
+        // oa-core types + the host base pointers separately as `usize`
+        // (kept inside oa-libretro). Most pre-NES systems never call
+        // this; most modern cores do. Returning true regardless keeps
+        // cores happy whether they call it or not.
+        RETRO_ENVIRONMENT_SET_MEMORY_MAPS => {
+            if data.is_null() {
+                return true;
+            }
+            let map = unsafe { &*(data as *const retro_memory_map) };
+            let (descs, ptrs) =
+                unsafe { parse_memory_descriptors(map.descriptors, map.num_descriptors) };
+            log::info!(
+                "oa-libretro: SET_MEMORY_MAPS captured {} descriptor(s)",
+                descs.len()
+            );
+            with_state(|s| {
+                s.memory_descriptors = descs;
+                s.memory_map_ptrs = ptrs;
+            });
+            true
+        }
 
         // DECLINE `SET_CONTENT_INFO_OVERRIDE`. We don't actually store the
         // declared override array — accepting it would be lying about
@@ -1361,5 +1557,90 @@ mod tests {
         for id in [17u32, 50, 100, 9999, u32::MAX] {
             assert_eq!(lightgun_field_value(p, id), 0, "unknown id {id} must return 0");
         }
+    }
+
+    // ---- parse_memory_descriptors ------------------------------------
+
+    #[test]
+    fn parse_memory_descriptors_handles_null_array() {
+        // libretro spec allows cores to call SET_MEMORY_MAPS with a NULL
+        // descriptor pointer to clear an earlier map. The parser must
+        // return empty Vecs without dereferencing.
+        let (descs, ptrs) = unsafe { parse_memory_descriptors(std::ptr::null(), 5) };
+        assert!(descs.is_empty(), "null array must produce empty descriptors");
+        assert!(ptrs.is_empty(), "null array must produce empty pointers");
+    }
+
+    #[test]
+    fn parse_memory_descriptors_handles_zero_count() {
+        // n=0 short-circuits regardless of pointer — a non-null pointer
+        // with zero entries shouldn't read any memory.
+        let dummy: retro_memory_descriptor = retro_memory_descriptor {
+            flags: 0,
+            ptr: std::ptr::null_mut(),
+            offset: 0,
+            start: 0,
+            select: 0,
+            disconnect: 0,
+            len: 0,
+            addrspace: std::ptr::null(),
+        };
+        let (descs, ptrs) = unsafe { parse_memory_descriptors(&dummy, 0) };
+        assert!(descs.is_empty());
+        assert!(ptrs.is_empty());
+    }
+
+    #[test]
+    fn parse_memory_descriptors_copies_metadata_and_keeps_pointer_separately() {
+        // Simulate a 2-region NES-shape map: WRAM at $0000-$07FF and
+        // PRG-ROM at $8000-$FFFF. Verify the metadata copies in cleanly
+        // and the host pointer comes back in the parallel Vec.
+        let mut buf1 = [0u8; 0x800];
+        let mut buf2 = [0u8; 0x8000];
+        let s_tag = CString::new("S").unwrap();
+        let descs_in = [
+            retro_memory_descriptor {
+                flags: 0x4, // RETRO_MEMDESC_SYSTEM_RAM
+                ptr: buf1.as_mut_ptr() as *mut c_void,
+                offset: 0,
+                start: 0x0000,
+                select: 0,
+                disconnect: 0,
+                len: 0x800,
+                addrspace: s_tag.as_ptr(),
+            },
+            retro_memory_descriptor {
+                flags: 0x1, // RETRO_MEMDESC_CONST
+                ptr: buf2.as_mut_ptr() as *mut c_void,
+                offset: 0,
+                start: 0x8000,
+                select: 0,
+                disconnect: 0,
+                len: 0x8000,
+                addrspace: std::ptr::null(),
+            },
+        ];
+        let (descs, ptrs) =
+            unsafe { parse_memory_descriptors(descs_in.as_ptr(), descs_in.len() as u32) };
+
+        assert_eq!(descs.len(), 2);
+        assert_eq!(ptrs.len(), 2);
+
+        assert_eq!(descs[0].flags, 0x4);
+        assert_eq!(descs[0].start, 0x0000);
+        assert_eq!(descs[0].len, 0x800);
+        assert_eq!(descs[0].addrspace.as_deref(), Some("S"));
+
+        assert_eq!(descs[1].flags, 0x1);
+        assert_eq!(descs[1].start, 0x8000);
+        assert_eq!(descs[1].len, 0x8000);
+        assert_eq!(descs[1].addrspace, None, "null addrspace must yield None");
+
+        // Host pointers come back through the parallel ptrs Vec — not
+        // exposed in oa_core::MemoryDescriptor. The values match what
+        // we passed in (raw usize transmute), so the storage roundtrips
+        // cleanly even though oa-core sees no pointers.
+        assert_eq!(ptrs[0], buf1.as_ptr() as usize);
+        assert_eq!(ptrs[1], buf2.as_ptr() as usize);
     }
 }

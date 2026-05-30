@@ -6486,6 +6486,24 @@ fn run_emu_render(
                 } else {
                     let _ = core_ref.drain_audio();
                 }
+
+                // Drain OSD messages the core queued this frame via
+                // SET_MESSAGE / SET_MESSAGE_EXT and surface each as a
+                // toast. Log-only messages (target=LOG) skip the toast
+                // — the env arm already emitted the log line at parse
+                // time. Tagging with the active system id picks up
+                // per-system toast theming via [data-system="<id>"].
+                for msg in core_ref.drain_messages() {
+                    if msg.log_only {
+                        continue;
+                    }
+                    let level = match msg.level {
+                        oa_core::CoreMessageLevel::Info => ToastLevel::Info,
+                        oa_core::CoreMessageLevel::Warn => ToastLevel::Warn,
+                        oa_core::CoreMessageLevel::Error => ToastLevel::Error,
+                    };
+                    emit_toast(&app_handle, level, Some(&current_system_id), msg.text);
+                }
             }
 
             frame_n += 1;

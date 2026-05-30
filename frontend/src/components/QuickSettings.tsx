@@ -128,6 +128,11 @@ type DiscInfo = {
   currentIndex: number;
   ejected: boolean;
   labels: string[];
+  // v2 cores only — filesystem paths per disc. Empty for v1 cores.
+  // Not consumed by the disc-swap UI today (labels remain the
+  // primary visible string); surfaced as a tooltip-source field
+  // for future "where does this disc live?" polish.
+  paths: string[];
 };
 
 const MEMORY_WINDOW_BYTES = 256;
