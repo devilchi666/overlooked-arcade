@@ -579,11 +579,13 @@ export const systemThemes: Record<SystemId, SystemTheme> = {
     extensions: ["vec", "gam"],
     // Vectrex boxes were landscape, showing the unit + the screen.
     tileAspect: "4/3",
-    // Vector display on a green-phosphor CRT — crt-lite captures the
-    // soft glow + scanline-less vector beam look acceptably for Phase 0.
-    // A dedicated `vector-phosphor` shader preset (gaussian glow on
-    // vector lines, no scanlines) is a Phase 2 polish item.
-    defaultShaderPreset: "crt-lite",
+    // Vector display on the original Vectrex's monochrome CRT — the
+    // dedicated `vector-phosphor` preset (wider-σ Gaussian glow on
+    // bright vector strokes + ~80ms phosphor persistence) ships
+    // 2026-05-29 and becomes the canonical look. No scanlines on
+    // vector displays. Operators wanting a softer / harder halo
+    // override the bloom_amount per-system.
+    defaultShaderPreset: "vector-phosphor",
   },
   virtualboy: {
     id: "virtualboy",

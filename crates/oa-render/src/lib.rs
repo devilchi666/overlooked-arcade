@@ -159,6 +159,17 @@ pub enum ShaderPreset {
     /// LCDs don't have them. Single-pass — effect lives in the
     /// final-blit shader's preset branch.
     LcdHandheld,
+    /// Vectrex vector-phosphor preset. Targets the Vectrex's monochrome
+    /// CRT vector display: bright vector strokes against pure black.
+    /// Bright-pass filter extracts only luminance above a threshold,
+    /// then a wider-σ separable Gaussian blooms those bright pixels,
+    /// then a persistent history accumulator decays the previous
+    /// frame's glow at ~80ms half-life so vector strokes leave a
+    /// short fading echo (the signature Vectrex "ghosting"). Final
+    /// blit composites source + tinted-glow. Multi-pass — uses the
+    /// EffectPass chain + an extra persistent ping-pong pair the
+    /// other presets don't need.
+    VectorPhosphor,
 }
 
 impl Default for ShaderPreset {
@@ -180,6 +191,7 @@ impl ShaderPreset {
             Self::CrtLite => 2,
             Self::Phosphor => 3,
             Self::LcdHandheld => 4,
+            Self::VectorPhosphor => 5,
         }
     }
 
@@ -191,6 +203,7 @@ impl ShaderPreset {
             "crt-lite" => Self::CrtLite,
             "phosphor" => Self::Phosphor,
             "lcd-handheld" => Self::LcdHandheld,
+            "vector-phosphor" => Self::VectorPhosphor,
             _ => Self::Plain,
         }
     }
@@ -203,6 +216,7 @@ impl ShaderPreset {
             Self::CrtLite => "crt-lite",
             Self::Phosphor => "phosphor",
             Self::LcdHandheld => "lcd-handheld",
+            Self::VectorPhosphor => "vector-phosphor",
         }
     }
 
@@ -210,7 +224,15 @@ impl ShaderPreset {
     /// `effect_chain`) to be populated before the final blit reads them.
     /// Used by `present()` to decide whether to allocate + run the chain.
     pub fn is_multipass(self) -> bool {
-        matches!(self, Self::Phosphor)
+        matches!(self, Self::Phosphor | Self::VectorPhosphor)
+    }
+
+    /// True for presets that need a PERSISTENT render-target pair (the
+    /// history textures) that survives across frames. The Vectrex
+    /// vector-phosphor accumulates the prior frame's glow into the
+    /// current frame's bloom; Phosphor and the rest are frame-local.
+    pub fn uses_persistence(self) -> bool {
+        matches!(self, Self::VectorPhosphor)
     }
 }
 
@@ -804,6 +826,17 @@ impl Renderer {
                 chain.push(self.create_blur_pass("phosphor v-blur", false));
                 chain
             }
+            ShaderPreset::VectorPhosphor => {
+                // 9-tap σ≈2.5 Gaussian with a bright-pass on the H pass
+                // (V pass sees the H pass's already-filtered output, so
+                // re-thresholding would over-cull). Default threshold
+                // 0.5 separates Vectrex vector strokes (luminance > 0.7)
+                // from background (luminance ~ 0).
+                let mut chain = Vec::with_capacity(2);
+                chain.push(self.create_vector_blur_pass("vector-phosphor h-blur", true, 0.5));
+                chain.push(self.create_vector_blur_pass("vector-phosphor v-blur", false, 0.5));
+                chain
+            }
             // Single-pass presets — effects apply in the final-blit shader's
             // preset branch via the uniform_buffer's preset_id field.
             ShaderPreset::Plain
@@ -872,6 +905,83 @@ impl Renderer {
             // fb_width / fb_height are written every present(); the direction
             // flag is the only constant-per-pass field.
             uniform_bytes: [if direction_is_x { 1 } else { 0 }, 0, 0, 0],
+        }
+    }
+
+    /// Build a wider-σ separable Gaussian pass with an optional bright-pass
+    /// filter — used by the VectorPhosphor preset. Same shader source for
+    /// both H and V (`direction_is_x` picks the axis); `glow_threshold` is
+    /// only consulted by the H pass since the V pass sees the H pass's
+    /// already-filtered output.
+    fn create_vector_blur_pass(
+        &self,
+        label: &'static str,
+        direction_is_x: bool,
+        glow_threshold: f32,
+    ) -> EffectPass {
+        let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("oa-render vector blur shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/vector_blur.wgsl"))),
+        });
+        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("oa-render vector blur pipeline layout"),
+            bind_group_layouts: &[&self.bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                // Linear intermediate textures — matches the Phosphor
+                // path so the final blit's sRGB encode stays the only
+                // gamma transition.
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("oa-render vector blur uniform"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Layout: [direction_is_x, fb_width, fb_height, glow_threshold].
+        // fb_width / fb_height are rewritten each present() per the
+        // existing loop; direction_is_x + glow_threshold stay constant
+        // after build. We pack the f32 threshold into the u32 slot via
+        // to_bits() — the uniform write is a 16-byte memcpy that doesn't
+        // care about typed contents.
+        EffectPass {
+            label,
+            pipeline,
+            uniform_buffer,
+            uniform_bytes: [
+                if direction_is_x { 1 } else { 0 },
+                0,
+                0,
+                glow_threshold.to_bits(),
+            ],
         }
     }
 
