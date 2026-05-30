@@ -289,9 +289,18 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    persistence. Per-`docs/cores/vectrex/SESSION_LOG.md` 2026-05-29
    entry + ROADMAP flip.
 
-2. **Dedicated `vb-monochrome` shader for Virtual Boy** (~120 lines WGSL).
-   - New `ShaderPreset::VbMonochrome` variant. LED-grain noise + red-on-black tint + optional visor reflection.
-   - Wants operator design input on noise intensity + grain pattern.
+~~2. Dedicated `vb-monochrome` shader for Virtual Boy~~ —
+   **SHIPPED 2026-05-30** on `feat/virtualboy-completion-pack`.
+   New `ShaderPreset::VbMonochrome` (id=6) — pure-red palette
+   enforcement + vertical scanline darken at the source-column rate
+   (mimics the VB's spinning-mirror LED column scanner) + soft
+   circular vignette (eyepiece framing). Single-pass — branches in
+   `blit.wgsl`. `themes/registry.ts` virtualboy `defaultShaderPreset`
+   flipped `plain` → `vb-monochrome`. Operator design locked:
+   vertical scanlines + soft vignette + red-only (no visor reflection
+   in v1 — would obscure gameplay). Per
+   `docs/cores/virtualboy/SESSION_LOG.md` 2026-05-30 entry + ROADMAP
+   flip.
 
 ~~3. Per-system `lcd-handheld` default binding~~ — **SHIPPED 2026-05-24**
    alongside the media-taxonomy wave. `defaultShaderPreset: "lcd-handheld"`
