@@ -522,25 +522,19 @@ export const CoresCategorySettings: Component = () => {
 // --- Library / Media / BIOS — informational cards ---------------------
 
 export const LibrarySettings: Component = () => {
-  // Lift the legacy LibraryManagerPage body into the SETTINGS pane
-  // via the variant="panel" prop. Page chrome (Back button + title)
-  // is suppressed — the SETTINGS sidebar already provides nav, and the
-  // category header above already says "Library". Tabs nav (Library /
-  // Views / Game media) + all per-tab bodies are byte-identical to
-  // the legacy menu-bar entry. The "Game media" tab also shows up
-  // here intentionally — its content is more capable than the
-  // SETTINGS → Media category (which stays as informational
-  // placeholder until PlatformMediaDialog gets its own variant="panel"
-  // lift), and operators expect Library Manager's Media tab to keep
-  // working from this surface.
+  // Embed LibraryManagerPage's Library / Views / Game media tab
+  // strip directly in the SETTINGS pane. The SETTINGS sidebar
+  // already provides navigation; the category header above already
+  // says "Library". The "Game media" tab also shows up here
+  // intentionally — its content is more capable than the SETTINGS →
+  // Media category (which stays as informational placeholder until
+  // PlatformMediaDialog gets its own panel-mode lift), and
+  // operators expect Library Manager's Media tab to keep working
+  // from this surface.
   const ctx = useRetroverse();
   return (
     <div class="-mx-8 -mb-6">
       <LibraryManagerPage
-        variant="panel"
-        // onBack is unreachable in panel mode (no Back button, no
-        // Esc handler) — supply a no-op so the type is satisfied.
-        onBack={() => {}}
         settings={ctx.settings}
         library={ctx.library}
         layout={ctx.layout}
