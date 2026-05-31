@@ -6,6 +6,34 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-31 — Retroverse flag default flipped OFF → ON; deprecation cycle starts
+
+Single one-line change at `frontend/src/settings/store.ts:139`
+(`DEFAULT_EXPERIMENTAL_RETROVERSE_UI: false → true`) plus the
+adjacent doc comment. Merged `--no-ff` from
+`feat/retroverse-flag-default-on`. Paired merge of the standing
+audit branch `feat/retroverse-flag-deprecation-audit` landed
+`docs/PLANS/retroverse-flag-deprecation.md` on main.
+
+- **Shipped:** Fresh installs land in Retroverse on first launch.
+  Existing operators with a stored `experimentalRetroverseUi`
+  value keep their value (silent migration rejected — worse for
+  the "I opted out" expectation than a manual re-flip surprise).
+  The Settings → Display → Experimental → Retroverse UI toggle
+  stays as the documented escape hatch through one release cycle
+  of playtest.
+- **Almost:** The escape-hatch toggle is intentionally still in
+  place. It drops together with the legacy Shell in the eventual
+  deletion PR per `docs/PLANS/retroverse-flag-deprecation.md` §7.
+- **Next:** Operator playtest cycle (~one release window).
+  Anything that surfaces as missing / broken vs the legacy Shell
+  gets fixed in small follow-up branches like the recent
+  feat/retroverse-migration-followups (Quit + Game-focus + drop
+  overlay + Help dialogs). After the cycle passes, the deletion
+  PR removes ~1900 lines of dead code.
+
+---
+
 ## 2026-05-30 — Retroverse migration follow-ups (drop overlay + header affordances + Help-dialog home)
 
 Three of the six migration items from §5 of
