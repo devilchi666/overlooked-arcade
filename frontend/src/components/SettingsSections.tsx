@@ -746,6 +746,7 @@ export const BiosSettings: Component = () => {
 // --- About -------------------------------------------------------------
 
 export const AboutSettings: Component = () => {
+  const ctx = useRetroverse();
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="Overlooked Arcade">
@@ -791,11 +792,33 @@ export const AboutSettings: Component = () => {
       <SettingsCard title="Report a bug">
         <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
           Found a crash or a bug? Open an issue on the project's
-          GitHub. Include the contents of{" "}
-          <span class="text-(--color-system-accent)">Help → Debug log…</span>{" "}
-          (legacy menu bar) if the bug surfaced at runtime —
-          frontend logs land in the same stream as Rust logs.
+          GitHub. Open the debug log below if the bug surfaced at
+          runtime — frontend logs land in the same stream as Rust
+          logs, so the dump is a self-contained reproduction
+          artifact.
         </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              ctx.onOpenDebugLog();
+            }}
+            class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/10 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-(--color-system-accent) transition hover:bg-(--color-system-accent)/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+          >
+            Open debug log…
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              ctx.onOpenKeyboardShortcuts();
+            }}
+            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-(--color-oa-ink-dim)/50 hover:bg-white/[0.08] hover:text-(--color-oa-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+          >
+            Keyboard shortcuts…
+          </button>
+        </div>
       </SettingsCard>
     </div>
   );

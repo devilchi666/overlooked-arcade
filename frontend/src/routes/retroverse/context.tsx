@@ -80,6 +80,27 @@ export type RetroverseContextValue = {
   /// existing collection. Used by the right-click context menu on a
   /// custom-collection sidebar row.
   onOpenRenameCollection: (collectionId: string, currentName: string) => void;
+  /// Game-focus state — true when the operator has flipped keyboard
+  /// passthrough ON (Ctrl+G) so OA hotkeys go to the running core
+  /// instead of the shell. RetroverseShell renders a small status pill
+  /// in the header when this is true; mirrors the legacy toolbarRight
+  /// indicator at App.tsx:1457-1464.
+  gameFocus: Accessor<boolean>;
+  /// Quit handler — fires `invoke("quit_app")`. Bound to the ✕ button
+  /// in the RetroverseShell header; mirrors the legacy toolbarRight
+  /// Quit button at App.tsx:1505-1515. Ctrl+Q keyboard shortcut works
+  /// in both modes via App.tsx's keydown handler.
+  onQuit: () => void;
+  /// Open the live debug-log dialog (Rust + frontend log ring). In
+  /// the legacy Shell this was reachable from Help → Debug log…;
+  /// Retroverse exposes the same dialog via a button in SETTINGS →
+  /// About → Report a bug card so operator bug-report flow doesn't
+  /// regress.
+  onOpenDebugLog: () => void;
+  /// Open the Keyboard shortcuts cheatsheet. Same migration story as
+  /// onOpenDebugLog — legacy Shell's Help menu had it; Retroverse
+  /// surfaces it from SETTINGS → About.
+  onOpenKeyboardShortcuts: () => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

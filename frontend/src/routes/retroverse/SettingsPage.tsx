@@ -141,7 +141,7 @@ const CATEGORIES: readonly CategoryDef[] = [
     glyph: "▦",
     description: "Default OA theme picker.",
     helpText:
-      "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — operator can switch presentation modes via the menu bar's Tools menu (legacy Shell only).",
+      "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — visual variants land here as they're built.",
   },
   // CONTENT & LIBRARY.
   {
@@ -151,7 +151,7 @@ const CATEGORIES: readonly CategoryDef[] = [
     glyph: "▤",
     description: "Library folders + scanner cadence.",
     helpText:
-      "Where OA looks for ROMs. Each folder can scan-subfolders, treat-subfolders-as-systems, or watch for changes. Reachable today via the menu bar's Library Manager…",
+      "Where OA looks for ROMs. Each folder can scan-subfolders, treat-subfolders-as-systems, or watch for changes. The Library Manager surface (folders, views, game media) embeds directly in this category — Library Manager's full Library / Views / Game media tab strip is what you see when you click in.",
   },
   {
     id: "media",
@@ -451,9 +451,10 @@ const SettingsPage: Component = () => {
                 Coming in a follow-up slice
               </p>
               <p class="mt-3 text-sm text-(--color-oa-ink-dim)">
-                This category's data path needs its own polish slice. Until
-                then the existing menu-bar surface (legacy Shell) remains
-                the canonical entry point.
+                This category's data path needs its own polish slice. The
+                fallback should be unreachable in normal use — every
+                category in GROUP_ORDER has a Match arm. If you're seeing
+                this, please file a bug.
               </p>
             </div>
           }
