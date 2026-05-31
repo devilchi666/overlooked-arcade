@@ -309,9 +309,20 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    flipped ✅ for each. Operator validation against real handheld captures
    remains a stretch polish item but doesn't gate the default.
 
-4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch** (~80 lines).
-   - Bits 16-20 in `bindings.rs::jaguar` already exist. Wire libretro `RETRO_DEVICE_KEYBOARD` events from the upper-bit presses through to Virtual Jaguar.
-   - Wants VJ-specific RETROK keycode validation against a running core.
+~~4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch**~~ —
+   **SHIPPED** alongside the original Jaguar onboarding. Bits 16-20
+   are masked out of `libretro_bits` by `jaguar_to_libretro_bits`
+   and forwarded to Virtual Jaguar via `retro_keyboard_event_t` in
+   the emu-thread frame loop (`apps/oa-shell/src/main.rs:6134-6148`).
+   Mapping table at `apps/oa-shell/src/bindings.rs::jaguar_high_bit_to_retro_key`
+   with bitmask helper `JAGUAR_HIGH_BIT_MASK`. KP_HASH maps to
+   `RETROK_HASH` (35, since libretro defines no `RETROK_KP_HASH`).
+   Edge-detected per-bit so a single mask compare skips work when
+   no high-bit transitions happened. Tests at
+   `bindings.rs:4671-4702`. VJ keycode validation against running
+   cores remains operator-driven (Iron Soldier weapon select, AvP
+   map screen) — same playtest gap that gates per-core ROADMAP
+   Phase 1 entries across systems.
 
 ~~5. Multi-system light-gun smoke-test validation~~ — **SHIPPED 2026-05-25**
    on `feat/light-gun-harness`. Original audit framing was wrong:
@@ -391,14 +402,37 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
      inserts a row before the focused index no longer drags the ring
      onto a different logical button.
 
-2. **SNES Mouse + Super Multitap** (~200 lines, niche). Mario Paint, Bomberman.
+2. **SNES Super Multitap** (~150 lines, niche). 8-player Bomberman
+   series (Super Bomberman 3/4/5, Panic Bomber W). snes9x registers
+   it as a RetroPad subclass; needs a `DEVICE_ID_OPTIONS_SNES` table
+   mirroring `DEVICE_ID_OPTIONS_GAMECUBE` (in
+   `frontend/src/components/GameDialogs.tsx:711-717`) so operators
+   can pick it per-game. **SNES Mouse half already shipped** via the
+   generic per-game device-type override (id=2) — label at
+   `frontend/src/components/GameDialogs.tsx:646`; dispatch via
+   `arm_libretro_device` (Mario Paint, ACME Animation Factory).
 3. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.
 4. **Vectrex translucent overlay rendering + aspect override** (~250 lines combined). Plastic color-strip per-game PNG; Vectrex CRT portrait 3:4 default.
 5. **NDS microphone input** (~200 lines). Blow/voice puzzles. Deferred until operator playtest forces it.
-6. **NDS per-game touch overlay UI** (~250 lines). Visual stylus cursor.
+6. **NDS per-game touch hotspot overlay** (~200 lines). Game-specific
+   touch zones (Phantom Hourglass map screen, Mario Kart DS
+   course-selection, Brain Age stylus zones). **Visual stylus reticle
+   half already shipped** — `frontend/src/components/StylusOverlay.tsx`
+   renders a hollow accent-ring at the cursor, fills in on
+   left-mouse-down (gated on `STYLUS_SYSTEMS` set including `nds`).
+   Per-game hotspot configuration data + overlay rendering is the
+   remaining slice.
 7. **NDS multi-touch** (~80 lines, niche). POINTER index 1+.
 8. **Sega CD 3-button vs 6-button pad mode override** (~100 lines + DATA work).
-9. **SMS Light Phaser** (~120 lines, shared light-gun infra).
+~~9. **SMS Light Phaser**~~ — **SHIPPED 2026-05-25** via the
+   `feat/light-gun-harness` branch. Dispatch wired in
+   `crates/oa-libretro/src/state.rs::lightgun_field_value` alongside
+   nes/saturn/psx/dreamcast/atari7800; catalogued at
+   `apps/oa-shell/src/light_gun_systems.rs:102` with `WiringShipped`
+   status. Operator playtest of Operation Wolf / Rambo III /
+   Shooting Gallery / Marksman Shooting on real Phaser hardware is
+   the remaining gap (tracked under MEDIUM #5's playtest matrix). No
+   SMS-specific code work remains.
 10. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
 11. **NGP-mono vs NGPC library-tile differentiation** (~60 lines). Badge or subtitle.
 12. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
