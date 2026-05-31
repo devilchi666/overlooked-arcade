@@ -12,7 +12,7 @@
 // avoids the panel feeling "empty" because a metadata field hasn't
 // been enriched yet.
 
-import { For, Show, type Component } from "solid-js";
+import { For, Show, createSignal, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getDataDir } from "../../lib/dataDir";
 import { createResource } from "solid-js";
@@ -21,8 +21,13 @@ import type { RomEntry } from "../../library/types";
 import { systemThemes } from "../../themes/registry";
 import {
   getGameInfo,
+  getGameInfoOverride,
+  setGameInfoOverride,
   type BugSeverity,
 } from "../../library/gameInfo";
+import { useGameInfoBadges } from "../../library/gameInfoBadges";
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 
 type Props = {
   entry: RomEntry;
@@ -98,6 +103,11 @@ const GameDetailPanel: Component<Props> = (props) => {
     }
   });
 
+  // Bump signal — the Apply best emulator action increments this so
+  // the merged resource re-fetches with fresh appliedBestEmulator
+  // provenance without forcing a full library refresh.
+  const [mergedRefreshKey, setMergedRefreshKey] = createSignal(0);
+
   // Fetch the merged Game Info record (file layer + operator overrides)
   // for the focused entry. Re-fetches when the operator focuses a
   // different tile — the createResource source closure depends on the
@@ -110,10 +120,16 @@ const GameDetailPanel: Component<Props> = (props) => {
       romId: props.entry.id,
       romHash: props.entry.sha1,
       romTitle: props.entry.title,
+      _: mergedRefreshKey(),
     }),
     async (args) => {
       try {
-        return await getGameInfo(args);
+        return await getGameInfo({
+          systemId: args.systemId,
+          romId: args.romId,
+          romHash: args.romHash,
+          romTitle: args.romTitle,
+        });
       } catch (e) {
         console.warn("[GameDetailPanel] get_game_info failed:", e);
         return null;
@@ -129,6 +145,65 @@ const GameDetailPanel: Component<Props> = (props) => {
     if (!m) return [];
     return [...m.bugs].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
   };
+
+  // ---- Apply best emulator action (Phase 8) -------------------------
+  //
+  // Wires the panel's [Apply] button next to the Recommended core
+  // block. Writes `GameOverrides.libretro_core` for this game via the
+  // existing per-game core-override Tauri path and marks the operator
+  // override row's `appliedBestEmulator` provenance flag so:
+  //  (a) the button switches to "Applied" without further input;
+  //  (b) the tile gains the `✎` local-edits indicator;
+  //  (c) the "Reset to default" affordance in the modal editor knows
+  //      to unwind this override when used.
+  const badges = useGameInfoBadges();
+
+  async function handleApplyBestEmulator(): Promise<void> {
+    const entry = props.entry;
+    const m = merged();
+    const recommended = m?.bestEmulator?.recommended;
+    if (!entry || !recommended) return;
+    try {
+      // 1. Per-game core override write — operator's next launch uses
+      // the recommended core. This is the same path the per-game
+      // settings drawer uses.
+      await invoke("update_game_core_override", {
+        id: entry.id,
+        value: recommended,
+      });
+      // 2. Read current override, set the provenance flag, write back.
+      // Preserves any other operator edits — we mutate only the flag.
+      const ov = await getGameInfoOverride({
+        systemId: entry.systemId,
+        romId: entry.id,
+      });
+      await setGameInfoOverride({
+        systemId: entry.systemId,
+        romId: entry.id,
+        overrideRecord: { ...ov, appliedBestEmulator: true },
+      });
+      // 3. Refresh side effects: tile-badge cache (✎ shows up if it
+      // wasn't already) + the merged record this panel reads from
+      // (so the Apply button switches to Applied without an entry
+      // change).
+      await badges.refresh();
+      setMergedRefreshKey((k: number) => k + 1);
+      // 4. Inline confirmation toast — surfaces via the existing
+      // oa://toast channel so the per-system theming carries through.
+      await emit("oa://toast", {
+        level: "success",
+        message: `Best emulator applied — ${recommended} will be used on next launch.`,
+        system: entry.systemId,
+      });
+    } catch (err) {
+      console.warn("[GameDetailPanel] Apply best emulator failed:", err);
+      await emit("oa://toast", {
+        level: "error",
+        message: "Apply best emulator failed — see debug log for details.",
+        system: entry.systemId,
+      });
+    }
+  }
 
   const metadata = () => media.media(props.entry.id)?.metadata;
   const themeName = () =>
@@ -380,12 +455,22 @@ const GameDetailPanel: Component<Props> = (props) => {
             </div>
             <button
               type="button"
-              disabled
-              title="Wiring in Phase 8 — sets GameOverrides.libretro_core for this game"
-              class="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)/60"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void handleApplyBestEmulator();
+              }}
+              disabled={merged()?.appliedBestEmulator ?? false}
+              title={
+                merged()?.appliedBestEmulator
+                  ? "Recommended core already applied for this game — use the Game Info tab to reset"
+                  : `Set ${merged()!.bestEmulator!.recommended} as the per-game core override`
+              }
+              class="shrink-0 rounded-md border px-3 py-1 text-[0.6rem] uppercase tracking-widest transition"
               classList={{
-                "border-(--color-system-accent)/40 bg-(--color-system-accent)/10 text-(--color-system-accent-soft)":
+                "border-(--color-system-accent)/40 bg-(--color-system-accent)/10 text-(--color-system-accent-soft) cursor-default":
                   merged()?.appliedBestEmulator ?? false,
+                "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                  !(merged()?.appliedBestEmulator ?? false),
               }}
             >
               {merged()?.appliedBestEmulator ? "Applied" : "Apply"}
