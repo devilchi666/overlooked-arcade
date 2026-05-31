@@ -142,6 +142,32 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
   Why it came up: v1 schema (line 994 of `library_db.rs`) declares year/genre/developer/publisher columns but no Rust code ever writes to them — metadata enrichment writes to MediaDb instead. The columns are read by no code path either.
   Why deferred: dropping the columns is a v15 migration. Keeping them is a future "write enrichment to both places" option (e.g. for SQL-side queries / FTS5 searches on developer/publisher) which is real value. Cleanup decision: either populate them via the metadata-sync path, or migrate to remove them. No urgency either way. Cross-ref: `docs/features/retroverse-ui/DECISIONS.md` 2026-05-29 "DISCOVER v1: 4 data-driven axes."
 
-- 2026-05-31 — Per-System UI overlays vs Retroverse theme visual conflict
-  Why it came up: legacy-Shell-deletion Phase 1 restored `SystemBackground` / `SystemBootAnimation` / `StylusOverlay` to Retroverse mode (pre-deletion they only rendered inside the legacy `<Shell>`'s `<main>`). Operator confirmed they visibly conflict with the Retroverse-side theming — the background art / boot fade compete with Retroverse's own visual language. Interim workaround: turn off Settings → Display → Per-system experiences master toggle (the operator's current state).
-  Why deferred: not a regression (these features were already missing in Retroverse mode pre-deletion; the restoration is on-design for Per-System UI Stage 1's "master toggle applies everywhere" intent). Real fix needs a Retroverse-aware mode for the per-system overlays — z-index / opacity / theming alignment so they layer correctly under the Retroverse chrome, or a per-shell exemption for specific overlay categories. Pick up before the next Per-System UI stage (Stage 2 behavior layer) so the design language stays coherent. Cross-ref: legacy Shell deletion commit `274df1e`, `feat/retroverse-legacy-deletion` branch.
+- 2026-05-31 — Two-shell architectural decision (Retroverse opinionated; Kiosk hosts customization) + Per-System UI Stage 2+ routing
+  Why it came up: legacy-Shell-deletion Phase 1 restored `SystemBackground` + `SystemBootAnimation` + `StylusOverlay` to Retroverse mode (pre-deletion these only rendered inside the legacy `<Shell>`'s `<main>`). Operator confirmed `SystemBackground` visibly conflicts with the Retroverse chrome — its 50%-opaque radial-gradient overlay sits on top of `RetroverseShell` because it's a root-level sibling with no positioned ancestor + later in DOM order than the shell. Interim workaround: Settings → Display → Per-system experiences master toggle OFF.
+
+  **Investigation surfaced the real issue.** Per-System UI Stage 1's visual overlays were designed around a "central transparent library area with per-system art bleeding through" — fundamentally different from Retroverse's "opinionated tabbed shell where Retroverse owns the visual identity." Per-System UI Stage 2's vision (per-system *navigation*: wheels / carousels / lists per system) goes even further — assumes a layout-flex shell, which Retroverse explicitly isn't. The conflict is design-intents disagreeing, not a layering bug.
+
+  **Decision (2026-05-31):** Two-shell future. Retroverse stays opinionated + clean (Heroic Games Launcher peer); a separate **Kiosk** shell hosts the themable / heavily-customized experience (BigBox peer). Naming locked: Kiosk (matching existing `docs/features/kiosk-shell/`). Kiosk shell stays **back-burner** for now — defer the work until there's appetite to spec it. The Kiosk plan in `docs/features/kiosk-shell/KIOSK_PLAN.md` already pegs it as "theme editor for power users that consumes the built-in per-system experiences as starting defaults" (2026-05-26 DECISIONS Q), which matches this routing.
+
+  **Per-System UI Stage 1 split:**
+
+  | Stage 1 piece                                        | Retroverse | Kiosk |
+  |------------------------------------------------------|:----------:|:-----:|
+  | Per-system audio (navigate / launch / boot-intro SFX) | ✅ keeps   | ✅ inherits |
+  | Per-system accent colors (`--color-system-accent`)    | ✅ keeps   | ✅ inherits |
+  | Tile flourishes (LCD-feel hover, physical click pulse)| ✅ keeps   | ✅ inherits |
+  | `SystemBackground` (full-viewport gradient + art)     | ❌ removed | ✅ home |
+  | `SystemBootAnimation` (transient tint flash overlay)  | ❌ removed | ✅ home |
+  | `StylusOverlay` (cursor reticle for NDS)              | ✅ keeps (no z-conflict) | ✅ inherits |
+
+  **Per-System UI Stage 2 routing:**
+  - Visual / layout parts (per-system navigation: carousel / wheel / list; per-system tile emphasis): Kiosk-only.
+  - Audio sub-part (per-system in-game SFX — sword swings tinted differently per system, etc.): ships in **both** shells when picked up (audio is layout-agnostic).
+
+  **Per-System UI Stage 3 routing:** case-by-case when picked up. In-game overlays + library↔game transitions may work in either shell; metadata-priority field is data-only and shared.
+
+  **Immediate fix (2026-05-31):** `SystemBackground` + `SystemBootAnimation` removed from `frontend/src/App.tsx` on `feat/retroverse-per-system-overlay-fix`. The components themselves stay in the codebase (`frontend/src/components/SystemBackground.tsx` + `SystemBootAnimation.tsx`) as future Kiosk consumers. `StylusOverlay` retained in Retroverse. `hoveredSystemId` signal + its mouseover tracker dropped (only consumer was `SystemBackground`); `pinnedEntry` memo dropped (only consumer was `SystemBackground`'s fallback chain). The master toggle's audio + accent + tile-flourish gates continue to work uncontroversially in Retroverse.
+
+  Why deferred: Kiosk shell is multi-month design + implementation work. No operator demand for it yet; Retroverse covers the daily-driver case completely. Pick up when an operator use case (cabinet build / power-user customizer) actually surfaces. Until then, the visual-overlay components sit in-tree as ready-to-consume building blocks.
+
+  Cross-refs: legacy Shell deletion commit `274df1e` (`feat/retroverse-legacy-deletion`); overlay-fix branch `feat/retroverse-per-system-overlay-fix`; `docs/PLANS/per-system-ui.md` (Stage 1+ plan); `docs/features/kiosk-shell/KIOSK_PLAN.md` (Kiosk design notes); `docs/DECISIONS.md` 2026-05-26 Q (Kiosk-as-theme-editor framing).
