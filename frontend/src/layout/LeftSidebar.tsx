@@ -24,10 +24,12 @@ import { useFocusGroup } from "../nav/focus";
 import { createSignal } from "solid-js";
 import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
 
-/// Which top-level surface the main pane is showing. `all` and `view-node`
-/// are library views (filtered or not); `library-manager` and `cores` are
-/// the two routed full pages. Per-system settings live in dialogs now,
-/// not a page — there is no longer a deep-link tab discriminant.
+/// Which surface the LIBRARY tab's grid is filtered to. `all` shows
+/// every game across every system; `view-node` restricts to whatever
+/// the operator picked in the sidebar (a system leaf, a container
+/// node, etc.). The legacy `library-manager` and `cores` page-routing
+/// variants dropped 2026-05-31 with the legacy Shell — those surfaces
+/// now live in Retroverse SETTINGS → Library / SETTINGS → Cores.
 ///
 /// `view-node` is the PR-β fold of the old `system` variant — navigation
 /// is a pointer into the active view's tree (`viewId` + `nodeId`), not
@@ -35,9 +37,7 @@ import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
 /// `resolveNodeSystemIds` (views/resolver.ts).
 export type SidebarView =
   | { kind: "all" }
-  | { kind: "view-node"; viewId: string; nodeId: string }
-  | { kind: "library-manager" }
-  | { kind: "cores" };
+  | { kind: "view-node"; viewId: string; nodeId: string };
 
 type Props = {
   layout: LayoutStore;

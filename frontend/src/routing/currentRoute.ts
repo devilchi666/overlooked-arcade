@@ -1,11 +1,10 @@
 // Retroverse-UI Phase A Slice 4 — top-level route signal.
 //
 // The Retroverse design uses 6 top-toolbar tabs as peers (HOME / LIBRARY
-// / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS). Today's `SidebarView`
-// in App.tsx (kind: "all" | "library-manager" | "cores" | viewForSystem)
-// is incompatible — it models LIBRARY's *internal* state, not the
-// top-level tab. Rather than refactor SidebarView, we layer a separate
-// currentRoute signal above it. Phase B's RetroverseShell + top-tab
+// / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS). `SidebarView`
+// (kind: "all" | "view-node") models LIBRARY's *internal* filter
+// state, not the top-level tab. currentRoute is layered above
+// SidebarView so the two stay decoupled. Phase B's RetroverseShell + top-tab
 // strip are the first surface that read this; Phase A wires the signal
 // without UI consumers.
 //

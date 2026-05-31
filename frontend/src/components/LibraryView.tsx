@@ -62,7 +62,7 @@ const LibraryView: Component<Props> = (props) => {
 
   /// Resolve the active view-node selection to the SystemId set the
   /// library should restrict to. `null` means "no system filter"
-  /// (currentView is `all`, library-manager, or cores). For view-node:
+  /// (currentView is `all`). For view-node:
   /// look up the node in the active view, resolve via the views
   /// resolver (handles container rules + synthesized-leaf fallback for
   /// deep-links outside the active view's tree).
@@ -133,11 +133,6 @@ const LibraryView: Component<Props> = (props) => {
         }
         return "Library";
       }
-      // LibraryView never mounts in settings / cores mode (App.tsx Switch
-      // routes them to dedicated pages), but TypeScript wants the
-      // discriminant exhaustive.
-      case "library-manager": return "Library Manager";
-      case "cores": return "Cores";
     }
   };
 
