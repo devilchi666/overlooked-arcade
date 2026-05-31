@@ -32,6 +32,15 @@ import { systemThemes } from "../themes/registry";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
+import {
+  getGameInfoOverride,
+  setGameInfoOverride,
+  deleteGameInfoOverride,
+  type BugSeverity,
+  type GameBug,
+  type GameInfoOverride,
+} from "../library/gameInfo";
+import { useGameInfoBadges } from "../library/gameInfoBadges";
 
 type Props = {
   entry: RomEntry | null;
@@ -59,7 +68,9 @@ type SaveSlot = {
   thumbnailDataUrl?: string;
 };
 
-type TabId = "screenshots" | "titles" | "saves";
+type TabId = "screenshots" | "titles" | "saves" | "gameInfo";
+
+const BUG_SEVERITIES: BugSeverity[] = ["blocker", "major", "minor", "cosmetic"];
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -162,6 +173,155 @@ const GameInfoModal: Component<Props> = (props) => {
   // length; v1 caps to ~3 lines with a Read more toggle).
   const [descExpanded, setDescExpanded] = createSignal(false);
 
+  // ---- Game Info Panel v1 — inline editor state (Phase 7) ------------
+  //
+  // Bound to the per-game SQLite `game_info_overrides` row. Loads on
+  // every entry change so opening the modal for a different game
+  // resets the form. Save / Reset / Submit Correction handlers below.
+  // Field semantics: empty string / undefined / empty array all mean
+  // "no override on this field; fall back to file value." A future
+  // refinement could surface the file-layer values inline as gray
+  // placeholders so the operator can see what they're choosing to
+  // override.
+  const [editShortSummary, setEditShortSummary] = createSignal("");
+  /// One control category per line in the textarea — simplest UX for
+  /// v1's free-form strings. Save splits on newline + trims.
+  const [editControlsRaw, setEditControlsRaw] = createSignal("");
+  const [editBestEmu, setEditBestEmu] = createSignal("");
+  const [editBestEmuReason, setEditBestEmuReason] = createSignal("");
+  const [editBugs, setEditBugs] = createSignal<GameBug[]>([]);
+  const [editAppliedBestEmu, setEditAppliedBestEmu] = createSignal(false);
+  const [editAppliedControls, setEditAppliedControls] = createSignal(false);
+  /// Editor saving / submitting state — disables the buttons while a
+  /// round-trip is in flight so the operator doesn't double-click.
+  const [editSaving, setEditSaving] = createSignal(false);
+  const [editSubmitToast, setEditSubmitToast] = createSignal<string | null>(null);
+
+  /// Hydrate the editor when the entry changes. Always reads the raw
+  /// override (not the merged record) so the form clearly distinguishes
+  /// "operator set this" from "use file value."
+  createEffect(() => {
+    const e = props.entry;
+    if (!e) return;
+    void (async () => {
+      try {
+        const ov = await getGameInfoOverride({
+          systemId: e.systemId,
+          romId: e.id,
+        });
+        setEditShortSummary(ov.shortSummary ?? "");
+        setEditControlsRaw((ov.controlsSupported ?? []).join("\n"));
+        setEditBestEmu(ov.bestEmulator ?? "");
+        setEditBestEmuReason(ov.bestEmulatorReason ?? "");
+        setEditBugs(ov.bugs ?? []);
+        setEditAppliedBestEmu(ov.appliedBestEmulator);
+        setEditAppliedControls(ov.appliedControls);
+      } catch (err) {
+        console.warn("[GameInfoModal] getGameInfoOverride failed:", err);
+      }
+    })();
+    setEditSubmitToast(null);
+  });
+
+  const gameInfoBadges = useGameInfoBadges();
+
+  /// Build the GameInfoOverride from the current form state. Empty
+  /// strings → undefined per the schema (the row gets DELETEd when all
+  /// fields collapse to default).
+  function formToOverride(): GameInfoOverride {
+    const trimmedSummary = editShortSummary().trim();
+    const controlsList = editControlsRaw()
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const trimmedEmu = editBestEmu().trim();
+    const trimmedReason = editBestEmuReason().trim();
+    const bugs = editBugs().filter((b) => b.description.trim().length > 0);
+    return {
+      shortSummary: trimmedSummary.length > 0 ? trimmedSummary : undefined,
+      controlsSupported: controlsList.length > 0 ? controlsList : undefined,
+      bestEmulator: trimmedEmu.length > 0 ? trimmedEmu : undefined,
+      bestEmulatorReason: trimmedReason.length > 0 ? trimmedReason : undefined,
+      bugs: bugs.length > 0 ? bugs : undefined,
+      appliedBestEmulator: editAppliedBestEmu(),
+      appliedControls: editAppliedControls(),
+    };
+  }
+
+  async function handleEditorSave(): Promise<void> {
+    const e = props.entry;
+    if (!e || editSaving()) return;
+    setEditSaving(true);
+    try {
+      await setGameInfoOverride({
+        systemId: e.systemId,
+        romId: e.id,
+        overrideRecord: formToOverride(),
+      });
+      // Refresh the badge cache so the tile-badge layer reflects any
+      // newly-added bugs / local-edit indicator without a full library
+      // reload.
+      await gameInfoBadges.refresh();
+    } catch (err) {
+      console.warn("[GameInfoModal] setGameInfoOverride failed:", err);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleEditorReset(): Promise<void> {
+    const e = props.entry;
+    if (!e || editSaving()) return;
+    setEditSaving(true);
+    try {
+      await deleteGameInfoOverride({
+        systemId: e.systemId,
+        romId: e.id,
+      });
+      // Re-hydrate the form to the default state.
+      setEditShortSummary("");
+      setEditControlsRaw("");
+      setEditBestEmu("");
+      setEditBestEmuReason("");
+      setEditBugs([]);
+      setEditAppliedBestEmu(false);
+      setEditAppliedControls(false);
+      await gameInfoBadges.refresh();
+    } catch (err) {
+      console.warn("[GameInfoModal] deleteGameInfoOverride failed:", err);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  /// Phase 9 stub — copy the operator's edits as JSON to the clipboard
+  /// + show an informational toast. v2 will replace this with a
+  /// pre-populated GitHub Issue URL flow against the
+  /// overlooked-arcade-game-info data repo. For v1 the surface is
+  /// visible so operators know contribution is coming.
+  async function handleSubmitCorrection(): Promise<void> {
+    const e = props.entry;
+    if (!e) return;
+    const payload = {
+      systemId: e.systemId,
+      romId: e.id,
+      title: e.title,
+      sha1: e.sha1,
+      override: formToOverride(),
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setEditSubmitToast(
+        "Your changes are copied to the clipboard. We're not yet set up to receive submissions automatically — coming soon.",
+      );
+    } catch (err) {
+      console.warn("[GameInfoModal] clipboard write failed:", err);
+      setEditSubmitToast(
+        "Could not copy to clipboard. See the debug log for details.",
+      );
+    }
+  }
+
   function onWindowKey(e: KeyboardEvent) {
     if (e.key === "Escape" && props.entry) {
       e.stopPropagation();
@@ -209,7 +369,7 @@ const GameInfoModal: Component<Props> = (props) => {
   // Launch (A), Resume-from-slot (Y, when one exists), Close (B), and
   // L1/R1 cycle the tabs. No focus ring on individual elements — the
   // modal owns the visible focus.
-  const TABS: TabId[] = ["screenshots", "titles", "saves"];
+  const TABS: TabId[] = ["screenshots", "titles", "saves", "gameInfo"];
   function cycleTab(delta: -1 | 1): void {
     const cur = TABS.indexOf(activeTab());
     const next = (cur + delta + TABS.length) % TABS.length;
@@ -459,6 +619,18 @@ const GameInfoModal: Component<Props> = (props) => {
                     >
                       Save states
                     </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.currentTarget.blur(); setActiveTab("gameInfo"); }}
+                      class={TAB_BUTTON_CLASS}
+                      classList={{
+                        "border-(--color-system-accent) bg-white/[0.06] text-(--color-oa-ink)": activeTab() === "gameInfo",
+                        "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)": activeTab() !== "gameInfo",
+                      }}
+                      title="Operator-editable per-game notes — short summary, controls, recommended core, known bugs"
+                    >
+                      Game info
+                    </button>
                   </div>
 
                   <div class="min-h-0 flex-1 overflow-auto rounded border border-white/5 bg-white/[0.02] p-3">
@@ -599,6 +771,216 @@ const GameInfoModal: Component<Props> = (props) => {
                           </For>
                         </ul>
                       </Show>
+                    </Show>
+
+                    {/* Game Info tab — operator-editable per-game notes.
+                        Phase 7 of the Game Info Panel arc. Form binds
+                        to the raw SQLite override so empty fields read
+                        as "no override; fall back to file value." */}
+                    <Show when={activeTab() === "gameInfo"}>
+                      <div class="flex flex-col gap-4 text-xs">
+                        <p class="text-[0.65rem] uppercase tracking-[0.35em] text-(--color-oa-ink-dim)">
+                          Operator notes
+                        </p>
+                        <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)/80">
+                          Edits stay local to this install. Use{" "}
+                          <span class="text-(--color-oa-ink-dim)">Submit correction</span> to share.
+                          Empty fields fall back to the project-curated values
+                          (visible in the detail panel).
+                        </p>
+
+                        {/* Short summary */}
+                        <label class="flex flex-col gap-1">
+                          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            Short summary
+                          </span>
+                          <textarea
+                            value={editShortSummary()}
+                            onInput={(e) => setEditShortSummary(e.currentTarget.value)}
+                            rows={3}
+                            class="w-full rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+                            placeholder="A short note — your impression, why this version, anything worth surfacing."
+                          />
+                        </label>
+
+                        {/* Controls supported (multi-line) */}
+                        <label class="flex flex-col gap-1">
+                          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            Controls supported — one per line
+                          </span>
+                          <textarea
+                            value={editControlsRaw()}
+                            onInput={(e) => setEditControlsRaw(e.currentTarget.value)}
+                            rows={3}
+                            class="w-full rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+                            placeholder={"Standard gamepad\nLight gun\nMouse"}
+                          />
+                        </label>
+
+                        {/* Best emulator — two fields side by side */}
+                        <div class="flex flex-col gap-1">
+                          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            Recommended core
+                          </span>
+                          <input
+                            type="text"
+                            value={editBestEmu()}
+                            onInput={(e) => setEditBestEmu(e.currentTarget.value)}
+                            class="w-full rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 font-mono text-[0.7rem] text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+                            placeholder="e.g. beetle_psx_hw_libretro.dll"
+                          />
+                          <textarea
+                            value={editBestEmuReason()}
+                            onInput={(e) => setEditBestEmuReason(e.currentTarget.value)}
+                            rows={2}
+                            class="mt-1 w-full rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+                            placeholder="Short justification — why this core, what it does better."
+                          />
+                        </div>
+
+                        {/* Bugs */}
+                        <div class="flex flex-col gap-2">
+                          <div class="flex items-center justify-between">
+                            <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                              Known issues
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.currentTarget.blur();
+                                setEditBugs((bs) => [
+                                  ...bs,
+                                  { description: "", severity: "minor", workaround: undefined },
+                                ]);
+                              }}
+                              class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                            >
+                              + Add
+                            </button>
+                          </div>
+                          <Show
+                            when={editBugs().length > 0}
+                            fallback={
+                              <p class="text-[0.65rem] text-(--color-oa-ink-dim)/60">
+                                No operator bug entries — the panel will use the project's curated list.
+                              </p>
+                            }
+                          >
+                            <For each={editBugs()}>
+                              {(bug, i) => (
+                                <div class="flex flex-col gap-1 rounded border border-white/5 bg-white/[0.02] p-2">
+                                  <div class="flex items-center gap-2">
+                                    <select
+                                      value={bug.severity}
+                                      onChange={(e) =>
+                                        setEditBugs((bs) =>
+                                          bs.map((b, idx) =>
+                                            idx === i()
+                                              ? { ...b, severity: e.currentTarget.value as BugSeverity }
+                                              : b,
+                                          ),
+                                        )
+                                      }
+                                      class="rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink)"
+                                    >
+                                      <For each={BUG_SEVERITIES}>
+                                        {(s) => <option value={s}>{s}</option>}
+                                      </For>
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={bug.description}
+                                      onInput={(e) =>
+                                        setEditBugs((bs) =>
+                                          bs.map((b, idx) =>
+                                            idx === i()
+                                              ? { ...b, description: e.currentTarget.value }
+                                              : b,
+                                          ),
+                                        )
+                                      }
+                                      class="flex-1 rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+                                      placeholder="Bug description"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.currentTarget.blur();
+                                        setEditBugs((bs) => bs.filter((_, idx) => idx !== i()));
+                                      }}
+                                      class="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim) hover:bg-red-500/10 hover:text-(--color-oa-ink)"
+                                      aria-label="Remove bug entry"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={bug.workaround ?? ""}
+                                    onInput={(e) => {
+                                      const v = e.currentTarget.value;
+                                      setEditBugs((bs) =>
+                                        bs.map((b, idx) =>
+                                          idx === i()
+                                            ? { ...b, workaround: v.length > 0 ? v : undefined }
+                                            : b,
+                                        ),
+                                      );
+                                    }}
+                                    class="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[0.7rem] text-(--color-oa-ink-dim) focus:border-(--color-system-accent)/60 focus:outline-none"
+                                    placeholder="Workaround (optional)"
+                                  />
+                                </div>
+                              )}
+                            </For>
+                          </Show>
+                        </div>
+
+                        {/* Action row — Save / Reset / Submit correction */}
+                        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-white/5 pt-3">
+                          <button
+                            type="button"
+                            disabled={editSaving()}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void handleEditorReset();
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:opacity-60"
+                            title="Delete the local override row — falls back to project-curated values"
+                          >
+                            Reset to default
+                          </button>
+                          <button
+                            type="button"
+                            disabled={editSaving()}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void handleSubmitCorrection();
+                            }}
+                            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:opacity-60"
+                            title="Copy your edits to the clipboard (v1 stub; v2 submits via GitHub Issue)"
+                          >
+                            Submit correction
+                          </button>
+                          <button
+                            type="button"
+                            disabled={editSaving()}
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              void handleEditorSave();
+                            }}
+                            class="rounded-md border border-(--color-system-accent) bg-(--color-system-accent)/15 px-4 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:bg-(--color-system-accent)/25 disabled:opacity-60"
+                          >
+                            {editSaving() ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+
+                        <Show when={editSubmitToast()}>
+                          <p class="rounded border border-white/10 bg-white/[0.04] px-3 py-2 text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)">
+                            {editSubmitToast()}
+                          </p>
+                        </Show>
+                      </div>
                     </Show>
                   </div>
                 </div>

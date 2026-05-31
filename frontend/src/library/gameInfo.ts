@@ -79,6 +79,18 @@ export async function getGameInfo(args: {
   return invoke<MergedGameInfo | null>("get_game_info", args);
 }
 
+/// Read just the operator's local override for one game (not the
+/// merged record). Returns `EMPTY_GAME_INFO_OVERRIDE` when no override
+/// row exists. Used by the GameInfoModal Game Info tab's editor form
+/// — the form binds to override fields specifically so it can
+/// distinguish "operator set this" from "fall back to file value."
+export async function getGameInfoOverride(args: {
+  systemId: string;
+  romId: string;
+}): Promise<GameInfoOverride> {
+  return invoke<GameInfoOverride>("get_game_info_override", args);
+}
+
 /// UPSERT the operator's local overrides for one game. Passing
 /// `EMPTY_GAME_INFO_OVERRIDE` deletes the row.
 export async function setGameInfoOverride(args: {

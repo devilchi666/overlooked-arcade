@@ -2960,6 +2960,7 @@ fn main() {
             delete_cheat,
             list_cheat_formats,
             get_game_info,
+            get_game_info_override,
             set_game_info_override,
             delete_game_info_override,
             list_game_info_overridden,
@@ -7580,6 +7581,21 @@ fn list_game_info_overridden(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<Vec<(String, String)>, String> {
     db.list_game_info_overridden()
+}
+
+/// Read just the operator's local override for one game — the editor
+/// form in GameInfoModal's new Game Info tab binds to this so it can
+/// distinguish "operator set this" (override field is Some) from
+/// "fall back to file value" (override field is None). Returns the
+/// default-constructed override when no row exists.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_game_info_override(
+    systemId: String,
+    romId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<game_info::GameInfoOverride, String> {
+    db.get_game_info_override(&systemId, &romId)
 }
 
 /// Compute tile-badge data for every game in `entries`. Caller passes
