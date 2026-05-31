@@ -138,6 +138,49 @@ Each entry has:
 Severity drives the panel's emphasis and the tile badge's tint. The tile
 badge shows the maximum severity across all bugs.
 
+#### `touch_hotspots`
+
+```yaml
+touch_hotspots:
+  - label: "Map"
+    x: 8
+    y: 16
+    w: 80
+    h: 80
+  - label: "Inventory"
+    x: 200
+    y: 12
+    w: 40
+    h: 24
+```
+
+Game-specific tappable regions worth showing as labelled outlines while a
+stylus-using game runs (Phantom Hourglass's map, Brain Age's letter zones,
+Trauma Center's incision sites). The `TouchHotspotOverlay` frontend
+component reads these and renders thin accent-coloured rectangles with
+labels over the bottom-screen area.
+
+Each entry has:
+
+- `label` (string, required) — short label shown next to the outlined
+  rectangle. Keep terse so it doesn't crowd small render sizes.
+- `x` / `y` (integer, required) — top-left corner of the rectangle in
+  **NDS bottom-screen native space** (0..256 × 0..192).
+- `w` / `h` (integer, required) — width / height in the same native space.
+
+NDS-specific in practice today; the schema is generic enough that future
+stylus / pointer systems (PSP touch in some titles, Vita rear-touch, etc.)
+can adopt it without schema changes — coordinates would be in that
+system's primary touchscreen space.
+
+**V1 limitation:** the overlay assumes the default melonDS stacked-screen
+layout (top above bottom, bottom screen occupying y[192..384] of the
+256×384 framebuffer). Non-default layouts (side-by-side, top-only)
+misplace the hotspots until v2 reads the core option.
+
+Toggle via Esc → QuickSettings → "Show touch hints" while a stylus-using
+game runs.
+
 ### `meta` (optional, defaults populated)
 
 ```yaml

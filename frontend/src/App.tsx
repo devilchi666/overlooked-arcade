@@ -6,6 +6,7 @@ import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
 import StylusOverlay from "./components/StylusOverlay";
+import TouchHotspotOverlay from "./components/TouchHotspotOverlay";
 import GamePropertiesDialog from "./components/GamePropertiesDialog";
 import {
   CheatsDialog,
@@ -240,6 +241,12 @@ const App: Component = () => {
   // Quick Settings overlay (slice 2.8.B). Replaces the slice-A Esc → library
   // toggle behavior during single-window gameplay.
   const [quickSettingsOpen, setQuickSettingsOpen] = createSignal(false);
+  // Per-session "Show touch hints" toggle (NDS touch hotspots
+  // overlay). Defaults off; operator flips it via QuickSettings →
+  // "Show touch hints" while a stylus-using game runs. Resets on
+  // process restart by design — per-session ergonomic, not a
+  // sticky preference.
+  const [touchHintsEnabled, setTouchHintsEnabled] = createSignal(false);
   // Help menu dialogs.
   const [helpDialog, setHelpDialog] = createSignal<"shortcuts" | "about" | "debug-log" | null>(null);
   // Tools → Screenshot gallery. Targets the active game (running or
@@ -1499,6 +1506,26 @@ const App: Component = () => {
       <StylusOverlay
         runningSystemId={() => (runningEntry()?.systemId ?? null) as SystemId | null}
       />
+      {/* TouchHotspotOverlay — per-game labelled tappable regions
+          while a stylus-using game runs. Gated internally on
+          HOTSPOT_SYSTEMS (nds today) + the per-session
+          `touchHintsEnabled` signal. The toggle lives in
+          QuickSettings (Esc-overlay) for in-game flip; resets per
+          session by design. See docs/cores/SCHEMA.md for the
+          `touch_hotspots` field that drives the overlay. */}
+      <TouchHotspotOverlay
+        running={() => {
+          const entry = runningEntry();
+          if (!entry) return null;
+          return {
+            systemId: entry.systemId as SystemId,
+            romId: entry.id,
+            romHash: entry.sha1 ?? undefined,
+            romTitle: entry.title,
+          };
+        }}
+        enabled={touchHintsEnabled}
+      />
       {/* Folder-drop overlay — rendered as a sibling of the flag-gate
           Show so it overlays both the legacy Shell and RetroverseShell.
           Pointer-events:none lets the underlying Tauri drag-drop logic
@@ -1540,6 +1567,8 @@ const App: Component = () => {
         onExitToLibrary={() => void handleUnload()}
         requestedView={quickSettingsRequestedView()}
         exitMode={isDirectLaunch() ? "quit" : "library"}
+        touchHintsEnabled={touchHintsEnabled}
+        setTouchHintsEnabled={setTouchHintsEnabled}
       />
       <SaveSlotsModal
         entry={savesEntry()}

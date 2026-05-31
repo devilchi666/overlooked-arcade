@@ -109,10 +109,51 @@ pub struct GameInfo {
     #[serde(default)]
     pub bugs: Vec<GameBug>,
 
+    /// Stylus / touch hotspots — game-specific tappable regions worth
+    /// showing as labelled outlines while a stylus-using game runs
+    /// (Phantom Hourglass's map, Brain Age's letter zones, Trauma
+    /// Center's incision sites). Coordinates are in NDS bottom-screen
+    /// native space (0..256 × 0..192). The `TouchHotspotOverlay`
+    /// frontend component reads these via `get_game_info` and maps
+    /// them to the WebView viewport via the renderer's last_viewport
+    /// + the melonDS default stacked-screen layout assumption (bottom
+    /// screen at y[192..384] of the 256×384 framebuffer; non-default
+    /// layouts misplace hotspots until v2 reads the core option).
+    /// NDS-specific in practice; the schema is generic so future
+    /// stylus / pointer systems can adopt it.
+    #[serde(default)]
+    pub touch_hotspots: Vec<TouchHotspot>,
+
     /// File-level metadata (schema version, last-updated, contributors).
     /// Defaults populated when fields are absent (schema_version = 1).
     #[serde(default)]
     pub meta: GameInfoMeta,
+}
+
+/// One labelled tappable region. Coordinates in NDS bottom-screen
+/// native space (0..256 × 0..192); the overlay component handles
+/// mapping into WebView viewport coords.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct TouchHotspot {
+    /// Short label shown next to the outlined rectangle ("Map",
+    /// "Inventory", "Letter zone"). Kept terse so it doesn't crowd
+    /// the screen at small render sizes.
+    pub label: String,
+
+    /// X coordinate of the rectangle's top-left corner, NDS bottom-
+    /// screen native space (0..256).
+    pub x: u16,
+
+    /// Y coordinate of the rectangle's top-left corner, NDS bottom-
+    /// screen native space (0..192).
+    pub y: u16,
+
+    /// Width of the rectangle in NDS bottom-screen native space.
+    pub w: u16,
+
+    /// Height of the rectangle in NDS bottom-screen native space.
+    pub h: u16,
 }
 
 /// Identifies which game in the operator's library this record
@@ -420,6 +461,10 @@ pub struct MergedGameInfo {
     /// Known issues. Empty vec → UI hides the section.
     #[serde(default)]
     pub bugs: Vec<GameBug>,
+    /// Touch hotspots. File-only in v1 (no operator override path);
+    /// empty vec → UI overlay doesn't render. See [`TouchHotspot`].
+    #[serde(default)]
+    pub touch_hotspots: Vec<TouchHotspot>,
 
     // --- Status flags (provenance for the tile badge + Apply state) ---
     /// True when the operator has at least one local override on this
@@ -488,6 +533,12 @@ pub fn merge_game_info(
         .clone()
         .unwrap_or_else(|| file.map(|f| f.bugs.clone()).unwrap_or_default());
 
+    // Touch hotspots are file-only in v1 — no operator override path.
+    // If we add one in v2, slot the override read here.
+    let touch_hotspots = file
+        .map(|f| f.touch_hotspots.clone())
+        .unwrap_or_default();
+
     Some(MergedGameInfo {
         system_id: system_id.to_string(),
         date: file.and_then(|f| f.date),
@@ -501,6 +552,7 @@ pub fn merge_game_info(
         controls_supported,
         best_emulator,
         bugs,
+        touch_hotspots,
         has_local_edits: !ov.is_empty(),
         applied_best_emulator: ov.applied_best_emulator,
         applied_controls: ov.applied_controls,
@@ -972,9 +1024,51 @@ id_key:
         assert!(gi.date.is_none());
         assert!(gi.controls_supported.is_empty());
         assert!(gi.bugs.is_empty());
+        assert!(gi.touch_hotspots.is_empty());
         // meta defaults populated even when absent.
         assert_eq!(gi.meta.schema_version, CURRENT_SCHEMA_VERSION);
     }
+
+    #[test]
+    fn parse_touch_hotspots_populates_vec() {
+        // Phantom-Hourglass-shaped record exercising the new field.
+        // Three hotspots with different positions/sizes to confirm
+        // each tuple roundtrips through serde correctly.
+        let yaml = r#"---
+id_key:
+  system_id: nds
+  rom_title: "The Legend of Zelda: Phantom Hourglass (USA)"
+
+touch_hotspots:
+  - label: "Map"
+    x: 8
+    y: 16
+    w: 80
+    h: 80
+  - label: "Inventory"
+    x: 200
+    y: 12
+    w: 40
+    h: 24
+  - label: "Quest log"
+    x: 96
+    y: 120
+    w: 64
+    h: 56
+"#;
+        let out = parse_games_info_file(yaml);
+        assert_eq!(out.len(), 1);
+        let gi = &out[0];
+        assert_eq!(gi.touch_hotspots.len(), 3);
+        assert_eq!(gi.touch_hotspots[0].label, "Map");
+        assert_eq!(gi.touch_hotspots[0].x, 8);
+        assert_eq!(gi.touch_hotspots[0].y, 16);
+        assert_eq!(gi.touch_hotspots[0].w, 80);
+        assert_eq!(gi.touch_hotspots[0].h, 80);
+        assert_eq!(gi.touch_hotspots[1].label, "Inventory");
+        assert_eq!(gi.touch_hotspots[2].label, "Quest log");
+    }
+
 
     #[test]
     fn parse_multi_document_yields_all_records_in_order() {
@@ -1348,6 +1442,41 @@ id_key:
         assert!(merged.has_local_edits);
         assert!(merged.applied_best_emulator);
         assert!(!merged.applied_controls);
+    }
+
+    #[test]
+    fn merge_propagates_file_touch_hotspots() {
+        // File has hotspots; override has none. V1 has no override
+        // path for hotspots — the merged record carries the file's
+        // hotspots unchanged. (Override path can land in v2 if the
+        // operator wants per-install custom hotspots.)
+        let mut file = tomb_raider_file_record();
+        file.touch_hotspots = vec![TouchHotspot {
+            label: "Map".to_string(),
+            x: 8,
+            y: 16,
+            w: 80,
+            h: 80,
+        }];
+        let merged = merge_game_info("psx", Some(&file), &GameInfoOverride::default())
+            .expect("file-only merge yields a record");
+        assert_eq!(merged.touch_hotspots.len(), 1);
+        assert_eq!(merged.touch_hotspots[0].label, "Map");
+        assert_eq!(merged.touch_hotspots[0].x, 8);
+        assert_eq!(merged.touch_hotspots[0].w, 80);
+    }
+
+    #[test]
+    fn merge_no_file_yields_empty_touch_hotspots() {
+        // Override-only record (homebrew the operator annotated
+        // locally). touch_hotspots stays empty because there's no
+        // override path for it in v1.
+        let ov = GameInfoOverride {
+            short_summary: Some("Local note".into()),
+            ..Default::default()
+        };
+        let merged = merge_game_info("nds", None, &ov).expect("merged record");
+        assert!(merged.touch_hotspots.is_empty());
     }
 
     #[test]

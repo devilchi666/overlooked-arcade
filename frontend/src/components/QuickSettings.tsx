@@ -54,6 +54,12 @@ type Props = {
   /// the parent decides which side-effect it triggers (unload-and-quit
   /// vs unload-only).
   exitMode?: "library" | "quit";
+  /// Per-session "Show touch hints" toggle accessor — used by the
+  /// ActionsPanel's NDS-gated toggle row to render the current state.
+  /// Owned by App.tsx; resets per session by design.
+  touchHintsEnabled: () => boolean;
+  /// Setter for the same toggle. Bound to the toggle row's click.
+  setTouchHintsEnabled: (next: boolean) => void;
 };
 
 const BTN_BASE =
@@ -607,6 +613,8 @@ const QuickSettings: Component<Props> = (props) => {
               onShowSaves={props.onShowSaves}
               onShowInfo={props.onShowInfo}
               onExitToLibrary={props.onExitToLibrary}
+              touchHintsEnabled={props.touchHintsEnabled}
+              setTouchHintsEnabled={props.setTouchHintsEnabled}
             />
           </Show>
 
@@ -1595,6 +1603,11 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
 // its own component so the focus group + back handler scope cleanly to
 // "actions" view only — the rewind / TAS / memory sub-views have their
 // own UI and would need separate focus groups (deferred).
+/// Systems that get the "Show touch hints" action row. Mirrors the
+/// HOTSPOT_SYSTEMS set in TouchHotspotOverlay so the toggle is only
+/// surfaced when the overlay would have something to show.
+const HOTSPOT_SYSTEMS: ReadonlySet<string> = new Set(["nds"]);
+
 const ActionsPanel: Component<{
   entry: RomEntry | null;
   exitMode?: "library" | "quit";
@@ -1602,6 +1615,8 @@ const ActionsPanel: Component<{
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
+  touchHintsEnabled: () => boolean;
+  setTouchHintsEnabled: (next: boolean) => void;
 }> = (props) => {
   type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; onActivate: () => void };
   const actions = createMemo<Action[]>(() => {
@@ -1629,18 +1644,32 @@ const ActionsPanel: Component<{
           }
         },
       },
-      {
-        key: "exit",
-        icon: "🚪",
-        label: props.exitMode === "quit" ? "Quit" : "Exit to library",
-        hint: "Ctrl+W",
-        destructive: true,
-        onActivate: () => {
-          props.onClose();
-          props.onExitToLibrary();
-        },
-      },
     ];
+    // Touch-hints toggle — only surfaced when the running game's
+    // system has hotspot support (NDS today). Label flips so the
+    // current state is glanceable; activating flips the per-session
+    // signal and stays on the actions panel (overlay updates live —
+    // operator doesn't need to leave QuickSettings to see effect).
+    if (props.entry && HOTSPOT_SYSTEMS.has(props.entry.systemId)) {
+      const on = props.touchHintsEnabled();
+      list.push({
+        key: "touch-hints",
+        icon: on ? "◉" : "◯",
+        label: on ? "Hide touch hints" : "Show touch hints",
+        onActivate: () => props.setTouchHintsEnabled(!on),
+      });
+    }
+    list.push({
+      key: "exit",
+      icon: "🚪",
+      label: props.exitMode === "quit" ? "Quit" : "Exit to library",
+      hint: "Ctrl+W",
+      destructive: true,
+      onActivate: () => {
+        props.onClose();
+        props.onExitToLibrary();
+      },
+    });
     return list;
   });
   const [focusedIndex, setFocusedIndex] = createSignal(0);

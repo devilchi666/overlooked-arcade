@@ -20,6 +20,18 @@ export type BestEmulator = {
   reason?: string;
 };
 
+/// One labelled tappable region for the TouchHotspotOverlay.
+/// Coordinates in NDS bottom-screen native space (0..256 × 0..192).
+/// Matches the Rust `TouchHotspot` struct in
+/// `apps/oa-shell/src/game_info.rs`.
+export type TouchHotspot = {
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 /// Final per-game record after the field-typed precedence merge of
 /// the file layer (docs/cores/<id>/games-info.md) + operator local
 /// overrides (SQLite game_info_overrides). The frontend doesn't
@@ -39,6 +51,9 @@ export type MergedGameInfo = {
   controlsSupported: string[];
   bestEmulator?: BestEmulator;
   bugs: GameBug[];
+  /// Game-specific tappable regions (NDS stylus titles, etc.).
+  /// Empty array when the game record has none.
+  touchHotspots: TouchHotspot[];
   /// True when the operator has at least one local override on this
   /// game. Drives the ✎ tile-badge indicator.
   hasLocalEdits: boolean;
