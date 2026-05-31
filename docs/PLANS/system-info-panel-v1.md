@@ -1,7 +1,9 @@
 # System Info Panel v1 — Plan
 
 Per-system metadata for the Retroverse HOME tab's right pane, populated
-from MAME's `-listxml` + `history.dat` as the baseline, layered with
+from MAME's `-listxml` + `history.xml` (community-maintained by
+arcade-history.com / Gaming-History; MAME deprecated the legacy
+`history.dat` text format in 2023) as the baseline, layered with
 OA-curated YAML overrides + per-install operator edits.
 
 Replaces the current `frontend/src/routes/retroverse/systemMetadataStubs.ts`
@@ -45,7 +47,7 @@ applied to per-system records.
 
 | Layer | Source | Storage | Update cadence |
 |---|---|---|---|
-| **L1 — MAME baseline** | MAME's `-listxml` + `history.dat` for ~40 OA systems that map to a MAME machine driver | SQLite (`system_info_mame` table) hydrated from shipped slim files at first launch | Per OA release; operator can re-import from their MAME install |
+| **L1 — MAME baseline** | MAME's `-listxml` + `history.xml` (arcade-history.com) for ~40 OA systems that map to a MAME machine driver | SQLite (`system_info_mame` table) hydrated from shipped slim files at first launch | Per OA release; operator can re-import from their MAME install |
 | **L2 — OA curated** | Hand-edited YAML per system at `docs/cores/<id>/system-info.yaml`; mirrors the existing `games-info.md` pattern | SQLite (`system_info_curated` table) baked at first launch from in-tree YAML files | Per OA release |
 | **L3 — Operator edits** | Per-install local overrides set via the per-system Settings drill-in | SQLite (`system_info_overrides` table); per-field columnar storage | Whenever the operator clicks Save |
 
@@ -132,7 +134,9 @@ Same evolution pattern as Game Info Panel v1's `GameInfoMeta`.
 ```
 assets/mame-source/
   listxml-slim.json         # ~5MB, OA-relevant machines only
-  history-slim.dat          # ~5MB, OA-relevant entries only
+  history-slim.xml          # ~50KB, OA-relevant <entry>s only (subset of
+                            # arcade-history.com's history.xml — MAME
+                            # deprecated history.dat text format in 2023)
   mame-version.txt          # e.g. "0.262" — what bump-mame.sh used
 
 docs/cores/<id>/
@@ -148,7 +152,7 @@ tools/
 ```
 <exe_dir>/assets/mame-source/
   listxml-slim.json         # copied from in-tree
-  history-slim.dat          # copied from in-tree
+  history-slim.xml          # copied from in-tree
   mame-version.txt
 
 <exe_dir>/docs/cores/<id>/
@@ -183,7 +187,8 @@ tree (so dev builds work without an install step).
 3. If the hashes match: no work; SQLite L1 + L2 tables are current.
 4. If mismatched (or `system_info_meta` empty): rebake.
    - Parse `listxml-slim.json` → write `system_info_mame` rows.
-   - Parse `history-slim.dat` → enrich the `system_info_mame` rows.
+   - Parse `history-slim.xml` → enrich the `system_info_mame` rows
+     with the `<text>` body keyed by `<systems>/<system name="…">`.
    - Parse every `docs/cores/<id>/system-info.yaml` → write
      `system_info_curated` rows.
    - Store new content hash in `system_info_meta`.
@@ -197,12 +202,17 @@ hash-mismatch. Acceptable launch overhead.
 Operator clicks SETTINGS → Storage → "Refresh MAME system info":
 
 1. OA attempts to locate MAME at OS-typical paths
-   (`/usr/bin/mame`, `C:\mame\mame.exe`, etc.) + offers a folder
-   picker.
+   (`<exe_dir>/Emulators/MAME/`, `/usr/bin/mame`, `C:\mame\mame.exe`,
+   etc.) + offers a folder picker. The `Emulators/MAME/` location is
+   the project-wide convention introduced in Phase 1a — mirrors the
+   in-tree layout `tools/bump-mame.sh` probes during maintainer bumps.
 2. If MAME missing: toast "MAME install not found. Point me at your
    MAME folder, or install MAME to refresh."
 3. If MAME found: OA invokes `mame -listxml` + reads MAME's bundled
-   `history.dat` (typically under `<mame>/history/`).
+   `history.xml` (typically under `<mame>/history/history.xml`;
+   community-maintained by arcade-history.com). When `history.xml`
+   is absent, OA still updates the structured fields from
+   `-listxml` and surfaces a "no descriptions refreshed" sub-toast.
 4. Runs the same slim + extract pipeline but against the operator's
    MAME data.
 5. Overwrites `system_info_mame` rows for every MAME-known system.
@@ -301,11 +311,12 @@ Single branch `feat/system-info-panel-v1`, 6 phase commits:
 
 1. **MAME extractor tool + slim source files.** Rust binary at
    `tools/mame-extractor/` (separate from `oa-shell`); reads MAME's
-   `-listxml` output + `history.dat`; emits slim JSON. Shell wrapper
-   `tools/bump-mame.sh` for maintainer workflow. Initial commit
-   includes `assets/mame-source/listxml-slim.json` +
-   `history-slim.dat` + `mame-version.txt` generated against a
-   pinned MAME release.
+   `-listxml` output + `history.xml` (arcade-history.com — MAME
+   deprecated the legacy `history.dat` text format in 2023); emits
+   slim JSON + slim XML. Shell wrapper `tools/bump-mame.sh` for
+   maintainer workflow. Initial commit includes
+   `assets/mame-source/listxml-slim.json` + `history-slim.xml` +
+   `mame-version.txt` generated against a pinned MAME release.
 
 2. **Rust types + SQLite migration + bake-on-launch + Tauri
    commands.** New module `apps/oa-shell/src/system_info.rs` mirrors
@@ -348,13 +359,16 @@ shape.
 
 ## 9. Attribution + licensing
 
-MAME is BSD-3-Clause; `-listxml` output and `history.dat` are MAME's
-own data and redistributable under the same terms.
+MAME is BSD-3-Clause; `-listxml` output is MAME's own data and
+redistributable under the same terms. `history.xml` is maintained
+separately by arcade-history.com (Gaming-History); the upstream
+download page distributes it for free use in MAME frontends.
 
 Add a line to `AboutSettings` → "Credits" card:
 
 > System metadata derived in part from MAME (BSD-3-Clause) —
-> `-listxml` machine data + `history.dat`.
+> `-listxml` machine data; per-system descriptions from
+> arcade-history.com's `history.xml` (Gaming-History project).
 
 The slim MAME source files in `assets/mame-source/` get a header
 comment pointing at the upstream license file (`assets/mame-source/LICENSE`
