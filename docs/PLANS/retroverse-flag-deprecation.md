@@ -140,15 +140,17 @@ Each of these is a small piece of functionality currently in legacy
 chrome with no Retroverse equivalent. Pick a home for each, ship it,
 THEN start the deletion PR.
 
-| Item | Currently in | Suggested Retroverse home | Cost |
-|------|--------------|---------------------------|------|
-| **Quit button** | `toolbarRight` (App.tsx:1505-1515) — fires `invoke("quit_app")` | RetroverseShell header next to the profile chip, OR SETTINGS → About | small |
-| **Game-focus ON indicator** | `toolbarRight` (App.tsx:1457-1464) — pill that shows when keyboard passthrough is active | RetroverseShell header status area, OR a HintBar slot | small |
-| **Hide/Show library button (single-window mode)** | `toolbarRight` (App.tsx:1465-1478) — toggles `libraryVisible()` so wgpu pixels show through | Retroverse already has the equivalent gate at `App.tsx:2030` (`Show when={!(isDirectLaunch() \|\| gameMode())}`) — no explicit toggle button, the gate hides the entire shell on game-mode. Verify operator workflow; if a toggle is needed, header button. | none-to-small |
-| **Unload running ROM button** | `toolbarRight` (App.tsx:1479-1491) — fires `handleUnload()` | `Ctrl+W` keyboard shortcut works in both modes already (App.tsx:730-736). Optional: add a button to RetroverseShell header. | none-to-small |
-| **Folder-drop overlay UI** | rendered inside `<Shell>` at App.tsx:1973-1989 — only visible in legacy mode | Move `<Show when={dropOverlayVisible()}>` outside the legacy branch so it overlays Retroverse too. Drop listener at App.tsx:1748-1769 is window-global already. | tiny |
-| **WidgetCustomizerDialog** | `View → Customize widgets…` legacy menu | **Drop entirely** — Retroverse has no widgets | none |
-| **Show right sidebar button** | `toolbarRight` (App.tsx:1492-1504) — only relevant in legacy presentation modes | **Drop entirely** — Retroverse has no right sidebar | none |
+| Status | Item | Currently in | Retroverse home | Cost |
+|--------|------|--------------|-----------------|------|
+| ✅ shipped 2026-05-30 | **Quit button** | `toolbarRight` (App.tsx:1505-1515) — fires `invoke("quit_app")` | `RetroverseShell` header `✕` button between clock and profile chip; new `onQuit` handler on `RetroverseContext`. Commit `494d1da`. | small |
+| ✅ shipped 2026-05-30 | **Game-focus ON indicator** | `toolbarRight` (App.tsx:1457-1464) — pill that shows when keyboard passthrough is active | `RetroverseShell` header `<Show>`-gated accent pill between clock and Quit; new `gameFocus` accessor on `RetroverseContext`. Commit `494d1da`. | small |
+| ⏳ verify (operator) | **Hide/Show library button (single-window mode)** | `toolbarRight` (App.tsx:1465-1478) — toggles `libraryVisible()` so wgpu pixels show through | Retroverse already has the equivalent gate at `App.tsx:2030` (`Show when={!(isDirectLaunch() \|\| gameMode())}`) — no explicit toggle button, the gate hides the entire shell on game-mode. Verify operator workflow during playtest cycle; if a toggle is needed, header button. | none-to-small |
+| ⏳ verify (operator) | **Unload running ROM button** | `toolbarRight` (App.tsx:1479-1491) — fires `handleUnload()` | `Ctrl+W` keyboard shortcut works in both modes already (App.tsx:730-736). Optional: add a button to RetroverseShell header if playtest surfaces an actual operator need. | none-to-small |
+| ✅ shipped 2026-05-30 | **Folder-drop overlay UI** | was rendered inside `<Shell>` at App.tsx:1973-1989 — only visible in legacy mode | Relocated to a sibling of the flag-gate `<Show>` so it overlays both shells; drop listener at App.tsx:1748-1769 was already window-global. Commit `c0bcacb`. | tiny |
+| ✅ shipped 2026-05-30 | **Help → Debug log… + Keyboard shortcuts…** (discovered gap, not in original §5) | Legacy MenuBar Help menu at App.tsx:1424-1427 was the only entry point | Two buttons in `AboutSettings` → Report a bug card; new `onOpenDebugLog` + `onOpenKeyboardShortcuts` handlers on `RetroverseContext`. Commit `d8ce7b6`. | small |
+| ✅ shipped 2026-05-30 | **Stale prose sweep** | `SettingsPage.tsx:144/154/455` + `LeftSidebar.tsx:568` referenced legacy access paths in misleading ways | Rephrased to drop "(legacy Shell only)" / "menu bar" tail references; fallback prose updated. Commit `d8ce7b6`. | tiny |
+| ⏳ deletion PR | **WidgetCustomizerDialog** | `View → Customize widgets…` legacy menu | **Drop entirely** alongside the legacy `toolbarLeft` menu items that own it — deleting them together is cleaner than partial-state. ~175 lines (dialog) + ~120 lines (widgets registry, only used by `RightSidebar` which is also dying). | none |
+| ⏳ deletion PR | **Show right sidebar button** | `toolbarRight` (App.tsx:1492-1504) — only relevant in legacy presentation modes | **Drop entirely** alongside the rest of `toolbarRight` — Retroverse has no right sidebar. | none |
 
 ---
 
@@ -156,20 +158,27 @@ THEN start the deletion PR.
 
 In order:
 
-1. **Stale prose sweep** in `frontend/src/routes/retroverse/SettingsPage.tsx`
-   (and SettingsSections.tsx category helpText) — remove "Reachable
-   today via the menu bar's…" references that misled the 2026-05-30
-   audit.
-2. **Migrate the small list in §5** (Quit / Game-focus / drop overlay)
-   into Retroverse before deletion lands. Each is a small contained PR.
-3. **Flip the flag default ON** (one-line change in
-   `frontend/src/lib/retroverseFlag.ts`).
-4. **One release cycle of operator playtest** with the flag default ON
-   to surface anything missed. Operator can flip back OFF as the escape
-   hatch during this window.
-5. **Confirm no remaining references to legacy `SidebarView` kinds** via
-   grep: `library-manager` and `cores` as kind values, plus the
-   `setCurrentView({ kind: "library-manager" | "cores" })` callsites.
+1. ✅ **Stale prose sweep** in `frontend/src/routes/retroverse/SettingsPage.tsx`
+   (and SettingsSections.tsx category helpText) — shipped 2026-05-30
+   in commit `d8ce7b6` on `feat/retroverse-migration-followups`.
+2. ✅ **Migrate the small list in §5** (Quit / Game-focus / drop
+   overlay; plus the discovered Help-dialog gap) — shipped 2026-05-30
+   on `feat/retroverse-migration-followups` (commits `c0bcacb` +
+   `494d1da` + `d8ce7b6`).
+3. ✅ **Flip the flag default ON** — shipped 2026-05-31 on
+   `feat/retroverse-flag-default-on` (single change at
+   `frontend/src/settings/store.ts:139`,
+   `DEFAULT_EXPERIMENTAL_RETROVERSE_UI: false → true`). The accessor
+   shape at `lib/retroverseFlag.ts` was already reactive; only the
+   store-side default needed to flip.
+4. 🟨 **One release cycle of operator playtest** — in progress
+   starting 2026-05-31. Operator can flip back OFF as the escape
+   hatch via Settings → Display → Experimental → Retroverse UI for
+   the duration of this cycle.
+5. ⏳ **Confirm no remaining references to legacy `SidebarView` kinds**
+   via grep — done as the first step of the deletion PR itself; the
+   variants stay in place during the playtest cycle as cheap
+   insurance for operators flipping back to legacy.
 
 ---
 
