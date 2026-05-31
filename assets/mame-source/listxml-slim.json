@@ -1,0 +1,523 @@
+{
+  "mame_version": "0.288(mame0288)",
+  "systems": [
+    {
+      "system_id": "tg16",
+      "machine_name": "pce",
+      "year": "1987",
+      "manufacturer": "NEC / Hudson Soft",
+      "cpu": "Hudson Soft HuC6280 @ 7.16 MHz",
+      "sound": "Hudson Soft HuC6280 @ 7.16 MHz",
+      "resolution": "1088 × 242",
+      "refresh_rate": "59.83 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "pce-cd",
+      "machine_name": "pce",
+      "year": "1987",
+      "manufacturer": "NEC / Hudson Soft",
+      "cpu": "Hudson Soft HuC6280 @ 7.16 MHz",
+      "sound": "Hudson Soft HuC6280 @ 7.16 MHz",
+      "resolution": "1088 × 242",
+      "refresh_rate": "59.83 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "lynx",
+      "machine_name": "lynx",
+      "year": "1989",
+      "manufacturer": "Atari",
+      "cpu": "GTE G65SC02 @ 4.00 MHz",
+      "sound": "Speaker",
+      "resolution": "160 × 102",
+      "refresh_rate": "59.90 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "nes",
+      "machine_name": "nes",
+      "year": "1985",
+      "manufacturer": "Nintendo",
+      "cpu": "Ricoh RP2A03G @ 1.79 MHz",
+      "sound": "Ricoh RP2A03G @ 1.79 MHz",
+      "resolution": "256 × 240",
+      "refresh_rate": "60.10 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "snes",
+      "machine_name": "snes",
+      "year": "1989",
+      "manufacturer": "Nintendo",
+      "cpu": "Ricoh 5A22 @ 21.48 MHz",
+      "sound": "Speaker",
+      "resolution": "512 × 225",
+      "refresh_rate": "60.10 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "atari7800",
+      "machine_name": "a7800",
+      "year": "1986",
+      "manufacturer": "Atari",
+      "cpu": "MOS Technology 6502 @ 1.79 MHz",
+      "sound": "Speaker",
+      "resolution": "320 × 224",
+      "refresh_rate": "59.96 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "genesis",
+      "machine_name": "genesis",
+      "year": "1989",
+      "manufacturer": "Sega",
+      "cpu": "Motorola MC68000 @ 7.67 MHz",
+      "sound": "Sega 315-5313 Megadrive VDP @ 53.69 MHz",
+      "resolution": "256 × 224",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "segacd",
+      "machine_name": "segacd",
+      "year": "1992",
+      "manufacturer": "Sega",
+      "cpu": "Motorola MC68000 @ 7.67 MHz",
+      "sound": "Sega 315-5313 Megadrive VDP @ 53.69 MHz",
+      "resolution": "256 × 224",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "sega32x",
+      "machine_name": "32x",
+      "year": "1994",
+      "manufacturer": "Sega",
+      "cpu": "Motorola MC68000 @ 7.67 MHz",
+      "sound": "Sega 315-5313 Megadrive VDP @ 53.69 MHz",
+      "resolution": "256 × 224",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "sega32xcd",
+      "machine_name": "32x_scd",
+      "year": "1994",
+      "manufacturer": "Sega",
+      "cpu": "Motorola MC68000 @ 7.67 MHz",
+      "sound": "Sega 315-5313 Megadrive VDP @ 53.69 MHz",
+      "resolution": "256 × 224",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "saturn",
+      "machine_name": "saturn",
+      "year": "1994",
+      "manufacturer": "Sega",
+      "cpu": "Hitachi SH-2 (SH7604) @ 28.64 MHz",
+      "sound": "Speaker",
+      "resolution": "320 × 224",
+      "refresh_rate": "59.76 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "stv",
+      "machine_name": "stvbios",
+      "year": "1996",
+      "manufacturer": "Sega",
+      "cpu": "Hitachi SH-2 (SH7604) @ 28.64 MHz",
+      "sound": "Speaker",
+      "resolution": "352 × 224",
+      "refresh_rate": "59.76 Hz",
+      "max_players": 4,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "psx",
+      "machine_name": "psj",
+      "year": "1994",
+      "manufacturer": "Sony Computer Entertainment Inc",
+      "cpu": "Sony CXD8530CQ @ 67.74 MHz",
+      "sound": "Speaker",
+      "resolution": "640 × 480",
+      "refresh_rate": "60.00 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "neogeo",
+      "machine_name": "neogeo",
+      "year": "1990",
+      "manufacturer": "SNK",
+      "cpu": "Motorola MC68000 @ 12.00 MHz",
+      "sound": "YM2610 OPNB @ 8.00 MHz",
+      "resolution": "320 × 224",
+      "refresh_rate": "59.19 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "neocd",
+      "machine_name": "neocdz",
+      "year": "1996",
+      "manufacturer": "SNK",
+      "cpu": "Motorola MC68000 @ 12.00 MHz",
+      "sound": "YM2610 OPNB @ 8.00 MHz",
+      "resolution": "320 × 224",
+      "refresh_rate": "59.19 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "ngp",
+      "machine_name": "ngp",
+      "year": "1998",
+      "manufacturer": "SNK",
+      "cpu": "Toshiba TMP95C061 @ 6.14 MHz",
+      "sound": "Speaker",
+      "resolution": "160 × 152",
+      "refresh_rate": "59.95 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "jaguar",
+      "machine_name": "jaguar",
+      "year": "1993",
+      "manufacturer": "Atari",
+      "cpu": "Motorola MC68000 @ 13.30 MHz",
+      "sound": "Speaker",
+      "resolution": "640 × 229",
+      "refresh_rate": "60.05 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy",
+        "keypad"
+      ]
+    },
+    {
+      "system_id": "jagcd",
+      "machine_name": "jaguarcd",
+      "year": "1995",
+      "manufacturer": "Atari",
+      "cpu": "Motorola MC68000 @ 13.30 MHz",
+      "sound": "Speaker",
+      "resolution": "640 × 229",
+      "refresh_rate": "60.05 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy",
+        "keypad"
+      ]
+    },
+    {
+      "system_id": "pcfx",
+      "machine_name": "pcfx",
+      "year": "1994",
+      "manufacturer": "NEC",
+      "cpu": "NEC V810 @ 21.48 MHz",
+      "sound": "Speaker",
+      "resolution": "1088 × 242",
+      "refresh_rate": "59.83 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "n64",
+      "machine_name": "n64",
+      "year": "1996",
+      "manufacturer": "Nintendo",
+      "cpu": "NEC VR4300 (big) @ 93.75 MHz",
+      "sound": "Speaker",
+      "resolution": "3093 × 525",
+      "refresh_rate": "59.96 Hz",
+      "max_players": 4,
+      "peripheral_hints": [
+        "joy",
+        "mouse",
+        "stick"
+      ]
+    },
+    {
+      "system_id": "dreamcast",
+      "machine_name": "dc",
+      "year": "1999",
+      "manufacturer": "Sega",
+      "cpu": "Hitachi SH7091 @ 200.00 MHz",
+      "sound": "Speaker",
+      "resolution": "640 × 480",
+      "refresh_rate": "59.94 Hz",
+      "max_players": 4,
+      "peripheral_hints": [
+        "joy",
+        "pedal",
+        "stick"
+      ]
+    },
+    {
+      "system_id": "sms",
+      "machine_name": "sms",
+      "year": "1990",
+      "manufacturer": "Sega",
+      "cpu": "Zilog Z80 @ 3.58 MHz",
+      "sound": "Speaker",
+      "resolution": "268 × 224",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "gamegear",
+      "machine_name": "gamegear",
+      "year": "1991",
+      "manufacturer": "Sega",
+      "cpu": "Zilog Z80 @ 3.58 MHz",
+      "sound": "Speaker",
+      "resolution": "160 × 144",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "gb",
+      "machine_name": "gameboy",
+      "year": "1990",
+      "manufacturer": "Nintendo",
+      "cpu": "Sharp LR35902 @ 4.19 MHz",
+      "sound": "Speaker",
+      "resolution": "160 × 144",
+      "refresh_rate": "59.73 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "gbc",
+      "machine_name": "gbcolor",
+      "year": "1998",
+      "manufacturer": "Nintendo",
+      "cpu": "Sharp LR35902 @ 4.19 MHz",
+      "sound": "Speaker",
+      "resolution": "160 × 144",
+      "refresh_rate": "59.72 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "gba",
+      "machine_name": "gba",
+      "year": "2001",
+      "manufacturer": "Nintendo",
+      "cpu": "ARM7 (little) @ 16.78 MHz",
+      "sound": "Speaker",
+      "resolution": "240 × 160",
+      "refresh_rate": "59.73 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "2600",
+      "machine_name": "a2600",
+      "year": "1977",
+      "manufacturer": "Atari",
+      "cpu": "MOS Technology 6507 @ 1.19 MHz",
+      "sound": "Speaker",
+      "resolution": "176 × 223",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "5200",
+      "machine_name": "a5200",
+      "year": "1982",
+      "manufacturer": "Atari",
+      "cpu": "MOS Technology 6502 @ 1.79 MHz",
+      "sound": "Speaker",
+      "resolution": "335 × 239",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 4,
+      "peripheral_hints": [
+        "keypad",
+        "stick"
+      ]
+    },
+    {
+      "system_id": "coleco",
+      "machine_name": "coleco",
+      "year": "1982",
+      "manufacturer": "Coleco",
+      "cpu": "Zilog Z80 @ 3.58 MHz",
+      "sound": "Speaker",
+      "resolution": "280 × 216",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "dial",
+        "joy",
+        "keypad",
+        "only_buttons",
+        "trackball"
+      ]
+    },
+    {
+      "system_id": "intv",
+      "machine_name": "intv",
+      "year": "1979",
+      "manufacturer": "Mattel Electronics",
+      "cpu": "GI CP1610 @ 894 kHz",
+      "sound": "Speaker",
+      "resolution": "189 × 240",
+      "refresh_rate": "59.92 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy",
+        "keypad",
+        "stick"
+      ]
+    },
+    {
+      "system_id": "o2",
+      "machine_name": "odyssey2",
+      "year": "1979",
+      "manufacturer": "Magnavox",
+      "cpu": "Intel 8048 @ 5.37 MHz",
+      "sound": "Intel 8244 @ 3.58 MHz",
+      "resolution": "360 × 243",
+      "refresh_rate": "59.83 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy",
+        "keyboard"
+      ]
+    },
+    {
+      "system_id": "channelf",
+      "machine_name": "channelf",
+      "year": "1976",
+      "manufacturer": "Fairchild",
+      "cpu": "Fairchild F8 @ 1.79 MHz",
+      "sound": "Speaker",
+      "resolution": "204 × 232",
+      "refresh_rate": "60.53 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "vectrex",
+      "machine_name": "vectrex",
+      "year": "1982",
+      "manufacturer": "General Consumer Electronics",
+      "cpu": "Motorola MC6809 @ 6.00 MHz",
+      "sound": "Speaker",
+      "refresh_rate": "60.00 Hz",
+      "max_players": 2,
+      "peripheral_hints": [
+        "lightgun",
+        "stick"
+      ]
+    },
+    {
+      "system_id": "virtualboy",
+      "machine_name": "vboy",
+      "year": "1995",
+      "manufacturer": "Nintendo",
+      "cpu": "NEC V810 @ 20.00 MHz",
+      "sound": "Speaker",
+      "resolution": "384 × 224",
+      "refresh_rate": "50.04 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "doublejoy"
+      ]
+    },
+    {
+      "system_id": "wonderswan",
+      "machine_name": "wswan",
+      "year": "1999",
+      "manufacturer": "Bandai",
+      "cpu": "NEC V30MZ @ 3.07 MHz",
+      "sound": "Speaker",
+      "resolution": "224 × 144",
+      "refresh_rate": "75.47 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    },
+    {
+      "system_id": "pokemini",
+      "machine_name": "pokemini",
+      "year": "2001",
+      "manufacturer": "Nintendo",
+      "cpu": "Nintendo Minx @ 4.00 MHz",
+      "sound": "Speaker",
+      "resolution": "96 × 64",
+      "refresh_rate": "72.00 Hz",
+      "max_players": 1,
+      "peripheral_hints": [
+        "joy"
+      ]
+    }
+  ]
+}

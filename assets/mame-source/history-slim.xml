@@ -1,0 +1,930 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OA-slimmed history.xml — only OA-relevant <entry>s retained.
+Source: MAME 0.288(mame0288); history.xml v2.87a (2026-04-11)
+from arcade-history.com (Gaming-History).
+Format: subset of upstream history.xml. Entries kept iff their
+<systems> block lists at least one machine in tools/mame-extractor's
+MAME_DRIVER_MAP. <software>-only entries are dropped (per-game
+data flows through docs/cores/<id>/games-info.md instead). -->
+<history version="2.87a" date="2026-04-11">
+<entry>
+		<systems>
+			<system name="a2600" game="no" />
+		</systems>
+		<text>
+Console published 49 years ago:
+
+Atari 2600 (c) 1977 Atari, Incorporated.
+
+- TECHNICAL -
+
+Model No. CX-2600 A.
+
+Resolution: 160 x 260 (horz.) at 60.00 Hz
+CPU: 6507
+Cpu Clock: 1.19 MHz
+Graphics Clock: 1.19 MHz
+Bits: 8
+ROM: 4k max
+RAM: 128 bytes, in VLSI
+Video Display Processor: Stella
+Sprites: 32
+Colors: 256 (static)
+Sound Processor: Two Channel Square or Noise (TIA)
+Cartridge ROM: 2k up to 64k
+
+- TRIVIA -
+
+The Atari 2600 was released on October 14, 1977 (Friday) in North America at a retail price of 199.95 USD, it was shipped with two joysticks and a Combat cartridge (eight additional games were available at launch and sold separately).
+
+The console was originally sold as the Atari VCS (for Video Computer System). Following the release of the Atari 5200 in 1982, the VCS was renamed Atari 2600, after the unit&apos;s Atari part number CX2600.
+
+The Atari VCS was developed under the project codename &apos;Stella&apos;.
+
+It is rumored that the number 2600 was chosen because 2600 cycles was a prominent long distance access tone, and that one of the developers had created devices that would trick pay phones into granting long distance access as a hobby.
+
+Export releases:
+[JP] &quot;Atari 2800&quot;
+
+- STAFF -
+
+Designed by: Joe Decuir, Steve Mayer, Ron Milner
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/54858/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="a5200" game="no" />
+			<system name="a5200a" game="no" />
+		</systems>
+		<text>
+Console published 44 years ago:
+
+Atari 5200 (c) 1982 Atari, Incorporated.
+
+The Atari 5200 was a video game console introduced as a higher end complementary console for the popular Atari 2600. It was based on Atari&apos;s existing 400/800 computers and the internal hardware was almost identical, although software was not directly compatible between the two systems.
+
+- TRIVIA -
+
+The Atari 5200 was introduced in 1982 and was actually designed to be a competitor to the Intellivision before ColecoVision entered the market. Developed under the name of PAM (Atari, at the time, typically named projects after well-endowed female employees), Atari considered releasing it with that moniker; PAM in this case an acronym for &apos;Personal Arcade Machine&apos;.
+
+The Atari 5200 was also known as the &apos;Video System X&apos; just prior to release.
+
+The Atari 5200 originally retailed for $269.95. For perspective, this amount would have been equal to $671.40 in 2016 US currency.
+
+The 5200 shared much of the architecture of the Atari 400/800 computers, but featured a different cartridge connector and completely different controllers. Non-centering analogue joysticks which offered a full 360 degrees of mobility, were both innovative and unreliable. Other controller features included a keypad, and a ahead-of-it&apos;s-time pause button. The Atari 5200 suffered from it&apos;s initial incompatibility with the VCS/2600 (an adapter was later released) and fierce competition from Coleco. When Warner Communications sold Atari Corp. to the Tramiels in 1984, they quickly removed it from the market.
+
+You can use an adapter to play 2600 games on the 5200.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/34760/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="a7800" game="no" />
+			<system name="a7800p" game="no" />
+		</systems>
+		<text>
+Console published 40 years ago:
+
+Atari 7800 (c) 1986 Atari Corporation.
+
+- TRIVIA -
+
+Originally developed in 1984 as the Atari 3600, the Atari 7800 Prosystem was released to the North American market in 1986, in an attempt to compete in a revitalized home videogame market. The 7800 was actually designed by Gencomp as part of a lawsuit settlement (Gencomp had been sued for releasing a speedup chipset for Atari coin-op Missile Command).
+
+The 7800 was compatible with pre-existing Atari 2600 game program cartridges, without the need for expansion modules or turning switches, but was also designed to use enhanced 7800-only cartridges such as the pack-in &apos;Pole Position 2&apos;. Many peripherals, including a computer/keyboard and high score saving cartridge were planned but never released.
+
+Unfortunately for Atari, the system did poorly in the late 1980&apos;s market dominated by Nintendo.
+
+In the summer of 1984 the first 5,000 Atari 7800&apos;s had just been built in the new El Paso assembly plant. The production line manager, Brad Saville was eager to meet with Jack Tramiel to show him the new flagship Atari video game console. The meeting ended abruptly as Jack Tramiel was quoted &quot;Get your pollution out of here! We make computers now and we don&apos;t want your garbage.&quot; The line manager was fired 2 days later. About 8-9 months later the line manager received a phone call from Atari asking him as to the whereabouts of the die molds for the Atari 7800. The ex-line manager responded that he did in fact know where they were and for $50/hour for about 200 to 300 hours of his time he would remember where they were and find them. The Atari Corp. representative who called was infuriated and informed the former production line manager that Atari&apos;s lawyers would be in contact with him. He never heard from Atari again.&quot;
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/34761/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="channelf" game="no" />
+		</systems>
+		<text>
+Console published 50 years ago:
+
+Channel F (c) 1976 Fairchild.
+
+A home video game console.
+
+Built-in games: Tennis, Hockey
+
+Tennis: a simple Pong variant. Two players compete by passing back and forth a ball with paddles. If a player misses the ball, his opponent gets a point. In Tennis, the players can choose from 4 different game speeds. A round can be configured to end as soon as one player reaches a score of 15, or after a time limit of 2, 5, 10, or 20 minutes.
+
+Hockey: an extended version of the Pong concept. Two players try to get the ball to land in their opponent&apos;s goal. The paddles can be moved not only up and down, but all across the playfield. They can even be tilted to have the ball reflect in another direction. In addition to the main paddles, both players also have a special goalkeeper paddle that they can move up and down between the poles. There are four ball speeds to choose from. Matches end when either one of the players reaches a score of 15, or after a time limit of 2, 5, 10, or 20 minutes. If the game ends in a tie, the players can decide to play 1 minute of overtime.
+
+- TECHNICAL -
+
+CPU: Fairchild F8
+SPEED: 2 MHz
+RAM: 64 bytes
+COLORS: 8, only four different colors per line, unless black/white palette were chosen, then only these two colors on the whole line.
+SOUND: First models : played through the console, built-in speaker; System II : played through TV
+
+- TRIVIA -
+
+Released in November 1976 in the USA at the retail price of $169.95. For perspective, $169.95 in 1976 is equal to $725.32 in 2017.
+
+The unit was launched as the Video Entertainment System, or VES, but when Atari released their VCS the next year, Fairchild renamed its machine.
+
+The Channel F has the distinction of being the first programmable ROM cartridge–based video game console, and the first console to use a microprocessor.
+
+Sometime in 1979, Zircon International bought the rights to the Channel F and released the re-designed console as the Channel F System II to compete with Atari&apos;s VCS. This re-designed System II was completed by Nick Talesfore at Fairchild. He was the same industrial designer who designed the original game console. Only six new games were released after the debut of the second system before its demise, several of which were developed at Fairchild before they sold it off. 
+
+The major changes were in design, with the controllers removable from the base unit instead of being wired directly into it; the controller storage was moved to the rear of the unit, and the sound was now mixed into the RF TV signal so the unit no longer needed a speaker. Electronics was also simplified with custom logic chips instead of standard logic resulting in a much smaller circuit board. This version also featured a simpler and more modern-looking case design. 
+
+The Channel F was exported to Europe and licensed to several companies over there. Th elist of licensed Channel F consoles:
+Adman Grandstand Video Entertainment Computer (UK)
+Adman Grandstand Video Entertainment Computer System 2(UK)
+Barco Challenger (Belgium)
+Dumont Channel F (Italy)
+Emerson Channel F (Italy)
+ITT Telematch Processor (Germany)
+Luxor Video Entertainment System (Sweden)
+Luxor Video Entertainment Computer (Sweden)
+Nordmende Color TelePlay (Germany)
+Saba Videoplay (Germany)
+Saba Videoplay 2 (Germany)
+
+Cartridge list (for all Channel F systems):
+&quot;Videocart-1&quot;: Tic-Tac-Toe, Shooting Gallery, Doodle, Quadra-Doodle
+&quot;Videocart-2&quot;: Desert Fox, Shooting Gallery
+&quot;Videocart-3&quot;: Video Blackjack
+&quot;Videocart-4&quot;: Spitfire
+&quot;Videocart-5&quot;: Space War
+&quot;Videocart-6&quot;: Math Quiz I (Addition &amp; Subtraction)
+&quot;Videocart-7&quot;: Math Quiz II (Multiplication &amp; Division)
+&quot;Videocart-8&quot;: Magic Numbers (Mind Reader &amp; Nim)
+&quot;Videocart-9&quot;: Drag Race
+&quot;Videocart-10&quot;: Maze, Jailbreak, Blind-Man&apos;s-Bluff, Trailblazer
+&quot;Videocart-11&quot;: Backgammon, Acey-Deucey
+&quot;Videocart-12&quot;: Baseball
+&quot;Videocart-13&quot;: Robot War, Torpedo Alley
+&quot;Videocart-14&quot;: Sonar Search
+&quot;Videocart-15&quot;: Memory Match 1, Memory Match 2
+&quot;Videocart-16&quot;: Dodge&apos; It
+&quot;Videocart-17&quot;: Pinball Challenge
+&quot;Videocart-18&quot;: Hangman
+&quot;Videocart-19&quot;: Checkers
+&quot;Videocart-20&quot;: Video Whizball
+&quot;Videocart-21&quot;: Bowling
+&quot;Videocart-22&quot;: Slot Machine
+&quot;Videocart-23&quot;: Galactic Space Wars
+&quot;Videocart-24&quot;: Pro Football
+&quot;Videocart-25&quot;: Casino Poker
+&quot;Videocart-26&quot;: Alien Invasion
+&quot;Schach Model 20]&quot;(this chess game was a Saba German exclusive, it had #20 in the Saba Videoplay catalog)
+&quot;Democart&quot; 
+&quot;Democart 2&quot;
+
+in 2009 a Pac-Man game was developed and released on a cartridge as Videocart -27 complete with box and instruction booklet.
+
+- STAFF -
+
+Designed by: Jerry Lawson
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/43196/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="coleco" game="no" />
+		</systems>
+		<text>
+Console published 44 years ago:
+
+ColecoVision [NTSC model] (c) 1982 Coleco Industries, Inc. [Amsterdam, NY, USA]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/275382/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="gameboy" game="no" />
+		</systems>
+		<software>
+			<item list="vgmplay" name="gameboy" />
+		</software>
+		<text>
+Console (handheld) published 36 years ago:
+
+Game Boy (c) 1990 Nintendo Co., Ltd.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228455/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="gba" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 25 years ago:
+
+Game Boy Advance (c) 2001 Nintendo Co., Ltd. [Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228456/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="gbcolor" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 28 years ago:
+
+Game Boy Color (c) 1998 Nintendo Co., Ltd. [Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228457/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="intv" game="no" />
+			<system name="intvecs" game="no" />
+			<system name="intvkbd" game="no" />
+			<system name="intvoice" game="no" />
+		</systems>
+		<text>
+Console published 47 years ago:
+
+Intellivision (c) 1979 Mattel Electronics.
+
+The Intellivision is a home video game console.
+
+- TRIVIA -
+
+Development of the console began in 1978, less than a year after the introduction of its main competitor, the Atari 2600. The word intellivision is a portmanteau of &apos;intelligent television&apos;.
+
+The Intellivision can be considered the first 16-bit game console, as it has a 16-bit microprocessor.
+
+The Intellivision was also the first system to feature downloadable games. However, since there was no storage device the games vanished once the machine was turned off. In 1981, General Instrument teamed up with Mattel to roll out the PlayCable, a device that allowed the downloading of Intellivision games via cable TV.
+
+Intellivision was the first game console to provide real-time human and robot voices in the middle of gameplay, courtesy of the IntelliVoice module. The voice chip used, the SPO256 Orator, was developed jointly by Mattel and General Instrument.
+
+Intellivision was the first console to feature a controller with a directional pad that allowed 16 directions. The disc-shaped pad allowed players to control action without lifting the thumb and was considered by many Intellivision users to be a useful innovation.
+
+The Intellivision was also the first game console or home computer to offer a musical synthesizer keyboard. The music synthesizer keyboard was designed as a secondary add-on for the ECS, and was intended to lead to a series of music-oriented software titles for both educational and entertainment purposes, but only one title, Melody Blaster, was ever released.
+
+Intellivision was also the first console to have a complete built-in character font. While Odyssey² had a limited character font (uppercase alphabet, numerals, and some other characters), Intellivision&apos;s system font had complete upper- and lowercase alphabets, numerals, and almost all of the punctuation and symbols found on standard computer keyboards.
+
+Over 3 million Intellivision units were sold and a total of 125 games were released for the console.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/103336/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="jaguar" game="no" />
+		</systems>
+		<text>
+Console published 33 years ago:
+
+Jaguar (c) 1993 Atari Corp. [Sunnyvale, CA, USA]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228783/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="jaguarcd" game="no" />
+		</systems>
+		<text>
+Console published 31 years ago:
+
+Jaguar CD (c) 1995 Atari Corp. [Sunnyvale, CA, USA]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228784/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="lynx" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 37 years ago:
+
+Lynx (c) 1989 Atari Corp. [Sunnyvale, CA, USA]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228785/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="neocdz" game="no" />
+			<system name="neocdzj" game="no" />
+		</systems>
+		<text>
+Console published 30 years ago:
+
+Neo-Geo CDZ (c) 1996 SNK Corp. [Shin Nihon Kikaku] [Osaka, Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228437/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="neogeo" game="no" />
+			<system name="ng_mv1" game="no" />
+			<system name="ng_mv1f" game="no" />
+			<system name="ng_mv1fz" game="no" />
+			<system name="ng_mv2f" game="no" />
+			<system name="ng_mv4f" game="no" />
+		</systems>
+		<text>
+Arcade System published 36 years ago:
+
+Neo-Geo MVS (c) 1990 SNK Corp.
+
+A cartridge-based arcade system board. The MVS stands for Multi Video System, and as its name suggest, offers owners the ability to put up to six different arcade titles into a single cabinet, a key economic consideration for operators with limited floorspace. With its games stored on self-contained cartridges, a game cabinet can be exchanged for a different game title by swapping the game&apos;s ROM-cartridge and cabinet artwork.
+
+- TECHNICAL -
+
+Main CPU: Motorola 68000 (@ 12 Mhz)
+Sound CPU: Zilog Z80 (@ 4 Mhz)
+Sound Chips: Yamaha YM2610 (@ 8 Mhz)
+
+TOTAL RAM: 214 KB.
+- Main Motorola 68000 RAM: 64 KB (32 KB x2).
+- Video RAM: 84 KB.
+-- Main VRAM: 64 KB (32 KB x2)
+-- Palette memory: 16 KB (8 KB x2)
+-- Fast video sprite RAM: 4 KB (2 KB x2)
+- Zilog Z80 Sound RAM: 2 KB.
+- Battery-backup save NVRAM: 64 KB.
+
+On-board ROM: 512 KB
+- Zoom look-up table: 128 KB
+- Fix layer graphics: 128 KB
+- Zilog Z80 sound: 128 KB
+- Motorola 68000 BIOS: 128 KB
+
+Display resolution: 320×224 px (many games only use the centermost 304 px)
+Color palette: 65,536 (16-bit) (not RGB565, but RGB666, where the lowest bit of each channel is shared with one bit)
+Maximum colors on screen: 4096 (12-bit)
+Maximum sprites on screen: 380
+Minimum sprite size: 1x2 px
+Maximum sprite size: 16x512 px
+Maximum sprites per scanline: 96
+Simultaneous scroll planes: 3
+Aspect ratio: 4:3
+
+- TRIVIA -
+
+Released on April 26, 1990 (Thursday) in Japan, the same day as the Neo-Geo AES console.
+
+MVS stand for &apos;Multi Video System&apos;, Neo-Geo means &apos;New World&apos;.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/82772/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="ngp" game="no" />
+		</systems>
+		<software>
+			<item list="vgmplay" name="ngp" />
+		</software>
+		<text>
+Console published 28 years ago:
+
+Neo-Geo Pocket (c) 1998 SNK Corp. [Shin Nihon Kikaku] [Osaka, Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228438/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="n64" game="no" />
+		</systems>
+		<text>
+Console published 30 years ago:
+
+Nintendo 64 (c) 1996 Nintendo Co., Ltd.
+
+Nintendo&apos;s third home video game console for the international market. Named for its 64-bit central processing unit. As part of the fifth generation of gaming, the system competed primarily with the Sony PlayStation and the Sega Saturn.
+
+- TRIVIA -
+
+It was released in June 1996 in Japan.
+
+Codenamed &apos;Project Reality&apos;, the Nintendo 64 design was mostly complete by mid-1995, but its launch was delayed until 1996, when Time named it Machine of the Year.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/127812/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="nes" game="no" />
+			<system name="nespal" game="no" />
+		</systems>
+		<text>
+Console published 41 years ago:
+
+Nintendo Entertainment System [NES] (c) 1985 Nintendo Co., Ltd.
+
+8-Bit video game console developed in Japan. For more information about the console itself, please see the original Japanese release entry; &quot;Family Computer [FAMICOM] [Model HVC-001]&quot;.
+
+- TECHNICAL -
+
+Parts:
+Nintendo Entertainment System [NES] [Model NES-001]
+AC Power Adapter [Model NES-002]
+RF Adapter [Model NES-003]
+Controller [Model NES-004]
+
+- TRIVIA -
+
+Official Accessories:
+NES Zapper [Model NES-005]
+R.O.B the Robot [Model NES-012]
+NES Advantage [Model NES-026]
+Power Pad [Model NES-028]
+Satellite [Model NES-032]
+Satellite Wireless Receiver [Model NES-033]
+NES Four Score [Model NES-034]
+Controller (Redesigned) [Model NES-039]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/82114/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="odyssey2" game="no" />
+		</systems>
+		<text>
+Console published 48 years ago:
+
+Odyssey² (c) 1978 The Magnavox Co.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/95736/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="pce" game="no" />
+		</systems>
+		<text>
+Console published 39 years ago:
+
+PC-Engine (c) 1987 NEC Home Electronics, Ltd.
+
+- TRIVIA -
+
+Released on October 30, 1987 in Japan.
+
+The PC-Engine was a collaborative effort between Hudson Soft and NEC Home Electronics. NEC&apos;s interest in entering the lucrative video game market coincided with Hudson&apos;s failed attempt to sell designs for then-advanced graphics chips to Nintendo.
+
+In Japan, the PC-Engine was very successful, and at one point was the top-selling console in the nation. 3,9 millions units were sold in Japan.
+
+Export releases:
+[US] &quot;TurboGrafx-16&quot; (1989)
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/115696/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="pcfx" game="no" />
+		</systems>
+		<text>
+Console published 32 years ago:
+
+PC-FX (c) 1994 NEC Home Electronics, Ltd.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/127769/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="pokemini" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 25 years ago:
+
+Pokémon Mini (c) 2001 Nintendo Co., Ltd. [Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228462/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="saturn" game="no" />
+		</systems>
+		<text>
+Console published 32 years ago:
+
+Saturn [Model MK-80001] (c) 1994 SEGA Enterprises, Ltd. [Tokyo, Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/230507/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="segacd" game="no" />
+		</systems>
+		<text>
+Console published 34 years ago:
+
+Sega CD (c) 1992 Sega of America, Inc.
+
+- TECHNICAL -
+
+Model 1690
+
+- TRIVIA -
+
+Released on October 15, 1992 in USA.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/82092/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="dc" game="no" />
+			<system name="dceu" game="no" />
+		</systems>
+		<text>
+Console published 27 years ago:
+
+Sega Dreamcast [Model HKT-3020] (c) 1999 SEGA Enterprises, Ltd. [Tokyo, Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/230515/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="gamegear" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 36 years ago:
+
+Sega Game Gear (c) 1990 Sega Enterprises, Ltd.
+
+- TECHNICAL -
+
+Model 2110-50
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/82100/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="32x" game="no" />
+			<system name="32x_scd" game="no" />
+		</systems>
+		<text>
+Console published 32 years ago:
+
+Sega Genesis 32X (c) 1994 Sega of America, Inc.
+
+The Sega Genesis 32X is an add-on for the Sega Genesis video game console. Codenamed &apos;Project Mars&apos;, the 32X was designed to expand the power of the Genesis and serve as a transitional console into the 32-bit era until the later release of the Sega Saturn. Independent of the Genesis, the 32X utilizes its own ROM cartridges and has its own library of games.
+
+- TECHNICAL -
+
+Model No. MK-84000A
+
+CPU: 2 x SH-2 32-bit RISC (23 MHz)
+Memory: 2Mbit RAM
+Display: 320 x 240 resolution, 32768 on-screen colors.
+Dimensions: 110 x 210 x 100 mm (4.3 x 8.3 x 3.9 in).
+Weight: 495 g. (17.5 oz)
+
+- TRIVIA -
+
+Unveiled at June 1994&apos;s Consumer Electronics Show, Sega presented the 32X as a low-cost option for consumers looking to play 32-bit games. Developed in response to the Atari Jaguar and concerns that the Saturn would not make it to market by the end of 1994, the product was originally conceived as an entirely new console. At the suggestion of Sega of America executive Joe Miller and his team, the console was converted into an add-on to the existing Genesis and made more powerful. The final design contained two 32-bit central processing unit chips and a 3-D graphics processor. In order to bring the new add-on to market by its scheduled release date of November 21, 1994, development of the new system and its games were rushed.
+
+Ultimately, the console failed to attract third-party video game developers and sufficient consumers due to the announcement of the Sega Saturn&apos;s simultaneous release in Japan. Sega&apos;s efforts to rush the 32X to market cut into available time for game development, resulting in a weak library of forty titles that could not fully utilize the add-on&apos;s hardware, including Genesis ports. By the end of 1994, the 32X had sold 665,000 units. After price reductions in 1995, it was officially discontinued in 1996 as Sega turned their focus toward the Saturn.
+
+Export releases:
+[JP] &quot;Super 32X [Model HMA-2400]&quot;
+[EU] &quot;Sega Mega Drive 32X [Model MK-84200-50]&quot;
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/82090/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="genesis" game="no" />
+			<system name="genesis_tmss" game="no" />
+		</systems>
+		<text>
+Console published 37 years ago:
+
+Sega Genesis (c) 1989 Sega of America, Inc.
+
+North American release. Console developed in Japan. See the original Japanese entry; &quot;Mega Drive [Model HAA-2510]&quot;, for more information about the conseole itself.
+
+- TECHNICAL -
+
+Model # MK-1600
+
+- TRIVIA -
+
+Having achieved very little progress in cracking the American market with the Sega Master System, Sega&apos;s plans for the Mega Drive (renamed Genesis here) were far bolder, with aggressive marketing tactics in place from day one which openly criticized Nintendo and their NES, which, much like Japan, dominated the video game console market. The Genesis launched in late 1989, and although had struggled against the PC-Engine in Japan, quickly eclipsed the US-variant, the TurboGrafx-16.
+
+The early Genesis game library and marketing campaigns in North America focused on the arcade-at-home stance, although Sega also took the decision to create celebrity-sponsored sports titles (as well as the famed Michael Jackson&apos;s Moonwalker), a tactic which proved reasonably successful. Sega also partnered with Disney to create platformers such as Castle of Illusion Starring Mickey Mouse and QuackShot, the relationship running for several years into the mid-90s.
+
+Most notably was Sega&apos;s strong ties with Electronic Arts, which saw rapid growth on the Mega Drive not least due to John Madden Football. EA stemmed from their history as computer game publishers during this period and turned in to a major player of the video game landscape, eventually becoming the world&apos;s largest video game publisher.
+
+The Genesis made huge gains over Nintendo during the console&apos;s first couple of years, although for many it was assumed that the successor, the Super Nintendo, would reclaim its crown upon release. Though this eventually did occur, Nintendo&apos;s plans were set back dramatically by the release of Sonic the Hedgehog on that day, June 23, 1991, as well as a wealth of high quality titles and strong advertising campaigns depicting the SNES, much like the NES, as the weaker system. Though damaged, Nintendo never truly went away - a number of strange Sega marketing blunders in 1994/1995 and the extended lifespan of the SNES (not to mention the strong support coming from Japan) meant that in the end, the Super Nintendo was able to take a victory.
+
+Sega became disinterested in the Genesis by the mid-90s, focusing instead on the Sega Saturn. It did, however contract Majesco to continue manufacturing Mega Drives in the US through 1997 and 1998, and the few third party developers and first party studios that stayed on board produced games like Vectorman 2 and Sonic 3D - Flickies&apos; Island and many compilations. In an ironic twist of fate, a straight port of Frogger would be the last officially released Mega Drive game released in the country - Frogger had been a series Sega held a license over for much of the 1980s, and coincidentally was one of the last SNES releases in the region too.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/83340/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="sms" game="no" />
+		</systems>
+		<text>
+Console published 36 years ago:
+
+Sega Master System II (c) 1990 SEGA Enterprises, Ltd. [Tokyo, Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/230503/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="psj" game="no" />
+			<system name="psa" game="no" />
+		</systems>
+		<text>
+Console published 32 years ago:
+
+Sony PlayStation (c) 1994 Sony Computer Ent., Inc.
+
+The first of the PlayStation lineup of home video game consoles. It primarily competed with the Nintendo 64 and the Sega Saturn as part of the fifth generation of video game consoles.
+
+- TECHNICAL -
+
+Model ID: SCPH-1000
+
+- TRIVIA -
+
+The PlayStation was released in Japan on December 03, 1994. The console was an immediate success in Japan, selling over 2 million units within its first six months on the market.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/127811/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="stvbios" game="no" />
+		</systems>
+		<text>
+Arcade System published 31 years ago:
+
+ST-V [Sega Titan Video Game System] (c) 1995 Sega Enterprises, Limited.
+
+- TECHNICAL -
+
+Main CPU: 2x Hitachi SH-2 (7604 32-Bit RISC) @ 28.6 MHz in a master/slave configuration
+
+Custom Saturn Control Unit (SCU): Fixed-point math coprocessor
+
+VDP1: 32-bit Video Display Processor - handles sprite and polygon drawing. Dual 256 KB framebuffers for rotate and scale effects. Texture mapping, Gouraud shading. 512KB texture RAM
+
+VDP2: 32-bit background and scroll plane Video Display Processor - transparency effects, shadowing, 5 simultaneous scrolling backgrounds and 2 simultaneous rotating playfields
+
+Sound CPU: Motorola 68000( @ 11.45 MHz)
+Sound chip: Yamaha YMF292-F SCSP (@ 11.3 MHz)
+
+Main RAM: 2 MB
+VRAM: 1.54MB
+Audio RAM: 512KB
+
+- TRIVIA -
+
+Sega&apos;s ST-V is essentially identical to the Sega Saturn home console system. The only difference is the media: ST-V used ROM cartridges instead of CD-ROMs to store games. Being derived from the Saturn hardware, the ST-V was presumably named after the moon Titan, a satellite of Saturn.
+
+PATENTS :
+U.S.A : 4,442,486 - 4,454,594 - 4,462,076
+Europe : 80244
+Canada : 1,183,276
+Honk Kong : 88-4302
+Singapore : 88-155
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/69615/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="snes" game="no" />
+		</systems>
+		<text>
+Console published 36 years ago:
+
+Super Famicom (c) 1990 Nintendo Co., Ltd.
+
+- TECHNICAL -
+
+Model # SHVC-001
+
+- TRIVIA -
+
+To compete with the popular Famicom, NEC launched the PC-Engine in 1987, and Sega followed suit with the Sega Mega Drive in 1988. Both systems were built on 16-bit architectures and offered improved graphics and sound over the 8-bit Famicom. Nintendo executives were in no rush to design a new system, but they reconsidered when they began to see their dominance in the market slipping.
+
+Designed by Masayuki Uemura, the designer of the original Famicom, the Super Famicom was released in Japan on Wednesday, November 21, 1990 for 25,000 Yens.
+
+It was an instant success; Nintendo&apos;s initial shipment of 300,000 units sold out within hours, and the resulting social disturbance led the Japanese government to ask video game manufacturers to schedule future console releases on weekends.
+
+The system&apos;s release also gained the attention of the Yakuza, leading to a decision to ship the devices at night to avoid robbery.
+
+With the Super Famicom quickly outselling its chief rivals, Nintendo reasserted itself as the leader of the Japanese console market. Nintendo&apos;s success was partially due to its retention of most of its key third-party developers from its earlier system, including Capcom, Konami, Tecmo, Square, Koei, and Enix.
+
+Export releases:
+[US] &quot;Super Nintendo [Model SNS-001]&quot;
+[EU] &quot;Super Nintendo [Model SNSP-001]&quot;
+
+17.17 millions units were sold in Japan and 49.10 millions worldwide (including export releases).
+
+The Super Famicom was officially discontinued in September 2003 in Japan.
+
+- SERIES -
+
+1. FAMICOM [Family Computer] [Model HVC-001] (1983)
+2. Super Famicom [Model SHVC-001] (1990)
+3. Nintendo 64 (1996)
+4. Nintendo GameCube (2001)
+5. Nintendo Wii (2006)
+6. Nintendo Wii U (2012)
+
+- STAFF -
+
+Designed by: Masayuki Uemura
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/83311/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="vectrex" game="no" />
+		</systems>
+		<software>
+			<item list="vgmplay" name="vectrex_vect" />
+		</software>
+		<text>
+Console published 44 years ago:
+
+Vectrex - Arcade System (c) 1982 GCE [General Consumer Electric].
+
+Vector display-based home video game console.
+
+- TECHNICAL -
+
+Model HP 3000
+
+Circuit board
+CPU: Motorola 68A09 @ 1.5 MHz
+RAM: 1 KB (two 4-bit 2114 chips)
+ROM: 8 KB (one 8-bit 2363 chip)
+Cartridge ROM: 32 KB
+MOS 6522 Versatile Interface Adapter (VIA)
+
+Sound
+Sound: General Instrument AY-3-8912
+MCU controlled sound
+3-inch electrodynamic paper cone speaker
+
+The cathode ray tube is a Samsung model 240RB40 monochrome unit measuring 9 × 11 inches, displaying a picture of 240 mm diagonal; it is an off-the-shelf picture tube manufactured for small black/white television sets. The brightness of the CRT is controlled using a circular knob on the back of the display. A vector CRT display such as the one in the Vectrex does not require a special tube, and differs from standard raster-based television sets only in the control circuits. Rather than use sawtooth waves to direct the internal electron beam in a raster pattern, computer-controlled integrators feed linear amplifiers to drive the deflection yoke. This yoke has similar, if not identical inductances, unlike a TV deflection yoke. The yoke uses a standard TV core. The high-voltage transformer also uses a standard core and bobbin. There is special circuitry to turn off the electron beam if the vector generator stops or fails. This prevents burning of the screen&apos;s phosphors. This design is a great deal smaller than the electronics found in the free-standing, full-sized Asteroids.
+
+In order to enhance the display visuals of the Vectrex, every commercially released game included its own unique translucent plastic screen overlay that accompanied the cartridge. Instead of physically touching the CRT screen, four tabs on the Vectrex console securely held them in place in front of it, with a small gap between the actual screen and the overlay. Made up of one to three colors for the play field area, these overlays provide the illusion of simple color graphics (on an otherwise black and white screen), helped reduced glare, flicker and gave the appearance of a flat screen. They also allowed changes in brightness intensity of vector graphics to be more visually distinctive. In some cases game designers created pseudo color cycling effects, for a sense of movement, by using alternating colored patterns. In addition to players&apos; score areas, some overlays also contained additional artwork and patterns, to add to the game&apos;s play field. Across the bottom of each overlay are game-specific joystick and button functions as a guide for the player. Each overlay also displayed the title and logo of each game, along with a colored border or design, to add cosmetic flair to the Vectrex (much like an arcade machine with its marquee or side art). Overlays were not required, but added to the experience in terms of the visual look of game graphics and the overall display appearance of the console.
+
+- TRIVIA -
+
+It was first released for the North America market in November 1982.
+
+The only Vector display-based ever designed and released for the home market.
+
+The Vectrex was conceived by John Ross of Smith Engineering in late 1980. He, Mike Purvis, Tom Sloper, and Steve Marking had gone to Electro-Mavin, a surplus warehouse in Los Angeles. They found a 1-inch cathode ray tube (CRT) and wondered if a small electronic game could be made of it. A demonstration of a vector-drawing cathode ray tube display was made by connecting the deflection yoke in a standard television to the channels of a stereo amplifier fed with music program material. An auxiliary yoke was used to keep the raster television&apos;s horizontal fly-back high-voltage system running. The demo led to a system originally conceived as a handheld called the Mini Arcade but, as Smith Engineering shopped the idea around to developers, it evolved into a tabletop with nine-inch screen.
+
+The system was licensed to General Consumer Electronics in 1981. After a brief hardware and software development period, the Vectrex was unveiled on 7 June 1982 at the Summer Consumer Electronics Show in Chicago. It was publicly released in November, just in time for the holidays. The launch sales were strong enough that Milton Bradley bought out General Consumer Electronics in early 1983.
+
+The computer and vector generator were designed by Gerry Karr. The computer runs the game&apos;s computer code, watches the user&apos;s inputs, runs the sound generator, and controls the vector generator to make the screen drawings. The vector generator is an all-analog design using two integrators: X and Y. The computer sets the integration rates using a digital-to-analog converter. The computer controls the integration time by momentarily closing electronic analog switches within the operational-amplifier based integrator circuits. Voltage ramps are produced that the monitor uses to steer the electron beam over the face of the phosphor screen of the cathode ray tube. Another signal is generated that controls the brightness of the line.
+
+During development, for a short period of time, the possibility of using the 6502 processor was considered, but later its performance was considered insufficient.
+
+Milton Bradley&apos;s greater resources allowed the Vectrex to be released in parts of Europe by mid-1983 and, through a co-branding agreement with Bandai, in Japan as well. However, the video game crash of 1983 turned Milton Bradley&apos;s support of the Vectrex into a costly mistake. In May 1984, Milton Bradley merged with Hasbro, and the Vectrex was discontinued a few months after. Over its lifetime, it had cost Milton Bradley tens of millions of dollars.
+
+Prior to the Vectrex&apos;s discontinuation, a successor console with a color screen had been planned. After the rights reverted to Smith Engineering, the company made plans to revive the Vectrex as a handheld, but the imminent arrival of Nintendo&apos;s Game Boy put an end to those plans. In the mid-1990s, Jay Smith, then head of Smith Engineering, allowed new hardware and software development on a fee- and royalty-free basis. Smith has also allowed duplication of the original Vectrex software on a not-for-profit basis to allow Vectrex owners to obtain the original titles at low cost or for free.
+
+- UPDATES -
+
+Early units have a very audible buzzing from the built-in speaker that reacts to the graphics generated on screen. This is due to improper production grounding of signal lines of the low-level audio circuitry, and was eventually resolved in later production models.
+
+- STAFF -
+
+BY: Jay Smith, John Ross
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/275788/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="vboy" game="no" />
+		</systems>
+		<text>
+Console published 31 years ago:
+
+Virtual Boy (c) 1995 Nintendo Co., Ltd. [Japan]
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/228466/?o=2
+		</text>
+	</entry>
+<entry>
+		<systems>
+			<system name="wswan" game="no" />
+		</systems>
+		<text>
+Console (handheld) published 27 years ago:
+
+WonderSwan (c) 1999 Bandai Co., Ltd.
+
+A handheld game console released in Japan by Bandai It was developed by Gunpei Yokoi&apos;s company Koto Laboratory and Bandai.
+
+- TRIVIA -
+
+Released in 1999 in the fifth generation of video game consoles.
+
+Koto Laboratories claims that the WonderSwan sold 3.5 million units and 10 million game cartridges in all.
+
+- CONTRIBUTE -
+
+Edit this entry: https://www.arcade-history.com/game/45718/?o=2
+		</text>
+	</entry>
+</history>
