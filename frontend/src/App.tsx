@@ -1970,23 +1970,6 @@ const App: Component = () => {
           </Show>
           </div>
         </main>
-        <Show when={dropOverlayVisible()}>
-          {/* Folder-drop overlay. Pointer-events:none lets the underlying
-              Tauri drag-drop logic handle the actual drop without our DOM
-              capturing it. The Tauri payload, not the DOM event, fires the
-              ingest. */}
-          <div class="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-(--color-oa-bg-deep)/80 backdrop-blur-sm">
-            <div class="rounded-xl border-2 border-dashed border-(--color-system-accent) bg-(--color-oa-bg)/80 px-12 py-10 text-center">
-              <p class="text-5xl text-(--color-system-accent)">⇩</p>
-              <p class="mt-3 text-sm font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink)">
-                Drop folder to import
-              </p>
-              <p class="mt-1 text-[0.7rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                ROMs will be scanned and added
-              </p>
-            </div>
-          </div>
-        </Show>
       </Shell>
         }
       >
@@ -2031,6 +2014,27 @@ const App: Component = () => {
             <RetroverseShell />
           </Show>
         </RetroverseProvider>
+      </Show>
+      {/* Folder-drop overlay — rendered as a sibling of the flag-gate
+          Show so it overlays both the legacy Shell and RetroverseShell.
+          Pointer-events:none lets the underlying Tauri drag-drop logic
+          handle the actual drop without our DOM capturing it. The Tauri
+          payload, not the DOM event, fires the ingest. The drop
+          listener (window.addEventListener("drop", …)) at the bottom of
+          this component is already window-global, so the overlay's only
+          job is the visual hint. */}
+      <Show when={dropOverlayVisible()}>
+        <div class="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-(--color-oa-bg-deep)/80 backdrop-blur-sm">
+          <div class="rounded-xl border-2 border-dashed border-(--color-system-accent) bg-(--color-oa-bg)/80 px-12 py-10 text-center">
+            <p class="text-5xl text-(--color-system-accent)">⇩</p>
+            <p class="mt-3 text-sm font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink)">
+              Drop folder to import
+            </p>
+            <p class="mt-1 text-[0.7rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              ROMs will be scanned and added
+            </p>
+          </div>
+        </div>
       </Show>
       <ImportWizard
         open={wizardOpen()}
