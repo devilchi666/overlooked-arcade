@@ -6,6 +6,62 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-30 — Retroverse migration follow-ups (drop overlay + header affordances + Help-dialog home)
+
+Three of the six migration items from §5 of
+`docs/PLANS/retroverse-flag-deprecation.md`. Single feature branch
+`feat/retroverse-migration-followups`, three phase commits, merged
+`--no-ff`. Pre-conditions toward the eventual legacy-Shell deletion
+PR; no legacy code removed yet.
+
+- **Shipped (Phase 1, `c0bcacb` — folder-drop overlay relocates
+  outside the flag gate):** The `<Show when={dropOverlayVisible()}>`
+  block moved from inside the legacy `<Shell>` (App.tsx:1973-1989)
+  to a sibling of the flag-gate `<Show>`. The window-global drop
+  listener at App.tsx:1748-1769 already fired the ingest in both
+  modes — only the visual cue was Retroverse-blind. Now the dashed
+  drop card overlays both shells uniformly.
+- **Shipped (Phase 2, `494d1da` — RetroverseShell Quit + Game-focus
+  indicator):** New `gameFocus: Accessor<boolean>` + `onQuit: () =>
+  void` on `RetroverseContext`. Header gains two new elements
+  between the clock and the profile chip: a `<Show>`-gated
+  accent-colored "Game focus" pill (visible only while keyboard
+  passthrough is ON) + a 9×9 ✕ Quit button (muted styling so the
+  profile chip stays the visual anchor). Mirrors the legacy
+  toolbarRight affordances at App.tsx:1457-1515. Ctrl+G / Ctrl+Q
+  keyboard shortcuts continue to work in both modes via App.tsx's
+  keydown handler.
+- **Shipped (Phase 3, `d8ce7b6` — stale prose sweep + Help-dialog
+  Retroverse home):** Two pieces. Prose sweep: rephrased the
+  themes / library / fallback strings in `SettingsPage.tsx:144 /
+  :154 / :455` plus the `LeftSidebar.tsx:568` comment to drop
+  "(legacy Shell only)" / "menu bar" tail references. Discovered
+  gap: `Help → Debug log…` and `Keyboard shortcuts…` dialogs were
+  reachable only from the legacy MenuBar (App.tsx:1424-1427) — the
+  pre-edit prose at `SettingsSections.tsx:796` even pointed at
+  "(legacy menu bar)" as the bug-report recipe. New
+  `onOpenDebugLog` + `onOpenKeyboardShortcuts` handlers on
+  `RetroverseContext`, plus two buttons in AboutSettings → Report a
+  bug card ("Open debug log…" primary-styled + "Keyboard
+  shortcuts…" secondary-styled). The dialogs themselves (existing
+  `helpDialog` signal + `DebugLogDialog` + `KeyboardShortcutsDialog`
+  components) remain unchanged.
+- **Almost:** The Phase 3 commit message notes the deprecation plan
+  doc needs a follow-up tick recording that the Help-dialog gap was
+  closed in this branch rather than the deletion PR. Documentation
+  tick deferred — non-blocking.
+- **Next:** Three migration items remain (drop `WidgetCustomizerDialog`,
+  drop right-sidebar toggle button, operator-side verify of
+  Hide/Show library + Ctrl+W). The first two are deletions, cleaner
+  to do in the deletion PR itself alongside dropping the legacy
+  `toolbarLeft` menu items that own them. The verification is
+  operator playtest. After playtest passes, the flag default can
+  flip ON and the deletion PR follows the ordered checklist in §7
+  of `docs/PLANS/retroverse-flag-deprecation.md`. `npm run
+  typecheck` silent throughout this branch. No Rust changes.
+
+---
+
 ## 2026-05-30 — Gameplay fixes batch (NDS multi-touch + lightgun gun-side buttons + SNES Super Multitap)
 
 Four small-to-medium gameplay-completion fixes shipped as ordered

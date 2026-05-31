@@ -182,6 +182,28 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Retroverse migration follow-ups — drop overlay + header
+  affordances + Help-dialog Retroverse home** — merged to main
+  2026-05-30 (`--no-ff` from `feat/retroverse-migration-followups`).
+  Three phase commits closing items from §5 of
+  `docs/PLANS/retroverse-flag-deprecation.md` ahead of the eventual
+  legacy-Shell deletion PR. Phase 1 lifts the folder-drop overlay
+  out of the legacy Shell so Retroverse mode shows the visual cue
+  too. Phase 2 wires Quit + Game-focus indicator into the
+  RetroverseShell header next to the profile chip via new
+  `gameFocus` + `onQuit` context handlers. Phase 3 sweeps stale
+  "menu bar / legacy Shell only" prose from category helpText, and
+  closes a discovered gap — Debug log + Keyboard shortcuts dialogs
+  were only reachable from the legacy MenuBar — by surfacing
+  buttons in AboutSettings → Report a bug card via new
+  `onOpenDebugLog` + `onOpenKeyboardShortcuts` handlers. No legacy
+  code removed yet (that's the deletion PR). `npm run typecheck`
+  silent. Three migration items remain (drop
+  WidgetCustomizerDialog, drop right-sidebar toggle, operator
+  playtest of Hide/Show + Ctrl+W) and fold into the deletion PR
+  itself. Full per-phase summary in
+  [docs/SESSION_LOG.md](SESSION_LOG.md) 2026-05-30 entry.
+
 - **Gameplay fixes batch — NDS multi-touch + lightgun gun-side
   buttons + SNES Super Multitap** — merged to main 2026-05-30
   (`--no-ff` from `feat/gameplay-fixes-batch`). Four ordered phase
