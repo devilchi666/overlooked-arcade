@@ -6,6 +6,92 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-30 — Gameplay fixes batch (NDS multi-touch + lightgun gun-side buttons + SNES Super Multitap)
+
+Four small-to-medium gameplay-completion fixes shipped as ordered
+phase commits on `feat/gameplay-fixes-batch`, merged `--no-ff`. Closes
+multiple ROADMAP gaps across the per-core surface in one focused
+branch.
+
+- **Shipped (Phase 1, `47cd9ef` — docs only):** NEXT.md stale-entry
+  audit. Struck through MEDIUM #4 (Jaguar KP8–KP_HASH dispatch, was
+  fully shipped at `bindings.rs::jaguar_high_bit_to_retro_key` +
+  edge-detect loop in `main.rs:6134-6148`) and LOWER #9 (SMS Light
+  Phaser, dispatch shipped 2026-05-25 via light-gun-harness +
+  catalogued at `light_gun_systems.rs:102`). Narrowed LOWER #2 to
+  Super Multitap only (Mouse half already shipped via per-game
+  device-type override id=2 + label at `GameDialogs.tsx:646`).
+  Narrowed LOWER #6 to per-game touch-hotspot configuration only
+  (visual stylus reticle already shipped via `StylusOverlay.tsx`).
+- **Shipped (Phase 2, `552fd79` — SNES Super Multitap subclass):**
+  Mirrors the GameCube Wii peripheral subclass pattern. New
+  `DEVICE_ID_OPTIONS_SNES` table + `deviceOptionsForSystem` arm +
+  `systemSpecificDeviceLabel` case + per-game hint block in
+  `GameDialogs.tsx`. Subclass id 257 (= `(1 << 8) | RETRO_DEVICE_JOYPAD`)
+  verified against upstream snes9x `libretro/libretro.cpp` via
+  WebFetch before committing — hand-encoded same as Dolphin's Wii
+  ids, not the canonical RETRO_DEVICE_SUBCLASS macro. No Rust
+  changes — `arm_libretro_device` already dispatches arbitrary u32s.
+  Closes `snes/ROADMAP.md:31`.
+- **Shipped (Phase 3, `2d13533` — NDS multi-touch):** `oa_core::InputState`
+  gains `pointer_secondary: (i16, i16, bool, bool)` companion field;
+  `State.input_pointer_secondary[port]` mirror in oa-libretro;
+  `pointer_field_value(primary, secondary, index, id)` signature
+  widened. cb_input_state POINTER arm dispatches on `index`: 0 →
+  primary, 1 → secondary, ≥2 → zero. `POINTER_COUNT` reports total
+  pressed across both slots (0/1/2) independent of `index`. v1
+  plumbing only — `InputPoller::poll` leaves secondary at
+  `(0, 0, false, false)` until a real second-finger source is wired
+  (operator-driven follow-up). Closes `nds/ROADMAP.md:50` +
+  `NEXT.md` LOWER #7. 4 new tests in `state::tests`
+  (`pointer_field_value_index_1_returns_secondary_coords` +
+  `_index_out_of_range_returns_zero` + `_count_sums_pressed_slots` +
+  `_count_unaffected_by_out_of_range_index`).
+- **Shipped (Phase 4, `7795359` — Light-gun gun-side buttons):** New
+  `oa_core::InputState.lightgun_buttons: u32` field (bit position
+  matches libretro `RETRO_DEVICE_ID_LIGHTGUN_*` id directly; **u32
+  rather than the originally-specced u16** because RELOAD is id 16
+  which doesn't fit in u16). `State.input_lightgun_buttons[port]`
+  mirror; `lightgun_field_value(pointer, buttons, id)` signature
+  widened, AUX_A/B/C + START + SELECT + DPAD_{UP,DOWN,LEFT,RIGHT} +
+  RELOAD ids now read `(buttons >> id) & 1`. TRIGGER stays driven
+  by `pointer.pressed` (mouse left-click) so it fires without
+  per-system gun-side bindings. New
+  `oa_input::lightgun_buttons_from_joypad_bits(joypad: u32) -> u32`
+  derives the bitmask from per-port RetroPad bindings via a fixed
+  mapping (Y→AUX_A, A→AUX_B, X→AUX_C, START→START, SELECT→SELECT,
+  DPAD→DPAD, R-shoulder→RELOAD) — **no new bindings UI surface**,
+  operator rebinds the existing per-system JOYPAD bits to change
+  which physical input fires which gun-side button. 4 new tests
+  cover the bit dispatch + the u16-vs-u32 RELOAD regression guard.
+  Time Crisis pedal-reload + Wild Gunman alt-fire + Hogan's Alley
+  pause + Justifier's 3-button gun-side row + HotD 2 START all
+  reach the core. Per-core ROADMAPs flipped ✅ for nes / sms /
+  saturn / psx / dreamcast / atari7800 (each gains a new
+  "Light-gun gun-side buttons" line under the existing operator-
+  validation ⬜ bullet). `light_gun_systems.rs` snes notes updated
+  to reflect AUX wiring (previously read "return 0 today — Phase 2
+  Bindings UI work to wire them"). Cross-system POINTER+LIGHTGUN
+  inventory entry in `docs/NEXT.md` updated to record both Phase 3
+  + Phase 4.
+- **Almost:** Phase 4's u16-vs-u32 deviation from the original spec
+  noted in the commit message — operator pre-approved when this
+  came up at the planning check. The fixed JOYPAD→LIGHTGUN mapping
+  is the other deviation (spec said "InputPoller reads bindings";
+  derived-from-existing was the cleanest minimum-viable v1).
+- **Next:** Operator playtest of the 8-player Bomberman titles
+  (snes Super Multitap), Time Crisis 1/2 / Lethal Enforcers / HotD
+  series (gun-side buttons across psx + dreamcast + saturn), Wild
+  Gunman + Hogan's Alley (NES gun-side START + AUX_A). NDS
+  multi-touch needs a real second-finger source before Hotel Dusk
+  3D mode / Glory of Heracles two-finger gestures actually exercise
+  the index 1 path; surface is plumbed for the additive follow-up
+  PR. `cargo test --workspace` green throughout: oa-libretro 23 →
+  30 tests (+7 new), 539 oa-shell tests stable. `npm run typecheck`
+  silent.
+
+---
+
 ## 2026-05-30 — Game Info Panel v1 ship
 
 Closes the full 11-phase arc from `docs/PLANS/game-info-panel.md`. Single

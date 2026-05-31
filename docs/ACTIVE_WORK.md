@@ -182,6 +182,30 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Gameplay fixes batch — NDS multi-touch + lightgun gun-side
+  buttons + SNES Super Multitap** — merged to main 2026-05-30
+  (`--no-ff` from `feat/gameplay-fixes-batch`). Four ordered phase
+  commits closing small-to-medium per-core ROADMAP gaps in one
+  focused branch. Phase 1 NEXT.md cleanup (Jaguar high-bit + SMS
+  Phaser struck; SNES + NDS touch-overlay bullets narrowed). Phase 2
+  SNES Super Multitap subclass id 257 in the per-game device-type
+  dropdown (verified against upstream snes9x source). Phase 3 NDS
+  multi-touch — `pointer_secondary` companion field +
+  `pointer_field_value(primary, secondary, index, id)` dispatch;
+  POINTER_COUNT reports 0/1/2 total pressed; v1 plumbing only,
+  InputPoller leaves secondary at zero until a real second-finger
+  source is wired. Phase 4 light-gun gun-side buttons —
+  `lightgun_buttons: u32` (u32 deviation from u16 because RELOAD is
+  id 16) + State mirror + bit-keyed `lightgun_field_value` dispatch;
+  AUX_A/B/C + START + SELECT + DPAD + RELOAD wired through. Bindings
+  derive from per-port RetroPad bits via
+  `oa_input::lightgun_buttons_from_joypad_bits` — no new bindings
+  UI surface. Per-core ROADMAP flips: snes / nds / nes / sms /
+  saturn / psx / dreamcast / atari7800. Cross-system POINTER+LIGHTGUN
+  inventory entry in NEXT.md updated. oa-libretro 23→30 tests (+7
+  new); 539 oa-shell tests stable. Full per-phase summary in
+  [docs/SESSION_LOG.md](SESSION_LOG.md) 2026-05-30 entry.
+
 - **Game Info Panel v1** — merged to main 2026-05-30 (`--no-ff` from
   `feat/game-info-panel-v1`, merge `1caa4bc`). 11-phase arc across nine
   phase commits; full per-phase summary in
