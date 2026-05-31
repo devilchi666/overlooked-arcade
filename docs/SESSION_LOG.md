@@ -6,6 +6,58 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-31 — Per-System UI visual overlays routed to future Kiosk shell (two-shell decision)
+
+Single-commit branch `feat/retroverse-per-system-overlay-fix`,
+merged `--no-ff`. Resolves the visual conflict the operator
+surfaced after the legacy Shell deletion: SystemBackground's
+50%-opaque radial gradient was painting on top of the Retroverse
+chrome (root-level sibling, later in DOM order, no positioned
+ancestor).
+
+- **Shipped (App.tsx surgery — net -22 lines):**
+  `SystemBackground` + `SystemBootAnimation` dropped from the
+  Retroverse render path. `hoveredSystemId` signal + its
+  mouseover tracker dropped (only consumer was
+  `SystemBackground`'s source chain). `pinnedEntry` memo dropped
+  (same reason; LayoutStore field `rightSidebarPinnedGameId`
+  stays untouched since it may yet have a Retroverse home).
+  `StylusOverlay` retained — `fixed` positioning + small
+  footprint + NDS-only gate, no z-conflict with the Retroverse
+  chrome. The dropped components themselves stay in-tree
+  (`frontend/src/components/SystemBackground.tsx`,
+  `SystemBootAnimation.tsx`) as ready-to-consume building blocks
+  for the future Kiosk shell.
+- **Shipped (architectural decision — see `docs/PARKING_LOT.md`
+  2026-05-31 entry, now expanded):** Two-shell future locked.
+  Retroverse stays opinionated + clean (Heroic Games Launcher
+  peer); future **Kiosk** shell hosts the themable /
+  customizable experience (BigBox peer; name matches existing
+  `docs/features/kiosk-shell/`). Per-System UI Stage 1 splits:
+  audio + accent colors + tile flourishes stay in Retroverse
+  (no visual conflict); `SystemBackground` + `SystemBootAnimation`
+  become Kiosk-only; `StylusOverlay` works in either. Stage 2's
+  visual/layout parts (per-system navigation: wheels / carousels
+  / lists) are Kiosk-only; the audio sub-part (per-system
+  in-game SFX) ships in both shells when picked up. Stage 3
+  routing case-by-case. **Kiosk stays back-burner** per the
+  operator — no demand for the cabinet / customizer use case
+  yet; Retroverse covers the daily-driver case completely.
+- **Almost:** The PARKING_LOT entry now captures the full
+  architectural decision (table-shaped split + cross-refs to
+  the Kiosk plan + per-system-ui plan). The Kiosk shell at
+  `docs/features/kiosk-shell/` keeps its existing scope; no
+  edits needed there. The visual-overlay components stay in
+  `frontend/src/components/` dormant until Kiosk picks them up.
+- **Next:** Operator can flip Settings → Display → Per-system
+  experiences back ON — audio + accents + tile flourishes work
+  cleanly in Retroverse with no chrome conflict. The
+  deprecation-cycle flag mechanism at `frontend/src/lib/retroverseFlag.ts`
+  remains in place through one more release cycle per the
+  legacy-Shell-deletion plan §4.
+
+---
+
 ## 2026-05-31 — Legacy Shell deleted; Retroverse is the only shell
 
 Closes the multi-week deprecation arc. Single feature branch
