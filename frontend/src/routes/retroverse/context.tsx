@@ -91,6 +91,16 @@ export type RetroverseContextValue = {
   /// Quit button at App.tsx:1505-1515. Ctrl+Q keyboard shortcut works
   /// in both modes via App.tsx's keydown handler.
   onQuit: () => void;
+  /// Open the live debug-log dialog (Rust + frontend log ring). In
+  /// the legacy Shell this was reachable from Help → Debug log…;
+  /// Retroverse exposes the same dialog via a button in SETTINGS →
+  /// About → Report a bug card so operator bug-report flow doesn't
+  /// regress.
+  onOpenDebugLog: () => void;
+  /// Open the Keyboard shortcuts cheatsheet. Same migration story as
+  /// onOpenDebugLog — legacy Shell's Help menu had it; Retroverse
+  /// surfaces it from SETTINGS → About.
+  onOpenKeyboardShortcuts: () => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();

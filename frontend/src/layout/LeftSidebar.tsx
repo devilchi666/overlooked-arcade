@@ -564,8 +564,10 @@ const LeftSidebar: Component<Props> = (props) => {
       </nav>
 
       {/* Collapse / expand toggle pinned to bottom. Cores + Settings buttons
-          previously lived here too; both routes are now reached from the
-          menu bar (Library ▾ → Library Manager… / Cores Manager…). */}
+          previously lived here too; both routes now live elsewhere — Cores
+          via Retroverse SETTINGS → Cores (or the legacy Shell's Library ▾
+          → Cores Manager…), Settings via Retroverse SETTINGS or the legacy
+          Shell's Settings menu. */}
       <div class="space-y-1 border-t border-white/5 p-2">
         <button
           type="button"

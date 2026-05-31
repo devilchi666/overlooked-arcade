@@ -2002,6 +2002,8 @@ const App: Component = () => {
               setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
             gameFocus,
             onQuit: () => void invoke("quit_app"),
+            onOpenDebugLog: () => setHelpDialog("debug-log"),
+            onOpenKeyboardShortcuts: () => setHelpDialog("shortcuts"),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
