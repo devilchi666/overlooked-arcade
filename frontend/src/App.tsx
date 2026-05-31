@@ -2000,6 +2000,8 @@ const App: Component = () => {
               setCollectionDialogMode({ kind: "create", seedRomId }),
             onOpenRenameCollection: (collectionId, currentName) =>
               setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
+            gameFocus,
+            onQuit: () => void invoke("quit_app"),
           }}
         >
           {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed

@@ -15,7 +15,7 @@
 // LIBRARY's real grid + sidebar + detail pane. Slice 7 adds the
 // footer hint bar.
 
-import { createSignal, Match, onCleanup, onMount, Switch, type Component } from "solid-js";
+import { createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import {
   currentRoute,
   setCurrentRoute,
@@ -148,6 +148,35 @@ const RetroverseShell: Component = () => {
               {dateStr()}
             </span>
           </div>
+          {/* Game-focus indicator — visible only when keyboard
+              passthrough is ON (Ctrl+G). Mirrors the legacy
+              toolbarRight pill at App.tsx:1457-1464 so operators
+              running a game with the core grabbing hotkeys see
+              the same "Game focus" cue in Retroverse. */}
+          <Show when={ctx.gameFocus()}>
+            <span
+              title="Game focus is ON — OA hotkeys pass through to the core. Press Ctrl+G to disable."
+              class="shrink-0 rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--color-system-accent)"
+            >
+              Game focus
+            </span>
+          </Show>
+          {/* Quit button — fires invoke("quit_app"). Same affordance
+              as the legacy toolbarRight Quit at App.tsx:1505-1515.
+              Ctrl+Q keyboard shortcut works in both modes via
+              App.tsx's keydown handler. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              ctx.onQuit();
+            }}
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-sm text-(--color-oa-ink-dim) transition hover:border-(--color-oa-ink-dim)/50 hover:bg-white/[0.08] hover:text-(--color-oa-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            title="Quit (Ctrl+Q)"
+            aria-label="Quit"
+          >
+            ✕
+          </button>
           {/* Profile chip — avatar from Settings → Profile. Click
               routes to SETTINGS so the operator can edit display name
               + avatar there. */}

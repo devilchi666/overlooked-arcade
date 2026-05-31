@@ -80,6 +80,17 @@ export type RetroverseContextValue = {
   /// existing collection. Used by the right-click context menu on a
   /// custom-collection sidebar row.
   onOpenRenameCollection: (collectionId: string, currentName: string) => void;
+  /// Game-focus state — true when the operator has flipped keyboard
+  /// passthrough ON (Ctrl+G) so OA hotkeys go to the running core
+  /// instead of the shell. RetroverseShell renders a small status pill
+  /// in the header when this is true; mirrors the legacy toolbarRight
+  /// indicator at App.tsx:1457-1464.
+  gameFocus: Accessor<boolean>;
+  /// Quit handler — fires `invoke("quit_app")`. Bound to the ✕ button
+  /// in the RetroverseShell header; mirrors the legacy toolbarRight
+  /// Quit button at App.tsx:1505-1515. Ctrl+Q keyboard shortcut works
+  /// in both modes via App.tsx's keydown handler.
+  onQuit: () => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();
