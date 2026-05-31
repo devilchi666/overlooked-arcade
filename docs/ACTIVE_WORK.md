@@ -182,6 +182,26 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **NDS per-game touch hotspots overlay** — merged to main
+  2026-05-31 (`--no-ff` from `feat/nds-touch-hotspots`). Three
+  phase commits closing the second half of `docs/cores/nds/ROADMAP.md`
+  "Per-game touch overlay UI" (visual stylus reticle was first
+  half, 2026-05-27). Schema extension: new
+  `touch_hotspots: [{ label, x, y, w, h }]` optional field on
+  `GameInfo` in `apps/oa-shell/src/game_info.rs`; coords in
+  NDS bottom-screen native space. New
+  `frontend/src/components/TouchHotspotOverlay.tsx` renders
+  accent-outlined labelled rectangles via contain-fit math
+  against the standard NDS combined-frame aspect. Per-session
+  "Show touch hints" toggle in QuickSettings ActionsPanel,
+  NDS-gated. Seed entries for Phantom Hourglass + Brain Age +
+  Trauma Center in new `docs/cores/nds/games-info.md`. V1
+  limitation: assumes default melonDS stacked-vertical screen
+  layout; non-default layouts misplace hotspots until v2 reads
+  the core option. 540 oa-shell tests green (+3 new). Full
+  per-phase summary in [docs/SESSION_LOG.md](SESSION_LOG.md)
+  2026-05-31 entry.
+
 - **Legacy Shell deletion** — merged to main 2026-05-31 (`--no-ff`
   from `feat/retroverse-legacy-deletion`). Three phase commits
   closing the deletion plan in

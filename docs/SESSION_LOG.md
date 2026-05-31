@@ -6,6 +6,72 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-31 — NDS per-game touch hotspots overlay
+
+Closes the second half of `docs/cores/nds/ROADMAP.md` "Per-game
+touch overlay UI" — visual stylus reticle landed 2026-05-27 with
+the system-fixes branch; per-game touch-area indicator overlay
+ships here. Three-phase feature branch
+`feat/nds-touch-hotspots`, merged `--no-ff`. ~600 lines across
+9 files (parser + tests + component + seed content + docs).
+
+- **Shipped (Phase 1, `2483a9e` — schema + Rust):** New
+  optional `touch_hotspots: [{ label, x, y, w, h }]` field on
+  `GameInfo` in `apps/oa-shell/src/game_info.rs`. Coordinates
+  in NDS bottom-screen native space (0..256 × 0..192). New
+  `TouchHotspot` struct; threaded through `MergedGameInfo` +
+  `merge_game_info` (file-only in v1, no override path).
+  Schema doc section in `docs/cores/SCHEMA.md`. Three new tests
+  (parse roundtrip + merge with file + merge without file) push
+  oa-shell to 540 tests green.
+- **Shipped (Phase 2, `775ef25` — frontend overlay + toggle):**
+  New `frontend/src/components/TouchHotspotOverlay.tsx` (~165
+  lines) — contain-fits the NDS combined-frame aspect (256×384
+  portrait) into the viewport, maps each hotspot to the bottom
+  half of the fitted rectangle, renders thin accent-coloured
+  outlined rectangles with floating uppercase label chips
+  (operator pick — outline-style over filled-translucent /
+  numbered-dot alternatives). Per-session `touchHintsEnabled`
+  signal in App.tsx; toggle row "Show touch hints" / "Hide
+  touch hints" in QuickSettings ActionsPanel, gated to the
+  `HOTSPOT_SYSTEMS` set (NDS today). Per-session ergonomics by
+  design — resets on process restart, not a sticky preference.
+  Toggle thread: App.tsx → QuickSettings Props → ActionsPanel
+  Props. Mount alongside StylusOverlay in App.tsx. Live
+  re-fit on window resize.
+- **Shipped (Phase 3, `a0a9661` — seed content + ROADMAP
+  flips):** New `docs/cores/nds/games-info.md` with three
+  flagship entries:
+  - **Phantom Hourglass** — 4 corner widgets (Map, Items,
+    Menu, Speak/Action).
+  - **Brain Age: Train Your Brain in Minutes a Day** — answer
+    zone (right pane) + Menu/Done.
+  - **Trauma Center: Under the Knife** — vertical tool palette
+    (left edge) + patient view (rest).
+  NDS ROADMAP "Per-game touch overlay UI" bullet flipped
+  🟨→✅. NEXT.md Game Info Panel inventory entry updated to
+  record the schema extension + the new overlay component.
+- **Almost:** v1 layout assumption — overlay positions
+  hotspots against the default melonDS stacked-vertical screen
+  layout (top above bottom; bottom screen at y[192..384] of
+  the 256×384 framebuffer). Non-default melonDS layouts
+  (side-by-side, top-only, hybrid) misplace hotspots until v2
+  reads the core option. Documented across SCHEMA + overlay
+  header + ROADMAP. Operators using non-default layouts can
+  flip the toggle off; visual reticle still works.
+- **Next:** Toggle is per-session (resets on restart by
+  design). Operators wanting a sticky preference can request a
+  v2 promotion to `LayoutStore` or `GameOverrides` later.
+  Seed content (Phantom Hourglass / Brain Age / Trauma Center)
+  is illustrative; operator-driven expansion to other
+  stylus-heavy titles (Mario Kart DS course-select, Pokemon
+  Pokétch panel, Nintendogs interaction zones) is a content
+  workstream. Schema extension is generic enough that future
+  pointer/touch systems (PSP touch in some titles, Vita
+  rear-touch) can adopt without changes.
+
+---
+
 ## 2026-05-31 — Per-System UI visual overlays routed to future Kiosk shell (two-shell decision)
 
 Single-commit branch `feat/retroverse-per-system-overlay-fix`,
