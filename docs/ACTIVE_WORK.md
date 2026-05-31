@@ -182,6 +182,30 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Legacy Shell deletion** — merged to main 2026-05-31 (`--no-ff`
+  from `feat/retroverse-legacy-deletion`). Three phase commits
+  closing the deletion plan in
+  `docs/PLANS/retroverse-flag-deprecation.md` §7. Net **-1860
+  lines** across 13 files. Phase 1 stripped the entire
+  `<Show fallback={<Shell>}>` flag-gate wrapper + 76 legacy
+  MenuBar items + supporting signals/handlers/imports + the
+  `library-manager` + `cores` variants from `SidebarView`.
+  Phase 2 deleted six legacy chrome files (Shell / TopToolbar /
+  RightSidebar / MenuBar / widgets/index / WidgetCustomizerDialog,
+  -1268 lines on disk). Phase 3 collapsed `LibraryManagerPage`'s
+  `variant` + `onBack` props now that only the panel-mode caller
+  survived. `SystemBackground` / `SystemBootAnimation` /
+  `StylusOverlay` restored as siblings of `RetroverseProvider`
+  (these had only rendered inside the legacy `<main>`
+  pre-deletion); the restoration surfaced a Per-System UI vs
+  Retroverse theme visual conflict that's filed for follow-up in
+  `docs/PARKING_LOT.md` 2026-05-31 entry. Operator's interim
+  workaround is turning Settings → Display → Per-system
+  experiences OFF. The flag accessor + Settings toggle remain in
+  place through one more release cycle per the deprecation
+  plan §4. Full per-phase summary in
+  [docs/SESSION_LOG.md](SESSION_LOG.md) 2026-05-31 entry.
+
 - **Retroverse migration follow-ups — drop overlay + header
   affordances + Help-dialog Retroverse home** — merged to main
   2026-05-30 (`--no-ff` from `feat/retroverse-migration-followups`).

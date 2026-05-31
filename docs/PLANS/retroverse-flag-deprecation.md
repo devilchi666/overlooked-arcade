@@ -171,14 +171,38 @@ In order:
    `DEFAULT_EXPERIMENTAL_RETROVERSE_UI: false → true`). The accessor
    shape at `lib/retroverseFlag.ts` was already reactive; only the
    store-side default needed to flip.
-4. 🟨 **One release cycle of operator playtest** — in progress
-   starting 2026-05-31. Operator can flip back OFF as the escape
-   hatch via Settings → Display → Experimental → Retroverse UI for
-   the duration of this cycle.
-5. ⏳ **Confirm no remaining references to legacy `SidebarView` kinds**
-   via grep — done as the first step of the deletion PR itself; the
-   variants stay in place during the playtest cycle as cheap
-   insurance for operators flipping back to legacy.
+4. ✅ **One release cycle of operator playtest** — completed
+   2026-05-31. Operator confirmed Retroverse parity good enough
+   to greenlight deletion; the per-system UI visual conflict
+   surfaced post-deletion (PARKING_LOT 2026-05-31) is a follow-up,
+   not a regression.
+5. ✅ **Confirm no remaining references to legacy `SidebarView`
+   kinds** — verified via grep before merging the deletion PR;
+   `library-manager` and `cores` variants dropped from the type
+   union in `frontend/src/layout/LeftSidebar.tsx:36`.
+
+---
+
+## Deletion PR completed 2026-05-31
+
+Merged as `feat/retroverse-legacy-deletion` (three phase commits,
+merge `274df1e`). Net **-1860 lines** across 13 files — close to
+the ~1900 estimate in §8. The flag accessor + Settings toggle
+remain in place through one more release cycle per §4.
+
+Outstanding follow-ups:
+- `docs/PARKING_LOT.md` 2026-05-31 entry — Per-System UI overlays
+  vs Retroverse theme visual conflict. Operator workaround:
+  Settings → Display → Per-system experiences master toggle OFF.
+- Performance HUD Retroverse home (currently always-off, no UI
+  toggle).
+- Status messages reader (writes still happen; reader gone with
+  legacy toolbar).
+- QuickSettings deep-link entries (rewind / TAS / video / memory
+  / disc) — operators navigate inside QuickSettings via Esc.
+
+This doc moves to historical-reference status. Don't append new
+work here; create a new plan / parking lot entry.
 
 ---
 

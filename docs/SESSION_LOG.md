@@ -6,6 +6,87 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-31 — Legacy Shell deleted; Retroverse is the only shell
+
+Closes the multi-week deprecation arc. Single feature branch
+`feat/retroverse-legacy-deletion`, three phase commits, merged
+`--no-ff`. Net **-1860 lines** across 13 files (close to the
+~1900-line estimate in `docs/PLANS/retroverse-flag-deprecation.md`
+§8). Operator playtest cycle that started with the 2026-05-31
+flag-default flip passed clean enough to greenlight deletion.
+
+- **Shipped (Phase 1, `a28fefa` — App.tsx surgery):** Dropped the
+  entire `<Show when={isRetroverseUiEnabled()} fallback={<Shell>...
+  </Shell>}>` flag-gate wrapper; `RetroverseShell` now renders
+  unconditionally (still gated on the existing `!(isDirectLaunch()
+  || gameMode())` fullBleed check). Stripped 76 legacy MenuBar
+  items (`toolbarLeft` ~230L + `toolbarCenter` ~20L + `toolbarRight`
+  ~63L = ~315 lines of toolbar consts). Each menu item documented
+  in the commit message as routed to its Retroverse equivalent
+  (SETTINGS categories / LIBRARY GridControls / TileContextMenu /
+  QuickSettings / AboutSettings buttons). Dropped legacy signals +
+  helpers (`widgetCustomizerOpen`, `overflowOpen`,
+  `libraryManagerInitialTab`, `openLibraryManager`,
+  `openProperties`, `toggleGameFocus`, `openQuickSettings`,
+  `activeGameEntry`, `setPerfHudVisible`, `TOOLBAR_BTN`,
+  `requestOpenFirstMenu` import + global Start-button handler).
+  Dropped the keyboard handler's `currentView().kind ===
+  "library-manager"` gates + the legacy `<HintRegion>` fallback
+  that mapped `left-sidebar` / `library-grid` / `right-sidebar`
+  focus-group ids to hardcoded hints. Dropped `library-manager`
+  + `cores` variants from `SidebarView` in
+  `frontend/src/layout/LeftSidebar.tsx:36`; swept doc comments in
+  4 files. **Discovered + closed a pre-existing gap:**
+  `SystemBackground` / `SystemBootAnimation` / `StylusOverlay`
+  were rendered ONLY inside the legacy `<Shell>`'s `<main>` before
+  this PR — they were already missing in Retroverse mode during
+  the playtest cycle (the operator hadn't noticed the subtle
+  per-system art / boot fade / stylus reticle). Restored as
+  siblings of `RetroverseProvider` so the Per-System UI Stage 1
+  master-toggle intent is preserved now that there's only one
+  shell.
+- **Shipped (Phase 2, `5fbc6f0` — file deletions):** Six legacy
+  chrome files gone — `Shell.tsx` (85L), `TopToolbar.tsx` (38L),
+  `RightSidebar.tsx` (246L), `MenuBar.tsx` (604L),
+  `widgets/index.tsx` (120L), `WidgetCustomizerDialog.tsx`
+  (175L). The empty `frontend/src/layout/widgets/` directory also
+  removed. Total -1268 lines from disk.
+- **Shipped (Phase 3, `16707ec` — variant collapse):**
+  `LibraryManagerPage` Props lost `variant: "page" | "panel"` +
+  `onBack` (no surviving "page" caller). Page-mode header + Esc
+  handler + classList branching + `TAB_HINTS` map all dropped.
+  `LibrarySettings` caller in SettingsSections.tsx updated to
+  drop the no-op `onBack` + `variant` props. -55 lines.
+- **Almost:** Per-System UI overlay visual conflict in Retroverse
+  mode — the restored `SystemBackground` / `SystemBootAnimation`
+  compete with Retroverse's own theming. Operator's interim
+  workaround is turning Settings → Display → Per-system
+  experiences master toggle OFF. Filed in `docs/PARKING_LOT.md`
+  2026-05-31 entry as a real follow-up (z-index / opacity /
+  theming alignment OR per-shell exemption needed before the
+  next Per-System UI stage so the design language stays
+  coherent). The flag accessor at `frontend/src/lib/retroverseFlag.ts`
+  + the bridge `createEffect` + the Settings → Display →
+  Experimental → Retroverse UI toggle UI are all still in place;
+  flag mechanism deletion is one more release-cycle out per the
+  deprecation plan §4.
+- **Next:** Small operator-driven follow-ups documented in the
+  Phase 1 commit message — Performance HUD needs a Retroverse
+  home (HUD currently always-off, no UI toggle), QuickSettings
+  deep-link entries (rewind / TAS / video / memory / disc)
+  dropped (operators navigate inside QuickSettings via Esc),
+  status-message reader gone (writes still happen, plumbing
+  ready for a Retroverse home — likely a toast or LIBRARY header
+  status row). PARKING_LOT 2026-05-31 entry for the per-system
+  UI overlay conflict is the next branch in this lineage. With
+  the legacy Shell gone, the deletion plan in
+  `docs/PLANS/retroverse-flag-deprecation.md` can move to "done"
+  status; the doc itself can be archived or kept as historical
+  reference. `npm run typecheck` silent throughout the deletion;
+  no Rust changes.
+
+---
+
 ## 2026-05-31 — Retroverse flag default flipped OFF → ON; deprecation cycle starts
 
 Single one-line change at `frontend/src/settings/store.ts:139`
