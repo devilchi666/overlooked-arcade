@@ -21,6 +21,7 @@ mod cheat_formats;
 mod cheat_search;
 mod cli;
 mod data_dir;
+mod game_info;
 mod http_retry;
 mod core_installer;
 mod core_options;
@@ -2958,6 +2959,12 @@ fn main() {
             update_cheat,
             delete_cheat,
             list_cheat_formats,
+            get_game_info,
+            get_game_info_override,
+            set_game_info_override,
+            delete_game_info_override,
+            list_game_info_overridden,
+            list_game_info_badges,
             arm_cheats,
             start_cheat_search,
             filter_cheat_search,
@@ -7505,6 +7512,109 @@ fn update_cheat(cheat: library_db::Cheat, db: tauri::State<'_, library_db::Libra
 #[tauri::command]
 fn delete_cheat(id: i64, db: tauri::State<'_, library_db::LibraryDb>) -> Result<usize, String> {
     db.delete_cheat(id)
+}
+
+// ---- Game Info Panel v1 — Phase 4 query commands -----------------------
+//
+// `get_game_info` merges the file-layer (docs/cores/<id>/games-info.md
+// embedded index) with the operator's local SQLite overrides and
+// returns a single MergedGameInfo with field-typed precedence applied
+// per plan §8.
+//
+// `set_game_info_override` / `delete_game_info_override` UPSERT and
+// DELETE the operator's local row. `list_game_info_overridden` powers
+// the tile-badge `✎` indicator (Phase 6).
+
+/// Resolve a game's merged info record. Frontend passes the
+/// `systemId` from the focused tile, the local `romId` (used for the
+/// SQLite override lookup), plus the optional `romHash` (priority 1
+/// file-layer lookup) and `romTitle` (priority 2 fallback). Returns
+/// `None` only when there's nothing to show — no file record AND no
+/// operator override.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_game_info(
+    systemId: String,
+    romId: String,
+    romHash: Option<String>,
+    romTitle: Option<String>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<game_info::MergedGameInfo>, String> {
+    let index = game_info::global_index();
+    let file = index.lookup(&systemId, romHash.as_deref(), romTitle.as_deref());
+    let ov = db.get_game_info_override(&systemId, &romId)?;
+    Ok(game_info::merge_game_info(&systemId, file, &ov))
+}
+
+/// Replace the operator's local override for one game. Passing a
+/// default-constructed (empty) override deletes the row.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_game_info_override(
+    systemId: String,
+    romId: String,
+    overrideRecord: game_info::GameInfoOverride,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_game_info_override(&systemId, &romId, &overrideRecord)
+}
+
+/// Convenience: blank the operator's local override for one game.
+/// Equivalent to `set_game_info_override(..., GameInfoOverride::default())`
+/// — surfaced separately so the frontend's "Reset to default" affordance
+/// reads as a single explicit action rather than "set to empty."
+#[allow(non_snake_case)]
+#[tauri::command]
+fn delete_game_info_override(
+    systemId: String,
+    romId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_game_info_override(&systemId, &romId, &game_info::GameInfoOverride::default())
+}
+
+/// `(system_id, rom_id)` pairs for every game with at least one
+/// local override. Frontend caches this once per library refresh +
+/// renders the `✎` tile-badge for matching games (Phase 6).
+#[tauri::command]
+fn list_game_info_overridden(
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<(String, String)>, String> {
+    db.list_game_info_overridden()
+}
+
+/// Read just the operator's local override for one game — the editor
+/// form in GameInfoModal's new Game Info tab binds to this so it can
+/// distinguish "operator set this" (override field is Some) from
+/// "fall back to file value" (override field is None). Returns the
+/// default-constructed override when no row exists.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_game_info_override(
+    systemId: String,
+    romId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<game_info::GameInfoOverride, String> {
+    db.get_game_info_override(&systemId, &romId)
+}
+
+/// Compute tile-badge data for every game in `entries`. Caller passes
+/// the library list it already has (from list_games + LibraryStore on
+/// the frontend); we merge against the file-layer index + bulk-loaded
+/// overrides in-memory and return only entries with at least one bug
+/// or local edit. Sized for ~10k library entries.
+#[tauri::command]
+fn list_game_info_badges(
+    entries: Vec<game_info::LibraryEntryForBadges>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<game_info::GameInfoBadge>, String> {
+    let overrides = db.list_all_game_info_overrides()?;
+    let overrides_map: std::collections::HashMap<(String, String), game_info::GameInfoOverride> =
+        overrides
+            .into_iter()
+            .map(|(sys, rom, ov)| ((sys, rom), ov))
+            .collect();
+    Ok(game_info::compute_game_info_badges(&entries, &overrides_map))
 }
 
 /// Per-system cheat-code format declarations. Frontend's CheatsDialog

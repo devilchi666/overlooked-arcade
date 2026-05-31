@@ -12,13 +12,22 @@
 // avoids the panel feeling "empty" because a metadata field hasn't
 // been enriched yet.
 
-import { For, Show, type Component } from "solid-js";
+import { For, Show, createSignal, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getDataDir } from "../../lib/dataDir";
 import { createResource } from "solid-js";
 import { useMedia } from "../../library/media";
 import type { RomEntry } from "../../library/types";
 import { systemThemes } from "../../themes/registry";
+import {
+  getGameInfo,
+  getGameInfoOverride,
+  setGameInfoOverride,
+  type BugSeverity,
+} from "../../library/gameInfo";
+import { useGameInfoBadges } from "../../library/gameInfoBadges";
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 
 type Props = {
   entry: RomEntry;
@@ -55,6 +64,35 @@ function formatDate(unixSecs?: number): string {
   }
 }
 
+/// Glyph + tint for a single bug severity. Blockers get a red alert
+/// triangle; major + minor share an amber warning glyph at different
+/// emphasis; cosmetic shows as a neutral dot. Used by the KNOWN ISSUES
+/// section.
+function severityGlyph(s: BugSeverity): string {
+  switch (s) {
+    case "blocker": return "⚠";
+    case "major":   return "⚠";
+    case "minor":   return "•";
+    case "cosmetic": return "·";
+  }
+}
+function severityTintClass(s: BugSeverity): string {
+  switch (s) {
+    case "blocker":  return "text-red-300";
+    case "major":    return "text-amber-300";
+    case "minor":    return "text-(--color-oa-ink-dim)";
+    case "cosmetic": return "text-(--color-oa-ink-dim)/60";
+  }
+}
+function severityRank(s: BugSeverity): number {
+  switch (s) {
+    case "blocker":  return 3;
+    case "major":    return 2;
+    case "minor":    return 1;
+    case "cosmetic": return 0;
+  }
+}
+
 const GameDetailPanel: Component<Props> = (props) => {
   const media = useMedia();
   const [appDataPath] = createResource(async () => {
@@ -64,6 +102,108 @@ const GameDetailPanel: Component<Props> = (props) => {
       return "";
     }
   });
+
+  // Bump signal — the Apply best emulator action increments this so
+  // the merged resource re-fetches with fresh appliedBestEmulator
+  // provenance without forcing a full library refresh.
+  const [mergedRefreshKey, setMergedRefreshKey] = createSignal(0);
+
+  // Fetch the merged Game Info record (file layer + operator overrides)
+  // for the focused entry. Re-fetches when the operator focuses a
+  // different tile — the createResource source closure depends on the
+  // identifying fields. Returns null when neither the file layer nor
+  // operator overrides have any content, in which case the new
+  // sections silently hide.
+  const [merged] = createResource(
+    () => ({
+      systemId: props.entry.systemId,
+      romId: props.entry.id,
+      romHash: props.entry.sha1,
+      romTitle: props.entry.title,
+      _: mergedRefreshKey(),
+    }),
+    async (args) => {
+      try {
+        return await getGameInfo({
+          systemId: args.systemId,
+          romId: args.romId,
+          romHash: args.romHash,
+          romTitle: args.romTitle,
+        });
+      } catch (e) {
+        console.warn("[GameDetailPanel] get_game_info failed:", e);
+        return null;
+      }
+    },
+  );
+
+  // Bugs sorted by severity (blocker first). The tile-badge layer
+  // also picks the max severity, but here we want operator-visible
+  // ordering inside the panel.
+  const sortedBugs = () => {
+    const m = merged();
+    if (!m) return [];
+    return [...m.bugs].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  };
+
+  // ---- Apply best emulator action (Phase 8) -------------------------
+  //
+  // Wires the panel's [Apply] button next to the Recommended core
+  // block. Writes `GameOverrides.libretro_core` for this game via the
+  // existing per-game core-override Tauri path and marks the operator
+  // override row's `appliedBestEmulator` provenance flag so:
+  //  (a) the button switches to "Applied" without further input;
+  //  (b) the tile gains the `✎` local-edits indicator;
+  //  (c) the "Reset to default" affordance in the modal editor knows
+  //      to unwind this override when used.
+  const badges = useGameInfoBadges();
+
+  async function handleApplyBestEmulator(): Promise<void> {
+    const entry = props.entry;
+    const m = merged();
+    const recommended = m?.bestEmulator?.recommended;
+    if (!entry || !recommended) return;
+    try {
+      // 1. Per-game core override write — operator's next launch uses
+      // the recommended core. This is the same path the per-game
+      // settings drawer uses.
+      await invoke("update_game_core_override", {
+        id: entry.id,
+        value: recommended,
+      });
+      // 2. Read current override, set the provenance flag, write back.
+      // Preserves any other operator edits — we mutate only the flag.
+      const ov = await getGameInfoOverride({
+        systemId: entry.systemId,
+        romId: entry.id,
+      });
+      await setGameInfoOverride({
+        systemId: entry.systemId,
+        romId: entry.id,
+        overrideRecord: { ...ov, appliedBestEmulator: true },
+      });
+      // 3. Refresh side effects: tile-badge cache (✎ shows up if it
+      // wasn't already) + the merged record this panel reads from
+      // (so the Apply button switches to Applied without an entry
+      // change).
+      await badges.refresh();
+      setMergedRefreshKey((k: number) => k + 1);
+      // 4. Inline confirmation toast — surfaces via the existing
+      // oa://toast channel so the per-system theming carries through.
+      await emit("oa://toast", {
+        level: "success",
+        message: `Best emulator applied — ${recommended} will be used on next launch.`,
+        system: entry.systemId,
+      });
+    } catch (err) {
+      console.warn("[GameDetailPanel] Apply best emulator failed:", err);
+      await emit("oa://toast", {
+        level: "error",
+        message: "Apply best emulator failed — see debug log for details.",
+        system: entry.systemId,
+      });
+    }
+  }
 
   const metadata = () => media.media(props.entry.id)?.metadata;
   const themeName = () =>
@@ -194,11 +334,31 @@ const GameDetailPanel: Component<Props> = (props) => {
         </Show>
       </div>
 
-      {/* Description — graceful fallback when metadata isn't synced. */}
-      <Show when={metadata()?.description}>
-        <p class="px-5 pt-4 text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
-          {metadata()!.description}
-        </p>
+      {/* Description — graceful fallback when metadata isn't synced.
+          Operator's Game Info Panel shortSummary (when present) takes
+          the place of the libretro-database description. Local-source
+          summaries surface with an "(operator note)" mini-label so the
+          reader can tell they're operator-authored vs scraped content. */}
+      <Show
+        when={merged()?.shortSummary}
+        fallback={
+          <Show when={metadata()?.description}>
+            <p class="px-5 pt-4 text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
+              {metadata()!.description}
+            </p>
+          </Show>
+        }
+      >
+        <div class="flex flex-col gap-1 px-5 pt-4">
+          <Show when={merged()?.shortSummaryIsLocal}>
+            <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-system-accent-soft)">
+              Operator note
+            </p>
+          </Show>
+          <p class="text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
+            {merged()!.shortSummary}
+          </p>
+        </div>
       </Show>
 
       {/* Screenshots row — 3 thumbs, hidden when not synced. */}
@@ -248,6 +408,123 @@ const GameDetailPanel: Component<Props> = (props) => {
           <span class="text-[0.6rem] text-(--color-oa-ink-dim)/60">—</span>
         </div>
       </div>
+
+      {/* Controls supported — chip strip. Hidden when the merged record
+          has no entries (file layer empty + no operator override). Each
+          chip uses the neutral white/10 border so they don't compete
+          with the accent-tinted chips in the header chip strip. */}
+      <Show when={(merged()?.controlsSupported ?? []).length > 0}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+            Controls
+          </p>
+          <div class="flex flex-wrap gap-1.5">
+            <For each={merged()!.controlsSupported}>
+              {(c) => (
+                <span class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  {c}
+                </span>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
+
+      {/* Recommended core — the file/operator-curated best emulator
+          for this game. The Apply button is wired in Phase 8 (writes
+          GameOverrides.libretro_core). For Phase 5 it surfaces as a
+          disabled placeholder so the section reads correctly while
+          the action plumbing lands. When the operator has already
+          applied (provenance flag set), the button reflects the
+          "Applied" state. */}
+      <Show when={merged()?.bestEmulator}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+            Recommended core
+          </p>
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-1 flex-col gap-1">
+              <p class="font-mono text-[0.75rem] text-(--color-oa-ink)">
+                {merged()!.bestEmulator!.recommended}
+              </p>
+              <Show when={merged()!.bestEmulator!.reason}>
+                <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)">
+                  {merged()!.bestEmulator!.reason}
+                </p>
+              </Show>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void handleApplyBestEmulator();
+              }}
+              disabled={merged()?.appliedBestEmulator ?? false}
+              title={
+                merged()?.appliedBestEmulator
+                  ? "Recommended core already applied for this game — use the Game Info tab to reset"
+                  : `Set ${merged()!.bestEmulator!.recommended} as the per-game core override`
+              }
+              class="shrink-0 rounded-md border px-3 py-1 text-[0.6rem] uppercase tracking-widest transition"
+              classList={{
+                "border-(--color-system-accent)/40 bg-(--color-system-accent)/10 text-(--color-system-accent-soft) cursor-default":
+                  merged()?.appliedBestEmulator ?? false,
+                "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                  !(merged()?.appliedBestEmulator ?? false),
+              }}
+            >
+              {merged()?.appliedBestEmulator ? "Applied" : "Apply"}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      {/* Known issues — operator-visible bug list. Sorted by severity
+          descending (blockers first). Each entry shows a severity glyph
+          tinted by severity, the description, and an optional workaround
+          line indented underneath. */}
+      <Show when={sortedBugs().length > 0}>
+        <div class="flex flex-col gap-2 px-5 pt-4">
+          <div class="flex items-center justify-between">
+            <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+              Known issues
+            </p>
+            <span class="text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)/60">
+              {sortedBugs().length}
+            </span>
+          </div>
+          <div class="flex flex-col gap-2">
+            <For each={sortedBugs()}>
+              {(bug) => (
+                <div class="flex items-start gap-2">
+                  <span
+                    class={`mt-px shrink-0 text-sm leading-none ${severityTintClass(bug.severity)}`}
+                    aria-label={bug.severity}
+                  >
+                    {severityGlyph(bug.severity)}
+                  </span>
+                  <div class="flex flex-1 flex-col gap-0.5">
+                    <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span
+                        class={`mr-1 text-[0.55rem] uppercase tracking-widest ${severityTintClass(bug.severity)}`}
+                      >
+                        {bug.severity}
+                      </span>
+                      {bug.description}
+                    </p>
+                    <Show when={bug.workaround}>
+                      <p class="text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)/70">
+                        <span class="text-(--color-oa-ink-dim)/60">Workaround: </span>
+                        {bug.workaround}
+                      </p>
+                    </Show>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
 
       {/* Action buttons — pinned at the bottom via mt-auto + padding. */}
       <div class="mt-auto flex gap-2 px-5 py-5">
