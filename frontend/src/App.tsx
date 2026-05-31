@@ -5,8 +5,6 @@ import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
-import SystemBackground from "./components/SystemBackground";
-import SystemBootAnimation from "./components/SystemBootAnimation";
 import StylusOverlay from "./components/StylusOverlay";
 import GamePropertiesDialog from "./components/GamePropertiesDialog";
 import {
@@ -408,27 +406,11 @@ const App: Component = () => {
   // Last-focused library tile — drives the right sidebar widgets when nothing
   // is pinned. Sticky: cleared on library reload, not on tile leave.
   const [focusedEntry, setFocusedEntry] = createSignal<RomEntry | null>(null);
-  // Per-System UI Stage 1 Slice 3: mouse-hover preview signal for the
-  // SystemBackground. LibraryTile deliberately doesn't change focus on
-  // hover (selection is click-only — see LibraryTile.tsx:90-94), but
-  // the background is purely decorative and benefits from following
-  // the cursor. Walks `closest('[data-system]')` so it picks up tiles
-  // and sidebar leaves both — anything that already declared a
-  // per-system CSS scope.
-  const [hoveredSystemId, setHoveredSystemId] = createSignal<SystemId | null>(null);
-  onMount(() => {
-    const onOver = (e: MouseEvent) => {
-      const target = e.target as Element | null;
-      const el = target?.closest("[data-system]");
-      if (!el) return; // empty-space hover — sticky on last value
-      const sys = el.getAttribute("data-system");
-      if (sys && sys !== hoveredSystemId()) {
-        setHoveredSystemId(sys as SystemId);
-      }
-    };
-    document.addEventListener("mouseover", onOver, { passive: true });
-    onCleanup(() => document.removeEventListener("mouseover", onOver));
-  });
+  // hoveredSystemId + its mouseover tracker dropped 2026-05-31 with
+  // SystemBackground — see docs/PARKING_LOT.md 2026-05-31 entry. The
+  // hover-source signal was only consumed by SystemBackground; once
+  // the visual overlays moved out of Retroverse, the tracker is dead.
+
   // Right-click context menu over a system entry in the left sidebar.
   // Open when the user right-clicks a SystemItem; null when closed.
   const [systemContextFor, setSystemContextFor] = createSignal<{
@@ -500,12 +482,14 @@ const App: Component = () => {
   // drop-overlay UI. Cleared on drop / leave / cancel by the Tauri event.
   const [dropOverlayVisible, setDropOverlayVisible] = createSignal(false);
 
-  // Right-sidebar pinned entry (lookup from id in layout store).
-  const pinnedEntry = createMemo<RomEntry | null>(() => {
-    const id = layout.rightSidebarPinnedGameId();
-    if (!id) return null;
-    return library.state.entries.find((e) => e.id === id) ?? null;
-  });
+  // The legacy right-sidebar's "pinned entry" memo dropped 2026-05-31
+  // — pinned-game tracking still exists in LayoutStore
+  // (rightSidebarPinnedGameId), but App.tsx no longer reads it now
+  // that SystemBackground / SystemBootAnimation are gone (those were
+  // the last consumers of the pinned-entry fallback in the per-system
+  // source chain). Deeper LayoutStore cleanup deferred — the store
+  // field is harmless and may yet have a Retroverse home.
+
 
   // Game mode = single-window shell + a ROM is running + the library is hidden.
   const gameMode = () =>
@@ -1495,28 +1479,23 @@ const App: Component = () => {
           <RetroverseShell />
         </Show>
       </RetroverseProvider>
-      {/* Per-System UI Stage 1 overlays — rendered as siblings of
-          RetroverseProvider so the per-system background art, boot
-          animation, and stylus reticle work uniformly in Retroverse
-          mode. (Pre-deletion these only rendered inside the legacy
-          Shell's <main>; bringing them up to App.tsx level here
-          preserves the master-toggle design intent now that there's
-          only one shell.) Same `!gameMode()` gate as the legacy code
-          for the background + boot animation so wgpu emulator pixels
-          paint through during full-bleed gameplay; StylusOverlay
-          deliberately renders through gameMode (that IS its purpose). */}
-      <Show when={!gameMode()}>
-        <SystemBackground
-          systemId={() =>
-            (hoveredSystemId()
-              ?? (focusedEntry()?.systemId as SystemId | undefined)
-              ?? activeSystemId()
-              ?? (pinnedEntry()?.systemId as SystemId | undefined)
-              ?? null) as SystemId | null
-          }
-        />
-        <SystemBootAnimation activeSystemId={activeSystemId} />
-      </Show>
+      {/* StylusOverlay — cursor reticle for stylus-using systems
+          (NDS today). `fixed` positioning + z-30 + 28x28 footprint, so
+          no z-order conflict with the Retroverse chrome. Renders
+          through gameMode (that IS its purpose — visual stylus
+          feedback while playing).
+          ---
+          SystemBackground + SystemBootAnimation were rendered here
+          briefly post-legacy-Shell-deletion but were dropped on
+          2026-05-31: their full-viewport overlays compete with
+          Retroverse's opinionated theming (50% gradient over the
+          chrome was the visual conflict the operator reported).
+          See `docs/PARKING_LOT.md` 2026-05-31 entry — the
+          two-shell architectural decision routes the per-system
+          visual overlays to the future Kiosk shell, which won't
+          have Retroverse's central-opaque-chrome constraint. The
+          per-system audio + accent colors + tile flourishes stay
+          in Retroverse uncontroversially (no visual conflict). */}
       <StylusOverlay
         runningSystemId={() => (runningEntry()?.systemId ?? null) as SystemId | null}
       />
