@@ -24,12 +24,11 @@ function letterBucket(title: string): string {
 /** Apply view + search-query filters. Pure.
  *
  *  `viewSystemIds` is the caller-resolved set of system ids the active
- *  view-node restricts to (null for `all`, library-manager, cores —
- *  meaning "no system-level filter"). The resolution lives in the
- *  caller (LibraryView) because the views model needs ViewsStore +
- *  resolver, which we keep out of this pure module. The `view`
- *  parameter is retained for future per-discriminant logic (e.g.
- *  date-range filters from a smart view).
+ *  view-node restricts to (null for `all` — meaning "no system-level
+ *  filter"). The resolution lives in the caller (LibraryView) because
+ *  the views model needs ViewsStore + resolver, which we keep out of
+ *  this pure module. The `view` parameter is retained for future
+ *  per-discriminant logic (e.g. date-range filters from a smart view).
  */
 export function filterEntries(
   entries: RomEntry[],

@@ -5,7 +5,6 @@ import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./components/CorePickerMenu";
 import GameInfoModal from "./components/GameInfoModal";
 import ImportWizard from "./components/ImportWizard";
-import LibraryView from "./components/LibraryView";
 import SystemBackground from "./components/SystemBackground";
 import SystemBootAnimation from "./components/SystemBootAnimation";
 import StylusOverlay from "./components/StylusOverlay";
@@ -20,31 +19,24 @@ import {
   MilestonesDialog,
   type GameDialogState,
 } from "./components/GameDialogs";
-import CoresPage from "./components/CoresPage";
 import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
-import LibraryManagerPage from "./components/LibraryManagerPage";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
 import NewCollectionDialog, { type CollectionDialogMode } from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
-import Shell from "./layout/Shell";
-import TopToolbar from "./layout/TopToolbar";
-import LeftSidebar, { type SidebarView } from "./layout/LeftSidebar";
+import { type SidebarView } from "./layout/LeftSidebar";
 import { createViewsStore } from "./views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "./views/defaults";
 import { findNode, nodeContainsId } from "./views/resolver";
 import type { ContainerNode } from "./views/types";
 import ContainerContextMenu from "./components/ContainerContextMenu";
-import { MenuBar, Menu, MenuItem, MenuLabel, MenuDivider, MenuRadio, MenuCheckbox } from "./layout/MenuBar";
 import {
   AudioDialog,
   DisplayDialog,
   GameplayDialog,
   ShadersDialog,
-  SHELL_MODE_LABELS,
-  SHELL_OPTIONS,
   type ShellMode,
 } from "./components/SettingsDialogs";
 import {
@@ -55,25 +47,9 @@ import {
 } from "./components/SystemDialogs";
 import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
 import { DebugLogDialog } from "./components/DebugLogDialog";
-import { WidgetCustomizerDialog } from "./components/WidgetCustomizerDialog";
 import { ScreenshotGalleryDialog } from "./components/ScreenshotGalleryDialog";
 import { PerformanceHud } from "./components/PerformanceHud";
-import RightSidebar from "./layout/RightSidebar";
-import {
-  createLayoutStore,
-  PRESENTATION_LABELS,
-  PRESENTATION_OPTIONS,
-  VIEW_MODE_LABELS,
-  VIEW_MODE_OPTIONS,
-  SORT_KEY_LABELS,
-  SORT_KEY_OPTIONS,
-  GROUP_BY_LABELS,
-  GROUP_BY_OPTIONS,
-  type PresentationMode,
-  type ViewMode,
-  type SortKey,
-  type GroupBy,
-} from "./layout/state";
+import { createLayoutStore } from "./layout/state";
 import {
   ingestFolderPath,
   pickFolderAndIngest,
@@ -95,13 +71,12 @@ import type { RomEntry } from "./library/types";
 import { createSettingsStore } from "./settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
 import type { SystemId } from "./themes/registry";
-import { onNavEvent, setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
-import { HintBar, HintRegion, type Hints } from "./nav/HintBar";
-import { activeFocusGroupId, setSwapAB } from "./nav/focus";
-import { requestOpenFirstMenu } from "./layout/MenuBar";
+import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
+import { HintBar } from "./nav/HintBar";
+import { setSwapAB } from "./nav/focus";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
-import { setRetroverseUiEnabled, isRetroverseUiEnabled } from "./lib/retroverseFlag";
+import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
 import { RetroverseProvider } from "./routes/retroverse/context";
 import {
@@ -131,9 +106,6 @@ function launchStatus(result: LaunchResult): string {
     case "launched":     return `Launched ${result.entry.title}.`;
   }
 }
-
-const TOOLBAR_BTN =
-  "rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[0.65rem] font-medium uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-wait disabled:opacity-60";
 
 /** Tauri-side `DirectLaunchConfig` mirror. None = library mode. */
 type DirectLaunchConfig = {
@@ -209,7 +181,14 @@ const App: Component = () => {
     return cfg !== undefined && cfg !== null;
   });
   const [busy, setBusy] = createSignal<Busy>("idle");
-  const [status, setStatus] = createSignal<string>("");
+  // Status reader stays unused after legacy toolbarCenter dropped on
+  // 2026-05-31. setStatus calls scattered through scan / launch /
+  // import handlers are dead writes for now — Retroverse home for
+  // these messages (likely an `oa://toast` route or a status row in
+  // the LIBRARY header) is a follow-up. Keeping the setter live so
+  // the future plumbing is one call away from working.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [, setStatus] = createSignal<string>("");
   const [shellMode, setShellMode] = createSignal<ShellMode>("two-window");
   const [libraryVisible, setLibraryVisible] = createSignal(true);
   // OA-wide Settings dialogs (Step 4). Single open-dialog signal — opening
@@ -246,9 +225,6 @@ const App: Component = () => {
   /// dropped in on create) and `rename` (relabel an existing list).
   const [collectionDialogMode, setCollectionDialogMode] =
     createSignal<CollectionDialogMode | null>(null);
-  function openProperties(entry: RomEntry) {
-    setPropertiesFor(entry);
-  }
   // Game ▾ menu items that previously deep-linked into the drawer's tabs
   // now launch focused dialogs from GameDialogs.tsx. Single discriminated
   // signal covers all seven; clears on close.
@@ -268,27 +244,26 @@ const App: Component = () => {
   const [quickSettingsOpen, setQuickSettingsOpen] = createSignal(false);
   // Help menu dialogs.
   const [helpDialog, setHelpDialog] = createSignal<"shortcuts" | "about" | "debug-log" | null>(null);
-  // View → Customize widgets… dialog.
-  const [widgetCustomizerOpen, setWidgetCustomizerOpen] = createSignal(false);
   // Tools → Screenshot gallery. Targets the active game (running or
   // focused) at the time of opening; entry stays bound until the dialog
   // closes.
   const [screenshotGalleryFor, setScreenshotGalleryFor] = createSignal<RomEntry | null>(null);
   // Tools → Performance HUD toggle. UI-side render-loop FPS only (v1);
   // emulator-side telemetry will plug into the same overlay when wired.
-  const [perfHudVisible, setPerfHudVisible] = createSignal(false);
+  // Toggle UI dropped with the legacy Tools menu on 2026-05-31 — the
+  // HUD now stays at its default (off) until a Retroverse home is
+  // added (likely SETTINGS → Storage or SETTINGS → About).
+  const [perfHudVisible] = createSignal(false);
   // Phase 6 Cross-system slice 3 — Game focus toggle. When true, OA hotkeys
   // (F1/F2/F5/F8/Esc/digits/Backspace) stop firing inside the emu thread
   // so the keyboard-passthrough pump can deliver those keys to the core
   // unchallenged. Hydrated from `get_game_focus` at mount; pushed to Rust
   // via `set_game_focus` on user change; updated reactively when the Rust
   // side toggles via the Ctrl+G hotkey by listening to the
-  // `oa://game-focus-changed` event.
+  // `oa://game-focus-changed` event. UI toggle dropped with the legacy
+  // Tools menu — Ctrl+G keyboard shortcut still flips it (the Rust side
+  // owns the hotkey).
   const [gameFocus, setGameFocusSignal] = createSignal(false);
-  function toggleGameFocus(next: boolean) {
-    setGameFocusSignal(next);
-    void invoke("set_game_focus", { active: next });
-  }
   onMount(() => {
     void invoke<boolean>("get_game_focus").then((on) => setGameFocusSignal(on));
     let unlisten: (() => void) | undefined;
@@ -417,29 +392,17 @@ const App: Component = () => {
     }
   });
 
-  // Global Start button → open the menu bar. Bypasses the per-group
-  // onStart routing in focus.ts so Start works from any active group
-  // (sidebar, library-grid, etc.). When the menu is already open the
-  // request is a no-op (the createEffect inside MenuBar only re-fires
-  // on tick change and re-opens the first menu; switching menus is
-  // handled by L1/R1).
-  onMount(() => {
-    const dispose = onNavEvent((event) => {
-      if (event.kind !== "button") return;
-      if (event.button !== "start") return;
-      if (event.phase !== "down") return;
-      if (gameMode() || isDirectLaunch()) return;
-      requestOpenFirstMenu();
-    });
-    onCleanup(dispose);
-  });
-  // Tools ▾ menu items request the overlay to land on a specific panel.
-  // Cleared on close so a subsequent Esc-open lands on the action grid.
+  // Legacy "Start button → open menu bar" handler removed alongside
+  // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;
+  // Start is reserved for future Retroverse-side surfacing (likely
+  // opening QuickSettings when a game is running).
+  // Tools ▾ menu items used to request the overlay to land on a
+  // specific panel. The menu is gone with the legacy Shell, but the
+  // signal stays as plumbing — a future Retroverse home (likely in
+  // the per-game settings drawer or the in-game QuickSettings tabs)
+  // can flip it to deep-link into rewind / TAS / video / memory /
+  // disc panels without re-touching QuickSettings.
   const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
-  function openQuickSettings(view: QuickSettingsView) {
-    setQuickSettingsRequestedView(view);
-    setQuickSettingsOpen(true);
-  }
   // Toolbar idle-hide flag (single-window gameplay).
   const [headerHidden, setHeaderHidden] = createSignal(false);
   // Last-focused library tile — drives the right sidebar widgets when nothing
@@ -466,16 +429,6 @@ const App: Component = () => {
     document.addEventListener("mouseover", onOver, { passive: true });
     onCleanup(() => document.removeEventListener("mouseover", onOver));
   });
-  // Overflow menu state (toolbar … button).
-  const [overflowOpen, setOverflowOpen] = createSignal(false);
-  // Library menu deep-links into the Library Manager page. The page hosts
-  // two tabs (library / media); these menu items pick which one to land on.
-  const [libraryManagerInitialTab, setLibraryManagerInitialTab] =
-    createSignal<"library" | "media" | undefined>(undefined);
-  function openLibraryManager(tab?: "library" | "media") {
-    setLibraryManagerInitialTab(tab);
-    setCurrentView({ kind: "library-manager" });
-  }
   // Right-click context menu over a system entry in the left sidebar.
   // Open when the user right-clicks a SystemItem; null when closed.
   const [systemContextFor, setSystemContextFor] = createSignal<{
@@ -714,8 +667,7 @@ const App: Component = () => {
     if (
       e.key === "Escape" &&
       shellMode() === "single-window" &&
-      gameRunning() &&
-      currentView().kind !== "library-manager"
+      gameRunning()
     ) {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       // The QuickSettings component has its own capture-phase Esc listener
@@ -757,7 +709,6 @@ const App: Component = () => {
     let unlisten: (() => void) | undefined;
     void listen("oa://request-quick-settings", () => {
       if (!gameRunning()) return;
-      if (currentView().kind === "library-manager") return;
       if (quickSettingsOpen()) return;
       setQuickSettingsOpen(true);
       (document.activeElement as HTMLElement | null)?.blur();
@@ -851,7 +802,6 @@ const App: Component = () => {
       void autoSyncAfterIngest(result.systemIds, result.entries);
     }
     setBusy("idle");
-    setOverflowOpen(false);
   }
 
   async function handleAddLibraryFolder() {
@@ -1194,336 +1144,20 @@ const App: Component = () => {
   const activeSystemId = createMemo<SystemId | null>(() => {
     return viewToSystemId(currentView());
   });
-  const activeGameEntry = createMemo<RomEntry | null>(() => {
-    return runningEntry() ?? focusedEntry() ?? pinnedEntry();
-  });
-
-  const toolbarLeft = (
-    <>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.currentTarget.blur();
-          setCurrentView({ kind: "all" });
-        }}
-        class="rounded px-2 py-1 text-base font-bold text-(--color-system-accent) transition hover:bg-white/5"
-        title="Home"
-      >
-        ◐
-      </button>
-      <MenuBar>
-        <Menu label="Library">
-          <MenuItem
-            label={busy() === "scanning" ? "Scanning…" : "Import folder…"}
-            disabled={busy() !== "idle"}
-            onClick={() => setWizardOpen(true)}
-          />
-          <MenuItem
-            label="Rescan tracked folders"
-            disabled={settings.libraryFolders().length === 0 || busy() !== "idle"}
-            onClick={() => void handleRescanLibraryFolders()}
-          />
-          <MenuDivider />
-          <MenuItem label="Library Manager…" onClick={() => openLibraryManager("library")} />
-          <MenuItem label="Sync media…" onClick={() => openLibraryManager("media")} />
-          <MenuItem label="Cores Manager…" onClick={() => setCurrentView({ kind: "cores" })} />
-          <MenuDivider />
-          <MenuCheckbox
-            label="Auto-hide empty systems"
-            checked={layout.autoHideEmptySystems()}
-            onChange={(next) => layout.setAutoHideEmptySystems(next)}
-          />
-          <MenuCheckbox
-            label="Auto-remove on file delete"
-            checked={settings.autoRemoveOnDelete()}
-            onChange={(next) => settings.setAutoRemoveOnDelete(next)}
-          />
-        </Menu>
-        <Menu label="View">
-          <MenuRadio<ViewMode>
-            label="View mode"
-            value={layout.viewMode()}
-            onChange={(v) => layout.setViewMode(v)}
-            options={VIEW_MODE_OPTIONS.map((m) => ({ value: m, label: VIEW_MODE_LABELS[m] }))}
-          />
-          <MenuDivider />
-          <MenuRadio<SortKey>
-            label="Sort by"
-            value={layout.sortKey()}
-            onChange={(v) => layout.setSortKey(v)}
-            options={SORT_KEY_OPTIONS.map((k) => ({ value: k, label: SORT_KEY_LABELS[k] }))}
-          />
-          <MenuDivider />
-          <MenuRadio<GroupBy>
-            label="Group by"
-            value={layout.groupBy()}
-            onChange={(v) => layout.setGroupBy(v)}
-            options={GROUP_BY_OPTIONS.map((g) => ({ value: g, label: GROUP_BY_LABELS[g] }))}
-          />
-          <MenuDivider />
-          <MenuCheckbox
-            label="Left sidebar"
-            hint="Ctrl+B"
-            checked={!layout.leftSidebarCollapsed()}
-            onChange={(next) => layout.setLeftSidebarCollapsed(!next)}
-          />
-          <MenuCheckbox
-            label="Right sidebar"
-            checked={layout.rightSidebarVisible()}
-            onChange={(next) => layout.setRightSidebarVisible(next)}
-          />
-          <MenuItem
-            label="Customize widgets…"
-            onClick={() => setWidgetCustomizerOpen(true)}
-          />
-          <MenuDivider />
-          <MenuRadio<PresentationMode>
-            label="Mode"
-            value={layout.presentationMode()}
-            onChange={(v) => layout.setPresentationMode(v)}
-            options={PRESENTATION_OPTIONS.map((m) => ({ value: m, label: PRESENTATION_LABELS[m] }))}
-          />
-        </Menu>
-        <Menu
-          label="System"
-          disabled={activeSystemId() === null}
-          disabledHint="Pick a system in the sidebar"
-        >
-          <Show when={activeSystemId()}>
-            {(id) => (
-              <>
-                <MenuLabel>{id()}</MenuLabel>
-                <MenuDivider />
-                <MenuItem
-                  label="Show library"
-                  onClick={() => setCurrentView(viewForSystem(id()))}
-                />
-                <MenuDivider />
-                <MenuItem label="Bindings…" onClick={() => openSystemDialog("bindings", id())} />
-                <MenuItem label="Default core…" onClick={() => openSystemDialog("default-core", id())} />
-                <MenuItem label="Shaders…" onClick={() => openSystemDialog("shaders", id())} />
-                <MenuItem label="Core options…" onClick={() => openSystemDialog("core-options", id())} />
-                <MenuItem label="Rewind overrides…" onClick={() => openSystemDialog("rewind", id())} />
-                <MenuItem label="Display overrides…" onClick={() => openSystemDialog("display", id())} />
-                <MenuDivider />
-                <MenuItem
-                  label="Hide from sidebar"
-                  onClick={() => {
-                    hideSystemInActiveView(id());
-                    if (activeSystemId() === id()) {
-                      setCurrentView({ kind: "all" });
-                    }
-                  }}
-                />
-              </>
-            )}
-          </Show>
-        </Menu>
-        <Menu
-          label="Game"
-          disabled={activeGameEntry() === null}
-          disabledHint="Focus a game tile, or start playing one"
-        >
-          <Show when={activeGameEntry()}>
-            {(entry) => (
-              <>
-                <MenuLabel>{entry().title}</MenuLabel>
-                <MenuDivider />
-                <Show
-                  when={runningEntry() && runningEntry()!.id === entry().id}
-                  fallback={
-                    <MenuItem label="Launch" onClick={() => void handleLaunch(entry())} />
-                  }
-                >
-                  <MenuItem
-                    label="Exit to library"
-                    hint="Ctrl+W"
-                    destructive
-                    onClick={() => void handleUnload()}
-                  />
-                </Show>
-                <MenuDivider />
-                <MenuItem label="Save states…" onClick={() => setSavesEntry(entry())} />
-                <MenuItem label="Game info…" onClick={() => setGameInfoFor(entry())} />
-                <MenuItem label="Properties…" onClick={() => openProperties(entry())} />
-                <MenuDivider />
-                <MenuItem label="Cheats…" onClick={() => setGameDialog({ kind: "cheats", target: entry() })} />
-                <MenuItem label="Milestones…" onClick={() => setGameDialog({ kind: "milestones", target: entry() })} />
-                <MenuItem label="Shaders…" onClick={() => setGameDialog({ kind: "shaders", target: entry() })} />
-                <MenuItem label="Rewind overrides…" onClick={() => setGameDialog({ kind: "rewind", target: entry() })} />
-                <MenuItem label="Input…" onClick={() => setGameDialog({ kind: "input", target: entry() })} />
-                <MenuItem label="Display overrides…" onClick={() => setGameDialog({ kind: "display", target: entry() })} />
-                <MenuItem label="Core options…" onClick={() => setGameDialog({ kind: "core-options", target: entry() })} />
-                <MenuDivider />
-                <MenuItem label="Pick region…" onClick={() => setRegionPickerFor(entry())} />
-              </>
-            )}
-          </Show>
-        </Menu>
-        <Menu label="Tools">
-          <MenuItem
-            label="Rewind…"
-            disabled={!gameRunning()}
-            onClick={() => openQuickSettings("rewind")}
-          />
-          <MenuItem
-            label="TAS recorder…"
-            disabled={!gameRunning()}
-            onClick={() => openQuickSettings("tas")}
-          />
-          <MenuItem
-            label="Video capture…"
-            disabled={!gameRunning()}
-            onClick={() => openQuickSettings("video")}
-          />
-          <MenuItem
-            label="Memory inspector…"
-            disabled={!gameRunning()}
-            onClick={() => openQuickSettings("memory")}
-          />
-          <MenuItem
-            label="Disc control…"
-            disabled={!gameRunning()}
-            onClick={() => openQuickSettings("disc")}
-          />
-          <MenuDivider />
-          <MenuItem
-            label="Screenshot gallery…"
-            disabled={activeGameEntry() === null}
-            onClick={() => {
-              const entry = activeGameEntry();
-              if (entry) setScreenshotGalleryFor(entry);
-            }}
-          />
-          <MenuCheckbox
-            label="Performance HUD"
-            checked={perfHudVisible()}
-            onChange={(next) => setPerfHudVisible(next)}
-          />
-          <MenuCheckbox
-            label="Game focus"
-            hint="Ctrl+G"
-            checked={gameFocus()}
-            onChange={(next) => toggleGameFocus(next)}
-          />
-        </Menu>
-        <Menu label="Settings">
-          <MenuItem label="Display…" onClick={() => setSettingsDialog("display")} />
-          <MenuItem label="Audio…" onClick={() => setSettingsDialog("audio")} />
-          <MenuItem label="Gameplay…" onClick={() => setSettingsDialog("gameplay")} />
-          <MenuItem label="Shaders…" onClick={() => setSettingsDialog("shaders")} />
-          <MenuDivider />
-          <MenuRadio<ShellMode>
-            label="Shell mode"
-            value={settings.shellModePref()}
-            onChange={(v) => settings.setShellModePref(v)}
-            options={SHELL_OPTIONS.map((m) => ({ value: m, label: SHELL_MODE_LABELS[m] }))}
-          />
-        </Menu>
-        <Menu label="Help">
-          <MenuItem label="Debug log…" onClick={() => setHelpDialog("debug-log")} />
-          <MenuDivider />
-          <MenuItem label="Keyboard shortcuts…" onClick={() => setHelpDialog("shortcuts")} />
-          <MenuItem label="About Overlooked Arcade…" onClick={() => setHelpDialog("about")} />
-        </Menu>
-      </MenuBar>
-    </>
-  );
-
-  const toolbarCenter = (
-    <div class="flex w-full max-w-md items-center gap-2">
-      <input
-        type="search"
-        placeholder="Search games…"
-        value={searchQuery()}
-        onInput={(e) => setSearchQuery(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            setSearchQuery("");
-            (e.currentTarget as HTMLInputElement).blur();
-          }
-        }}
-        class="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim) focus-visible:border-(--color-system-accent) focus-visible:outline-none"
-      />
-      <Show when={status()}>
-        <p class="hidden truncate text-[0.7rem] text-(--color-oa-ink-dim) lg:block">{status()}</p>
-      </Show>
-    </div>
-  );
-
-  const toolbarRight = (
-    <>
-      <Show when={gameFocus()}>
-        <span
-          title="Game focus is ON — OA hotkeys pass through to the core. Press Ctrl+G to disable."
-          class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--color-system-accent)"
-        >
-          Game focus
-        </span>
-      </Show>
-      <Show when={shellMode() === "single-window"}>
-        <button
-          type="button"
-          onClick={(e) => {
-            setLibraryVisible((v) => !v);
-            e.currentTarget.blur();
-          }}
-          class={TOOLBAR_BTN}
-          aria-pressed={libraryVisible()}
-          title={gameRunning() ? "Toggle library (Esc)" : undefined}
-        >
-          {libraryVisible() ? "Hide" : "Show"}
-        </button>
-      </Show>
-      <Show when={gameRunning()}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.currentTarget.blur();
-            void handleUnload();
-          }}
-          class={TOOLBAR_BTN}
-          title="Unload ROM (Ctrl+W)"
-        >
-          Unload
-        </button>
-      </Show>
-      <Show when={!layout.rightSidebarVisible() && layout.presentationMode() !== "cabinet"}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.currentTarget.blur();
-            layout.setRightSidebarVisible(true);
-          }}
-          class={TOOLBAR_BTN}
-          title="Show right sidebar"
-        >
-          ‹
-        </button>
-      </Show>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.currentTarget.blur();
-          void invoke("quit_app");
-        }}
-        class={TOOLBAR_BTN}
-        title="Quit (Ctrl+Q)"
-      >
-        ✕
-      </button>
-    </>
-  );
-
-  // Click anywhere outside the overflow menu closes it.
-  onMount(() => {
-    const onDocClick = () => {
-      if (overflowOpen()) setOverflowOpen(false);
-    };
-    window.addEventListener("click", onDocClick);
-    onCleanup(() => window.removeEventListener("click", onDocClick));
-  });
+  // Legacy toolbarLeft / Center / Right consts + the overflow-menu
+  // onMount removed in 2026-05-31's legacy-Shell deletion. The
+  // RetroverseShell header owns search + clock + Quit + Game-focus
+  // pill + profile chip; the legacy MenuBar's 76 items split as:
+  // Library / Cores / BIOS / Media — SETTINGS → corresponding category
+  // (LibrarySettings / CoresCategorySettings / BiosSettings / MediaSettings)
+  // View — LIBRARY page's GridControls + LayoutStore-backed presentation
+  // System — SETTINGS → per-system drill-in (PerSystemSettingsBody)
+  // Game — TileContextMenu + GameDialogs (per-game settings drawer)
+  // Tools — QuickSettings in-game overlay
+  // Settings — SETTINGS categories
+  // Help — Debug log + Keyboard shortcuts buttons in
+  //        AboutSettings → Report a bug card (added in
+  //        feat/retroverse-migration-followups commit d8ce7b6).
 
   // Filesystem watcher — register the tracked-folder list with the Rust
   // watcher service whenever it changes. New ROMs dropped into a watched
@@ -1816,209 +1450,76 @@ const App: Component = () => {
     <MediaProvider>
       <PlatformMediaProvider>
       <GameInfoBadgesProvider entries={() => library.state.entries}>
-      {/* Retroverse-UI Phase B Slice 5 — entire Shell swaps to
-          RetroverseShell when the experimental flag is ON. Two
-          distinct UIs, no hybrid state. Modals (ImportWizard /
-          GameInfoModal / etc.) below this Show stay accessible in
-          both modes. */}
-      <Show
-        when={isRetroverseUiEnabled()}
-        fallback={
-      <Shell
-        layout={layout}
-        fullBleed={isDirectLaunch() || gameMode()}
-        toolbar={
-          <TopToolbar
-            left={toolbarLeft}
-            center={toolbarCenter}
-            right={toolbarRight}
-            hidden={headerHidden()}
-          />
-        }
-        leftSidebar={
-          <LeftSidebar
-            layout={layout}
-            library={library}
-            views={viewsStore}
-            currentView={currentView()}
-            onNavigate={(v) => setCurrentView(v)}
-            onSystemContext={(id, position) => setSystemContextFor({ id, position })}
-            onContainerContext={(container, position) =>
-              setContainerContextFor({ container, position })
-            }
-          />
-        }
-        rightSidebar={
-          <RightSidebar
-            layout={layout}
-            focused={focusedEntry}
-            pinned={pinnedEntry}
-            onLaunch={(e) => void handleLaunch(e)}
-            onShowSaves={(e) => setSavesEntry(e)}
-            onShowInfo={(e) => setGameInfoFor(e)}
-          />
-        }
+      {/* Retroverse is now the only shell. The legacy Shell + its
+          flag-gate Show wrapper dropped on 2026-05-31 after the
+          flag-default-ON deprecation cycle passed clean. The
+          fullBleed gate (single-window + game running + library
+          hidden, OR direct-launch boot) keeps RetroverseShell
+          unmounted so wgpu emulator pixels paint into the WebView's
+          transparent background; Esc / Ctrl+W toggle libraryVisible
+          back, gameMode goes false, the shell re-renders. */}
+      <RetroverseProvider
+        value={{
+          library,
+          customCollections,
+          layout,
+          views: viewsStore,
+          settings,
+          searchQuery,
+          setSearchQuery,
+          focusedEntry,
+          setFocusedEntry,
+          currentView,
+          setCurrentView,
+          onLaunch: handleLaunch,
+          onShowSaves: (e) => setSavesEntry(e),
+          onShowInfo: (e) => setGameInfoFor(e),
+          onPickContext: (entry, position) => setContextMenuFor({ entry, position }),
+          onPickFolder: handlePickFolder,
+          onPostLaunch: postLaunchUiUpdate,
+          onToggleFavorite: (entry, value) => void library.setFavorite(entry.id, value),
+          onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
+          onAddLibraryFolder: handleAddLibraryFolder,
+          onRescanLibraryFolders: handleRescanLibraryFolders,
+          onOpenNewCollection: (seedRomId) =>
+            setCollectionDialogMode({ kind: "create", seedRomId }),
+          onOpenRenameCollection: (collectionId, currentName) =>
+            setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
+          gameFocus,
+          onQuit: () => void invoke("quit_app"),
+          onOpenDebugLog: () => setHelpDialog("debug-log"),
+          onOpenKeyboardShortcuts: () => setHelpDialog("shortcuts"),
+        }}
       >
-        <main class="relative h-full">
-          {/* Per-System UI Stage 1 Slice 3: per-system background
-              layer mounted behind the library content. Source chain
-              follows "where is the operator looking right now?":
-                1. hoveredSystemId — mouse over any [data-system]
-                   element (tiles, sidebar leaves, …); updates live
-                   without changing tile selection
-                2. focusedEntry().systemId — click/gamepad-selected
-                   tile (sticky)
-                3. activeSystemId() — sidebar-filtered system view
-                   (e.g. operator clicked into NES from the sidebar
-                   but hasn't clicked a tile yet)
-                4. pinnedEntry().systemId — right-sidebar pin as the
-                   "nothing else applies" fallback
-              Honors the perSystemUiEnabled master toggle. */}
-          {/* Suppress library-chrome overlays (background + boot
-              animation) when the game is "full bleed" — single-window
-              shell + game running + library hidden. In that state the
-              WebView is supposed to melt away so wgpu emulator pixels
-              show through; an opaque CSS background-image overlay
-              would visually cover the running game. StylusOverlay
-              below DOES render through gameMode because that's
-              literally its purpose (visual stylus feedback while
-              playing an NDS game). */}
-          <Show when={!gameMode()}>
-            <SystemBackground
-              systemId={() =>
-                (hoveredSystemId()
-                  ?? (focusedEntry()?.systemId as SystemId | undefined)
-                  ?? activeSystemId()
-                  ?? (pinnedEntry()?.systemId as SystemId | undefined)
-                  ?? null) as SystemId | null
-              }
-            />
-            {/* Per-System UI Stage 1 Slice 4: boot animation overlay
-                triggered by explicit system entry (sidebar nav).
-                activeSystemId() reflects "viewToSystemId(currentView())"
-                — i.e. the system the operator filtered to via the
-                sidebar. Hover/focus changes don't fire the boot; only
-                switching the library's active view does. */}
-            <SystemBootAnimation activeSystemId={activeSystemId} />
-          </Show>
-          {/* NDS Phase 2: visual stylus reticle. Tracks the OS cursor
-              while a stylus-using game is running and adds explicit
-              press feedback (the OS cursor doesn't change appearance
-              on click). Closes the docs/cores/nds/ROADMAP.md "Per-
-              game touch overlay UI — visual stylus cursor" bullet for
-              the cursor portion; per-game touch hotspots remain ⬜
-              as a separate larger feature. */}
-          <StylusOverlay
-            runningSystemId={() => (runningEntry()?.systemId ?? null) as SystemId | null}
-          />
-          <div class="relative z-10 h-full">
-          <Switch
-            fallback={
-              <Show when={!isDirectLaunch()}>
-                <div
-                  class="oa-library-fade h-full"
-                  classList={{
-                    "is-hidden": !libraryVisible(),
-                    "oa-library-overlay":
-                      shellMode() === "single-window" && gameRunning(),
-                  }}
-                  aria-hidden={!libraryVisible()}
-                >
-                  <LibraryView
-                    library={library}
-                    layout={layout}
-                    views={viewsStore}
-                    currentView={currentView()}
-                    searchQuery={searchQuery()}
-                    onLaunch={handleLaunch}
-                    onShowSaves={(entry) => setSavesEntry(entry)}
-                    onPickContext={(entry, position) => setContextMenuFor({ entry, position })}
-                    onFocus={(entry) => setFocusedEntry(entry)}
-                    onShowInfo={(entry) => setGameInfoFor(entry)}
-                    selectedId={() => focusedEntry()?.id ?? null}
-                    onPickFolder={handlePickFolder}
-                    onToggleFavorite={(entry, value) => void library.setFavorite(entry.id, value)}
-                  />
-                </div>
-              </Show>
-            }
-          >
-            <Match when={currentView().kind === "library-manager"}>
-              <div class="h-full overflow-y-auto">
-                <LibraryManagerPage
-                  onBack={() => setCurrentView({ kind: "all" })}
-                  settings={settings}
-                  library={library}
-                  layout={layout}
-                  views={viewsStore}
-                  onAddLibraryFolder={handleAddLibraryFolder}
-                  onRescanLibraryFolders={handleRescanLibraryFolders}
-                  initialTab={libraryManagerInitialTab()}
-                />
-              </div>
-            </Match>
-            <Match when={currentView().kind === "cores"}>
-              <div class="h-full overflow-y-auto">
-                <CoresPage onBack={() => setCurrentView({ kind: "all" })} />
-              </div>
-            </Match>
-          </Switch>
-          <Show when={gameMode() && headerHidden()}>
-            <div class="pointer-events-none fixed bottom-3 right-4 z-10 rounded-md bg-black/50 px-2 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim) backdrop-blur">
-              Esc · library
-            </div>
-          </Show>
-          </div>
-        </main>
-      </Shell>
-        }
-      >
-        <RetroverseProvider
-          value={{
-            library,
-            customCollections,
-            layout,
-            views: viewsStore,
-            settings,
-            searchQuery,
-            setSearchQuery,
-            focusedEntry,
-            setFocusedEntry,
-            currentView,
-            setCurrentView,
-            onLaunch: handleLaunch,
-            onShowSaves: (e) => setSavesEntry(e),
-            onShowInfo: (e) => setGameInfoFor(e),
-            onPickContext: (entry, position) => setContextMenuFor({ entry, position }),
-            onPickFolder: handlePickFolder,
-            onPostLaunch: postLaunchUiUpdate,
-            onToggleFavorite: (entry, value) => void library.setFavorite(entry.id, value),
-            onToggleCompleted: (entry, value) => void library.setCompleted(entry.id, value),
-            onAddLibraryFolder: handleAddLibraryFolder,
-            onRescanLibraryFolders: handleRescanLibraryFolders,
-            onOpenNewCollection: (seedRomId) =>
-              setCollectionDialogMode({ kind: "create", seedRomId }),
-            onOpenRenameCollection: (collectionId, currentName) =>
-              setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
-            gameFocus,
-            onQuit: () => void invoke("quit_app"),
-            onOpenDebugLog: () => setHelpDialog("debug-log"),
-            onOpenKeyboardShortcuts: () => setHelpDialog("shortcuts"),
-          }}
-        >
-          {/* Phase B Slice 7 fix — mirror existing Shell's fullBleed
-              gate: hide the entire Retroverse shell when the game is
-              "full bleed" (single-window with library hidden, OR
-              direct-launch boot). The wgpu emulator surface paints to
-              the WebView's transparent background; when no Retroverse
-              chrome is on top, emulator pixels show through. Esc /
-              Ctrl+W toggle libraryVisible back, gameMode goes false,
-              shell re-renders. */}
-          <Show when={!(isDirectLaunch() || gameMode())}>
-            <RetroverseShell />
-          </Show>
-        </RetroverseProvider>
+        <Show when={!(isDirectLaunch() || gameMode())}>
+          <RetroverseShell />
+        </Show>
+      </RetroverseProvider>
+      {/* Per-System UI Stage 1 overlays — rendered as siblings of
+          RetroverseProvider so the per-system background art, boot
+          animation, and stylus reticle work uniformly in Retroverse
+          mode. (Pre-deletion these only rendered inside the legacy
+          Shell's <main>; bringing them up to App.tsx level here
+          preserves the master-toggle design intent now that there's
+          only one shell.) Same `!gameMode()` gate as the legacy code
+          for the background + boot animation so wgpu emulator pixels
+          paint through during full-bleed gameplay; StylusOverlay
+          deliberately renders through gameMode (that IS its purpose). */}
+      <Show when={!gameMode()}>
+        <SystemBackground
+          systemId={() =>
+            (hoveredSystemId()
+              ?? (focusedEntry()?.systemId as SystemId | undefined)
+              ?? activeSystemId()
+              ?? (pinnedEntry()?.systemId as SystemId | undefined)
+              ?? null) as SystemId | null
+          }
+        />
+        <SystemBootAnimation activeSystemId={activeSystemId} />
       </Show>
+      <StylusOverlay
+        runningSystemId={() => (runningEntry()?.systemId ?? null) as SystemId | null}
+      />
       {/* Folder-drop overlay — rendered as a sibling of the flag-gate
           Show so it overlays both the legacy Shell and RetroverseShell.
           Pointer-events:none lets the underlying Tauri drag-drop logic
@@ -2251,11 +1752,6 @@ const App: Component = () => {
           </Switch>
         )}
       </Show>
-      <WidgetCustomizerDialog
-        open={widgetCustomizerOpen()}
-        onClose={() => setWidgetCustomizerOpen(false)}
-        layout={layout}
-      />
       <ScreenshotGalleryDialog
         open={screenshotGalleryFor() !== null}
         onClose={() => setScreenshotGalleryFor(null)}
@@ -2276,22 +1772,13 @@ const App: Component = () => {
       />
       <ToastStack />
       <HintBar />
-      <Show when={!gameMode() && !isDirectLaunch()}>
-        <HintRegion
-          hints={(): Hints => {
-            switch (activeFocusGroupId()) {
-              case "left-sidebar":
-                return { a: "Open", x: "System menu", r1: "Library", start: "Menu bar" };
-              case "library-grid":
-                return { a: "Launch", x: "Menu", y: "Info", l1: "Sidebar", r1: "Widgets", start: "Menu bar" };
-              case "right-sidebar":
-                return { a: "Activate", b: "Library", l1: "Library", start: "Menu bar" };
-              default:
-                return {};
-            }
-          }}
-        />
-      </Show>
+      {/* Per-page HintRegion providers inside each Retroverse page own
+          the hint content now. The legacy top-level fallback that
+          mapped left-sidebar / library-grid / right-sidebar focus
+          group ids to hardcoded hints dropped on 2026-05-31 alongside
+          the legacy Shell — Retroverse pages use page-prefixed group
+          ids (e.g. "library-LEFT") so the legacy switch's default ()
+          arm was always firing anyway. */}
       </GameInfoBadgesProvider>
       </PlatformMediaProvider>
     </MediaProvider>
