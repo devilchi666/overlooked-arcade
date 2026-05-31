@@ -182,6 +182,34 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Game Info Panel v1** — merged to main 2026-05-30 (`--no-ff` from
+  `feat/game-info-panel-v1`, merge `1caa4bc`). 11-phase arc across nine
+  phase commits; full per-phase summary in
+  [docs/SESSION_LOG.md](SESSION_LOG.md) 2026-05-30 entry. Backend ships
+  the three-layer data model (file layer at `docs/cores/<id>/games-info.md`
+  + SQLite `game_info_overrides` v15 migration + field-typed precedence
+  merge) and six Tauri commands; UI extends Retroverse `GameDetailPanel`
+  with operator-note + Controls + Recommended core (+wired Apply action)
+  + Known issues sections, adds `⚠ N` + `✎` tile badges, and gains a
+  4th "Game info" tab in `GameInfoModal` with the inline editor + Submit
+  correction stub. Plan: `docs/PLANS/game-info-panel.md`. Schema:
+  `docs/cores/SCHEMA.md`. v1 seed entries live in `docs/cores/psx/games-info.md`
+  (Tomb Raider + Final Fantasy VII). 539 oa-shell tests green (up 33 from
+  506). Per-system `KNOWN_GAME_BUGS → games-info.md` migration + per-core
+  README touch-ups (42 systems) stay operator-driven follow-up.
+
+- **libretro env-callback batch (four gaps closed)** — merged to main
+  2026-05-30 (`--no-ff` from `feat/libretro-env-callbacks-batch`, merge
+  `3b35a41`). SET_MEMORY_MAPS storage + Core::memory_map() trait method
+  (unblocks RetroAchievements rcheevos); SET_MESSAGE / SET_MESSAGE_EXT
+  routed to existing oa://toast layer with per-system theming;
+  SET_SUPPORT_NO_GAME flag + LibretroCore::load_no_rom() (DOSBox-Pure /
+  ScummVM bootless mode infrastructure); disc-control v2 extras
+  (add_image_index / replace_image_index / set_initial_image /
+  get_image_path) — DiscInfo gains `paths` Vec. Full summary in
+  [docs/SESSION_LOG.md](SESSION_LOG.md) 2026-05-30 entry. Cross-system
+  inventory in `docs/NEXT.md` records each gap.
+
 - **Controller navigation v2 polish**
   ([features/controller-nav/](features/controller-nav/)) — merged to
   main 2026-05-26 (`--no-ff` from `feat/controller-nav-v2-polish`).

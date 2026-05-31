@@ -6,6 +6,66 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-05-30 — Game Info Panel v1 ship
+
+Closes the full 11-phase arc from `docs/PLANS/game-info-panel.md`. Single
+feature branch `feat/game-info-panel-v1`, nine phase commits, merged
+`--no-ff` as `1caa4bc`. 33 new backend tests (506 → 539).
+
+- **Shipped (backend, Phases 1-4):**
+  - `apps/oa-shell/src/game_info.rs` — types (GameInfo / GameIdKey /
+    BestEmulator / GameBug / BugSeverity / GameInfoMeta / GameInfoOverride
+    / MergedGameInfo / GameInfoBadge), multi-document YAML parser with
+    defensive `skip_pre_yaml` pre-document trimming.
+  - GameInfoIndex with two-key lookup (hash priority, title fallback) +
+    runtime `resolve_docs_cores_dir` that tries `<exe_dir>/docs/cores/`
+    first then falls back to the source tree.
+  - SQLite migration v15 adds `game_info_overrides` (columnar; scalar
+    fields per column, array fields as JSON blobs).
+  - Field-typed precedence merge per plan §8 — facts file-only, narrative
+    operator-wins. `merge_game_info` returns None when both layers empty.
+  - Six Tauri commands: `get_game_info`, `get_game_info_override`,
+    `set_game_info_override`, `delete_game_info_override`,
+    `list_game_info_overridden`, `list_game_info_badges`.
+- **Shipped (UI, Phases 5-9):**
+  - Retroverse `GameDetailPanel` gains four conditional sections:
+    operator-note swap (replaces description with "(operator note)"
+    mini-label when local), Controls (chip strip), Recommended core
+    (Apply button writes per-game `libretro_core` override + provenance
+    flag), Known issues (severity-sorted with red/amber/neutral tints).
+    LIBRARY / COLLECTIONS / PLAY NOW only — HOME keeps SystemInfoPanel.
+  - `LibraryTile` bottom-right badges: `⚠ N` (severity-tinted) + `✎`
+    (operator local-edits indicator). Bulk-fetch via
+    `list_game_info_badges` so a 10k-entry library is single-digit ms.
+    Context-based store in `frontend/src/library/gameInfoBadges.tsx`
+    refreshes on library entry changes.
+  - `GameInfoModal` gains a 4th "Game info" tab with inline editor:
+    short summary, controls supported (newline-separated), recommended
+    core + reason, bugs add/remove with severity dropdown + workaround.
+    Save / Reset to default / Submit correction (Phase 9 stub: clipboard
+    copy + informational toast).
+- **Shipped (docs, Phases 10-11):**
+  - `docs/cores/SCHEMA.md` — full schema reference + worked migration
+    workflow for `KNOWN_GAME_BUGS.md → games-info.md` per-system.
+  - `docs/cores/psx/games-info.md` seed with Tomb Raider + FF7 entries.
+  - `docs/cores/psx/README.md` updated as the worked example.
+  - `docs/INDEX.md` SCHEMA pointer + `docs/NEXT.md` cross-system
+    infrastructure inventory entry.
+- **Almost:** The `i` keyboard shortcut (Q3 — open modal directly to the
+  Game Info tab) deferred to a follow-up; today the operator clicks MORE
+  → Game info. Apply controls action also deferred — v1 controls strings
+  are free-form ("Standard gamepad" / "Light gun") and need a
+  strings→`RETRO_DEVICE_*` mapping that belongs in v2.
+- **Next:** Per-core README touch-ups for the other 42 systems (single-
+  line mention of games-info.md next to KNOWN_GAME_BUGS.md, no behavior
+  change). Per-system migration of `KNOWN_GAME_BUGS.md` content into
+  `games-info.md` records — operator-driven, one system at a time,
+  workflow documented in `SCHEMA.md`. v2 evolution (separate data repo +
+  scheduled scraper + GitHub-Issue submission flow) fully designed in
+  plan §11 but blocked on deciding when to start.
+
+---
+
 ## 2026-05-30 — libretro env-callback batch (four gaps closed)
 
 Closes four high-leverage libretro `cb_environment` arms that were previously
