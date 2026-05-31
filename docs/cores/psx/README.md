@@ -162,5 +162,12 @@ muscle memory remap via the per-system Bindings dialog.
 
 - `ROADMAP.md` — phase tracking for PSX specifically.
 - `SESSION_LOG.md` — Shipped / Almost / Next per session.
-- `KNOWN_GAME_BUGS.md` — per-game compatibility issues.
+- `KNOWN_GAME_BUGS.md` — per-game compatibility issues (free-form
+  legacy notes; being migrated into `games-info.md`).
+- `games-info.md` — structured per-game reference data for the Game
+  Info Panel (release year, publisher, region, version, player count,
+  controls supported, best emulator, known issues, operator-editable
+  short summary). v1 seeded with Tomb Raider + Final Fantasy VII
+  records; the rest arrives via the migration described in
+  `docs/cores/SCHEMA.md`.
 - `DECISIONS.md` — PSX-specific integration choices.

@@ -186,9 +186,39 @@ parser against all the unit-test fixtures. A future task may add a
 `cargo run --bin oa-shell -- validate-game-info` command for whole-file
 linting.
 
+## Migrating from `KNOWN_GAME_BUGS.md`
+
+The per-core `KNOWN_GAME_BUGS.md` files are the legacy free-form markdown
+notes that pre-date the structured schema. v1 migrates these into
+`games-info.md` records — operator-driven, one system at a time:
+
+1. **Identify per-game blocks** — typically delimited by an h2/h3 heading
+   like `## Tomb Raider (USA)`. Some files use bulleted lists per game;
+   judgement call.
+2. **Build the `id_key`** — pull the canonical title from the operator's
+   library (matches the No-Intro / Redump rom_title). The `rom_hash` is
+   optional; look it up in `library_db.games.sha1` if available.
+3. **Extract bug entries** — each "this game has issue X" sentence becomes
+   one entry under `bugs:`. Pick the severity by reading the impact:
+   - `blocker` — uncompletable / hard crash with no workaround
+   - `major` — significant degradation, completable with effort
+   - `minor` — noticeable but doesn't disrupt
+   - `cosmetic` — visual glitch only
+   Workaround text → `workaround:` field when the legacy notes mention one.
+4. **Surface recommended-core mentions** — if the legacy notes say "use
+   core X for this game," extract into `best_emulator.recommended` +
+   `reason`.
+5. **Spot-check** — `cargo test --bin oa-shell game_info::` validates the
+   parser ate everything you wrote.
+6. **Drop the legacy file** — once the YAML mirrors the markdown, the
+   `KNOWN_GAME_BUGS.md` can be deleted. Until then both exist side by side;
+   the panel reads YAML, the README still links the legacy file.
+
+Per-system migration is independent — no need to do them all at once.
+
 ## Related plans
 
 - `docs/PLANS/game-info-panel.md` — the full v1 plan + future evolution
 - `apps/oa-shell/src/game_info.rs` — Rust types + parser
 - `docs/cores/<id>/KNOWN_GAME_BUGS.md` — legacy free-form bug notes; being
-  migrated into `games-info.md` in Phase 10 of the panel plan
+  migrated into `games-info.md` per the workflow above

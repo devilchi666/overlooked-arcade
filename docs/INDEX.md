@@ -43,6 +43,10 @@ with docs as of 2026-05-27 — jagcd / sega32xcd / stv added). See
 [ACTIVE_WORK.md](ACTIVE_WORK.md) for which
 cores are currently being worked on.
 
+- [cores/SCHEMA.md](cores/SCHEMA.md) — YAML schema reference for the
+  per-system `games-info.md` files that drive the Game Info Panel
+  (factual + narrative reference data per game). Authoritative.
+
 ## Research + plans (historical or pre-execution)
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
