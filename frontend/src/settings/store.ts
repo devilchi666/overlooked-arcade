@@ -131,12 +131,15 @@ const DEFAULT_PER_SYSTEM_UI_ENABLED = true;
 const DEFAULT_BOOT_ANIMATIONS_ENABLED = true;
 
 // Retroverse UI experimental toggle (Phase A of the Retroverse rollout
-// — see docs/PLANS/retroverse-ui-rollout.md). Default OFF; existing UI
-// stays byte-identical until the operator flips this in Settings →
-// Display → Experimental. Phase A wires the flag without any
-// consumers; Phase B's RetroverseShell is the first surface that
-// reads it.
-const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = false;
+// — see docs/PLANS/retroverse-ui-rollout.md). Default flipped from
+// OFF → ON on 2026-05-31 as the start of the deprecation cycle —
+// fresh installs land in Retroverse; existing operators with a stored
+// preference keep their value (no surprise switch). Operators who get
+// stuck flip back via Settings → Display → Experimental → Retroverse
+// UI — the toggle stays as the escape hatch through one release
+// cycle of playtest, then the flag + the legacy Shell drop together
+// per docs/PLANS/retroverse-flag-deprecation.md §7.
+const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = true;
 
 // Retroverse SETTINGS → Profile — display name + avatar. Drives the
 // top-right profile chip on the Retroverse shell and any future
