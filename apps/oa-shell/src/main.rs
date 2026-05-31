@@ -6009,6 +6009,7 @@ fn run_emu_render(
                         buttons: f.port0,
                         axes: [0; 4],
                         pointer,
+                        pointer_secondary: (0, 0, false, false),
                         analog_buttons: [0; 16],
                     };
                     // Recorded input bits are ALREADY libretro-shape
@@ -6021,7 +6022,9 @@ fn run_emu_render(
                             oa_core::PortIndex::Port1,
                             oa_core::InputState {
                                 buttons: f.port1, axes: [0; 4],
-                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false),
+                                pointer_secondary: (0, 0, false, false),
+                                analog_buttons: [0; 16],
                             },
                         );
                     }
@@ -6030,7 +6033,9 @@ fn run_emu_render(
                             oa_core::PortIndex::Port2,
                             oa_core::InputState {
                                 buttons: f.port2, axes: [0; 4],
-                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false),
+                                pointer_secondary: (0, 0, false, false),
+                                analog_buttons: [0; 16],
                             },
                         );
                     }
@@ -6039,7 +6044,9 @@ fn run_emu_render(
                             oa_core::PortIndex::Port3,
                             oa_core::InputState {
                                 buttons: f.port3, axes: [0; 4],
-                                pointer: (0, 0, false, false), analog_buttons: [0; 16],
+                                pointer: (0, 0, false, false),
+                                pointer_secondary: (0, 0, false, false),
+                                analog_buttons: [0; 16],
                             },
                         );
                     }
@@ -6161,6 +6168,7 @@ fn run_emu_render(
                     buttons: libretro_bits,
                     axes: polled.axes,
                     pointer: polled.pointer,
+                    pointer_secondary: polled.pointer_secondary,
                     analog_buttons: polled.analog_buttons,
                 });
                 // Phase G — pump sensor values for cores that enabled

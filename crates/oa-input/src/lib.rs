@@ -669,7 +669,12 @@ impl InputPoller {
             }
         }
 
-        InputState { buttons: bits, axes, pointer, analog_buttons }
+        // V1 multi-touch: the secondary slot stays released until a
+        // real second-finger source is wired. Surface area in place so
+        // a future operator-driven PR adding it is purely additive
+        // here.
+        let pointer_secondary = (0i16, 0i16, false, false);
+        InputState { buttons: bits, axes, pointer, pointer_secondary, analog_buttons }
     }
 
     /// Sample the OS mouse position + left-button state via

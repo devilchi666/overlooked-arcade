@@ -79,6 +79,14 @@ pub(crate) struct State {
     /// `RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN` so cores can detect
     /// the reload-by-aim-off-screen gesture).
     pub input_pointer: [(i16, i16, bool, bool); 5],
+    /// Per-port secondary pointer for multi-touch dispatch. Cores
+    /// polling `RETRO_DEVICE_POINTER` with `index = 1` receive
+    /// fields from this tuple; `index = 0` reads `input_pointer`;
+    /// `index ≥ 2` returns zero. `RETRO_DEVICE_ID_POINTER_COUNT`
+    /// reports how many pointers are currently pressed across both
+    /// slots (0 / 1 / 2). Mirrors `InputState.pointer_secondary`
+    /// via LibretroCore::set_input.
+    pub input_pointer_secondary: [(i16, i16, bool, bool); 5],
     /// Per-port analog-button pressure. Layout: `[port][button_id]`
     /// where `button_id` matches the RETRO_DEVICE_ID_JOYPAD_* bit
     /// position (0-15). Range 0..32767. Cores polling
@@ -254,6 +262,7 @@ impl State {
             input_bits: [0; 5],
             input_axes: [[0; 4]; 5],
             input_pointer: [(0, 0, false, false); 5],
+            input_pointer_secondary: [(0, 0, false, false); 5],
             input_analog_buttons: [[0; 16]; 5],
             display_aspect: 0.0,
             system_dir: CString::new(".").unwrap(),
@@ -681,18 +690,40 @@ pub(crate) unsafe extern "C" fn cb_get_sensor_input(port: u32, id: u32) -> f32 {
         .unwrap_or(0.0)
 }
 
-/// Pure helper: resolve a RETRO_DEVICE_ID_POINTER_* query against a
-/// stored `(x, y, pressed)` tuple. Extracted from cb_input_state so
-/// the dispatch table is unit-testable without manipulating the
-/// libretro singleton state. `count` reports 1 when pressed, 0
-/// otherwise — single-pointer model; multi-touch is Phase 2.5.
-pub(crate) fn pointer_field_value(pointer: (i16, i16, bool, bool), id: u32) -> i16 {
-    let (x, y, pressed, _in_viewport) = pointer;
+/// Pure helper: resolve a `RETRO_DEVICE_ID_POINTER_*` query against
+/// the per-port primary + secondary pointer tuples.
+///
+/// Multi-touch dispatch: cores poll
+/// `cb_input_state(port, RETRO_DEVICE_POINTER, index, id)` where
+/// `index` selects which finger (0 = primary, 1 = secondary,
+/// ≥ 2 = unused/zero). `COUNT` is independent of `index` and
+/// reports the total number of pressed pointers (0 / 1 / 2).
+///
+/// Extracted from cb_input_state so the dispatch table is
+/// unit-testable without manipulating the libretro singleton state.
+pub(crate) fn pointer_field_value(
+    primary: (i16, i16, bool, bool),
+    secondary: (i16, i16, bool, bool),
+    index: u32,
+    id: u32,
+) -> i16 {
+    // COUNT is touched-finger total — the same answer regardless of
+    // which `index` the core queried. Compute it before the
+    // index dispatch so `index = 1` `COUNT` returns 2-when-both-down
+    // (rather than dropping to whatever the index-1 PRESSED happens
+    // to be).
+    if id == RETRO_DEVICE_ID_POINTER_COUNT {
+        return primary.2 as i16 + secondary.2 as i16;
+    }
+    let (x, y, pressed, _in_viewport) = match index {
+        0 => primary,
+        1 => secondary,
+        _ => return 0,
+    };
     match id {
         RETRO_DEVICE_ID_POINTER_X       => x,
         RETRO_DEVICE_ID_POINTER_Y       => y,
         RETRO_DEVICE_ID_POINTER_PRESSED => if pressed { 1 } else { 0 },
-        RETRO_DEVICE_ID_POINTER_COUNT   => if pressed { 1 } else { 0 },
         _ => 0,
     }
 }
@@ -781,12 +812,16 @@ pub(crate) unsafe extern "C" fn cb_input_state(
     }
 
     // Pointer device — touch screen / mouse-as-touch / stylus. Cores
-    // polling this get the per-port (x, y, pressed) tuple back. OA's
-    // `index` is ignored at Phase 0 (multi-touch is Phase 2.5);
-    // single-pointer support handles NDS stylus + generic touch.
+    // polling this get the per-port (x, y, pressed) tuple back per
+    // `index`: 0 → primary, 1 → secondary, ≥2 → zero. POINTER_COUNT
+    // reports total pressed across both slots regardless of index.
     if device == RETRO_DEVICE_POINTER {
-        return with_state(|s| pointer_field_value(s.input_pointer[port as usize], id))
-            .unwrap_or(0);
+        return with_state(|s| pointer_field_value(
+            s.input_pointer[port as usize],
+            s.input_pointer_secondary[port as usize],
+            index,
+            id,
+        )).unwrap_or(0);
     }
 
     // Light gun device — classical arcade-style point-and-shoot. Shares
@@ -1406,24 +1441,32 @@ mod tests {
 
     // ---- pointer_field_value ------------------------------------------
 
+    /// Released secondary slot used in single-pointer tests so the
+    /// pre-Phase-3 semantics keep reading clearly.
+    const NO_SECONDARY: (i16, i16, bool, bool) = (0, 0, false, false);
+
     #[test]
     fn pointer_field_value_returns_stored_coords() {
-        // Mid-screen click, pressed, inside viewport.
+        // Mid-screen click, pressed, inside viewport, no second finger.
+        // Index 0 = primary slot — pre-Phase-3 single-pointer behaviour.
         let p = (1000i16, -2000i16, true, true);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       1000);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -2000);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_COUNT),   1);
+        let s = NO_SECONDARY;
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_X),       1000);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_Y),       -2000);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_COUNT),   1);
     }
 
     #[test]
     fn pointer_field_value_unpressed_reports_zero_count() {
-        // Pointer at min coords, released. COUNT must follow PRESSED.
+        // Pointer at min coords, released, no second finger. COUNT
+        // must follow PRESSED total — 0 here.
         let p = (-32768i16, -32768i16, false, true);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_X),       -32768);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_Y),       -32768);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_PRESSED), 0);
-        assert_eq!(pointer_field_value(p, RETRO_DEVICE_ID_POINTER_COUNT),   0);
+        let s = NO_SECONDARY;
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_X),       -32768);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_Y),       -32768);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_PRESSED), 0);
+        assert_eq!(pointer_field_value(p, s, 0, RETRO_DEVICE_ID_POINTER_COUNT),   0);
     }
 
     #[test]
@@ -1431,8 +1474,9 @@ mod tests {
         // Anything outside the 4 documented IDs returns 0 — defensive
         // against future libretro spec additions.
         let p = (100i16, 200i16, true, true);
+        let s = NO_SECONDARY;
         for id in [4u32, 7, 42, 9999] {
-            assert_eq!(pointer_field_value(p, id), 0, "id {id} must return 0");
+            assert_eq!(pointer_field_value(p, s, 0, id), 0, "id {id} must return 0");
         }
     }
 
@@ -1445,14 +1489,87 @@ mod tests {
         // leaves the viewport).
         let p_in  = (1000i16, -2000i16, true, true);
         let p_out = (1000i16, -2000i16, true, false);
+        let s = NO_SECONDARY;
         assert_eq!(
-            pointer_field_value(p_in,  RETRO_DEVICE_ID_POINTER_X),
-            pointer_field_value(p_out, RETRO_DEVICE_ID_POINTER_X),
+            pointer_field_value(p_in,  s, 0, RETRO_DEVICE_ID_POINTER_X),
+            pointer_field_value(p_out, s, 0, RETRO_DEVICE_ID_POINTER_X),
         );
         assert_eq!(
-            pointer_field_value(p_in,  RETRO_DEVICE_ID_POINTER_PRESSED),
-            pointer_field_value(p_out, RETRO_DEVICE_ID_POINTER_PRESSED),
+            pointer_field_value(p_in,  s, 0, RETRO_DEVICE_ID_POINTER_PRESSED),
+            pointer_field_value(p_out, s, 0, RETRO_DEVICE_ID_POINTER_PRESSED),
         );
+    }
+
+    // ---- pointer_field_value — multi-touch (index 1+) -----------------
+
+    #[test]
+    fn pointer_field_value_index_1_returns_secondary_coords() {
+        // Two distinct pointers down. Index 0 reads primary; index 1
+        // reads secondary. Coords + PRESSED differ between slots so
+        // a swap regression would surface immediately.
+        let primary   = (1000i16, -2000i16, true, true);
+        let secondary = (-5000i16, 7777i16, true, true);
+        assert_eq!(pointer_field_value(primary, secondary, 0, RETRO_DEVICE_ID_POINTER_X), 1000);
+        assert_eq!(pointer_field_value(primary, secondary, 0, RETRO_DEVICE_ID_POINTER_Y), -2000);
+        assert_eq!(pointer_field_value(primary, secondary, 1, RETRO_DEVICE_ID_POINTER_X), -5000);
+        assert_eq!(pointer_field_value(primary, secondary, 1, RETRO_DEVICE_ID_POINTER_Y), 7777);
+        assert_eq!(pointer_field_value(primary, secondary, 0, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
+        assert_eq!(pointer_field_value(primary, secondary, 1, RETRO_DEVICE_ID_POINTER_PRESSED), 1);
+    }
+
+    #[test]
+    fn pointer_field_value_index_out_of_range_returns_zero() {
+        // libretro's `index` parameter is u32. Anything past index 1
+        // is undefined territory — return zero so cores polling
+        // (NDS homebrew that loops poll until COUNT) don't read stale
+        // primary data when they intended to ask about a third finger.
+        let primary   = (1000i16, -2000i16, true, true);
+        let secondary = (-5000i16, 7777i16, true, true);
+        for idx in [2u32, 3, 7, 99, u32::MAX] {
+            assert_eq!(
+                pointer_field_value(primary, secondary, idx, RETRO_DEVICE_ID_POINTER_X),
+                0, "index {idx} POINTER_X must return 0",
+            );
+            assert_eq!(
+                pointer_field_value(primary, secondary, idx, RETRO_DEVICE_ID_POINTER_PRESSED),
+                0, "index {idx} POINTER_PRESSED must return 0",
+            );
+        }
+    }
+
+    #[test]
+    fn pointer_field_value_count_sums_pressed_slots() {
+        // COUNT semantics: total pressed across both slots,
+        // independent of `index`. 0 / 1 / 2 covers the full domain.
+        let down  = (0i16, 0i16, true,  true);
+        let up    = (0i16, 0i16, false, true);
+        // Both up → 0
+        for idx in [0u32, 1] {
+            assert_eq!(pointer_field_value(up, up, idx, RETRO_DEVICE_ID_POINTER_COUNT), 0);
+        }
+        // Only primary → 1 (regardless of index)
+        for idx in [0u32, 1] {
+            assert_eq!(pointer_field_value(down, up, idx, RETRO_DEVICE_ID_POINTER_COUNT), 1);
+        }
+        // Only secondary → 1
+        for idx in [0u32, 1] {
+            assert_eq!(pointer_field_value(up, down, idx, RETRO_DEVICE_ID_POINTER_COUNT), 1);
+        }
+        // Both down → 2
+        for idx in [0u32, 1] {
+            assert_eq!(pointer_field_value(down, down, idx, RETRO_DEVICE_ID_POINTER_COUNT), 2);
+        }
+    }
+
+    #[test]
+    fn pointer_field_value_count_unaffected_by_out_of_range_index() {
+        // Even with index ≥ 2 (where X/Y/PRESSED return 0), COUNT
+        // still answers the total-pressed question — cores that
+        // pre-poll COUNT before iterating fingers shouldn't see 0
+        // just because they probed an arbitrarily-high index.
+        let down = (0i16, 0i16, true, true);
+        assert_eq!(pointer_field_value(down, down, 2, RETRO_DEVICE_ID_POINTER_COUNT), 2);
+        assert_eq!(pointer_field_value(down, down, 99, RETRO_DEVICE_ID_POINTER_COUNT), 2);
     }
 
     // ---- lightgun_field_value -----------------------------------------

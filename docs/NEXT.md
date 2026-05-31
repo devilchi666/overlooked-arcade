@@ -422,7 +422,22 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    left-mouse-down (gated on `STYLUS_SYSTEMS` set including `nds`).
    Per-game hotspot configuration data + overlay rendering is the
    remaining slice.
-7. **NDS multi-touch** (~80 lines, niche). POINTER index 1+.
+~~7. **NDS multi-touch**~~ — **SHIPPED 2026-05-30** on
+   `feat/gameplay-fixes-batch`. POINTER `index` parameter now
+   dispatches per-finger: `index = 0` → primary, `index = 1` →
+   secondary, `index ≥ 2` → zero. `POINTER_COUNT` reports total
+   pressed across both slots (0 / 1 / 2). New `pointer_secondary`
+   field on `oa_core::InputState` + `input_pointer_secondary[port]`
+   mirror in `crates/oa-libretro/src/state.rs` + extended
+   `pointer_field_value(primary, secondary, index, id)` signature.
+   V1 plumbing — `InputPoller::poll` leaves secondary at
+   `(0, 0, false, false)`; a second-finger source (second-mouse /
+   real touchscreen / Surface pen) lands as additive operator-
+   driven follow-up at the poll site. Tests:
+   `pointer_field_value_index_1_returns_secondary_coords`,
+   `_index_out_of_range_returns_zero`, `_count_sums_pressed_slots`,
+   `_count_unaffected_by_out_of_range_index`. nds/ROADMAP.md
+   line 50 flipped ⬜→✅.
 8. **Sega CD 3-button vs 6-button pad mode override** (~100 lines + DATA work).
 ~~9. **SMS Light Phaser**~~ — **SHIPPED 2026-05-25** via the
    `feat/light-gun-harness` branch. Dispatch wired in
