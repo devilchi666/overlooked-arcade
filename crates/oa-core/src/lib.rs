@@ -364,6 +364,23 @@ pub struct InputState {
     /// Set to `(0, 0, false, false)` for systems that don't use the
     /// pointer device.
     pub pointer: (i16, i16, bool, bool),
+    /// Secondary pointer for multi-touch dispatch. Same shape as
+    /// `pointer`; cores polling `RETRO_DEVICE_POINTER` with `index = 1`
+    /// receive this tuple's fields. NDS dual-stylus titles (Hotel Dusk
+    /// 3D mode, Glory of Heracles two-finger gestures, the handful of
+    /// homebrew that exercise multi-touch) are the v1 motivating
+    /// consumers. Cores polling with `index = 0` see `pointer`;
+    /// `index ≥ 2` reads zero. The `RETRO_DEVICE_ID_POINTER_COUNT`
+    /// poll reports how many pointers are currently `pressed`
+    /// (0 / 1 / 2).
+    ///
+    /// V1 plumbing only: `InputPoller` leaves this at
+    /// `(0, 0, false, false)` until a real second-finger input source
+    /// is wired (operator-driven; second-mouse / actual touchscreen /
+    /// future Surface-pen path). The shape exists today so cores can
+    /// poll it without crashing and so a second-source PR is purely
+    /// additive at the poll site.
+    pub pointer_secondary: (i16, i16, bool, bool),
     /// Per-button analog pressure for cores that poll
     /// `RETRO_DEVICE_INDEX_ANALOG_BUTTON`. Slot `i` corresponds to
     /// `RETRO_DEVICE_ID_JOYPAD_<bit i>`. Range 0..32767 (positive only —
@@ -378,6 +395,30 @@ pub struct InputState {
     /// the digital `buttons` bitmask remains the source of truth for
     /// `RETRO_DEVICE_JOYPAD` polls regardless of this field's contents.
     pub analog_buttons: [i16; 16],
+    /// Gun-side button bitmask for `RETRO_DEVICE_LIGHTGUN`. Bit
+    /// position == `RETRO_DEVICE_ID_LIGHTGUN_*`:
+    /// - bit 3  → AUX_A     (Time Crisis alt-fire, Wild Gunman dodge)
+    /// - bit 4  → AUX_B     (Hogan's Alley reload-by-button alt)
+    /// - bit 6  → START     (pause / continue prompts)
+    /// - bit 7  → SELECT    (menu screens on console-ported guns)
+    /// - bit 8  → AUX_C     (third gun-side button on Justifier)
+    /// - bit 9  → DPAD_UP   (menu nav on console-ported guns)
+    /// - bit 10 → DPAD_DOWN
+    /// - bit 11 → DPAD_LEFT
+    /// - bit 12 → DPAD_RIGHT
+    /// - bit 16 → RELOAD    (Time Crisis pedal alternative; the canonical
+    ///                       off-screen-aim reload still flows through
+    ///                       `IS_OFFSCREEN` from `pointer.in_viewport`)
+    ///
+    /// `u32` deliberately rather than `u16` — RELOAD is libretro id 16,
+    /// which doesn't fit in `u16`. Bits not listed above are reserved
+    /// (libretro hasn't allocated 5 or 17+ to LIGHTGUN ids).
+    /// `TRIGGER` (id 2) stays driven by `pointer.pressed`, not this
+    /// bitmask, so left-click continues to fire even when the operator
+    /// has no per-system gun-side bindings configured.
+    ///
+    /// Zero-filled for cores not polling LIGHTGUN.
+    pub lightgun_buttons: u32,
 }
 
 impl Default for InputState {
@@ -386,7 +427,9 @@ impl Default for InputState {
             buttons: 0,
             axes: [0; 4],
             pointer: (0, 0, false, false),
+            pointer_secondary: (0, 0, false, false),
             analog_buttons: [0; 16],
+            lightgun_buttons: 0,
         }
     }
 }

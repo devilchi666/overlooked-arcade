@@ -28,4 +28,4 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ⬜ bsnes swap validation — operator drops the higher-accuracy alternative via per-system Cores override (`SystemSettings`-level core picker shipped).
 - ⬜ Hi-res game validation (Secret of Mana 2-player split-screen, RPM Racing menus, R-Type III) — 512×448 mode; operator-driven.
 - ⬜ Mouse support — Mario Paint, ACME Animation Factory. libretro exposes SNES Mouse; needs a per-game device-type setting (Phase 3 polish).
-- ⬜ Super Multitap support — Bomberman games, etc; per-game core option surface.
+- ✅ Super Multitap support — `DEVICE_ID_OPTIONS_SNES` subclass id 257 (`((1 << 8) | RETRO_DEVICE_JOYPAD)`, snes9x's hand-encoded CTL_MP5 wire value, matching the Dolphin pattern) in `frontend/src/components/GameDialogs.tsx`; operator picks "Super Multitap (4-port adapter)" per-game per-port; `arm_libretro_device` already dispatches arbitrary u32s. Hint block names Super Bomberman 3/4/5 + Panic Bomber W (two-port = 8 players) and the 5-player titles (one-port). Operator playtest of the 8-player Bomberman flagship titles remains the validation gap.

@@ -763,8 +763,19 @@ impl Core for LibretroCore {
             // that don't poll RETRO_DEVICE_POINTER (most systems) ignore
             // the stored values; NDS / light-gun games / DC HoTD get the
             // (x, y, pressed) tuple back via cb_input_state's
-            // RETRO_DEVICE_POINTER arm.
+            // RETRO_DEVICE_POINTER arm. `pointer_secondary` is the
+            // multi-touch slot: cores polling POINTER with `index = 1`
+            // read it; defaults to `(0, 0, false, false)` until a
+            // second-finger input source is wired.
             s.input_pointer[port_idx] = input.pointer;
+            s.input_pointer_secondary[port_idx] = input.pointer_secondary;
+            // LIGHTGUN gun-side button bitmask. Cores polling
+            // RETRO_DEVICE_LIGHTGUN with AUX_A/B/C, START, SELECT,
+            // DPAD_{UP,DOWN,LEFT,RIGHT}, or RELOAD read the
+            // matching bit from this u32 via lightgun_field_value.
+            // TRIGGER + SCREEN_X/Y + IS_OFFSCREEN keep their existing
+            // sources (pointer.pressed + pointer coords + in_viewport).
+            s.input_lightgun_buttons[port_idx] = input.lightgun_buttons;
             // Per-button analog pressure flows through the same path.
             // Cores that don't poll RETRO_DEVICE_INDEX_ANALOG_BUTTON
             // (most systems) ignore the stored values; PSX/Saturn/GC/DC

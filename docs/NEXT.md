@@ -309,9 +309,20 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    flipped ✅ for each. Operator validation against real handheld captures
    remains a stretch polish item but doesn't gate the default.
 
-4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch** (~80 lines).
-   - Bits 16-20 in `bindings.rs::jaguar` already exist. Wire libretro `RETRO_DEVICE_KEYBOARD` events from the upper-bit presses through to Virtual Jaguar.
-   - Wants VJ-specific RETROK keycode validation against a running core.
+~~4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch**~~ —
+   **SHIPPED** alongside the original Jaguar onboarding. Bits 16-20
+   are masked out of `libretro_bits` by `jaguar_to_libretro_bits`
+   and forwarded to Virtual Jaguar via `retro_keyboard_event_t` in
+   the emu-thread frame loop (`apps/oa-shell/src/main.rs:6134-6148`).
+   Mapping table at `apps/oa-shell/src/bindings.rs::jaguar_high_bit_to_retro_key`
+   with bitmask helper `JAGUAR_HIGH_BIT_MASK`. KP_HASH maps to
+   `RETROK_HASH` (35, since libretro defines no `RETROK_KP_HASH`).
+   Edge-detected per-bit so a single mask compare skips work when
+   no high-bit transitions happened. Tests at
+   `bindings.rs:4671-4702`. VJ keycode validation against running
+   cores remains operator-driven (Iron Soldier weapon select, AvP
+   map screen) — same playtest gap that gates per-core ROADMAP
+   Phase 1 entries across systems.
 
 ~~5. Multi-system light-gun smoke-test validation~~ — **SHIPPED 2026-05-25**
    on `feat/light-gun-harness`. Original audit framing was wrong:
@@ -391,14 +402,52 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
      inserts a row before the focused index no longer drags the ring
      onto a different logical button.
 
-2. **SNES Mouse + Super Multitap** (~200 lines, niche). Mario Paint, Bomberman.
+2. **SNES Super Multitap** (~150 lines, niche). 8-player Bomberman
+   series (Super Bomberman 3/4/5, Panic Bomber W). snes9x registers
+   it as a RetroPad subclass; needs a `DEVICE_ID_OPTIONS_SNES` table
+   mirroring `DEVICE_ID_OPTIONS_GAMECUBE` (in
+   `frontend/src/components/GameDialogs.tsx:711-717`) so operators
+   can pick it per-game. **SNES Mouse half already shipped** via the
+   generic per-game device-type override (id=2) — label at
+   `frontend/src/components/GameDialogs.tsx:646`; dispatch via
+   `arm_libretro_device` (Mario Paint, ACME Animation Factory).
 3. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.
 4. **Vectrex translucent overlay rendering + aspect override** (~250 lines combined). Plastic color-strip per-game PNG; Vectrex CRT portrait 3:4 default.
 5. **NDS microphone input** (~200 lines). Blow/voice puzzles. Deferred until operator playtest forces it.
-6. **NDS per-game touch overlay UI** (~250 lines). Visual stylus cursor.
-7. **NDS multi-touch** (~80 lines, niche). POINTER index 1+.
+6. **NDS per-game touch hotspot overlay** (~200 lines). Game-specific
+   touch zones (Phantom Hourglass map screen, Mario Kart DS
+   course-selection, Brain Age stylus zones). **Visual stylus reticle
+   half already shipped** — `frontend/src/components/StylusOverlay.tsx`
+   renders a hollow accent-ring at the cursor, fills in on
+   left-mouse-down (gated on `STYLUS_SYSTEMS` set including `nds`).
+   Per-game hotspot configuration data + overlay rendering is the
+   remaining slice.
+~~7. **NDS multi-touch**~~ — **SHIPPED 2026-05-30** on
+   `feat/gameplay-fixes-batch`. POINTER `index` parameter now
+   dispatches per-finger: `index = 0` → primary, `index = 1` →
+   secondary, `index ≥ 2` → zero. `POINTER_COUNT` reports total
+   pressed across both slots (0 / 1 / 2). New `pointer_secondary`
+   field on `oa_core::InputState` + `input_pointer_secondary[port]`
+   mirror in `crates/oa-libretro/src/state.rs` + extended
+   `pointer_field_value(primary, secondary, index, id)` signature.
+   V1 plumbing — `InputPoller::poll` leaves secondary at
+   `(0, 0, false, false)`; a second-finger source (second-mouse /
+   real touchscreen / Surface pen) lands as additive operator-
+   driven follow-up at the poll site. Tests:
+   `pointer_field_value_index_1_returns_secondary_coords`,
+   `_index_out_of_range_returns_zero`, `_count_sums_pressed_slots`,
+   `_count_unaffected_by_out_of_range_index`. nds/ROADMAP.md
+   line 50 flipped ⬜→✅.
 8. **Sega CD 3-button vs 6-button pad mode override** (~100 lines + DATA work).
-9. **SMS Light Phaser** (~120 lines, shared light-gun infra).
+~~9. **SMS Light Phaser**~~ — **SHIPPED 2026-05-25** via the
+   `feat/light-gun-harness` branch. Dispatch wired in
+   `crates/oa-libretro/src/state.rs::lightgun_field_value` alongside
+   nes/saturn/psx/dreamcast/atari7800; catalogued at
+   `apps/oa-shell/src/light_gun_systems.rs:102` with `WiringShipped`
+   status. Operator playtest of Operation Wolf / Rambo III /
+   Shooting Gallery / Marksman Shooting on real Phaser hardware is
+   the remaining gap (tracked under MEDIUM #5's playtest matrix). No
+   SMS-specific code work remains.
 10. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
 11. **NGP-mono vs NGPC library-tile differentiation** (~60 lines). Badge or subtitle.
 12. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
@@ -487,7 +536,7 @@ What's already shipped that future work can lean on. Cite these in PRs that clos
 - **BIOS pre-checks** — CD-launch dispatch covers 9 CD systems; cart-shape covers nds/neogeo/coleco/intv/o2/channelf/5200/pokemini/gba/jaguar (10 systems). Neogeo BIOS flavour-tagged stock vs Universe. GBA pre-check is warn-on-missing (mGBA HLE works); jaguar pre-check is block-on-missing (Virtual Jaguar requires jagboot).
 - **Keyboard passthrough** + Game-Focus toggle + Ctrl+G. Default-on for `mame`, `msx`, `msx2`, `5200`.
 - **Analog axes** — `InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity + per-system default routing (`default_analog_routing("n64") → WASD`).
-- **POINTER + LIGHTGUN devices** — `oa_core::InputState.pointer` is now `(x, y, pressed, in_viewport)` + `cb_input_state` dispatch for both `RETRO_DEVICE_POINTER` (touch/stylus shape, NDS et al.) AND `RETRO_DEVICE_LIGHTGUN` (classical gun shape, NES Zapper / Saturn Virtua Gun / PSX GunCon / Dreamcast HotD / SMS Light Phaser / SNES Super Scope / Atari 7800 XEGS Light Gun). Pure helper functions `pointer_field_value` + `lightgun_field_value` in `crates/oa-libretro/src/state.rs` are exhaustively unit-tested. `InputPoller::poll_pointer` + `PointerViewport` (window-relative mapping fed from `Renderer::last_viewport()` per frame); pointer outside the viewport reports `(0, 0, false, false)` so light-gun cores polling `LIGHTGUN_IS_OFFSCREEN` see the reload-by-aim gesture (House of the Dead 2, Time Crisis series, Lethal Enforcers, Confidential Mission). IS_OFFSCREEN plumbed end-to-end 2026-05-27. Catalogue of known light-gun systems + device-type expectations in `apps/oa-shell/src/light_gun_systems.rs`. Remaining Phase 2 gap for full light-gun support: LIGHTGUN AUX/START/SELECT/DPAD/RELOAD bindings UI for gun-side physical buttons.
+- **POINTER + LIGHTGUN devices** — `oa_core::InputState.pointer` is now `(x, y, pressed, in_viewport)` + `pointer_secondary` companion for multi-touch (index 1+) + `cb_input_state` dispatch for both `RETRO_DEVICE_POINTER` (touch/stylus shape, NDS et al.) AND `RETRO_DEVICE_LIGHTGUN` (classical gun shape, NES Zapper / Saturn Virtua Gun / PSX GunCon / Dreamcast HotD / SMS Light Phaser / SNES Super Scope / Atari 7800 XEGS Light Gun). Pure helper functions `pointer_field_value(primary, secondary, index, id)` + `lightgun_field_value(pointer, buttons, id)` in `crates/oa-libretro/src/state.rs` are exhaustively unit-tested (30 tests covering both helpers + viewport coord math edge cases). `InputPoller::poll_pointer` + `PointerViewport` (window-relative mapping fed from `Renderer::last_viewport()` per frame); pointer outside the viewport reports `(0, 0, false, false)` so light-gun cores polling `LIGHTGUN_IS_OFFSCREEN` see the reload-by-aim gesture (House of the Dead 2, Time Crisis series, Lethal Enforcers, Confidential Mission). IS_OFFSCREEN plumbed end-to-end 2026-05-27. POINTER multi-touch (index 0 → primary, 1 → secondary, ≥2 → zero; COUNT reports 0/1/2 total pressed) plumbed 2026-05-30 via Phase 3 of `feat/gameplay-fixes-batch`. LIGHTGUN gun-side buttons (AUX_A/B/C + START + SELECT + DPAD + RELOAD) plumbed 2026-05-30 via Phase 4 of `feat/gameplay-fixes-batch` — `InputState.lightgun_buttons: u32` (bit position == libretro id) + State mirror + `oa_input::lightgun_buttons_from_joypad_bits` derives the bitmask from per-port RetroPad bindings (no new bindings UI). Catalogue of known light-gun systems + device-type expectations in `apps/oa-shell/src/light_gun_systems.rs`.
 - **Direct-launch CLI** — `--system` / `--core` / per-game lookup + bootstrap-hint so the emu thread loads the right .dll on first launch.
 - **Disc-id extraction** — `cd_id.rs::extractors` covers pce-cd, segacd, saturn, psx/ps2, neocd, pcfx, gamecube, dreamcast; 3DO returns None by design.
 - **Per-system theming** — `frontend/src/themes/systems.css` + `registry.ts`.

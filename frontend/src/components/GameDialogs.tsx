@@ -645,6 +645,11 @@ function systemSpecificDeviceLabel(systemId: string, deviceId: number): string |
     case "snes":
       if (deviceId === 2) return "SNES Mouse";
       if (deviceId === 4) return "Super Scope";
+      // snes9x hand-encodes the multitap as `((1 << 8) | RETRO_DEVICE_JOYPAD)`
+      // (= 257) at the top of `libretro/libretro.cpp`, not the canonical
+      // RETRO_DEVICE_SUBCLASS macro. The u32 wire value here is what
+      // retro_set_controller_port_device actually receives → CTL_MP5.
+      if (deviceId === 257) return "Super Multitap (4-port)";
       return null;
     case "psx":
       if (deviceId === 5) return "DualShock / Analog";
@@ -716,18 +721,33 @@ const DEVICE_ID_OPTIONS_GAMECUBE: readonly { id: number; generic: string }[] = [
   { id: 1537, generic: "GameCube Controller (Wii mode)" },
 ];
 
+/// SNES peripheral subclasses registered by snes9x. The Super Multitap
+/// id is hand-encoded as `((1 << 8) | RETRO_DEVICE_JOYPAD)` at the top
+/// of snes9x's `libretro/libretro.cpp` — same pattern Dolphin uses,
+/// not the canonical RETRO_DEVICE_SUBCLASS macro. The u32 wire value
+/// here is what retro_set_controller_port_device receives → CTL_MP5
+/// inside snes9x. Operators pick this in the per-game Input dialog
+/// for 8-player Bomberman games (Super Bomberman 3/4/5 + Panic Bomber W)
+/// — typically on BOTH ports for the full 8-player setup.
+const DEVICE_ID_OPTIONS_SNES: readonly { id: number; generic: string }[] = [
+  { id: 257, generic: "Super Multitap (4-port adapter)" },
+];
+
 /// Per-system option-list resolution. Most systems just use the base
 /// seven libretro device types; GameCube/Wii layers Dolphin's
 /// Wii-peripheral subclasses on top so they appear in the dropdown
-/// only for GC system games. Future systems with custom subclasses
-/// (Saturn 3D Pad sits on the generic ANALOG id 5 today, so no
-/// extras needed; if Beetle Saturn ever adds Twin-Stick Pro as a
-/// subclass, this is the table to extend).
+/// only for GC system games. SNES layers snes9x's Super Multitap.
+/// Future systems with custom subclasses (Saturn 3D Pad sits on the
+/// generic ANALOG id 5 today, so no extras needed; if Beetle Saturn
+/// ever adds Twin-Stick Pro as a subclass, this is the table to extend).
 function deviceOptionsForSystem(
   systemId: string,
 ): readonly { id: number; generic: string }[] {
   if (systemId === "gamecube") {
     return [...DEVICE_ID_OPTIONS_BASE, ...DEVICE_ID_OPTIONS_GAMECUBE];
+  }
+  if (systemId === "snes") {
+    return [...DEVICE_ID_OPTIONS_BASE, ...DEVICE_ID_OPTIONS_SNES];
   }
   return DEVICE_ID_OPTIONS_BASE;
 }
@@ -844,6 +864,19 @@ export const GameInputDialog: Component<{
                       GameCube Controller (Wii mode). Pick on Port 0
                       above; use additional ports below for 2-4
                       player setups.
+                    </p>
+                  </Show>
+                  <Show when={e().systemId === "snes"}>
+                    <p class="rounded border border-(--color-system-accent)/30 bg-(--color-system-accent)/5 px-2 py-1.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                      <span class="text-(--color-oa-ink)">Super Multitap (5+ players):</span> Super
+                      Bomberman 3 / 4 / 5 + Panic Bomber W expect a
+                      Super Multitap on each port for 8-player matches
+                      — set Port 0 = Super Multitap AND Port 1 =
+                      Super Multitap above + below. snes9x then routes
+                      8 RetroPad ports through the two adapters (4 per
+                      multitap). Smaller 5-player titles (Smash Tennis,
+                      Bomberman B-Daman, Super Tennis 4-player + 1)
+                      need only Port 0 = Super Multitap.
                     </p>
                   </Show>
                   <For each={[1, 2, 3, 4] as const}>
