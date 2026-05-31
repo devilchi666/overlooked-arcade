@@ -70,6 +70,7 @@ audio + working 6-button pad at native 59.94 Hz NTSC.
 - ⬜ **6-button Saturn pad glyphs** for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `SystemBindingsEditor.tsx:226`).
 - ⬜ **Kronos vs Beetle Saturn vs YabaSanshiro** — operator-driven DECISIONS doc.
 - ⬜ **Light Gun support** — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness` (`crates/oa-libretro/src/state.rs::lightgun_field_value`); IS_OFFSCREEN reload-by-aim flag plumbed 2026-05-27 (`InputState.pointer` is now `(x, y, pressed, in_viewport)`). Beetle Saturn + Kronos both poll RETRO_DEVICE_LIGHTGUN for the Virtua Gun; SCREEN_X/Y/TRIGGER/IS_OFFSCREEN reach the core. Flagship validation: Virtua Cop 1/2 / House of the Dead / Death Crimson 2 / Crypt Killer. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
+- ✅ **Light-gun gun-side buttons** (AUX_A/B/C + START + SELECT + DPAD + RELOAD) — shipped 2026-05-30 via Phase 4 of `feat/gameplay-fixes-batch`. New `oa_core::InputState.lightgun_buttons: u32` + State mirror + bit-keyed `lightgun_field_value` dispatch. Bindings derive from per-port RetroPad bits via `oa_input::lightgun_buttons_from_joypad_bits` (no new bindings UI — operator rebinds existing per-system JOYPAD bits). Virtua Gun's START button (used for Virtua Cop continue prompts + House of the Dead mode-select) reaches the core through LIGHTGUN_START.
 
 ---
 

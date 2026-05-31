@@ -43,6 +43,16 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
   closed by Phase A LIGHTGUN device-type + the existing POINTER infra
   (window-relative mapping via `PointerViewport`). Operator playtest
   pending.
+- ✅ Light-gun gun-side buttons (AUX_A/B/C + START + SELECT + DPAD +
+  RELOAD) — shipped 2026-05-30 via Phase 4 of
+  `feat/gameplay-fixes-batch`. New `oa_core::InputState.lightgun_buttons:
+  u32` + State mirror + bit-keyed `lightgun_field_value` dispatch.
+  Bindings derive from per-port RetroPad bits via
+  `oa_input::lightgun_buttons_from_joypad_bits`. The XEGS Light Gun
+  hardware only had a single trigger — the gun-side bits stay zero
+  in normal XEGS play. Plumbed for completeness so a future
+  homebrew title using LIGHTGUN as a generic point-and-click input
+  shape works without re-touching the dispatch path.
 - ✅ Trak-Ball / driving-controller support (Pole Position II, Asteroids
   Deluxe) — closed by Phase A PADDLE / MOUSE + Phase C mouse-as-stick.
   Trackball games can also try device = MOUSE (libretro MOUSE is

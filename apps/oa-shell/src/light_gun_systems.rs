@@ -95,8 +95,10 @@ pub const LIGHT_GUN_SYSTEMS: &[LightGunSystem] = &[
         status: WiringStatus::WiringShipped,
         notes: "snes9x polls LIGHTGUN for the Super Scope. bsnes \
                 Super Scope path also goes through LIGHTGUN. AUX_A / \
-                AUX_B (Cursor, Turbo, Pause) return 0 today — Phase 2 \
-                Bindings UI work to wire them.",
+                AUX_B (Cursor, Turbo, Pause) wired via the \
+                lightgun_buttons bitmask (Phase 4 of \
+                feat/gameplay-fixes-batch, 2026-05-30) — operator \
+                rebinds per-port RetroPad bits to drive them.",
     },
     LightGunSystem {
         system_id: "sms",

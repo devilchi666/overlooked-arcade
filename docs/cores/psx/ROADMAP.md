@@ -74,6 +74,7 @@ audio + working digital DualPad at native 59.94 Hz NTSC.
 - ⬜ **HW vs SW perf benchmarks** — operator-driven DECISIONS doc.
 - ⬜ **PGXP geometry correction** — operator-driven per-game core-option curation (per-game core-options drawer shipped cross-system).
 - ⬜ **Light gun support** — operator validation. LIGHTGUN dispatch shipped 2026-05-25 on `feat/light-gun-harness`; IS_OFFSCREEN reload-by-aim flag plumbed 2026-05-27 via the new `in_viewport` field on `InputState.pointer` (`crates/oa-libretro/src/state.rs::lightgun_field_value`). Beetle PSX polls RETRO_DEVICE_LIGHTGUN for both the Namco GunCon (Time Crisis 1/2, Point Blank trilogy) AND the Konami Justifier (Lethal Enforcers, Crypt Killer); SCREEN_X/Y/TRIGGER/IS_OFFSCREEN reach the core. Time Crisis-style reload-by-aiming-off-screen now functional. Catalogued in `apps/oa-shell/src/light_gun_systems.rs`.
+- ✅ **Light-gun gun-side buttons** (AUX_A/B/C + START + SELECT + DPAD + RELOAD) — shipped 2026-05-30 via Phase 4 of `feat/gameplay-fixes-batch`. New `oa_core::InputState.lightgun_buttons: u32` + State mirror + bit-keyed `lightgun_field_value` dispatch. Bindings derive from per-port RetroPad bits via `oa_input::lightgun_buttons_from_joypad_bits`. Time Crisis pedal-reload (foot-pedal-on-button alternative — the off-screen-aim gesture also reloads via IS_OFFSCREEN; both paths active) reaches the core through LIGHTGUN_RELOAD. Justifier's A/B/Start gun-side buttons (Lethal Enforcers menu nav) map to AUX_A/B/START.
 
 ---
 

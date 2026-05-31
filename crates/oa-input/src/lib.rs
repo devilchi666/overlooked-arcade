@@ -674,7 +674,24 @@ impl InputPoller {
         // a future operator-driven PR adding it is purely additive
         // here.
         let pointer_secondary = (0i16, 0i16, false, false);
-        InputState { buttons: bits, axes, pointer, pointer_secondary, analog_buttons }
+
+        // LIGHTGUN gun-side buttons derive from the same RetroPad
+        // bindings the operator already configured for this port —
+        // no new bindings UI surface. Mirror specific JOYPAD bits
+        // (Y / A / X / START / SELECT / DPad / R-shoulder) to their
+        // LIGHTGUN counterparts (AUX_A / B / C / START / SELECT /
+        // DPad / RELOAD). See `lightgun_buttons_from_joypad_bits`
+        // for the mapping rationale + commentary.
+        let lightgun_buttons = lightgun_buttons_from_joypad_bits(bits);
+
+        InputState {
+            buttons: bits,
+            axes,
+            pointer,
+            pointer_secondary,
+            analog_buttons,
+            lightgun_buttons,
+        }
     }
 
     /// Sample the OS mouse position + left-button state via
@@ -903,6 +920,85 @@ fn compute_stick_output(
         (clamped * 32767.0).round().clamp(-32768.0, 32767.0) as i16
     };
     (to_i16(x), to_i16(y))
+}
+
+// RetroPad bit positions — match the libretro
+// `RETRO_DEVICE_ID_JOYPAD_*` numeric ids; we keep the constants here
+// rather than re-exporting from oa-libretro to avoid making oa-input
+// depend on the ffi crate.
+const RETROPAD_BIT_Y: u32      = 1;
+const RETROPAD_BIT_SELECT: u32 = 2;
+const RETROPAD_BIT_START: u32  = 3;
+const RETROPAD_BIT_UP: u32     = 4;
+const RETROPAD_BIT_DOWN: u32   = 5;
+const RETROPAD_BIT_LEFT: u32   = 6;
+const RETROPAD_BIT_RIGHT: u32  = 7;
+const RETROPAD_BIT_A: u32      = 8;
+const RETROPAD_BIT_X: u32      = 9;
+const RETROPAD_BIT_R: u32      = 11;
+
+// LIGHTGUN id bit positions — match `RETRO_DEVICE_ID_LIGHTGUN_*` numeric
+// ids 1:1 so `1 << id` reads the right slot in
+// `oa_libretro::state::lightgun_field_value`. AUX_A=3, AUX_B=4,
+// START=6, SELECT=7, AUX_C=8, DPAD_UP=9, DPAD_DOWN=10, DPAD_LEFT=11,
+// DPAD_RIGHT=12, RELOAD=16.
+const LIGHTGUN_AUX_A: u32      = 3;
+const LIGHTGUN_AUX_B: u32      = 4;
+const LIGHTGUN_START: u32      = 6;
+const LIGHTGUN_SELECT: u32     = 7;
+const LIGHTGUN_AUX_C: u32      = 8;
+const LIGHTGUN_DPAD_UP: u32    = 9;
+const LIGHTGUN_DPAD_DOWN: u32  = 10;
+const LIGHTGUN_DPAD_LEFT: u32  = 11;
+const LIGHTGUN_DPAD_RIGHT: u32 = 12;
+const LIGHTGUN_RELOAD: u32     = 16;
+
+/// Derive a `RETRO_DEVICE_LIGHTGUN`-shape gun-side button bitmask from
+/// the operator's per-port RetroPad binding output. The mapping is
+/// fixed so operators don't need a separate gun-side bindings UI —
+/// rebind the per-system RetroPad bits to change which physical
+/// inputs fire which gun-side button.
+///
+/// Fixed mapping rationale (digital buttons only — TRIGGER stays on
+/// mouse left-click via `pointer.pressed`):
+///
+/// | RetroPad bit     | LIGHTGUN id  | Why                                                   |
+/// |------------------|--------------|-------------------------------------------------------|
+/// | Y (1)            | AUX_A (3)    | First face button after B (B is conventional trigger) |
+/// | A (8)            | AUX_B (4)    | Second face button                                    |
+/// | X (9)            | AUX_C (8)    | Third face button (Justifier has 3 gun-side buttons)  |
+/// | START (3)        | START (6)    | Pause / continue prompts on console-ported gun games  |
+/// | SELECT (2)       | SELECT (7)   | Menu screens on console-ported guns                   |
+/// | UP / DOWN /      | DPAD_UP /    | Menu nav on console-ported guns (Hogan's Alley,       |
+/// | LEFT / RIGHT     | DOWN / LEFT  | Wild Gunman score-screen navigation)                  |
+/// | (4 / 5 / 6 / 7)  | RIGHT        |                                                       |
+/// | R-shoulder (11)  | RELOAD (16)  | Time Crisis pedal-equivalent button-reload (the       |
+/// |                  |              | off-screen aim gesture also reloads via               |
+/// |                  |              | IS_OFFSCREEN — both paths active)                     |
+///
+/// B (0) / L-shoulder (10) / L2 / R2 / L3 / R3 / TRIGGER (LIGHTGUN id 2)
+/// are NOT mapped — B is the conventional primary fire which already
+/// flows through `pointer.pressed`, and the other slots stay free for
+/// future operator-driven additions (e.g. a separate Konami Justifier
+/// "trigger override" or arcade-cabinet pedal-on-shoulder).
+pub fn lightgun_buttons_from_joypad_bits(joypad: u32) -> u32 {
+    let mut out = 0u32;
+    let mirror = |out: &mut u32, joypad_bit: u32, lightgun_bit: u32| {
+        if (joypad >> joypad_bit) & 1 == 1 {
+            *out |= 1 << lightgun_bit;
+        }
+    };
+    mirror(&mut out, RETROPAD_BIT_Y,      LIGHTGUN_AUX_A);
+    mirror(&mut out, RETROPAD_BIT_A,      LIGHTGUN_AUX_B);
+    mirror(&mut out, RETROPAD_BIT_X,      LIGHTGUN_AUX_C);
+    mirror(&mut out, RETROPAD_BIT_START,  LIGHTGUN_START);
+    mirror(&mut out, RETROPAD_BIT_SELECT, LIGHTGUN_SELECT);
+    mirror(&mut out, RETROPAD_BIT_UP,     LIGHTGUN_DPAD_UP);
+    mirror(&mut out, RETROPAD_BIT_DOWN,   LIGHTGUN_DPAD_DOWN);
+    mirror(&mut out, RETROPAD_BIT_LEFT,   LIGHTGUN_DPAD_LEFT);
+    mirror(&mut out, RETROPAD_BIT_RIGHT,  LIGHTGUN_DPAD_RIGHT);
+    mirror(&mut out, RETROPAD_BIT_R,      LIGHTGUN_RELOAD);
+    out
 }
 
 #[cfg(test)]

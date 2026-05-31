@@ -6011,6 +6011,11 @@ fn run_emu_render(
                         pointer,
                         pointer_secondary: (0, 0, false, false),
                         analog_buttons: [0; 16],
+                        // TAS replay re-uses the recorded JOYPAD bits
+                        // for the LIGHTGUN derivation — gun-side
+                        // buttons followed the same physical inputs
+                        // when the recording was captured.
+                        lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(f.port0),
                     };
                     // Recorded input bits are ALREADY libretro-shape
                     // (we record what the core received). Set directly
@@ -6025,6 +6030,7 @@ fn run_emu_render(
                                 pointer: (0, 0, false, false),
                                 pointer_secondary: (0, 0, false, false),
                                 analog_buttons: [0; 16],
+                                lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(f.port1),
                             },
                         );
                     }
@@ -6036,6 +6042,7 @@ fn run_emu_render(
                                 pointer: (0, 0, false, false),
                                 pointer_secondary: (0, 0, false, false),
                                 analog_buttons: [0; 16],
+                                lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(f.port2),
                             },
                         );
                     }
@@ -6047,6 +6054,7 @@ fn run_emu_render(
                                 pointer: (0, 0, false, false),
                                 pointer_secondary: (0, 0, false, false),
                                 analog_buttons: [0; 16],
+                                lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(f.port3),
                             },
                         );
                     }
@@ -6170,6 +6178,15 @@ fn run_emu_render(
                     pointer: polled.pointer,
                     pointer_secondary: polled.pointer_secondary,
                     analog_buttons: polled.analog_buttons,
+                    // Derive from `libretro_bits` (post-remap) rather
+                    // than `polled.lightgun_buttons` (which was
+                    // computed pre-remap, before the per-system
+                    // bit-shuffle that converts raw OA layout to the
+                    // RetroPad layout cores actually poll). For systems
+                    // with identity remaps the two are equivalent; for
+                    // systems with non-trivial remaps the libretro-
+                    // shape bits are what the LIGHTGUN core expects.
+                    lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(libretro_bits),
                 });
                 // Phase G — pump sensor values for cores that enabled
                 // accelerometer / gyroscope / illuminance via the
