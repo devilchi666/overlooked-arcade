@@ -188,13 +188,20 @@ Upgrade the existing Import Wizard into a guided-setup flow:
 
 **Voice:** warm + curator/enthusiast. Sample copy in the plan.
 
-**Phase 0 = controller-nav primitives** (~2-3 weeks frontend infrastructure: focus manager, gamepad → UI event layer, focus-ring component pattern, on-screen hint bar). Shippable independently — makes a few existing screens controller-navigable as a proof-of-concept before the wizard work.
+**Phase 0 = controller-nav primitives** (~2-3 weeks frontend infrastructure: focus manager, gamepad → UI event layer, focus-ring component pattern, on-screen hint bar). ✅ shipped 2026-05-26 — see [features/controller-nav/](features/controller-nav/).
 
-**Phases 1-6** (~6-7 weeks): wizard upgrade, curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry.
+**Phase 1B — wizard upgrade** (~3-4 weeks) is in flight. Slice 1
+(smart-scan emission + Settings → Library entry point) shipped
+2026-06-01 (`5ef8062` merge). Slices 2-6 remaining — see
+[features/guided-setup/README.md](features/guided-setup/README.md)
+for the slice table and the HIGH band entry below for Slice 2's
+concrete scope.
 
-**Total estimate:** 8-10 weeks of focused work. Awaiting operator green-light to start Phase 0.
+**Phases 2B-2F** (~4-5 weeks): curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry.
 
-Dwarfs the MEDIUM band below — when implementation starts, this arc dominates the roadmap for ~2 months. MEDIUM-band shader work + light-gun playtest can pipeline alongside if multiple sessions overlap.
+**Total estimate:** 8-10 weeks of focused work.
+
+Dwarfs the MEDIUM band below — while in flight, this arc dominates the roadmap for ~2 months. MEDIUM-band shader work + light-gun playtest can pipeline alongside if multiple sessions overlap.
 
 ---
 
@@ -269,6 +276,37 @@ Surface structured reference data per game in OA's library — date, publisher, 
 These are operator-independent and the infrastructure they sit on already exists.
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
+
+### Guided Setup Phase 1B Slice 2 — per-ROM results table
+
+Replace the wizard's Step 2 (extension→system mapping editor) + Step 3
+(progress bar + per-system tally) with a single LaunchBox-inspired
+per-ROM table. Each row: File / Detected system / Suggested title /
+Confidence badge / Status. Consumes the Slice 1 backend payload
+(`system_id` / `suggested_title` / `confidence` / `sha1`) which is
+already streaming over `oa://library-scan-complete`.
+
+**v1 per-row actions:** Change system (dropdown), Edit title (inline
+text), Skip (toggle), Show path (popover). Bulk-select via row
+checkboxes; bulk Change-system + bulk Skip. Sort + filter by any
+column.
+
+**v2 actions deferred** (plan §15): Mark as duplicate, per-game core
+override from the table, Open in file explorer, Set as region
+representative, bulk edit.
+
+**Where the work lives:** `frontend/src/components/ImportWizard.tsx`
+(replace in place per the Slice 1 decision). Slice 1's `useMedia`
++ existing classify helpers carry over. Likely also wants a
+`useDomQueryFocusGroup` integration so DPad / shoulder bumpers
+walk rows + columns cleanly (controller-nav requirement per
+guided-setup plan §10).
+
+**Scope:** ~1-2 weeks. Reuses Slice 1 plumbing entirely; the work
+is UI affordance design + table virtualization for 5K-row
+libraries.
+
+**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade".
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 

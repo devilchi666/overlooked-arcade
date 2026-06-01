@@ -11,6 +11,22 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Guided Setup Phase 1B — wizard upgrade**
+  ([features/guided-setup/](features/guided-setup/)). Slice 1
+  shipped 2026-06-01 (`5ef8062` merge — smart-scan emission +
+  Settings → Library entry point re-wiring the orphaned wizard
+  after the 2026-05-31 legacy-Shell deletion). The Rust scanner
+  now classifies + hashes during the walk and emits per-row
+  `system_id` / `suggested_title` / `confidence` (Hash / Header /
+  Extension / Hint) / `sha1` fields. Settings → Library → "Re-scan
+  with smart detection" card opens the wizard. Slice 2 (per-ROM
+  results table consuming the Slice 1 fields) is next — replaces
+  the Step 2 mapping editor + Step 3 progress-only view with a
+  single LaunchBox-inspired table. Plan + slice breakdown in
+  [features/guided-setup/README.md](features/guided-setup/README.md);
+  off-tree Slice 1 plan at
+  `C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md`.
+
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
