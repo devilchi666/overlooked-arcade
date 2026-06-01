@@ -182,6 +182,43 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **MAME ROM-set name resolution (listxml metadata pass)** —
+  branch `feat/mame-rom-set-name-resolution`, five phase commits
+  closing `docs/cores/mame/ROADMAP.md` line 56's listxml-deferral.
+  Library tiles now show "Donkey Kong (US set 1)" instead of `dkong`
+  on first launch; GameDetailPanel auto-surfaces year + manufacturer
+  via MediaDb GameMetadata enrichment.
+  - **Phase 1a** (`0e13bb5`) — `tools/mame-extractor` emits
+    `assets/mame-source/mame-games-slim.json` (name + description +
+    year + manufacturer + cloneof per machine) alongside the
+    existing per-system slim; single-pass walk with both outputs.
+    Filter: `runnable!=no` AND `isbios!=yes` AND `isdevice!=yes`
+    AND has `<rom>`. Both parents + clones emit own descriptions.
+  - **Phase 1b** (`4957a19`) — operator regenerated bundle via
+    `tools/bump-mame.sh` against MAME 0.288. 42,612 records, 5.4 MB
+    minified.
+  - **Phase 2** (`e68def2`) — SQLite migration v17 (`mame_games`
+    L1 + `mame_games_overrides` L3 + `mame_games_meta` KV); new
+    `apps/oa-shell/src/mame_games.rs` module; 5 Tauri commands
+    (`lookup_mame_game` / `get_mame_game_override` /
+    `set_mame_game_override` / `reset_mame_game_override` plus
+    `media::set_game_mame_metadata` MediaDb writer); bake-on-launch
+    wired next to `bake_system_info_on_launch`.
+  - **Phase 3** (`8e98972`) — `frontend/src/library/ingest.ts::resolveMameTitles`
+    cutover with the supersede-don't-replace lookup chain
+    (`lookup_mame_game` → legacy `lookup_mame_title` → filename);
+    writes year + publisher to MediaDb GameMetadata at ingest so
+    GameDetailPanel renders enriched without per-system UI work.
+  - **Phase 4** (`4dd3b74`) — `mame_import.rs::parse_listxml`
+    mirrors the Phase 1a refactor so "Refresh MAME system info"
+    bakes both tables from one MAME run; `games_refreshed` count
+    surfaces in the existing toast.
+  - **Phase 5** (this commit) — docs flips.
+
+  598 oa-shell tests passing (+21 from pre-branch 577). Frontend
+  typecheck silent. Legacy `mame_titles` table (v11 libretro-database
+  MAME.dat) preserved as 2nd-tier fallback; L3 edit UI deferred to v2.
+
 - **System Info Panel v1** — merged to main 2026-06-01 (`--no-ff`
   from `feat/system-info-panel-v1`). Six phase commits + a
   SCHEMA_VERSION trap fix closing `docs/PLANS/system-info-panel-v1.md`

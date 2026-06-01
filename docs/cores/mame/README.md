@@ -87,6 +87,20 @@ Some MAME drivers bind important keys to F1-F8 / Esc / digits / Backspace — th
 
 Game focus is per-session (default OFF every launch). The keyboard-passthrough pump itself is per-system; the `keyboard_passthrough` field in `<appData>/systems/mame.json` overrides the compiled-in default (true) if a user wants to suppress key forwarding entirely.
 
+## Per-game title resolution
+
+Tiles in the library show "Donkey Kong (US set 1)" instead of `dkong`, with the year + manufacturer flowing through to the Game Detail Panel. The resolution chain at ingest:
+
+1. **Bundled listxml catalog** (L1, baked from `assets/mame-source/mame-games-slim.json`). ~42k playable arcade machines from MAME 0.288 — name + description + year + manufacturer + cloneof. Lookup happens via the `lookup_mame_game` Tauri command; merged with the operator's L3 overrides in `mame_games_overrides` when present.
+2. **Legacy MAME.dat catalog** (libretro-database). Falls back when the bundled L1 has nothing for the ROM-set — useful for very recent arcade machines that post-date the bundled MAME 0.288 catalog (or older installs that synced MAME.dat before this feature shipped). Operator-triggered refresh via the `sync_mame_titles` Tauri command remains in place as a backup path.
+3. **Filename** — the original behavior. Only seen when neither catalog has the ROM-set (homebrew, hacks, ROMs that post-date both catalogs).
+
+Each catalog hit also writes year + manufacturer to MediaDb GameMetadata via `media::set_game_mame_metadata` — the Game Detail Panel reads `useMedia().media(romId)?.metadata` and surfaces "Donkey Kong (1981, Nintendo)" without any per-system UI plumbing.
+
+**Refreshing against a newer MAME**: SETTINGS → Storage → "Refresh MAME system info" runs the operator's local MAME's `-listxml`, parses both the per-system records AND the arcade-game catalog in one pass, and overwrites both `system_info_mame` AND `mame_games`. L3 overrides + the bundled L1 hash stay untouched; the refresh is session-scoped (next OA update rebakes from the bundled artifacts). The toast surfaces both counts: "Refreshed N systems + M arcade games from MAME 0.290".
+
+**Parent vs clone descriptions**: `sf2ce.zip` shows "Street Fighter II': Champion Edition", NOT the parent `sf2`'s "Street Fighter II: The World Warrior". The slim emits both rows with their own descriptions per MAME's listxml; the lookup keys strictly on the operator's filename.
+
 ## Current status (2026-05-19)
 
 **Works:**

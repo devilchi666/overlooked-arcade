@@ -53,7 +53,7 @@ Closed by shared analog input infra Phases A-D (2026-05-21).
 
 - ⬜ Validate a known-good ROM set against MAME 0.287 — operator playtest.
 - ⬜ Verify the 6-button SF mapping feels right on a real cabinet stick / fight pad — operator playtest of alternate "SF-native" defaults.
-- ⬜ Per-game ROM-set name resolution — operator-driven curation (MAME listxml metadata pass deferred).
+- ✅ Per-game ROM-set name resolution — listxml metadata pass shipped 2026-06-01 (bundled `assets/mame-source/mame-games-slim.json` baked into `mame_games` table; lookup chain in `frontend/src/library/ingest.ts::resolveMameTitles` patches tile titles + invokes `media::set_game_mame_metadata` to populate MediaDb year + publisher for GameDetailPanel). Operator-driven curation (L3 override edit UI) deferred to v2.
 - ⬜ `.chd` arcade games — operator playtest against Killer Instinct / Atari System 2.
 - ⬜ Verify aspect-ratio handling — operator validation that the renderer respects libretro rotation flag (per-system aspect override infra is shipped cross-system).
 

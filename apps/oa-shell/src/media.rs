@@ -3277,6 +3277,70 @@ pub fn set_manual_cover(
     Ok(updated)
 }
 
+/// Patch the MAME-derived metadata onto a game's MediaDb entry:
+/// year + publisher (mapped from MAME's `manufacturer`). Used by
+/// the frontend ingest pipeline AFTER `lookup_mame_game` resolves
+/// the human title, so the GameDetailPanel surfaces "Donkey Kong
+/// (1981, Nintendo)" without any further plumbing — the panel
+/// already reads year + publisher from `useMedia().media(romId)?.metadata`.
+///
+/// Preserves any pre-existing genre / developer / players /
+/// description fields on the entry; only `year` + `publisher` are
+/// overwritten. Setting either parameter to `None` LEAVES the
+/// existing value in place (the frontend never needs to "clear"
+/// these — that's what `reset_mame_game_override` is for at the
+/// catalog tier).
+///
+/// Emits `oa://media-updated` so the frontend re-renders. Soft-fails
+/// on lock contention rather than blocking ingest.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn set_game_mame_metadata(
+    romId: String,
+    year: Option<u32>,
+    publisher: Option<String>,
+    state: tauri::State<'_, MediaState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let updated = {
+        let mut db = state.db.write().map_err(|_| "media db lock poisoned".to_string())?;
+        let gm = db.entry(romId.clone()).or_insert_with(GameMedia::default);
+        let mut meta = gm.metadata.clone().unwrap_or_default();
+        let mut changed = false;
+        if let Some(y) = year {
+            if meta.year != Some(y) {
+                meta.year = Some(y);
+                changed = true;
+            }
+        }
+        if let Some(p) = publisher {
+            if meta.publisher.as_deref() != Some(p.as_str()) {
+                meta.publisher = Some(p);
+                changed = true;
+            }
+        }
+        if !changed {
+            // No-op — neither field actually moved. Return the
+            // current GameMedia clone for the emit (frontend can
+            // still re-render harmlessly) without a write_media_db
+            // call.
+            gm.clone()
+        } else {
+            gm.metadata = Some(meta);
+            let snap = gm.clone();
+            write_media_db(&state.app_data_dir, &db)
+                .map_err(|e| format!("write media.json: {e}"))?;
+            snap
+        }
+    };
+    use tauri::Emitter;
+    let _ = app.emit(
+        "oa://media-updated",
+        serde_json::json!({ "romId": &romId, "media": &updated }),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn clear_media(

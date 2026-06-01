@@ -1,16 +1,22 @@
 # mame-extractor
 
 Maintainer-only utility that slims MAME's `-listxml` output and
-`history.xml` (from arcade-history.com / Gaming-History) down to the
-~40 machines that map to OA-supported systems. Produces the three
-files in `assets/mame-source/` that `oa-shell` bakes into SQLite on
-launch (System Info Panel v1, Phase 2).
+`history.xml` (from arcade-history.com / Gaming-History) down to:
+(1) the ~40 machines that map to OA-supported systems (per-system
+metadata), and (2) every playable arcade-game machine MAME knows
+about (~25-30k records, used for ROM-set name resolution in the
+library). Produces the four files in `assets/mame-source/` that
+`oa-shell` bakes into SQLite on launch.
 
 Invoked exclusively via `tools/bump-mame.sh`. Standalone Cargo workspace —
 NOT a member of OA's root workspace, so `cargo build --workspace` /
 `cargo test --workspace` from the repo root do not touch it.
 
-Plan reference: `docs/PLANS/system-info-panel-v1.md`.
+Plan references:
+- `docs/PLANS/system-info-panel-v1.md` (per-system slim, originally
+  the only artifact).
+- `C:/Users/Devilchi/.claude/plans/glittery-kindling-blum.md`
+  (mame-games-slim, added 2026-06-01).
 
 ## Usage
 
@@ -100,6 +106,55 @@ Field-by-field source:
 | `max_players`      | `<input players="…">`                                  |
 | `peripheral_hints` | Sorted unique `<control type="…">` under `<input>`     |
 
+### `mame-games-slim.json`
+
+Per-machine arcade-game catalog. One JSON record per machine that
+satisfies ALL of:
+
+- `runnable != "no"` (machine is playable, not a placeholder stub),
+- `isbios != "yes"` (not a BIOS-only ROM-set like `neogeo`),
+- `isdevice != "yes"` (not a CPU / chip device entry),
+- has at least one `<rom>` child element,
+- has a non-empty `<description>` (every real machine does).
+
+Both parents AND clones emit their own row with their own
+`<description>`. The clone's `cloneof` field points at the parent's
+machine name; the parent's `cloneof` is omitted. This means an
+operator with `sf2ce.zip` gets "Street Fighter II': Champion Edition"
+— NOT the parent `sf2`'s "Street Fighter II: The World Warrior".
+
+```json
+{
+  "mame_version": "0.262",
+  "schema_version": 1,
+  "machines": [
+    {"name": "dkong", "description": "Donkey Kong (US set 1)", "year": "1981", "manufacturer": "Nintendo"},
+    {"name": "sf2", "description": "Street Fighter II: The World Warrior (World 910522)", "year": "1991", "manufacturer": "Capcom"},
+    {"name": "sf2ce", "description": "Street Fighter II': Champion Edition (World 920313)", "year": "1992", "manufacturer": "Capcom", "cloneof": "sf2"}
+  ]
+}
+```
+
+Field-by-field source:
+
+| Field          | MAME source                                            |
+|----------------|--------------------------------------------------------|
+| `name`         | `<machine name="…">` attribute (matches `.zip` stem)   |
+| `description`  | `<description>…</description>` child text              |
+| `year`         | `<year>…</year>` child text (optional in MAME)         |
+| `manufacturer` | `<manufacturer>…</manufacturer>` child text            |
+| `cloneof`      | `<machine cloneof="…">` attribute (omitted when None)  |
+
+Output is sorted by `name` ascending and **minified** (no
+pretty-printing) — at ~25-30k records, pretty-printing balloons the
+file to 4-5 MB, and the install-size cost outweighs the human-readability
+benefit for an artifact this large. Diff stability across MAME version
+bumps comes from the deterministic sort, not from pretty formatting.
+
+`schema_version` lets the consumer detect and reject incompatible
+artifacts on future schema bumps (Phase 2 SQLite loader will refuse
+to bake an artifact whose `schema_version` exceeds what it understands).
+
 ### `history-slim.xml`
 
 Filtered `<entry>` blocks from upstream `history.xml`. Output is a
@@ -166,4 +221,9 @@ real upstream shape (NES multi-machine `<systems>` block, an unrelated
 arcade machine, a software-list-only entry that must be dropped, and a
 single-machine PCE entry), the chip-clock formatter at MHz / GHz / kHz /
 Hz breakpoints, the placeholder-history path, and a sanity check that
-`MAME_DRIVER_MAP` has no duplicate slugs.
+`MAME_DRIVER_MAP` has no duplicate slugs. The arcade-games slim path
+adds five more tests against an embedded seven-machine sample:
+parent + clone preserve their own descriptions; BIOS / device /
+runnable=no / ROM-less entries are excluded; output sorts
+alphabetically; the per-system path is unaffected by the new arcade
+walk; and the `ArcadeGameRecord` serialised JSON shape stays locked.
