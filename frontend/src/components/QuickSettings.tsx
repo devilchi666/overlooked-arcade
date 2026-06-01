@@ -32,10 +32,6 @@ import { HintRegion } from "./../nav/HintBar";
 // the scrub before the overlay tears down so we never leave the emu
 // thread frozen in scrub mode with no UI driving it.
 
-// Public view ids — exported so the parent can request the overlay to
-// open pre-set on a specific drill-in (Tools ▾ menu items).
-export type QuickSettingsView = "actions" | "rewind" | "tas" | "video" | "memory" | "disc";
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -60,10 +56,6 @@ type Props = {
   onOpenScreenshots: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   settings: SettingsStore;
-  /// Optional landing view on open. Defaults to "actions". Set by the
-  /// Tools menu items to drop the user directly on the panel they asked
-  /// for instead of forcing them through the action grid.
-  requestedView?: QuickSettingsView | null;
   /// "library" (default): exit action returns to the library grid.
   /// "quit": exit action ends the process — set by direct-launch mode
   /// where there's no library to return to. Both call `onExitToLibrary`;
@@ -260,16 +252,10 @@ const QuickSettings: Component<Props> = (props) => {
         .then((s) => setVideoState(s ?? null))
         .catch(() => setVideoState(null));
       void refreshDiscState();
-      // Tools-menu deep-link: open straight on the requested panel. Each
-      // view-specific enter helper does its own hydration (recordings,
-      // clip list, scrub start, …) — calling them here keeps the
-      // landing-by-link path equivalent to the action-row click path.
-      const req = props.requestedView ?? null;
-      if (req === "rewind") void enterRewindView();
-      else if (req === "tas") void enterTasView();
-      else if (req === "video") void enterVideoView();
-      else if (req === "memory") setView("memory");
-      else if (req === "disc") setView("disc");
+      // No deep-link landing today — the legacy Tools menu drove
+      // requestedView and was removed in the Retroverse migration.
+      // Sub-views are now reached via dedicated action rows that call
+      // enterViewFromAction (see ActionsPanel onEnterView).
       requestAnimationFrame(() => {
         if (!cardRef) return;
         const firstBtn = cardRef.querySelector<HTMLButtonElement>(
@@ -378,6 +364,19 @@ const QuickSettings: Component<Props> = (props) => {
     const s = rewindState();
     return s !== null && s.enabled && s.snapshotCount > 0;
   };
+
+  // Dispatcher used by the ActionsPanel rows for Rewind / TAS / Video
+  // / Memory / Disc. Rewind / TAS / Video need server-side hydration
+  // (start_rewind_scrub, recordings list, clip list) handled by their
+  // enter*View helpers; memory + disc are pure UI switches.
+  function enterViewFromAction(view: QuickView) {
+    if (view === "rewind") void enterRewindView();
+    else if (view === "tas") void enterTasView();
+    else if (view === "video") void enterVideoView();
+    else if (view === "memory") setView("memory");
+    else if (view === "disc") setView("disc");
+    // "actions" passed accidentally is a no-op — we're already there.
+  }
 
   async function enterRewindView() {
     if (!rewindAvailable()) return;
@@ -642,6 +641,7 @@ const QuickSettings: Component<Props> = (props) => {
               setTouchHintsEnabled={props.setTouchHintsEnabled}
               perfHudVisible={props.perfHudVisible}
               setPerfHudVisible={props.setPerfHudVisible}
+              onEnterView={enterViewFromAction}
             />
           </Show>
 
@@ -1649,6 +1649,12 @@ const ActionsPanel: Component<{
   setTouchHintsEnabled: (next: boolean) => void;
   perfHudVisible: () => boolean;
   setPerfHudVisible: (next: boolean) => void;
+  /// Switch QuickSettings to a sub-view (Rewind scrubber / TAS /
+  /// Video / Memory / Disc). The parent dispatches to the correct
+  /// enter*View() helper which handles hydration; for memory/disc
+  /// it's a direct setView() since they don't need start-time
+  /// server roundtrips.
+  onEnterView: (view: QuickView) => void;
 }> = (props) => {
   type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; onActivate: () => void };
   const actions = createMemo<Action[]>(() => {
@@ -1709,6 +1715,14 @@ const ActionsPanel: Component<{
           }
         },
       },
+      // Sub-view entries — these stay inside QuickSettings rather
+      // than closing it. The parent's onEnterView callback dispatches
+      // to enter*View() / setView() with the right hydration.
+      { key: "rewind", icon: "⟲", label: "Rewind scrubber", onActivate: () => props.onEnterView("rewind") },
+      { key: "tas", icon: "⏺", label: "TAS replay", onActivate: () => props.onEnterView("tas") },
+      { key: "video", icon: "🎥", label: "Video capture", onActivate: () => props.onEnterView("video") },
+      { key: "memory", icon: "🧠", label: "Memory inspector", onActivate: () => props.onEnterView("memory") },
+      { key: "disc", icon: "💿", label: "Disc swap", onActivate: () => props.onEnterView("disc") },
     ];
     // Touch-hints toggle — only surfaced when the running game's
     // system has hotspot support (NDS today). Label flips so the
@@ -1783,9 +1797,6 @@ const ActionsPanel: Component<{
           />
         )}
       </For>
-      <p class="px-2 pt-1 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-        Rewind · TAS · Video · Memory → top bar <span class="text-(--color-oa-ink)">Tools</span> menu
-      </p>
     </div>
   );
 };

@@ -18,7 +18,7 @@ import {
   MilestonesDialog,
   type GameDialogState,
 } from "./components/GameDialogs";
-import QuickSettings, { type QuickSettingsView } from "./components/QuickSettings";
+import QuickSettings from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
@@ -402,13 +402,6 @@ const App: Component = () => {
   // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;
   // Start is reserved for future Retroverse-side surfacing (likely
   // opening QuickSettings when a game is running).
-  // Tools ▾ menu items used to request the overlay to land on a
-  // specific panel. The menu is gone with the legacy Shell, but the
-  // signal stays as plumbing — a future Retroverse home (likely in
-  // the per-game settings drawer or the in-game QuickSettings tabs)
-  // can flip it to deep-link into rewind / TAS / video / memory /
-  // disc panels without re-touching QuickSettings.
-  const [quickSettingsRequestedView, setQuickSettingsRequestedView] = createSignal<QuickSettingsView | null>(null);
   // Toolbar idle-hide flag (single-window gameplay).
   const [headerHidden, setHeaderHidden] = createSignal(false);
   // Last-focused library tile — drives the right sidebar widgets when nothing
@@ -1557,10 +1550,7 @@ const App: Component = () => {
       />
       <QuickSettings
         open={quickSettingsOpen()}
-        onClose={() => {
-          setQuickSettingsOpen(false);
-          setQuickSettingsRequestedView(null);
-        }}
+        onClose={() => setQuickSettingsOpen(false)}
         entry={runningEntry()}
         settings={settings}
         onShowSaves={(entry) => setSavesEntry(entry)}
@@ -1569,7 +1559,6 @@ const App: Component = () => {
         onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
         onOpenScreenshots={(entry) => setScreenshotGalleryFor(entry)}
         onExitToLibrary={() => void handleUnload()}
-        requestedView={quickSettingsRequestedView()}
         exitMode={isDirectLaunch() ? "quit" : "library"}
         touchHintsEnabled={touchHintsEnabled}
         setTouchHintsEnabled={setTouchHintsEnabled}
