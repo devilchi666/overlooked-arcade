@@ -46,6 +46,7 @@ mod scummvm_cli;
 mod scummvm_detect;
 mod shader_presets;
 mod shader_presets_watcher;
+mod system_info;
 mod system_settings;
 mod title_parse;
 mod video_capture;
@@ -2430,6 +2431,69 @@ fn resolve_cores_dir() -> PathBuf {
         .join("cores")
 }
 
+/// Bake L1 + L2 `system_info_*` tables on startup when the slim files
+/// or any per-system YAML changed since the last run.
+///
+/// Hash-based dirty detection per `docs/PLANS/system-info-panel-v1.md`
+/// §5: hash the slim-source files + every `docs/cores/<id>/system-info.yaml`
+/// in a stable order, compare against the value stored in
+/// `system_info_meta`. Match → no work. Miss / no stored value → parse
+/// the slim sources, run the per-system YAML walk, replace the L1 + L2
+/// table contents in a transaction, store the new hash.
+///
+/// L3 (operator overrides) is NEVER touched here — that's the whole
+/// point of separating it into its own table.
+fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> {
+    let mame_dir = match system_info::resolve_assets_mame_source_dir() {
+        Some(d) => d,
+        None => {
+            log::info!(
+                "system_info: bake skipped — assets/mame-source not found \
+                 (checked <exe>/assets/mame-source and <repo>/assets/mame-source)"
+            );
+            return Ok(());
+        }
+    };
+    let cores_dir = match system_info::resolve_docs_cores_dir() {
+        Some(d) => d,
+        None => {
+            log::info!(
+                "system_info: bake skipped — docs/cores not found \
+                 (checked <exe>/docs/cores and <repo>/docs/cores)"
+            );
+            return Ok(());
+        }
+    };
+    let listxml_path = mame_dir.join("listxml-slim.json");
+    let history_path = mame_dir.join("history-slim.xml");
+
+    let new_hash = system_info::hash_l1_l2_inputs(&listxml_path, &history_path, &cores_dir);
+    let stored_hash = db.get_system_info_meta_hash()?;
+    if stored_hash.as_deref() == Some(new_hash.as_str()) {
+        log::info!(
+            "system_info: bake skipped — content hash {} matches stored",
+            &new_hash
+        );
+        return Ok(());
+    }
+
+    let l1 = system_info::load_mame_records(&listxml_path, &history_path)?;
+    let l2 = system_info::load_curated_records(&cores_dir);
+
+    db.bake_system_info_mame(&l1)?;
+    db.bake_system_info_curated(&l2)?;
+    db.set_system_info_meta_hash(&new_hash)?;
+
+    log::info!(
+        "system_info: baked {} L1 rows + {} L2 rows; hash {} (was {})",
+        l1.len(),
+        l2.len(),
+        &new_hash,
+        stored_hash.as_deref().unwrap_or("∅"),
+    );
+    Ok(())
+}
+
 /// Read the persisted audio device name from `appDataDir/audio.json`. `None`
 /// (missing file, malformed JSON, or `"deviceName": null`) means "use the
 /// system default device".
@@ -2963,6 +3027,11 @@ fn main() {
             get_game_info_override,
             set_game_info_override,
             delete_game_info_override,
+            get_system_info,
+            get_system_info_override,
+            set_system_info_override,
+            delete_system_info_override,
+            reset_system_info_to_default,
             list_game_info_overridden,
             list_game_info_badges,
             arm_cheats,
@@ -3402,6 +3471,17 @@ fn main() {
                                     }),
                                 );
                             }
+                        }
+
+                        // System Info Panel v1 — bake L1 + L2 tables on
+                        // launch when the slim files (or any L2 YAML)
+                        // changed since the last run. Cheap miss-or-hit
+                        // (~5ms hash); rebake itself is 50-100ms cold and
+                        // only runs on actual content change. Errors log
+                        // at warn level — the panel degrades to "—"
+                        // everywhere rather than blocking startup.
+                        if let Err(e) = bake_system_info_on_launch(&db) {
+                            log::warn!("system_info: bake-on-launch failed: {e}");
                         }
 
                         app.manage(db);
@@ -7640,6 +7720,98 @@ fn list_game_info_badges(
             .map(|(sys, rom, ov)| ((sys, rom), ov))
             .collect();
     Ok(game_info::compute_game_info_badges(&entries, &overrides_map))
+}
+
+// ---- System Info Panel v1 — Phase 2 query + edit commands -------------
+//
+// `get_system_info` reads all three layers (L1 baked from
+// assets/mame-source/, L2 baked from docs/cores/<id>/system-info.yaml,
+// L3 from system_info_overrides) and applies the field-typed
+// precedence merge from `system_info::merge_system_info`. Frontend
+// consumes the result directly for HomePage hero + SystemInfoPanel
+// right pane rendering — no further merge logic on the client side.
+//
+// `set_system_info_override` / `delete_system_info_override` /
+// `reset_system_info_to_default` round-trip the L3 row. `delete` and
+// `reset_to_default` are aliases (the UI uses different verbs for
+// "clear this override" vs "wipe all my edits for this system" but
+// the v1 backend treats both as DELETE).
+
+/// Resolve a system's merged info record. Always returns a record
+/// (never None) — even when L1/L2/L3 are all absent, the merged shape
+/// is a system_id-stamped struct with every field None, which the
+/// panel renders as "—" rows. Keeps the frontend's read path
+/// branch-free.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_system_info(
+    systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<system_info::MergedSystemInfo, String> {
+    let mame = db.get_system_info_mame(&systemId)?;
+    let curated = db.get_system_info_curated(&systemId)?;
+    let ov = db.get_system_info_override(&systemId)?;
+    Ok(system_info::merge_system_info(
+        &systemId,
+        mame.as_ref(),
+        curated.as_ref(),
+        &ov,
+    ))
+}
+
+/// Read the operator's raw L3 overrides for one system (without
+/// merging in L1+L2). Drives the per-system Settings drill-in form,
+/// where each field shows its CURRENT override value alongside a
+/// "(L1)" / "(curated)" / "(edited)" provenance hint.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_system_info_override(
+    systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<system_info::SystemInfoOverride, String> {
+    db.get_system_info_override(&systemId)
+}
+
+/// Upsert (or DELETE if empty) the operator's L3 overrides for one
+/// system. Frontend builds the SystemInfoOverride struct from form
+/// state and POSTs the whole thing — the backend doesn't merge
+/// existing rows with the incoming payload (replace semantics).
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_system_info_override(
+    systemId: String,
+    overrideRecord: system_info::SystemInfoOverride,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_system_info_override(&systemId, &overrideRecord)
+}
+
+/// Clear one operator override. Equivalent to
+/// `set_system_info_override(systemId, SystemInfoOverride::default())`.
+/// The per-system Settings drill-in calls this when the operator
+/// clicks "Reset to default" on an individual field — the field
+/// blanks AND the row drops (so the panel falls through to L2/L1
+/// next launch without carrying a sparse override row forever).
+#[allow(non_snake_case)]
+#[tauri::command]
+fn delete_system_info_override(
+    systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_system_info_override(&systemId, &system_info::SystemInfoOverride::default())
+}
+
+/// Alias for `delete_system_info_override` with a more explicit verb.
+/// The per-system Settings drill-in's "Reset all overrides for this
+/// system" affordance uses this name to make the destructive intent
+/// obvious to the operator.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn reset_system_info_to_default(
+    systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_system_info_override(&systemId, &system_info::SystemInfoOverride::default())
 }
 
 /// Per-system cheat-code format declarations. Frontend's CheatsDialog

@@ -55,6 +55,10 @@ toml                = { workspace = true }
 png                 = "0.17"
 base64              = "0.22"
 sha1                = "0.10"
+# System Info Panel v1 (Phase 2) — parses the slim history.xml that
+# tools/mame-extractor emits. Matches the extractor's version so any
+# parser-level quirks reproduce on both sides.
+quick-xml           = "0.36"
 reqwest             = { workspace = true }
 image               = { workspace = true }
 strsim              = { workspace = true }

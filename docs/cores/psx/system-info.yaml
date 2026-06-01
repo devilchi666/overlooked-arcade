@@ -1,0 +1,51 @@
+# PlayStation — system-info.yaml
+#
+# L2 (curated) per-system metadata. See docs/PLANS/system-info-panel-v1.md.
+# Migrated 2026-05-31 from systemMetadataStubs.ts.
+
+system_id: psx
+manufacturer: Sony
+type: Home Console
+generation: 5th Generation
+release_date: "December 3, 1994"
+discontinued: "March 23, 2006"
+units_sold: "102.50 Million"
+media: CD-ROM
+cpu: "MIPS R3000A @ 33.86 MHz"
+sound: "SPU 24-channel"
+resolution: "640 x 480 max"
+color_palette: "16.7 Million"
+display_ratio: "4:3"
+
+architecture: 32-Bit
+max_players: "1-2 Players (Multitap up to 8)"
+multiplayer: "Yes — 2 local; up to 8 via Multitap"
+region: "NTSC / PAL / NTSC-J"
+storage: "Memory Card (128KB)"
+ram: "2MB"
+video_output: "Composite / S-Video / RGB"
+aspect_ratio: "4:3"
+
+peripherals:
+  - name: Digital Controller
+    glyph: "🎮"
+  - name: DualShock
+    glyph: "🎮"
+  - name: Multitap
+    glyph: "🔗"
+  - name: GunCon
+    glyph: "🔫"
+  - name: Mouse
+    glyph: "🖱️"
+
+release_flag: "🇯🇵"
+tagline: "32-BIT HOME CONSOLE"
+blurb: >-
+  Sony's first console, and the system that brought 3D gaming to the
+  mainstream. Its CD-ROM media unlocked cinematic storytelling and a
+  JRPG renaissance.
+sidebar_subline: "32-BIT · 1994"
+
+meta:
+  schema_version: 1
+  last_updated: "2026-05-31"

@@ -729,6 +729,135 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v15 (game_info_overrides)");
         }
 
+        // v15 → v16: System Info Panel v1 — three-layer per-system
+        // metadata. L1 (system_info_mame) baked from the slim files
+        // shipped under assets/mame-source/; L2 (system_info_curated)
+        // baked from docs/cores/<id>/system-info.yaml; L3
+        // (system_info_overrides) holds the operator's local edits.
+        // system_info_meta carries the content hash that drives the
+        // dirty-detection rebake on launch (plan §5).
+        if current < 16 {
+            Self::migrate_v15_to_v16(conn)?;
+            conn.pragma_update(None, "user_version", 16)
+                .map_err(|e| format!("set user_version=16: {e}"))?;
+            log::info!("library_db: schema migrated to v16 (system_info_* tables)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v15_to_v16(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            -- L1: MAME baseline rows. system_id is the OA slug
+            -- (matches `SystemId` in frontend/src/themes/registry.ts);
+            -- one row per slug, even when multiple slugs point at
+            -- the same MAME machine (tg16 + pce-cd both → pce).
+            -- max_players keeps its integer form here; the merge
+            -- layer formats it as a string only when L2 + L3 don't
+            -- supply one.
+            CREATE TABLE IF NOT EXISTS system_info_mame (
+                system_id          TEXT PRIMARY KEY,
+                machine_name       TEXT,
+                year               TEXT,
+                manufacturer       TEXT,
+                cpu                TEXT,
+                sound              TEXT,
+                resolution         TEXT,
+                refresh_rate       TEXT,
+                max_players        INTEGER,
+                peripheral_hints   TEXT,
+                description        TEXT
+            );
+
+            -- L2: hand-curated YAML rows. Columnar storage (one
+            -- column per field) so the per-system Settings drill-in
+            -- can query individual fields without parsing a JSON
+            -- blob. peripherals is the one Vec field; stored as a
+            -- JSON array of {name, glyph}.
+            CREATE TABLE IF NOT EXISTS system_info_curated (
+                system_id          TEXT PRIMARY KEY,
+                manufacturer       TEXT,
+                system_type        TEXT,
+                generation         TEXT,
+                release_date       TEXT,
+                discontinued       TEXT,
+                units_sold         TEXT,
+                media              TEXT,
+                cpu                TEXT,
+                sound              TEXT,
+                resolution         TEXT,
+                color_palette      TEXT,
+                display_ratio      TEXT,
+                architecture       TEXT,
+                max_players        TEXT,
+                multiplayer        TEXT,
+                region             TEXT,
+                storage            TEXT,
+                ram                TEXT,
+                video_output       TEXT,
+                aspect_ratio       TEXT,
+                refresh_rate       TEXT,
+                peripherals        TEXT,
+                release_flag       TEXT,
+                tagline            TEXT,
+                blurb              TEXT,
+                sidebar_subline    TEXT,
+                schema_version     INTEGER NOT NULL DEFAULT 1,
+                last_updated       TEXT
+            );
+
+            -- L3: per-install operator overrides. Same columnar
+            -- shape as system_info_curated minus the schema/meta
+            -- fields (operator edits don't carry their own schema
+            -- version — they ride the L2 schema). Sparse: rows only
+            -- exist when the operator has at least one non-default
+            -- field; a default-constructed SystemInfoOverride
+            -- triggers a DELETE rather than an UPSERT.
+            CREATE TABLE IF NOT EXISTS system_info_overrides (
+                system_id          TEXT PRIMARY KEY,
+                manufacturer       TEXT,
+                system_type        TEXT,
+                generation         TEXT,
+                release_date       TEXT,
+                discontinued       TEXT,
+                units_sold         TEXT,
+                media              TEXT,
+                cpu                TEXT,
+                sound              TEXT,
+                resolution         TEXT,
+                color_palette      TEXT,
+                display_ratio      TEXT,
+                architecture       TEXT,
+                max_players        TEXT,
+                multiplayer        TEXT,
+                region             TEXT,
+                storage            TEXT,
+                ram                TEXT,
+                video_output       TEXT,
+                aspect_ratio       TEXT,
+                refresh_rate       TEXT,
+                peripherals        TEXT,
+                release_flag       TEXT,
+                tagline            TEXT,
+                blurb              TEXT,
+                sidebar_subline    TEXT,
+                created_at         INTEGER NOT NULL,
+                updated_at         INTEGER NOT NULL
+            );
+
+            -- Key-value bag for the bake-on-launch dirty-detection
+            -- hash. Single row today (key='l1_l2_hash'); structured
+            -- as KV so future cache markers (per-system rebake
+            -- stamps, schema-version migrations, etc.) can land
+            -- without a schema bump.
+            CREATE TABLE IF NOT EXISTS system_info_meta (
+                key                TEXT PRIMARY KEY,
+                value              TEXT NOT NULL
+            );
+            "#,
+        )
+        .map_err(|e| format!("v15→v16 migration: {e}"))?;
         Ok(())
     }
 
@@ -2581,6 +2710,519 @@ impl LibraryDb {
             out.push(r.map_err(|e| format!("list_game_info_overridden row: {e}"))?);
         }
         Ok(out)
+    }
+
+    // --- System info CRUD (System Info Panel v1, Phase 2) ---------------
+    //
+    // Three tables back the merge layer: system_info_mame (L1, baked
+    // from assets/mame-source/), system_info_curated (L2, baked from
+    // docs/cores/<id>/system-info.yaml), and system_info_overrides
+    // (L3, written by the per-system Settings drill-in edit UI). The
+    // bake-on-launch path (main.rs::bake_system_info_on_launch) writes
+    // L1+L2 in bulk; the per-system query path joins all three on
+    // system_id via merge_system_info.
+    //
+    // system_info_meta carries the content hash of the slim files +
+    // YAMLs; bake_system_info_on_launch compares against this hash to
+    // decide whether a rebake is needed (cheap: ~5ms hash, ~50-100ms
+    // rebake on miss).
+
+    /// Read one L1 row by system slug. Returns `None` when the system
+    /// has no MAME-baseline data (DOSBox / ScummVM / PSP / PS2 / NDS /
+    /// GameCube / 3DO / MSX / MSX2 — anything the extractor's
+    /// MAME_DRIVER_MAP doesn't cover or the upstream MAME release
+    /// doesn't ship).
+    pub fn get_system_info_mame(
+        &self,
+        system_id: &str,
+    ) -> Result<Option<crate::system_info::SystemInfoMame>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT machine_name, year, manufacturer, cpu, sound,
+                        resolution, refresh_rate, max_players,
+                        peripheral_hints, description
+                 FROM system_info_mame WHERE system_id = ?1",
+                params![system_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_system_info_mame: {e}"))?;
+        let Some((
+            machine_name,
+            year,
+            manufacturer,
+            cpu,
+            sound,
+            resolution,
+            refresh_rate,
+            max_players,
+            peripheral_hints_json,
+            description,
+        )) = row
+        else {
+            return Ok(None);
+        };
+        // Malformed JSON degrades to an empty list rather than
+        // poisoning the read — matches the game_info_overrides bug
+        // list parsing convention.
+        let peripheral_hints: Vec<String> = peripheral_hints_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        Ok(Some(crate::system_info::SystemInfoMame {
+            system_id: system_id.to_string(),
+            machine_name,
+            year,
+            manufacturer,
+            cpu,
+            sound,
+            resolution,
+            refresh_rate,
+            max_players: max_players.and_then(|n| u32::try_from(n).ok()),
+            peripheral_hints,
+            description,
+        }))
+    }
+
+    /// Read one L2 row by system slug. Returns `None` for systems
+    /// without a `docs/cores/<id>/system-info.yaml` file (most of the
+    /// 45 systems in v1 — the L2 layer fills in over time).
+    pub fn get_system_info_curated(
+        &self,
+        system_id: &str,
+    ) -> Result<Option<crate::system_info::SystemInfoCurated>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let sid = system_id.to_string();
+        let row = conn
+            .query_row(
+                "SELECT manufacturer, system_type, generation, release_date,
+                        discontinued, units_sold, media, cpu, sound,
+                        resolution, color_palette, display_ratio,
+                        architecture, max_players, multiplayer, region,
+                        storage, ram, video_output, aspect_ratio, refresh_rate,
+                        peripherals, release_flag, tagline, blurb,
+                        sidebar_subline, schema_version, last_updated
+                 FROM system_info_curated WHERE system_id = ?1",
+                params![system_id],
+                |row| {
+                    let peripherals_json: Option<String> = row.get(21)?;
+                    let peripherals = peripherals_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str::<Vec<crate::system_info::Peripheral>>(s).ok())
+                        .unwrap_or_default();
+                    Ok(crate::system_info::SystemInfoCurated {
+                        system_id: sid.clone(),
+                        manufacturer: row.get(0)?,
+                        system_type: row.get(1)?,
+                        generation: row.get(2)?,
+                        release_date: row.get(3)?,
+                        discontinued: row.get(4)?,
+                        units_sold: row.get(5)?,
+                        media: row.get(6)?,
+                        cpu: row.get(7)?,
+                        sound: row.get(8)?,
+                        resolution: row.get(9)?,
+                        color_palette: row.get(10)?,
+                        display_ratio: row.get(11)?,
+                        architecture: row.get(12)?,
+                        max_players: row.get(13)?,
+                        multiplayer: row.get(14)?,
+                        region: row.get(15)?,
+                        storage: row.get(16)?,
+                        ram: row.get(17)?,
+                        video_output: row.get(18)?,
+                        aspect_ratio: row.get(19)?,
+                        refresh_rate: row.get(20)?,
+                        peripherals,
+                        release_flag: row.get(22)?,
+                        tagline: row.get(23)?,
+                        blurb: row.get(24)?,
+                        sidebar_subline: row.get(25)?,
+                        meta: crate::system_info::SystemInfoMeta {
+                            schema_version: row.get::<_, i64>(26)? as u32,
+                            last_updated: row.get(27)?,
+                            contributors: Vec::new(),
+                        },
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_system_info_curated: {e}"))?;
+        Ok(row)
+    }
+
+    /// Read the operator's L3 overrides for one system. Returns the
+    /// default-constructed (empty) override when no row exists — the
+    /// "no overrides" case is the common path, not an error.
+    pub fn get_system_info_override(
+        &self,
+        system_id: &str,
+    ) -> Result<crate::system_info::SystemInfoOverride, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT manufacturer, system_type, generation, release_date,
+                        discontinued, units_sold, media, cpu, sound,
+                        resolution, color_palette, display_ratio,
+                        architecture, max_players, multiplayer, region,
+                        storage, ram, video_output, aspect_ratio, refresh_rate,
+                        peripherals, release_flag, tagline, blurb, sidebar_subline
+                 FROM system_info_overrides WHERE system_id = ?1",
+                params![system_id],
+                |row| {
+                    let peripherals_json: Option<String> = row.get(21)?;
+                    // None = no override; Some(json) = override (possibly
+                    // empty vec for "operator cleared the list"). Malformed
+                    // JSON downgrades to None — same robustness pattern as
+                    // game_info bug list parsing.
+                    let peripherals: Option<Vec<crate::system_info::Peripheral>> = peripherals_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str::<Vec<crate::system_info::Peripheral>>(s).ok());
+                    Ok(crate::system_info::SystemInfoOverride {
+                        manufacturer: row.get(0)?,
+                        system_type: row.get(1)?,
+                        generation: row.get(2)?,
+                        release_date: row.get(3)?,
+                        discontinued: row.get(4)?,
+                        units_sold: row.get(5)?,
+                        media: row.get(6)?,
+                        cpu: row.get(7)?,
+                        sound: row.get(8)?,
+                        resolution: row.get(9)?,
+                        color_palette: row.get(10)?,
+                        display_ratio: row.get(11)?,
+                        architecture: row.get(12)?,
+                        max_players: row.get(13)?,
+                        multiplayer: row.get(14)?,
+                        region: row.get(15)?,
+                        storage: row.get(16)?,
+                        ram: row.get(17)?,
+                        video_output: row.get(18)?,
+                        aspect_ratio: row.get(19)?,
+                        refresh_rate: row.get(20)?,
+                        peripherals,
+                        release_flag: row.get(22)?,
+                        tagline: row.get(23)?,
+                        blurb: row.get(24)?,
+                        sidebar_subline: row.get(25)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_system_info_override: {e}"))?;
+        Ok(row.unwrap_or_default())
+    }
+
+    /// Upsert the operator's L3 overrides for one system. A default-
+    /// constructed (empty) override deletes the row so the table stays
+    /// sparse.
+    pub fn set_system_info_override(
+        &self,
+        system_id: &str,
+        ov: &crate::system_info::SystemInfoOverride,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        if ov.is_empty() {
+            conn.execute(
+                "DELETE FROM system_info_overrides WHERE system_id = ?1",
+                params![system_id],
+            )
+            .map_err(|e| format!("delete system_info_override: {e}"))?;
+            return Ok(());
+        }
+
+        let peripherals_json = ov
+            .peripherals
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".into()));
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        conn.execute(
+            r#"
+            INSERT INTO system_info_overrides (
+                system_id,
+                manufacturer, system_type, generation, release_date,
+                discontinued, units_sold, media, cpu, sound,
+                resolution, color_palette, display_ratio,
+                architecture, max_players, multiplayer, region,
+                storage, ram, video_output, aspect_ratio, refresh_rate,
+                peripherals, release_flag, tagline, blurb, sidebar_subline,
+                created_at, updated_at
+            ) VALUES (
+                ?1,
+                ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8, ?9, ?10,
+                ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17,
+                ?18, ?19, ?20, ?21, ?22,
+                ?23, ?24, ?25, ?26, ?27,
+                ?28, ?28
+            )
+            ON CONFLICT(system_id) DO UPDATE SET
+                manufacturer    = excluded.manufacturer,
+                system_type     = excluded.system_type,
+                generation      = excluded.generation,
+                release_date    = excluded.release_date,
+                discontinued    = excluded.discontinued,
+                units_sold      = excluded.units_sold,
+                media           = excluded.media,
+                cpu             = excluded.cpu,
+                sound           = excluded.sound,
+                resolution      = excluded.resolution,
+                color_palette   = excluded.color_palette,
+                display_ratio   = excluded.display_ratio,
+                architecture   = excluded.architecture,
+                max_players    = excluded.max_players,
+                multiplayer    = excluded.multiplayer,
+                region         = excluded.region,
+                storage        = excluded.storage,
+                ram            = excluded.ram,
+                video_output   = excluded.video_output,
+                aspect_ratio   = excluded.aspect_ratio,
+                refresh_rate   = excluded.refresh_rate,
+                peripherals    = excluded.peripherals,
+                release_flag   = excluded.release_flag,
+                tagline        = excluded.tagline,
+                blurb          = excluded.blurb,
+                sidebar_subline = excluded.sidebar_subline,
+                updated_at     = excluded.updated_at
+            "#,
+            params![
+                system_id,
+                ov.manufacturer,
+                ov.system_type,
+                ov.generation,
+                ov.release_date,
+                ov.discontinued,
+                ov.units_sold,
+                ov.media,
+                ov.cpu,
+                ov.sound,
+                ov.resolution,
+                ov.color_palette,
+                ov.display_ratio,
+                ov.architecture,
+                ov.max_players,
+                ov.multiplayer,
+                ov.region,
+                ov.storage,
+                ov.ram,
+                ov.video_output,
+                ov.aspect_ratio,
+                ov.refresh_rate,
+                peripherals_json,
+                ov.release_flag,
+                ov.tagline,
+                ov.blurb,
+                ov.sidebar_subline,
+                now,
+            ],
+        )
+        .map_err(|e| format!("upsert system_info_override: {e}"))?;
+        Ok(())
+    }
+
+    /// List `system_id`s with at least one operator override — drives
+    /// the per-system Settings drill-in "edited" indicator (similar
+    /// to the `✎` badge for per-game edits).
+    pub fn list_system_info_overridden(&self) -> Result<Vec<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT system_id FROM system_info_overrides")
+            .map_err(|e| format!("list_system_info_overridden prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("list_system_info_overridden query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_system_info_overridden row: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// Wholesale replace the L1 table. The bake-on-launch path calls
+    /// this after parsing `listxml-slim.json` + folding in
+    /// `history-slim.xml`'s descriptions. Wrapped in a transaction so
+    /// a parse failure mid-rebake doesn't leave the table in a half-
+    /// populated state.
+    pub fn bake_system_info_mame(
+        &self,
+        rows: &[crate::system_info::SystemInfoMame],
+    ) -> Result<(), String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("bake_system_info_mame tx: {e}"))?;
+        tx.execute("DELETE FROM system_info_mame", [])
+            .map_err(|e| format!("bake_system_info_mame clear: {e}"))?;
+        {
+            let mut stmt = tx
+                .prepare(
+                    r#"
+                    INSERT INTO system_info_mame (
+                        system_id, machine_name, year, manufacturer,
+                        cpu, sound, resolution, refresh_rate,
+                        max_players, peripheral_hints, description
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                    "#,
+                )
+                .map_err(|e| format!("bake_system_info_mame prepare: {e}"))?;
+            for r in rows {
+                let hints_json = serde_json::to_string(&r.peripheral_hints).unwrap_or_else(|_| "[]".into());
+                stmt.execute(params![
+                    r.system_id,
+                    r.machine_name,
+                    r.year,
+                    r.manufacturer,
+                    r.cpu,
+                    r.sound,
+                    r.resolution,
+                    r.refresh_rate,
+                    r.max_players.map(|n| n as i64),
+                    hints_json,
+                    r.description,
+                ])
+                .map_err(|e| format!("bake_system_info_mame insert {}: {e}", r.system_id))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("bake_system_info_mame commit: {e}"))?;
+        Ok(())
+    }
+
+    /// Wholesale replace the L2 table. Same transaction pattern as
+    /// `bake_system_info_mame`.
+    pub fn bake_system_info_curated(
+        &self,
+        rows: &[crate::system_info::SystemInfoCurated],
+    ) -> Result<(), String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("bake_system_info_curated tx: {e}"))?;
+        tx.execute("DELETE FROM system_info_curated", [])
+            .map_err(|e| format!("bake_system_info_curated clear: {e}"))?;
+        {
+            let mut stmt = tx
+                .prepare(
+                    r#"
+                    INSERT INTO system_info_curated (
+                        system_id,
+                        manufacturer, system_type, generation, release_date,
+                        discontinued, units_sold, media, cpu, sound,
+                        resolution, color_palette, display_ratio,
+                        architecture, max_players, multiplayer, region,
+                        storage, ram, video_output, aspect_ratio, refresh_rate,
+                        peripherals, release_flag, tagline, blurb, sidebar_subline,
+                        schema_version, last_updated
+                    ) VALUES (
+                        ?1,
+                        ?2, ?3, ?4, ?5,
+                        ?6, ?7, ?8, ?9, ?10,
+                        ?11, ?12, ?13,
+                        ?14, ?15, ?16, ?17,
+                        ?18, ?19, ?20, ?21, ?22,
+                        ?23, ?24, ?25, ?26, ?27,
+                        ?28, ?29
+                    )
+                    "#,
+                )
+                .map_err(|e| format!("bake_system_info_curated prepare: {e}"))?;
+            for r in rows {
+                let peripherals_json = if r.peripherals.is_empty() {
+                    None
+                } else {
+                    Some(
+                        serde_json::to_string(&r.peripherals)
+                            .unwrap_or_else(|_| "[]".into()),
+                    )
+                };
+                stmt.execute(params![
+                    r.system_id,
+                    r.manufacturer,
+                    r.system_type,
+                    r.generation,
+                    r.release_date,
+                    r.discontinued,
+                    r.units_sold,
+                    r.media,
+                    r.cpu,
+                    r.sound,
+                    r.resolution,
+                    r.color_palette,
+                    r.display_ratio,
+                    r.architecture,
+                    r.max_players,
+                    r.multiplayer,
+                    r.region,
+                    r.storage,
+                    r.ram,
+                    r.video_output,
+                    r.aspect_ratio,
+                    r.refresh_rate,
+                    peripherals_json,
+                    r.release_flag,
+                    r.tagline,
+                    r.blurb,
+                    r.sidebar_subline,
+                    r.meta.schema_version as i64,
+                    r.meta.last_updated,
+                ])
+                .map_err(|e| {
+                    format!("bake_system_info_curated insert {}: {e}", r.system_id)
+                })?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("bake_system_info_curated commit: {e}"))?;
+        Ok(())
+    }
+
+    /// Read the stored content hash from `system_info_meta` (key =
+    /// `l1_l2_hash`). None when no row exists (first launch, or the
+    /// table was just created).
+    pub fn get_system_info_meta_hash(&self) -> Result<Option<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT value FROM system_info_meta WHERE key = 'l1_l2_hash'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| format!("get_system_info_meta_hash: {e}"))?;
+        Ok(row)
+    }
+
+    /// Write (or replace) the stored content hash.
+    pub fn set_system_info_meta_hash(&self, hash: &str) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            r#"
+            INSERT INTO system_info_meta (key, value) VALUES ('l1_l2_hash', ?1)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            "#,
+            params![hash],
+        )
+        .map_err(|e| format!("set_system_info_meta_hash: {e}"))?;
+        Ok(())
     }
 
     // --- Milestones CRUD (Phase 4 slice F) -------------------------------
@@ -4821,5 +5463,231 @@ mod tests {
         // because the JSON parse failed.
         assert!(ov.controls_supported.is_none());
         assert!(ov.bugs.is_none());
+    }
+
+    // ---- System Info Panel v1 — Phase 2 DB tests --------------------
+
+    #[test]
+    fn system_info_override_default_when_absent() {
+        // No row in system_info_overrides → get_system_info_override
+        // returns the default-constructed override (every field None).
+        let db = fresh_db();
+        let ov = db.get_system_info_override("nes").expect("read");
+        assert_eq!(ov, crate::system_info::SystemInfoOverride::default());
+        assert!(ov.is_empty());
+    }
+
+    #[test]
+    fn system_info_override_set_and_get_roundtrip() {
+        let db = fresh_db();
+        let pref = crate::system_info::SystemInfoOverride {
+            blurb: Some("My NES blurb.".to_string()),
+            cpu: Some("MOS 6502-derivative".to_string()),
+            peripherals: Some(vec![crate::system_info::Peripheral {
+                name: "Modded Controller".to_string(),
+                glyph: "🕹️".to_string(),
+            }]),
+            ..Default::default()
+        };
+        db.set_system_info_override("nes", &pref).expect("upsert");
+
+        let read = db.get_system_info_override("nes").expect("read back");
+        assert_eq!(read, pref);
+    }
+
+    #[test]
+    fn system_info_override_empty_deletes_row() {
+        // Setting a default-constructed (empty) override deletes the
+        // row so the table stays sparse — matches the game_info
+        // pattern.
+        let db = fresh_db();
+        let pref = crate::system_info::SystemInfoOverride {
+            blurb: Some("set".to_string()),
+            ..Default::default()
+        };
+        db.set_system_info_override("nes", &pref).expect("upsert");
+        // Now wipe it.
+        db.set_system_info_override("nes", &crate::system_info::SystemInfoOverride::default())
+            .expect("delete via empty");
+        // Verify by counting rows directly.
+        let conn = db.inner.lock().expect("lock");
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM system_info_overrides WHERE system_id = ?1",
+                params!["nes"],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 0, "empty override must DELETE the row");
+    }
+
+    #[test]
+    fn system_info_override_upsert_updates_existing_row() {
+        let db = fresh_db();
+        let first = crate::system_info::SystemInfoOverride {
+            blurb: Some("v1".to_string()),
+            ..Default::default()
+        };
+        db.set_system_info_override("nes", &first).expect("upsert 1");
+        let second = crate::system_info::SystemInfoOverride {
+            blurb: Some("v2".to_string()),
+            cpu: Some("override cpu".to_string()),
+            ..Default::default()
+        };
+        db.set_system_info_override("nes", &second).expect("upsert 2");
+        let read = db.get_system_info_override("nes").expect("read back");
+        assert_eq!(read.blurb.as_deref(), Some("v2"));
+        assert_eq!(read.cpu.as_deref(), Some("override cpu"));
+    }
+
+    #[test]
+    fn system_info_override_scopes_by_system_id() {
+        let db = fresh_db();
+        db.set_system_info_override(
+            "nes",
+            &crate::system_info::SystemInfoOverride {
+                blurb: Some("nes blurb".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("upsert nes");
+        db.set_system_info_override(
+            "snes",
+            &crate::system_info::SystemInfoOverride {
+                blurb: Some("snes blurb".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("upsert snes");
+        let nes = db.get_system_info_override("nes").expect("read nes");
+        let snes = db.get_system_info_override("snes").expect("read snes");
+        assert_eq!(nes.blurb.as_deref(), Some("nes blurb"));
+        assert_eq!(snes.blurb.as_deref(), Some("snes blurb"));
+        // Unrelated slug returns default.
+        let unrelated = db.get_system_info_override("psx").expect("read psx");
+        assert!(unrelated.is_empty());
+    }
+
+    #[test]
+    fn system_info_list_overridden_returns_only_systems_with_rows() {
+        let db = fresh_db();
+        db.set_system_info_override(
+            "nes",
+            &crate::system_info::SystemInfoOverride {
+                blurb: Some("set".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("upsert");
+        db.set_system_info_override(
+            "psx",
+            &crate::system_info::SystemInfoOverride {
+                blurb: Some("set".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("upsert");
+        let listed = db.list_system_info_overridden().expect("list");
+        assert_eq!(listed.len(), 2);
+        assert!(listed.contains(&"nes".to_string()));
+        assert!(listed.contains(&"psx".to_string()));
+    }
+
+    #[test]
+    fn system_info_meta_hash_roundtrip() {
+        let db = fresh_db();
+        // Fresh DB → no stored hash.
+        assert!(db.get_system_info_meta_hash().expect("read").is_none());
+        db.set_system_info_meta_hash("abc123").expect("write");
+        assert_eq!(
+            db.get_system_info_meta_hash().expect("read"),
+            Some("abc123".to_string())
+        );
+        // Subsequent write overwrites.
+        db.set_system_info_meta_hash("def456").expect("write 2");
+        assert_eq!(
+            db.get_system_info_meta_hash().expect("read"),
+            Some("def456".to_string())
+        );
+    }
+
+    #[test]
+    fn system_info_bake_mame_replaces_all_rows() {
+        let db = fresh_db();
+        let first = vec![crate::system_info::SystemInfoMame {
+            system_id: "nes".to_string(),
+            machine_name: Some("nes".to_string()),
+            year: Some("1985".to_string()),
+            max_players: Some(2),
+            peripheral_hints: vec!["joy".to_string()],
+            description: Some("first description".to_string()),
+            ..Default::default()
+        }];
+        db.bake_system_info_mame(&first).expect("bake 1");
+        let read = db.get_system_info_mame("nes").expect("read 1").unwrap();
+        assert_eq!(read.year.as_deref(), Some("1985"));
+        assert_eq!(read.max_players, Some(2));
+        assert_eq!(read.peripheral_hints, vec!["joy"]);
+
+        // Replace with a different set — the bake clears the table
+        // first, so the old NES row must be gone afterward.
+        let second = vec![crate::system_info::SystemInfoMame {
+            system_id: "snes".to_string(),
+            year: Some("1990".to_string()),
+            ..Default::default()
+        }];
+        db.bake_system_info_mame(&second).expect("bake 2");
+        assert!(
+            db.get_system_info_mame("nes").expect("read 2 nes").is_none(),
+            "first bake's NES row must be cleared"
+        );
+        let snes = db.get_system_info_mame("snes").expect("read 2 snes").unwrap();
+        assert_eq!(snes.year.as_deref(), Some("1990"));
+    }
+
+    #[test]
+    fn system_info_bake_curated_roundtrip() {
+        let db = fresh_db();
+        let recs = vec![crate::system_info::SystemInfoCurated {
+            system_id: "snes".to_string(),
+            manufacturer: Some("Nintendo".to_string()),
+            system_type: Some("Home Console".to_string()),
+            blurb: Some("Test blurb.".to_string()),
+            peripherals: vec![crate::system_info::Peripheral {
+                name: "SNES Controller".to_string(),
+                glyph: "🎮".to_string(),
+            }],
+            meta: crate::system_info::SystemInfoMeta {
+                schema_version: 1,
+                last_updated: Some("2026-05-31".to_string()),
+                contributors: Vec::new(),
+            },
+            ..Default::default()
+        }];
+        db.bake_system_info_curated(&recs).expect("bake");
+        let read = db.get_system_info_curated("snes").expect("read").unwrap();
+        assert_eq!(read.manufacturer.as_deref(), Some("Nintendo"));
+        assert_eq!(read.system_type.as_deref(), Some("Home Console"));
+        assert_eq!(read.blurb.as_deref(), Some("Test blurb."));
+        assert_eq!(read.peripherals.len(), 1);
+        assert_eq!(read.peripherals[0].name, "SNES Controller");
+        assert_eq!(read.meta.last_updated.as_deref(), Some("2026-05-31"));
+    }
+
+    #[test]
+    fn system_info_bake_curated_handles_empty_peripherals() {
+        // A curated record with no peripherals must store NULL (not
+        // a `[]` JSON string) in the peripherals column — so the
+        // reader's empty-vec / no-override distinction stays clean.
+        let db = fresh_db();
+        let recs = vec![crate::system_info::SystemInfoCurated {
+            system_id: "gba".to_string(),
+            manufacturer: Some("Nintendo".to_string()),
+            peripherals: Vec::new(),
+            ..Default::default()
+        }];
+        db.bake_system_info_curated(&recs).expect("bake");
+        let read = db.get_system_info_curated("gba").expect("read").unwrap();
+        assert!(read.peripherals.is_empty());
     }
 }
