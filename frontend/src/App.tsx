@@ -1643,6 +1643,7 @@ const App: Component = () => {
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
         onOpenInput={(entry) => setGameDialog({ kind: "input", target: entry })}
+        onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
         onOpenNewCollection={(romId) =>
           setCollectionDialogMode({ kind: "create", seedRomId: romId })
         }
