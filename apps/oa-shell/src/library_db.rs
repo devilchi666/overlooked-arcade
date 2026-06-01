@@ -21,7 +21,16 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 14;
+// Bump this with every new migration. The early-return in
+// `bootstrap_schema` (current == SCHEMA_VERSION → Ok) gates the entire
+// if-chain, so an unbumped constant silently skips every newer
+// migration even when the migration code is present. (We learned this
+// the hard way 2026-05-31: Game Info Panel v1's v14→v15 migration
+// shipped without the bump, leaving game_info_overrides absent on any
+// install that opened the build; System Info Panel v1's v15→v16
+// inherited the same hole until the operator caught it via the bake-
+// on-launch warn-level log.)
+const SCHEMA_VERSION: i32 = 16;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
