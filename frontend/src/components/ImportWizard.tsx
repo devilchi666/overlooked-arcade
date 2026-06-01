@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { invoke } from "@tauri-apps/api/core";
@@ -20,6 +20,7 @@ import {
 } from "../themes/registry";
 import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
 import ResultsTable, { type TableRow } from "./import-wizard/ResultsTable";
+import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 
 // Phase 2.7 slice C — Import wizard.
 //
@@ -87,7 +88,7 @@ type RuleDraft = {
   systemId: SystemId;
 };
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 type Props = {
   open: boolean;
@@ -111,7 +112,8 @@ const SELECT =
 const STEP_LABELS: Record<Step, string> = {
   1: "Folder",
   2: "Review",
-  3: "Confirm",
+  3: "Readiness",
+  4: "Confirm",
 };
 
 function nextUiKey(): string {
@@ -1074,8 +1076,33 @@ const ImportWizard: Component<Props> = (props) => {
     );
   };
 
-  /// Phase 1B Slice 2 — confirm step (was Step 4 pre-Slice-2).
-  const Step3 = () => {
+  /// Phase 1B Slice 3 — per-system readiness checklist. Sources the
+  /// per-system list from `commitRowsToEntries()` so it matches what
+  /// will actually land in the library (skipped + system-less rows
+  /// excluded). Component itself fetches list_cores + get_bios_status
+  /// on mount.
+  const readinessSystems = createMemo<SystemId[]>(() => {
+    const seen = new Set<SystemId>();
+    for (const e of commitRowsToEntries()) {
+      seen.add(e.systemId);
+    }
+    return Array.from(seen);
+  });
+
+  const Step3 = () => (
+    <div class="flex flex-col gap-3">
+      <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
+        How ready is each system for your incoming games?
+      </p>
+      <SystemReadinessChecklist systems={readinessSystems} />
+    </div>
+  );
+
+  /// Phase 1B Slice 2 — confirm step (was Step 4 pre-Slice-2; was
+  /// Step 3 in the intermediate Slice 2 wizard; restored to Step 4
+  /// when Slice 3 inserted the readiness checklist between Review
+  /// and Confirm).
+  const Step4 = () => {
     const total = () => commitRowsToEntries().length;
     return (
       <div class="flex flex-col gap-4">
@@ -1157,12 +1184,12 @@ const ImportWizard: Component<Props> = (props) => {
                 Import games
               </h2>
               <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                Step {step()} of 3 · {STEP_LABELS[step()]}
+                Step {step()} of 4 · {STEP_LABELS[step()]}
               </p>
             </div>
             <div class="flex items-center gap-3">
               <ol class="flex items-center gap-1.5 text-[0.6rem] uppercase tracking-widest">
-                <For each={[1, 2, 3] as Step[]}>
+                <For each={[1, 2, 3, 4] as Step[]}>
                   {(n) => (
                     <li
                       class="rounded-full px-2 py-0.5"
@@ -1194,6 +1221,7 @@ const ImportWizard: Component<Props> = (props) => {
             <Show when={step() === 1}>{Step1()}</Show>
             <Show when={step() === 2}>{Step2()}</Show>
             <Show when={step() === 3}>{Step3()}</Show>
+            <Show when={step() === 4}>{Step4()}</Show>
           </div>
 
           <footer class="flex items-center justify-between border-t border-white/5 px-6 py-3">
@@ -1265,6 +1293,16 @@ const ImportWizard: Component<Props> = (props) => {
                 </Show>
               </Show>
               <Show when={step() === 3}>
+                <button
+                  type="button"
+                  class={BTN_PRIMARY}
+                  disabled={commitRowsToEntries().length === 0}
+                  onClick={() => setStep(4)}
+                >
+                  Next ›
+                </button>
+              </Show>
+              <Show when={step() === 4}>
                 <button
                   type="button"
                   class={BTN}

@@ -3009,6 +3009,7 @@ fn main() {
             convert_video_clip_to_webm,
             delete_video_clip,
             open_video_clip_folder,
+            open_bios_folder,
             list_screenshots,
             delete_screenshot,
             open_screenshot_folder,
@@ -8234,6 +8235,44 @@ fn open_video_clip_folder(clip_dir: String) -> Result<(), String> {
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+    }
+    Ok(())
+}
+
+/// Reveal `<exe_dir>/system/` in the OS file manager so operators can
+/// drop BIOS files into the right place. Wired into the per-system
+/// Readiness Checklist (Phase 1B Slice 2) and reusable from any
+/// other surface that wants the same affordance.
+///
+/// Mirrors `open_video_clip_folder` cross-platform spawning; auto-
+/// creates the system dir if it's missing (operator's first run may
+/// not have an OA-managed install yet).
+#[tauri::command]
+fn open_bios_folder() -> Result<(), String> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let system_dir = exe_dir.join("system");
+    if !system_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&system_dir) {
+            return Err(format!(
+                "could not create system dir {}: {e}",
+                system_dir.display()
+            ));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer").arg(&system_dir).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&system_dir).spawn();
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&system_dir).spawn();
     }
     Ok(())
 }
