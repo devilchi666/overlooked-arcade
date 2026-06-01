@@ -23,10 +23,12 @@ import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
 // Phase 2.7 slice C — Import wizard.
 //
 // 4-step modal driving folder import end-to-end. Sits alongside (not above)
-// the existing dialog flow in App.tsx — the wizard is opened explicitly from
-// the toolbar ⋯ → Import folder…. The dialog-then-progress fallback that
-// shipped in slice B stays as a quick path for users who don't need the
-// per-folder rules editor.
+// the existing dialog flow in App.tsx — the wizard is opened explicitly
+// from Settings → Library → "Re-scan with smart detection" (Phase 1B
+// Slice 1). The dialog-then-progress fallback that shipped in slice B
+// stays as a quick path for users who don't need the per-folder rules
+// editor: the LibraryView empty-state "Import folder" button and
+// Settings → Library → Add folder both route through it.
 //
 // Step 1: pick a folder + scan toggles + watch toggle.
 // Step 2: extension → system mapping editor. Pre-populated from the registry,
@@ -50,6 +52,13 @@ type ScannedRom = {
   /// to match against. When present, the bucketing logic prefers it
   /// over the extension lookup.
   systemHint?: string;
+  // Phase 1B Slice 1 — smart-classification fields emitted by the
+  // Rust scanner. Slice 1 plumbs them through; the per-ROM results
+  // table in Slice 2 is the first UI consumer.
+  systemId?: SystemId;
+  suggestedTitle?: string;
+  confidence?: "hash" | "header" | "extension" | "hint";
+  sha1?: string;
 };
 
 type Folder = {
@@ -593,7 +602,15 @@ const ImportWizard: Component<Props> = (props) => {
       // Kick off the extension-mode scan unconditionally — it's the
       // path 38+ existing systems use, and it costs nothing for
       // dosbox-only folders since there are no scannable extensions.
-      const extJobId = await invoke<number>("start_background_scan", { folder: f, extensions });
+      // Phase 1B Slice 1: pass the current rule map as extensionToSystem
+      // so the Rust smart-classification stage knows which system to
+      // hash each row against.
+      const extensionToSystem = Object.fromEntries(ruleMap());
+      const extJobId = await invoke<number>("start_background_scan", {
+        folder: f,
+        extensions,
+        extensionToSystem,
+      });
       registerJob(extJobId);
       // The Cancel button targets the extension job — dosbox dir scans
       // are short enough that cancelling the visible one is sufficient.

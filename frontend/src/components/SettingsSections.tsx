@@ -538,17 +538,40 @@ export const LibrarySettings: Component = () => {
   // PlatformMediaDialog gets its own panel-mode lift), and
   // operators expect Library Manager's Media tab to keep working
   // from this surface.
+  //
+  // Above the embedded Library Manager: the Phase 1B Slice 1
+  // "Re-scan with smart detection" card — the Settings → Library
+  // entry point per the guided-setup plan §12 IA. Re-establishes a
+  // path to the Import Wizard (orphaned after the 2026-05-31 legacy-
+  // Shell deletion).
   const ctx = useRetroverse();
   return (
-    <div class="-mx-8 -mb-6">
-      <LibraryManagerPage
-        settings={ctx.settings}
-        library={ctx.library}
-        layout={ctx.layout}
-        views={ctx.views}
-        onAddLibraryFolder={ctx.onAddLibraryFolder}
-        onRescanLibraryFolders={ctx.onRescanLibraryFolders}
-      />
+    <div class="flex flex-col gap-4">
+      <SettingsCard
+        title="Re-scan with smart detection"
+        description="Drop in your ROMs and OA will get them ready. We'll detect systems, suggest canonical titles via hash matching, and walk you through anything that needs your input."
+      >
+        <button
+          type="button"
+          class="self-start rounded-md bg-(--color-system-accent) px-4 py-2 text-xs font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            ctx.onOpenImportWizard();
+          }}
+        >
+          Open import wizard
+        </button>
+      </SettingsCard>
+      <div class="-mx-8 -mb-6">
+        <LibraryManagerPage
+          settings={ctx.settings}
+          library={ctx.library}
+          layout={ctx.layout}
+          views={ctx.views}
+          onAddLibraryFolder={ctx.onAddLibraryFolder}
+          onRescanLibraryFolders={ctx.onRescanLibraryFolders}
+        />
+      </div>
     </div>
   );
 };

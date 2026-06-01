@@ -5,6 +5,11 @@ import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId
 import type { LibraryStore } from "./store";
 import type { RomEntry } from "./types";
 
+/// Confidence tier for a smart-classified row. Phase 1B Slice 1 — see
+/// `scan_service::Confidence` in the Rust backend. Slice 2's per-ROM
+/// results table renders this as a per-row badge.
+export type ScanConfidence = "hash" | "header" | "extension" | "hint";
+
 type ScannedRom = {
   path: string;
   fileName: string;
@@ -19,6 +24,21 @@ type ScannedRom = {
   /// extension-based mapping so .zip Neo Geo sets classify as neogeo
   /// rather than mame.
   systemHint?: SystemId;
+  /// Phase 1B Slice 1: smart-classified system. Populated by the
+  /// scan-time classifier (hint > extension map > SHA-1 hit). Slice 1
+  /// emits these but no UI consumes them yet — Slice 2's per-ROM
+  /// results table is the first reader.
+  systemId?: SystemId;
+  /// Phase 1B Slice 1: cleaned title from the filename, or the
+  /// canonical name on a SHA-1 hit.
+  suggestedTitle?: string;
+  /// Phase 1B Slice 1: confidence tier of the system classification.
+  confidence?: ScanConfidence;
+  /// Phase 1B Slice 1: lower-case hex SHA-1 stamped when a hash
+  /// candidate hit `rom_hashes`. Slice 4 folds this into the post-
+  /// commit ingest so the post-commit identify pass can skip already-
+  /// hashed rows.
+  sha1?: string;
 };
 
 export type ScanProgress = {
@@ -45,11 +65,21 @@ type ScanCompletePayload = {
 /// throttled updates (per-file emission throttled to ~12 Hz on the Rust
 /// side). Rejects if Rust returns an error or the complete event carries
 /// an `errorMessage`.
+///
+/// `extensionToSystem` (Phase 1B Slice 1) drives the smart-classification
+/// stage in the Rust scanner. Pass `coreSystemMap` from
+/// [`resolveScannableExtensions`] — Maps don't serialize through Tauri's
+/// invoke as plain objects, hence `Object.fromEntries`.
 export async function runBackgroundScan(
   folder: string,
   extensions: string[],
+  extensionToSystem: Map<string, SystemId> | Record<string, string>,
   onProgress?: (p: ScanProgress) => void,
 ): Promise<ScannedRom[]> {
+  const extensionToSystemObj =
+    extensionToSystem instanceof Map
+      ? Object.fromEntries(extensionToSystem)
+      : extensionToSystem;
   let progressUnlisten: UnlistenFn | undefined;
   let completeUnlisten: UnlistenFn | undefined;
   try {
@@ -76,7 +106,11 @@ export async function runBackgroundScan(
             }
           },
         );
-        jobId = await invoke<number>("start_background_scan", { folder, extensions });
+        jobId = await invoke<number>("start_background_scan", {
+          folder,
+          extensions,
+          extensionToSystem: extensionToSystemObj,
+        });
       } catch (e) {
         reject(e);
       }
@@ -314,11 +348,14 @@ export async function pickFolderAndIngest(
 }
 
 /// Ingest a folder by absolute path — bypasses the dialog. Used by the
-/// window-level drag-drop handler (Tauri 2 onDragDropEvent payload contains
-/// the dropped paths) and by the toolbar's Import folder option after the
-/// dialog resolves. Runs the scan in Rust on a tokio blocking task; the
-/// optional `onProgress` callback fires throttled progress events while the
-/// walk is in flight (~12 Hz max).
+/// LibraryView empty-state "Import folder" button after the picker
+/// resolves, and by Settings → Library → Add folder. Runs the scan in
+/// Rust on a tokio blocking task; the optional `onProgress` callback
+/// fires throttled progress events while the walk is in flight (~12 Hz
+/// max). The window-level onDragDropEvent listener in App.tsx also
+/// calls this when a drop succeeds, but external drag-drop is parking-
+/// lotted Won't fix (docs/PARKING_LOT.md 2026-05-20) — listener stays
+/// wired in case any drop lands, but it's not an operator-facing path.
 export async function ingestFolderPath(
   store: LibraryStore,
   folder: string,
@@ -328,7 +365,7 @@ export async function ingestFolderPath(
 
   let scanned: ScannedRom[];
   try {
-    scanned = await runBackgroundScan(folder, extensions, onProgress);
+    scanned = await runBackgroundScan(folder, extensions, coreSystemMap, onProgress);
   } catch (e) {
     return { kind: "error", message: `scan failed: ${String(e)}` };
   }
@@ -402,7 +439,7 @@ export async function rescanFolders(
   for (const folder of folders) {
     let scanned: ScannedRom[];
     try {
-      scanned = await runBackgroundScan(folder, extensions, onProgress);
+      scanned = await runBackgroundScan(folder, extensions, coreSystemMap, onProgress);
     } catch (e) {
       errors.push(`${folder}: ${String(e)}`);
       continue;
