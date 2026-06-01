@@ -182,6 +182,55 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **System Info Panel v1** — shipped 2026-06-01 on branch
+  `feat/system-info-panel-v1` (pending merge). Six phase commits
+  closing `docs/PLANS/system-info-panel-v1.md` end-to-end.
+  - **Phase 1a + 1b** (`8491bd5` + `13300a7`) — maintainer-time
+    `tools/mame-extractor/` Rust binary + `tools/bump-mame.sh`
+    wrapper + slim artifacts in `assets/mame-source/` (12.5 KB
+    listxml-slim.json with 36 of 39 OA slugs populated, 40 KB
+    history-slim.xml filtered from arcade-history.com's
+    history.xml v2.87a, mame-version.txt). Discovered
+    history.dat → history.xml migration mid-stream
+    (MAME deprecated the text format in 2023; arcade-history.com
+    publishes XML). Project-wide `Emulators/` convention also
+    introduced here (canonical home for third-party emulator
+    binaries OA shells out to; `/Emulators/` gitignored).
+  - **Phase 2** (`d59879b`) — Rust types + SQLite migration v16
+    (4 tables: system_info_mame / _curated / _overrides / _meta)
+    + bake-on-launch with hash-based dirty detection + 5 Tauri
+    commands + 5 L2 YAMLs migrated from systemMetadataStubs.ts.
+  - **SCHEMA_VERSION trap fix** (`3a65a77`) — pre-existing
+    library_db.rs bug where the early-return short-circuit
+    skipped the v15+v16 migrations on installs at user_version=14.
+    Constant bumped to 16 with a long inline comment calling out
+    the trap. Side-fixed Game Info Panel v1's silent
+    `game_info_overrides` absence on the same installs.
+  - **Phase 3** (`3131d13`) — frontend cutover. SystemInfoPanel
+    + HomePage hero read the merged record via getSystemInfo;
+    systemMetadataStubs.ts deleted (-328 lines). Schema
+    refinements applied: dropped Input Latency + Emulator Core
+    rows; Co-Op Support → Multiplayer (free-form); added
+    Refresh Rate row.
+  - **Phase 4** (`ee60ad3`) — per-system Settings drill-in edit
+    UI. New PerSystemInfoSection with form-row-per-field input
+    + provenance badges (slate "curated" = L2, accent "edited" =
+    L3, no badge = L1 default) + dedicated peripherals editor
+    + Reset All Overrides button. SystemInfoCurated flipped to
+    rename_all="camelCase" with snake_case aliases so the wire
+    format matches the rest of the API while YAMLs stay
+    snake_case.
+  - **Phase 5** (`c717d1a`) — operator-driven MAME re-import.
+    New apps/oa-shell/src/mame_import.rs ports the maintainer-
+    time extractor in-process (shared MAME_DRIVER_MAP +
+    parse_listxml + format_clock). New "Refresh MAME system
+    info" card in StorageSettings with folder-picker fallback.
+    L2 + L3 untouched on refresh.
+  - **Phase 6** (`<this commit>`) — docs + About credits.
+  Workspace tests: 577 oa-shell green at branch tip (was 539
+  pre-branch; +38 from system_info module + library_db tests
+  + mame_import tests). Frontend `npm run typecheck` silent.
+
 - **NDS per-game touch hotspots overlay** — merged to main
   2026-05-31 (`--no-ff` from `feat/nds-touch-hotspots`). Three
   phase commits closing the second half of `docs/cores/nds/ROADMAP.md`

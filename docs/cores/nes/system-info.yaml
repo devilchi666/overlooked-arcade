@@ -1,0 +1,51 @@
+# NES — system-info.yaml
+#
+# L2 (curated) per-system metadata. See docs/PLANS/system-info-panel-v1.md.
+# Migrated 2026-05-31 from systemMetadataStubs.ts.
+
+system_id: nes
+manufacturer: Nintendo
+type: Home Console
+generation: 3rd Generation
+release_date: "July 15, 1983"
+discontinued: "August 14, 2003"
+units_sold: "61.91 Million"
+media: Cartridge
+cpu: "Ricoh 2A03 @ 1.79 MHz"
+sound: "Ricoh 2A03 APU"
+resolution: "256 x 240"
+color_palette: "54 Colors"
+display_ratio: "8:7 (4:3)"
+
+architecture: 8-Bit
+max_players: "1-2 Players"
+multiplayer: "Yes — 2 local; 4 via Four Score adapter"
+region: "NTSC / PAL"
+storage: "Cartridge (1MB Max)"
+ram: "2KB"
+video_output: "RF / Composite"
+aspect_ratio: "4:3"
+
+peripherals:
+  - name: NES Controller
+    glyph: "🎮"
+  - name: Zapper
+    glyph: "🔫"
+  - name: Power Pad
+    glyph: "👣"
+  - name: Four Score
+    glyph: "🔗"
+  - name: R.O.B.
+    glyph: "🤖"
+
+release_flag: "🇯🇵"
+tagline: "8-BIT HOME CONSOLE"
+blurb: >-
+  Nintendo's flagship console of the 1980s and the system that rebuilt
+  the home video-game industry after the 1983 crash. Defined
+  platformers, RPGs, and action games for a generation.
+sidebar_subline: "8-BIT · 1983"
+
+meta:
+  schema_version: 1
+  last_updated: "2026-05-31"

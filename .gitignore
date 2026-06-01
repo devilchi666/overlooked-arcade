@@ -28,6 +28,12 @@ Cargo.lock.bak
 # User-provided content (never commit)
 /assets/test-roms
 /assets/system-bios
+# Third-party emulator binaries OA shells out to (MAME today; DOSBox-X /
+# ScummVM standalone / etc. eventually). Project-wide convention: drop
+# them under <root>/Emulators/<name>/. The shipped install applies the
+# same shape at <exe_dir>/Emulators/. See tools/mame-extractor/README.md
+# "Where to put MAME" for the canonical layout.
+/Emulators
 
 # Copyrighted runtime content (BIOSes + libretro cores + game ROMs).
 # `target/` already catches the dev drop dirs (target/debug/cores,
