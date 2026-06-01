@@ -22,6 +22,7 @@ import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
 } from "../../components/SystemDialogs";
+import PerSystemInfoSection from "./PerSystemInfoSection";
 import type { CoreEntry, MonitorInfo, SettingsStore } from "../../settings/store";
 
 type Props = {
@@ -136,6 +137,15 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
               active={active}
               cores={() => cores() ?? []}
             />
+          </Card>
+
+          {/* System info — Phase 4 edit UI for the HOME tab's right
+              pane fields. Each row inherits from L2 (curated YAML) +
+              L1 (MAME) by default; typing in a row promotes the value
+              to an L3 operator override. "Reset all overrides for
+              this system" drops the entire L3 row. */}
+          <Card title="System info">
+            <PerSystemInfoSection systemId={props.systemId} />
           </Card>
 
           {/* Bindings + Core options stay as dialog launchers — those

@@ -167,10 +167,19 @@ pub struct SlimListxml {
 /// Field grouping mirrors the panel's three sections (SYSTEM
 /// INFORMATION / TECHNICAL DETAILS / hero extras).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct SystemInfoCurated {
     /// OA system slug — must match the directory name under
     /// `docs/cores/`. Mandatory.
+    ///
+    /// Serde rename map (struct-level + per-field aliases): outputs
+    /// camelCase for the Tauri JSON response the frontend expects,
+    /// while every snake_case YAML key authored in
+    /// `docs/cores/<id>/system-info.yaml` still parses via the
+    /// per-field `alias` attributes below. Net effect: YAML stays in
+    /// the operator-friendly snake_case convention; the wire format
+    /// matches MergedSystemInfo / SystemInfoOverride.
+    #[serde(alias = "system_id")]
     pub system_id: String,
 
     // --- SYSTEM INFORMATION (12 fields) -----------------------------
@@ -180,21 +189,22 @@ pub struct SystemInfoCurated {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
     /// "Home Console" / "Handheld" / "Arcade" — editorial; MAME
-    /// doesn't classify this way.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "type")]
+    /// doesn't classify this way. YAML key is `type` (single word);
+    /// JSON wire key is `systemType` for consistency with
+    /// MergedSystemInfo + SystemInfoOverride.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "type")]
     pub system_type: Option<String>,
     /// "3rd Generation" / "4th Generation" — editorial.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generation: Option<String>,
     /// Full release date — "October 29, 1988". L1 has the year only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "release_date")]
     pub release_date: Option<String>,
     /// Discontinuation date — entirely L2 (never in MAME).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discontinued: Option<String>,
     /// Lifetime units sold ("49.10 Million"). Entirely L2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "units_sold")]
     pub units_sold: Option<String>,
     /// Media format ("Cartridge", "CD-ROM", "DVD-ROM"). MAME-→L2 polish.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -212,10 +222,10 @@ pub struct SystemInfoCurated {
     pub resolution: Option<String>,
     /// Color palette ("32,768 Colors", "54 Colors"). Not in MAME's
     /// `-listxml` for home consoles; entirely L2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "color_palette")]
     pub color_palette: Option<String>,
     /// Source pixel ratio framing ("8:7 (4:3)"). Entirely L2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "display_ratio")]
     pub display_ratio: Option<String>,
 
     // --- TECHNICAL DETAILS (9 fields) -------------------------------
@@ -225,7 +235,7 @@ pub struct SystemInfoCurated {
     pub architecture: Option<String>,
     /// Polished max-players string ("1-2 Players"). Overrides L1's
     /// integer (which formats as "N Players" by default at merge).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "max_players")]
     pub max_players: Option<String>,
     /// Free-form multiplayer description ("2 local; 4 with multitap").
     /// Replaces the old binary "Co-Op Support: Yes/No" framing from
@@ -242,14 +252,14 @@ pub struct SystemInfoCurated {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ram: Option<String>,
     /// Video output formats ("Composite / RGB"). Entirely L2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "video_output")]
     pub video_output: Option<String>,
     /// Display aspect ("4:3"). Entirely L2.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "aspect_ratio")]
     pub aspect_ratio: Option<String>,
     /// Polished refresh rate ("60 Hz" without decimals).
     /// Overrides L1's emit ("60.10 Hz").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "refresh_rate")]
     pub refresh_rate: Option<String>,
 
     // --- PERIPHERALS ------------------------------------------------
@@ -264,7 +274,7 @@ pub struct SystemInfoCurated {
 
     /// Country-of-origin flag emoji ("🇺🇸" / "🇯🇵") shown next to the
     /// release date in the HOME tab's hero.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "release_flag")]
     pub release_flag: Option<String>,
     /// Short subtitle under the system name in the hero
     /// ("16-BIT HOME CONSOLE").
@@ -275,7 +285,7 @@ pub struct SystemInfoCurated {
     pub blurb: Option<String>,
     /// Compact subline shown beneath the system name in the SYSTEMS
     /// sidebar ("16-BIT · 1990").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "sidebar_subline")]
     pub sidebar_subline: Option<String>,
 
     /// Per-record bookkeeping (schema version, last-edit date,

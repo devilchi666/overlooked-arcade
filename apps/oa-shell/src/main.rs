@@ -3029,6 +3029,7 @@ fn main() {
             delete_game_info_override,
             get_system_info,
             get_system_info_override,
+            get_system_info_curated,
             set_system_info_override,
             delete_system_info_override,
             reset_system_info_to_default,
@@ -7770,6 +7771,24 @@ fn get_system_info_override(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<system_info::SystemInfoOverride, String> {
     db.get_system_info_override(&systemId)
+}
+
+/// Read just the L2 curated record for one system. Returns `null`
+/// when no `docs/cores/<id>/system-info.yaml` shipped for the slug
+/// (most of the 45 systems in v1 — L2 fills in over time).
+///
+/// Used alongside `get_system_info` + `get_system_info_override` by
+/// the Phase 4 edit UI to distinguish "this value came from L2
+/// (curated)" from "this value came from L1 (MAME baseline)" — both
+/// surface as a non-edited field in the form, but the operator-facing
+/// badge differs ("curated" vs no badge).
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_system_info_curated(
+    systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<system_info::SystemInfoCurated>, String> {
+    db.get_system_info_curated(&systemId)
 }
 
 /// Upsert (or DELETE if empty) the operator's L3 overrides for one

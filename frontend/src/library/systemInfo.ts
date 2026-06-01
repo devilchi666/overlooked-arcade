@@ -119,6 +119,43 @@ export type SystemInfoOverride = {
 /// table stays sparse.
 export const EMPTY_SYSTEM_INFO_OVERRIDE: SystemInfoOverride = {};
 
+/// One L2 curated record — the per-system YAML at
+/// `docs/cores/<id>/system-info.yaml` after parsing + storage in the
+/// `system_info_curated` SQLite table. Returned by `getSystemInfoCurated`
+/// for the Phase 4 edit UI's provenance-badge logic ("curated" vs
+/// "L1 default" distinction). All fields camelCase to match the rest
+/// of the wire shape; the underlying YAML stays snake_case via serde
+/// aliases.
+export type SystemInfoCurated = {
+  systemId: string;
+  manufacturer?: string;
+  systemType?: string;
+  generation?: string;
+  releaseDate?: string;
+  discontinued?: string;
+  unitsSold?: string;
+  media?: string;
+  cpu?: string;
+  sound?: string;
+  resolution?: string;
+  colorPalette?: string;
+  displayRatio?: string;
+  architecture?: string;
+  maxPlayers?: string;
+  multiplayer?: string;
+  region?: string;
+  storage?: string;
+  ram?: string;
+  videoOutput?: string;
+  aspectRatio?: string;
+  refreshRate?: string;
+  peripherals: Peripheral[];
+  releaseFlag?: string;
+  tagline?: string;
+  blurb?: string;
+  sidebarSubline?: string;
+};
+
 /// Resolve the merged System Info record for one system. Always
 /// returns a record — even when L1/L2/L3 are all absent, the merged
 /// shape is a systemId-stamped struct with every field undefined,
@@ -137,6 +174,18 @@ export async function getSystemInfoOverride(args: {
   systemId: string;
 }): Promise<SystemInfoOverride> {
   return invoke<SystemInfoOverride>("get_system_info_override", args);
+}
+
+/// Read just the L2 curated record (no merge). Returns `null` when
+/// no `docs/cores/<id>/system-info.yaml` shipped for the system.
+/// Phase 4 edit UI calls this alongside `getSystemInfo` +
+/// `getSystemInfoOverride` to compute provenance badges:
+/// `override` field set → "edited"; otherwise `curated` field set →
+/// "curated"; otherwise no badge (L1 baseline or nothing at all).
+export async function getSystemInfoCurated(args: {
+  systemId: string;
+}): Promise<SystemInfoCurated | null> {
+  return invoke<SystemInfoCurated | null>("get_system_info_curated", args);
 }
 
 /// UPSERT (or DELETE if every field is empty) the operator's L3
