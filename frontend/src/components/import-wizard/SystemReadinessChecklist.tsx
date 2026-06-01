@@ -1,14 +1,19 @@
 import {
+  createEffect,
   createMemo,
   createResource,
+  createSignal,
   For,
+  onCleanup,
   Show,
   type Accessor,
   type Component,
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { systemThemes, type SystemId } from "../../themes/registry";
+import MissingCoreBulkPrompt from "./MissingCoreBulkPrompt";
 
 // Phase 1B Slice 3 — Per-system readiness checklist.
 //
@@ -132,7 +137,7 @@ function coreInstalledFor(systemId: SystemId, cores: CoreEntry[] | undefined): b
 }
 
 const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (props) => {
-  const [cores] = createResource(async () => {
+  const [cores, { refetch: refetchCores }] = createResource(async () => {
     try {
       return await invoke<CoreEntry[]>("list_cores");
     } catch (e) {
@@ -159,29 +164,75 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     return m;
   });
 
+  // Phase 1B Slice 4: per-system Core options schema status. Map of
+  // SystemId → boolean (true when the schema file exists + has at least
+  // one option definition). Fetched in one batch when props.systems()
+  // changes; later re-fetched if a download completes (cores resource
+  // refetch). The schema only populates after the operator launches a
+  // game of the system once — so newly-imported systems usually report
+  // false until first play.
+  const [optionsBySystem, setOptionsBySystem] = createSignal<Map<SystemId, boolean>>(new Map());
+  createEffect(() => {
+    const systems = props.systems();
+    if (systems.length === 0) {
+      setOptionsBySystem(new Map());
+      return;
+    }
+    void (async () => {
+      const next = new Map<SystemId, boolean>();
+      // Parallel — the Tauri command is a cheap fs read.
+      const results = await Promise.allSettled(
+        systems.map((sid) =>
+          invoke<boolean>("has_core_options_schema", { systemId: sid }).catch(() => false),
+        ),
+      );
+      results.forEach((r, i) => {
+        const sid = systems[i];
+        if (r.status === "fulfilled") next.set(sid, r.value);
+        else next.set(sid, false);
+      });
+      setOptionsBySystem(next);
+    })();
+  });
+
+  // Phase 1B Slice 4: refetch installed cores when a download
+  // completes so the matching row's Core pill flips ⚠ → ✓ without
+  // the operator closing + reopening the wizard / Settings card.
+  let unlistenDownloadProgress: UnlistenFn | undefined;
+  void (async () => {
+    try {
+      unlistenDownloadProgress = await listen<{ fileName: string; phase: string }>(
+        "oa://core-download-progress",
+        (event) => {
+          if (event.payload.phase === "done") {
+            void refetchCores();
+          }
+        },
+      );
+    } catch (e) {
+      console.warn("[oa-readiness] listen oa://core-download-progress failed:", e);
+    }
+  })();
+  onCleanup(() => {
+    if (unlistenDownloadProgress) unlistenDownloadProgress();
+  });
+
+  // Phase 1B Slice 4: bulk-prompt modal state. null = closed. Array =
+  // systems to offer cores for. Both the per-row "Install core…"
+  // button and the top-of-list "Install N missing cores…" button
+  // funnel through this signal.
+  const [bulkPromptSystems, setBulkPromptSystems] = createSignal<SystemId[] | null>(null);
+
+  const missingCoreSystems = createMemo<SystemId[]>(() => {
+    if (cores.loading) return [];
+    return props.systems().filter((s) => !coreInstalledFor(s, cores()));
+  });
+
   async function openBiosFolder() {
     try {
       await invoke("open_bios_folder");
     } catch (e) {
       console.warn("[oa-readiness] open_bios_folder failed:", e);
-    }
-  }
-
-  function emitToast(text: string) {
-    // The shell-wide toast surface listens on the same event the
-    // SET_MESSAGE libretro env-callback emits (see Phase D batch).
-    // No frontend toast helper exists yet — fall back to a console
-    // log so the operator sees SOMETHING via the dev devtools while
-    // we wait for the proper Slice 4 wire.
-    console.log(`[oa-readiness] ${text}`);
-    try {
-      // Best-effort surface via window-level CustomEvent so any
-      // future toast layer can subscribe. No-op today.
-      window.dispatchEvent(
-        new CustomEvent("oa://readiness-stub-toast", { detail: { text } }),
-      );
-    } catch {
-      /* swallow */
     }
   }
 
@@ -225,11 +276,22 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     // Bindings — always ✓ for any registered system.
     const bindingsPill = <Pill state="ready" label="✓ Bindings ready" />;
 
-    // Core options — placeholder.
-    const optionsPill = <Pill state="coming" label="— Core options" detail="Coming Slice 4" />;
+    // Core options — real status as of Slice 4. The schema lands lazily
+    // when the operator first launches a game of this system. ↪ means
+    // "no per-system tuning has happened yet" rather than an error.
+    const hasOptions = () => optionsBySystem().get(systemId) === true;
+    const optionsPill = (
+      <Pill
+        state={hasOptions() ? "ready" : "na"}
+        label={hasOptions() ? "✓ Core options" : "↪ Core options"}
+        detail={hasOptions() ? undefined : "Schema populates on first game launch"}
+      />
+    );
 
-    // KNOWN_GAME_BUGS overrides — placeholder.
-    const overridesPill = <Pill state="coming" label="— Per-game overrides" detail="Coming Slice 4" />;
+    // KNOWN_GAME_BUGS overrides — placeholder. Coverage is sparse today
+    // (psx + nds only); the real status pill lands inside the broader
+    // KNOWN_GAME_BUGS.md → games-info.md migration arc.
+    const overridesPill = <Pill state="coming" label="— Per-game overrides" detail="Coming with games-info migration" />;
 
     return (
       <div
@@ -255,7 +317,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
               <button
                 type="button"
                 class="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-amber-300 hover:brightness-110"
-                onClick={() => emitToast(`Bulk core install for ${displayName} coming in Slice 4`)}
+                onClick={() => setBulkPromptSystems([systemId])}
               >
                 Install core…
               </button>
@@ -290,6 +352,30 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
         </p>
       </Show>
       <Show when={!cores.loading && !bios.loading && props.systems().length > 0}>
+        {/* Phase 1B Slice 4: top-level bulk-install banner. Hidden
+            when every system already has a core. Click opens the
+            modal scoped to ALL missing systems. */}
+        <Show when={missingCoreSystems().length > 0}>
+          <div class="flex items-center justify-between rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2">
+            <div>
+              <p class="text-xs font-semibold text-amber-300">
+                {missingCoreSystems().length}{" "}
+                {missingCoreSystems().length === 1 ? "system needs" : "systems need"} a core
+              </p>
+              <p class="mt-0.5 text-[0.65rem] text-(--color-oa-ink-dim)">
+                Download recommended cores from libretro buildbot — one click per system, or pick a different core per row.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 rounded-md border border-amber-400/40 bg-amber-500/20 px-3 py-1.5 text-xs uppercase tracking-wider text-amber-200 hover:bg-amber-500/30"
+              onClick={() => setBulkPromptSystems(missingCoreSystems())}
+            >
+              Install {missingCoreSystems().length} missing{" "}
+              {missingCoreSystems().length === 1 ? "core" : "cores"}…
+            </button>
+          </div>
+        </Show>
         <div class="flex flex-col gap-2">
           <For each={props.systems()}>{(sid) => renderRow(sid)}</For>
         </div>
@@ -299,6 +385,18 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
           </p>
         </Show>
       </Show>
+      {/* Phase 1B Slice 4: bulk-install modal. Open state lives on
+          this component because both the per-row "Install core…" button
+          and the top-of-list banner-button funnel through the same
+          signal. Modal calls onCoreInstalled once per successful
+          download; the event listener above also fires refetchCores
+          on phase=done so we double-cover the refresh path. */}
+      <MissingCoreBulkPrompt
+        open={bulkPromptSystems() !== null}
+        onClose={() => setBulkPromptSystems(null)}
+        systems={() => bulkPromptSystems() ?? []}
+        onCoreInstalled={() => void refetchCores()}
+      />
     </div>
   );
 };

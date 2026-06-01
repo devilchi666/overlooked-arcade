@@ -272,3 +272,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
+
+/// Phase 1B Slice 4 — surface "is the per-system core-options schema
+/// available?" to the Settings → Library readiness checklist (and the
+/// matching wizard step). The schema is populated lazily — it lands the
+/// first time the operator launches a game of this system, when the
+/// core's `RETRO_ENVIRONMENT_GET_VARIABLES` callback fires and the
+/// shell writes the captured definitions via [`write`]. Until then this
+/// returns `false`; the checklist surfaces "↪ Not configured yet" which
+/// is accurate (no per-system tuning has happened) rather than an
+/// error.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn has_core_options_schema(
+    systemId: String,
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> bool {
+    let file = read(&state.app_data_dir, &systemId);
+    !file.schema.is_empty()
+}

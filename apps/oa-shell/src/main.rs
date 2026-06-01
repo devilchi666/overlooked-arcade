@@ -3133,6 +3133,7 @@ fn main() {
             remove_installed_core,
             core_installer::available_cores,
             core_installer::download_core,
+            core_options::has_core_options_schema,
             get_core_pref,
             set_core_pref,
             quit_app,
