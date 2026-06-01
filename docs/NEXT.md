@@ -277,36 +277,75 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Guided Setup Phase 1B Slice 2 — per-ROM results table
+### ~~Guided Setup Phase 1B Slice 2 — per-ROM results table~~ ✅ SHIPPED 2026-06-01
 
-Replace the wizard's Step 2 (extension→system mapping editor) + Step 3
-(progress bar + per-system tally) with a single LaunchBox-inspired
-per-ROM table. Each row: File / Detected system / Suggested title /
-Confidence badge / Status. Consumes the Slice 1 backend payload
-(`system_id` / `suggested_title` / `confidence` / `sha1`) which is
-already streaming over `oa://library-scan-complete`.
+Merged to main as `04fa975` (`feat/guided-setup-phase-1b-slice-2`, one
+phase commit `f5e2527`). New
+`frontend/src/components/import-wizard/ResultsTable.tsx` (~700 lines) —
+virtualized table via `@tanstack/solid-virtual`. Confidence badges via
+`CONFIDENCE_PILL_STYLES` mirroring `BIOS_PILL_STYLES`. Inline-edit for
+system + title (ViewsManagerTab signal-pair pattern). Click-to-sort
+headers, filter input, Show-skipped toggle. Bulk-select with Gmail-style
+toolbar (Change system ▾ · Skip · Unskip · Clear). Wizard steps
+`4 → 3 (Folder / Review / Confirm)`; old per-folder rules editor lives
+in an `<details>` "Advanced — extension overrides" expander below the
+table. `commitRowsToEntries()` replaces `bucketScanned()` and honors
+per-row Change-system / Edit-title / Skip overrides at commit. Frontend
+`npm run typecheck` silent.
 
-**v1 per-row actions:** Change system (dropdown), Edit title (inline
-text), Skip (toggle), Show path (popover). Bulk-select via row
-checkboxes; bulk Change-system + bulk Skip. Sort + filter by any
-column.
+### Guided Setup Phase 1B Slice 3 — per-system readiness checklist
 
-**v2 actions deferred** (plan §15): Mark as duplicate, per-game core
-override from the table, Open in file explorer, Set as region
-representative, bulk edit.
+Per plan §5 Step 5 + §12 IA. Single component, two surfaces:
+1. **New wizard step** inserted between Review (current Step 2) and
+   Confirm — wizard re-expands `3 → 4 steps`. Header counter +
+   step-indicator update to 4.
+2. **Settings → Library → "System readiness" card** — a second
+   `SettingsCard` alongside the existing "Re-scan with smart detection"
+   card in `frontend/src/components/SettingsSections.tsx::LibrarySettings`.
+   Renders the SAME component, sourced from the operator's current
+   library state instead of the wizard's pending-commit rows.
 
-**Where the work lives:** `frontend/src/components/ImportWizard.tsx`
-(replace in place per the Slice 1 decision). Slice 1's `useMedia`
-+ existing classify helpers carry over. Likely also wants a
-`useDomQueryFocusGroup` integration so DPad / shoulder bumpers
-walk rows + columns cleanly (controller-nav requirement per
-guided-setup plan §10).
+**Row per system found,** each with these status pills:
+- ✓ **Core installed** (looks up `<exe_dir>/cores/<core_dll>` via
+  existing `list_cores` Tauri command)
+- ⚠ **BIOS present / missing / not required** — reuses the per-system
+  BIOS check helpers already wired for the Settings → BIOS category
+  (look at `apps/oa-shell/src/main.rs` BIOS endpoints + the existing
+  `BIOS_PILL_STYLES` in `SettingsSections.tsx:624`)
+- ✓ **Default bindings ready** (always ✓ once the system has any
+  registered bindings — the `bindings.rs` dispatch arms; per-game
+  customization is a separate surface)
+- ✓ **Core options pre-tuned** — checks per-system `core_options.rs`
+  catalog; ↪ if none
+- ⚠ **Per-game overrides from KNOWN_GAME_BUGS** — count of pending
+  overrides for matched games in the scan/library (Slice 4-pending
+  for actual application; this slice just surfaces the count)
 
-**Scope:** ~1-2 weeks. Reuses Slice 1 plumbing entirely; the work
-is UI affordance design + table virtualization for 5K-row
-libraries.
+Each row expandable to show per-pill detail. Inline action buttons:
+"Open BIOS folder" next to ⚠ BIOS, "Install core" next to ⚠ Core
+(wires Slice 4's bulk-prompt placeholder). Slice 3 ships the
+component + the two surfaces; the per-pill action buttons that
+require new infrastructure are stubbed with "Coming in Slice 4 / 5"
+toasts.
 
-**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade".
+**Where the work lives:**
+- New `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
+  (mirrors the import-wizard subdir pattern Slice 2 introduced).
+- `ImportWizard.tsx` — `Step` type back to `1|2|3|4`; new `Step3`
+  component renders the checklist sourced from `commitRowsToEntries()`
+  (gives per-system inventory); footer button branches re-routed.
+- `SettingsSections.tsx::LibrarySettings` — second `SettingsCard`
+  added alongside the existing one; sourced from the operator's
+  shipped library state via `library.entries()` grouped by `systemId`.
+- Slim Rust support if any (probably none — existing BIOS check
+  + `list_cores` cover the lookups).
+
+**Scope:** ~1 week. Reuses BIOS_PILL_STYLES + existing BIOS / core /
+bindings probes. The actual resolution actions (download core, drop
+BIOS file) are scoped to Slices 4 + 5; this slice surfaces the
+status only.
+
+**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 5 + §12 IA.
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 

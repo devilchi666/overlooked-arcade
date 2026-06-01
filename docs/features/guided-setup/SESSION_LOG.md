@@ -1,5 +1,71 @@
 # Guided Setup — Session Log
 
+## 2026-06-01 — Phase 1B Slice 2: per-ROM results table
+
+Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-2`,
+merge `04fa975`). One phase commit (`f5e2527`) replacing the wizard's
+Step 2 (extension→system mapping editor) + Step 3 (progress + per-system
+tally) with a single LaunchBox-inspired per-ROM table that consumes the
+Slice 1 backend payload.
+
+- **Shipped:**
+  - **Phase 1 — per-ROM results table (`f5e2527`):** new
+    `frontend/src/components/import-wizard/ResultsTable.tsx` (~700
+    lines) — virtualized table via `@tanstack/solid-virtual` (mirrors
+    `DetailListView` pattern). Columns: checkbox / file / detected
+    system / suggested title / confidence / status / skip toggle.
+    Confidence badge via new `CONFIDENCE_PILL_STYLES` record (mirrors
+    `BIOS_PILL_STYLES`). Status derived per row (Ready / Needs
+    system / Skipped). Inline-edit for system + title via
+    ViewsManagerTab signal-pair pattern (per-cell `editingCell` +
+    `editDrafts`; commit on blur/Enter; revert on Escape;
+    in-progress draft survives virtualization remount via
+    keyed signal). Click-to-sort headers with ▲/▼ glyph (keys:
+    fileName, systemId, title, confidence rank, status rank).
+    Filter input (case-insensitive substring on fileName + title)
+    + "Show skipped" toggle. Bulk-select with tri-state header
+    checkbox and Gmail-style appearing toolbar (`N selected ·
+    Change system ▾ · Skip · Unskip · Clear`). Row-level
+    controller-nav focus group (DPad UP/DOWN walks rows; A toggles
+    selection). Show-path popover via ⓘ icon button. Wizard
+    integration: Step type `1|2|3|4 → 1|2|3`; STEP_LABELS
+    `{Folder / Review / Confirm}`; step-indicator render +
+    counter both flipped; new `tableRows` signal + `createEffect`
+    builds rows from `scanRows` preferring backend `system_id` /
+    `suggestedTitle` / `confidence` / `sha1` from Slice 1 (with
+    `classifyScanRow` + `titleFromFileName` as fallback);
+    `onRowChange` + `onBulkChange` handlers; new
+    `commitRowsToEntries()` replaces `bucketScanned()` honoring
+    per-row overrides; `needsSystemCount()` drives an inline
+    warning banner above the table and the Next button's
+    disabled state; old `bucketTally` + `unmatchedTally` gone;
+    auto-start scan effect retargets `step()===3 → step()===2`;
+    mapping-editor body extracted into `MappingRulesAdvanced`
+    helper rendered inside `<details>` "Advanced — extension
+    overrides" below the table (persistent per-folder rules
+    editor stays available for power users); ScummVM detect
+    banner moves into the expander; footer button branches
+    re-routed (Step 2 = Cancel scan / Rescan / Next; Step 3 =
+    Skip sync / Import + sync). Frontend `npm run typecheck`
+    silent.
+
+- **Almost:** Operator playtest. The table is now the primary UI
+  consumer of the Slice 1 smart-scan emission — confidence badges
+  should light up reliably for known-canonical ROMs (Hash green,
+  Header cyan), CD-shape stays Ext muted, Neo Geo .zips Hint
+  amber. Per-row Change-system + Edit-title + Skip apply at
+  commit via `commitRowsToEntries()`.
+
+- **Next:** Slice 3 — per-system readiness checklist. Per plan
+  §5 Step 5: one row per system found in this scan, status
+  pills for Core installed / BIOS present / Default bindings
+  ready / Core options pre-tuned / Per-game overrides from
+  KNOWN_GAME_BUGS. Same component reused as Settings →
+  Library → System Readiness (a second SettingsCard alongside
+  "Re-scan with smart detection"). Wizard structure expands
+  back to 4 steps with the checklist between Review (Step 2)
+  and Confirm (now Step 4). Estimated 1-2 weeks.
+
 ## 2026-06-01 — Phase 1B Slice 1: smart-scan emission + Settings entry point
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b`,

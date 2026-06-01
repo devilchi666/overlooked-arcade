@@ -12,20 +12,36 @@ spanned every system but was filed under whichever core happened to be active.
 ## In flight
 
 - **Guided Setup Phase 1B — wizard upgrade**
-  ([features/guided-setup/](features/guided-setup/)). Slice 1
-  shipped 2026-06-01 (`5ef8062` merge — smart-scan emission +
-  Settings → Library entry point re-wiring the orphaned wizard
-  after the 2026-05-31 legacy-Shell deletion). The Rust scanner
-  now classifies + hashes during the walk and emits per-row
-  `system_id` / `suggested_title` / `confidence` (Hash / Header /
-  Extension / Hint) / `sha1` fields. Settings → Library → "Re-scan
-  with smart detection" card opens the wizard. Slice 2 (per-ROM
-  results table consuming the Slice 1 fields) is next — replaces
-  the Step 2 mapping editor + Step 3 progress-only view with a
-  single LaunchBox-inspired table. Plan + slice breakdown in
-  [features/guided-setup/README.md](features/guided-setup/README.md);
-  off-tree Slice 1 plan at
-  `C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md`.
+  ([features/guided-setup/](features/guided-setup/)). Slices 1 + 2
+  both shipped 2026-06-01.
+  - Slice 1 (`5ef8062` merge) — backend smart-scan emission +
+    Settings → Library entry point. The Rust scanner now
+    classifies + hashes during the walk and emits per-row
+    `system_id` / `suggested_title` / `confidence` (Hash /
+    Header / Extension / Hint) / `sha1`. Settings → Library
+    → "Re-scan with smart detection" card opens the orphaned
+    wizard (legacy-Shell toolbar entry point was deleted
+    2026-05-31).
+  - Slice 2 (`04fa975` merge) — per-ROM results table. The
+    wizard's Step 2 (mapping editor) + Step 3 (progress + tally)
+    collapsed into a single LaunchBox-inspired table that
+    consumes the Slice 1 payload. Virtualized via
+    `@tanstack/solid-virtual`; inline edit for system + title;
+    bulk-select with Gmail-style toolbar; sort + filter;
+    confidence badges; Skip per-row; old persistent rules
+    editor lives in an `<details>` "Advanced — extension
+    overrides" expander below the table. Step counter
+    `4 → 3 (Folder / Review / Confirm)`.
+  - **Slice 3 next** — per-system readiness checklist
+    component (Core installed / BIOS present / Bindings ready /
+    Core options pre-tuned / KNOWN_GAME_BUGS overrides). Same
+    component reused as a second card in Settings → Library
+    ("System readiness"). Wizard structure expands back to 4
+    steps with the checklist sitting between Review (Step 2)
+    and Confirm (Step 4). Detail in
+    [features/guided-setup/README.md](features/guided-setup/README.md)
+    Phase 1B slice table + the HIGH band entry in
+    [NEXT.md](NEXT.md).
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
