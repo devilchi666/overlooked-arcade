@@ -15,29 +15,37 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Windows-only CI as of 2026-06-01. The original matrix included
+# ubuntu-latest + macos-latest jobs that ran `cargo build / cargo test`
+# against the emulation crates (excluding oa-shell, which has too many
+# Tauri Linux deps to be worth installing in CI for non-distribution
+# validation). Those jobs were dropped because:
+#
+#   1. Windows is the operator's dev platform and where releases ship
+#      from. Cross-platform drift in the emulation crates is theoretical
+#      until Linux / macOS distribution is on the roadmap.
+#   2. The ubuntu-latest job repeatedly failed three oa-input tests
+#      (analog_tests::identity_routing_preserves_zero / invert_y /
+#      keyboard_right_key_drives_positive_x) because `device_query::
+#      DeviceState::new()` panics on headless runners with "Could not
+#      connect to a X display." Workaround options were xvfb-run, a
+#      Linux-only #[cfg] skip, or refactoring tests to a trait+mock —
+#      all valid but none earning their keep against speculative
+#      cross-platform drift detection.
+#   3. macOS GHA runners are ~5-10x runner-minute cost compared to
+#      Linux/Windows.
+#
+# When Linux distribution becomes real: add a separate
+# `tauri-build-linux.yml` workflow that installs the full GTK +
+# webkit2gtk + glib stack and produces a `.deb` / AppImage / Flatpak
+# artifact. That workflow validates the real shipping surface, not
+# just the emulation crates in isolation. Same shape applies to a
+# macOS bundle when that becomes a goal.
+
 jobs:
   test:
-    name: build + test (${{ matrix.os }})
-    strategy:
-      # If macOS breaks, we still want to see whether Windows and Linux passed.
-      fail-fast: false
-      matrix:
-        include:
-          # Windows is the dev platform — exercise the full workspace including
-          # the Tauri shell.
-          - os: windows-latest
-            cargo-args: "--workspace --locked"
-          # macOS and Linux skip the Tauri shell crate. Tauri's Linux deps
-          # (webkit2gtk, gtk, glib) are heavy, and we can't run/validate the
-          # shell binary on those platforms today anyway. CI here exists to
-          # catch cross-platform drift in the emulation crates (oa-pce-sys,
-          # oa-render, oa-audio, oa-input, etc.) — that's where the C/C++
-          # FFI risk lives.
-          - os: macos-latest
-            cargo-args: "--workspace --exclude oa-shell --locked"
-          - os: ubuntu-latest
-            cargo-args: "--workspace --exclude oa-shell --locked"
-    runs-on: ${{ matrix.os }}
+    name: build + test (windows)
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -51,30 +59,11 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
-      # Linux runners are minimal. Our deps on Linux:
-      #   - cpal (oa-audio)        → ALSA headers (libasound2-dev)
-      #   - gilrs (oa-input)       → udev          (libudev-dev)
-      #   - device_query (oa-input) → X11 + XInput + XTest dev headers
-      # Windows + macOS have the equivalents preinstalled.
-      - name: Install Linux system deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libudev-dev \
-            libx11-dev \
-            libxi-dev \
-            libxtst-dev \
-            pkg-config
-
-      # Windows builds the oa-shell crate, whose tauri::generate_context!()
-      # macro embeds the frontend dist into the binary at compile time
-      # (frontendDist: "../../frontend/dist" in tauri.conf.json). Without a
-      # prior Vite build the macro panics with "this path doesn't exist".
-      # macOS + Linux jobs exclude oa-shell, so they don't need this.
+      # The oa-shell crate's `tauri::generate_context!()` macro embeds
+      # the frontend dist into the binary at compile time (frontendDist:
+      # "../../frontend/dist" in tauri.conf.json). Without a prior Vite
+      # build the macro panics with "this path doesn't exist".
       - name: Setup Node.js
-        if: runner.os == 'Windows'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -82,14 +71,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
-        if: runner.os == 'Windows'
         run: |
           cd frontend
           npm ci
           npm run build
 
       - name: cargo build
-        run: cargo build ${{ matrix.cargo-args }}
+        run: cargo build --workspace --locked
 
       - name: cargo test
-        run: cargo test ${{ matrix.cargo-args }}
+        run: cargo test --workspace --locked
