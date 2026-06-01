@@ -27,7 +27,8 @@ import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
 // from Settings → Library → "Re-scan with smart detection" (Phase 1B
 // Slice 1). The dialog-then-progress fallback that shipped in slice B
 // stays as a quick path for users who don't need the per-folder rules
-// editor (drag-drop + LibraryView empty-state "Import folder" route there).
+// editor: the LibraryView empty-state "Import folder" button and
+// Settings → Library → Add folder both route through it.
 //
 // Step 1: pick a folder + scan toggles + watch toggle.
 // Step 2: extension → system mapping editor. Pre-populated from the registry,

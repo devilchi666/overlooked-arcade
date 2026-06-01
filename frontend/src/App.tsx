@@ -1262,10 +1262,9 @@ const App: Component = () => {
   /// quick succession is idempotent (no-op when no entries are
   /// missing a sha1).
   /// Post-ingest auto-sync hook. Used by every non-wizard ingest path
-  /// (drag-drop, "Add library folder", "Rescan tracked folders", the
-  /// LibraryView empty-state "Import folder" button). Mirrors the
-  /// wizard's commit() flow at
-  /// frontend/src/components/ImportWizard.tsx:550-630:
+  /// ("Add library folder", "Rescan tracked folders", the LibraryView
+  /// empty-state "Import folder" button). Mirrors the wizard's commit()
+  /// flow at frontend/src/components/ImportWizard.tsx:550-630:
   ///
   ///   1. AWAIT resolve_rom_hashes_for_system per system, sequentially.
   ///      Parallel resolves would contend on the LibraryDb write lock

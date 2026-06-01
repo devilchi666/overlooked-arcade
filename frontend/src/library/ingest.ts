@@ -348,11 +348,14 @@ export async function pickFolderAndIngest(
 }
 
 /// Ingest a folder by absolute path — bypasses the dialog. Used by the
-/// window-level drag-drop handler (Tauri 2 onDragDropEvent payload contains
-/// the dropped paths) and by the LibraryView empty-state "Import folder"
-/// button after the dialog resolves. Runs the scan in Rust on a tokio
-/// blocking task; the optional `onProgress` callback fires throttled
-/// progress events while the walk is in flight (~12 Hz max).
+/// LibraryView empty-state "Import folder" button after the picker
+/// resolves, and by Settings → Library → Add folder. Runs the scan in
+/// Rust on a tokio blocking task; the optional `onProgress` callback
+/// fires throttled progress events while the walk is in flight (~12 Hz
+/// max). The window-level onDragDropEvent listener in App.tsx also
+/// calls this when a drop succeeds, but external drag-drop is parking-
+/// lotted Won't fix (docs/PARKING_LOT.md 2026-05-20) — listener stays
+/// wired in case any drop lands, but it's not an operator-facing path.
 export async function ingestFolderPath(
   store: LibraryStore,
   folder: string,
