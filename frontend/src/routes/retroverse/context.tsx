@@ -101,6 +101,13 @@ export type RetroverseContextValue = {
   /// onOpenDebugLog — legacy Shell's Help menu had it; Retroverse
   /// surfaces it from SETTINGS → About.
   onOpenKeyboardShortcuts: () => void;
+  /// Phase 1B Slice 1 (Guided Setup arc) — re-establish a path to the
+  /// Import Wizard. The 4-step modal lives in `ImportWizard.tsx`; the
+  /// legacy toolbar that opened it was deleted with the 2026-05-31
+  /// legacy-Shell removal, leaving the wizard orphaned. Settings →
+  /// Library now exposes a "Re-scan with smart detection" card whose
+  /// primary button calls this handler.
+  onOpenImportWizard: () => void;
 };
 
 const RetroverseContext = createContext<RetroverseContextValue>();
