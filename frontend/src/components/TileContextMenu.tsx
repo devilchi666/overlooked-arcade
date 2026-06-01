@@ -42,6 +42,9 @@ type Props = {
   /// Open the per-game Shaders dialog (shader preset override per
   /// game — e.g. CRT-bezel for SF2 but plain for Tetris).
   onOpenShaders: (entry: RomEntry) => void;
+  /// Open the per-game Cheats dialog (cheat code entry / toggle
+  /// per game — Game Genie, Pro Action Replay codes, etc.).
+  onOpenCheats: (entry: RomEntry) => void;
   /// Slice 12 — open the NewCollectionDialog seeded with this rom.
   /// Wired by App.tsx when customCollections is in play. Absent =
   /// "+ New collection…" tail entry in the submenu is hidden.
@@ -234,6 +237,11 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onOpenShaders(props.entry!));
   }
 
+  function openCheats() {
+    if (!props.entry) return;
+    closeAfter(() => props.onOpenCheats(props.entry!));
+  }
+
   function removeFromLibrary() {
     if (!props.entry) return;
     closeAfter(() => void props.library.remove(props.entry!.id));
@@ -398,6 +406,7 @@ const TileContextMenu: Component<Props> = (props) => {
     list.push({ key: "core-options", label: "Core options…", onActivate: openCoreOptions });
     list.push({ key: "display", label: "Display…", onActivate: openDisplay });
     list.push({ key: "shaders", label: "Shaders…", onActivate: openShaders });
+    list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
     list.push({ key: "props", label: "Game properties…", onActivate: openProperties });
     list.push({
       key: "remove",
