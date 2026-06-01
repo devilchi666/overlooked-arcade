@@ -1564,6 +1564,8 @@ const App: Component = () => {
         settings={settings}
         onShowSaves={(entry) => setSavesEntry(entry)}
         onShowInfo={(entry) => setGameInfoFor(entry)}
+        onOpenShaders={(entry) => setGameDialog({ kind: "shaders", target: entry })}
+        onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
         onExitToLibrary={() => void handleUnload()}
         requestedView={quickSettingsRequestedView()}
         exitMode={isDirectLaunch() ? "quit" : "library"}
