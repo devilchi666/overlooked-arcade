@@ -67,7 +67,7 @@ audio + working controller at native 59.92 Hz NTSC.
 
 - ⬜ Per-system shader tweaks — operator-driven MD-palette vs crt-lite validation (shader pipeline + per-system override shipped cross-system).
 - ⬜ 3-button vs 6-button game compatibility map — operator-driven KNOWN_GAME_BUGS curation.
-- ⬜ MD-specific glyphs for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system).
+- ✅ MD-specific glyphs for the bindings UI — `frontend/src/components/GenesisPadReference.tsx` renders the physical 6-button pad layout (X-Y-Z above A-B-C with D-pad + Mode + Start to the side) with each face button labeled by its current keyboard / gamepad binding. Mounted in both `SystemBindingsEditor` (per-system Bindings dialog) and `GameDialogs` per-game Input dialog via the shared `GENESIS_SYSTEMS` set so all four Genesis-family slugs (genesis / segacd / sega32x / sega32xcd) pick it up. Shipped 2026-06-01.
 - ⬜ ClownMDEmu vs Genesis Plus GX vs PicoDrive comparison — operator-driven DECISIONS doc.
 
 ---

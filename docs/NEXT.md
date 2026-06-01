@@ -462,7 +462,17 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    Shooting Gallery / Marksman Shooting on real Phaser hardware is
    the remaining gap (tracked under MEDIUM #5's playtest matrix). No
    SMS-specific code work remains.
-10. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
+~~10. **Genesis MD-specific button glyphs polish**~~ — **SHIPPED
+    2026-06-01.** New `frontend/src/components/GenesisPadReference.tsx`
+    renders the physical 6-button Mega Drive pad (X-Y-Z above
+    A-B-C + D-pad + Mode + Start) with each face button labeled by
+    its current keyboard / gamepad binding. Mounted in both
+    `SystemBindingsEditor` (per-system Bindings dialog) and
+    `GameDialogs` per-game Input dialog via a shared
+    `GENESIS_SYSTEMS` set — all four Genesis-family slugs
+    (genesis / segacd / sega32x / sega32xcd) pick it up since
+    `apps/oa-shell/src/bindings.rs:1820` routes them all to the
+    same `GENESIS_BUTTONS` table. `genesis/ROADMAP.md` line 70 ✅.
 ~~11. **NGP-mono vs NGPC library-tile differentiation**~~ —
     **SHIPPED 2026-05-24** alongside the media-taxonomy wave. Tile
     `shortName` reads "NGP" for `.ngp` files / "NGPC" for `.ngc`
