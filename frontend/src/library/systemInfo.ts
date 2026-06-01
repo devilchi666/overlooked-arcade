@@ -216,3 +216,39 @@ export async function resetSystemInfoToDefault(args: {
 }): Promise<void> {
   return invoke("reset_system_info_to_default", args);
 }
+
+/// Result of the SETTINGS → Storage → "Refresh MAME system info"
+/// action. Frontend renders this as a toast message; `missingSystems`
+/// drives a follow-up "N OA systems aren't covered by your MAME
+/// release" hint when populated.
+export type MameRefreshReport = {
+  /// MAME version captured from `mame -version`, e.g. `"0.288"`.
+  mameVersion: string;
+  /// OA-slug rows written to system_info_mame after the refresh.
+  systemsRefreshed: number;
+  /// OA slugs the operator's `mame -listxml` didn't cover. In v1
+  /// this typically includes `3do`, `msx`, `msx2` — see
+  /// `tools/mame-extractor/README.md` "Known L1 description gaps".
+  missingSystems: string[];
+  /// True when a `history.xml` was found + parsed for descriptions;
+  /// false when only the structured fields were updated (operator
+  /// hasn't dropped a community-maintained history.xml next to MAME).
+  historyPresent: boolean;
+  /// Absolute path of the MAME binary used — surfaced in the toast
+  /// for transparency ("Refreshed from C:\Emulators\MAME\mame.exe").
+  mamePath: string;
+};
+
+/// Re-import the L1 (MAME baseline) layer from the operator's local
+/// MAME install. `mamePath` (optional) overrides auto-detection — pass
+/// the path returned by the folder-picker when canonical paths fail.
+/// May be the binary itself OR a folder containing `mame.exe` / `mame`.
+///
+/// L2 (curated YAML) + L3 (operator overrides) are NEVER touched —
+/// only the L1 table gets replaced. Per-install operator edits and
+/// shipped curated content both survive the refresh.
+export async function refreshMameSystemInfo(args: {
+  mamePath?: string;
+}): Promise<MameRefreshReport> {
+  return invoke<MameRefreshReport>("refresh_mame_system_info", args);
+}

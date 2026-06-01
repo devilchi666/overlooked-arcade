@@ -46,6 +46,7 @@ mod scummvm_cli;
 mod scummvm_detect;
 mod shader_presets;
 mod shader_presets_watcher;
+mod mame_import;
 mod system_info;
 mod system_settings;
 mod title_parse;
@@ -3033,6 +3034,7 @@ fn main() {
             set_system_info_override,
             delete_system_info_override,
             reset_system_info_to_default,
+            refresh_mame_system_info,
             list_game_info_overridden,
             list_game_info_badges,
             arm_cheats,
@@ -7831,6 +7833,37 @@ fn reset_system_info_to_default(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.set_system_info_override(&systemId, &system_info::SystemInfoOverride::default())
+}
+
+/// Re-import the L1 (MAME baseline) layer from the operator's local
+/// MAME install — the "Refresh MAME system info" button in
+/// SETTINGS → Storage. Shells out to `mame -listxml` + reads MAME's
+/// local `history.xml` (if present), runs the same parser pipeline
+/// the maintainer-time `tools/mame-extractor/` binary uses, and
+/// overwrites the SQLite `system_info_mame` table. L2 (curated YAML)
+/// + L3 (operator overrides) are NEVER touched.
+///
+/// `mamePath` (optional) overrides MAME auto-detection — used by the
+/// folder-picker fallback when the canonical
+/// `<exe_dir>/Emulators/MAME/` location isn't populated. May be
+/// either the binary file or its parent folder.
+///
+/// The operator's re-import is session-scoped (plan §10): next OA
+/// release rebakes from the bundled slim files, overwriting whatever
+/// the operator imported. v2 candidate: per-row provenance tracking
+/// so re-imports survive updates.
+///
+/// Runs on the Tauri command-thread; the listxml parse can take a
+/// couple of seconds against a recent MAME's 200MB+ output. UI shows
+/// a "Refreshing…" disabled state while in flight.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn refresh_mame_system_info(
+    mamePath: Option<String>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<mame_import::MameRefreshReport, String> {
+    let custom = mamePath.as_deref().map(std::path::Path::new);
+    mame_import::refresh_mame_system_info(custom, &db)
 }
 
 /// Per-system cheat-code format declarations. Frontend's CheatsDialog

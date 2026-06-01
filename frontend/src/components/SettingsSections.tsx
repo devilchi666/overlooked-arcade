@@ -18,12 +18,19 @@
 import {
   createMemo,
   createResource,
+  createSignal,
   For,
   Show,
   type Component,
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
+import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
+import {
+  refreshMameSystemInfo,
+  type MameRefreshReport,
+} from "../library/systemInfo";
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
@@ -936,7 +943,121 @@ export const StorageSettings: Component = () => {
           library / sync caches all live under the data directory.
         </p>
       </SettingsCard>
+
+      <MameRefreshCard />
     </div>
+  );
+};
+
+/// "Refresh MAME system info" card — Phase 5 of the System Info Panel
+/// v1. Operator clicks once, OA shells out to their local MAME's
+/// `-listxml` + reads `history.xml` from the canonical install layout,
+/// overwrites the SQLite system_info_mame (L1) table without touching
+/// L2 (curated YAML) or L3 (operator overrides).
+///
+/// MAME auto-detect probes <exe_dir>/Emulators/MAME/ first; if not
+/// found, the operator can use the folder picker to point at their
+/// own MAME install (binary OR parent folder). The re-import is
+/// session-scoped per plan §10 — next OA release rebakes from the
+/// bundled slim files, overwriting whatever the operator imported.
+const MameRefreshCard: Component = () => {
+  const [busy, setBusy] = createSignal(false);
+  const [lastReport, setLastReport] = createSignal<MameRefreshReport | null>(null);
+  const [lastError, setLastError] = createSignal<string | null>(null);
+
+  async function refresh(customMamePath?: string) {
+    setBusy(true);
+    setLastError(null);
+    try {
+      const report = await refreshMameSystemInfo({ mamePath: customMamePath });
+      setLastReport(report);
+      const missing = report.missingSystems.length;
+      const histNote = report.historyPresent ? "" : " (no history.xml found — descriptions not refreshed)";
+      const missNote = missing > 0 ? ` ${missing} OA system${missing === 1 ? "" : "s"} not covered by this MAME release.` : "";
+      await emit("oa://toast", {
+        level: "success",
+        message: `Refreshed ${report.systemsRefreshed} systems from MAME ${report.mameVersion}.${missNote}${histNote}`,
+      });
+    } catch (e) {
+      const msg = String(e);
+      console.warn("[StorageSettings] refresh_mame_system_info failed:", e);
+      setLastError(msg);
+      // If MAME wasn't found, prompt for a folder rather than just
+      // erroring. Operators don't always have it on PATH.
+      const looksLikeNotFound = /not found|No such|not.*detected/i.test(msg);
+      if (looksLikeNotFound && !customMamePath) {
+        await emit("oa://toast", {
+          level: "warning",
+          message:
+            "MAME not found at the canonical path. Pick your MAME folder.",
+        });
+        const picked = await pickDirectory({
+          directory: true,
+          multiple: false,
+          title: "Locate your MAME folder",
+        }).catch(() => null);
+        if (picked && !Array.isArray(picked)) {
+          // Retry with the operator's pick.
+          await refresh(picked);
+        }
+      } else {
+        await emit("oa://toast", {
+          level: "error",
+          message: `Refresh failed: ${msg}`,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SettingsCard title="MAME system info">
+      <div class="flex flex-col gap-3">
+        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+          Re-imports per-system metadata (CPU / sound / resolution /
+          refresh rate / peripherals) from your local MAME install,
+          overwriting the bundled L1 baseline. Curated values (
+          <code class="text-(--color-oa-ink-dim)/80">docs/cores/&lt;id&gt;/system-info.yaml</code>
+          ) and your local edits stay untouched.
+        </p>
+        <p class="text-[0.65rem] text-(--color-oa-ink-dim)/70">
+          Looks for MAME at{" "}
+          <code class="text-(--color-oa-ink-dim)/80">
+            &lt;exe_dir&gt;/Emulators/MAME/mame.exe
+          </code>{" "}
+          first, then PATH + typical system install paths. A folder
+          picker opens if nothing's found.
+        </p>
+        <p class="text-[0.6rem] text-amber-300/80">
+          Session-scoped: the next OA update rebakes from the bundled
+          slim files and overwrites this refresh.
+        </p>
+
+        <div class="flex items-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              refresh();
+            }}
+            disabled={busy()}
+            class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/20 px-4 py-2 text-[0.7rem] uppercase tracking-widest text-(--color-system-accent-soft) transition hover:bg-(--color-system-accent)/30 disabled:opacity-40"
+          >
+            {busy() ? "Refreshing…" : "Refresh MAME system info"}
+          </button>
+          <Show when={lastReport()}>
+            <span class="text-[0.65rem] text-(--color-oa-ink-dim)">
+              Last refresh: MAME {lastReport()!.mameVersion} ·{" "}
+              {lastReport()!.systemsRefreshed} systems
+            </span>
+          </Show>
+          <Show when={lastError() && !lastReport()}>
+            <span class="text-[0.65rem] text-red-300">{lastError()}</span>
+          </Show>
+        </div>
+      </div>
+    </SettingsCard>
   );
 };
 
