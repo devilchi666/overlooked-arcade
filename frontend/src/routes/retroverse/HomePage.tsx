@@ -19,12 +19,15 @@
 //             existing GameInfoModal rather than swapping the right
 //             pane.
 //
-// Stub data for the dense system specs lives in systemMetadataStubs.ts;
-// rows missing from a system's stub render as "—" (graceful
-// degradation).
+// Per-system data flows from the three-layer system_info merge
+// (apps/oa-shell/src/system_info.rs + `get_system_info` Tauri
+// command). Hero hero (tagline / release line / blurb) + sidebar
+// sublines both consume `MergedSystemInfo` shapes. Fields missing
+// at every layer render as "—" / are silently hidden.
 
 import {
   createMemo,
+  createResource,
   createSignal,
   For,
   onCleanup,
@@ -41,7 +44,7 @@ import { HintRegion } from "../../nav/HintBar";
 import { useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
-import { getSystemSpecs } from "./systemMetadataStubs";
+import { getSystemInfo, type MergedSystemInfo } from "../../library/systemInfo";
 import { useRetroverse } from "./context";
 
 function formatHours(secs: number): string {
@@ -260,7 +263,24 @@ const HomePage: Component = () => {
   const [activeSystemIdSig, setActiveSystemIdSig] = createSignal<SystemId | null>(null);
   const activeSystemId = () => activeSystemIdSig() ?? defaultSystemId();
   const activeTheme = () => systemThemes[activeSystemId()];
-  const activeSpecs = () => getSystemSpecs(activeSystemId());
+  // Three-layer merged system info — replaces the old hand-typed
+  // systemMetadataStubs lookup. Resource re-fires whenever the active
+  // system changes; errors degrade to undefined so the hero falls
+  // back to the bare theme name without the tagline / blurb / release
+  // line. See `frontend/src/library/systemInfo.ts` + Phase 2 of
+  // docs/PLANS/system-info-panel-v1.md.
+  const [activeMerged] = createResource(
+    activeSystemId,
+    async (systemId): Promise<MergedSystemInfo | undefined> => {
+      try {
+        return await getSystemInfo({ systemId });
+      } catch (e) {
+        console.warn("[HomePage] get_system_info failed:", e);
+        return undefined;
+      }
+    },
+  );
+  const activeSpecs = (): MergedSystemInfo | undefined => activeMerged();
 
   const systemsWithGames = createMemo(() => {
     const list = [...entriesBySystem().entries()].map(([sys, entries]) => ({
@@ -468,7 +488,25 @@ const HomePage: Component = () => {
               {({ systemId, count }) => {
                 const isActive = () => activeSystemId() === systemId;
                 const theme = systemThemes[systemId];
-                const subline = () => getSystemSpecs(systemId).sidebarSubline;
+                // Per-button subline — each system fetches its own
+                // merged info on first render. Cheap (SQLite single-
+                // row read via Tauri IPC) and the systems-with-games
+                // list is small (~10 systems for a typical operator).
+                const [merged] = createResource(
+                  () => systemId,
+                  async (sid): Promise<MergedSystemInfo | undefined> => {
+                    try {
+                      return await getSystemInfo({ systemId: sid });
+                    } catch (e) {
+                      console.warn(
+                        `[HomePage] sidebar get_system_info failed for ${sid}:`,
+                        e,
+                      );
+                      return undefined;
+                    }
+                  },
+                );
+                const subline = () => merged()?.sidebarSubline;
                 return (
                   <li>
                     <button
@@ -596,20 +634,20 @@ const HomePage: Component = () => {
               <h1 class="text-4xl font-semibold leading-none tracking-tight text-(--color-oa-ink)">
                 {(activeTheme()?.displayName ?? activeSystemId()).toUpperCase()}
               </h1>
-              <Show when={activeSpecs().tagline}>
+              <Show when={activeSpecs()?.tagline}>
                 <p class="text-[0.65rem] uppercase tracking-[0.3em] text-(--color-system-accent)">
-                  {activeSpecs().tagline}
+                  {activeSpecs()?.tagline}
                 </p>
               </Show>
-              <Show when={activeSpecs().releaseDate}>
+              <Show when={activeSpecs()?.releaseDate}>
                 <p class="text-xs text-(--color-oa-ink-dim)">
-                  <span class="mr-1">{activeSpecs().releaseFlag ?? ""}</span>
-                  Released: {activeSpecs().releaseDate}
+                  <span class="mr-1">{activeSpecs()?.releaseFlag ?? ""}</span>
+                  Released: {activeSpecs()?.releaseDate}
                 </p>
               </Show>
-              <Show when={activeSpecs().blurb}>
+              <Show when={activeSpecs()?.blurb}>
                 <p class="max-w-md text-[0.8rem] leading-relaxed text-(--color-oa-ink-dim)">
-                  {activeSpecs().blurb}
+                  {activeSpecs()?.blurb}
                 </p>
               </Show>
             </div>

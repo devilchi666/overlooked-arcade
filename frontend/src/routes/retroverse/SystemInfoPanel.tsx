@@ -1,22 +1,33 @@
 // HOME right pane — dense system-information layout per the
-// operator-supplied HOME mockup. Four stacked cards:
+// operator-supplied HOME mockup. Three live-data cards + an
+// achievements stub:
 //
 //   - SYSTEM INFORMATION: manufacturer / type / generation / release
 //     dates / units sold / media / CPU / sound / resolution / palette
 //     / display ratio.
-//   - TECHNICAL DETAILS: architecture / max players / co-op / region
-//     / storage / RAM / video output / aspect ratio / input latency /
-//     emulator core. Each row carries a leading glyph.
-//   - SUPPORTED PERIPHERALS: 5 horizontal icons + labels.
-//   - ACHIEVEMENTS: placeholder stub numbers (no integration yet).
+//   - TECHNICAL DETAILS: architecture / max players / multiplayer
+//     (free-form, refined from the old binary co-op flag) / region /
+//     storage / RAM / video output / aspect ratio / refresh rate.
+//   - SUPPORTED PERIPHERALS: grid of glyph + label tiles.
+//   - ACHIEVEMENTS: placeholder stub numbers (RetroAchievements
+//     integration ships in a separate stream).
 //
-// All data sourced from systemMetadataStubs.ts. Missing fields render
-// as "—" so partial entries degrade gracefully.
+// Phase 3 cutover (2026-05-31): data now flows from the three-layer
+// merge in apps/oa-shell/src/system_info.rs via the
+// `get_system_info` Tauri command instead of the hand-typed
+// `systemMetadataStubs.ts`. The stub file was deleted in this commit;
+// the panel renders "—" for any field the merged record leaves
+// undefined (L1+L2+L3 all blank → panel still works, just empty).
+//
+// Drops from the old schema: Input Latency (every system had "Low"
+// hardcoded; meaningless), Emulator Core (lives in Settings → per-
+// system → Default core, not system metadata). Adds Refresh Rate
+// (now sourced from MAME's <display refresh=…> attribute).
 
-import { For, Show, type Component } from "solid-js";
+import { createResource, For, Show, type Component } from "solid-js";
 import type { SystemId } from "../../themes/registry";
 import { systemThemes } from "../../themes/registry";
-import { getSystemSpecs, type SystemSpecs } from "./systemMetadataStubs";
+import { getSystemInfo, type MergedSystemInfo } from "../../library/systemInfo";
 
 type Props = {
   systemId: SystemId;
@@ -53,7 +64,23 @@ const Card: Component<{
 
 const SystemInfoPanel: Component<Props> = (props) => {
   const theme = () => systemThemes[props.systemId];
-  const specs = (): SystemSpecs => getSystemSpecs(props.systemId);
+
+  // Live merged record from the three-layer backend. Re-fires when
+  // the focused system changes. Errors degrade to undefined (panel
+  // renders "—" everywhere) rather than throwing.
+  const [merged] = createResource(
+    () => props.systemId,
+    async (systemId): Promise<MergedSystemInfo | undefined> => {
+      try {
+        return await getSystemInfo({ systemId });
+      } catch (e) {
+        console.warn("[SystemInfoPanel] get_system_info failed:", e);
+        return undefined;
+      }
+    },
+  );
+
+  const info = (): MergedSystemInfo | undefined => merged();
 
   // Achievement stubs — placeholder numbers per the operator's spec
   // (mockup-faithful, not derived from real data). RetroAchievements
@@ -77,42 +104,41 @@ const SystemInfoPanel: Component<Props> = (props) => {
       {/* SYSTEM INFORMATION */}
       <Card title="System information">
         <div class="flex flex-col">
-          <InfoRow label="Manufacturer" value={specs().manufacturer} />
-          <InfoRow label="Type" value={specs().type} />
-          <InfoRow label="Generation" value={specs().generation} />
-          <InfoRow label="Release Date" value={specs().releaseDate} />
-          <InfoRow label="Discontinued" value={specs().discontinued} />
-          <InfoRow label="Units Sold" value={specs().unitsSold} />
-          <InfoRow label="Media" value={specs().media} />
-          <InfoRow label="CPU" value={specs().cpu} />
-          <InfoRow label="Sound" value={specs().sound} />
-          <InfoRow label="Resolution" value={specs().resolution} />
-          <InfoRow label="Color Palette" value={specs().colorPalette} />
-          <InfoRow label="Display Ratio" value={specs().displayRatio} />
+          <InfoRow label="Manufacturer" value={info()?.manufacturer} />
+          <InfoRow label="Type" value={info()?.systemType} />
+          <InfoRow label="Generation" value={info()?.generation} />
+          <InfoRow label="Release Date" value={info()?.releaseDate} />
+          <InfoRow label="Discontinued" value={info()?.discontinued} />
+          <InfoRow label="Units Sold" value={info()?.unitsSold} />
+          <InfoRow label="Media" value={info()?.media} />
+          <InfoRow label="CPU" value={info()?.cpu} />
+          <InfoRow label="Sound" value={info()?.sound} />
+          <InfoRow label="Resolution" value={info()?.resolution} />
+          <InfoRow label="Color Palette" value={info()?.colorPalette} />
+          <InfoRow label="Display Ratio" value={info()?.displayRatio} />
         </div>
       </Card>
 
       {/* TECHNICAL DETAILS */}
       <Card title="Technical details">
         <div class="flex flex-col">
-          <TechRow glyph="▤" label="Architecture" value={specs().architecture} />
-          <TechRow glyph="👥" label="Max Players" value={specs().maxPlayers} />
-          <TechRow glyph="🤝" label="Co-Op Support" value={specs().coOpSupport} />
-          <TechRow glyph="🌐" label="Region" value={specs().region} />
-          <TechRow glyph="💾" label="Storage" value={specs().storage} />
-          <TechRow glyph="⚡" label="RAM" value={specs().ram} />
-          <TechRow glyph="📺" label="Video Output" value={specs().videoOutput} />
-          <TechRow glyph="📐" label="Aspect Ratio" value={specs().aspectRatio} />
-          <TechRow glyph="⏱" label="Input Latency" value={specs().inputLatency} />
-          <TechRow glyph="⚙" label="Emulator Core" value={specs().emulatorCore} />
+          <TechRow glyph="▤" label="Architecture" value={info()?.architecture} />
+          <TechRow glyph="👥" label="Max Players" value={info()?.maxPlayers} />
+          <TechRow glyph="🤝" label="Multiplayer" value={info()?.multiplayer} />
+          <TechRow glyph="🌐" label="Region" value={info()?.region} />
+          <TechRow glyph="💾" label="Storage" value={info()?.storage} />
+          <TechRow glyph="⚡" label="RAM" value={info()?.ram} />
+          <TechRow glyph="📺" label="Video Output" value={info()?.videoOutput} />
+          <TechRow glyph="📐" label="Aspect Ratio" value={info()?.aspectRatio} />
+          <TechRow glyph="🔁" label="Refresh Rate" value={info()?.refreshRate} />
         </div>
       </Card>
 
       {/* SUPPORTED PERIPHERALS */}
-      <Show when={specs().peripherals && specs().peripherals!.length > 0}>
+      <Show when={info()?.peripherals && info()!.peripherals.length > 0}>
         <Card title="Supported peripherals">
           <div class="grid grid-cols-3 gap-2">
-            <For each={specs().peripherals}>
+            <For each={info()?.peripherals ?? []}>
               {(peripheral) => (
                 <div class="flex flex-col items-center gap-1 rounded-md border border-white/5 bg-white/[0.02] px-2 py-2 text-center">
                   <span class="text-xl">{peripheral.glyph}</span>
