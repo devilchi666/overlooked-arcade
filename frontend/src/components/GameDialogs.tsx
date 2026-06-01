@@ -36,6 +36,7 @@ import CoreOptionsPanel from "./CoreOptionsPanel";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import KeypadReference from "./KeypadReference";
 import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
+import { LightGunMappingHelp, isLightGunSystem } from "./LightGunHelp";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -819,6 +820,11 @@ export const GameInputDialog: Component<{
                   )}
                 </For>
               </select>
+              <Show when={overrides().libretroDevice === 4 && isLightGunSystem(e().systemId)}>
+                <div class="mt-2">
+                  <LightGunMappingHelp />
+                </div>
+              </Show>
               <Show
                 when={showExtraPorts()}
                 fallback={

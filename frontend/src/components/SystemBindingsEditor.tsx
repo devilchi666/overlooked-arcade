@@ -19,6 +19,7 @@ import {
 import type { SystemId } from "../themes/registry";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
+import { LightGunMappingHelp, isLightGunSystem } from "./LightGunHelp";
 
 // Per-system input bindings editor.
 //
@@ -184,6 +185,11 @@ const SystemBindingsEditor: Component<Props> = (props) => {
           Reset to defaults
         </button>
       </div>
+      <Show when={isLightGunSystem(props.systemId)}>
+        <div class="mt-3">
+          <LightGunMappingHelp compact />
+        </div>
+      </Show>
       <Show
         when={bindings()}
         fallback={
