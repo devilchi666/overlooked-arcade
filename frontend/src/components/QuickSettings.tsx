@@ -76,6 +76,12 @@ type Props = {
   touchHintsEnabled: () => boolean;
   /// Setter for the same toggle. Bound to the toggle row's click.
   setTouchHintsEnabled: (next: boolean) => void;
+  /// Per-session "Performance HUD" toggle accessor — drives the
+  /// ActionsPanel's FPS-overlay toggle row. Same per-session
+  /// design as touch-hints.
+  perfHudVisible: () => boolean;
+  /// Setter for the same toggle.
+  setPerfHudVisible: (next: boolean) => void;
 };
 
 const BTN_BASE =
@@ -634,6 +640,8 @@ const QuickSettings: Component<Props> = (props) => {
               onExitToLibrary={props.onExitToLibrary}
               touchHintsEnabled={props.touchHintsEnabled}
               setTouchHintsEnabled={props.setTouchHintsEnabled}
+              perfHudVisible={props.perfHudVisible}
+              setPerfHudVisible={props.setPerfHudVisible}
             />
           </Show>
 
@@ -1639,6 +1647,8 @@ const ActionsPanel: Component<{
   onExitToLibrary: () => void;
   touchHintsEnabled: () => boolean;
   setTouchHintsEnabled: (next: boolean) => void;
+  perfHudVisible: () => boolean;
+  setPerfHudVisible: (next: boolean) => void;
 }> = (props) => {
   type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; onActivate: () => void };
   const actions = createMemo<Action[]>(() => {
@@ -1712,6 +1722,17 @@ const ActionsPanel: Component<{
         icon: on ? "◉" : "◯",
         label: on ? "Hide touch hints" : "Show touch hints",
         onActivate: () => props.setTouchHintsEnabled(!on),
+      });
+    }
+    // Performance HUD toggle — same per-session shape as touch-hints.
+    // Operator flips on when something feels slow, off when satisfied.
+    {
+      const on = props.perfHudVisible();
+      list.push({
+        key: "perf-hud",
+        icon: on ? "◉" : "◯",
+        label: on ? "Hide performance HUD" : "Show performance HUD",
+        onActivate: () => props.setPerfHudVisible(!on),
       });
     }
     list.push({

@@ -253,12 +253,13 @@ const App: Component = () => {
   // focused) at the time of opening; entry stays bound until the dialog
   // closes.
   const [screenshotGalleryFor, setScreenshotGalleryFor] = createSignal<RomEntry | null>(null);
-  // Tools → Performance HUD toggle. UI-side render-loop FPS only (v1);
+  // Performance HUD toggle. UI-side render-loop FPS only (v1);
   // emulator-side telemetry will plug into the same overlay when wired.
-  // Toggle UI dropped with the legacy Tools menu on 2026-05-31 — the
-  // HUD now stays at its default (off) until a Retroverse home is
-  // added (likely SETTINGS → Storage or SETTINGS → About).
-  const [perfHudVisible] = createSignal(false);
+  // Toggle lives in QuickSettings (in-game) — flip on when something
+  // feels slow, off when you've seen what you need. Per-session by
+  // design (matches touch-hints) so the FPS overlay doesn't quietly
+  // stay on across launches and confuse operators next session.
+  const [perfHudVisible, setPerfHudVisible] = createSignal(false);
   // Phase 6 Cross-system slice 3 — Game focus toggle. When true, OA hotkeys
   // (F1/F2/F5/F8/Esc/digits/Backspace) stop firing inside the emu thread
   // so the keyboard-passthrough pump can deliver those keys to the core
@@ -1572,6 +1573,8 @@ const App: Component = () => {
         exitMode={isDirectLaunch() ? "quit" : "library"}
         touchHintsEnabled={touchHintsEnabled}
         setTouchHintsEnabled={setTouchHintsEnabled}
+        perfHudVisible={perfHudVisible}
+        setPerfHudVisible={setPerfHudVisible}
       />
       <SaveSlotsModal
         entry={savesEntry()}
