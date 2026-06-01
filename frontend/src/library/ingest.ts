@@ -185,36 +185,116 @@ export function titleFromFileName(name: string): string {
   return base.replace(/_+/g, " ").trim();
 }
 
-type MameTitleLookup = {
+/// Legacy (v11) MAME.dat-backed lookup row. Used as a 2nd-tier
+/// fallback when the new bundled-listxml `lookup_mame_game` returns
+/// null (e.g. operator's install pre-dates Phase 1b's bundled slim
+/// but they previously ran `sync_mame_titles`).
+type LegacyMameTitleLookup = {
   romSet: string;
   title: string;
   year?: string | null;
   developer?: string | null;
 };
 
+/// v2 listxml-backed lookup row. Returned by the new
+/// `lookup_mame_game` Tauri command (Phase 2). Merged L1+L3 record;
+/// the frontend never sees raw L3 overrides on this path.
+type MergedMameGame = {
+  name: string;
+  description: string;
+  year?: string | null;
+  manufacturer?: string | null;
+  cloneof?: string | null;
+  hasLocalEdits: boolean;
+};
+
 /// Patch the `title` field on every MAME entry in `entries` with the
-/// canonical title from `mame_titles` when the ROM-set is in the catalog.
-/// Filename-derived titles ("sf2ce") survive only when the catalog has
-/// no match (homebrew, hack, or an older MAME ROM-set the libretro DB
-/// hasn't picked up yet). Mutates `entries` in place. Errors are soft —
-/// at worst, library tiles stay as .zip filenames.
+/// canonical title from the listxml-backed `mame_games` catalog (or
+/// the legacy MAME.dat-backed `mame_titles` as a fallback). When a
+/// hit also carries year + manufacturer, push them into
+/// MediaDb.GameMetadata via `set_game_mame_metadata` so the
+/// GameDetailPanel surfaces "Donkey Kong (1981, Nintendo)" without
+/// any further plumbing — the panel already reads
+/// `useMedia().media(romId)?.metadata`.
+///
+/// Filename-derived titles ("sf2ce") survive only when neither
+/// catalog has the ROM-set (homebrew, hack, or a ROM that post-dates
+/// both the bundled slim AND the last MAME.dat sync). Mutates
+/// `entries` in place. Errors are soft — at worst, library tiles
+/// stay as .zip filenames.
 async function resolveMameTitles(entries: RomEntry[]): Promise<void> {
   const mameEntries = entries.filter((e) => e.systemId === "mame");
   if (mameEntries.length === 0) return;
   for (const entry of mameEntries) {
     const fileName = entry.filePath.split(/[\\/]/).pop() ?? "";
-    const stem = fileName.replace(/\.zip$/i, "").toLowerCase();
+    const stem = fileName.replace(/\.(zip|7z)$/i, "").toLowerCase();
     if (!stem) continue;
+
+    // Tier 1 — listxml-backed catalog (bundled L1 + operator L3).
+    let title: string | null = null;
+    let year: number | null = null;
+    let publisher: string | null = null;
     try {
-      const hit = await invoke<MameTitleLookup | null>("lookup_mame_title", { romSet: stem });
-      if (hit && hit.title) {
-        entry.title = hit.title;
+      const hit = await invoke<MergedMameGame | null>("lookup_mame_game", { romSet: stem });
+      if (hit && hit.description) {
+        title = hit.description;
+        // MAME emits years as strings ("1981", "19??", "202?"); only
+        // numeric years convert cleanly to GameMetadata.year (u32).
+        // Non-numeric strings get dropped silently — the title still
+        // patches, year just stays unset.
+        if (hit.year) {
+          const parsed = parseInt(hit.year, 10);
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            year = parsed;
+          }
+        }
+        if (hit.manufacturer) {
+          publisher = hit.manufacturer;
+        }
       }
     } catch (e) {
-      // Soft fail — catalog not synced yet, or DB error. Filename-derived
-      // title stays in place; operator can re-sync later via the MAME
-      // settings / sync metadata action.
-      console.debug("[oa-ingest] mame title lookup failed:", e);
+      console.debug("[oa-ingest] lookup_mame_game failed:", e);
+    }
+
+    // Tier 2 — legacy MAME.dat-backed catalog. Only consulted when
+    // the new path missed; carries title + year + developer (no
+    // manufacturer field, so publisher stays None when the legacy
+    // path is what wins).
+    if (title === null) {
+      try {
+        const hit = await invoke<LegacyMameTitleLookup | null>("lookup_mame_title", { romSet: stem });
+        if (hit && hit.title) {
+          title = hit.title;
+          if (hit.year) {
+            const parsed = parseInt(hit.year, 10);
+            if (!Number.isNaN(parsed) && parsed > 0) {
+              year = parsed;
+            }
+          }
+        }
+      } catch (e) {
+        console.debug("[oa-ingest] lookup_mame_title (legacy) failed:", e);
+      }
+    }
+
+    if (title !== null) {
+      entry.title = title;
+      // Enrich MediaDb only when we actually have something to write
+      // — avoids a no-op round-trip per ROM on legacy-tier hits that
+      // don't carry year.
+      if (year !== null || publisher !== null) {
+        try {
+          await invoke("set_game_mame_metadata", {
+            romId: entry.id,
+            year,
+            publisher,
+          });
+        } catch (e) {
+          // Soft fail — title patch already landed; missing metadata
+          // just means GameDetailPanel shows "—" for year/publisher.
+          console.debug("[oa-ingest] set_game_mame_metadata failed:", e);
+        }
+      }
     }
   }
 }
