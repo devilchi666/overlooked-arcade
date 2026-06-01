@@ -1645,6 +1645,7 @@ const App: Component = () => {
         onOpenInput={(entry) => setGameDialog({ kind: "input", target: entry })}
         onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
         onOpenDisplay={(entry) => setGameDialog({ kind: "display", target: entry })}
+        onOpenShaders={(entry) => setGameDialog({ kind: "shaders", target: entry })}
         onOpenNewCollection={(romId) =>
           setCollectionDialogMode({ kind: "create", seedRomId: romId })
         }
