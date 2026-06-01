@@ -31,6 +31,7 @@ use quick_xml::Reader;
 use serde::Serialize;
 
 use crate::library_db::LibraryDb;
+use crate::mame_games::MameGame;
 use crate::system_info::{self, SystemInfoMame};
 
 /// OA slug → MAME machine driver name. Mirror of the constant in
@@ -113,6 +114,13 @@ pub struct MameRefreshReport {
     /// frontend can surface "Refreshed from C:\Emulators\MAME\
     /// mame.exe" in the toast for transparency.
     pub mame_path: String,
+    /// Count of arcade-game records written to `mame_games` during
+    /// the same -listxml run (Phase 4 of MAME ROM-set name
+    /// resolution). Equal to the number of playable / runnable
+    /// non-BIOS / non-device machines with at least one <rom> child
+    /// in the operator's MAME version. The same UI toast that
+    /// surfaces `systemsRefreshed` also surfaces this count.
+    pub games_refreshed: u32,
 }
 
 /// Locate a MAME binary, preferring the canonical project location
@@ -283,23 +291,49 @@ struct ExtractedMachine {
     peripheral_hints: BTreeSet<String>,
 }
 
+/// Per-machine scratch for the arcade-games path. Opens for EVERY
+/// `<machine>` (not gated by wanted_machines) because the arcade
+/// catalog covers all playable machines regardless of OA system
+/// slug. Mirrors `tools/mame-extractor/src/main.rs`'s shape.
+#[derive(Default, Debug)]
+struct ArcadeGameInProgress {
+    description: Option<String>,
+    year: Option<String>,
+    manufacturer: Option<String>,
+    cloneof: Option<String>,
+    isbios: bool,
+    isdevice: bool,
+    runnable_no: bool,
+    has_rom: bool,
+}
+
+/// Active `<machine>` context. `arcade` always tracks; `extracted`
+/// is Some only when the machine name is in `wanted_machines`.
+struct CurrentMachine {
+    name: String,
+    arcade: ArcadeGameInProgress,
+    extracted: Option<ExtractedMachine>,
+}
+
 #[derive(Copy, Clone)]
 enum TextTarget {
     Year,
     Manufacturer,
+    Description,
 }
 
 fn parse_listxml(
     path: &Path,
     wanted_machines: &HashSet<&str>,
-) -> Result<HashMap<String, ExtractedMachine>, String> {
+) -> Result<(HashMap<String, ExtractedMachine>, Vec<MameGame>), String> {
     let mut reader = Reader::from_file(path)
         .map_err(|e| format!("opening listxml at {}: {e}", path.display()))?;
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut out: HashMap<String, ExtractedMachine> = HashMap::new();
-    let mut current: Option<(String, ExtractedMachine)> = None;
+    let mut out_systems: HashMap<String, ExtractedMachine> = HashMap::new();
+    let mut out_games: Vec<MameGame> = Vec::new();
+    let mut current: Option<CurrentMachine> = None;
     let mut text_target: Option<TextTarget> = None;
     let mut text_buf = String::new();
 
@@ -336,19 +370,48 @@ fn parse_listxml(
                 let tag = std::str::from_utf8(name.as_ref()).unwrap_or("");
                 match tag {
                     "machine" => {
-                        if let Some((mname, em)) = current.take() {
-                            out.insert(mname, em);
+                        if let Some(cm) = current.take() {
+                            let CurrentMachine { name, arcade, extracted } = cm;
+                            if let Some(em) = extracted {
+                                out_systems.insert(name.clone(), em);
+                            }
+                            if !arcade.isbios
+                                && !arcade.isdevice
+                                && !arcade.runnable_no
+                                && arcade.has_rom
+                            {
+                                if let Some(desc) = arcade.description {
+                                    out_games.push(MameGame {
+                                        name,
+                                        description: desc,
+                                        year: arcade.year,
+                                        manufacturer: arcade.manufacturer,
+                                        cloneof: arcade.cloneof,
+                                    });
+                                }
+                            }
                         }
                     }
-                    "year" | "manufacturer" => {
+                    "year" | "manufacturer" | "description" => {
                         if let Some(target) = text_target.take() {
-                            if let Some((_, em)) = current.as_mut() {
+                            if let Some(cm) = current.as_mut() {
                                 let value = text_buf.trim().to_string();
                                 if !value.is_empty() {
                                     match target {
-                                        TextTarget::Year => em.year = Some(value),
+                                        TextTarget::Year => {
+                                            if let Some(em) = cm.extracted.as_mut() {
+                                                em.year = Some(value.clone());
+                                            }
+                                            cm.arcade.year = Some(value);
+                                        }
                                         TextTarget::Manufacturer => {
-                                            em.manufacturer = Some(value)
+                                            if let Some(em) = cm.extracted.as_mut() {
+                                                em.manufacturer = Some(value.clone());
+                                            }
+                                            cm.arcade.manufacturer = Some(value);
+                                        }
+                                        TextTarget::Description => {
+                                            cm.arcade.description = Some(value);
                                         }
                                     }
                                 }
@@ -365,14 +428,14 @@ fn parse_listxml(
         buf.clear();
     }
 
-    Ok(out)
+    Ok((out_systems, out_games))
 }
 
 fn handle_open_tag(
     e: &BytesStart,
     self_closing: bool,
     wanted_machines: &HashSet<&str>,
-    current: &mut Option<(String, ExtractedMachine)>,
+    current: &mut Option<CurrentMachine>,
     text_target: &mut Option<TextTarget>,
     text_buf: &mut String,
 ) {
@@ -380,32 +443,56 @@ fn handle_open_tag(
     let tag = std::str::from_utf8(name.as_ref()).unwrap_or("");
     match tag {
         "machine" => {
-            if let Some(mname) = attr(e, b"name") {
-                if wanted_machines.contains(mname.as_str()) {
-                    *current = Some((mname, ExtractedMachine::default()));
-                } else {
-                    *current = None;
-                }
-            }
+            let Some(machine_name) = attr(e, b"name") else { return };
+            let cloneof = attr(e, b"cloneof");
+            let isbios = attr(e, b"isbios").as_deref() == Some("yes");
+            let isdevice = attr(e, b"isdevice").as_deref() == Some("yes");
+            let runnable_no = attr(e, b"runnable").as_deref() == Some("no");
+            let extracted = if wanted_machines.contains(machine_name.as_str()) {
+                Some(ExtractedMachine::default())
+            } else {
+                None
+            };
+            *current = Some(CurrentMachine {
+                name: machine_name,
+                arcade: ArcadeGameInProgress {
+                    cloneof,
+                    isbios,
+                    isdevice,
+                    runnable_no,
+                    ..ArcadeGameInProgress::default()
+                },
+                extracted,
+            });
         }
-        "year" | "manufacturer" if !self_closing && current.is_some() => {
+        "year" | "manufacturer" | "description" if !self_closing && current.is_some() => {
             *text_target = Some(match tag {
                 "year" => TextTarget::Year,
-                _ => TextTarget::Manufacturer,
+                "manufacturer" => TextTarget::Manufacturer,
+                _ => TextTarget::Description,
             });
             text_buf.clear();
         }
+        "rom" if current.is_some() => {
+            if let Some(cm) = current.as_mut() {
+                cm.arcade.has_rom = true;
+            }
+        }
         "input" if current.is_some() => {
             if let Some(p) = attr(e, b"players").and_then(|v| v.parse::<u32>().ok()) {
-                if let Some((_, em)) = current.as_mut() {
-                    em.max_players = Some(p);
+                if let Some(cm) = current.as_mut() {
+                    if let Some(em) = cm.extracted.as_mut() {
+                        em.max_players = Some(p);
+                    }
                 }
             }
         }
         "control" if current.is_some() => {
             if let Some(t) = attr(e, b"type") {
-                if let Some((_, em)) = current.as_mut() {
-                    em.peripheral_hints.insert(t);
+                if let Some(cm) = current.as_mut() {
+                    if let Some(em) = cm.extracted.as_mut() {
+                        em.peripheral_hints.insert(t);
+                    }
                 }
             }
         }
@@ -413,30 +500,34 @@ fn handle_open_tag(
             let w = attr(e, b"width").and_then(|v| v.parse::<u32>().ok());
             let h = attr(e, b"height").and_then(|v| v.parse::<u32>().ok());
             let refresh = attr(e, b"refresh").and_then(|v| v.parse::<f64>().ok());
-            if let Some((_, em)) = current.as_mut() {
-                if em.resolution.is_none() {
-                    if let (Some(w), Some(h)) = (w, h) {
-                        em.resolution = Some(format!("{} × {}", w, h));
+            if let Some(cm) = current.as_mut() {
+                if let Some(em) = cm.extracted.as_mut() {
+                    if em.resolution.is_none() {
+                        if let (Some(w), Some(h)) = (w, h) {
+                            em.resolution = Some(format!("{} × {}", w, h));
+                        }
                     }
-                }
-                if em.refresh_rate.is_none() {
-                    if let Some(r) = refresh {
-                        em.refresh_rate = Some(format!("{:.2} Hz", r));
+                    if em.refresh_rate.is_none() {
+                        if let Some(r) = refresh {
+                            em.refresh_rate = Some(format!("{:.2} Hz", r));
+                        }
                     }
                 }
             }
         }
         "chip" if current.is_some() => {
             let chip_type = attr(e, b"type");
-            let name = attr(e, b"name");
+            let chip_name = attr(e, b"name");
             let clock = attr(e, b"clock").and_then(|v| v.parse::<u64>().ok());
-            if let (Some(ct), Some((_, em))) = (chip_type.as_deref(), current.as_mut()) {
+            if let (Some(ct), Some(cm)) = (chip_type.as_deref(), current.as_mut()) {
                 if matches!(ct, "cpu" | "audio") {
-                    if let Some(text) = format_chip(name.as_deref(), clock) {
-                        match ct {
-                            "cpu" if em.cpu.is_none() => em.cpu = Some(text),
-                            "audio" if em.sound.is_none() => em.sound = Some(text),
-                            _ => {}
+                    if let Some(em) = cm.extracted.as_mut() {
+                        if let Some(text) = format_chip(chip_name.as_deref(), clock) {
+                            match ct {
+                                "cpu" if em.cpu.is_none() => em.cpu = Some(text),
+                                "audio" if em.sound.is_none() => em.sound = Some(text),
+                                _ => {}
+                            }
                         }
                     }
                 }
@@ -530,7 +621,7 @@ pub fn refresh_mame_system_info(
 
     let parse_result = parse_listxml(&listxml_tmp, &wanted);
     let _ = fs::remove_file(&listxml_tmp); // best-effort cleanup
-    let extracted = parse_result?;
+    let (extracted, mut arcade_games) = parse_result?;
 
     // Optional history.xml: when present, parse via the existing
     // slim-XML parser in system_info.rs (the upstream history.xml has
@@ -586,9 +677,20 @@ pub fn refresh_mame_system_info(
     // BUNDLED slim files; an operator re-import is session-scoped per
     // plan §5 — next OA update rebakes from the bundled data and
     // overwrites this. v2 candidate: per-row provenance tracking.
+
+    // Sort by name ascending for diff stability + bake to mame_games
+    // (Phase 4). Same reasoning as system_info_meta: don't touch
+    // mame_games_meta — the stored hash tracks the BUNDLED slim, an
+    // operator refresh is session-scoped and the next OA update
+    // rebakes from the bundled artifact.
+    arcade_games.sort_by(|a, b| a.name.cmp(&b.name));
+    let games_refreshed = arcade_games.len() as u32;
+    db.bake_mame_games(&arcade_games)?;
+
     log::info!(
-        "system_info: refresh — wrote {} L1 rows from MAME {} ({} missing slugs: {})",
+        "system_info: refresh — wrote {} L1 system rows + {} arcade-game rows from MAME {} ({} missing slugs: {})",
         refreshed,
+        games_refreshed,
         version,
         missing.len(),
         if missing.is_empty() { "none".to_string() } else { missing.join(", ") }
@@ -600,6 +702,7 @@ pub fn refresh_mame_system_info(
         missing_systems: missing,
         history_present: history_path.is_some(),
         mame_path: mame.display().to_string(),
+        games_refreshed,
     })
 }
 
@@ -672,5 +775,97 @@ mod tests {
         fs::create_dir_all(&tmp).unwrap();
         assert!(detect_history_xml(&tmp).is_none());
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Fixture for the dual-emit parser test (Phase 4). Carries:
+    /// - `nes` system machine (matches MAME_DRIVER_MAP; no <rom> child →
+    ///   no arcade record).
+    /// - `dkong` playable arcade with <rom> + description.
+    /// - `sf2` arcade parent.
+    /// - `sf2ce` clone of sf2 with its OWN description.
+    /// - `neogeo` BIOS (isbios="yes") — excluded from arcade output.
+    /// - `i8080` device (isdevice="yes") — excluded.
+    const SAMPLE_DUAL_LISTXML: &str = r#"<?xml version="1.0"?>
+<mame build="0.288">
+  <machine name="nes" sourcefile="nes.cpp">
+    <description>Nintendo Entertainment System</description>
+    <year>1985</year>
+    <manufacturer>Nintendo</manufacturer>
+    <input players="2"><control type="joy"/></input>
+    <display width="256" height="240" refresh="60.10"/>
+    <chip type="cpu" name="N2A03" clock="1789773"/>
+  </machine>
+  <machine name="dkong" sourcefile="dkong.cpp">
+    <description>Donkey Kong (US set 1)</description>
+    <year>1981</year>
+    <manufacturer>Nintendo</manufacturer>
+    <rom name="c_5et_g.bin" size="2048"/>
+  </machine>
+  <machine name="sf2" sourcefile="cps1.cpp">
+    <description>Street Fighter II: The World Warrior (World 910522)</description>
+    <year>1991</year>
+    <manufacturer>Capcom</manufacturer>
+    <rom name="sf2_30a.bin" size="131072"/>
+  </machine>
+  <machine name="sf2ce" sourcefile="cps1.cpp" cloneof="sf2">
+    <description>Street Fighter II': Champion Edition (World 920313)</description>
+    <year>1992</year>
+    <manufacturer>Capcom</manufacturer>
+    <rom name="sf2ce_30.bin" size="131072"/>
+  </machine>
+  <machine name="neogeo" sourcefile="neogeo.cpp" isbios="yes">
+    <description>Neo-Geo</description>
+    <year>1990</year>
+    <manufacturer>SNK</manufacturer>
+    <rom name="bios.bin" size="131072"/>
+  </machine>
+  <machine name="i8080" sourcefile="i8085.cpp" isdevice="yes" runnable="no">
+    <description>8080 CPU</description>
+  </machine>
+</mame>
+"#;
+
+    #[test]
+    fn parse_listxml_emits_both_systems_and_arcade_games() {
+        // Single -listxml pass populates both outputs. Mirrors the
+        // production refresh flow: one MAME invocation refreshes both
+        // system_info_mame AND mame_games.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-test-dual-listxml-{}.xml",
+            std::process::id()
+        ));
+        fs::write(&tmp, SAMPLE_DUAL_LISTXML).unwrap();
+        let mut wanted = HashSet::new();
+        wanted.insert("nes");
+        let (systems, mut arcade) = parse_listxml(&tmp, &wanted).expect("parse");
+        let _ = fs::remove_file(&tmp);
+
+        // Systems half: nes populated (the only wanted machine).
+        assert!(systems.contains_key("nes"));
+        assert_eq!(systems.len(), 1);
+        let nes = &systems["nes"];
+        assert_eq!(nes.year.as_deref(), Some("1985"));
+        assert_eq!(nes.max_players, Some(2));
+
+        // Arcade games half: dkong + sf2 + sf2ce; nes excluded (no
+        // <rom>); neogeo + i8080 excluded by filter.
+        arcade.sort_by(|a, b| a.name.cmp(&b.name));
+        let names: Vec<&str> = arcade.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["dkong", "sf2", "sf2ce"]);
+
+        // Clone carries its OWN description, NOT inherited from parent.
+        let sf2ce = arcade.iter().find(|m| m.name == "sf2ce").unwrap();
+        assert_eq!(
+            sf2ce.description,
+            "Street Fighter II': Champion Edition (World 920313)"
+        );
+        assert_eq!(sf2ce.cloneof.as_deref(), Some("sf2"));
+
+        let sf2 = arcade.iter().find(|m| m.name == "sf2").unwrap();
+        assert_eq!(
+            sf2.description,
+            "Street Fighter II: The World Warrior (World 910522)"
+        );
+        assert_eq!(sf2.cloneof, None);
     }
 }
