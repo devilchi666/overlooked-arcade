@@ -50,6 +50,7 @@ mod mame_games;
 mod mame_import;
 mod system_info;
 mod system_settings;
+mod title_clean;
 mod title_parse;
 mod video_capture;
 mod views;
@@ -9462,11 +9463,20 @@ fn directory_is_empty(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+#[allow(non_snake_case)]
+// `extensionToSystem` is the per-extension → system_id mapping the
+// smart-classification stage uses to classify each scanned row. Built
+// on the frontend from `systemThemes[].extensions` (registry default)
+// merged with the active folder's per-folder rule overrides. Phase 1B
+// Slice 1.
 async fn start_background_scan(
     folder: String,
     extensions: Vec<String>,
+    extensionToSystem: std::collections::HashMap<String, String>,
     handle: tauri::AppHandle,
     scan_state: tauri::State<'_, scan_service::ScanServiceState>,
+    media_state: tauri::State<'_, crate::media::MediaState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<u64, String> {
     let folder_path = std::path::PathBuf::from(&folder);
     if !folder_path.is_dir() {
@@ -9476,6 +9486,28 @@ async fn start_background_scan(
         .into_iter()
         .map(|e| e.trim_start_matches('.').to_ascii_lowercase())
         .collect();
+
+    // Pre-spawn auto-sync. The smart-classification stage queries the
+    // `rom_hashes` table per system; if the table is empty for a system
+    // we won't get any `confidence: "hash"` rows until the post-commit
+    // identify pass runs. Auto-syncing here means a first-time operator's
+    // FIRST scan can light up canonical titles directly. Failures are
+    // logged + swallowed (best-effort; the scan still works without
+    // hash data).
+    let distinct_systems: std::collections::HashSet<String> =
+        extensionToSystem.values().cloned().collect();
+    for system_id in &distinct_systems {
+        if let Err(e) = crate::rom_hashes::auto_sync_rom_hashes_if_empty(
+            system_id,
+            &handle,
+            &media_state.app_data_dir,
+            &db,
+        )
+        .await
+        {
+            log::warn!("scan_service: pre-scan auto-sync for {system_id} failed: {e}");
+        }
+    }
 
     let job_id = scan_service::next_job_id();
     let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -9491,15 +9523,23 @@ async fn start_background_scan(
     let emit_handle = handle.clone();
     let folder_for_task = folder_path.clone();
     let folder_str = folder.clone();
+    let extension_to_system_for_task = extensionToSystem;
 
     // spawn_blocking — fs walk is blocking. The Tokio runtime is already
     // present via reqwest's transitive use; we share it.
     tokio::task::spawn_blocking(move || {
+        // Get a borrow of LibraryDb from inside the closure — the State<T>
+        // returned by app.state::<T>() derefs to &T. LibraryDb is Send+Sync
+        // (Mutex<Connection> internally) so the borrow is safe across the
+        // rayon parallel pass inside run_scan_blocking.
+        let db_state = emit_handle.state::<library_db::LibraryDb>();
         let result = scan_service::run_scan_blocking(
             job_id,
             emit_handle.clone(),
             folder_for_task,
             wanted,
+            extension_to_system_for_task,
+            &db_state,
             cancel.clone(),
         );
         let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
@@ -9594,12 +9634,14 @@ async fn start_background_directory_scan(
     let system_id_for_task = systemId.clone();
 
     tokio::task::spawn_blocking(move || {
+        let db_state = emit_handle.state::<library_db::LibraryDb>();
         let result = scan_service::run_dir_scan_blocking(
             job_id,
             emit_handle.clone(),
             folder_for_task,
             1, // depth — only 1-level-deep is supported today
             system_id_for_task,
+            &db_state,
             cancel.clone(),
         );
         let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
