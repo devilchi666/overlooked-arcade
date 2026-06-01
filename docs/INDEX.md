@@ -34,7 +34,7 @@ Routing table. Read this first; it points to everything else.
 - [features/dosbox-and-scummvm/](features/dosbox-and-scummvm/) — DOSBox + ScummVM onboarding plan (📐 planned, not yet implemented)
 - [features/controller-nav/](features/controller-nav/) — Phase 0 controller-nav primitives (focus manager + gamepad event layer + hint bar); shared foundation for guided-setup + per-system-UI
 - [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI (audio / boot animations / tile flourishes / backgrounds, eventually layout + in-game overlays); Stage 1 in flight
-- [features/retroverse-ui/](features/retroverse-ui/) — Experimental top-toolbar IA replacing the legacy sidebar Shell; 6 of 6 tabs operator-facing as of 2026-05-28. Design + planning docs in `docs/PLANS/retroverse-ui-rollout.md` + per-tab + content-packs docs. Deletion plan for the legacy Shell in `docs/PLANS/retroverse-flag-deprecation.md` (2026-05-30 audit; no code changes yet). System info panel v1 plan (MAME-derived per-system metadata for the HOME tab) at `docs/PLANS/system-info-panel-v1.md` (2026-05-31, pre-execution).
+- [features/retroverse-ui/](features/retroverse-ui/) — Experimental top-toolbar IA replacing the legacy sidebar Shell; 6 of 6 tabs operator-facing as of 2026-05-28. Design + planning docs in `docs/PLANS/retroverse-ui-rollout.md` + per-tab + content-packs docs. Deletion plan for the legacy Shell in `docs/PLANS/retroverse-flag-deprecation.md` (2026-05-30 audit; no code changes yet). System info panel v1 shipped 2026-06-01 (`feat/system-info-panel-v1`, six phase commits); design + retro at `docs/PLANS/system-info-panel-v1.md`. Schema reference appended to `docs/cores/SCHEMA.md`. Cross-system inventory entry in `docs/NEXT.md`.
 
 ## Per-core docs
 

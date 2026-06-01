@@ -15,6 +15,16 @@ surface.
 Planning conversation: 2026-05-31. This doc is the spec; treat
 anything else as commentary.
 
+**Status: ✅ v1 shipped 2026-06-01** on branch
+`feat/system-info-panel-v1`. Six phase commits (1a + 1b →
+extractor + slim files; 2 → Rust types + SQLite + bake + commands;
+3 → frontend cutover; 4 → per-system Settings drill-in edit UI;
+5 → operator-driven MAME refresh). All three limitations called
+out in §10 carried over to v1 as documented; the three OA slugs
+without MAME data (`3do`, `msx`, `msx2`) fall through to L2 YAML
+per the same recipe DOSBox / ScummVM use. v2 candidates listed in
+§10 stay parked.
+
 ---
 
 ## 1. The problem today
@@ -405,10 +415,10 @@ or similar).
   + Rust struct shape this plan mirrors.
 - `docs/PLANS/game-info-panel.md` — sibling per-game plan; same
   three-layer model.
-- `docs/cores/SCHEMA.md` — `games-info.md` schema doc; will get a
-  new sibling section for `system-info.yaml`.
+- `docs/cores/SCHEMA.md` — `system-info.yaml` schema section
+  (appended 2026-06-01).
 - `frontend/src/routes/retroverse/SystemInfoPanel.tsx` — current
-  consumer; will be rewired to the new Tauri command.
+  consumer; rewired to the new Tauri command in Phase 3.
 - `frontend/src/routes/retroverse/HomePage.tsx` — hero consumer;
   same rewire.
 - `frontend/src/routes/retroverse/systemMetadataStubs.ts` —

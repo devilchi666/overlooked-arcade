@@ -787,6 +787,14 @@ export const AboutSettings: Component = () => {
             <span class="text-(--color-oa-ink)">Art &amp; metadata:</span>{" "}
             libretro-thumbnails + LaunchBox + EmuMovies community packs.
           </p>
+          <p>
+            <span class="text-(--color-oa-ink)">System metadata:</span>{" "}
+            derived in part from MAME (BSD-3-Clause) —{" "}
+            <code class="text-(--color-oa-ink-dim)/80">-listxml</code>{" "}
+            machine data; per-system descriptions from arcade-history.com's{" "}
+            <code class="text-(--color-oa-ink-dim)/80">history.xml</code>{" "}
+            (the Gaming-History project).
+          </p>
         </div>
       </SettingsCard>
 
