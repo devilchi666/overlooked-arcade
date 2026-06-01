@@ -182,9 +182,10 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
-- **System Info Panel v1** — shipped 2026-06-01 on branch
-  `feat/system-info-panel-v1` (pending merge). Six phase commits
-  closing `docs/PLANS/system-info-panel-v1.md` end-to-end.
+- **System Info Panel v1** — merged to main 2026-06-01 (`--no-ff`
+  from `feat/system-info-panel-v1`). Six phase commits + a
+  SCHEMA_VERSION trap fix closing `docs/PLANS/system-info-panel-v1.md`
+  end-to-end.
   - **Phase 1a + 1b** (`8491bd5` + `13300a7`) — maintainer-time
     `tools/mame-extractor/` Rust binary + `tools/bump-mame.sh`
     wrapper + slim artifacts in `assets/mame-source/` (12.5 KB

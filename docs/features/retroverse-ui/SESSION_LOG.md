@@ -1,5 +1,110 @@
 # Retroverse UI — Session Log
 
+## 2026-06-01 — System Info Panel v1 (HOME right pane gets real data)
+
+Shipped end-to-end on `feat/system-info-panel-v1` across 6 phase
+commits + a SCHEMA_VERSION trap fix; merged `--no-ff` to main today.
+Replaces the hand-typed 5-of-45-systems `systemMetadataStubs.ts`
+(now deleted) with a three-layer data model: L1 MAME baseline baked
+from `assets/mame-source/listxml-slim.json` + `history-slim.xml` →
+L2 curated YAML at `docs/cores/<id>/system-info.yaml` (5 systems
+seeded) → L3 per-install operator overrides in SQLite.
+
+**Phases:**
+1. `8491bd5` / `13300a7` — `tools/mame-extractor/` (standalone Cargo
+   binary; streaming quick-xml parser; 11 unit tests) +
+   `tools/bump-mame.sh` maintainer wrapper + the slim artifacts
+   generated against MAME 0.288 + arcade-history.com history.xml
+   v2.87a. Project-wide `Emulators/` convention introduced as the
+   canonical home for third-party emulator binaries OA shells out
+   to; `/Emulators/` gitignored. Mid-stream discovery: MAME
+   deprecated the legacy `history.dat` text format in 2023 — only
+   `history.xml` is published today (community-maintained by
+   arcade-history.com / Gaming-History). Extractor + plan + script
+   migrated accordingly before Phase 1b ran.
+2. `d59879b` — `apps/oa-shell/src/system_info.rs` with the four
+   structs (SystemInfoMame / SystemInfoCurated / SystemInfoOverride
+   / MergedSystemInfo) + parsers + `merge_system_info` field-typed
+   precedence (L3 > L2 > L1 per scalar; override-replaces-file for
+   peripherals; L1 u32 max_players formats only as fallback).
+   library_db migration v15→v16 adds 4 tables (system_info_mame /
+   _curated / _overrides / _meta) + 10 CRUD methods. main.rs gains
+   `bake_system_info_on_launch` with hash-based dirty detection +
+   5 Tauri commands. 18 system_info unit tests + 10 library_db
+   tests.
+3. `3a65a77` (SCHEMA_VERSION trap fix) — the `if current ==
+   SCHEMA_VERSION { return Ok(()); }` early-return in
+   `bootstrap_schema` short-circuits the entire migration if-chain
+   when the constant lags behind the newest migration. Game Info
+   Panel v1's v14→v15 had also shipped without the bump, leaving
+   `game_info_overrides` silently absent on any install at
+   user_version=14. Constant bumped to 16 with a long inline
+   comment calling out the trap; both gaps closed in one swing.
+4. `3131d13` — frontend cutover. `SystemInfoPanel.tsx` +
+   `HomePage.tsx` (hero + per-button sidebar subline) read the
+   merged record via the new `getSystemInfo` binding;
+   `systemMetadataStubs.ts` deleted (-328 lines). Schema
+   refinements applied: dropped the Input Latency row ("Low"
+   hardcoded — meaningless) + the Emulator Core row (lives in
+   per-system Default core); Co-Op Support → Multiplayer
+   (free-form like "2 local; up to 5 via Super Multitap"); added
+   Refresh Rate row sourced from MAME's `<display refresh=…>`.
+5. `ee60ad3` — per-system Settings drill-in edit UI. New
+   `PerSystemInfoSection` with form-row-per-field input across
+   3 sub-sections (System information / Technical details / Hero)
+   + dedicated peripherals editor (add/remove rows with glyph +
+   name inputs) + Reset All Overrides button. Provenance badges:
+   no badge = L1 (default); slate "curated" = L2; accent
+   "edited" = L3. `SystemInfoCurated` flipped to
+   `rename_all = "camelCase"` with snake_case serde aliases so
+   the wire format matches the rest of the API while the existing
+   YAMLs continue to parse unchanged.
+6. `c717d1a` — operator-driven MAME re-import.
+   `apps/oa-shell/src/mame_import.rs` ports the maintainer-time
+   extractor in-process (shared `MAME_DRIVER_MAP`, `parse_listxml`,
+   `format_clock` — duplicated rather than shared because the
+   extractor is a standalone Cargo workspace with deps oa-shell
+   doesn't want). New "Refresh MAME system info" card in
+   StorageSettings with folder-picker fallback when the canonical
+   `<exe_dir>/Emulators/MAME/` location isn't populated. L2 + L3
+   untouched on refresh. 6 unit tests including a trip-wire that
+   asserts the in-app `MAME_DRIVER_MAP` length matches the
+   extractor's.
+7. `78a50e3` — docs + About credits. `docs/cores/SCHEMA.md` gains
+   the system-info.yaml schema section; plan flipped to "✅ v1
+   shipped 2026-06-01"; NEXT.md gets two cross-system inventory
+   entries; About → Credits gains an MAME + arcade-history.com
+   line.
+
+**Final state:** 577 oa-shell tests green (was 539 pre-branch;
++38 across system_info / library_db / mame_import). Frontend
+`npm run typecheck` silent. HOME panel populates with real data
+for all 39 OA-mappable systems (CPU / sound / resolution / refresh
+rate / peripherals from L1; full-fidelity values + hero blurb +
+release flag for the 5 curated systems).
+
+**Known L1 gaps** (intentional, documented):
+- `3do` — MAME 0.288 splits 3DO into model-specific drivers
+  (`3do_fz1`, `3do_gdo101`, etc.); no plain `3do` parent
+- `msx` / `msx2` — MAME has many MSX variant drivers but no
+  plain parent
+
+Fall through to L2 per the same recipe DOSBox / ScummVM use.
+
+**v2 candidates parked** (per plan §10): session-scoped
+re-imports → sticky per-row provenance; bundled-only L1 →
+scheduled refresh from a separate `overlooked-arcade-system-info`
+repo; RetroAchievements integration to replace the achievements
+stub.
+
+**Next:** Operator-chosen from `docs/NEXT.md` HIGH/MEDIUM bands
+or the §10 list in `docs/PLANS/retroverse-ui-rollout.md`. Top
+near-term picks per pipeline order: Per-System UI Stage 1
+slices 6-9 (content-heavy GB / NES / Vectrex pilots), or
+Phase C6 content-packs infrastructure.
+
+— end of 2026-06-01 session.
+
 ## 2026-05-29 — Now-playing chip clears on playback failure (PARKING_LOT closeout)
 
 Small follow-up to G1: the HintBar now-playing chip was tracking
