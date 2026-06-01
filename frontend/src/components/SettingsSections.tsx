@@ -34,6 +34,7 @@ import {
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
+import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
 import {
@@ -545,6 +546,12 @@ export const LibrarySettings: Component = () => {
   // path to the Import Wizard (orphaned after the 2026-05-31 legacy-
   // Shell deletion).
   const ctx = useRetroverse();
+  // Phase 1B Slice 3 — derive the per-system list from the operator's
+  // shipped library. Reactive: when entries change (import, delete),
+  // the readiness checklist re-renders against the new system inventory.
+  const librarySystems = createMemo(() =>
+    Array.from(new Set(ctx.library.state.entries.map((e) => e.systemId))),
+  );
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -561,6 +568,15 @@ export const LibrarySettings: Component = () => {
         >
           Open import wizard
         </button>
+      </SettingsCard>
+      <SettingsCard
+        title="System readiness"
+        description="Per-system status across the library: which cores are installed, which systems still need a BIOS file, and where everything sits today. Same checklist the import wizard shows on Step 3."
+      >
+        <SystemReadinessChecklist
+          systems={librarySystems}
+          emptyStateLabel="Library is empty — import a folder to get started."
+        />
       </SettingsCard>
       <div class="-mx-8 -mb-6">
         <LibraryManagerPage
