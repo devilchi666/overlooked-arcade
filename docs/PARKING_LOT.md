@@ -171,3 +171,84 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
   Why deferred: Kiosk shell is multi-month design + implementation work. No operator demand for it yet; Retroverse covers the daily-driver case completely. Pick up when an operator use case (cabinet build / power-user customizer) actually surfaces. Until then, the visual-overlay components sit in-tree as ready-to-consume building blocks.
 
   Cross-refs: legacy Shell deletion commit `274df1e` (`feat/retroverse-legacy-deletion`); overlay-fix branch `feat/retroverse-per-system-overlay-fix`; `docs/PLANS/per-system-ui.md` (Stage 1+ plan); `docs/features/kiosk-shell/KIOSK_PLAN.md` (Kiosk design notes); `docs/DECISIONS.md` 2026-05-26 Q (Kiosk-as-theme-editor framing).
+
+- 2026-06-01 — Forty more L2 `system-info.yaml` files (the unrepresented systems)
+  Why it came up: System Info Panel v1 shipped 2026-06-01 with L2
+  YAMLs for only 5 of 45 systems (snes / nes / genesis / psx / gb —
+  the entries hand-migrated from `systemMetadataStubs.ts`). The
+  other ~40 systems' panels show MAME L1 fields (CPU / sound /
+  resolution / refresh rate / max players) but "—" in every L2-only
+  row (type / generation / release_date / discontinued / units_sold
+  / multiplayer / hero blurb / sidebar subline) and the curated
+  peripheral list. Each L2 file is shippable independently; the
+  panel degrades gracefully whether the file exists or not.
+
+  Why deferred: operator scheduling. Mechanical content work — no
+  hard blocker, just wants a calmer window to do the 3-system pilot
+  + 37-system fill. Not on the critical path for anything; doesn't
+  gate future features.
+
+  **Authoring methodology (decided 2026-06-01 — record so we don't
+  re-derive next time):**
+
+  Source-per-field plan — minimize redundancy with L1:
+
+  | Field | Source |
+  |---|---|
+  | `manufacturer` / `year` / `cpu` / `sound` / `resolution` / `refresh_rate` / `max_players` | Already in L1 from MAME — **omit from L2** unless MAME's emit needs polishing. Skip-by-default; only override when the L1 string reads wrong (e.g. TG-16 resolution comes out as `1088 × 242` from the pixel-clock dims — override to `256 × 224`). |
+  | `type` / `generation` / `architecture` | Public knowledge (Wikipedia-level). |
+  | `release_date` (full month + day) / `discontinued` / `units_sold` | Public knowledge; WebSearch for the exact dates / numbers when uncertain. |
+  | `color_palette` / `display_ratio` / `media` / `storage` / `ram` / `video_output` / `aspect_ratio` | Public knowledge. |
+  | `multiplayer` | Free-form, name the actual adapter for the system ("2 local; 4 via Team Player" / "2 local; up to 8 via Multitap" / "Single player only"). |
+  | `peripherals` (name + glyph) | Curated list — not just the raw MAME hints. Glyph conventions: 🎮 gamepads, 🔫 light guns, 🖱️ mice, 🔗 multitaps, 🎤 mics, 📷 cameras, 🏎️ wheels, 📳 rumble, 💾 memory carts, 📡 wireless, 👣 mats, 🤖 R.O.B.-class oddities. |
+  | `release_flag` | 🇯🇵 / 🇺🇸 / 🇬🇧 / 🇩🇪 by country of first release. |
+  | `tagline` | Format-match the 5 existing: "{BIT}-BIT {FORM-FACTOR}" e.g. "16-BIT HOME CONSOLE", "8-BIT HANDHELD". |
+  | `blurb` | 2-3 sentences in the existing voice — slightly editorial, name-check 2-3 key franchises, period-aware. See the 5 shipped files for the calibration; samples drafted for Saturn + Lynx already validated as voice-matching. |
+  | `sidebar_subline` | Format-match: "{BIT}-BIT · {YEAR}" e.g. "16-BIT · 1990". |
+
+  Process per system (~5 min each, ~3-4 hours total for the 40):
+  1. Note what L1 already gives — only override / supplement.
+  2. Draft L2-only fields from training data.
+  3. WebSearch anything genuinely uncertain (mostly units-sold for
+     obscure systems, exact discontinuation dates).
+  4. Use `# UNCERTAIN: <reason>` YAML comments inline where
+     confidence is low so the operator's review pass catches them.
+  5. Commit in family-grouped batches (~5-10 per commit) so voice
+     can be refined early before the full 37 land:
+     - Pilot batch (3 files, validate voice): saturn + lynx +
+       dreamcast (console + handheld + CD-era; operator green-
+       lights or asks for voice adjustments)
+     - Nintendo handhelds: gbc / gba
+     - Sega: sms / gamegear / segacd / sega32x / sega32xcd
+     - NEC: tg16 / pce-cd / pcfx
+     - SNK: neogeo / neocd / ngp
+     - Atari: 2600 / 5200 / 7800 / lynx (lynx already pilot) / jaguar / jagcd
+     - Sony: ps2 / psp
+     - Nintendo: n64 / nds / gamecube / virtualboy / pokemini
+     - 80s home computers / consoles: msx / msx2 / coleco / intv / o2 / channelf / vectrex / wonderswan
+     - 3do
+     - mame / stv — special (MAME itself is arcade-collective)
+     - dosbox / scummvm — engine launchers, no MAME L1, blurb covers what the engine IS not a single system
+
+  Verification:
+  - `load_curated_records_parses_all_shipped_yamls` test (already
+    in `apps/oa-shell/src/system_info.rs`) asserts every shipped
+    YAML parses. Each commit must keep it green.
+  - Restart `cargo tauri dev` between batches; HOME panel populates
+    with new fields immediately via the bake-on-launch hash detection.
+
+  Risk: my blurb voice may not match the operator's exactly.
+  Mitigation: 3-system pilot first; operator green-lights or asks
+  for voice adjustments; only then proceed with the other 37.
+
+  Branch shape (when picked up): `feat/system-info-l2-yamls` or
+  similar. Pilot is its own commit; family batches each their own
+  commit. Final commit updates the
+  `load_curated_records_parses_all_shipped_yamls` test's lower
+  bound from 5 to ~45 (or removes the bound entirely once all
+  systems ship).
+
+  Cross-refs: `docs/PLANS/system-info-panel-v1.md` §10 (notes the
+  ~40 outstanding systems); `docs/cores/SCHEMA.md` "system-info.yaml
+  Schema reference" section (the field documentation); the 5
+  shipped templates at `docs/cores/{snes,nes,genesis,psx,gb}/system-info.yaml`.
