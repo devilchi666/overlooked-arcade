@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 16;
+const SCHEMA_VERSION: i32 = 17;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -752,6 +752,74 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v16 (system_info_* tables)");
         }
 
+        // v16 → v17: MAME ROM-set name resolution — three new tables
+        // backing the new listxml-based per-arcade-game catalog.
+        // mame_games (L1) holds the bundled slim baked from
+        // assets/mame-source/mame-games-slim.json; mame_games_overrides
+        // (L3) holds sparse operator edits; mame_games_meta carries
+        // the bake-on-launch content hash. The legacy `mame_titles`
+        // table (v11) is left in place as a 2nd-tier fallback for
+        // operators who synced it via the libretro-database HTTP path
+        // before this build shipped.
+        if current < 17 {
+            Self::migrate_v16_to_v17(conn)?;
+            conn.pragma_update(None, "user_version", 17)
+                .map_err(|e| format!("set user_version=17: {e}"))?;
+            log::info!("library_db: schema migrated to v17 (mame_games* tables)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v16_to_v17(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            -- L1: per-arcade-game baseline rows baked from the bundled
+            -- mame-games-slim.json. `name` is the MAME machine name and
+            -- matches the operator's .zip filename stem (lowercase).
+            -- `description` is the human title; other fields are
+            -- optional. `cloneof` points at the parent ROM-set's name
+            -- when the row is a clone (no foreign-key constraint —
+            -- parents may not be present in the slim if filtered out).
+            CREATE TABLE IF NOT EXISTS mame_games (
+                name           TEXT PRIMARY KEY,
+                description    TEXT NOT NULL,
+                year           TEXT,
+                manufacturer   TEXT,
+                cloneof        TEXT
+            );
+            -- Cloneof index supports future parent/clone grouping
+            -- queries without a full table scan.
+            CREATE INDEX IF NOT EXISTS idx_mame_games_cloneof
+                ON mame_games(cloneof) WHERE cloneof IS NOT NULL;
+
+            -- L3: per-install operator overrides. Sparse columnar
+            -- shape — every field optional, only rows with at least
+            -- one non-NULL override field exist. Mirrors
+            -- system_info_overrides' shape. created_at + updated_at
+            -- let any future "show my edits" UI sort by recency.
+            CREATE TABLE IF NOT EXISTS mame_games_overrides (
+                name           TEXT PRIMARY KEY,
+                description    TEXT,
+                year           TEXT,
+                manufacturer   TEXT,
+                cloneof        TEXT,
+                created_at     INTEGER NOT NULL,
+                updated_at     INTEGER NOT NULL
+            );
+
+            -- Key-value bag for the bake-on-launch dirty-detection
+            -- hash. Single row today (key='l1_hash'); structured as
+            -- KV so future cache markers (per-machine rebake stamps,
+            -- schema-version migrations, etc.) can land without a
+            -- schema bump.
+            CREATE TABLE IF NOT EXISTS mame_games_meta (
+                key            TEXT PRIMARY KEY,
+                value          TEXT NOT NULL
+            );
+            "#,
+        )
+        .map_err(|e| format!("v16→v17 migration: {e}"))?;
         Ok(())
     }
 
@@ -3234,6 +3302,207 @@ impl LibraryDb {
         Ok(())
     }
 
+    // --- MAME games (v17 — listxml-based ROM-set name resolution) -------
+
+    /// Wholesale replace every row in `mame_games`. Single transaction
+    /// so a parse failure mid-bake doesn't leave the table half-
+    /// populated. Used by the bake-on-launch path (when the bundled
+    /// slim's hash changes) and by the operator-driven MAME refresh
+    /// (Phase 4) so both paths share the same write logic.
+    pub fn bake_mame_games(
+        &self,
+        rows: &[crate::mame_games::MameGame],
+    ) -> Result<(), String> {
+        let mut conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("bake_mame_games tx: {e}"))?;
+        tx.execute("DELETE FROM mame_games", [])
+            .map_err(|e| format!("bake_mame_games clear: {e}"))?;
+        {
+            let mut stmt = tx
+                .prepare(
+                    r#"
+                    INSERT INTO mame_games (name, description, year, manufacturer, cloneof)
+                    VALUES (?1, ?2, ?3, ?4, ?5)
+                    "#,
+                )
+                .map_err(|e| format!("bake_mame_games prepare: {e}"))?;
+            for r in rows {
+                stmt.execute(params![
+                    r.name.to_ascii_lowercase(),
+                    r.description,
+                    r.year,
+                    r.manufacturer,
+                    r.cloneof,
+                ])
+                .map_err(|e| format!("bake_mame_games insert {}: {e}", r.name))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("bake_mame_games commit: {e}"))?;
+        Ok(())
+    }
+
+    /// Read one L1 row by machine name. Lowercases the input to match
+    /// the storage convention. Returns `Ok(None)` for names not in the
+    /// catalog (homebrew, hacks, or ROMs whose machine post-dates the
+    /// bundled slim — operators can re-bundle via the Phase 4 refresh).
+    pub fn get_mame_game(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::mame_games::MameGame>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let key = name.to_ascii_lowercase();
+        conn.query_row(
+            "SELECT name, description, year, manufacturer, cloneof FROM mame_games WHERE name = ?1",
+            params![key],
+            |row| {
+                Ok(crate::mame_games::MameGame {
+                    name: row.get(0)?,
+                    description: row.get(1)?,
+                    year: row.get(2)?,
+                    manufacturer: row.get(3)?,
+                    cloneof: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("get_mame_game {name}: {e}"))
+    }
+
+    /// Read the L3 override row for one machine. Returns `Ok(None)`
+    /// when the operator hasn't edited that machine.
+    pub fn get_mame_game_override(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::mame_games::MameGameOverride>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let key = name.to_ascii_lowercase();
+        conn.query_row(
+            "SELECT name, description, year, manufacturer, cloneof FROM mame_games_overrides WHERE name = ?1",
+            params![key],
+            |row| {
+                Ok(crate::mame_games::MameGameOverride {
+                    name: row.get(0)?,
+                    description: row.get(1)?,
+                    year: row.get(2)?,
+                    manufacturer: row.get(3)?,
+                    cloneof: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("get_mame_game_override {name}: {e}"))
+    }
+
+    /// Merged L1 + L3 lookup. Returns `Ok(None)` when neither tier has
+    /// the machine (caller falls through to the legacy `mame_titles`
+    /// path and ultimately to the filename).
+    pub fn lookup_merged_mame_game(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::mame_games::MergedMameGame>, String> {
+        let l1 = match self.get_mame_game(name)? {
+            Some(l1) => l1,
+            // Optimisation: L1 absent → L3 has nothing to override.
+            // The operator-edit-only case (L3 present, no L1) is
+            // intentionally unsupported; overrides are layered ON TOP
+            // of a baseline, never standalone.
+            None => return Ok(None),
+        };
+        let l3 = self.get_mame_game_override(name)?;
+        Ok(Some(crate::mame_games::merge_mame_game(l1, l3)))
+    }
+
+    /// Upsert an L3 override row. Empty overrides (every field None)
+    /// trigger a DELETE so the row doesn't waste storage and the
+    /// `has_local_edits` flag reads false for that machine.
+    pub fn upsert_mame_game_override(
+        &self,
+        override_record: &crate::mame_games::MameGameOverride,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let key = override_record.name.to_ascii_lowercase();
+        if override_record.is_empty() {
+            conn.execute(
+                "DELETE FROM mame_games_overrides WHERE name = ?1",
+                params![key],
+            )
+            .map_err(|e| format!("upsert_mame_game_override delete {key}: {e}"))?;
+            return Ok(());
+        }
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            r#"
+            INSERT INTO mame_games_overrides
+                (name, description, year, manufacturer, cloneof, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+            ON CONFLICT(name) DO UPDATE SET
+                description  = excluded.description,
+                year         = excluded.year,
+                manufacturer = excluded.manufacturer,
+                cloneof      = excluded.cloneof,
+                updated_at   = excluded.updated_at
+            "#,
+            params![
+                key,
+                override_record.description,
+                override_record.year,
+                override_record.manufacturer,
+                override_record.cloneof,
+                now,
+            ],
+        )
+        .map_err(|e| format!("upsert_mame_game_override {key}: {e}"))?;
+        Ok(())
+    }
+
+    /// Delete the L3 override for one machine. Idempotent — a DELETE
+    /// that matches no row is not an error.
+    pub fn reset_mame_game_override(&self, name: &str) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let key = name.to_ascii_lowercase();
+        conn.execute(
+            "DELETE FROM mame_games_overrides WHERE name = ?1",
+            params![key],
+        )
+        .map_err(|e| format!("reset_mame_game_override {key}: {e}"))?;
+        Ok(())
+    }
+
+    /// Read the stored L1 content hash from `mame_games_meta`. None
+    /// means "no row yet" (first launch, or table was just created).
+    pub fn get_mame_games_meta_hash(&self) -> Result<Option<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT value FROM mame_games_meta WHERE key = 'l1_hash'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| format!("get_mame_games_meta_hash: {e}"))?;
+        Ok(row)
+    }
+
+    /// Write (or replace) the stored L1 content hash.
+    pub fn set_mame_games_meta_hash(&self, hash: &str) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            r#"
+            INSERT INTO mame_games_meta (key, value) VALUES ('l1_hash', ?1)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            "#,
+            params![hash],
+        )
+        .map_err(|e| format!("set_mame_games_meta_hash: {e}"))?;
+        Ok(())
+    }
+
     // --- Milestones CRUD (Phase 4 slice F) -------------------------------
 
     /// List every milestone configured for a game, in id order. Returns
@@ -5698,5 +5967,200 @@ mod tests {
         db.bake_system_info_curated(&recs).expect("bake");
         let read = db.get_system_info_curated("gba").expect("read").unwrap();
         assert!(read.peripherals.is_empty());
+    }
+
+    // ---- MAME games (v17) — Phase 2 DB tests ------------------------
+
+    fn sample_mame_games() -> Vec<crate::mame_games::MameGame> {
+        vec![
+            crate::mame_games::MameGame {
+                name: "dkong".into(),
+                description: "Donkey Kong (US set 1)".into(),
+                year: Some("1981".into()),
+                manufacturer: Some("Nintendo".into()),
+                cloneof: None,
+            },
+            crate::mame_games::MameGame {
+                name: "sf2".into(),
+                description: "Street Fighter II: The World Warrior".into(),
+                year: Some("1991".into()),
+                manufacturer: Some("Capcom".into()),
+                cloneof: None,
+            },
+            crate::mame_games::MameGame {
+                name: "sf2ce".into(),
+                description: "Street Fighter II': Champion Edition".into(),
+                year: Some("1992".into()),
+                manufacturer: Some("Capcom".into()),
+                cloneof: Some("sf2".into()),
+            },
+        ]
+    }
+
+    #[test]
+    fn mame_games_bake_inserts_all_rows() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        let read = db.get_mame_game("dkong").expect("read").unwrap();
+        assert_eq!(read.description, "Donkey Kong (US set 1)");
+        assert_eq!(read.year.as_deref(), Some("1981"));
+        assert_eq!(read.cloneof, None);
+
+        let clone = db.get_mame_game("sf2ce").expect("read clone").unwrap();
+        assert_eq!(clone.cloneof.as_deref(), Some("sf2"));
+    }
+
+    #[test]
+    fn mame_games_lookup_lowercases_input() {
+        // Operator's ROM filename casing varies (`DKONG.zip` vs
+        // `dkong.zip`); storage + lookup must match regardless of
+        // caller casing. Bake writes lowercase; lookup lowercases on
+        // read.
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        assert!(db.get_mame_game("DKONG").expect("read").is_some());
+        assert!(db.get_mame_game("dKoNg").expect("read").is_some());
+    }
+
+    #[test]
+    fn mame_games_bake_replaces_existing_rows() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake 1");
+        // Bake an entirely different set — old rows must be cleared.
+        let second = vec![crate::mame_games::MameGame {
+            name: "pacman".into(),
+            description: "Pac-Man".into(),
+            year: Some("1980".into()),
+            ..Default::default()
+        }];
+        db.bake_mame_games(&second).expect("bake 2");
+        assert!(db.get_mame_game("dkong").expect("read").is_none());
+        assert!(db.get_mame_game("pacman").expect("read").is_some());
+    }
+
+    #[test]
+    fn mame_games_lookup_merged_falls_through_to_l1() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        let merged = db.lookup_merged_mame_game("dkong").expect("lookup").unwrap();
+        assert_eq!(merged.description, "Donkey Kong (US set 1)");
+        assert_eq!(merged.year.as_deref(), Some("1981"));
+        assert!(!merged.has_local_edits);
+    }
+
+    #[test]
+    fn mame_games_lookup_merged_applies_l3_override() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        let ov = crate::mame_games::MameGameOverride {
+            name: "dkong".into(),
+            description: Some("Donkey Kong (operator polished)".into()),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&ov).expect("upsert");
+        let merged = db.lookup_merged_mame_game("dkong").expect("lookup").unwrap();
+        assert_eq!(merged.description, "Donkey Kong (operator polished)");
+        // Year + manufacturer ride through L1 since L3 left them None.
+        assert_eq!(merged.year.as_deref(), Some("1981"));
+        assert_eq!(merged.manufacturer.as_deref(), Some("Nintendo"));
+        assert!(merged.has_local_edits);
+    }
+
+    #[test]
+    fn mame_games_lookup_merged_returns_none_when_l1_absent() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        // Pure-L3 lookup without L1 baseline: returns None (overrides
+        // can't exist standalone — they layer ON TOP of L1).
+        let ov = crate::mame_games::MameGameOverride {
+            name: "homebrew".into(),
+            description: Some("Some homebrew title".into()),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&ov).expect("upsert");
+        assert!(
+            db.lookup_merged_mame_game("homebrew").expect("lookup").is_none(),
+            "lookup must require L1 — pure-L3 case yields None so the frontend falls through"
+        );
+    }
+
+    #[test]
+    fn mame_games_upsert_override_empty_deletes_row() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        let ov = crate::mame_games::MameGameOverride {
+            name: "dkong".into(),
+            description: Some("polished".into()),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&ov).expect("upsert");
+        assert!(db.get_mame_game_override("dkong").expect("read").is_some());
+        // Empty override → row should drop.
+        let empty = crate::mame_games::MameGameOverride {
+            name: "dkong".into(),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&empty).expect("upsert empty");
+        assert!(
+            db.get_mame_game_override("dkong").expect("read").is_none(),
+            "empty override must DELETE the row"
+        );
+    }
+
+    #[test]
+    fn mame_games_reset_override_is_idempotent() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        // No row yet — reset must not error.
+        db.reset_mame_game_override("dkong").expect("reset on empty");
+        // Now create one + reset.
+        let ov = crate::mame_games::MameGameOverride {
+            name: "dkong".into(),
+            description: Some("x".into()),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&ov).expect("upsert");
+        db.reset_mame_game_override("dkong").expect("reset");
+        assert!(db.get_mame_game_override("dkong").expect("read").is_none());
+    }
+
+    #[test]
+    fn mame_games_upsert_override_lowercases_name() {
+        let db = fresh_db();
+        db.bake_mame_games(&sample_mame_games()).expect("bake");
+        let ov = crate::mame_games::MameGameOverride {
+            name: "DKONG".into(),  // caller passes mixed case
+            description: Some("polished".into()),
+            ..Default::default()
+        };
+        db.upsert_mame_game_override(&ov).expect("upsert");
+        // Lookup with the lowercase form succeeds — the upsert
+        // normalised the storage key.
+        assert!(db.get_mame_game_override("dkong").expect("read").is_some());
+    }
+
+    #[test]
+    fn mame_games_meta_hash_roundtrip() {
+        let db = fresh_db();
+        assert!(db.get_mame_games_meta_hash().expect("read").is_none());
+        db.set_mame_games_meta_hash("abc").expect("write");
+        assert_eq!(
+            db.get_mame_games_meta_hash().expect("read"),
+            Some("abc".to_string())
+        );
+        db.set_mame_games_meta_hash("def").expect("write 2");
+        assert_eq!(
+            db.get_mame_games_meta_hash().expect("read"),
+            Some("def".to_string())
+        );
+    }
+
+    #[test]
+    fn mame_games_lookup_missing_returns_none() {
+        let db = fresh_db();
+        // Empty table — every lookup should return None cleanly.
+        assert!(db.get_mame_game("dkong").expect("read").is_none());
+        assert!(db.lookup_merged_mame_game("dkong").expect("read").is_none());
+        assert!(db.get_mame_game_override("dkong").expect("read").is_none());
     }
 }

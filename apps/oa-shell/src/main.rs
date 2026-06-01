@@ -46,6 +46,7 @@ mod scummvm_cli;
 mod scummvm_detect;
 mod shader_presets;
 mod shader_presets_watcher;
+mod mame_games;
 mod mame_import;
 mod system_info;
 mod system_settings;
@@ -2495,6 +2496,52 @@ fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> 
     Ok(())
 }
 
+/// Bake the `mame_games` (L1) table on startup when the bundled slim
+/// changed since the last run. Mirrors the system_info bake's
+/// hash-based dirty detection — one source file
+/// (`assets/mame-source/mame-games-slim.json`), one stored hash key
+/// (`l1_hash` in `mame_games_meta`).
+///
+/// L3 (operator overrides) is NEVER touched here. Missing slim file
+/// degrades silently (info log + empty L1 table); lookups fall back
+/// to the legacy `mame_titles` path and ultimately the filename, so
+/// pre-Phase-1b installs still work.
+fn bake_mame_games_on_launch(db: &library_db::LibraryDb) -> Result<(), String> {
+    let slim_path = match mame_games::resolve_mame_games_slim_path() {
+        Some(p) => p,
+        None => {
+            log::info!(
+                "mame_games: bake skipped — assets/mame-source not found \
+                 (checked <exe>/assets/mame-source and <repo>/assets/mame-source)"
+            );
+            return Ok(());
+        }
+    };
+
+    let new_hash = mame_games::hash_l1_input(&slim_path);
+    let stored_hash = db.get_mame_games_meta_hash()?;
+    if stored_hash.as_deref() == Some(new_hash.as_str()) {
+        log::info!(
+            "mame_games: bake skipped — content hash {} matches stored",
+            &new_hash
+        );
+        return Ok(());
+    }
+
+    let rows = mame_games::parse_mame_games_slim_json(&slim_path)?;
+    let count = rows.len();
+    db.bake_mame_games(&rows)?;
+    db.set_mame_games_meta_hash(&new_hash)?;
+
+    log::info!(
+        "mame_games: baked {} L1 rows; hash {} (was {})",
+        count,
+        &new_hash,
+        stored_hash.as_deref().unwrap_or("∅"),
+    );
+    Ok(())
+}
+
 /// Read the persisted audio device name from `appDataDir/audio.json`. `None`
 /// (missing file, malformed JSON, or `"deviceName": null`) means "use the
 /// system default device".
@@ -3032,6 +3079,10 @@ fn main() {
             get_system_info_override,
             get_system_info_curated,
             set_system_info_override,
+            lookup_mame_game,
+            get_mame_game_override,
+            set_mame_game_override,
+            reset_mame_game_override,
             delete_system_info_override,
             reset_system_info_to_default,
             refresh_mame_system_info,
@@ -3094,6 +3145,7 @@ fn main() {
             media::get_only_sync_identified,
             media::set_only_sync_identified,
             media::set_manual_cover,
+            media::set_game_mame_metadata,
             media::clear_media,
             media::clear_metadata_for_system,
             media::set_selected_variant,
@@ -3485,6 +3537,9 @@ fn main() {
                         // everywhere rather than blocking startup.
                         if let Err(e) = bake_system_info_on_launch(&db) {
                             log::warn!("system_info: bake-on-launch failed: {e}");
+                        }
+                        if let Err(e) = bake_mame_games_on_launch(&db) {
+                            log::warn!("mame_games: bake-on-launch failed: {e}");
                         }
 
                         app.manage(db);
@@ -7833,6 +7888,78 @@ fn reset_system_info_to_default(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.set_system_info_override(&systemId, &system_info::SystemInfoOverride::default())
+}
+
+// ---------------------------------------------------------------------
+// MAME games (v17) — listxml-based per-arcade-game name resolution.
+// ---------------------------------------------------------------------
+//
+// `lookup_mame_game` is the frontend-facing v2 lookup — returns the
+// merged L1+L3 record for one machine name (or null when neither tier
+// has it). The ingest pipeline in `frontend/src/library/ingest.ts`
+// calls this BEFORE falling back to the legacy `lookup_mame_title`
+// (libretro-database MAME.dat) and ultimately the filename.
+//
+// `get_mame_game_override` / `set_mame_game_override` /
+// `reset_mame_game_override` round-trip the L3 row. Operator-facing
+// override UI is deferred to v2; today's surface is power-user SQL.
+
+/// Look up a MAME ROM-set by `.zip` basename (e.g. `"sf2ce"`).
+/// Returns `null` when neither the bundled L1 catalog nor the L3
+/// override table has the machine — the frontend's `resolveMameTitles`
+/// then falls through to the legacy MAME.dat path before settling on
+/// the filename. Input is lowercased internally to match storage.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn lookup_mame_game(
+    romSet: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<mame_games::MergedMameGame>, String> {
+    db.lookup_merged_mame_game(&romSet)
+}
+
+/// Read the operator's raw L3 override for one machine. Returns the
+/// default-constructed override (every field None) when no row exists;
+/// future override-editing UI uses this to populate the form.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_mame_game_override(
+    romSet: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<mame_games::MameGameOverride, String> {
+    let key = romSet.to_ascii_lowercase();
+    let opt = db.get_mame_game_override(&key)?;
+    Ok(opt.unwrap_or_else(|| mame_games::MameGameOverride { name: key, ..Default::default() }))
+}
+
+/// Upsert (or DELETE if empty) the operator's L3 override for one
+/// machine. Frontend posts the full `MameGameOverride` struct;
+/// the backend's `upsert_mame_game_override` handles the empty-row
+/// DELETE semantics so empty overrides don't accumulate.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_mame_game_override(
+    romSet: String,
+    overrideRecord: mame_games::MameGameOverride,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    // Normalize the override's name field to match the romSet param —
+    // the frontend may not preserve casing across the round-trip.
+    let mut record = overrideRecord;
+    record.name = romSet.to_ascii_lowercase();
+    db.upsert_mame_game_override(&record)
+}
+
+/// Reset the operator's L3 override for one machine. Equivalent to
+/// `set_mame_game_override(romSet, MameGameOverride::default())`. The
+/// row drops so the next lookup falls through to L1.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn reset_mame_game_override(
+    romSet: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.reset_mame_game_override(&romSet)
 }
 
 /// Re-import the L1 (MAME baseline) layer from the operator's local
