@@ -3,6 +3,35 @@
 Per-core Shipped / Almost / Next log for Sega Mega Drive / Genesis.
 Project-wide log lives at `docs/SESSION_LOG.md`.
 
+## 2026-06-01 — MD button-glyph polish (visual 6-button pad reference)
+
+- **Shipped:** `frontend/src/components/GenesisPadReference.tsx` —
+  renders the physical 6-button Mega Drive pad layout (X-Y-Z above
+  A-B-C + D-pad on the left + Mode/Start in the centre). Each face
+  card shows the per-system keyboard / gamepad binding below the
+  letter so operators see the spatial relationship the alphabetical
+  bindings row table misses (A is "next to B is next to C along the
+  bottom"; X is "above A"; etc. — the muscle-memory shape Street
+  Fighter II's 1993 6-button pad introduced). Component uses the
+  same `get_bindings` Tauri command + per-system data-system accent
+  pattern as `KeypadReference` (Coleco). Shared
+  `GENESIS_SYSTEMS = {genesis, segacd, sega32x, sega32xcd}` Set
+  gates rendering — all four slugs route to the same
+  `GENESIS_BUTTONS` table per `apps/oa-shell/src/bindings.rs:1820`,
+  so the visual reference is correct for any of them. Mounted in
+  both `SystemBindingsEditor` (per-system Bindings dialog) + the
+  per-game Input dialog in `GameDialogs.tsx`. `ROADMAP.md` line 70
+  flipped ⬜ → ✅. NEXT.md LOWER #10 closed in the same batch.
+- **Almost:** Phase 1 operator validation (Sonic / Streets of Rage 2 /
+  Phantasy Star IV / Gunstar Heroes playtest) still ⬜.
+- **Next:** 3-button vs 6-button game compatibility map (ROADMAP
+  Phase 2 line 69) — operator-driven KNOWN_GAME_BUGS curation when
+  playtime surfaces real issues.
+
+Merged to main 2026-06-01 as part of
+`feat/per-core-followups-and-audit` (bundled with a cross-system
+NEXT.md audit pass that closed 3 stale-shipped entries elsewhere).
+
 ---
 
 ## 2026-05-19 — Phase 0 onboarding
