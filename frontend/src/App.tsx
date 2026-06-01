@@ -1566,6 +1566,7 @@ const App: Component = () => {
         onShowInfo={(entry) => setGameInfoFor(entry)}
         onOpenShaders={(entry) => setGameDialog({ kind: "shaders", target: entry })}
         onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
+        onOpenScreenshots={(entry) => setScreenshotGalleryFor(entry)}
         onExitToLibrary={() => void handleUnload()}
         requestedView={quickSettingsRequestedView()}
         exitMode={isDirectLaunch() ? "quit" : "library"}
@@ -1651,6 +1652,7 @@ const App: Component = () => {
         onOpenCheats={(entry) => setGameDialog({ kind: "cheats", target: entry })}
         onOpenRewind={(entry) => setGameDialog({ kind: "rewind", target: entry })}
         onOpenMilestones={(entry) => setGameDialog({ kind: "milestones", target: entry })}
+        onOpenScreenshots={(entry) => setScreenshotGalleryFor(entry)}
         onOpenNewCollection={(romId) =>
           setCollectionDialogMode({ kind: "create", seedRomId: romId })
         }

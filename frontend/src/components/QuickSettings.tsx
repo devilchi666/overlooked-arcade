@@ -53,6 +53,11 @@ type Props = {
   /// snes9x sound interpolation, mednafen PSX skip-bios) is valuable
   /// because many cores apply option changes live without reload.
   onOpenCoreOptions: (entry: RomEntry) => void;
+  /// Open the per-game Screenshot gallery dialog (F12 captures viewer).
+  /// Reachable from both the pre-launch tile menu Per-game settings ▸
+  /// sub-view AND here so operators can browse what they just captured
+  /// without leaving gameplay.
+  onOpenScreenshots: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   settings: SettingsStore;
   /// Optional landing view on open. Defaults to "actions". Set by the
@@ -625,6 +630,7 @@ const QuickSettings: Component<Props> = (props) => {
               onShowInfo={props.onShowInfo}
               onOpenShaders={props.onOpenShaders}
               onOpenCoreOptions={props.onOpenCoreOptions}
+              onOpenScreenshots={props.onOpenScreenshots}
               onExitToLibrary={props.onExitToLibrary}
               touchHintsEnabled={props.touchHintsEnabled}
               setTouchHintsEnabled={props.setTouchHintsEnabled}
@@ -1629,6 +1635,7 @@ const ActionsPanel: Component<{
   onShowInfo: (entry: RomEntry) => void;
   onOpenShaders: (entry: RomEntry) => void;
   onOpenCoreOptions: (entry: RomEntry) => void;
+  onOpenScreenshots: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   touchHintsEnabled: () => boolean;
   setTouchHintsEnabled: (next: boolean) => void;
@@ -1678,6 +1685,17 @@ const ActionsPanel: Component<{
           if (props.entry) {
             props.onClose();
             props.onOpenCoreOptions(props.entry);
+          }
+        },
+      },
+      {
+        key: "screenshots",
+        icon: "📷",
+        label: "Screenshots",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onOpenScreenshots(props.entry);
           }
         },
       },
