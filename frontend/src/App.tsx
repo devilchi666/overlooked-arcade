@@ -1642,6 +1642,7 @@ const App: Component = () => {
         onPickRegion={(entry) => setRegionPickerFor(entry)}
         onPickCore={(entry, position) => setCoreMenuFor({ entry, position })}
         onOpenProperties={(entry) => setPropertiesFor(entry)}
+        onOpenInput={(entry) => setGameDialog({ kind: "input", target: entry })}
         onOpenNewCollection={(romId) =>
           setCollectionDialogMode({ kind: "create", seedRomId: romId })
         }

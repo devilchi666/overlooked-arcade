@@ -147,6 +147,19 @@ pub const LIGHT_GUN_SYSTEMS: &[LightGunSystem] = &[
                 Crisis).",
     },
     LightGunSystem {
+        system_id: "atari7800",
+        device: RETRO_DEVICE_LIGHTGUN,
+        flagship_title: "Sentinel",
+        default_core_dll: "prosystem_libretro.dll",
+        status: WiringStatus::WiringShipped,
+        notes: "ProSystem polls LIGHTGUN for the XEGS Light Gun. \
+                Sentinel + Crossbow + Alien Brigade + Barnyard Blaster \
+                are the canonical 7800 light-gun titles. AUX_A / AUX_B \
+                bits wired via lightgun_buttons (Phase 4 of \
+                feat/gameplay-fixes-batch, 2026-05-30) — operator \
+                rebinds per-port RetroPad bits to drive them.",
+    },
+    LightGunSystem {
         system_id: "nds",
         device: RETRO_DEVICE_POINTER,
         flagship_title: "Phantom Hourglass (touch as gun)",
