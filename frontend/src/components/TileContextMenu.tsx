@@ -49,6 +49,10 @@ type Props = {
   /// capture interval / buffer size overrides — distinct from the
   /// QuickSettings in-game rewind scrubber).
   onOpenRewind: (entry: RomEntry) => void;
+  /// Open the per-game Milestones dialog (memory-watcher completion
+  /// trigger curation — set per-game checkpoints that fire when
+  /// the watched memory region matches a target).
+  onOpenMilestones: (entry: RomEntry) => void;
   /// Slice 12 — open the NewCollectionDialog seeded with this rom.
   /// Wired by App.tsx when customCollections is in play. Absent =
   /// "+ New collection…" tail entry in the submenu is hidden.
@@ -251,6 +255,11 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onOpenRewind(props.entry!));
   }
 
+  function openMilestones() {
+    if (!props.entry) return;
+    closeAfter(() => props.onOpenMilestones(props.entry!));
+  }
+
   function removeFromLibrary() {
     if (!props.entry) return;
     closeAfter(() => void props.library.remove(props.entry!.id));
@@ -417,6 +426,7 @@ const TileContextMenu: Component<Props> = (props) => {
     list.push({ key: "shaders", label: "Shaders…", onActivate: openShaders });
     list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
     list.push({ key: "rewind", label: "Rewind settings…", onActivate: openRewind });
+    list.push({ key: "milestones", label: "Milestones…", onActivate: openMilestones });
     list.push({ key: "props", label: "Game properties…", onActivate: openProperties });
     list.push({
       key: "remove",

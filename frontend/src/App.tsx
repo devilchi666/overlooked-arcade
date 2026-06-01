@@ -1648,6 +1648,7 @@ const App: Component = () => {
         onOpenShaders={(entry) => setGameDialog({ kind: "shaders", target: entry })}
         onOpenCheats={(entry) => setGameDialog({ kind: "cheats", target: entry })}
         onOpenRewind={(entry) => setGameDialog({ kind: "rewind", target: entry })}
+        onOpenMilestones={(entry) => setGameDialog({ kind: "milestones", target: entry })}
         onOpenNewCollection={(romId) =>
           setCollectionDialogMode({ kind: "create", seedRomId: romId })
         }
