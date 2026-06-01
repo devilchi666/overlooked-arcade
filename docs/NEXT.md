@@ -537,7 +537,7 @@ Not code — content / curation / validation work.
 - **Region badges + publisher / developer logos** (already in `docs/PARKING_LOT.md`).
 - **2600 homebrew / hack tile distinction** — per-game source-of-origin tag.
 - **NEC PC-FX cover-art curation** — Japan-only library; titles ship Japanese by default and need operator-set English aliases for searchability.
-- **MAME ROM-set name resolution** — per-game metadata sync against MAME listxml.
+- ~~**MAME ROM-set name resolution** — per-game metadata sync against MAME listxml.~~ ✅ Shipped 2026-06-01 (bundled `mame-games-slim.json` + L1/L3 SQLite tables + ingest cutover; see `docs/cores/mame/ROADMAP.md` Phase 1.5).
 
 ---
 
