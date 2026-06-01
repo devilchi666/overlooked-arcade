@@ -43,6 +43,24 @@ type CoreEntry = {
   validExtensions: string;
 };
 
+/// Subset of the shape `core_installer::available_cores` returns. Same
+/// shape `MissingCoreBulkPrompt.tsx` consumes — using identical types
+/// here keeps the readiness checklist and the modal aligned on the
+/// "which catalog entries exist for which system + are they installed"
+/// signal, which is the source-of-truth fix for the 2026-06-01 bug
+/// where the banner counted "1 missing core" but the modal showed
+/// "no missing cores" (the banner's extension-overlap heuristic
+/// diverged from the modal's catalog-membership filter for systems
+/// without CATALOG entries — jagcd / sega32xcd / stv).
+type AvailableCore = {
+  base: string;
+  fileName: string;
+  systems: string[];
+  installed: boolean;
+  recommended: boolean;
+  supportedOnHost: boolean;
+};
+
 type BiosEntryStatus = "ok" | "unknownHash" | "missing" | "error";
 
 type BiosStatusEntry = {
@@ -114,14 +132,13 @@ function Pill(props: {
   );
 }
 
-/// Cross-reference installed cores' valid_extensions against the system's
-/// registered extensions. Returns true if ANY installed core handles AT
-/// LEAST ONE of the system's extensions. Matches the loose semantics the
-/// rest of OA uses ("can this system launch at all?") — a stricter "this
-/// system has its preferred default core installed" check needs the
-/// per-system default-core registry which lives in cores.json at runtime
-/// (deferred to a polish pass).
-function coreInstalledFor(systemId: SystemId, cores: CoreEntry[] | undefined): boolean {
+/// Extension-overlap helper. Returns true if any installed core's
+/// `validExtensions` covers at least one of the system's registered
+/// extensions. Used as the FALLBACK signal when the system isn't in
+/// the curated CATALOG (`available_cores`) — covers cases like jagcd
+/// where the operator has the Jaguar core installed and it handles
+/// `.cue` too, even though jagcd has no dedicated catalog entry.
+function extensionOverlapInstalled(systemId: SystemId, cores: CoreEntry[] | undefined): boolean {
   if (!cores) return false;
   const sysExts = new Set(
     systemThemes[systemId]?.extensions.map((e) => e.toLowerCase()) ?? [],
@@ -136,13 +153,64 @@ function coreInstalledFor(systemId: SystemId, cores: CoreEntry[] | undefined): b
   return false;
 }
 
+/// True when at least one CATALOG entry targeting this system is
+/// currently installed. Primary signal for the Core pill — same
+/// source of truth the bulk-install modal filters against, so the
+/// banner count and the modal contents agree.
+function catalogCoreInstalled(systemId: SystemId, available: AvailableCore[] | undefined): boolean {
+  if (!available) return false;
+  return available.some((c) => c.systems.includes(systemId) && c.installed);
+}
+
+/// True when CATALOG has at least one entry targeting this system —
+/// regardless of installed-state. Used to decide whether the
+/// "Install core…" affordances should appear; for systems with no
+/// catalog entries (jagcd / sega32xcd / stv right now, or anything
+/// added to the registry before its CATALOG row lands), the modal
+/// has nothing to offer and the operator must install manually.
+function catalogHasEntry(systemId: SystemId, available: AvailableCore[] | undefined): boolean {
+  if (!available) return false;
+  return available.some((c) => c.systems.includes(systemId));
+}
+
+/// Hybrid "is the operator able to launch this system?" check.
+/// Catalog-membership first (the authoritative signal for systems we
+/// curate), extension-overlap fallback for systems missing from
+/// the catalog. Together these align with the modal's filter — if
+/// this function returns true, the modal would have no row to offer;
+/// if false, the modal has a row to offer when `catalogHasEntry`
+/// also returns true.
+function coreInstalledFor(
+  systemId: SystemId,
+  available: AvailableCore[] | undefined,
+  cores: CoreEntry[] | undefined,
+): boolean {
+  return catalogCoreInstalled(systemId, available) || extensionOverlapInstalled(systemId, cores);
+}
+
 const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (props) => {
+  // Two installed-cores signals, both refetched when a download finishes:
+  //   - `cores` (list_cores)         — installed cores' validExtensions, for
+  //                                    extension-overlap fallback on systems
+  //                                    not in CATALOG.
+  //   - `available` (available_cores) — CATALOG entries with per-entry
+  //                                     installed-state. Source of truth that
+  //                                     the bulk-install modal also uses.
   const [cores, { refetch: refetchCores }] = createResource(async () => {
     try {
       return await invoke<CoreEntry[]>("list_cores");
     } catch (e) {
       console.warn("[oa-readiness] list_cores failed:", e);
       return [] as CoreEntry[];
+    }
+  });
+
+  const [available, { refetch: refetchAvailable }] = createResource(async () => {
+    try {
+      return await invoke<AvailableCore[]>("available_cores");
+    } catch (e) {
+      console.warn("[oa-readiness] available_cores failed:", e);
+      return [] as AvailableCore[];
     }
   });
 
@@ -198,6 +266,9 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   // Phase 1B Slice 4: refetch installed cores when a download
   // completes so the matching row's Core pill flips ⚠ → ✓ without
   // the operator closing + reopening the wizard / Settings card.
+  // Both resources refetch — the catalog-aware `available` drives
+  // the primary pill state, the `cores` extension-overlap drives
+  // the no-catalog-entry fallback.
   let unlistenDownloadProgress: UnlistenFn | undefined;
   void (async () => {
     try {
@@ -206,6 +277,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
         (event) => {
           if (event.payload.phase === "done") {
             void refetchCores();
+            void refetchAvailable();
           }
         },
       );
@@ -224,8 +296,14 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   const [bulkPromptSystems, setBulkPromptSystems] = createSignal<SystemId[] | null>(null);
 
   const missingCoreSystems = createMemo<SystemId[]>(() => {
-    if (cores.loading) return [];
-    return props.systems().filter((s) => !coreInstalledFor(s, cores()));
+    if (cores.loading || available.loading) return [];
+    // Two filters: (1) we don't already have a core for it, (2) the
+    // catalog has SOMETHING to offer. If catalog has no entry, the
+    // modal can't surface anything to install — banner skips it too
+    // so the count + the modal contents stay in lockstep.
+    return props.systems().filter(
+      (s) => !coreInstalledFor(s, available(), cores()) && catalogHasEntry(s, available()),
+    );
   });
 
   async function openBiosFolder() {
@@ -240,15 +318,31 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     const theme = systemThemes[systemId];
     const displayName = theme?.displayName ?? systemId;
 
-    // Core
-    const hasCore = () => coreInstalledFor(systemId, cores());
-    const corePill = (
-      <Pill
-        state={hasCore() ? "ready" : "warning"}
-        label={hasCore() ? "✓ Core installed" : "⚠ No core"}
-        detail={hasCore() ? undefined : "Drop a .dll into /cores/"}
-      />
-    );
+    // Core — three states, not two:
+    //   ✓ Installed: any catalog entry or extension-overlap core for the system
+    //   ⚠ No core: catalog has installable entries but none installed
+    //   ↪ Manual install: no catalog entry exists for this system (e.g.
+    //                     jagcd / sega32xcd / stv as of 2026-06-01 —
+    //                     systems wired in the registry that don't yet
+    //                     have curated catalog rows)
+    const hasCore = () => coreInstalledFor(systemId, available(), cores());
+    const hasCatalogRow = () => catalogHasEntry(systemId, available());
+    const corePillState = (): PillState => {
+      if (hasCore()) return "ready";
+      if (hasCatalogRow()) return "warning";
+      return "na";
+    };
+    const corePillLabel = (): string => {
+      if (hasCore()) return "✓ Core installed";
+      if (hasCatalogRow()) return "⚠ No core";
+      return "↪ No catalog core";
+    };
+    const corePillDetail = (): string | undefined => {
+      if (hasCore()) return undefined;
+      if (hasCatalogRow()) return "Drop a .dll into /cores/";
+      return "Install manually via Settings → Cores";
+    };
+    const corePill = <Pill state={corePillState()} label={corePillLabel()} detail={corePillDetail()} />;
 
     // BIOS
     const biosEntry = () => biosBySlug().get(systemId);
@@ -311,9 +405,9 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
           {optionsPill}
           {overridesPill}
         </div>
-        <Show when={!hasCore() || (biosEntry() && biosEntry()!.status !== "ok")}>
+        <Show when={(!hasCore() && hasCatalogRow()) || (biosEntry() && biosEntry()!.status !== "ok")}>
           <div class="mt-1 flex items-center gap-2 text-[0.7rem]">
-            <Show when={!hasCore()}>
+            <Show when={!hasCore() && hasCatalogRow()}>
               <button
                 type="button"
                 class="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[0.65rem] uppercase tracking-widest text-amber-300 hover:brightness-110"
@@ -339,19 +433,19 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
 
   return (
     <div class="flex flex-col gap-3">
-      <Show when={cores.loading || bios.loading}>
+      <Show when={cores.loading || bios.loading || available.loading}>
         <p class="rounded-md border border-white/5 bg-black/20 px-3 py-2 text-xs text-(--color-oa-ink-dim)">
           Loading readiness…
         </p>
       </Show>
       <Show
-        when={!cores.loading && !bios.loading && props.systems().length === 0}
+        when={!cores.loading && !bios.loading && !available.loading && props.systems().length === 0}
       >
         <p class="rounded-md border border-white/5 bg-black/20 px-3 py-2 text-xs text-(--color-oa-ink-dim)">
           {props.emptyStateLabel ?? "No systems in this scan."}
         </p>
       </Show>
-      <Show when={!cores.loading && !bios.loading && props.systems().length > 0}>
+      <Show when={!cores.loading && !bios.loading && !available.loading && props.systems().length > 0}>
         {/* Phase 1B Slice 4: top-level bulk-install banner. Hidden
             when every system already has a core. Click opens the
             modal scoped to ALL missing systems. */}

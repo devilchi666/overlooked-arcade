@@ -109,13 +109,22 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
     if (!all) return;
     const next: ModalRow[] = [];
     for (const systemId of props.systems()) {
-      const candidates = all.filter(
-        (c) =>
-          c.systems.includes(systemId) &&
-          c.recommended &&
-          !c.installed &&
-          c.supportedOnHost,
-      );
+      // Permissive filter: include any installable, supported candidate
+      // (recommended OR not). Recommended-first sort ensures the default
+      // selection still points at the OA-tested core, but operators
+      // never get a silently-dropped row when a system has only
+      // non-recommended candidates (the readiness checklist's banner
+      // counts based on catalog presence, not recommended-presence —
+      // they must agree to avoid the 2026-06-01 "1 missing core" /
+      // "no missing cores" UX divergence).
+      const candidates = all
+        .filter(
+          (c) =>
+            c.systems.includes(systemId) &&
+            !c.installed &&
+            c.supportedOnHost,
+        )
+        .sort((a, b) => Number(b.recommended) - Number(a.recommended));
       if (candidates.length === 0) continue;
       next.push({
         systemId,
