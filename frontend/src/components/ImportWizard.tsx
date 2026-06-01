@@ -19,6 +19,7 @@ import {
   type SystemId,
 } from "../themes/registry";
 import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
+import ResultsTable, { type TableRow } from "./import-wizard/ResultsTable";
 
 // Phase 2.7 slice C — Import wizard.
 //
@@ -86,7 +87,7 @@ type RuleDraft = {
   systemId: SystemId;
 };
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3;
 
 type Props = {
   open: boolean;
@@ -94,7 +95,7 @@ type Props = {
   library: LibraryStore;
   settings: SettingsStore;
   /// Bridges to the existing scan-progress status bar in App.tsx so the
-  /// toolbar still surfaces live updates while the wizard is on Step 3.
+  /// outer chrome surfaces live updates while the wizard is on Step 2.
   onStatus?: (status: string) => void;
 };
 
@@ -109,9 +110,8 @@ const SELECT =
 
 const STEP_LABELS: Record<Step, string> = {
   1: "Folder",
-  2: "Mapping",
-  3: "Preview",
-  4: "Confirm",
+  2: "Review",
+  3: "Confirm",
 };
 
 function nextUiKey(): string {
@@ -200,13 +200,20 @@ const ImportWizard: Component<Props> = (props) => {
   // newly-written descriptors.
   const [scummvmDetectOpen, setScummvmDetectOpen] = createSignal(false);
 
-  // Step 4 sync options.
+  // Step 3 sync options (was Step 4 pre-Slice 2 — `Steps 2+3` collapsed
+  // into one combined "Scan + review" step).
   const [syncCovers, setSyncCovers] = createSignal(true);
   const [syncSnaps, setSyncSnaps] = createSignal(true);
   const [syncTitles, setSyncTitles] = createSignal(true);
   const [syncMetadata, setSyncMetadata] = createSignal(true);
   const [committing, setCommitting] = createSignal(false);
   const [commitError, setCommitError] = createSignal<string | null>(null);
+
+  // Per-ROM table state (Phase 1B Slice 2). Built from `scanRows`
+  // when the scan completes; mutated in-place via onRowChange /
+  // onBulkChange from the table UI. Resets when `scanRows` reverts
+  // to empty (modal close, rescan kickoff).
+  const [tableRows, setTableRows] = createSignal<TableRow[]>([]);
 
   // Listener lifecycle for Step 3 — kept here (not inside startScan) so
   // onCleanup can tear them down if the modal closes mid-scan.
@@ -298,6 +305,7 @@ const ImportWizard: Component<Props> = (props) => {
     setScanJobId(null);
     setScanError(null);
     setScanCancelled(false);
+    setTableRows([]);
     setCommitError(null);
     setCommitting(false);
     teardownListeners();
@@ -376,56 +384,82 @@ const ImportWizard: Component<Props> = (props) => {
     return ruleMap().get(r.extension) ?? systemForExtension(r.extension);
   }
 
-  function bucketScanned() {
-    const t0 = performance.now();
+  /// Phase 1B Slice 2: build the operator-mutable TableRow list when
+  /// the scan completes. The backend smart-scan (Slice 1) populates
+  /// `systemId` / `suggestedTitle` / `confidence` / `sha1` per row;
+  /// the `classifyScanRow` fallback covers any row the backend left
+  /// unclassified.
+  ///
+  /// Resets to `[]` whenever `scanRows()` becomes empty (rescan
+  /// kickoff, modal close) so the table doesn't show stale data
+  /// from a previous scan.
+  createEffect(() => {
+    const rows = scanRows();
+    if (rows.length === 0) {
+      setTableRows([]);
+      return;
+    }
+    const next: TableRow[] = rows.map((r) => {
+      const sysId = (r.systemId as SystemId | undefined) ?? classifyScanRow(r);
+      const title = r.suggestedTitle ?? titleFromFileName(r.fileName);
+      const key = r.archiveInnerPath ? `${r.path}#${r.archiveInnerPath}` : r.path;
+      return {
+        key,
+        path: r.path,
+        fileName: r.fileName,
+        extension: r.extension,
+        archiveInnerPath: r.archiveInnerPath,
+        systemHint: r.systemHint as SystemId | undefined,
+        confidence: r.confidence,
+        sha1: r.sha1,
+        systemId: sysId ?? null,
+        title,
+        skipped: false,
+        selected: false,
+      };
+    });
+    setTableRows(next);
+  });
+
+  function onRowChange(key: string, patch: Partial<TableRow>) {
+    setTableRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  function onBulkChange(keys: string[], patch: Partial<TableRow>) {
+    const keySet = new Set(keys);
+    setTableRows((prev) => prev.map((r) => (keySet.has(r.key) ? { ...r, ...patch } : r)));
+  }
+
+  /// Build the RomEntry list to commit, honoring per-row operator
+  /// overrides. Skipped rows + rows without `systemId` are excluded.
+  /// Replaces the pre-Slice-2 `bucketScanned()` helper.
+  function commitRowsToEntries(): RomEntry[] {
     const now = Date.now();
-    const entries: RomEntry[] = [];
-    const unmatched = new Map<string, number>();
-    const rowCount = scanRows().length;
-    for (const r of scanRows()) {
-      const sysId = classifyScanRow(r);
-      if (!sysId) {
-        unmatched.set(r.extension, (unmatched.get(r.extension) ?? 0) + 1);
-        continue;
-      }
-      entries.push({
+    const out: RomEntry[] = [];
+    for (const r of tableRows()) {
+      if (r.skipped) continue;
+      if (r.systemId === null) continue;
+      out.push({
         id: romIdFromPath(r.path),
-        title: titleFromFileName(r.fileName),
-        systemId: sysId,
+        title: r.title.trim() || titleFromFileName(r.fileName),
+        systemId: r.systemId,
         filePath: r.path,
         addedAt: now,
         ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
       });
     }
-    const ms = performance.now() - t0;
-    // Quiet on fast calls so the log isn't drowned; loud when it's slow.
-    if (ms > 10) {
-      console.log(`[oa-wizard] bucketScanned rows=${rowCount} entries=${entries.length} took ${ms.toFixed(1)}ms`);
-    }
-    return { entries, unmatched };
+    return out;
   }
 
-  /// Per-system tally for the Step 3 found-so-far box.
-  function bucketTally(): { systemId: SystemId; count: number; archived: number }[] {
-    const tally = new Map<SystemId, { count: number; archived: number }>();
-    for (const r of scanRows()) {
-      const sysId = classifyScanRow(r);
-      if (!sysId) continue;
-      const cur = tally.get(sysId) ?? { count: 0, archived: 0 };
-      cur.count++;
-      if (r.archiveInnerPath) cur.archived++;
-      tally.set(sysId, cur);
+  /// Count of rows that still need an operator decision (system not
+  /// set + not skipped). Drives the Next button gate on Step 2 and
+  /// the warning banner inside the wizard.
+  function needsSystemCount(): number {
+    let n = 0;
+    for (const r of tableRows()) {
+      if (!r.skipped && r.systemId === null) n++;
     }
-    return [...tally.entries()]
-      .map(([systemId, v]) => ({ systemId, count: v.count, archived: v.archived }))
-      .sort((a, b) => b.count - a.count);
-  }
-
-  function unmatchedTally(): { extension: string; count: number }[] {
-    const { unmatched } = bucketScanned();
-    return [...unmatched.entries()]
-      .map(([extension, count]) => ({ extension, count }))
-      .sort((a, b) => b.count - a.count);
+    return n;
   }
 
   /// Union of registry exts + cores' valid_extensions. Same shape as
@@ -640,10 +674,11 @@ const ImportWizard: Component<Props> = (props) => {
     }
   }
 
-  // When entering Step 3, auto-start the scan once (unless one's already
-  // landed). Re-running the scan is via the manual Restart button.
+  // When entering Step 2 (Scan + review), auto-start the scan once
+  // (unless one's already landed). Re-running the scan is via the
+  // manual Rescan button.
   createEffect(() => {
-    if (step() === 3 && !scanRunning() && scanRows().length === 0 && !scanError() && !scanCancelled()) {
+    if (step() === 2 && !scanRunning() && scanRows().length === 0 && !scanError() && !scanCancelled()) {
       void startScan();
     }
   });
@@ -693,8 +728,10 @@ const ImportWizard: Component<Props> = (props) => {
       });
 
       // 2) Add games. Reuse the existing library store path so the seed-row
-      // drop + cache-refresh side effects fire correctly.
-      const { entries } = bucketScanned();
+      // drop + cache-refresh side effects fire correctly. Slice 2: source
+      // is `commitRowsToEntries()` which honors per-row Change-system /
+      // Edit-title / Skip overrides from the table.
+      const entries = commitRowsToEntries();
       const added = entries.length > 0 ? await props.library.addScannedRoms(entries) : 0;
 
       // 3) Refresh the settings store's SQLite-backed folder signal so the
@@ -868,11 +905,16 @@ const ImportWizard: Component<Props> = (props) => {
     </div>
   );
 
-  const Step2 = () => (
-    <div class="flex flex-col gap-4">
+  /// Phase 1B Slice 2: extracted out of the old Step2 body. Now lives
+  /// inside the Step 2 Advanced expander; surfaces the per-folder
+  /// extension→system rules editor for power users who want overrides
+  /// to persist across rescans. Per-row Change-system in the table is
+  /// the primary affordance; this editor is the persistence path.
+  const MappingRulesAdvanced = () => (
+    <div class="flex flex-col gap-3 pt-2">
       <div class="flex items-center justify-between">
-        <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
-          For this folder, ROMs of type:
+        <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+          Persistent extension → system overrides for this folder. Survive future rescans.
         </p>
         <div class="flex gap-2">
           <button type="button" class={BTN} onClick={resetRulesToDefaults}>
@@ -883,11 +925,7 @@ const ImportWizard: Component<Props> = (props) => {
           </button>
         </div>
       </div>
-      {/* Banner — visible when a scummvm rule is in the active set.
-          Opens the ScummvmDetectDialog scoped to the wizard's
-          currently-picked folder. Operator runs detection, confirms
-          matches, writes `.scummvm` descriptors, then advances to
-          Step 3 where the regular extension scan picks them up. */}
+      {/* Banner — visible when a scummvm rule is in the active set. */}
       <Show when={rules().some((r) => r.systemId === "scummvm") && folder()}>
         <div class="flex items-center justify-between rounded-md border border-(--color-system-accent)/30 bg-(--color-system-accent)/10 px-3 py-2 text-xs">
           <div>
@@ -895,7 +933,7 @@ const ImportWizard: Component<Props> = (props) => {
             <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
               Auto-detect known SCUMM titles + ScummVM freewares and
               generate <code class="font-mono">.scummvm</code> descriptor
-              files in bulk — no need to hand-craft one per game.
+              files in bulk.
             </p>
           </div>
           <button
@@ -907,12 +945,12 @@ const ImportWizard: Component<Props> = (props) => {
           </button>
         </div>
       </Show>
-      <div class="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto pr-1">
+      <div class="flex max-h-[280px] flex-col gap-1.5 overflow-y-auto pr-1">
         <For
           each={rules()}
           fallback={
             <p class="rounded-md border border-dashed border-white/10 px-3 py-4 text-center text-xs text-(--color-oa-ink-dim)">
-              No rules. The scanner will fall back to the system registry's defaults.
+              No rules. The scanner falls back to the system registry's defaults.
             </p>
           }
         >
@@ -957,97 +995,88 @@ const ImportWizard: Component<Props> = (props) => {
     </div>
   );
 
-  const Step3 = () => {
-    const tally = () => bucketTally();
-    const unmatched = () => unmatchedTally();
-    const total = () => scanRows().length;
+  /// Phase 1B Slice 2 — combined "Scan + review" step (was Steps 2 + 3
+  /// pre-Slice-2). Renders the scan-progress UI while the walk + hash
+  /// pass run; flips to the per-ROM ResultsTable once rows arrive.
+  /// The persistent extension-rules editor lives below the table in
+  /// an Advanced `<details>` expander.
+  const Step2 = () => {
+    const total = () => tableRows().length;
+    const showProgress = () => scanRunning() || (total() === 0 && scanProgress() !== null && !scanError());
     return (
-      <div class="flex flex-col gap-4">
-        <Show
-          when={!scanError()}
-          fallback={
-            <div class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-3 text-xs text-(--color-oa-ink)">
-              Scan failed: {scanError()}
-            </div>
-          }
-        >
-          <Show when={scanRunning() || scanProgress()}>
-            <div class="rounded-md border border-white/5 bg-black/30 px-3 py-3">
-              <div class="flex items-baseline justify-between text-xs">
-                <p class="text-(--color-oa-ink)">
-                  {scanRunning() ? "Scanning…" : "Scan complete"}
-                </p>
-                <p class="text-(--color-oa-ink-dim)">
-                  {scanProgress()?.filesSeen ?? 0} files scanned
-                </p>
-              </div>
-              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
-                <div
-                  class="h-full bg-(--color-system-accent) transition-all"
-                  style={{
-                    width: scanRunning()
-                      ? `${Math.min(95, 10 + ((scanProgress()?.filesSeen ?? 0) % 100))}%`
-                      : "100%",
-                  }}
-                />
-              </div>
-              <Show when={scanRunning() && scanProgress()?.currentFile}>
-                <p class="mt-2 truncate font-mono text-[0.65rem] text-(--color-oa-ink-dim)">
-                  {scanProgress()!.currentFile}
-                </p>
-              </Show>
-            </div>
-          </Show>
-          <Show when={scanCancelled()}>
-            <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
-              Scan cancelled.
-            </p>
-          </Show>
-          <Show when={!scanRunning() && total() > 0}>
-            <div class="flex flex-col gap-2">
-              <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
-                Found {total()} games
+      <div class="flex min-h-0 flex-1 flex-col gap-3">
+        <Show when={scanError()}>
+          <div class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-3 text-xs text-(--color-oa-ink)">
+            Scan failed: {scanError()}
+          </div>
+        </Show>
+        <Show when={showProgress()}>
+          <div class="rounded-md border border-white/5 bg-black/30 px-3 py-3">
+            <div class="flex items-baseline justify-between text-xs">
+              <p class="text-(--color-oa-ink)">
+                {scanRunning() ? "Scanning…" : "Scan complete"}
               </p>
-              <div class="flex flex-col gap-1">
-                <For each={tally()}>
-                  {(t) => (
-                    <div class="flex items-center justify-between rounded-md border border-white/5 bg-black/20 px-3 py-1.5 text-xs">
-                      <span class="text-(--color-oa-ink)">
-                        {systemThemes[t.systemId]?.displayName ?? t.systemId}
-                      </span>
-                      <span class="text-(--color-oa-ink-dim)">
-                        {t.count} {t.count === 1 ? "game" : "games"}
-                        {t.archived > 0 && ` · ${t.archived} in archives`}
-                      </span>
-                    </div>
-                  )}
-                </For>
-                <Show when={unmatched().length > 0}>
-                  <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
-                    <p class="font-semibold">
-                      {unmatched().reduce((s, u) => s + u.count, 0)} unmatched files
-                    </p>
-                    <p class="mt-0.5 text-(--color-oa-ink-dim)">
-                      {unmatched().map((u) => `${u.extension} (${u.count})`).join(", ")} —
-                      add a rule on the Mapping step to assign.
-                    </p>
-                  </div>
-                </Show>
-              </div>
+              <p class="text-(--color-oa-ink-dim)">
+                {scanProgress()?.filesSeen ?? 0} files scanned
+              </p>
+            </div>
+            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+              <div
+                class="h-full bg-(--color-system-accent) transition-all"
+                style={{
+                  width: scanRunning()
+                    ? `${Math.min(95, 10 + ((scanProgress()?.filesSeen ?? 0) % 100))}%`
+                    : "100%",
+                }}
+              />
+            </div>
+            <Show when={scanRunning() && scanProgress()?.currentFile}>
+              <p class="mt-2 truncate font-mono text-[0.65rem] text-(--color-oa-ink-dim)">
+                {scanProgress()!.currentFile}
+              </p>
+            </Show>
+          </div>
+        </Show>
+        <Show when={scanCancelled() && total() === 0}>
+          <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
+            Scan cancelled.
+          </p>
+        </Show>
+        <Show when={!scanRunning() && total() === 0 && !scanError() && !scanCancelled() && scanProgress()}>
+          <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
+            No supported ROMs found in this folder.
+          </p>
+        </Show>
+        <Show when={total() > 0}>
+          <Show when={needsSystemCount() > 0}>
+            <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
+              <p class="font-semibold">
+                {needsSystemCount()} {needsSystemCount() === 1 ? "row" : "rows"} need a system before commit.
+              </p>
+              <p class="mt-0.5 text-(--color-oa-ink-dim)">
+                Click each row's <span class="text-(--color-oa-ink)">Detected system</span> cell to assign one, or use the Advanced extension overrides below for a persistent rule.
+              </p>
             </div>
           </Show>
-          <Show when={!scanRunning() && total() === 0 && !scanError() && !scanCancelled() && scanProgress()}>
-            <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
-              No supported ROMs found in this folder.
-            </p>
-          </Show>
+          <ResultsTable
+            rows={tableRows}
+            onRowChange={onRowChange}
+            onBulkChange={onBulkChange}
+          />
+          <details class="rounded-md border border-white/5 bg-black/20 px-3 py-2 text-xs text-(--color-oa-ink)">
+            <summary class="cursor-pointer select-none text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)">
+              Advanced — extension overrides
+            </summary>
+            <MappingRulesAdvanced />
+          </details>
         </Show>
       </div>
     );
   };
 
-  const Step4 = () => {
-    const total = () => bucketScanned().entries.length;
+  /// Phase 1B Slice 2 — confirm step (was Step 4 pre-Slice-2).
+  const Step3 = () => {
+    const total = () => commitRowsToEntries().length;
     return (
       <div class="flex flex-col gap-4">
         <p class="text-sm text-(--color-oa-ink)">
@@ -1128,12 +1157,12 @@ const ImportWizard: Component<Props> = (props) => {
                 Import games
               </h2>
               <p class="mt-0.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                Step {step()} of 4 · {STEP_LABELS[step()]}
+                Step {step()} of 3 · {STEP_LABELS[step()]}
               </p>
             </div>
             <div class="flex items-center gap-3">
               <ol class="flex items-center gap-1.5 text-[0.6rem] uppercase tracking-widest">
-                <For each={[1, 2, 3, 4] as Step[]}>
+                <For each={[1, 2, 3] as Step[]}>
                   {(n) => (
                     <li
                       class="rounded-full px-2 py-0.5"
@@ -1165,7 +1194,6 @@ const ImportWizard: Component<Props> = (props) => {
             <Show when={step() === 1}>{Step1()}</Show>
             <Show when={step() === 2}>{Step2()}</Show>
             <Show when={step() === 3}>{Step3()}</Show>
-            <Show when={step() === 4}>{Step4()}</Show>
           </div>
 
           <footer class="flex items-center justify-between border-t border-white/5 px-6 py-3">
@@ -1197,11 +1225,6 @@ const ImportWizard: Component<Props> = (props) => {
                 </button>
               </Show>
               <Show when={step() === 2}>
-                <button type="button" class={BTN_PRIMARY} onClick={() => setStep(3)}>
-                  Next ›
-                </button>
-              </Show>
-              <Show when={step() === 3}>
                 <Show when={scanRunning()}>
                   <button type="button" class={BTN} onClick={cancelScan}>
                     Cancel scan
@@ -1216,6 +1239,7 @@ const ImportWizard: Component<Props> = (props) => {
                       setScanProgress(null);
                       setScanError(null);
                       setScanCancelled(false);
+                      setTableRows([]);
                       void startScan();
                     }}
                   >
@@ -1224,14 +1248,23 @@ const ImportWizard: Component<Props> = (props) => {
                   <button
                     type="button"
                     class={BTN_PRIMARY}
-                    disabled={scanError() !== null}
-                    onClick={() => setStep(4)}
+                    disabled={
+                      scanError() !== null
+                      || tableRows().length === 0
+                      || commitRowsToEntries().length === 0
+                    }
+                    onClick={() => setStep(3)}
+                    title={
+                      commitRowsToEntries().length === 0 && tableRows().length > 0
+                        ? "Every row is either skipped or missing a system — nothing to commit"
+                        : undefined
+                    }
                   >
                     Next ›
                   </button>
                 </Show>
               </Show>
-              <Show when={step() === 4}>
+              <Show when={step() === 3}>
                 <button
                   type="button"
                   class={BTN}
