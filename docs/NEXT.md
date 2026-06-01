@@ -270,24 +270,11 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Phase D dialog wiring — six orphaned per-game dialogs
+### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 
-**Surfaced 2026-06-01** while playtesting `feat/lightgun-bindings-ui`. The Retroverse legacy-Shell deletion (2026-05-31, see `docs/features/retroverse-ui/SESSION_LOG.md`) silently dropped the MenuBar callers that opened the Phase D split dialogs (`docs/features/ui-polish/UI_POLISH_PLAN.md` Phase D — "replaces the seven tab-strip surfaces of the old PerGameSettingsDrawer with focused single-purpose dialogs"). All seven dialogs are mounted in `frontend/src/App.tsx:1661-1697` keyed off `gameDialog()?.kind === <name>`, but until 2026-06-01 `setGameDialog` was only called with `null` (close). The `input` kind was wired by `feat/lightgun-bindings-ui` commit `ee8c8e1`; six remain orphaned.
+Six commits on `feat/wire-phase-d-orphans` closing the orphan inventory in operator-utility order: `552236b` Core options → `c5fd427` Display → `7ad1556` Shaders → `5508b30` Cheats → `5351f80` Rewind settings → `aeef83e` Milestones. All seven Phase D split dialogs (Input from `feat/lightgun-bindings-ui` commit `ee8c8e1` + these six) now reachable via TileContextMenu between `Change core…` and `Game properties…`. Each commit follows the mechanical `Input mapping…` pattern (Props field + handler + menu row + App.tsx setGameDialog wire). 60 lines total; `npm run typecheck` silent throughout.
 
-| Dialog | What it controls | Likely entry surface |
-|---|---|---|
-| `GameCoreOptionsDialog` | Per-game libretro core options | TileContextMenu OR QuickSettings |
-| `GameDisplayDialog` | Per-game display aspect override (e.g. 16:9 OutRun) | TileContextMenu |
-| `GameRewindDialog` | Per-game rewind enable / interval / buffer overrides | TileContextMenu (separate from QuickSettings' in-game rewind scrubber) |
-| `GameShadersDialog` | Per-game shader preset override | QuickSettings (in-game preview is natural) |
-| `MilestonesDialog` | Per-game completion milestones | TileContextMenu OR Game Info Panel tab |
-| `CheatsDialog` | Per-game cheat codes | TileContextMenu |
-
-**Scope per dialog:** ~10 lines (Props field + handler in TileContextMenu OR QuickSettings + menu row + App.tsx wire). Mirror of the `Input mapping…` pattern in commit `ee8c8e1` (`frontend/src/components/TileContextMenu.tsx` + `frontend/src/App.tsx`).
-
-**Recommended sequencing:** one task per dialog, NOT a bundled PR — each is its own surface-choice design decision (shaders/core-options probably belong in QuickSettings for the in-game preview affordance; milestones may want a Game Info Panel tab instead of the tile menu). Operator green-lights the entry surface per dialog; implementation is mechanical from there.
-
-**Total estimate:** ~60 lines of wiring + ~6 surface-choice conversations. Each PR shippable independently in a single session.
+**Follow-up parked:** Shaders + Core options would benefit from a parallel QuickSettings (in-game) entry point with live preview — TileContextMenu is the pre-launch surface; QuickSettings is the in-game tuning surface. Tile menu also has 11 settings items now; if menu length becomes operator-painful, refactor to a `Per-game settings ▸` sub-view mirroring the existing `Add to collection ▸` pattern.
 
 ---
 
