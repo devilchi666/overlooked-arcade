@@ -402,26 +402,40 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
      inserts a row before the focused index no longer drags the ring
      onto a different logical button.
 
-2. **SNES Super Multitap** (~150 lines, niche). 8-player Bomberman
-   series (Super Bomberman 3/4/5, Panic Bomber W). snes9x registers
-   it as a RetroPad subclass; needs a `DEVICE_ID_OPTIONS_SNES` table
-   mirroring `DEVICE_ID_OPTIONS_GAMECUBE` (in
-   `frontend/src/components/GameDialogs.tsx:711-717`) so operators
-   can pick it per-game. **SNES Mouse half already shipped** via the
-   generic per-game device-type override (id=2) — label at
-   `frontend/src/components/GameDialogs.tsx:646`; dispatch via
-   `arm_libretro_device` (Mario Paint, ACME Animation Factory).
+~~2. **SNES Super Multitap**~~ — **SHIPPED 2026-05-30** as
+   `552fd79` (Phase 2 of `feat/gameplay-fixes-batch`).
+   `DEVICE_ID_OPTIONS_SNES = [{ id: 257, generic: "Super Multitap
+   (4-port adapter)" }]` in `frontend/src/components/GameDialogs.tsx`
+   layered into `deviceOptionsForSystem("snes")`. Hand-encoded
+   `((1 << 8) | RETRO_DEVICE_JOYPAD) = 257` matches snes9x's
+   CTL_MP5 wire value (same pattern Dolphin uses for Wii subclasses
+   — not the canonical `RETRO_DEVICE_SUBCLASS` macro's `+1`).
+   `arm_libretro_device` dispatches it as an arbitrary u32. SNES
+   Mouse half was already shipped earlier via the generic id=2
+   route + per-system label override. `snes/ROADMAP.md` line 31
+   flipped ⬜→✅. Operator playtest of 8-player Bomberman titles
+   remains a separate operator-playtest gate.
 3. **O2 per-game keyboard-layout overlay UI** (~150 lines). Quest for the Rings overlays. Frontend image picker + in-game overlay surface.
-4. **Vectrex translucent overlay rendering + aspect override** (~250 lines combined). Plastic color-strip per-game PNG; Vectrex CRT portrait 3:4 default.
+4. **Vectrex translucent overlay rendering** (~150 lines). Plastic
+   color-strip per-game PNG composited over the framebuffer. Aspect
+   override half already shipped 2026-05-24 (Vectrex CRT portrait
+   3:4 via `system_settings::default_display_aspect("vectrex") =
+   Some(0.75)`; `vectrex/ROADMAP.md` line 34 ✅). Overlay half
+   remains ⬜.
 5. **NDS microphone input** (~200 lines). Blow/voice puzzles. Deferred until operator playtest forces it.
-6. **NDS per-game touch hotspot overlay** (~200 lines). Game-specific
-   touch zones (Phantom Hourglass map screen, Mario Kart DS
-   course-selection, Brain Age stylus zones). **Visual stylus reticle
-   half already shipped** — `frontend/src/components/StylusOverlay.tsx`
-   renders a hollow accent-ring at the cursor, fills in on
-   left-mouse-down (gated on `STYLUS_SYSTEMS` set including `nds`).
-   Per-game hotspot configuration data + overlay rendering is the
-   remaining slice.
+~~6. **NDS per-game touch hotspot overlay**~~ — **SHIPPED 2026-05-31**
+   on `feat/nds-touch-hotspots`. Schema extension: new
+   `touch_hotspots: [{ label, x, y, w, h }]` optional field on
+   `GameInfo` (`apps/oa-shell/src/game_info.rs`); coords in NDS
+   bottom-screen native space (0..256 × 0..192). New
+   `frontend/src/components/TouchHotspotOverlay.tsx` renders
+   accent-coloured labelled rectangles via contain-fit math.
+   Per-session "Show touch hints" toggle in QuickSettings
+   ActionsPanel, NDS-gated. Seed entries for Phantom Hourglass +
+   Brain Age + Trauma Center in `docs/cores/nds/games-info.md`.
+   `nds/ROADMAP.md` line 48 ✅. V1 limitation: assumes default
+   melonDS stacked-vertical screen layout; non-default layouts
+   misplace hotspots until v2 reads the core option.
 ~~7. **NDS multi-touch**~~ — **SHIPPED 2026-05-30** on
    `feat/gameplay-fixes-batch`. POINTER `index` parameter now
    dispatches per-finger: `index = 0` → primary, `index = 1` →
@@ -448,8 +462,23 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
    Shooting Gallery / Marksman Shooting on real Phaser hardware is
    the remaining gap (tracked under MEDIUM #5's playtest matrix). No
    SMS-specific code work remains.
-10. **Genesis MD-specific button glyphs polish** (UI). A/B/C diamond + 6-button shoulder visualization.
-11. **NGP-mono vs NGPC library-tile differentiation** (~60 lines). Badge or subtitle.
+~~10. **Genesis MD-specific button glyphs polish**~~ — **SHIPPED
+    2026-06-01.** New `frontend/src/components/GenesisPadReference.tsx`
+    renders the physical 6-button Mega Drive pad (X-Y-Z above
+    A-B-C + D-pad + Mode + Start) with each face button labeled by
+    its current keyboard / gamepad binding. Mounted in both
+    `SystemBindingsEditor` (per-system Bindings dialog) and
+    `GameDialogs` per-game Input dialog via a shared
+    `GENESIS_SYSTEMS` set — all four Genesis-family slugs
+    (genesis / segacd / sega32x / sega32xcd) pick it up since
+    `apps/oa-shell/src/bindings.rs:1820` routes them all to the
+    same `GENESIS_BUTTONS` table. `genesis/ROADMAP.md` line 70 ✅.
+~~11. **NGP-mono vs NGPC library-tile differentiation**~~ —
+    **SHIPPED 2026-05-24** alongside the media-taxonomy wave. Tile
+    `shortName` reads "NGP" for `.ngp` files / "NGPC" for `.ngc`
+    files via `subsystemLabel` in
+    `frontend/src/components/LibraryTile.tsx`. `ngp/ROADMAP.md`
+    line 40 ✅.
 12. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
 
 ---

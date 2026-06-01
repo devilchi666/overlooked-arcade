@@ -35,6 +35,7 @@ import {
 import CoreOptionsPanel from "./CoreOptionsPanel";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import KeypadReference from "./KeypadReference";
+import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -955,6 +956,9 @@ export const GameInputDialog: Component<{
             </Show>
             <Show when={e().systemId === "coleco"}>
               <KeypadReference systemId={e().systemId} />
+            </Show>
+            <Show when={GENESIS_SYSTEMS.has(e().systemId)}>
+              <GenesisPadReference systemId={e().systemId} />
             </Show>
           </div>
         )}

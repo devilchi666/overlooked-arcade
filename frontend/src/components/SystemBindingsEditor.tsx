@@ -18,6 +18,7 @@ import {
 } from "../systems/keymap";
 import type { SystemId } from "../themes/registry";
 import AnalogBindingsSection from "./AnalogBindingsSection";
+import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
 
 // Per-system input bindings editor.
 //
@@ -303,6 +304,16 @@ const SystemBindingsEditor: Component<Props> = (props) => {
       </p>
       <Show when={error()}>
         <p class="mt-2 text-[0.7rem] text-red-300/80">{error()}</p>
+      </Show>
+      {/* Per-system visual references — Genesis-family pad layout
+          renders only for genesis / segacd / sega32x / sega32xcd
+          (Show gate inside the component on GENESIS_SYSTEMS). Other
+          systems with non-grid physical layouts can mount sibling
+          components here as they're built. */}
+      <Show when={GENESIS_SYSTEMS.has(props.systemId)}>
+        <div class="mt-4">
+          <GenesisPadReference systemId={props.systemId} />
+        </div>
       </Show>
       <AnalogBindingsSection systemId={props.systemId} mode="system" />
     </article>
