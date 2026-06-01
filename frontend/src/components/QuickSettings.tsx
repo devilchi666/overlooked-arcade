@@ -42,6 +42,17 @@ type Props = {
   entry: RomEntry | null;
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
+  /// Open the per-game Shaders dialog. Parked follow-up from the
+  /// Phase D dialog rewire batch — TileContextMenu is the
+  /// pre-launch surface; this is the in-game (operator paused with
+  /// Esc) surface, valuable because shader changes preview live
+  /// against the current frame.
+  onOpenShaders: (entry: RomEntry) => void;
+  /// Open the per-game Core options dialog. Same parked follow-up
+  /// — in-game tuning of core options (PSX PGXP geometry,
+  /// snes9x sound interpolation, mednafen PSX skip-bios) is valuable
+  /// because many cores apply option changes live without reload.
+  onOpenCoreOptions: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   settings: SettingsStore;
   /// Optional landing view on open. Defaults to "actions". Set by the
@@ -612,6 +623,8 @@ const QuickSettings: Component<Props> = (props) => {
               onClose={props.onClose}
               onShowSaves={props.onShowSaves}
               onShowInfo={props.onShowInfo}
+              onOpenShaders={props.onOpenShaders}
+              onOpenCoreOptions={props.onOpenCoreOptions}
               onExitToLibrary={props.onExitToLibrary}
               touchHintsEnabled={props.touchHintsEnabled}
               setTouchHintsEnabled={props.setTouchHintsEnabled}
@@ -1614,6 +1627,8 @@ const ActionsPanel: Component<{
   onClose: () => void;
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
+  onOpenShaders: (entry: RomEntry) => void;
+  onOpenCoreOptions: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   touchHintsEnabled: () => boolean;
   setTouchHintsEnabled: (next: boolean) => void;
@@ -1641,6 +1656,28 @@ const ActionsPanel: Component<{
           if (props.entry) {
             props.onClose();
             props.onShowInfo(props.entry);
+          }
+        },
+      },
+      {
+        key: "shaders",
+        icon: "✦",
+        label: "Shaders",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onOpenShaders(props.entry);
+          }
+        },
+      },
+      {
+        key: "core-options",
+        icon: "⚙",
+        label: "Core options",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onOpenCoreOptions(props.entry);
           }
         },
       },
