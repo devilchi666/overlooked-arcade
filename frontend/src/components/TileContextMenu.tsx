@@ -30,6 +30,9 @@ type Props = {
   onPickCore: (entry: RomEntry, position: { x: number; y: number }) => void;
   /// Open the per-game settings drawer (Phase 2.8 slice D).
   onOpenProperties: (entry: RomEntry) => void;
+  /// Open the per-game Input dialog (libretro device-type select +
+  /// keypad/lightgun reference + per-port wiring).
+  onOpenInput: (entry: RomEntry) => void;
   /// Slice 12 — open the NewCollectionDialog seeded with this rom.
   /// Wired by App.tsx when customCollections is in play. Absent =
   /// "+ New collection…" tail entry in the submenu is hidden.
@@ -202,6 +205,11 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onOpenProperties(props.entry!));
   }
 
+  function openInput() {
+    if (!props.entry) return;
+    closeAfter(() => props.onOpenInput(props.entry!));
+  }
+
   function removeFromLibrary() {
     if (!props.entry) return;
     closeAfter(() => void props.library.remove(props.entry!.id));
@@ -362,6 +370,7 @@ const TileContextMenu: Component<Props> = (props) => {
       badgeAccent: true,
       onActivate: changeCore,
     });
+    list.push({ key: "input", label: "Input mapping…", onActivate: openInput });
     list.push({ key: "props", label: "Game properties…", onActivate: openProperties });
     list.push({
       key: "remove",
