@@ -293,59 +293,68 @@ table. `commitRowsToEntries()` replaces `bucketScanned()` and honors
 per-row Change-system / Edit-title / Skip overrides at commit. Frontend
 `npm run typecheck` silent.
 
-### Guided Setup Phase 1B Slice 3 — per-system readiness checklist
+### ~~Guided Setup Phase 1B Slice 3 — per-system readiness checklist~~ ✅ SHIPPED 2026-06-01
 
-Per plan §5 Step 5 + §12 IA. Single component, two surfaces:
-1. **New wizard step** inserted between Review (current Step 2) and
-   Confirm — wizard re-expands `3 → 4 steps`. Header counter +
-   step-indicator update to 4.
-2. **Settings → Library → "System readiness" card** — a second
-   `SettingsCard` alongside the existing "Re-scan with smart detection"
-   card in `frontend/src/components/SettingsSections.tsx::LibrarySettings`.
-   Renders the SAME component, sourced from the operator's current
-   library state instead of the wizard's pending-commit rows.
+Merged to main as `b57f3e7` (`feat/guided-setup-phase-1b-slice-3`, one
+phase commit `2020b4e`). New
+`frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
+(~300 lines) rendering 5 pills per system (Core installed via
+`list_cores ∩ systemThemes extensions` / BIOS present via
+`get_bios_status` / Bindings always ✓ / 2 placeholder pills for
+Slice 4). New `apps/oa-shell/src/main.rs::open_bios_folder` Tauri
+command for the "Open BIOS folder" action. Two surfaces: new wizard
+Step 3 (between Review and Confirm; step counter `3 → 4`) AND a
+second "System readiness" SettingsCard in
+`SettingsSections.tsx::LibrarySettings` alongside the existing
+"Re-scan with smart detection" card. 615 oa-shell tests green; npm
+typecheck silent.
 
-**Row per system found,** each with these status pills:
-- ✓ **Core installed** (looks up `<exe_dir>/cores/<core_dll>` via
-  existing `list_cores` Tauri command)
-- ⚠ **BIOS present / missing / not required** — reuses the per-system
-  BIOS check helpers already wired for the Settings → BIOS category
-  (look at `apps/oa-shell/src/main.rs` BIOS endpoints + the existing
-  `BIOS_PILL_STYLES` in `SettingsSections.tsx:624`)
-- ✓ **Default bindings ready** (always ✓ once the system has any
-  registered bindings — the `bindings.rs` dispatch arms; per-game
-  customization is a separate surface)
-- ✓ **Core options pre-tuned** — checks per-system `core_options.rs`
-  catalog; ↪ if none
-- ⚠ **Per-game overrides from KNOWN_GAME_BUGS** — count of pending
-  overrides for matched games in the scan/library (Slice 4-pending
-  for actual application; this slice just surfaces the count)
+### Guided Setup Phase 1B Slice 4 — bulk missing-core download + Core options pill
 
-Each row expandable to show per-pill detail. Inline action buttons:
-"Open BIOS folder" next to ⚠ BIOS, "Install core" next to ⚠ Core
-(wires Slice 4's bulk-prompt placeholder). Slice 3 ships the
-component + the two surfaces; the per-pill action buttons that
-require new infrastructure are stubbed with "Coming in Slice 4 / 5"
-toasts.
+Two things land together because they share a Rust core-installer
+infrastructure and the Slice 3 placeholders are already shaped to
+consume the data they'll produce.
+
+**Part A — Bulk core download.** Wire the existing
+`apps/oa-shell/src/core_installer.rs` to the "Install core…" stub on
+the readiness checklist. Per plan §5 Step 6: "We need 4 cores for
+these systems. Download from libretro buildbot? `[Download all
+(12 MB)]` `[Skip]` `[Pick individually]`". On-demand only — never
+silent. The stub today dispatches a `window.CustomEvent("oa://readiness-stub-toast")`;
+Slice 4 listens for that event from a real bulk-prompt modal +
+fires `core_installer::download_core` per selection.
+
+**Part B — Core options pill.** Currently renders the muted
+`— Coming Slice 4` placeholder. Swap to a real ✓ / ↪ status by
+reading the per-system `core_options.rs` catalog. The `read()` /
+`write()` helpers are module-private today — Slice 4 needs to add a
+small `list_core_options_for_system(system_id) -> Option<usize>`
+Tauri command returning the option count (✓ when > 0, ↪ when 0 / no
+catalog).
+
+**Part C (optional, can defer)** — KNOWN_GAME_BUGS pill real status.
+The structured `games-info.md` schema (System Info Panel work)
+covers some systems but the count API doesn't exist yet. If
+Slice 4 grows too large, leave the KNOWN_GAME_BUGS pill as a
+placeholder + queue Slice 4b separately.
 
 **Where the work lives:**
-- New `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
-  (mirrors the import-wizard subdir pattern Slice 2 introduced).
-- `ImportWizard.tsx` — `Step` type back to `1|2|3|4`; new `Step3`
-  component renders the checklist sourced from `commitRowsToEntries()`
-  (gives per-system inventory); footer button branches re-routed.
-- `SettingsSections.tsx::LibrarySettings` — second `SettingsCard`
-  added alongside the existing one; sourced from the operator's
-  shipped library state via `library.entries()` grouped by `systemId`.
-- Slim Rust support if any (probably none — existing BIOS check
-  + `list_cores` cover the lookups).
+- `apps/oa-shell/src/core_installer.rs` already exists with the
+  download path; needs a thin Tauri command wrapper (`download_core`,
+  `list_available_cores_for_system` if not present).
+- `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
+  — listen for the "Install core…" click directly (drop the
+  CustomEvent stub) and open a new `MissingCoreBulkPrompt.tsx` modal
+  (lives in the same `import-wizard/` subdir). The Core options pill
+  reads from a new `useCoreOptionsCount(systemId)` resource.
+- New `frontend/src/components/import-wizard/MissingCoreBulkPrompt.tsx`
+  — modal listing the missing systems' suggested cores, total
+  download size, per-row Skip / Pick toggle, primary "Download all"
+  button.
 
-**Scope:** ~1 week. Reuses BIOS_PILL_STYLES + existing BIOS / core /
-bindings probes. The actual resolution actions (download core, drop
-BIOS file) are scoped to Slices 4 + 5; this slice surfaces the
-status only.
+**Scope:** ~1 week for A + B; ~1.5 weeks if C lands too.
 
-**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 5 + §12 IA.
+**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 6 + §13 Phase 2.
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 

@@ -35,8 +35,8 @@ LaunchBox-inspired table.
 | --- | --- | --- |
 | 1 | Smart-scan emission (backend) + Settings → Library entry point | ✅ shipped 2026-06-01 |
 | 2 | Per-ROM results table in the wizard (consumes Slice 1 fields) | ✅ shipped 2026-06-01 |
-| 3 | Per-system readiness checklist component (also Settings → System Readiness) | ⬜ next |
-| 4 | Bulk-prompt missing-core download (wires `core_installer.rs`) | ⬜ pending |
+| 3 | Per-system readiness checklist component (also Settings → System Readiness) | ✅ shipped 2026-06-01 |
+| 4 | Bulk-prompt missing-core download (wires `core_installer.rs`) | ⬜ next |
 | 5 | Guided BIOS resolution UI | ⬜ pending |
 | 6 | Voice/tone copy pass + first-launch empty-state | ⬜ pending |
 

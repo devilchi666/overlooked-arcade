@@ -13,7 +13,7 @@ spanned every system but was filed under whichever core happened to be active.
 
 - **Guided Setup Phase 1B — wizard upgrade**
   ([features/guided-setup/](features/guided-setup/)). Slices 1 + 2
-  both shipped 2026-06-01.
+  + 3 all shipped 2026-06-01.
   - Slice 1 (`5ef8062` merge) — backend smart-scan emission +
     Settings → Library entry point. The Rust scanner now
     classifies + hashes during the walk and emits per-row
@@ -30,15 +30,22 @@ spanned every system but was filed under whichever core happened to be active.
     bulk-select with Gmail-style toolbar; sort + filter;
     confidence badges; Skip per-row; old persistent rules
     editor lives in an `<details>` "Advanced — extension
-    overrides" expander below the table. Step counter
-    `4 → 3 (Folder / Review / Confirm)`.
-  - **Slice 3 next** — per-system readiness checklist
-    component (Core installed / BIOS present / Bindings ready /
-    Core options pre-tuned / KNOWN_GAME_BUGS overrides). Same
-    component reused as a second card in Settings → Library
-    ("System readiness"). Wizard structure expands back to 4
-    steps with the checklist sitting between Review (Step 2)
-    and Confirm (Step 4). Detail in
+    overrides" expander below the table.
+  - Slice 3 (`b57f3e7` merge) — per-system readiness checklist.
+    New `SystemReadinessChecklist.tsx` rendering 5 pills per
+    system (Core installed / BIOS present / Bindings + 2
+    placeholders for Slice 4). Wired in two surfaces: new
+    wizard Step 3 between Review and Confirm (step counter
+    `3 → 4`, labels `Folder / Review / Readiness / Confirm`)
+    AND a second "System readiness" SettingsCard alongside
+    "Re-scan with smart detection". Working "Open BIOS folder"
+    action via new `open_bios_folder` Tauri command;
+    "Install core…" stub dispatches a CustomEvent for Slice 4
+    to wire to the real toast layer.
+  - **Slice 4 next** — bulk-prompt missing-core download.
+    Wires `core_installer.rs` to a real bulk-prompt UI behind
+    the Install-core stub; same slice can swap the Core options
+    placeholder into real per-system status. Detail in
     [features/guided-setup/README.md](features/guided-setup/README.md)
     Phase 1B slice table + the HIGH band entry in
     [NEXT.md](NEXT.md).

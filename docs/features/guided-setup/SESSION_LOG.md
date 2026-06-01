@@ -1,5 +1,74 @@
 # Guided Setup — Session Log
 
+## 2026-06-01 — Phase 1B Slice 3: per-system readiness checklist
+
+Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-3`,
+merge `b57f3e7`). One phase commit (`2020b4e`) inserting a readiness
+checklist between the per-ROM table (Slice 2) and Confirm. Same
+component lives in two surfaces: new wizard Step 3 + a second
+`SettingsCard` in Settings → Library alongside the existing
+"Re-scan with smart detection" card.
+
+- **Shipped:**
+  - **Phase 1 — readiness checklist component + Open BIOS folder
+    action (`2020b4e`):** new
+    `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
+    (~300 lines). Props: `systems: Accessor<SystemId[]>` +
+    `emptyStateLabel?` for surface-specific empty copy. Fetches
+    `list_cores` + `get_bios_status` once on mount via
+    `createResource`. Per-row rendering uses `data-system="<id>"`
+    so each row picks up its theme accent via the `systems.css`
+    CSS cascade; auto-fit grid of 5 pills (Core / BIOS / Bindings
+    + 2 placeholder pills `— Coming Slice 4`); inline action
+    buttons rendered when a row has any ⚠ state. Pill colors via
+    a `PILL_STYLES` record mirroring `BIOS_PILL_STYLES` (`ready` /
+    `warning` / `na` / `coming`). Core check uses a cheap
+    `list_cores().validExtensions ∩ systemThemes[id].extensions`
+    intersection (any installed core that handles the system's
+    extensions counts as ✓); a stricter "operator's preferred
+    default core for this system is installed" check defers to a
+    polish pass (needs the cores.json registry, not in scope).
+    BIOS check is per-system via `entries.find(slug)`; absence
+    from the response = "not required" (BIOS-required system list
+    is curated in `main.rs::get_bios_status`). Bindings pill is
+    always ✓ for any registered SystemId since `bindings.rs`
+    dispatch covers all 45 onboarded systems. New
+    `apps/oa-shell/src/main.rs::open_bios_folder` Tauri command
+    mirrors `open_video_clip_folder`'s cross-platform spawn
+    pattern (`explorer` / `open` / `xdg-open`); auto-creates
+    `<exe_dir>/system/` if missing so first-run operators don't
+    hit an error. Wizard integration: `Step` type `1|2|3 →
+    1|2|3|4`; `STEP_LABELS` `Folder / Review / Readiness /
+    Confirm`; step-indicator + header counter back to 4. New
+    `Step3` body renders `<SystemReadinessChecklist>` sourcing
+    via new `readinessSystems` memo (unique systemIds from
+    `commitRowsToEntries()`); old Step3 (sync toggles) renamed to
+    Step4; footer button branches re-routed (Step 2 Next → 3;
+    Step 3 Next → 4 disabled when `commitRowsToEntries()` is
+    empty; Step 4 keeps the existing Skip-sync / Import + sync
+    pair). Settings → Library wired: new "System readiness"
+    `SettingsCard` between the existing "Re-scan with smart
+    detection" card and the embedded `LibraryManagerPage`;
+    `librarySystems` memo derives unique systemIds from
+    `ctx.library.state.entries` so the card reactively re-renders
+    on library mutations. 615 oa-shell tests green; frontend
+    `npm run typecheck` silent.
+
+- **Almost:** Operator playtest. The Install-core stub currently
+  dispatches a `window.CustomEvent("oa://readiness-stub-toast")`
+  with no UI listener yet — operator can't see the toast unless
+  reading devtools console. Slice 4 wires the real toast +
+  `core_installer.rs` integration on top of that event channel.
+
+- **Next:** Slice 4 — bulk-prompt missing-core download. Wires
+  `apps/oa-shell/src/core_installer.rs` to the Install-core stub
+  via a real bulk-prompt UI ("Download these N cores from
+  libretro buildbot? [12 MB]"). Same slice can swap the
+  `— Coming Slice 4` Core options pill into real per-system
+  status by reading the `core_options.rs` catalog (likely needs
+  a new Tauri command since the existing `read()` is module-
+  private). Estimated 1 week.
+
 ## 2026-06-01 — Phase 1B Slice 2: per-ROM results table
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-2`,
