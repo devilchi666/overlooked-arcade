@@ -45,6 +45,10 @@ type Props = {
   /// Open the per-game Cheats dialog (cheat code entry / toggle
   /// per game — Game Genie, Pro Action Replay codes, etc.).
   onOpenCheats: (entry: RomEntry) => void;
+  /// Open the per-game Rewind settings dialog (rewind enable /
+  /// capture interval / buffer size overrides — distinct from the
+  /// QuickSettings in-game rewind scrubber).
+  onOpenRewind: (entry: RomEntry) => void;
   /// Slice 12 — open the NewCollectionDialog seeded with this rom.
   /// Wired by App.tsx when customCollections is in play. Absent =
   /// "+ New collection…" tail entry in the submenu is hidden.
@@ -242,6 +246,11 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onOpenCheats(props.entry!));
   }
 
+  function openRewind() {
+    if (!props.entry) return;
+    closeAfter(() => props.onOpenRewind(props.entry!));
+  }
+
   function removeFromLibrary() {
     if (!props.entry) return;
     closeAfter(() => void props.library.remove(props.entry!.id));
@@ -407,6 +416,7 @@ const TileContextMenu: Component<Props> = (props) => {
     list.push({ key: "display", label: "Display…", onActivate: openDisplay });
     list.push({ key: "shaders", label: "Shaders…", onActivate: openShaders });
     list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
+    list.push({ key: "rewind", label: "Rewind settings…", onActivate: openRewind });
     list.push({ key: "props", label: "Game properties…", onActivate: openProperties });
     list.push({
       key: "remove",
