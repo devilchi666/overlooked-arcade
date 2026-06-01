@@ -86,7 +86,13 @@ type MenuItem = {
 /// SystemContextMenu's main / move-category pattern. The list itself
 /// is rebuilt per view (no nesting through `<Show>`) so the focus
 /// group's index → action mapping stays consistent.
-type MenuView = "main" | "add-to-collection";
+///
+/// 2026-06-01 — added `per-game-settings` sub-view collapsing the
+/// seven Phase D dialog rows (Input / Core options / Display /
+/// Shaders / Cheats / Rewind / Milestones) behind a single top-level
+/// entry. Same precedent as Add-to-collection: back navigation in the
+/// sub-view returns to main rather than closing the menu.
+type MenuView = "main" | "add-to-collection" | "per-game-settings";
 
 const ITEM_CLASS =
   "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm text-(--color-oa-ink) hover:bg-white/[0.06] disabled:cursor-default disabled:text-(--color-oa-ink-dim) disabled:hover:bg-transparent";
@@ -354,6 +360,27 @@ const TileContextMenu: Component<Props> = (props) => {
       return list;
     }
 
+    // Per-game settings sub-view — the seven Phase D split dialogs
+    // (Input / Core options / Display / Shaders / Cheats / Rewind /
+    // Milestones). Top-level shows a single "Per-game settings ▸"
+    // entry that transitions here. B / Esc returns to main.
+    if (menuView() === "per-game-settings") {
+      const list: MenuItem[] = [];
+      list.push({
+        key: "settings-back",
+        label: "← Back",
+        onActivate: () => setMenuView("main"),
+      });
+      list.push({ key: "input", label: "Input mapping…", onActivate: openInput });
+      list.push({ key: "core-options", label: "Core options…", onActivate: openCoreOptions });
+      list.push({ key: "display", label: "Display…", onActivate: openDisplay });
+      list.push({ key: "shaders", label: "Shaders…", onActivate: openShaders });
+      list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
+      list.push({ key: "rewind", label: "Rewind settings…", onActivate: openRewind });
+      list.push({ key: "milestones", label: "Milestones…", onActivate: openMilestones });
+      return list;
+    }
+
     const list: MenuItem[] = [];
     list.push({ key: "launch", label: "Launch", badge: "Enter", onActivate: launch });
     if (hasGameVariants()) {
@@ -420,13 +447,13 @@ const TileContextMenu: Component<Props> = (props) => {
       badgeAccent: true,
       onActivate: changeCore,
     });
-    list.push({ key: "input", label: "Input mapping…", onActivate: openInput });
-    list.push({ key: "core-options", label: "Core options…", onActivate: openCoreOptions });
-    list.push({ key: "display", label: "Display…", onActivate: openDisplay });
-    list.push({ key: "shaders", label: "Shaders…", onActivate: openShaders });
-    list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
-    list.push({ key: "rewind", label: "Rewind settings…", onActivate: openRewind });
-    list.push({ key: "milestones", label: "Milestones…", onActivate: openMilestones });
+    list.push({
+      key: "per-game-settings",
+      label: "Per-game settings",
+      badge: "›",
+      badgeAccent: true,
+      onActivate: () => setMenuView("per-game-settings"),
+    });
     list.push({ key: "props", label: "Game properties…", onActivate: openProperties });
     list.push({
       key: "remove",
@@ -453,10 +480,10 @@ const TileContextMenu: Component<Props> = (props) => {
       if (it && !it.disabled) it.onSecondary?.();
     },
     onCancel: () => {
-      // B in the Add-to-collection sub-view returns to the top level
-      // instead of closing the whole menu — mirrors the unified spec
-      // operators have for sub-region menus.
-      if (menuView() === "add-to-collection") {
+      // B in any sub-view returns to the top level instead of closing
+      // the whole menu — mirrors the unified spec operators have for
+      // sub-region menus.
+      if (menuView() !== "main") {
         setMenuView("main");
         return;
       }
