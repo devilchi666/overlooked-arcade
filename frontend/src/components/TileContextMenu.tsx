@@ -36,6 +36,8 @@ type Props = {
   /// Open the per-game Core options dialog (libretro core option
   /// curation per game — region, speedhack, BIOS-skip, etc.).
   onOpenCoreOptions: (entry: RomEntry) => void;
+  /// Open the per-game Screenshot gallery dialog (F12 captures viewer).
+  onOpenScreenshots: (entry: RomEntry) => void;
   /// Open the per-game Display dialog (display aspect override —
   /// e.g. 16:9 for OutRun on a 4:3-default system).
   onOpenDisplay: (entry: RomEntry) => void;
@@ -241,6 +243,11 @@ const TileContextMenu: Component<Props> = (props) => {
     closeAfter(() => props.onOpenCoreOptions(props.entry!));
   }
 
+  function openScreenshots() {
+    if (!props.entry) return;
+    closeAfter(() => props.onOpenScreenshots(props.entry!));
+  }
+
   function openDisplay() {
     if (!props.entry) return;
     closeAfter(() => props.onOpenDisplay(props.entry!));
@@ -378,6 +385,7 @@ const TileContextMenu: Component<Props> = (props) => {
       list.push({ key: "cheats", label: "Cheats…", onActivate: openCheats });
       list.push({ key: "rewind", label: "Rewind settings…", onActivate: openRewind });
       list.push({ key: "milestones", label: "Milestones…", onActivate: openMilestones });
+      list.push({ key: "screenshots", label: "Screenshots…", onActivate: openScreenshots });
       return list;
     }
 
