@@ -330,77 +330,74 @@ entry. Part C (KNOWN_GAME_BUGS pill real status) intentionally
 deferred — coverage is sparse + the count API belongs with the
 broader `KNOWN_GAME_BUGS.md → games-info.md` migration arc.
 
-### Guided Setup Phase 1B Slice 5 — guided BIOS resolution
+### ~~Guided Setup Phase 1B Slice 5 — guided BIOS resolution~~ ✅ SHIPPED 2026-06-01
 
-Today the readiness checklist's ⚠ BIOS pill has an "Open BIOS
-folder" button that lands the operator at `<exe_dir>/system/`
-(Slice 3's `open_bios_folder` Tauri command). Slice 5 expands the
-affordance into a richer surface that tells the operator exactly
-what file they need + where to find it.
+Merged to main as `e3092b8` (`feat/guided-setup-phase-1b-slice-5`, two
+phase commits). Deep refactor of `BiosCheck` enum + 18 per-system
+`check_*_bios` functions to carry structured per-file inventory;
+~25 LOC of inline scan-and-classify per function shrank to 2 lines
+via new `scan_bios_table` + `bios_check_from_inventory` helpers.
+New `install_bios_file` Tauri command with atomic `.partial` swap
+mirroring `core_installer::download_core`. New
+`BiosResolutionDetail.tsx` with per-file rows + click-to-pick
+affordance via `@tauri-apps/plugin-dialog`'s file picker. WARN
+semantics per operator decision (copy regardless of hash; pill
+flips to ⚠ "unknown hash" if mismatch). Channel F flags
+`sl90025.bin.optional=true` so the Channel F II revision file is
+hash-checked when present but doesn't gate the launch pair. Neo
+Geo cart keeps its zip-introspection path wrapped in the new
+variant shape. Operator playtest follow-up (`719112d`) wired
+`window.addEventListener("focus", …)` refetch + a manual "Refresh"
+button so manual file drops via the OS file manager get picked up
+live without a wizard close-and-reopen. 615 oa-shell tests stayed
+green throughout.
 
-**What's already in place:**
-- `apps/oa-shell/src/main.rs::get_bios_status` returns a
-  `BiosStatusResponse` with per-system `entries[]`. Each entry
-  carries `slug` / `label` / `required` (the filename(s) the check
-  function expects) / `status` / `detail`. The detail field already
-  contains the matched filename + SHA-1 on `ok` / `unknownHash`
-  and the io-error message on `error`.
-- Per-system `check_*_bios` helpers in main.rs know the canonical
-  SHA-1(s) for each expected file (they're how the `ok` / `unknownHash`
-  distinction is made). Slice 5 needs to expose those canonical
-  hashes to the frontend so the operator can verify-on-disk that
-  what they have is the right thing.
+### Guided Setup Phase 1B Slice 6 — voice/tone copy pass + first-launch empty-state
 
-**Slice 5 scope:**
+**Closes Phase 1B.** Per plan §4 voice card + §5 Step 0 — the last
+slice before the wizard upgrade ships as a complete arc.
 
-1. **New Tauri command** — extend the BIOS status response with
-   per-file detail: filename → expected SHA-1 mapping (where known)
-   + whether the file is present + whether its hash matches. The
-   existing `detail` string is already shaped close to this; the
-   refactor surfaces it as structured data rather than a
-   human-readable summary.
-2. **Expanded BIOS pill** — when ⚠, the row expands inline (no
-   modal — clutter-avoidance) to show:
-   - Filename + expected SHA-1 + "what to look for" hint
-   - For multi-file BIOSes (NDS needs three, Saturn needs regional
-     variants, etc.), one sub-row per file with its own
-     present-but-wrong-hash vs absent state
-   - Optional "where to get it" hint per system (operator-supplied
-     list of legal sources, kept curated in
-     `apps/oa-shell/src/bios_sources.rs` or similar — Slice 5
-     defines the shape; populating is operator-driven)
-3. **"Pick BIOS file…" per missing file** — per-file folder-picker
-   button (`@tauri-apps/plugin-dialog`'s `open()`) that opens the OS
-   file picker scoped to the operator's chosen file. On selection,
-   the file is filename-checked against the active system's expected
-   list, hash-verified if a canonical SHA-1 is known, and copied
-   into `<exe_dir>/system/`. The BIOS check refetch fires
-   immediately so the pill flips ⚠ → ✓ in real time.
-4. **Keep "Open BIOS folder"** as the escape hatch for operators who
-   prefer to manage `<exe_dir>/system/` themselves.
+**Part A — voice/tone copy pass.** Every user-facing string in the
+Slices 1-5 surfaces gets reviewed against the warm + curator-enthusiast
+voice locked in plan §4. The voice card has explicit examples:
 
-(External drag-drop is parking-lotted Won't fix per
-`docs/PARKING_LOT.md` 2026-05-20 — drop targets aren't an OA
-pattern. The per-file picker covers the same convenience without
-introducing a new drop surface.)
+| Situation | Bad | Good |
+| --- | --- | --- |
+| Scan complete | "240 files scanned, 12 systems detected." | "Found 240 games across 12 systems. Quite a collection — let's get them ready." |
+| Missing BIOS | "Error: scph1001.bin not found." | "PlayStation needs a BIOS file to run. We're looking for `scph1001.bin` — drop it in the BIOS folder when you've got it." |
+| Default core picked | "Default core: snes9x_libretro.dll" | "Using snes9x for SNES — solid balance of accuracy and performance. You can swap to bsnes later if you want higher accuracy." |
+| Unknown file | "Unknown file: weirdgame.romz" | "Not sure what `weirdgame.romz` is — looks like a ROM but the extension doesn't ring any bells. Set the system below, or skip it." |
+| First-system bindings | "SNES default bindings applied." | "Defaults for SNES are set up — d-pad for movement, B for A, A for B (Nintendo convention). Looks good, or want to adjust?" |
+
+Surfaces touched (string-only edits in most):
+`ImportWizard.tsx`, `ResultsTable.tsx`, `SystemReadinessChecklist.tsx`,
+`BiosResolutionDetail.tsx`, `MissingCoreBulkPrompt.tsx`,
+`SettingsSections.tsx::LibrarySettings`.
+
+**Part B — first-launch empty-state.** Per plan §5 Step 0:
+
+> OA detects "no library configured" → main UI shows a friendly
+> empty-state with a single `Set up your library` button. No
+> auto-fire. Operator clicks → wizard opens.
+
+The shipped `LibraryView::ImportFolderEmpty` already has a bare
+"Import folder" empty-state button (Slice 1's verification path).
+Slice 6 replaces it with a hero treatment + the guided-setup copy
++ routes to the wizard via `ctx.onOpenImportWizard()` (instead of
+the legacy folder-picker `props.onPickFolder()` LibraryView
+currently calls).
 
 **Where the work lives:**
-- `apps/oa-shell/src/main.rs` (or split into a new
-  `bios_resolution.rs` module) — refactor `BiosStatusResponse`
-  shape; add structured per-file detail; expose canonical SHA-1s.
-- New `frontend/src/components/import-wizard/BiosResolutionDetail.tsx`
-  — inline-expandable per-row component rendering the filename +
-  SHA-1 + hint surface. Mounted inside `SystemReadinessChecklist`
-  when a row has ⚠ BIOS.
-- `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
-  — add drop-target affordance + wire the per-file detail expansion.
+- `frontend/src/components/LibraryView.tsx` — replace the
+  `ImportFolderEmpty` bare button with the hero treatment; route
+  the primary action to `ctx.onOpenImportWizard()`.
+- Every component file listed in Part A — string edits only, no
+  structural changes.
 
-**Scope:** ~1 week. The hardest part is the operator-curated
-"where to get it" hints — start with a stub (just the filename +
-hash; "consult your usual sources") and let the operator fill in
-per-system text over time.
+**Scope:** ~3-4 days. Pure UI / copy pass; no new Tauri commands,
+no new components.
 
-**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 6 (BIOS branch) + §13 Phase 2.
+**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §4 voice card + §5 Step 0.
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 

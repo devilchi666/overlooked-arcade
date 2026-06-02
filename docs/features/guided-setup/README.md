@@ -37,8 +37,8 @@ LaunchBox-inspired table.
 | 2 | Per-ROM results table in the wizard (consumes Slice 1 fields) | ✅ shipped 2026-06-01 |
 | 3 | Per-system readiness checklist component (also Settings → System Readiness) | ✅ shipped 2026-06-01 |
 | 4 | Bulk-prompt missing-core download (wires `core_installer.rs`) | ✅ shipped 2026-06-01 |
-| 5 | Guided BIOS resolution UI | ⬜ next |
-| 6 | Voice/tone copy pass + first-launch empty-state | ⬜ pending |
+| 5 | Guided BIOS resolution UI | ✅ shipped 2026-06-01 |
+| 6 | Voice/tone copy pass + first-launch empty-state | ⬜ next (closes Phase 1B) |
 
 Slice 1's plan + execution notes lived off-tree at
 `C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md`. Once Phase

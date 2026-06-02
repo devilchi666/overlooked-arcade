@@ -12,7 +12,7 @@ spanned every system but was filed under whichever core happened to be active.
 ## In flight
 
 - **Guided Setup Phase 1B — wizard upgrade**
-  ([features/guided-setup/](features/guided-setup/)). Slices 1-4
+  ([features/guided-setup/](features/guided-setup/)). Slices 1-5
   all shipped 2026-06-01.
   - Slice 1 (`5ef8062` merge) — backend smart-scan emission +
     Settings → Library entry point. The Rust scanner now
@@ -59,13 +59,29 @@ spanned every system but was filed under whichever core happened to be active.
     entries' arrays (jagcd / sega32xcd / stv / neogeo), new
     `opera_libretro` entry for 3DO. Every registry slug now
     has at least one CATALOG entry.
-  - **Slice 5 next** — guided BIOS resolution. Expands the ⚠
-    BIOS pill from "Open BIOS folder" to a richer surface
-    with per-file SHA-1 + filename + "where to get it"
-    inline. The existing `get_bios_status` response already
-    carries the per-system filename/required strings — Slice
-    5 is mostly UI on what's already in the payload, plus
-    drag-drop into the checklist. Detail in
+  - Slice 5 (`e3092b8` merge) — guided BIOS resolution. Deep
+    refactor of `BiosCheck` enum + 18 per-system `check_*_bios`
+    functions to carry structured per-file inventory. New
+    `install_bios_file` Tauri command + new
+    `BiosResolutionDetail.tsx` with per-file rows + status
+    badges + click-to-pick affordance via
+    `@tauri-apps/plugin-dialog`'s file picker. ChannelF flags
+    `sl90025.bin.optional=true` so the Channel F II revision
+    file is hash-checked when present but doesn't gate the
+    launch pair. Operator playtest follow-up wired
+    `window.addEventListener("focus", …)` refetch + a manual
+    "Refresh" button so manual file drops into
+    `<exe_dir>/system/` (or `/cores/`) via the OS file manager
+    get picked up live without a wizard close-and-reopen.
+  - **Slice 6 next** — voice/tone copy pass + first-launch
+    empty-state. CLOSES Phase 1B. Per plan §4 every user-facing
+    string in the wizard + readiness checklist + bulk-install
+    modal + BIOS resolution detail gets reviewed against the
+    warm/curator-enthusiast voice. Per plan §5 Step 0, the
+    first-launch empty-state lands: OA detects "no library
+    configured" + shows a friendly hero with a single "Set up
+    your library" button instead of dropping operators into
+    the empty library view. Detail in
     [features/guided-setup/README.md](features/guided-setup/README.md)
     Phase 1B slice table + the HIGH band entry in
     [NEXT.md](NEXT.md).

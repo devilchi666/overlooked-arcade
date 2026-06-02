@@ -1,5 +1,85 @@
 # Guided Setup — Session Log
 
+## 2026-06-01 — Phase 1B Slice 5: guided BIOS resolution + window-focus refetch
+
+Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-5`,
+merge `e3092b8`). Two phase commits — main slice + operator-playtest
+follow-up.
+
+- **Shipped:**
+  - **Phase 1 — BIOS resolution refactor + Pick-BIOS-file picker (`d2d82c8`):**
+    Deep refactor of `BiosCheck` enum + 18 per-system `check_*_bios`
+    functions. New types: `BiosFile` / `BiosFileStatus` /
+    `BiosOverallVerdict` / `BiosSemantics`. New helpers replacing
+    inline scan-and-classify across the 18 functions:
+    `sha1_hex_upper`, `scan_bios_table` (walks the const hash table +
+    builds per-file inventory), `derive_bios_overall` (translates
+    inventory + AnyOf/AllRequired semantics into the verdict),
+    `bios_check_from_inventory` (wraps verdict into the appropriate
+    BiosCheck variant), `exe_system_dir` (centralizes
+    `<exe_dir>/system/` derivation that was duplicated three places).
+    Most check functions go from ~25 LOC to 2 lines. ChannelF flags
+    `sl90025.bin.optional=true` post-scan so the Channel F II
+    revision file is hash-checked when present but doesn't gate the
+    launch pair on absence. Neo Geo cart keeps its bespoke zip-
+    introspection path wrapped in a single-entry inventory.
+    BiosStatusEntry grows `files: Vec<BiosFile>` so the frontend gets
+    structured per-file detail. New `install_bios_file` Tauri command:
+    reads operator-chosen source path → SHA-1 → looks up canonical
+    via new `known_hashes_for_system` dispatcher → atomic `.partial`
+    swap into `<exe_dir>/system/`. WARN semantics per operator
+    decision (copy regardless of hash; pill flips to ⚠ "unknown hash"
+    if mismatch). Frontend: new
+    `frontend/src/components/import-wizard/BiosResolutionDetail.tsx`
+    with per-file rows + status badges + click-to-pick affordance via
+    `@tauri-apps/plugin-dialog`'s file picker → invokes
+    `install_bios_file` → triggers `onInstalled` callback. Computed
+    SHA-1 displayed alongside expected SHA-1 on Unknown hash.
+    "Where to get it" collapsible expander pulling from new
+    `biosHints.ts` stub map (operator-driven content over time).
+    `SystemReadinessChecklist` auto-expands the detail inline below
+    the existing action-buttons row when `biosEntry().status !== "ok"`.
+    "Open BIOS folder" stays as the escape hatch.
+  - **Phase 2 — focus + manual Refresh refetch (`719112d`):**
+    operator playtest caught that manually dropping BIOS files into
+    `<exe_dir>/system/` via the OS file manager (or dropping cores
+    into `/cores/`) didn't update the readiness pills. The
+    `bios` / `cores` / `available` / per-system `optionsBySystem`
+    resources only refetched on mount + on download-progress
+    `phase=done` events; manual filesystem changes had no signal.
+    Two complementary fixes: (a) `window.addEventListener("focus", …)`
+    refetches all four resources when OA regains OS focus
+    (operator clicks "Open BIOS folder", drops files via File
+    Explorer, switches back → pill flips live), per the saved
+    `reference_tauri_dom_focus_reliable` memory. (b) Manual
+    "Refresh" button next to the BIOS folder path as a backup
+    affordance for cases where focus doesn't trigger or when
+    operator wants explicit control. Both surfaces (wizard Step 3 +
+    Settings → Library card) benefit equally — they share the
+    component.
+
+  No drag-drop — per `docs/PARKING_LOT.md` 2026-05-20 won't-fix and
+  the `feedback-code-exists-isnt-live` memory; per-file picker
+  covers the operator-facing install affordance. 615 oa-shell
+  tests stay green throughout. Frontend `npm run typecheck` silent.
+
+- **Almost:** Operator playtest of the BIOS picker flow (both
+  canonical-match and unknown-hash paths) + the focus-refetch
+  behavior. Plus the ChannelF optional file ↪ semantics with a
+  real Channel F II ROM in hand.
+
+- **Next:** Slice 6 — voice/tone copy pass + first-launch empty-
+  state entry point. CLOSES Phase 1B. Per plan §4 voice card, every
+  user-facing string in the wizard + readiness checklist + bulk-
+  install modal + BIOS resolution detail gets reviewed against the
+  warm/curator-enthusiast tone ("Found 240 games across 12 systems.
+  Quite a collection — let's get them ready.") vs the dry default
+  ("240 files scanned, 12 systems detected."). Per plan §5 Step 0,
+  the first-launch empty-state lands: OA detects "no library
+  configured" on first launch and shows a friendly hero with a
+  single "Set up your library" button instead of dumping operators
+  straight into the empty library view. Estimated 3-4 days.
+
 ## 2026-06-01 — Phase 1B Slice 4: bulk missing-core download + Core options pill + catalog slug realignment
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-4`,
