@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// One curated catalog entry. Cross-platform: `base` is the buildbot
 /// basename (no extension) and `systems` lists the Overlooked Arcade
@@ -1105,139 +1105,306 @@ pub fn available_cores(cores_dir: tauri::State<'_, CoresDir>) -> Vec<AvailableCo
 /// `resolve_cores_dir` on every invoke. Set up once at app start.
 pub struct CoresDir(pub PathBuf);
 
+/// Catalog lookup — returns the human display_name for `base` when
+/// CATALOG has a row for it, falling back to the bare base for ad-hoc
+/// downloads (e.g. core slugs the catalog doesn't carry yet). Only
+/// used to shape the JobRegistry label, so a fallback to base is
+/// acceptable.
+fn catalog_display_name_for(base: &str) -> &str {
+    CATALOG
+        .iter()
+        .find(|e| e.base == base)
+        .map(|e| e.display_name)
+        .unwrap_or(base)
+}
+
 /// Download the buildbot nightly zip for `base`, extract the single
 /// dylib inside, validate it via libretro probe, and place it at
 /// `<exe_dir>/cores/<base>.<ext>`. Emits `oa://core-download-progress`
 /// throughout. If a file with the same name already exists, it gets
 /// overwritten (Update path).
+///
+/// Phase 1 of the background-jobs arc wires this as the pilot kind.
+/// On every invocation we register a `core_download` job in the
+/// JobRegistry (if the state is managed — soft-fail otherwise),
+/// poll the JobHandle's cancel/pause flags from inside the chunk
+/// loop, and emit per-chunk progress through the registry's debounced
+/// `progress()` call. The existing `oa://core-download-progress`
+/// emits stay intact for Guided Setup's listener (see plan §"Out of
+/// scope" — today's event protocols emit unchanged). The completion /
+/// failure / cancel finalizers run in one place at the bottom of the
+/// function, regardless of which error path took us out.
 #[tauri::command]
 pub async fn download_core(
     base: String,
     cores_dir: tauri::State<'_, CoresDir>,
     app: AppHandle,
 ) -> Result<String, String> {
+    use crate::job_registry::{JobKind, JobRegistry};
+
     let dest_dir = cores_dir.0.clone();
-    let url = buildbot_url_for(&base)
-        .ok_or_else(|| format!(
-            "buildbot has no build for this OS/ARCH ({}/{})",
-            std::env::consts::OS, std::env::consts::ARCH,
-        ))?;
-    let file_name = core_filename_for_host(&base);
-    let final_path = dest_dir.join(&file_name);
 
-    if let Err(e) = std::fs::create_dir_all(&dest_dir) {
-        return Err(format!("create cores dir {}: {e}", dest_dir.display()));
-    }
+    // === Background-jobs registration (soft-fail). ===
+    let registry_state = app.try_state::<JobRegistry>();
+    let job_id: Option<i64> = registry_state.as_ref().and_then(|state| {
+        let label = format!("Downloading {}", catalog_display_name_for(&base));
+        match state.create_job(
+            JobKind::CoreDownload {
+                base: base.clone(),
+            },
+            label,
+            None,
+            None,
+            false,
+            "bytes",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = state.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(core_download) failed: {e}");
+                None
+            }
+        }
+    });
+    let handle = job_id.and_then(|id| registry_state.as_ref().and_then(|s| s.handle(id)));
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
-        .build()
-        .map_err(|e| format!("reqwest client: {e}"))?;
-
-    emit_progress(&app, &file_name, 0, None, "downloading", None);
-
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .send()
-        .await
-        .map_err(|e| {
-            emit_progress(&app, &file_name, 0, None, "error", Some(&format!("{e}")));
-            format!("GET {url}: {e}")
+    // === Wrap the existing flow so finalization runs exactly once. ===
+    let result: Result<String, String> = async {
+        let url = buildbot_url_for(&base).ok_or_else(|| {
+            format!(
+                "buildbot has no build for this OS/ARCH ({}/{})",
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+            )
         })?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        emit_progress(&app, &file_name, 0, None, "error", Some(&format!("HTTP {status}")));
-        return Err(format!("buildbot HTTP {status} for {url}"));
-    }
-    let total = resp.content_length();
+        let file_name = core_filename_for_host(&base);
+        let final_path = dest_dir.join(&file_name);
 
-    // Stream the body to memory — the zips are small (typically <10 MB)
-    // so we avoid the tempfile dance. If we ever ship something where
-    // 10s of MB matters, switch to a `tokio::fs::File` writer.
-    use futures::StreamExt;
-    let mut downloaded: u64 = 0;
-    let mut zip_bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| {
-            emit_progress(&app, &file_name, downloaded, total, "error", Some(&format!("{e}")));
-            format!("download chunk: {e}")
-        })?;
-        zip_bytes.extend_from_slice(&chunk);
-        downloaded += chunk.len() as u64;
-        emit_progress(&app, &file_name, downloaded, total, "downloading", None);
-    }
+        if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+            return Err(format!("create cores dir {}: {e}", dest_dir.display()));
+        }
 
-    emit_progress(&app, &file_name, downloaded, total, "extracting", None);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(180))
+            .build()
+            .map_err(|e| format!("reqwest client: {e}"))?;
 
-    // Extract: every libretro buildbot zip contains exactly one dylib
-    // at the top level. We pick the first entry whose extension matches
-    // our host's dylib extension and write it through to a `.partial`
-    // file so a failed validation doesn't clobber an existing good copy.
-    let ext = dylib_ext();
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes))
-        .map_err(|e| {
-            emit_progress(&app, &file_name, downloaded, total, "error", Some(&format!("{e}")));
-            format!("open zip: {e}")
-        })?;
-    let mut payload: Option<Vec<u8>> = None;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)
-            .map_err(|e| format!("read zip entry {i}: {e}"))?;
-        if !entry.is_file() { continue; }
-        let name = entry.name().to_string();
-        if !name.to_ascii_lowercase().ends_with(&format!(".{ext}")) { continue; }
-        let mut buf = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut buf)
-            .map_err(|e| format!("read zip body {name}: {e}"))?;
-        payload = Some(buf);
-        break;
-    }
-    let Some(payload) = payload else {
-        emit_progress(&app, &file_name, downloaded, total, "error", Some("zip had no .{ext} entry"));
-        return Err(format!("zip {url} contained no .{ext} entry"));
-    };
+        emit_progress(&app, &file_name, 0, None, "downloading", None);
 
-    let partial_path = final_path.with_extension(format!("{ext}.partial"));
-    std::fs::write(&partial_path, &payload).map_err(|e| {
-        emit_progress(&app, &file_name, downloaded, total, "error", Some(&format!("{e}")));
-        format!("write {}: {e}", partial_path.display())
-    })?;
+        let resp = client
+            .get(&url)
+            .header("User-Agent", "OverlookedArcade")
+            .send()
+            .await
+            .map_err(|e| {
+                emit_progress(&app, &file_name, 0, None, "error", Some(&format!("{e}")));
+                format!("GET {url}: {e}")
+            })?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            emit_progress(&app, &file_name, 0, None, "error", Some(&format!("HTTP {status}")));
+            return Err(format!("buildbot HTTP {status} for {url}"));
+        }
+        let total = resp.content_length();
 
-    // Validate the just-written file before renaming over the live one.
-    // A bogus .dll surfaces as a probe error, the .partial gets cleaned
-    // up, and the previous-good install is left intact.
-    if let Err(e) = oa_libretro::probe(&partial_path) {
-        let _ = std::fs::remove_file(&partial_path);
-        emit_progress(&app, &file_name, downloaded, total, "error", Some(&format!("probe: {e}")));
-        return Err(format!("downloaded file failed libretro probe: {e}"));
-    }
+        // Stream the body to memory — the zips are small (typically <10 MB)
+        // so we avoid the tempfile dance. If we ever ship something where
+        // 10s of MB matters, switch to a `tokio::fs::File` writer.
+        use futures::StreamExt;
+        let mut downloaded: u64 = 0;
+        let mut zip_bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            // Cancel / pause check before reading the next chunk.
+            // Cancel returns a sentinel error string ("cancelled") that
+            // the finalizer below recognizes; pause spins on the flag.
+            if let Some(h) = &handle {
+                if h.is_cancelled() {
+                    return Err("cancelled".into());
+                }
+                while h.is_paused() {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    if h.is_cancelled() {
+                        return Err("cancelled".into());
+                    }
+                }
+            }
+            let chunk = chunk.map_err(|e| {
+                emit_progress(
+                    &app,
+                    &file_name,
+                    downloaded,
+                    total,
+                    "error",
+                    Some(&format!("{e}")),
+                );
+                format!("download chunk: {e}")
+            })?;
+            zip_bytes.extend_from_slice(&chunk);
+            downloaded += chunk.len() as u64;
+            emit_progress(&app, &file_name, downloaded, total, "downloading", None);
+            // Background-jobs progress — registry rate-limits internally
+            // (1 Hz SQLite write, 10 Hz Tauri event). Best-effort: a DB
+            // error here shouldn't fail the download.
+            if let (Some(state), Some(id)) = (registry_state.as_ref(), job_id) {
+                let _ = state.progress(id, downloaded as i64, total.map(|t| t as i64));
+            }
+        }
 
-    // Replace the existing core, if any. On Windows a currently-loaded
-    // DLL can't be overwritten — surface that cleanly. On any error,
-    // keep the .partial around so the user can retry post-restart.
-    if final_path.exists() {
-        if let Err(e) = std::fs::remove_file(&final_path) {
+        emit_progress(&app, &file_name, downloaded, total, "extracting", None);
+
+        // Extract: every libretro buildbot zip contains exactly one dylib
+        // at the top level. We pick the first entry whose extension matches
+        // our host's dylib extension and write it through to a `.partial`
+        // file so a failed validation doesn't clobber an existing good copy.
+        let ext = dylib_ext();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes))
+            .map_err(|e| {
+                emit_progress(
+                    &app,
+                    &file_name,
+                    downloaded,
+                    total,
+                    "error",
+                    Some(&format!("{e}")),
+                );
+                format!("open zip: {e}")
+            })?;
+        let mut payload: Option<Vec<u8>> = None;
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| format!("read zip entry {i}: {e}"))?;
+            if !entry.is_file() {
+                continue;
+            }
+            let name = entry.name().to_string();
+            if !name.to_ascii_lowercase().ends_with(&format!(".{ext}")) {
+                continue;
+            }
+            let mut buf = Vec::with_capacity(entry.size() as usize);
+            entry
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("read zip body {name}: {e}"))?;
+            payload = Some(buf);
+            break;
+        }
+        let Some(payload) = payload else {
             emit_progress(
-                &app, &file_name, downloaded, total, "error",
-                Some("existing core in use; restart Overlooked Arcade and retry"),
+                &app,
+                &file_name,
+                downloaded,
+                total,
+                "error",
+                Some("zip had no .{ext} entry"),
             );
-            return Err(format!(
-                "remove existing {}: {e} (likely still loaded by the running process; restart and retry)",
-                final_path.display(),
-            ));
+            return Err(format!("zip {url} contained no .{ext} entry"));
+        };
+
+        let partial_path = final_path.with_extension(format!("{ext}.partial"));
+        std::fs::write(&partial_path, &payload).map_err(|e| {
+            emit_progress(
+                &app,
+                &file_name,
+                downloaded,
+                total,
+                "error",
+                Some(&format!("{e}")),
+            );
+            format!("write {}: {e}", partial_path.display())
+        })?;
+
+        // Validate the just-written file before renaming over the live one.
+        // A bogus .dll surfaces as a probe error, the .partial gets cleaned
+        // up, and the previous-good install is left intact.
+        if let Err(e) = oa_libretro::probe(&partial_path) {
+            let _ = std::fs::remove_file(&partial_path);
+            emit_progress(
+                &app,
+                &file_name,
+                downloaded,
+                total,
+                "error",
+                Some(&format!("probe: {e}")),
+            );
+            return Err(format!("downloaded file failed libretro probe: {e}"));
+        }
+
+        // Replace the existing core, if any. On Windows a currently-loaded
+        // DLL can't be overwritten — surface that cleanly. On any error,
+        // keep the .partial around so the user can retry post-restart.
+        if final_path.exists() {
+            if let Err(e) = std::fs::remove_file(&final_path) {
+                emit_progress(
+                    &app,
+                    &file_name,
+                    downloaded,
+                    total,
+                    "error",
+                    Some("existing core in use; restart Overlooked Arcade and retry"),
+                );
+                return Err(format!(
+                    "remove existing {}: {e} (likely still loaded by the running process; restart and retry)",
+                    final_path.display(),
+                ));
+            }
+        }
+        if let Err(e) = std::fs::rename(&partial_path, &final_path) {
+            let _ = std::fs::remove_file(&partial_path);
+            emit_progress(
+                &app,
+                &file_name,
+                downloaded,
+                total,
+                "error",
+                Some(&format!("{e}")),
+            );
+            return Err(format!("rename to {}: {e}", final_path.display()));
+        }
+
+        emit_progress(&app, &file_name, downloaded, total, "done", None);
+        log::info!(
+            "core_installer: installed {} from {url}",
+            final_path.display()
+        );
+        Ok(final_path.to_string_lossy().into_owned())
+    }
+    .await;
+
+    // === Finalize the job row. ===
+    if let (Some(state), Some(id)) = (registry_state.as_ref(), job_id) {
+        let was_cancelled = handle.as_ref().is_some_and(|h| h.is_cancelled());
+        match (&result, was_cancelled) {
+            (Ok(_), _) => {
+                let _ = state.mark_completed(id);
+            }
+            (Err(_), true) => {
+                // Per-kind cancel-cleanup contract (plan §"Cancel
+                // cleanup"): core_download cancel = delete the
+                // `.partial` file. Re-derive its path here from
+                // dest_dir + base (the in-closure `partial_path` is
+                // out of scope by now). The remove is best-effort —
+                // ENOENT (the more common case if cancel fired during
+                // the chunk loop, before extract wrote `.partial`)
+                // and any IO error both silently no-op.
+                let ext = dylib_ext();
+                let file_name = core_filename_for_host(&base);
+                let partial_path = dest_dir
+                    .join(&file_name)
+                    .with_extension(format!("{ext}.partial"));
+                let _ = std::fs::remove_file(&partial_path);
+                let _ = state.mark_cancelled(id);
+            }
+            (Err(e), false) => {
+                let _ = state.mark_failed(id, e.clone());
+            }
         }
     }
-    if let Err(e) = std::fs::rename(&partial_path, &final_path) {
-        let _ = std::fs::remove_file(&partial_path);
-        emit_progress(&app, &file_name, downloaded, total, "error", Some(&format!("{e}")));
-        return Err(format!("rename to {}: {e}", final_path.display()));
-    }
 
-    emit_progress(&app, &file_name, downloaded, total, "done", None);
-    log::info!("core_installer: installed {} from {url}", final_path.display());
-    Ok(final_path.to_string_lossy().into_owned())
+    result
 }
 
 #[cfg(test)]

@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 17;
+const SCHEMA_VERSION: i32 = 18;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -768,6 +768,81 @@ impl LibraryDb {
             log::info!("library_db: schema migrated to v17 (mame_games* tables)");
         }
 
+        // v17 → v18: background_jobs registry. Persists what OA is
+        // doing in the background (HTTP downloads, hash resolves,
+        // media sync, folder scans, future per-track SHA-1) so
+        // operations survive app restart. First slice of the
+        // 5-phase arc in docs/PLANS/background-jobs-and-progress-bar.md.
+        // Phase 1 wires `core_download` as the pilot kind; the other
+        // 8 kinds in the §"Operations to consolidate" inventory wire
+        // in Phase 4. The frontend BackgroundJobsBar lands in Phase 2;
+        // auto-resume-on-launch dispatch lands in Phase 3. Phase 1
+        // crash detection promotes `state='running'` rows to
+        // `state='interrupted'` on next launch (via the lock file +
+        // `JobRegistry::promote_running_rows_to_interrupted`) and
+        // leaves them there for the operator to retry from the
+        // existing per-operation modal.
+        if current < 18 {
+            Self::migrate_v17_to_v18(conn)?;
+            conn.pragma_update(None, "user_version", 18)
+                .map_err(|e| format!("set user_version=18: {e}"))?;
+            log::info!("library_db: schema migrated to v18 (background_jobs)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v17_to_v18(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            -- Background jobs registry. Schema follows
+            -- docs/PLANS/background-jobs-and-progress-bar.md §Schema
+            -- verbatim. Active rows (pending/running/paused/
+            -- interrupted) are queried via idx_background_jobs_active;
+            -- finished rows (completed/failed/cancelled) page through
+            -- idx_background_jobs_history for the recent-activity
+            -- panel AND for the 100-row rolling-buffer prune.
+            --
+            -- parent_job_id models two cases:
+            --   1. Bulk parents (bulk_core_install w/ N child downloads).
+            --   2. Auto-triggered prereqs (Identify hashes → Sync dat).
+            -- ON DELETE SET NULL so the rolling-buffer prune of finished
+            -- parents doesn't cascade and accidentally drop their
+            -- in-flight children.
+            --
+            -- resume_payload is per-kind JSON: HTTP Range start byte
+            -- for core_download; scan stamp for folder_scan; per-track
+            -- cache key for disc_track_hash; etc. NULL means "no
+            -- checkpoint worth resuming from."
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind            TEXT NOT NULL,
+                label           TEXT NOT NULL,
+                system_id       TEXT,
+                target_id       TEXT,
+                parent_job_id   INTEGER REFERENCES background_jobs(id) ON DELETE SET NULL,
+                is_prereq       INTEGER NOT NULL DEFAULT 0,
+                state           TEXT NOT NULL,
+                done            INTEGER NOT NULL DEFAULT 0,
+                total           INTEGER,
+                unit            TEXT NOT NULL,
+                last_event_at   INTEGER NOT NULL,
+                started_at      INTEGER NOT NULL,
+                finished_at     INTEGER,
+                can_resume      INTEGER NOT NULL DEFAULT 1,
+                resume_payload  TEXT,
+                error_message   TEXT,
+                retry_count     INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_active
+                ON background_jobs (state, last_event_at);
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_history
+                ON background_jobs (state, finished_at);
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_parent
+                ON background_jobs (parent_job_id);
+            "#,
+        )
+        .map_err(|e| format!("v17→v18 migration: {e}"))?;
         Ok(())
     }
 
@@ -5323,6 +5398,76 @@ mod tests {
 
         // Clear is idempotent on missing rows.
         db.clear_game_group_default("tg16", "Nothing Set").expect("clear noop");
+    }
+
+    #[test]
+    fn schema_v17_to_v18_migration() {
+        // Build a v17 DB by hand (no background_jobs table), then open
+        // through LibraryDb so bootstrap_schema migrates it forward to
+        // SCHEMA_VERSION. Per the v7→v8 test pattern: skip the
+        // intermediate migrations by jumping straight to the target
+        // pre-migration version via pragma_update — the bootstrap
+        // chain will only run migrations from there onward.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v17-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            let conn = Connection::open(&db_path).expect("open v17");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            conn.pragma_update(None, "user_version", 17).expect("set v17");
+        }
+        let _db = LibraryDb::open(&tmp).expect("open and migrate");
+        // background_jobs table should exist after migration. Use a
+        // second Connection (WAL mode set on the LibraryDb-owned
+        // connection makes concurrent readers safe).
+        let conn2 = Connection::open(&db_path).expect("reopen");
+        let cnt: i64 = conn2
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='background_jobs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query background_jobs presence");
+        assert_eq!(cnt, 1, "background_jobs table should exist after v18 migration");
+        // Round-trip a row through the new shape to confirm columns + types.
+        let now: i64 = 1_700_000_000_000;
+        conn2
+            .execute(
+                "INSERT INTO background_jobs (kind, label, state, unit, last_event_at, started_at, total) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params!["core_download", "Downloading Beetle PSX HW", "pending", "bytes", now, now, 8_400_000_i64],
+            )
+            .expect("insert");
+        let (kind, state, unit, total): (String, String, String, i64) = conn2
+            .query_row(
+                "SELECT kind, state, unit, total FROM background_jobs WHERE label = ?1",
+                params!["Downloading Beetle PSX HW"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read back");
+        assert_eq!(kind, "core_download");
+        assert_eq!(state, "pending");
+        assert_eq!(unit, "bytes");
+        assert_eq!(total, 8_400_000);
+        // All three indexes should exist.
+        let idx_count: i64 = conn2
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' \
+                 AND name IN ('idx_background_jobs_active', 'idx_background_jobs_history', 'idx_background_jobs_parent')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query indexes");
+        assert_eq!(idx_count, 3, "all three background_jobs indexes should exist");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
