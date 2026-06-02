@@ -578,6 +578,37 @@ export const LibrarySettings: Component = () => {
           emptyStateLabel="Library is empty — import a folder to get started."
         />
       </SettingsCard>
+      <SettingsCard
+        title="Background Jobs — dev test"
+        description="Spawns a synthetic 30-second background job that ticks progress at 10 Hz. Use it to exercise the BackgroundJobsBar's pause / resume / cancel / auto-collapse without burning a real core download. Click multiple times for 2+ / 3+ concurrent jobs to test the Pause-all / Cancel-all thresholds."
+      >
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
+                console.warn("[oa-jobs] spawn_test_job failed:", err);
+              });
+            }}
+          >
+            Spawn 30 s test job
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
+                console.warn("[oa-jobs] spawn_test_job failed:", err);
+              });
+            }}
+          >
+            Spawn 10 s test job
+          </button>
+        </div>
+      </SettingsCard>
       <div class="-mx-8 -mb-6">
         <LibraryManagerPage
           settings={ctx.settings}

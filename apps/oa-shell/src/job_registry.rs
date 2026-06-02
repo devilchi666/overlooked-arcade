@@ -34,7 +34,7 @@ use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// SQLite write debounce for progress ticks. Progress fires far faster
 /// than the operator can perceive (a fast HTTP stream pushes hundreds
@@ -66,18 +66,26 @@ const HEARTBEAT_SECS: u64 = 1;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JobKind {
     CoreDownload { base: String },
+    /// Dev-only synthetic job for exercising the BackgroundJobsBar
+    /// without burning bandwidth on a real download. Lives at the
+    /// production level (not behind `cfg(debug_assertions)`) so
+    /// operators can sanity-check the bar after settings changes too;
+    /// always-on cost is zero unless `spawn_test_job` is invoked.
+    TestJob { name: String },
 }
 
 impl JobKind {
     pub fn discriminator(&self) -> &'static str {
         match self {
             Self::CoreDownload { .. } => "core_download",
+            Self::TestJob { .. } => "test_job",
         }
     }
 
     pub fn target_id(&self) -> Option<String> {
         match self {
             Self::CoreDownload { base } => Some(base.clone()),
+            Self::TestJob { name } => Some(name.clone()),
         }
     }
 }
@@ -473,6 +481,76 @@ impl JobRegistry {
         r
     }
 
+    /// Phase 2 — flip the JobHandle's pause flag from outside the
+    /// worker (typically from the BackgroundJobsBar's per-row pause
+    /// button, routed through the `pause_job` / `resume_job` Tauri
+    /// commands). The worker's chunk-loop already polls
+    /// `handle.pause` (Slice E pattern) and spins on the flag with a
+    /// cancel-check overlay, so the operator's pause click resolves
+    /// at the next chunk boundary. Returns `false` if the job already
+    /// finalized (handle dropped from the active map).
+    ///
+    /// Note: this only flips the in-memory flag. The Phase 2 bar
+    /// optimistically updates the row's state to `paused` in the
+    /// frontend store; the authoritative SQLite transition lands
+    /// when the worker observes the flag, flushes its resume
+    /// payload, and calls `mark_paused`. Phase 1's pilot kind
+    /// (core_download) does not yet bridge pause → mark_paused (its
+    /// chunk loop just spins on the flag), so pause currently looks
+    /// the same as a stalled download until Phase 3 wires the
+    /// per-kind pause path. Cancel works end-to-end today.
+    pub fn signal_pause(&self, job_id: i64, paused: bool) -> bool {
+        let Some(handle) = self.handle(job_id) else {
+            return false;
+        };
+        handle.pause.store(paused, Ordering::Relaxed);
+        true
+    }
+
+    /// Phase 2 — flip the JobHandle's cancel flag from outside the
+    /// worker. The worker's chunk-loop polls `handle.cancel` and
+    /// returns the "cancelled" sentinel error; `download_core`'s
+    /// finalize block then calls `mark_cancelled` + the per-kind
+    /// `.partial` cleanup. Returns `false` if the job already
+    /// finalized.
+    pub fn signal_cancel(&self, job_id: i64) -> bool {
+        let Some(handle) = self.handle(job_id) else {
+            return false;
+        };
+        handle.cancel.store(true, Ordering::Relaxed);
+        true
+    }
+
+    /// Phase 2 — bulk flip cancel on every active job. Used by the
+    /// bar's "Cancel all" button (which confirms before applying when
+    /// 3+ jobs are active per plan §"Bar header"). Returns the count
+    /// of jobs whose cancel flag was flipped.
+    pub fn signal_cancel_all(&self) -> usize {
+        let Ok(active) = self.inner.active.read() else {
+            return 0;
+        };
+        let mut n = 0;
+        for handle in active.values() {
+            handle.cancel.store(true, Ordering::Relaxed);
+            n += 1;
+        }
+        n
+    }
+
+    /// Phase 2 — bulk flip pause on every active job. Used by the
+    /// bar's "Pause all" button.
+    pub fn signal_pause_all(&self, paused: bool) -> usize {
+        let Ok(active) = self.inner.active.read() else {
+            return 0;
+        };
+        let mut n = 0;
+        for handle in active.values() {
+            handle.pause.store(paused, Ordering::Relaxed);
+            n += 1;
+        }
+        n
+    }
+
     /// Crash recovery. Called by `main.rs::setup()` after the lock
     /// file flagged the previous run as crashed. Promotes every
     /// `state = 'running'` row to `state = 'interrupted'` so Phase 3
@@ -491,8 +569,8 @@ impl JobRegistry {
     }
 
     /// List active rows (pending/running/paused). Phase 2's bar reads
-    /// this at startup to hydrate the visible-stack.
-    #[allow(dead_code)] // Phase 2 will surface via a Tauri command
+    /// this on mount to hydrate the visible-stack, then keeps in sync
+    /// via the `oa://job-event` broadcast.
     pub fn list_active(&self) -> Result<Vec<JobSnapshot>, String> {
         self.list_by_states(&[
             JobState::Pending,
@@ -666,6 +744,175 @@ impl JobRegistry {
             log::warn!("prune_history_to_cap delete: {e}");
         }
     }
+}
+
+// ===========================================================================
+// Tauri commands — Phase 2 BackgroundJobsBar surface
+// ===========================================================================
+//
+// The bar reads `list_active_jobs` once on mount to hydrate, then keeps
+// in sync via the existing `oa://job-event` broadcast. Per-row controls
+// flow through `pause_job` / `resume_job` / `cancel_job`. The "Pause all"
+// + "Cancel all" header buttons flow through `pause_all_jobs` (with a
+// bool arg so resume-all reuses the same command) + `cancel_all_jobs`.
+//
+// All commands soft-fail when the JobRegistry isn't managed (returns
+// the empty list or a no-op count). Same fallback shape as Phase 1's
+// download_core wiring — the bar just stays Hidden in that case.
+
+// Internal helper: Tauri commands take AppHandle and look up the
+// registry via try_state. Using `Option<tauri::State<...>>` directly
+// as a #[tauri::command] arg doesn't compile (State isn't Deserialize),
+// so we route through this lookup. Returns None when the registry
+// isn't managed yet; commands degrade to no-ops in that case.
+fn registry_handle<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Option<tauri::State<'_, JobRegistry>> {
+    app.try_state::<JobRegistry>()
+}
+
+/// Snapshot of currently-active jobs (pending / running / paused).
+/// Returns an empty list when the registry isn't managed yet.
+#[tauri::command]
+pub fn list_active_jobs(app: tauri::AppHandle) -> Result<Vec<JobSnapshot>, String> {
+    match registry_handle(&app) {
+        Some(reg) => reg.list_active(),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Recent finished history (completed / failed / cancelled), newest
+/// first. The Phase 5 recent-activity panel is the primary consumer,
+/// but exposing this in Phase 2 lets the bar's history sub-route work
+/// against a real surface once Phase 5 lands. `limit` is capped at
+/// 100 because that's the rolling-buffer ceiling (plan §"Job
+/// history").
+#[tauri::command]
+pub fn list_recent_jobs(
+    limit: Option<usize>,
+    app: tauri::AppHandle,
+) -> Result<Vec<JobSnapshot>, String> {
+    match registry_handle(&app) {
+        Some(reg) => reg.list_recent(limit.unwrap_or(100).min(100)),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Pause a single job. The worker observes the AtomicBool at the next
+/// chunk boundary and spins on it until resume or cancel. Returns
+/// `false` when the job already finalized.
+#[tauri::command]
+pub fn pause_job(job_id: i64, app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(registry_handle(&app)
+        .map(|reg| reg.signal_pause(job_id, true))
+        .unwrap_or(false))
+}
+
+/// Resume a paused job. Flips the pause flag back off; the worker
+/// breaks out of its pause spin and continues from the same chunk.
+#[tauri::command]
+pub fn resume_job(job_id: i64, app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(registry_handle(&app)
+        .map(|reg| reg.signal_pause(job_id, false))
+        .unwrap_or(false))
+}
+
+/// Cancel a single job. Flips the cancel flag; the worker exits at
+/// the next chunk boundary and the finalize block applies the
+/// per-kind cancel-cleanup contract (delete .partial for
+/// core_download, etc.).
+#[tauri::command]
+pub fn cancel_job(job_id: i64, app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(registry_handle(&app)
+        .map(|reg| reg.signal_cancel(job_id))
+        .unwrap_or(false))
+}
+
+/// Pause every active job. `paused = false` reuses this command as
+/// "Resume all" so the bar header's toggle button can route through
+/// one endpoint. Returns the count of handles whose flag flipped.
+#[tauri::command]
+pub fn pause_all_jobs(paused: bool, app: tauri::AppHandle) -> Result<usize, String> {
+    Ok(registry_handle(&app)
+        .map(|reg| reg.signal_pause_all(paused))
+        .unwrap_or(0))
+}
+
+/// Cancel every active job. The bar UI must confirm with the
+/// operator before invoking this (plan §"Bar header": "Both confirm
+/// before applying when 3+ jobs are active").
+#[tauri::command]
+pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
+    Ok(registry_handle(&app)
+        .map(|reg| reg.signal_cancel_all())
+        .unwrap_or(0))
+}
+
+/// Dev helper — spawn a synthetic background job that ticks
+/// progress at 10 Hz for `duration_secs` seconds. Lets the operator
+/// exercise the BackgroundJobsBar's pause / resume / cancel /
+/// auto-collapse / +N more affordances without a real long-running
+/// operation. Honors the JobHandle's cancel + pause flags exactly
+/// the same way `download_core`'s chunk loop does, so pause-then-
+/// cancel races behave identically.
+///
+/// Invoked from Settings → Library → "Background Jobs (dev test)".
+/// Stays in the production build because the always-on cost is zero
+/// (no spawn until invoked) and it remains useful for sanity-checking
+/// the bar after any settings change. Multiple calls produce N
+/// concurrent test jobs so the bar's 2+ / 3+ confirm thresholds can
+/// be exercised.
+#[tauri::command]
+pub async fn spawn_test_job(
+    duration_secs: Option<u64>,
+    app: tauri::AppHandle,
+) -> Result<i64, String> {
+    let secs = duration_secs.unwrap_or(30).clamp(1, 600);
+    let registry = registry_handle(&app)
+        .map(|s| (*s).clone())
+        .ok_or_else(|| "background-jobs registry not managed".to_string())?;
+    let total: i64 = (secs as i64) * 10; // 10 Hz ticks
+    // Make the label distinct so the operator can tell test jobs
+    // apart from real ones when both run together.
+    let suffix = now_ms() % 10_000;
+    let name = format!("test-{suffix:04}");
+    let job_id = registry.create_job(
+        JobKind::TestJob { name: name.clone() },
+        format!("Test job ({secs}s)"),
+        None,
+        None,
+        false,
+        "steps",
+        None,
+    )?;
+    registry.mark_running(job_id)?;
+    let handle = registry
+        .handle(job_id)
+        .ok_or_else(|| "test_job handle dropped before tick loop".to_string())?;
+    let registry_clone = registry.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut done: i64 = 0;
+        while done < total {
+            if handle.is_cancelled() {
+                let _ = registry_clone
+                    .flush_resume_state(job_id, serde_json::json!({ "done": done }));
+                let _ = registry_clone.mark_cancelled(job_id);
+                return;
+            }
+            while handle.is_paused() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                if handle.is_cancelled() {
+                    let _ = registry_clone.mark_cancelled(job_id);
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            done += 1;
+            let _ = registry_clone.progress(job_id, done, Some(total));
+        }
+        let _ = registry_clone.mark_completed(job_id);
+    });
+    Ok(job_id)
 }
 
 fn row_to_snapshot(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobSnapshot> {

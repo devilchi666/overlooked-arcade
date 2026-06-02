@@ -72,6 +72,7 @@ import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } f
 import type { SystemId } from "./themes/registry";
 import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar } from "./nav/HintBar";
+import BackgroundJobsBar from "./components/background-jobs/BackgroundJobsBar";
 import { setSwapAB } from "./nav/focus";
 import { setPerSystemUiEnabled } from "./themes/systemUiSound";
 import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
@@ -1783,6 +1784,7 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      <BackgroundJobsBar />
       <HintBar />
       {/* Per-page HintRegion providers inside each Retroverse page own
           the hint content now. The legacy top-level fallback that
