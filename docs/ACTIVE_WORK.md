@@ -182,6 +182,57 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 2 (BackgroundJobsBar)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-2`).
+  Five phase commits + a DOM-stability fix + a dev test affordance
+  shipping the persistent UI surface on top of Phase 1's backend.
+  - **Slice A** (`cff3dbc`) Tauri commands: `list_active_jobs`,
+    `list_recent_jobs`, `pause_job`, `resume_job`, `cancel_job`,
+    `pause_all_jobs`, `cancel_all_jobs`. JobRegistry gains
+    `signal_pause` / `signal_cancel` / `signal_pause_all` /
+    `signal_cancel_all` to flip the AtomicBool flags from outside
+    the worker. All commands soft-fail through `try_state` lookup.
+  - **Slice B** (`bcd1498`) `frontend/src/lib/backgroundJobs.ts` —
+    module-level reactive store mirroring JobState / JobSnapshot /
+    JobEvent. Race-safe hydration (listener attaches before the
+    `list_active_jobs` invoke; events queue until hydration lands).
+    Mutation helpers wrapping the Slice A commands.
+  - **Slice C** (`2944c84`) `BackgroundJobsBar.tsx` (~370 LOC) —
+    Hidden / HandleVisible / Expanded state machine, max-3-rows +
+    "+N more", per-row controls (pause / cancel + status pill +
+    formatted done/total), header with Pause-all / Cancel-all
+    (confirm when 3+ jobs active; cancels always confirm because
+    destructive). 2 s bar-pointer-idle auto-collapse. Inline
+    @keyframes pulse dot.
+  - **Slice D** (`2765b9c`) Mounted in App.tsx between ToastStack and
+    HintBar — z-30 vs HintBar's z-40 so mid-modal hint contexts win.
+  - **Dev affordance** (`3f1376a`) `JobKind::TestJob` +
+    `spawn_test_job(durationSecs)` Tauri command + a "Background Jobs
+    — dev test" SettingsCard in Settings → Library with Spawn 30 s /
+    Spawn 10 s buttons. Lets the operator exercise the bar without
+    burning a real download (cores download in well under a second on
+    fast internet, too short to inspect the UI).
+  - **DOM-stability fix** (`d75cbd8`) Switching the store from
+    `createSignal` + `s.map(...)` to `createStore` + `produce`. The
+    map approach swapped in a new object reference for the row on
+    every Progressed event, which Solid's `<For>` keys by identity →
+    the per-row DOM was destroyed and recreated 10×/sec. Two symptoms
+    fell out: the pause + cancel buttons flickered (visible DOM
+    churn) and clicks never landed (mousedown landed on a node that
+    was about to be destroyed before mouseup). createStore + produce
+    mutates fields in place; DOM stays stable; buttons retain
+    identity and clicks work. Added a dedicated `progressTick`
+    signal because store-field mutations don't surface through the
+    array-identity subscription the pulse animation was using.
+  - 660 of 660 oa-shell tests green. Operator smoke-tested pause +
+    cancel via the dev affordance before merge. Phase 1 pause
+    caveat carries through: the pause button stops the chunk loop
+    streaming but the row state stays `running` because Phase 1's
+    pilot kind doesn't yet bridge the pause flag back to
+    `mark_paused` — Phase 3 wires that, and the button will start
+    toggling to "▶ resume" then.
+
 - **Background jobs + persistent progress bar — Phase 1 (backend pilot)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-1`).

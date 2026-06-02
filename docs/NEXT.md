@@ -309,16 +309,20 @@ together:
   `--no-ff` merge of `feat/background-jobs-phase-1`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
   for the slice breakdown.
-- ⬜ **Phase 2** (~1 week, next) — `BackgroundJobsBar` Solid
-  component mounted in `RetroverseShell` between the main content
-  area and HintBar. Handle / collapsed / expanded states + 2 s
-  auto-hide reactivation. Stack-visible layout (max 3 visible
-  rows + "+N more"). Per-row label + progress bar + pause + cancel
-  controls. Bar header for 2+ jobs with Pause-all / Cancel-all
-  (confirm before applying when 3+ are active). Subscribes to the
-  existing `oa://job-event` broadcast; Phase 1's events already
-  fire unconsumed.
-- ⬜ **Phase 3** (~1.5 weeks) — `JobResumer` trait + per-kind
+- ✅ **Phase 2** (shipped 2026-06-02) —
+  `frontend/src/components/background-jobs/BackgroundJobsBar.tsx`
+  + the `lib/backgroundJobs.ts` store + Tauri commands (list /
+  pause / resume / cancel / bulk variants) + the dev test
+  affordance (Settings → Library → "Background Jobs — dev test"
+  spawn buttons backed by `JobKind::TestJob` + the
+  `spawn_test_job` command). createStore-backed reactive store
+  with race-safe hydration. Mounted in App.tsx between ToastStack
+  and HintBar; z-30 vs HintBar's z-40 per plan §"HintBar takes
+  priority." Operator smoke-tested the pause + cancel paths
+  before `--no-ff` merge of `feat/background-jobs-phase-2`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
+  for the slice breakdown.
+- ⬜ **Phase 3** (~1.5 weeks, next) — `JobResumer` trait + per-kind
   handlers for `core_download` / `artwork_sync` / `hash_resolve`.
   Cancel cleanup per kind. Auto-resume-on-launch flow w/ per-kind
   opt-out prompt. Duplicate-trigger Wait/Restart/Cancel dialog.
