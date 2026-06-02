@@ -1220,15 +1220,32 @@ pub async fn download_core(
         while let Some(chunk) = stream.next().await {
             // Cancel / pause check before reading the next chunk.
             // Cancel returns a sentinel error string ("cancelled") that
-            // the finalizer below recognizes; pause spins on the flag.
+            // the finalizer below recognizes. Pause spins on the flag
+            // AND transitions the row state through paused → running
+            // so the BackgroundJobsBar's resume button toggles
+            // correctly (Phase 3a fix — Phase 1 just spun without
+            // transitioning, leaving the row stuck on `running` while
+            // progress froze).
             if let Some(h) = &handle {
                 if h.is_cancelled() {
                     return Err("cancelled".into());
                 }
+                let mut was_paused = false;
                 while h.is_paused() {
+                    if !was_paused {
+                        was_paused = true;
+                        if let (Some(state), Some(id)) = (registry_state.as_ref(), job_id) {
+                            let _ = state.mark_paused(id);
+                        }
+                    }
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     if h.is_cancelled() {
                         return Err("cancelled".into());
+                    }
+                }
+                if was_paused {
+                    if let (Some(state), Some(id)) = (registry_state.as_ref(), job_id) {
+                        let _ = state.mark_running(id);
                     }
                 }
             }

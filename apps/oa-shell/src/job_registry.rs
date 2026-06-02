@@ -1029,12 +1029,22 @@ pub async fn spawn_test_job(
                 let _ = registry_clone.mark_cancelled(job_id);
                 return;
             }
+            // Same paused → running state bridge core_download uses
+            // so the bar's resume button toggles for test jobs too.
+            let mut was_paused = false;
             while handle.is_paused() {
+                if !was_paused {
+                    was_paused = true;
+                    let _ = registry_clone.mark_paused(job_id);
+                }
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 if handle.is_cancelled() {
                     let _ = registry_clone.mark_cancelled(job_id);
                     return;
                 }
+            }
+            if was_paused {
+                let _ = registry_clone.mark_running(job_id);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
             done += 1;
