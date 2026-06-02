@@ -253,6 +253,7 @@ const LibraryPage: Component = () => {
             onShowInfo={ctx.onShowInfo}
             selectedId={() => ctx.focusedEntry()?.id ?? null}
             onPickFolder={() => void ctx.onPickFolder()}
+            onImportWizard={() => ctx.onOpenImportWizard()}
             onToggleFavorite={ctx.onToggleFavorite}
             showSystemHeader
             gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}

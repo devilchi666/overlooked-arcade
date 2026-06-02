@@ -831,7 +831,7 @@ const ImportWizard: Component<Props> = (props) => {
   const Step1 = () => (
     <div class="flex flex-col gap-5">
       <p class="text-xs uppercase tracking-widest text-(--color-oa-ink-dim)">
-        Pick a folder to scan.
+        Where are your games today?
       </p>
       <div class="flex gap-2">
         <input
@@ -1046,17 +1046,19 @@ const ImportWizard: Component<Props> = (props) => {
         </Show>
         <Show when={!scanRunning() && total() === 0 && !scanError() && !scanCancelled() && scanProgress()}>
           <p class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-(--color-oa-ink-dim)">
-            No supported ROMs found in this folder.
+            No ROMs OA recognizes in this folder — try a different one.
           </p>
         </Show>
         <Show when={total() > 0}>
           <Show when={needsSystemCount() > 0}>
             <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-(--color-oa-ink)">
               <p class="font-semibold">
-                {needsSystemCount()} {needsSystemCount() === 1 ? "row" : "rows"} need a system before commit.
+                {needsSystemCount() === 1
+                  ? "A row still needs a system before commit"
+                  : `${needsSystemCount()} rows still need a system before commit`}
               </p>
               <p class="mt-0.5 text-(--color-oa-ink-dim)">
-                Click each row's <span class="text-(--color-oa-ink)">Detected system</span> cell to assign one, or use the Advanced extension overrides below for a persistent rule.
+                Click each row's <span class="text-(--color-oa-ink)">Detected system</span> cell to pick one, or use the Advanced extension overrides below for a persistent rule.
               </p>
             </div>
           </Show>
@@ -1107,18 +1109,19 @@ const ImportWizard: Component<Props> = (props) => {
     return (
       <div class="flex flex-col gap-4">
         <p class="text-sm text-(--color-oa-ink)">
-          Add <span class="font-semibold text-(--color-system-accent)">{total()}</span>{" "}
+          Looks good — ready to add{" "}
+          <span class="font-semibold text-(--color-system-accent)">{total()}</span>{" "}
           {total() === 1 ? "game" : "games"} to your library?
         </p>
         <div class="flex flex-col gap-2 rounded-md border border-white/5 bg-black/20 px-3 py-2.5">
           <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-            Run media + metadata sync after import?
+            Pull cover art + metadata after import?
           </p>
           <Toggle label="Cover art" checked={syncCovers()} onChange={setSyncCovers} />
           <Toggle label="Snapshots" checked={syncSnaps()} onChange={setSyncSnaps} />
           <Toggle label="Title screens" checked={syncTitles()} onChange={setSyncTitles} />
           <Toggle
-            label="Year / genre / developer / publisher / players"
+            label="Year, genre, developer, publisher, player count"
             checked={syncMetadata()}
             onChange={setSyncMetadata}
           />

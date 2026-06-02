@@ -15,9 +15,9 @@ import type { SystemId } from "../../themes/registry";
 /// per-system entry below. Keeps the affordance discoverable while
 /// leaving real sourcing guidance up to per-core curation.
 const DEFAULT_HINT =
-  "Drop the matching files into the BIOS folder shown above. " +
-  "See `docs/cores/<systemId>/README.md` in the OA repo for per-system " +
-  "sourcing notes.";
+  "Drop the matching file into the BIOS folder shown above when you've got it. " +
+  "Per-system sourcing notes live in `docs/cores/<systemId>/README.md` in the " +
+  "OA repo.";
 
 /// Per-system override copy. Operator can flesh these out per system
 /// over time — entries here override the DEFAULT_HINT for the matching
