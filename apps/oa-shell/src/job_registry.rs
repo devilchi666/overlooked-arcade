@@ -267,7 +267,13 @@ impl JobRegistry {
     }
 
     fn spawn_heartbeat(inner: Arc<Inner>) {
-        tokio::spawn(async move {
+        // `tauri::async_runtime::spawn` instead of `tokio::spawn` so
+        // this works regardless of whether the caller is inside a
+        // tokio reactor context. setup() runs synchronously on Tauri's
+        // main thread BEFORE the runtime is entered, so a raw
+        // `tokio::spawn` here panics with "there is no reactor running"
+        // and the app dies on launch.
+        tauri::async_runtime::spawn(async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(HEARTBEAT_SECS));
             // Skip the immediate first tick — registry just started.
             ticker.tick().await;
