@@ -1313,6 +1313,44 @@ date: 2024
     }
 
     #[test]
+    fn load_default_loads_nds_sample_via_registry_after_slice1_migration() {
+        // Slice 1 Phase D (2026-06-02) — `nds` game records moved from
+        // docs/cores/nds/games-info.md into config/systems/nds/games.yaml.
+        // Three seed entries (Phantom Hourglass / Brain Age / Trauma
+        // Center) all carry touch_hotspots; this test validates both
+        // the registry merge AND the touch_hotspot field roundtrip
+        // (via the inline {label, x, y, w, h} flow-style YAML form).
+        let idx = GameInfoIndex::load_default();
+        let phantom = idx
+            .lookup(
+                "nds",
+                None,
+                Some("The Legend of Zelda: Phantom Hourglass (USA)"),
+            )
+            .expect("Phantom Hourglass record must surface from registry");
+        assert_eq!(phantom.date, Some(2007));
+        assert_eq!(phantom.touch_hotspots.len(), 4);
+        let map = &phantom.touch_hotspots[0];
+        assert_eq!(map.label, "Map");
+        assert_eq!(map.x, 200);
+        assert_eq!(map.w, 48);
+
+        let brain_age = idx
+            .lookup(
+                "nds",
+                None,
+                Some("Brain Age: Train Your Brain in Minutes a Day! (USA)"),
+            )
+            .expect("Brain Age record must surface from registry");
+        assert_eq!(brain_age.touch_hotspots.len(), 2);
+
+        let trauma_center = idx
+            .lookup("nds", None, Some("Trauma Center: Under the Knife (USA)"))
+            .expect("Trauma Center record must surface from registry");
+        assert_eq!(trauma_center.publisher.as_deref(), Some("Atlus"));
+    }
+
+    #[test]
     fn parse_skips_markdown_prose_before_first_document_marker() {
         // Regression: an earlier version hung on serde_yaml's tokenizer
         // when contributors wrote markdown prose (backticks, em-dashes,

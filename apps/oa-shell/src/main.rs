@@ -1681,11 +1681,21 @@ const NDS_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// hash-match; returns OkUnknownHash if all three exist but at least
 /// one has an unexpected SHA-1; returns Missing if any are absent.
 fn check_nds_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    // Slice 5 refactor: per-file inventory + `AllRequired` semantics
-    // (BIOS only valid when bios7.bin + bios9.bin + firmware.bin are
-    // all present + canonical-hash-matched). Per-file detail flows
-    // through to the readiness checklist so the operator sees which
-    // specific file is missing rather than a single "missing" string.
+    // Slice 1 of the per-system descriptor consolidation
+    // (`docs/PLANS/per-system-descriptors.md`): prefers
+    // `config/systems/nds/bios.yaml` (all_required semantics) when
+    // present; falls through to [`NDS_BIOS_KNOWN_HASHES`] when the
+    // registry doesn't carry nds.
+    //
+    // Slice 5 refactor (Phase 1B): per-file inventory + `AllRequired`
+    // semantics (BIOS only valid when bios7.bin + bios9.bin +
+    // firmware.bin are all present + canonical-hash-matched). Per-file
+    // detail flows through to the readiness checklist so the operator
+    // sees which specific file is missing rather than a single
+    // "missing" string.
+    if let Some(verdict) = check_bios_from_registry("nds", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, NDS_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
@@ -10678,6 +10688,75 @@ mod tests {
             bios.semantics,
             system_descriptor::BiosSemanticsYaml::AnyOf
         ));
+    }
+
+    #[test]
+    fn nds_bios_check_via_registry_matches_legacy_const() {
+        // Slice 1 Phase D (2026-06-02) — confirms config/systems/nds/bios.yaml
+        // carries the same canonical (name, sha1) tuples as
+        // NDS_BIOS_KNOWN_HASHES + the semantics is all_required.
+        let registry = system_registry::global_registry();
+        let nds = registry
+            .get("nds")
+            .expect("config/systems/nds/system.yaml must load under cargo test");
+        let bios = nds
+            .bios
+            .as_ref()
+            .expect("config/systems/nds/bios.yaml must load");
+
+        let const_set: std::collections::HashSet<(&str, &str)> = NDS_BIOS_KNOWN_HASHES
+            .iter()
+            .map(|(n, h, _)| (*n, *h))
+            .collect();
+        let yaml_set: std::collections::HashSet<(&str, &str)> = bios
+            .files
+            .iter()
+            .map(|f| (f.name.as_str(), f.sha1.as_str()))
+            .collect();
+        assert_eq!(
+            const_set, yaml_set,
+            "config/systems/nds/bios.yaml must mirror NDS_BIOS_KNOWN_HASHES exactly"
+        );
+        assert!(matches!(
+            bios.semantics,
+            system_descriptor::BiosSemanticsYaml::AllRequired
+        ));
+        // All_required + 3 entries — DS BIOS is bios7+bios9+firmware.
+        assert_eq!(bios.files.len(), 3);
+    }
+
+    #[test]
+    fn nds_check_bios_via_registry_partial_present_returns_missing() {
+        // Drop bios7.bin only (with garbage bytes) — the all_required
+        // semantics should still return Missing because bios9 + firmware
+        // are absent. Validates the registry path produces the same
+        // verdict the const path would.
+        let dir = fresh_tmp_dir("nds-partial");
+        std::fs::write(dir.join("bios7.bin"), b"not the real bios").expect("seed bios7");
+        match check_nds_bios(&dir) {
+            Err(BiosError::Missing { files }) => {
+                // bios9 + firmware should appear in the inventory as Missing;
+                // bios7 should be UnknownHash since it's present with the
+                // wrong content.
+                let bios7 = files
+                    .iter()
+                    .find(|f| f.expected_name == "bios7.bin")
+                    .expect("bios7 in inventory");
+                assert!(matches!(bios7.on_disk, BiosFileStatus::UnknownHash { .. }));
+                let bios9 = files
+                    .iter()
+                    .find(|f| f.expected_name == "bios9.bin")
+                    .expect("bios9 in inventory");
+                assert!(matches!(bios9.on_disk, BiosFileStatus::Missing));
+                let firmware = files
+                    .iter()
+                    .find(|f| f.expected_name == "firmware.bin")
+                    .expect("firmware in inventory");
+                assert!(matches!(firmware.on_disk, BiosFileStatus::Missing));
+            }
+            other => panic!("expected Missing, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
