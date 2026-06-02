@@ -382,6 +382,56 @@ fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
     }
 }
 
+/// "Prefer-registry, fall back to const" shim for
+/// [`libretro_dat_refs_for_system`]. When
+/// `config/systems/<id>/system.yaml` carries a `libretro_dat_refs` block,
+/// use those refs; otherwise fall through to the const arm.
+///
+/// Slice 2 of the per-system descriptor consolidation
+/// (`docs/PLANS/per-system-descriptors.md`). Slice 1 already wired the
+/// BIOS check + game info + system info paths through the registry;
+/// this closes the dat-refs path. Phase D deletes the const arms +
+/// this shim's fallback; the resolved fn becomes a direct registry
+/// lookup.
+///
+/// **Implementation note (cache + leak):** the existing [`DatRef`]
+/// carries `&'static str` fields because every consumer downstream
+/// (`fetch_libretro_dat`, `fetch_and_parse_all`) treats refs as if they
+/// were process-lifetime data. Converting from the registry's owned
+/// `String` to `&'static str` requires either changing `DatRef` to
+/// `Cow<'static, str>` (~30 callsite changes downstream) or `Box::leak`
+/// (bounded one-time allocation per system — ~50 bytes × ~40 systems
+/// = ~2 KB lifetime). Slice 2 takes the leak approach for minimal
+/// disturbance; Phase D's `DatRef` shape can pivot to whatever the
+/// post-const world prefers.
+pub fn libretro_dat_refs_for_system_resolved(system_id: &str) -> &'static [DatRef] {
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<String, &'static [DatRef]>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(&refs) = cache.lock().unwrap().get(system_id) {
+        return refs;
+    }
+
+    let registry = crate::system_registry::global_registry();
+    if let Some(loaded) = registry.get(system_id) {
+        let refs: Vec<DatRef> = loaded
+            .descriptor
+            .libretro_dat_refs
+            .iter()
+            .map(|r| DatRef {
+                subdir: Box::leak(r.subdir.clone().into_boxed_str()),
+                basename: Box::leak(r.basename.clone().into_boxed_str()),
+            })
+            .collect();
+        let leaked: &'static [DatRef] = Box::leak(refs.into_boxed_slice());
+        cache.lock().unwrap().insert(system_id.to_string(), leaked);
+        return leaked;
+    }
+
+    libretro_dat_refs_for_system(system_id)
+}
+
 /// Extensions we deliberately skip when computing hashes — CD-container
 /// formats whose content hash means something different from "the
 /// canonical ROM bytes." See module docs.
@@ -894,7 +944,7 @@ pub async fn sync_rom_hashes_for_system(
     let _gate_guard = gate.lock().await;
 
     let app_data_dir = state.app_data_dir.clone();
-    let refs = libretro_dat_refs_for_system(&systemId);
+    let refs = libretro_dat_refs_for_system_resolved(&systemId);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {systemId}; skipping sync");
         return Ok(RomHashSyncSummary {
@@ -1149,7 +1199,7 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
     if db.count_rom_hashes(system_id)? > 0 {
         return Ok(());
     }
-    let refs = libretro_dat_refs_for_system(system_id);
+    let refs = libretro_dat_refs_for_system_resolved(system_id);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {system_id}");
         return Ok(());
@@ -1939,5 +1989,38 @@ game (
         let only_encoded = sha1_of_rom(&encoded, None).expect("hash encoded only");
         assert_eq!(only_encoded, "a9993e364706816aba3e25717850c26c9cd0d89d");
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    // ---- Slice 2 Phase C — registry round-trip for dat refs ----
+
+    #[test]
+    fn libretro_dat_refs_resolved_matches_legacy_for_all_systems() {
+        // Slice 2 Phase C (2026-06-02): every system in
+        // libretro_dat_refs_for_system's match arms must round-trip
+        // through libretro_dat_refs_for_system_resolved (which prefers
+        // the registry's config/systems/<id>/system.yaml
+        // libretro_dat_refs block). Phase D deletes the const arms
+        // + this test once direct registry lookup is the only path.
+        //
+        // The shipping registry should cover every system the const
+        // function arms over. List drift in either direction is the
+        // gap this test catches.
+        let registry = crate::system_registry::global_registry();
+        for sys_id in registry.system_ids() {
+            let const_refs = libretro_dat_refs_for_system(sys_id);
+            let resolved = libretro_dat_refs_for_system_resolved(sys_id);
+            let const_pairs: std::collections::HashSet<(&str, &str)> = const_refs
+                .iter()
+                .map(|r| (r.subdir, r.basename))
+                .collect();
+            let resolved_pairs: std::collections::HashSet<(&str, &str)> = resolved
+                .iter()
+                .map(|r| (r.subdir, r.basename))
+                .collect();
+            assert_eq!(
+                const_pairs, resolved_pairs,
+                "libretro_dat_refs for {sys_id} differ between const + registry path"
+            );
+        }
     }
 }

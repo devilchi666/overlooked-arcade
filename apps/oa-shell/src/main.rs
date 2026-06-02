@@ -652,6 +652,41 @@ fn parse_system_id(s: &str) -> oa_core::SystemId {
     }
 }
 
+/// "Prefer-registry, fall back to const" shim for
+/// [`default_core_dll_for_system`]. Slice 2 Phase C of the per-system
+/// descriptor consolidation arc. When
+/// `config/systems/<id>/system.yaml` carries a `default_core:` field,
+/// use it; otherwise fall through to the const match.
+///
+/// Leak-cache pattern mirrors
+/// [`crate::rom_hashes::libretro_dat_refs_for_system_resolved`] — the
+/// const arms return `&'static str`, so the registry's owned `String`
+/// gets `Box::leak`ed once per system. Bounded leak: at most one
+/// allocation per system over the lifetime of the process.
+fn default_core_dll_for_system_resolved(system_id: &str) -> &'static str {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(&s) = cache.lock().unwrap().get(system_id) {
+        return s;
+    }
+    let registry = system_registry::global_registry();
+    if let Some(loaded) = registry.get(system_id) {
+        if let Some(default_core) = &loaded.descriptor.default_core {
+            let leaked: &'static str =
+                Box::leak(default_core.clone().into_boxed_str());
+            cache
+                .lock()
+                .unwrap()
+                .insert(system_id.to_string(), leaked);
+            return leaked;
+        }
+    }
+    default_core_dll_for_system(system_id)
+}
+
 /// Default libretro core .dll filename for a system. Used when the user has
 /// no per-system pref set and no per-game override. The frontend's
 /// `resolveScannableExtensions` already unions in `list_cores` valid_exts
@@ -1337,6 +1372,9 @@ fn check_bios_from_registry(
 /// per-file inventory; verdict is `AnyOf` semantics (any one canonical
 /// match satisfies the system).
 fn check_pce_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("pce-cd", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, PCE_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1369,6 +1407,9 @@ const SEGA_CD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for any Sega CD BIOS matching a known regional
 /// filename. Slice 5 refactor: per-file inventory + `AnyOf` semantics.
 fn check_sega_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("segacd", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, SEGA_CD_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1413,6 +1454,9 @@ const SATURN_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for any Saturn BIOS. Slice 5 refactor: per-file
 /// inventory + `AnyOf` semantics (any regional variant satisfies).
 fn check_saturn_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("saturn", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, SATURN_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1500,6 +1544,9 @@ const NEOCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for any Neo Geo CD BIOS. Slice 5 refactor:
 /// per-file inventory + `AnyOf` semantics.
 fn check_neocd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("neocd", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, NEOCD_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1535,6 +1582,9 @@ const THREEDO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for any 3DO BIOS. Slice 5 refactor: per-file
 /// inventory + `AnyOf` semantics.
 fn check_3do_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("3do", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, THREEDO_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1556,6 +1606,9 @@ const PCFX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for the PC-FX BIOS. Slice 5 refactor: per-file
 /// inventory + `AnyOf` semantics.
 fn check_pcfx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("pcfx", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, PCFX_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1591,6 +1644,9 @@ const DREAMCAST_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// AND-of-two-distinct-files check is filed as a polish item in
 /// docs/cores/dreamcast/ROADMAP.md.
 fn check_dreamcast_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("dreamcast", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, DREAMCAST_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1655,6 +1711,9 @@ const PS2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Same shape as the other check_*_bios functions; slots into the
 /// CD-launch BIOS dispatch arm as the 9th CD-shape system.
 fn check_ps2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("ps2", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, PS2_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1863,6 +1922,9 @@ const COLECO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// `AnyOf` (table lists `colecovision.rom` + `coleco.rom` aliases —
 /// same content, either filename satisfies).
 fn check_coleco_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("coleco", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, COLECO_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1881,6 +1943,9 @@ const INTV_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for both required Intellivision BIOS files.
 /// Slice 5 refactor: per-file inventory + `AllRequired` semantics.
 fn check_intv_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("intv", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, INTV_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
@@ -1901,6 +1966,9 @@ const O2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for an Odyssey²/Videopac BIOS. Slice 5 refactor:
 /// per-file inventory + `AnyOf` semantics.
 fn check_o2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("o2", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, O2_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1923,6 +1991,12 @@ const CHANNELF_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// (`sl90025.bin`) is marked `optional` post-scan so a missing Channel
 /// F II revision doesn't flip the launch-pair check to ⚠ Missing.
 fn check_channelf_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    // Registry path is preferred — config/systems/channelf/bios.yaml
+    // carries sl90025.bin's `optional: true` flag directly so the
+    // post-scan adjustment below isn't needed when the registry is loaded.
+    if let Some(verdict) = check_bios_from_registry("channelf", system_dir) {
+        return verdict;
+    }
     let mut files = scan_bios_table(system_dir, CHANNELF_BIOS_KNOWN_HASHES);
     // sl90025.bin is the optional Channel F II revision file — present-
     // checking only, never required for the launch pair to satisfy.
@@ -1946,6 +2020,9 @@ const ATARI5200_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Pre-staged 5200 BIOS check. Slice 5 refactor: per-file inventory +
 /// `AnyOf` semantics (single-file table — semantics doesn't matter).
 fn check_atari5200_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("5200", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, ATARI5200_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1961,6 +2038,9 @@ const POKEMINI_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 
 /// Pre-staged PokeMini BIOS check. Slice 5 refactor: per-file inventory.
 fn check_pokemini_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("pokemini", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, POKEMINI_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1983,6 +2063,9 @@ const GBA_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// runs most titles fine BIOS-less) — that's a dispatch-site
 /// distinction, not a check-function one.
 fn check_gba_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("gba", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, GBA_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -2001,6 +2084,9 @@ const JAGUAR_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Scan `<system_dir>` for the Jaguar boot ROM. Slice 5 refactor: per-
 /// file inventory + `AnyOf` semantics (two aliases for the same file).
 fn check_jaguar_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("jaguar", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, JAGUAR_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -2020,6 +2106,9 @@ const JAGCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 
 /// Scan `<system_dir>` for the Jaguar CD BIOS. Slice 5 refactor.
 fn check_jagcd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("jagcd", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, JAGCD_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -3871,7 +3960,7 @@ fn run_emu_render(
             Some(hint) => {
                 let dll = hint.core_override.clone()
                     .or_else(|| cores_pref.get(&hint.system_id).cloned())
-                    .unwrap_or_else(|| default_core_dll_for_system(&hint.system_id).to_string());
+                    .unwrap_or_else(|| default_core_dll_for_system_resolved(&hint.system_id).to_string());
                 log::info!(
                     "oa-shell: direct-launch bootstrap \u{2192} system={} dll={} (skipping tg16 default)",
                     hint.system_id, dll
@@ -4333,7 +4422,7 @@ fn run_emu_render(
                     // already resolved at startup into `current_core_dll`; we
                     // re-read cores.json so a pref change in Settings takes
                     // effect without needing a per-game override).
-                    let per_system_default = default_core_dll_for_system(&system_id).to_string();
+                    let per_system_default = default_core_dll_for_system_resolved(&system_id).to_string();
                     let per_system_pref = read_cores_pref(&app_data_dir)
                         .get(&system_id)
                         .cloned()
@@ -10757,6 +10846,89 @@ mod tests {
             other => panic!("expected Missing, got: {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn all_bios_systems_via_registry_match_legacy_const() {
+        // Slice 2 Phase C (2026-06-02) — wires the remaining 17
+        // check_*_bios functions through the registry. Confirms every
+        // *_BIOS_KNOWN_HASHES const table has a matching bios.yaml
+        // in config/systems/<id>/ with identical (name, sha1) sets.
+        //
+        // Replaces the per-system spot checks (psx + nds) with one
+        // parametric assertion. Phase D deletes both this test and
+        // the const tables — until then, the test guards against
+        // any silent drift between the migrator-emitted YAMLs and
+        // the L1 source of truth.
+        let registry = system_registry::global_registry();
+        let pairs: &[(&str, &[(&str, &str, &str)])] = &[
+            ("pce-cd", PCE_BIOS_KNOWN_HASHES),
+            ("segacd", SEGA_CD_BIOS_KNOWN_HASHES),
+            ("saturn", SATURN_BIOS_KNOWN_HASHES),
+            ("psx", PSX_BIOS_KNOWN_HASHES),
+            ("neocd", NEOCD_BIOS_KNOWN_HASHES),
+            ("3do", THREEDO_BIOS_KNOWN_HASHES),
+            ("pcfx", PCFX_BIOS_KNOWN_HASHES),
+            ("dreamcast", DREAMCAST_BIOS_KNOWN_HASHES),
+            ("ps2", PS2_BIOS_KNOWN_HASHES),
+            ("nds", NDS_BIOS_KNOWN_HASHES),
+            ("coleco", COLECO_BIOS_KNOWN_HASHES),
+            ("intv", INTV_BIOS_KNOWN_HASHES),
+            ("o2", O2_BIOS_KNOWN_HASHES),
+            ("channelf", CHANNELF_BIOS_KNOWN_HASHES),
+            ("5200", ATARI5200_BIOS_KNOWN_HASHES),
+            ("pokemini", POKEMINI_BIOS_KNOWN_HASHES),
+            ("gba", GBA_BIOS_KNOWN_HASHES),
+            ("jaguar", JAGUAR_BIOS_KNOWN_HASHES),
+            ("jagcd", JAGCD_BIOS_KNOWN_HASHES),
+        ];
+        for (system_id, const_table) in pairs {
+            let loaded = registry
+                .get(system_id)
+                .unwrap_or_else(|| panic!("registry missing system {system_id}"));
+            let bios = loaded
+                .bios
+                .as_ref()
+                .unwrap_or_else(|| panic!("registry has no bios.yaml for {system_id}"));
+            let const_set: std::collections::HashSet<(&str, &str)> = const_table
+                .iter()
+                .map(|(n, h, _)| (*n, *h))
+                .collect();
+            let yaml_set: std::collections::HashSet<(&str, &str)> = bios
+                .files
+                .iter()
+                .map(|f| (f.name.as_str(), f.sha1.as_str()))
+                .collect();
+            assert_eq!(
+                const_set, yaml_set,
+                "config/systems/{system_id}/bios.yaml diverges from L1 const table",
+            );
+        }
+    }
+
+    #[test]
+    fn all_bios_systems_via_registry_have_expected_semantics() {
+        // Set-equivalence catches name/sha1 drift; semantics covers the
+        // AnyOf vs AllRequired distinction. Every CD-shape + cart-OR
+        // system is AnyOf; multi-file BIOSes (NDS, Intv, Channel F) are
+        // AllRequired. Slice 2 Phase C parametric guard.
+        let registry = system_registry::global_registry();
+        let any_of = ["pce-cd","segacd","saturn","psx","neocd","3do","pcfx","dreamcast","ps2","coleco","o2","5200","pokemini","gba","jaguar","jagcd"];
+        let all_required = ["nds","intv","channelf"];
+        for sys in any_of {
+            let bios = registry.get(sys).unwrap().bios.as_ref().unwrap();
+            assert!(
+                matches!(bios.semantics, system_descriptor::BiosSemanticsYaml::AnyOf),
+                "{sys} should be AnyOf"
+            );
+        }
+        for sys in all_required {
+            let bios = registry.get(sys).unwrap().bios.as_ref().unwrap();
+            assert!(
+                matches!(bios.semantics, system_descriptor::BiosSemanticsYaml::AllRequired),
+                "{sys} should be AllRequired"
+            );
+        }
     }
 
     #[test]
