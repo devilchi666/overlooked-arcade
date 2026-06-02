@@ -85,6 +85,20 @@ pub enum JobKind {
     /// (`mame_import::refresh_mame_system_info`). Atomic — single
     /// XML parse + bake; cancel rolls back.
     MameListxmlImport,
+    /// Per-system artwork download from libretro-thumbnails
+    /// (`media::sync_media_for_system`). Plan §"Kind taxonomy"
+    /// originally split this into artwork_sync vs metadata_sync for
+    /// per-kind concurrency, but the existing function bundles both
+    /// into one per-game-per-kind pass — Phase 4b wires the whole
+    /// pass as artwork_sync (covers 26 of 27 MediaKind variants;
+    /// only Manual is metadata-shape). The deeper split deferred
+    /// until a separate metadata-fetching path exists.
+    ArtworkSync { system_id: String },
+    /// Parent row for Guided Setup's parallel install of N cores
+    /// (`MissingCoreBulkPrompt` → N download_core calls). Children
+    /// are individual CoreDownload jobs linked via parent_job_id;
+    /// the parent's `done` counts how many children have finalized.
+    BulkCoreInstall,
     /// Dev-only synthetic job for exercising the BackgroundJobsBar
     /// without burning bandwidth on a real download. Lives at the
     /// production level (not behind `cfg(debug_assertions)`) so
@@ -101,6 +115,8 @@ impl JobKind {
             Self::HashResolve { .. } => "hash_resolve",
             Self::DatSync { .. } => "dat_sync",
             Self::MameListxmlImport => "mame_listxml_import",
+            Self::ArtworkSync { .. } => "artwork_sync",
+            Self::BulkCoreInstall => "bulk_core_install",
             Self::TestJob { .. } => "test_job",
         }
     }
@@ -112,6 +128,8 @@ impl JobKind {
             Self::HashResolve { system_id } => Some(system_id.clone()),
             Self::DatSync { system_id } => Some(system_id.clone()),
             Self::MameListxmlImport => None,
+            Self::ArtworkSync { system_id } => Some(system_id.clone()),
+            Self::BulkCoreInstall => None,
             Self::TestJob { name } => Some(name.clone()),
         }
     }
@@ -617,6 +635,7 @@ impl JobRegistry {
         self.drop_handle(job_id);
         self.emit_event(&JobEvent::Completed { job_id });
         self.prune_history_to_cap();
+        self.tick_parent_if_any(job_id);
         r
     }
 
@@ -627,6 +646,7 @@ impl JobRegistry {
         self.drop_handle(job_id);
         self.emit_event(&JobEvent::Failed { job_id, error });
         self.prune_history_to_cap();
+        self.tick_parent_if_any(job_id);
         r
     }
 
@@ -635,7 +655,86 @@ impl JobRegistry {
         let r = self.transition_to(job_id, JobState::Cancelled, None, None);
         self.drop_handle(job_id);
         self.prune_history_to_cap();
+        self.tick_parent_if_any(job_id);
         r
+    }
+
+    /// Phase 4b parent aggregation — when a child finalizes, look up
+    /// its parent_job_id (if any), recount finished siblings, and
+    /// emit a progress event on the parent. When the last sibling
+    /// resolves, finalize the parent too (mark_completed if every
+    /// child succeeded, mark_failed if any failed/cancelled — Phase
+    /// 4b treats partial success as failure at the parent level so
+    /// the bar visibly surfaces the issue; Phase 4c retry policy
+    /// will refine this).
+    fn tick_parent_if_any(&self, child_job_id: i64) {
+        let (parent_id, done_children, total_children, any_failure): (i64, i64, i64, bool) = {
+            let Ok(conn) = self.lock_conn() else { return };
+            let parent_id: Option<i64> = conn
+                .query_row(
+                    "SELECT parent_job_id FROM background_jobs WHERE id = ?1",
+                    params![child_job_id],
+                    |row| row.get(0),
+                )
+                .ok()
+                .flatten();
+            let Some(parent_id) = parent_id else {
+                return;
+            };
+            let result: Result<(i64, i64, i64), rusqlite::Error> = conn.query_row(
+                "SELECT \
+                    SUM(CASE WHEN state IN ('completed', 'failed', 'cancelled') THEN 1 ELSE 0 END), \
+                    COUNT(*), \
+                    SUM(CASE WHEN state IN ('failed', 'cancelled') THEN 1 ELSE 0 END) \
+                 FROM background_jobs WHERE parent_job_id = ?1",
+                params![parent_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            );
+            match result {
+                Ok((done, total, fail)) => (parent_id, done, total, fail > 0),
+                Err(_) => return,
+            }
+        };
+        // Emit parent progress (bypassing the per-handle debounce —
+        // parents don't carry handles in the active map; they advance
+        // by child-completion ticks, which are inherently low-rate).
+        let _ = self.write_progress_unthrottled(parent_id, done_children, Some(total_children));
+        if done_children >= total_children && total_children > 0 {
+            if any_failure {
+                let _ = self.mark_failed(
+                    parent_id,
+                    format!("{} of {} children failed", any_failure as i64, total_children),
+                );
+            } else {
+                let _ = self.mark_completed(parent_id);
+            }
+        }
+    }
+
+    /// Unthrottled progress writer for parent rows — bypasses the
+    /// per-JobHandle debounce because parents don't carry handles
+    /// (no worker polling pause/cancel on the parent itself).
+    fn write_progress_unthrottled(
+        &self,
+        job_id: i64,
+        done: i64,
+        total: Option<i64>,
+    ) -> Result<(), String> {
+        let now = now_ms();
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE background_jobs SET done = ?1, total = ?2, last_event_at = ?3 \
+             WHERE id = ?4",
+            params![done, total, now, job_id],
+        )
+        .map_err(|e| format!("update parent progress: {e}"))?;
+        drop(conn);
+        self.emit_event(&JobEvent::Progressed {
+            job_id,
+            done,
+            total,
+        });
+        Ok(())
     }
 
     /// Phase 2 — flip the JobHandle's pause flag from outside the
@@ -1003,6 +1102,40 @@ pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
     Ok(registry_handle(&app)
         .map(|reg| reg.signal_cancel_all())
         .unwrap_or(0))
+}
+
+/// Phase 4b — create a `bulk_core_install` parent job for the
+/// Guided Setup MissingCoreBulkPrompt batch. The frontend then loops
+/// over the per-core download_core calls, passing the returned id
+/// as `parentJobId` on each. As each child mark_completed/failed
+/// fires, the JobRegistry's tick_parent_if_any helper recounts
+/// children and updates the parent's `done` accordingly. Returns
+/// the parent's job_id; -1 means the registry isn't managed (the
+/// frontend treats this as "no parent" and the downloads still
+/// proceed individually).
+#[tauri::command]
+pub fn start_bulk_core_install(n: usize, app: tauri::AppHandle) -> Result<i64, String> {
+    let Some(reg) = registry_handle(&app) else {
+        log::warn!(
+            "background_jobs: start_bulk_core_install — registry not managed, skipping parent"
+        );
+        return Ok(-1);
+    };
+    let label = format!("Installing {} core{}", n, if n == 1 { "" } else { "s" });
+    let id = reg.create_job(
+        JobKind::BulkCoreInstall,
+        label,
+        None,
+        None,
+        false,
+        "cores",
+        None,
+    )?;
+    let _ = reg.mark_running(id);
+    // Pre-set the parent's total so the bar opens with "0 / N" rather
+    // than blank.
+    let _ = reg.write_progress_unthrottled(id, 0, Some(n as i64));
+    Ok(id)
 }
 
 /// Dev helper — spawn a synthetic background job that ticks
