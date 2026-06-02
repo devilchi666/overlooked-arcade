@@ -11,18 +11,6 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Background jobs + persistent progress bar — Phase 1**
-  ([features/background-jobs/](features/background-jobs/)) — branch
-  `feat/background-jobs-phase-1`. First slice of the 5-phase arc locked
-  2026-06-02 in [docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
-  Ships schema + `JobRegistry` + `<data_dir>/oa.lock` lifecycle + heartbeat
-  + `core_download` wired end-to-end as the pilot kind. **No frontend UI
-  this phase** (Phase 2 builds the `BackgroundJobsBar` Solid component);
-  **no auto-resume dispatch** (Phase 3 adds the `JobResumer` trait + per-
-  kind handlers). Phase 1's crash-recovery flow just promotes
-  `state='running'` rows to `interrupted` on next launch and leaves them
-  for operator-triggered retry.
-
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
@@ -193,6 +181,53 @@ spanned every system but was filed under whichever core happened to be active.
   background / boot animation file goes on disk).
 
 ## Recently completed (this session)
+
+- **Background jobs + persistent progress bar — Phase 1 (backend pilot)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-1`).
+  Six phase commits + a launch-crash fix landing the backend half of
+  the 5-phase arc locked earlier the same day in
+  [docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
+  - **Slice A** (`7add49c`) feature-folder skeleton + ACTIVE_WORK entry
+    + INDEX cross-cutting link.
+  - **Slice B** (`5c734d5`) schema migration v17→v18: new
+    `background_jobs` table + 3 indexes per plan §Schema.
+    `parent_job_id` uses `ON DELETE SET NULL` so the rolling-buffer
+    prune of finished parents doesn't cascade and drop in-flight
+    children.
+  - **Slice C** (`e3ac548`) `apps/oa-shell/src/job_registry.rs`
+    (~700 LOC): JobKind + JobState + JobSnapshot + JobEvent +
+    JobHandle (cancel + pause AtomicBool + last-write rate-limit
+    cells) + the JobRegistry wrapping `Arc<Inner>` for cheap Clone.
+    1 Hz SQLite write debounce, 10 Hz Tauri event cap, ~1 s heartbeat,
+    100-row history rolling buffer pruned on each finalize. 7 unit
+    tests cover the lifecycle + invariants.
+  - **Slice D** (`916cd31`) `<data_dir>/oa.lock` lifecycle + crash
+    detection wired in main.rs: lock file present at startup →
+    `promote_running_rows_to_interrupted` runs on registry
+    construction. Path shuttles from setup() to the post-`.run()`
+    cleanup via the same `Arc<OnceLock<PathBuf>>` pattern the
+    window-geometry flusher uses.
+  - **Slice E** (`86c9a96`) `core_installer::download_core` wired
+    via JobRegistry: cancel + pause polled inside the chunk loop,
+    per-chunk progress through `registry.progress()`, finalize block
+    handles mark_completed / mark_cancelled (with .partial cleanup
+    per plan §"Cancel cleanup") / mark_failed. Existing
+    `oa://core-download-progress` emit stays intact so Guided Setup's
+    listener doesn't break.
+  - **Wrap + fix** (`7ce47b1` + `71b24cc`) SESSION_LOG entry + a
+    launch-crash fix: setup() runs synchronously on Tauri's main
+    thread BEFORE the async runtime is entered, so raw `tokio::spawn`
+    in `JobRegistry::new` panicked with "no reactor running."
+    Switched to `tauri::async_runtime::spawn` which queues onto
+    Tauri's managed runtime regardless of caller context. Operator
+    smoke-tested before merge.
+  - 660 of 660 oa-shell tests green. Phase 2 (BackgroundJobsBar Solid
+    component) + Phase 3 (auto-resume dispatch) + Phase 4 (remaining
+    8 kinds + dependency graph) + Phase 5 (Settings + Recent activity
+    panel) queued. Phase 2 is the natural next step but stays in
+    NEXT.md HIGH band rather than auto-starting; the arc's plan
+    explicitly allows pipelining around other work.
 
 - **Per-system descriptor consolidation — Slice 2 (mass migration + L1 const deletion)**
   ([docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md))

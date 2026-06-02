@@ -301,22 +301,37 @@ together:
    (or worse, `.partial` files left for the operator to clean up).
 
 **Scope (per plan §"Sizing"):** ~5-6 weeks across 5 phases.
-- **Phase 1** (~1 week) — `background_jobs` SQLite table +
-  `JobRegistry` Tauri-managed state + `JobHandle` shape + event
-  broadcast. One pilot kind wired (probably `download_core`).
-  End-to-end smoke: create → progress → cancel.
-- **Phase 2** (~1 week) — `BackgroundJobsBar` Solid component in
-  RetroverseShell. Auto-hide / single-line / expandable panel.
-  Listens to `JobEvent` broadcast.
-- **Phase 3** (~1.5 weeks) — `JobResumer` trait + 3 kinds wired
-  (core_download / media_sync / resolve_rom_hashes) +
-  app-launch interrupted-job prompt.
-- **Phase 4** (~1.5 weeks) — wire remaining kinds (folder scan
-  with unknown-total / pulsing-bar shape, thumbnail sync, MAME
-  listxml, per-track SHA-1 when that arc lands). Pause +
-  stale-job detection per kind.
-- **Phase 5** (~1 week) — operator playtest, performance check,
-  crash-recovery testing.
+- ✅ **Phase 1** (shipped 2026-06-02) — `background_jobs` SQLite
+  table + `JobRegistry` Tauri-managed state + `JobHandle` shape +
+  `oa://job-event` broadcast + `<data_dir>/oa.lock` lifecycle +
+  heartbeat + 100-row rolling buffer. `core_download` wired
+  end-to-end as the pilot kind. Operator smoke-tested before
+  `--no-ff` merge of `feat/background-jobs-phase-1`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
+  for the slice breakdown.
+- ⬜ **Phase 2** (~1 week, next) — `BackgroundJobsBar` Solid
+  component mounted in `RetroverseShell` between the main content
+  area and HintBar. Handle / collapsed / expanded states + 2 s
+  auto-hide reactivation. Stack-visible layout (max 3 visible
+  rows + "+N more"). Per-row label + progress bar + pause + cancel
+  controls. Bar header for 2+ jobs with Pause-all / Cancel-all
+  (confirm before applying when 3+ are active). Subscribes to the
+  existing `oa://job-event` broadcast; Phase 1's events already
+  fire unconsumed.
+- ⬜ **Phase 3** (~1.5 weeks) — `JobResumer` trait + per-kind
+  handlers for `core_download` / `artwork_sync` / `hash_resolve`.
+  Cancel cleanup per kind. Auto-resume-on-launch flow w/ per-kind
+  opt-out prompt. Duplicate-trigger Wait/Restart/Cancel dialog.
+- ⬜ **Phase 4** (~1.5 weeks) — wire remaining kinds
+  (`folder_scan` w/ unknown-total pulsing handle, `metadata_sync`,
+  `mame_listxml_import`, `dat_sync`, `bulk_core_install` w/
+  parent-row aggregation, `disc_track_hash` when that arc lands).
+  Dependency graph via `parent_job_id`. Per-kind retry policy.
+- ⬜ **Phase 5** (~1 week) — "Download Settings" top-level
+  category + Recent activity full panel (tabbed by outcome, last
+  100) + per-kind auto-resume toggles + bar behavior toggles +
+  retry-policy controls. Operator playtest; performance check
+  (10 Hz event saturation); crash-recovery testing.
 
 **Cross-arc dependencies:** the per-track SHA-1 work
 ([docs/PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md))
@@ -325,12 +340,17 @@ progress" — these two arcs are mutually reinforcing. Either can
 ship first (disc-track integrates into the bar in Phase 4; the bar
 ships its pilot kinds without disc-track).
 
-**Critical open questions** (resolve before Phase 1):
-- Resume prompt vs auto-resume per kind — what's the right
-  default for each operation?
-- Pause semantics — actual mid-flight pause vs cancel-and-remember?
-- UI placement — bottom of window above HintBar feels right; needs
-  operator validation against the Retroverse layout.
+**Phase 1 critical open questions (resolved before execution):**
+- Resume prompt vs auto-resume per kind → auto-resume by default,
+  per-kind opt-out in Settings (locked decision, plan §"Resume on
+  app launch"). Phase 1 doesn't ship the dispatcher; Phase 3 does.
+- Pause semantics → cancel-and-remember (locked decision, plan
+  §"Pause + cancel"). Pause and "app closed mid-job" share one
+  code path: flush state to SQLite, terminate the worker, resume
+  re-enters from the checkpoint.
+- UI placement → above the HintBar; HintBar takes priority when
+  both want to show (locked decision, plan §"Bar placement in the
+  Retroverse layout").
 
 **Position:** queued in HIGH band — operator-driven "we need to
 plan soon" framing. Awaiting fresh green-light to kick off Phase 1.
