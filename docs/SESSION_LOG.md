@@ -6,6 +6,105 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-02 — Per-system descriptor consolidation — Slice 2 (mass migration + L1 const deletion)
+
+Second slice of the per-system descriptor consolidation arc, closing
+the cycle that Slice 1 opened earlier the same day. Took ~2,750 LOC
+out of the codebase + replaced it with 46 YAMLs under
+`config/systems/<id>/`. Five phase commits on
+`feat/per-system-descriptors-slice-2`.
+
+- **Shipped (Phase A, `d4553d1` — migrator tool):**
+  `tools/migrate-systems/` standalone Cargo project (own workspace
+  per the `tools/mame-extractor/` pattern). Five regex-based parsers
+  read OA's Rust sources (default_core_dll_for_system arms, every
+  `*_BIOS_KNOWN_HASHES` const + per-system semantics derived from
+  the check_*_bios bodies, CATALOG, libretro_dat_refs_for_system
+  arms) and join them against an embedded `SYSTEM_THEMES` mirror of
+  `frontend/src/themes/registry.ts::systemThemes` to emit the
+  three-file YAML triple per system. CLI flags --check (diff against
+  existing; exit 1 on drift), --dry-run (print to stdout), --systems
+  (subset filter), --output-dir, --repo-root.
+
+- **Shipped (Phase B, `d4e5b89` — mass emit):** ran the migrator
+  to emit YAMLs for all 41 frontend-registered systems (3 already
+  existed from Slice 1, rewritten by the migrator to the canonical
+  shape). 46 system.yaml + 19 bios.yaml emitted; 2 games.yaml
+  unchanged. Channel F's `sl90025.bin` hand-flagged with
+  `optional: true` (only special-cased system — the migrator can't
+  detect the post-scan `f.optional = true` adjustment that
+  check_channelf_bios applies). Legacy docs/cores/{snes,nes,
+  genesis}/system-info.yaml deleted (content embedded in
+  config/systems/<id>/system.yaml::system_info). Test
+  `load_curated_records_legacy_docs_cores_is_now_empty` asserts
+  the legacy walk produces zero records; new
+  `registry_load_finds_all_v1_panel_systems` covers the v1 lineup
+  via the registry path.
+
+- **Shipped (Phase C, `368b81c` — consumer shim sweep):** wired
+  the 17 remaining check_*_bios functions (pce-cd / segacd /
+  saturn / neocd / 3do / pcfx / dreamcast / ps2 / coleco / intv /
+  o2 / channelf / 5200 / pokemini / gba / jaguar / jagcd) through
+  the `check_bios_from_registry` shim. New
+  `libretro_dat_refs_for_system_resolved` + 2 call site updates +
+  new `default_core_dll_for_system_resolved` + 2 call site
+  updates. Both resolved fns use a `Box::leak` + `OnceLock` cache
+  to adapt the registry's owned `String` to the `&'static str`
+  return type ~50 downstream callers expect (~2 KB lifetime leak
+  bounded by `systems_count × ref_count`). Three new parametric
+  tests:
+  `all_bios_systems_via_registry_match_legacy_const`,
+  `all_bios_systems_via_registry_have_expected_semantics`,
+  `libretro_dat_refs_resolved_matches_legacy_for_all_systems`.
+
+- **Shipped (Phase D — L1 const deletion, ~2,750 LOC removed):**
+  the surgery. Deletions:
+  - 19 `*_BIOS_KNOWN_HASHES` const tables in main.rs (~700 LOC
+    total — the largest single chunk)
+  - 45-arm `libretro_dat_refs_for_system` match in rom_hashes.rs
+    (~315 LOC)
+  - 41-arm `default_core_dll_for_system` match in main.rs (~315
+    LOC)
+  - `known_hashes_for_system` dispatcher (~29 LOC)
+  - `scan_bios_table` helper (~33 LOC)
+  - legacy `hash_l1_l2_inputs` in system_info.rs (~31 LOC)
+  - `apps/oa-shell/src/light_gun_systems.rs` (~230 LOC) — reference
+    table with no production consumer
+  - `tools/migrate-systems/` (~1,277 LOC) — one-shot tool, mission
+    accomplished
+  - 5 const-matches-registry tests now invalid
+  Simplifications: `check_bios_from_registry` returns Result
+  directly; 19 `check_*_bios` functions become one-line wrappers;
+  `check_channelf_bios` drops its post-scan optional flag
+  adjustment (the flag lives in bios.yaml); resolved-variant
+  helpers all drop their const fallbacks. Net source diff: +143
+  lines simplifications / -1,387 lines source removed + 1,507 LOC
+  deleted in standalone files = **~2,750 LOC net reduction.** Plan
+  estimated ~1,800 LOC; we went further because the migrator
+  tool's own 1,277 LOC also went away.
+
+- **Shipped (Phase E — docs):** `docs/PLANS/per-system-descriptors.md`
+  status flipped to "Slice 2 SHIPPED"; `docs/ACTIVE_WORK.md` +
+  `docs/NEXT.md` updates; this SESSION_LOG entry.
+
+- **Almost:** Operator playtest end-to-end on the registry-only
+  state — `cargo tauri build` + smoke test that BIOS resolution
+  + ROM hash lookup still works for a system NOT migrated in
+  Slice 1 (e.g. NES / SNES / Genesis cart launch; Dreamcast disc
+  launch; Coleco BIOS check). The behavioral tests are all green
+  (646 oa-shell tests; was 615 pre-Slice-1 baseline) so the runtime
+  paths are intact — but a Real Game Real BIOS playtest closes the
+  arc cleanly.
+
+- **Next:** Slice 3 — L3 content-packs layer +
+  `<appDataDir>/content-packs/<pack>/systems/<id>/` deep-merge +
+  schemars-generated JSON Schema for external validators + CI
+  guard. Designed in the plan §"Slice 3"; ~1 week of focused work.
+  Queued in [docs/NEXT.md](NEXT.md). Awaiting fresh operator
+  green-light after the Slice 2 playtest pass.
+
+---
+
 ## 2026-06-02 — Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)
 
 First slice of the per-system descriptor consolidation arc planned

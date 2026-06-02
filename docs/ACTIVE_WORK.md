@@ -182,6 +182,36 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Per-system descriptor consolidation — Slice 2 (mass migration + L1 const deletion)**
+  ([docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md))
+  — shipped 2026-06-02 across five phase commits on
+  `feat/per-system-descriptors-slice-2`. Completes the consolidation
+  arc: every per-system data point that used to live in a Rust const
+  now lives in `config/systems/<id>/{system,bios,games}.yaml`.
+  - **Phase A** (`d4553d1`): `tools/migrate-systems/` standalone dev
+    tool. Five regex-based parsers feed an embedded SYSTEM_THEMES
+    mirror of frontend systemThemes to emit the YAML triple per
+    system. CLI with --check / --dry-run / --systems subset.
+  - **Phase B** (`d4e5b89`): 46 system.yaml + 19 bios.yaml emitted.
+    Channel F's sl90025.bin hand-flagged `optional: true` (only
+    special-cased system). docs/cores/{snes,nes,genesis}/system-info.yaml
+    deleted (content migrated).
+  - **Phase C** (`368b81c`): 17 more check_*_bios functions + new
+    resolved variants for libretro_dat_refs +
+    default_core_dll wired through the registry shim pattern. 3
+    new parametric tests.
+  - **Phase D** (`14e2c41`): deleted ~2,750 LOC of L1 const data.
+    19 `*_BIOS_KNOWN_HASHES` consts, 45-arm libretro_dat_refs match,
+    41-arm default_core_dll match, known_hashes_for_system,
+    scan_bios_table, LIGHT_GUN_SYSTEMS reference module, the
+    migrate-systems tool itself. check_*_bios functions become
+    one-liners.
+  - **Phase E** (this commit): docs flips + SESSION_LOG entry.
+  - End state: 46 systems load entirely from `config/systems/<id>/`.
+    646 oa-shell tests green. Slice 3 (L3 content packs + L4
+    SQLite layer + JSON Schema + CI lint) queued in
+    [docs/NEXT.md](NEXT.md).
+
 - **Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)**
   ([docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md))
   — shipped 2026-06-02 across five phase commits on

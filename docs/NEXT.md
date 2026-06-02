@@ -433,38 +433,54 @@ the in-tree `config/` next to `oa-shell.exe` at install time.
 **Test count:** 643 oa-shell green (was 615 pre-branch; +28 new — 21
 in Phase A, 1 in B, 3 in C, 3 in D).
 
-### Per-system descriptor consolidation — Slice 2 (mass migration of remaining 38 systems)
+### ~~Per-system descriptor consolidation — Slice 2 (mass migration of remaining 38 systems)~~ ✅ SHIPPED 2026-06-02
 
-**Next slice of the per-system descriptor consolidation arc.**
-Awaiting fresh operator green-light. Slice 1 ships a clean pilot
-foundation that the operator may want to play with (drop a PSX game
-in, edit `config/systems/psx/bios.yaml` directly to add an experimental
-SHA-1, restart, see the readiness checklist reflect the edit) before
-kicking off the bulk migration.
+Five phase commits on `feat/per-system-descriptors-slice-2`:
 
-**Scope (per plan §"Slice 2"):**
-- New `apps/oa-shell/src/bin/migrate_systems.rs` dev binary that walks
-  the existing Rust const tables (`*_BIOS_KNOWN_HASHES`,
-  `core_installer::CATALOG`, `rom_hashes::libretro_dat_refs_for_system`,
-  `light_gun_systems::LIGHT_GUN_SYSTEMS`, `DEVICE_ID_OPTIONS_*`
-  arrays) plus the existing `docs/cores/<id>/system-info.yaml` +
-  `games-info.md` files, emits the 3 YAMLs per system into
-  `config/systems/<id>/`. Idempotent — re-running overwrites.
-- Hand-review the 38 emitted folders. Special cases worth eyes-on:
-  Neo Geo cart's bespoke zip handling, MAME's listxml integration,
-  ScummVM + DOSBox engine-launcher shapes, Channel F's optional
-  sl90025.bin entry.
-- Delete the const tables once every system migrates: ~1,800 LOC
-  removed, replaced by ~80 LOC of loader + accessor (already shipped
-  in Slice 1).
-- Sweep the four remaining Slice 1 consumer shims into direct
-  registry calls — `check_*_bios` (16 more functions),
-  `core_installer::available_cores`, `rom_hashes::libretro_dat_refs_for_system`,
-  `light_gun_systems::LIGHT_GUN_SYSTEMS`.
+- **Phase A** (`d4553d1`) — `tools/migrate-systems/` dev tool. Reads
+  OA's Rust sources as text + parses them with regex (5 parsers:
+  default_core_dll_for_system arms, *_BIOS_KNOWN_HASHES const tables,
+  known_hashes_for_system dispatcher, per-system BiosSemantics from
+  check_*_bios bodies, CATALOG, libretro_dat_refs_for_system arms),
+  emits the 3-file YAML triple per system. Embedded SYSTEM_THEMES
+  mirror of frontend systemThemes (41 entries). CLI: --check /
+  --dry-run / --systems subset.
+- **Phase B** (`d4e5b89`) — ran the migrator. 46 system.yaml + 19
+  bios.yaml emitted. Channel F's sl90025.bin hand-flagged
+  `optional: true` (only special-cased system). docs/cores/{snes,nes,
+  genesis}/system-info.yaml deleted (content moved into config/systems).
+  653 oa-shell tests green.
+- **Phase C** (`368b81c`) — wired the remaining 17 check_*_bios
+  functions, `libretro_dat_refs_for_system_resolved`, and
+  `default_core_dll_for_system_resolved` through the registry shim
+  pattern. 656 oa-shell tests green (+3 parametric registry-match
+  tests).
+- **Phase D** (this commit) — deleted ~2,750 LOC of L1 const tables:
+  19 `*_BIOS_KNOWN_HASHES` consts (~700 LOC), 45-arm
+  `libretro_dat_refs_for_system` match (~315 LOC), 41-arm
+  `default_core_dll_for_system` match (~315 LOC),
+  `known_hashes_for_system` dispatcher (~29 LOC), `scan_bios_table`
+  helper (~33 LOC), legacy `hash_l1_l2_inputs` (~31 LOC),
+  `LIGHT_GUN_SYSTEMS` reference table + entire module (~230 LOC),
+  the `tools/migrate-systems/` one-shot tool (~1,277 LOC). The 19
+  `check_*_bios` functions become one-line wrappers around
+  `check_bios_from_registry`. Channel F's post-scan optional
+  adjustment goes away (`bios.yaml` carries the flag).
+- **Phase E** — this docs flip.
 
-**Scope:** ~2-3 weeks. May want to split into two batches (half the
-systems first, half a week later) so the operator-playtest pass is
-scopeable.
+End state: **every per-system data point that used to live in a Rust
+const now lives in `config/systems/<id>/{system,bios,games}.yaml`.**
+46 systems. The registry is the only L1+L2 source; operators can edit
+the YAMLs directly + restart to pick up changes; `deny_unknown_fields`
+catches typos at load time. 646 oa-shell tests green (was 615
+pre-Slice-1 / 643 post-Slice-1; Slice 2 net -3 from tests deleted
+alongside their const-table references — the behavioral tests stay).
+
+**Slice 3 — L3 content packs + L4 SQLite + JSON Schema + CI lint**
+remains. ~1 week per the plan §"Slice 3". Adds `<appDataDir>/content-packs/<pack>/systems/<id>/`
+deep-merge layer, schemars-generated JSON Schema for external
+validators, CI guard that runs `cargo test descriptor_validate_all_in_tree`
+on PR. Queued — awaiting fresh operator green-light.
 
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 
