@@ -899,6 +899,38 @@ impl JobRegistry {
         Ok(rows)
     }
 
+    /// Phase 3b — find an active row (pending / running / paused)
+    /// matching the given kind + target_id. Used by the
+    /// duplicate-trigger dialog: the frontend calls
+    /// `check_duplicate_job` before kicking off a new operation,
+    /// and shows a Wait / Restart / Cancel dialog if an existing
+    /// row hits. Returns the first match (there shouldn't be more
+    /// than one — plan §"Per-kind parallel concurrency" + FIFO
+    /// ordering — but if duplicates somehow exist, returning the
+    /// newest by last_event_at is the right default).
+    pub fn find_active_by_kind_target(
+        &self,
+        kind: &str,
+        target_id: &str,
+    ) -> Result<Option<JobSnapshot>, String> {
+        let conn = self.lock_conn()?;
+        let row = conn
+            .query_row(
+                "SELECT id, kind, label, system_id, target_id, parent_job_id, is_prereq, \
+                        state, done, total, unit, last_event_at, started_at, finished_at, \
+                        can_resume, resume_payload, error_message, retry_count \
+                 FROM background_jobs \
+                 WHERE kind = ?1 AND target_id = ?2 \
+                       AND state IN ('pending', 'running', 'paused') \
+                 ORDER BY last_event_at DESC LIMIT 1",
+                params![kind, target_id],
+                row_to_snapshot,
+            )
+            .optional()
+            .map_err(|e| format!("find_active_by_kind_target: {e}"))?;
+        Ok(row)
+    }
+
     /// Single-row snapshot. Used internally to build event payloads
     /// and by tests.
     pub fn snapshot(&self, job_id: i64) -> Result<Option<JobSnapshot>, String> {
@@ -1135,6 +1167,24 @@ pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
     Ok(registry_handle(&app)
         .map(|reg| reg.signal_cancel_all())
         .unwrap_or(0))
+}
+
+/// Phase 3b — look up an active job by kind + target_id. Returns
+/// the snapshot when one exists (i.e. an operator-triggered duplicate
+/// of the same operation). The frontend uses this to drive the
+/// Wait / Restart / Cancel dialog (plan §"Duplicate same-job
+/// triggering"). Returns None when no active duplicate exists; the
+/// caller proceeds with the new operation.
+#[tauri::command]
+pub fn check_duplicate_job(
+    kind: String,
+    target_id: String,
+    app: tauri::AppHandle,
+) -> Result<Option<JobSnapshot>, String> {
+    match registry_handle(&app) {
+        Some(reg) => reg.find_active_by_kind_target(&kind, &target_id),
+        None => Ok(None),
+    }
 }
 
 /// Phase 4b — create a `bulk_core_install` parent job for the
