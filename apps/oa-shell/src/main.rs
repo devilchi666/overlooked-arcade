@@ -23,6 +23,7 @@ mod cli;
 mod data_dir;
 mod game_info;
 mod http_retry;
+mod job_registry;
 mod core_installer;
 mod core_options;
 mod layout;
