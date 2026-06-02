@@ -381,6 +381,88 @@ resolution, voice + hero polish. ~1,800 lines of new code total;
 log in
 [features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md).
 
+### Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)
+
+**Major new arc, planning locked 2026-06-01.** Full plan at
+[docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md).
+Off-tree planning context at
+`C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md` (the in-tree
+plan doc is the source of truth — operator may want a fresh
+green-light before kicking off Slice 1).
+
+**Why this arc matters:** per-system data lives in ~8 scattered places
+today (hardcoded Rust const tables for BIOS hashes, core catalog,
+libretro-dat refs, light-gun systems, device-id options + in-tree
+`docs/cores/<id>/system-info.yaml` + `games-info.md`). The arc
+consolidates everything into `config/systems/<id>/system.yaml` +
+`bios.yaml` + `games.yaml` with serde + `deny_unknown_fields`, runtime
+load at app start, and an explicit L1/L2/L3/L4 layer model that L3
+content packs + L4 SQLite operator overrides slot into cleanly.
+
+**Slice 1 scope:**
+- New `apps/oa-shell/src/system_descriptor.rs` — serde-derived
+  `SystemDescriptor` + `BiosDescriptor` + `GamesDescriptor` structs
+  matching the three YAML files.
+- New `apps/oa-shell/src/system_registry.rs` — runtime loader (walks
+  `config/systems/<id>/` subfolders, hot-fails on malformed YAML, logs
+  load summary at INFO).
+- Migrate 3 pilot systems: **GB** (no BIOS — small-cart shape), **PSX**
+  (any_of BIOS variants — 18 candidates), **NDS** (all_required
+  multi-file BIOS — 3 files). Each pilot writes `system.yaml` +
+  optional `bios.yaml` + optional `games.yaml` into
+  `config/systems/<id>/`, deleting the matching in-tree
+  `docs/cores/<id>/system-info.yaml` + `games-info.md`.
+- Wire pilot consumers via "prefer-registry, fall back to hardcoded
+  const" shims — `check_*_bios` for PSX + NDS, `available_cores`
+  (CATALOG merge), `libretro_dat_refs_for_system`,
+  `known_hashes_for_system`, `parse_games_info_file`, System Info
+  Panel L2 loader.
+- After Slice 1: PSX + NDS run entirely off the registry; GB runs off
+  it except for BIOS (it has none). The other 38 systems are unchanged
+  — they keep reading from hardcoded const until Slice 2's mass
+  migration.
+
+**Where the work lives:**
+- `apps/oa-shell/src/system_descriptor.rs` (NEW)
+- `apps/oa-shell/src/system_registry.rs` (NEW)
+- `apps/oa-shell/src/main.rs` — shim 3 pilots' BIOS const consumers
+- `apps/oa-shell/src/core_installer.rs` — merge in-tree CATALOG with
+  registry
+- `apps/oa-shell/src/rom_hashes.rs` — shim
+  `libretro_dat_refs_for_system`
+- `apps/oa-shell/src/game_info.rs` + `system_info.rs` — change pilot
+  load paths
+- `config/systems/{gb,psx,nds}/system.yaml` + `bios.yaml` +
+  `games.yaml` (NEW)
+
+**Verification target:** 615 → ~625 oa-shell tests green; `cargo tauri
+dev` launches a PSX game with canonical BIOS in `<exe_dir>/system/`;
+NDS multi-file BIOS pill expands inline showing per-file ✓/⚠ status;
+GB readiness checklist shows ✓ Core via the registry's cores list +
+↪ BIOS not required; `Help → Debug log…` shows `system_registry:
+loaded 3 systems from config/systems/ in Xms` at startup.
+
+**Scope:** Slice 1 is ~1-2 weeks (design + loader + 3 pilots + ~10
+tests + verification). Slice 2 (mass migration of remaining 38 systems
++ deletion of ~1,800 LOC of const tables) is ~2-3 weeks. Slice 3 (L3
+content-pack layer + L4 SQLite overrides + JSON Schema generation +
+CI lint) is ~1 week.
+
+**Open implementation decision** (during Slice 1): how the YAMLs ship
+with the binary — `include_dir!` (embed at compile-time) vs sibling
+`config/` folder next to `oa-shell.exe` vs `xtask` build-script copy.
+`include_dir!` is the most likely pick; revisit when Slice 1 starts.
+
+**Position vs Guided Setup Phase 2:** both are HIGH band; either can
+go first. Operator picks per-session. Per-system descriptor arc is
+larger total effort but Slice 1 alone is comparable to Guided Setup
+Phase 2's ~1-week scope. Doing this arc first means Phase 2's
+per-system tier table in `core_installer.rs::CATALOG` lands directly
+in the new `config/systems/<id>/system.yaml` instead of as another
+hardcoded Rust const — small savings on Phase 2 + cleaner long-term
+shape. Doing Phase 2 first means the tier table ships as Rust const
+and migrates with the other 38 systems in Slice 2 — also fine.
+
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 
 **Next major Guided Setup work-item per plan §13 Phase 2.** Awaiting

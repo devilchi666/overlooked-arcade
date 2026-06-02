@@ -53,6 +53,7 @@ cores are currently being worked on.
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
 - [PLANS/](PLANS/) — design docs for in-flight work
+- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Planning locked 2026-06-01; Slice 1 (GB + PSX + NDS pilot) queued in HIGH band of [NEXT.md](NEXT.md). Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
 
 ## Setup reference (off-repo)
 
