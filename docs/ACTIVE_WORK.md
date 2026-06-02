@@ -11,81 +11,6 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Guided Setup Phase 1B — wizard upgrade**
-  ([features/guided-setup/](features/guided-setup/)). Slices 1-5
-  all shipped 2026-06-01.
-  - Slice 1 (`5ef8062` merge) — backend smart-scan emission +
-    Settings → Library entry point. The Rust scanner now
-    classifies + hashes during the walk and emits per-row
-    `system_id` / `suggested_title` / `confidence` (Hash /
-    Header / Extension / Hint) / `sha1`. Settings → Library
-    → "Re-scan with smart detection" card opens the orphaned
-    wizard (legacy-Shell toolbar entry point was deleted
-    2026-05-31).
-  - Slice 2 (`04fa975` merge) — per-ROM results table. The
-    wizard's Step 2 (mapping editor) + Step 3 (progress + tally)
-    collapsed into a single LaunchBox-inspired table that
-    consumes the Slice 1 payload. Virtualized via
-    `@tanstack/solid-virtual`; inline edit for system + title;
-    bulk-select with Gmail-style toolbar; sort + filter;
-    confidence badges; Skip per-row; old persistent rules
-    editor lives in an `<details>` "Advanced — extension
-    overrides" expander below the table.
-  - Slice 3 (`b57f3e7` merge) — per-system readiness checklist.
-    New `SystemReadinessChecklist.tsx` rendering 5 pills per
-    system (Core installed / BIOS present / Bindings + 2
-    placeholders for Slice 4). Wired in two surfaces: new
-    wizard Step 3 between Review and Confirm (step counter
-    `3 → 4`, labels `Folder / Review / Readiness / Confirm`)
-    AND a second "System readiness" SettingsCard alongside
-    "Re-scan with smart detection". Working "Open BIOS folder"
-    action via new `open_bios_folder` Tauri command.
-  - Slice 4 (`923ea7b` merge) — bulk-install modal + Core
-    options pill + catalog slug realignment. Three phase
-    commits: (1) new `MissingCoreBulkPrompt.tsx` modal with
-    per-system rows + recommended-core dropdown + live
-    download progress + `has_core_options_schema` Tauri
-    command wrapping the existing options reader; readiness
-    checklist swaps the Core options placeholder pill to real
-    status and the "Install core…" stub to open the modal,
-    plus a top-of-list "Install N missing cores…" banner.
-    (2) banner/modal source-of-truth alignment fix after
-    operator playtest caught the count divergence (banner
-    used extension-overlap, modal used CATALOG-membership;
-    hybrid coreInstalledFor + new ↪ "No catalog core" pill
-    state). (3) CATALOG slug realignment fix after operator
-    asked "no catalog core for atari 2600?"; 8 slug renames
-    (`atari2600 → 2600` etc.), 4 systems added to existing
-    entries' arrays (jagcd / sega32xcd / stv / neogeo), new
-    `opera_libretro` entry for 3DO. Every registry slug now
-    has at least one CATALOG entry.
-  - Slice 5 (`e3092b8` merge) — guided BIOS resolution. Deep
-    refactor of `BiosCheck` enum + 18 per-system `check_*_bios`
-    functions to carry structured per-file inventory. New
-    `install_bios_file` Tauri command + new
-    `BiosResolutionDetail.tsx` with per-file rows + status
-    badges + click-to-pick affordance via
-    `@tauri-apps/plugin-dialog`'s file picker. ChannelF flags
-    `sl90025.bin.optional=true` so the Channel F II revision
-    file is hash-checked when present but doesn't gate the
-    launch pair. Operator playtest follow-up wired
-    `window.addEventListener("focus", …)` refetch + a manual
-    "Refresh" button so manual file drops into
-    `<exe_dir>/system/` (or `/cores/`) via the OS file manager
-    get picked up live without a wizard close-and-reopen.
-  - **Slice 6 next** — voice/tone copy pass + first-launch
-    empty-state. CLOSES Phase 1B. Per plan §4 every user-facing
-    string in the wizard + readiness checklist + bulk-install
-    modal + BIOS resolution detail gets reviewed against the
-    warm/curator-enthusiast voice. Per plan §5 Step 0, the
-    first-launch empty-state lands: OA detects "no library
-    configured" + shows a friendly hero with a single "Set up
-    your library" button instead of dropping operators into
-    the empty library view. Detail in
-    [features/guided-setup/README.md](features/guided-setup/README.md)
-    Phase 1B slice table + the HIGH band entry in
-    [NEXT.md](NEXT.md).
-
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
@@ -256,6 +181,29 @@ spanned every system but was filed under whichever core happened to be active.
   background / boot animation file goes on disk).
 
 ## Recently completed (this session)
+
+- **Guided Setup Phase 1B — wizard upgrade (CLOSED)** —
+  ([features/guided-setup/](features/guided-setup/)). Six slices
+  shipped 2026-06-01 (`5ef8062` / `04fa975` / `b57f3e7` / `923ea7b`
+  / `e3092b8` / `bf77117` merges to main, ~1,800 lines of new code
+  total). The orphaned wizard (legacy-Shell toolbar entry point
+  deleted 2026-05-31) is now reachable via Settings → Library, with
+  a smart-scan classifier emitting per-row Hash/Header/Extension/
+  Hint confidence + canonical titles; a LaunchBox-inspired per-ROM
+  results table with inline edits + bulk-select + sort + filter; a
+  per-system readiness checklist surfaced in both the wizard Step 3
+  AND as a Settings → Library card; a bulk missing-core install
+  modal calling `core_installer::download_core` in parallel via the
+  buildbot; structured per-file BIOS resolution with a `Pick BIOS
+  file…` picker calling the new `install_bios_file` Tauri command;
+  warmed copy across the surfaces per plan §4 voice; and a
+  first-launch hero in `LibraryView::EmptyState`. 615 oa-shell
+  tests stayed green throughout. Phase 1B is feature-complete; the
+  next major guided-setup work-item (Phase 2 — curated CPU-tier
+  core selection per plan §13) is queued in
+  [NEXT.md](NEXT.md) HIGH band, awaiting fresh operator green-light.
+  Full per-slice ship log in
+  [features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md).
 
 - **MAME ROM-set name resolution (listxml metadata pass)** —
   branch `feat/mame-rom-set-name-resolution`, five phase commits

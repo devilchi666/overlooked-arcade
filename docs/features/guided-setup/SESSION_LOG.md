@@ -1,5 +1,85 @@
 # Guided Setup — Session Log
 
+## 2026-06-01 — Phase 1B CLOSED — Slice 6: voice/tone copy pass + first-launch hero
+
+Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-6`,
+merge `bf77117`). One phase commit (`bbc649a`). **Closes Phase 1B —
+the entire wizard-upgrade arc is now feature-complete after six
+slices shipped today.**
+
+- **Shipped:**
+  - **Phase 1 — voice/tone copy pass + first-launch hero (`bbc649a`):**
+    Targeted-tone pass per operator decision — ~15 string rewrites
+    out of ~70 enumerated across the six surfaces. Universal
+    affordance labels (column headers, button labels like Close /
+    Refresh, pill labels like "✓ Core installed") stayed put because
+    they're already operator-friendly and stretching them risks
+    over-cute affordances. The plan file (off-tree) carries the
+    per-string table as the single source of truth.
+
+    String rewrites: `ImportWizard.tsx` (Step 1 prompt → "Where are
+    your games today?", Step 4 confirm leads with operator validation,
+    sync-options header + metadata toggle, empty-scan message,
+    needs-system banner with conditional singular/plural);
+    `ResultsTable.tsx` (filtered-empty message warmed);
+    `SystemReadinessChecklist.tsx` (Core options NA detail,
+    two Core-pill details, top-of-list banner heading);
+    `BiosResolutionDetail.tsx` (detail intro, per-row install hint);
+    `biosHints.ts::DEFAULT_HINT`; `SettingsSections.tsx::LibrarySettings`
+    (Card 1 title + button, Card 2 description).
+
+    First-launch hero: `LibraryView::EmptyState` `!hasSeed` branch
+    replaced with system-accent ◐ glyph + "Welcome to Overlooked
+    Arcade" text-3xl heading + plan §5 Step 0 body copy verbatim +
+    "Set up your library" primary CTA → `ctx.onOpenImportWizard()`.
+    Muted secondary "Or pick a folder the quick way" link preserves
+    the legacy `props.onPickFolder()` path one click away. Drag-drop
+    body-copy reference dropped — drag-drop is parking-lotted
+    Won't fix per `docs/PARKING_LOT.md` 2026-05-20 and the
+    `feedback-code-exists-isnt-live` memory. New REQUIRED
+    `onImportWizard: () => void` prop on `LibraryView` (compile
+    error if forgotten); `LibraryPage` wires from
+    `ctx.onOpenImportWizard()`. `hasSeed` branch keeps the compact
+    treatment (operator past first launch).
+
+  Frontend `npm run typecheck` silent. No backend changes; 615
+  oa-shell tests stay green.
+
+- **Almost:** Operator playtest of the hero treatment + the warmed
+  copy across the wizard / readiness / Settings surfaces.
+
+- **Next:** **Phase 2 — curated CPU-tier core selection** per plan
+  §13 Phase 2 (separate from Phase 1B). New `sysinfo` crate
+  integration for CPU detection (brand, base clock, physical cores
+  → High/Mid/Low tier bucket); per-system tier preference table
+  declaring which core to default to per tier (e.g. `psx.high =
+  beetle_psx_hw`, `psx.mid = duckstation`, `psx.low = pcsx_rearmed`);
+  the tier feeds into existing `cores.json` per-system default
+  selection at install-time and gets surfaced on the readiness
+  checklist row ("Picked: beetle_psx_hw — high-tier core"). New
+  Settings → Performance → CPU tier (Auto / High / Mid / Low
+  override). Estimated ~1 week. Awaiting fresh operator green-light
+  to start (Phase 1B closure is a natural pause point — operator
+  may want to play with the shipped guided setup before kicking off
+  the next arc).
+
+## Phase 1B summary — six slices, one day
+
+| Slice | Shipped | Highlights |
+| --- | --- | --- |
+| 1 | `5ef8062` | Backend smart-scan emission (Confidence / sha1 / suggested_title) + Settings → Library entry point re-wiring the orphan wizard |
+| 2 | `04fa975` | Per-ROM results table (virtualized via `@tanstack/solid-virtual`); inline edit; bulk-select; sort + filter; mapping editor collapsed to Advanced expander |
+| 3 | `b57f3e7` | Per-system readiness checklist component (wizard Step 3 + Settings card); 5 pills per system; `open_bios_folder` action |
+| 4 | `923ea7b` | `MissingCoreBulkPrompt` modal + `has_core_options_schema` Tauri command; banner/modal source-of-truth alignment + CATALOG slug realignment fixes |
+| 5 | `e3092b8` | `BiosCheck` deep refactor (18 per-system check functions → 2-line helper calls); `install_bios_file` Tauri command; `BiosResolutionDetail` with per-file rows; window-focus refetch follow-up |
+| 6 | `bf77117` | Targeted voice/tone pass; first-launch hero in `LibraryView::EmptyState`; arc closure |
+
+Per-phase ship totals: ~1,800 lines of new code (Slices 2 + 5 the
+heaviest); 615 oa-shell tests stayed green throughout; frontend
+`npm run typecheck` stayed silent throughout. Phase 1B's wizard
+upgrade is feature-complete and ready for end-to-end operator
+validation against a real ROM library.
+
 ## 2026-06-01 — Phase 1B Slice 5: guided BIOS resolution + window-focus refetch
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-5`,

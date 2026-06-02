@@ -190,14 +190,20 @@ Upgrade the existing Import Wizard into a guided-setup flow:
 
 **Phase 0 = controller-nav primitives** (~2-3 weeks frontend infrastructure: focus manager, gamepad → UI event layer, focus-ring component pattern, on-screen hint bar). ✅ shipped 2026-05-26 — see [features/controller-nav/](features/controller-nav/).
 
-**Phase 1B — wizard upgrade** (~3-4 weeks) is in flight. Slice 1
-(smart-scan emission + Settings → Library entry point) shipped
-2026-06-01 (`5ef8062` merge). Slices 2-6 remaining — see
-[features/guided-setup/README.md](features/guided-setup/README.md)
-for the slice table and the HIGH band entry below for Slice 2's
-concrete scope.
+**Phase 1B = wizard upgrade** (~3-4 weeks) ✅ SHIPPED 2026-06-01 —
+all six slices in one day. See
+[features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md)
+for the per-slice ship log. The orphaned wizard (legacy-Shell
+toolbar entry point deleted 2026-05-31) is now reachable via
+Settings → Library; smart-scan emits per-row Hash/Header/Extension/
+Hint confidence + canonical titles; LaunchBox-inspired per-ROM
+results table with inline edits + bulk-select + sort + filter;
+per-system readiness checklist surfaced in wizard Step 3 + Settings
+card; bulk missing-core install modal calling `download_core` in
+parallel; structured per-file BIOS resolution with a Pick BIOS file
+picker; warmed copy + first-launch hero in `LibraryView`.
 
-**Phases 2B-2F** (~4-5 weeks): curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry.
+**Phases 2B-2F** (~4-5 weeks): curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry. **Phase 2 (curated CPU-tier core selection) is queued in HIGH band below — awaiting fresh operator green-light to start.**
 
 **Total estimate:** 8-10 weeks of focused work.
 
@@ -352,52 +358,85 @@ button so manual file drops via the OS file manager get picked up
 live without a wizard close-and-reopen. 615 oa-shell tests stayed
 green throughout.
 
-### Guided Setup Phase 1B Slice 6 — voice/tone copy pass + first-launch empty-state
+### ~~Guided Setup Phase 1B Slice 6 — voice/tone + first-launch hero~~ ✅ SHIPPED 2026-06-01 — **PHASE 1B CLOSED**
 
-**Closes Phase 1B.** Per plan §4 voice card + §5 Step 0 — the last
-slice before the wizard upgrade ships as a complete arc.
+Merged to main as `bf77117` (`feat/guided-setup-phase-1b-slice-6`, one
+phase commit `bbc649a`). Targeted voice/tone pass per operator
+decision — ~15 string rewrites across the six guided-setup surfaces,
+universal affordance labels left intact. First-launch hero in
+`LibraryView::EmptyState`: `!hasSeed` branch now shows system-accent
+◐ glyph + "Welcome to Overlooked Arcade" text-3xl heading + plan §5
+Step 0 body copy verbatim + "Set up your library" primary CTA →
+`ctx.onOpenImportWizard()`. Muted secondary "Or pick a folder the
+quick way" link preserves the legacy `props.onPickFolder()` path one
+click away. Drag-drop body-copy reference dropped per the parking-
+lot decision. New REQUIRED `onImportWizard: () => void` prop on
+LibraryView; `LibraryPage` wires from the Retroverse context.
 
-**Part A — voice/tone copy pass.** Every user-facing string in the
-Slices 1-5 surfaces gets reviewed against the warm + curator-enthusiast
-voice locked in plan §4. The voice card has explicit examples:
+**Phase 1B is feature-complete.** Six slices shipped 2026-06-01 in a
+single day: smart-scan emission, per-ROM results table, per-system
+readiness checklist, bulk missing-core install, guided BIOS
+resolution, voice + hero polish. ~1,800 lines of new code total;
+615 oa-shell tests stayed green throughout. Full per-slice ship
+log in
+[features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md).
 
-| Situation | Bad | Good |
-| --- | --- | --- |
-| Scan complete | "240 files scanned, 12 systems detected." | "Found 240 games across 12 systems. Quite a collection — let's get them ready." |
-| Missing BIOS | "Error: scph1001.bin not found." | "PlayStation needs a BIOS file to run. We're looking for `scph1001.bin` — drop it in the BIOS folder when you've got it." |
-| Default core picked | "Default core: snes9x_libretro.dll" | "Using snes9x for SNES — solid balance of accuracy and performance. You can swap to bsnes later if you want higher accuracy." |
-| Unknown file | "Unknown file: weirdgame.romz" | "Not sure what `weirdgame.romz` is — looks like a ROM but the extension doesn't ring any bells. Set the system below, or skip it." |
-| First-system bindings | "SNES default bindings applied." | "Defaults for SNES are set up — d-pad for movement, B for A, A for B (Nintendo convention). Looks good, or want to adjust?" |
+### Guided Setup Phase 2 — curated CPU-tier core selection
 
-Surfaces touched (string-only edits in most):
-`ImportWizard.tsx`, `ResultsTable.tsx`, `SystemReadinessChecklist.tsx`,
-`BiosResolutionDetail.tsx`, `MissingCoreBulkPrompt.tsx`,
-`SettingsSections.tsx::LibrarySettings`.
+**Next major Guided Setup work-item per plan §13 Phase 2.** Awaiting
+fresh operator green-light — Phase 1B closure is a natural pause
+point and the operator may want to play with the shipped guided
+setup before kicking off the next arc.
 
-**Part B — first-launch empty-state.** Per plan §5 Step 0:
-
-> OA detects "no library configured" → main UI shows a friendly
-> empty-state with a single `Set up your library` button. No
-> auto-fire. Operator clicks → wizard opens.
-
-The shipped `LibraryView::ImportFolderEmpty` already has a bare
-"Import folder" empty-state button (Slice 1's verification path).
-Slice 6 replaces it with a hero treatment + the guided-setup copy
-+ routes to the wizard via `ctx.onOpenImportWizard()` (instead of
-the legacy folder-picker `props.onPickFolder()` LibraryView
-currently calls).
+**Scope:**
+- `sysinfo` crate integration: CPU brand + base clock + physical
+  cores → bucket into High / Mid / Low tier. Compute once at first
+  launch + cache; operator override in Settings → Performance →
+  CPU tier (drop-down: Auto / High / Mid / Low).
+- Per-system tier preference table in `core_installer.rs` (next to
+  `CATALOG`) — declarative `{ system_id, high: &str, mid: &str, low:
+  &str }` rows for systems with multiple core options. Example
+  shape from plan §7:
+  ```
+  psx:    high → beetle_psx_hw   mid → duckstation   low → pcsx_rearmed
+  snes:   high → bsnes           mid → snes9x        low → snes9x
+  n64:    high → mupen64plus_next mid → mupen64plus  low → parallel_n64
+  ```
+  Systems with no tier-based variation (tg16, gba, etc.) use their
+  existing `defaultCoreDll` registry entry directly.
+- Surfaced on the readiness checklist row: "Using {core} for {system}
+  ({tier}-tier pick)" — visible automation, not silent. Operator
+  override path: per-system Settings → Cores + per-game Settings
+  drawer (both already exist; wizard just feeds reasonable defaults
+  into them).
+- New Tauri command `detect_cpu_tier() -> { tier: "high" | "mid" |
+  "low", brand: String, cores: u32, base_clock_ghz: f32 }` reading
+  via `sysinfo`. Cached in `<appDataDir>/cpu-tier.json` so the
+  detection doesn't re-run every wizard open.
+- New Settings → Performance category (or sub-card under Display)
+  with the CPU-tier override drop-down + a read-only display of the
+  detected hardware info.
 
 **Where the work lives:**
-- `frontend/src/components/LibraryView.tsx` — replace the
-  `ImportFolderEmpty` bare button with the hero treatment; route
-  the primary action to `ctx.onOpenImportWizard()`.
-- Every component file listed in Part A — string edits only, no
-  structural changes.
+- `apps/oa-shell/Cargo.toml` — add `sysinfo = "0.30"` (or current).
+- `apps/oa-shell/src/cpu_tier.rs` (new) — detection + caching + the
+  `detect_cpu_tier` Tauri command.
+- `apps/oa-shell/src/core_installer.rs` — extend with the per-system
+  tier table; expose via a new `recommended_core_for_tier(system_id,
+  tier)` helper consumed by both the readiness checklist (showing
+  the tier pick) and any future "apply curated defaults" affordance.
+- `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
+  — Core pill shows the tier-picked core when ✓; "Using {core}
+  ({tier}-tier pick)" detail.
+- `frontend/src/components/SettingsSections.tsx` — new Performance
+  category card (or section under Display) with the CPU-tier
+  override + hardware-info display.
 
-**Scope:** ~3-4 days. Pure UI / copy pass; no new Tauri commands,
-no new components.
+**Scope:** ~1 week per plan §13. Mostly new Rust (cpu_tier detection
++ the tier table) with a small frontend surface.
 
-**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §4 voice card + §5 Step 0.
+**Plan:** [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 +
+§13 Phase 2.
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 

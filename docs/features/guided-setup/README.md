@@ -16,8 +16,8 @@ decisions, not design rationale.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Phase 0 | Controller-nav primitives (shared with Per-System UI) | ✅ shipped 2026-05-26 — see [features/controller-nav/](../controller-nav/) |
-| Phase 1B | Wizard upgrade (~3-4 weeks) | 🔄 in flight — see below |
-| Phase 2B | Curated core selection (~1 week) | ⬜ pending |
+| Phase 1B | Wizard upgrade (~3-4 weeks) | ✅ SHIPPED 2026-06-01 — all 6 slices in one day. See `docs/features/guided-setup/SESSION_LOG.md` for the per-slice ship log. |
+| Phase 2B | Curated core selection (~1 week) | ⬜ next (awaiting fresh operator green-light — Phase 1B closure is a natural pause point) |
 | Phase 2C | Folder management (~1 week) | ⬜ pending |
 | Phase 2D | First-system bindings + KNOWN_GAME_BUGS overrides (~1 week) | ⬜ pending |
 | Phase 2E | Help suppression registry (~3-4 days) | ⬜ pending |
@@ -38,7 +38,7 @@ LaunchBox-inspired table.
 | 3 | Per-system readiness checklist component (also Settings → System Readiness) | ✅ shipped 2026-06-01 |
 | 4 | Bulk-prompt missing-core download (wires `core_installer.rs`) | ✅ shipped 2026-06-01 |
 | 5 | Guided BIOS resolution UI | ✅ shipped 2026-06-01 |
-| 6 | Voice/tone copy pass + first-launch empty-state | ⬜ next (closes Phase 1B) |
+| 6 | Voice/tone copy pass + first-launch empty-state | ✅ shipped 2026-06-01 — **CLOSES Phase 1B** |
 
 Slice 1's plan + execution notes lived off-tree at
 `C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md`. Once Phase
