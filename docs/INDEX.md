@@ -22,6 +22,7 @@ Routing table. Read this first; it points to everything else.
 - [VISION.md](VISION.md) — project vision
 - [ROADMAP.md](ROADMAP.md) — project-wide phase plan
 - [SESSION_LOG.md](SESSION_LOG.md) — project-wide entries (cross-stream)
+- [CHATGPT_BRIEFING.md](CHATGPT_BRIEFING.md) — self-contained briefing for ChatGPT / external LLM collaborators. Paste into a fresh session to get gap-spotting + feature-ideation help.
 
 ## Cross-cutting features
 
