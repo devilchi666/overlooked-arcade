@@ -7,6 +7,91 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-02 — Phase 3a ships the JobResumer + pause/resume bridge (`feat/background-jobs-phase-3a`)
+
+**Shipped:** Phase 3a (the first half of the original Phase 3 scope,
+split per the 2026-06-02 operator call to make the largest single
+phase more manageable). Four phase commits.
+
+- **Slice A — JobResumer trait + dispatcher** (`0a07a6c`). New
+  trait in `apps/oa-shell/src/job_registry.rs` with `kind()` and
+  `resume(snapshot, registry, app)` methods returning a
+  `tauri::async_runtime::JoinHandle<()>`. JobRegistry stores
+  resumers in `RwLock<HashMap<&'static str, Arc<dyn JobResumer>>>`.
+  New methods: `register_resumer` (idempotent per-kind
+  registration), `resume_interrupted_jobs(&app)` (iterates
+  `list_interrupted()` + dispatches; rows whose kind has no
+  resumer stay interrupted + log a warn), and `attach_handle`
+  (re-creates the AtomicBool flags for a job whose row exists in
+  SQLite but isn't in the active map — resumers call this BEFORE
+  mark_running so the bar's pause + cancel buttons rebind to the
+  resumed worker).
+- **Slice B — pause/resume state bridge** (`8deb7e2`). Both
+  `core_download` and `spawn_test_job` now call `mark_paused` when
+  the pause flag flips true (entering the spin) and `mark_running`
+  when it flips false (exiting). A `was_paused` flag gates both
+  calls so a momentary check doesn't fire spurious transitions.
+  Fixes the operator-reported "pause stops streaming but resume
+  button never appears" issue from Phase 2 smoke-test — the row
+  state now goes running → paused → running and the bar's per-row
+  button toggles ⏸ ↔ ▶ correctly.
+- **Slice C — CoreDownloadResumer + inner-fn refactor** (`fb2b290`).
+  Extracts the ~200-line download/extract/install body of
+  `download_core` into a shared `run_download_core_inner` so both
+  the Tauri command AND the resumer share one code path. New
+  `CoreDownloadResumer` impl reads `target_id` from the snapshot,
+  drops any leftover `.partial`, attaches a fresh handle, calls
+  `mark_running`, runs the inner, finalizes via the same
+  mark_completed / mark_cancelled (+ .partial cleanup) / mark_failed
+  shape as `download_core`'s tail. Phase 3a strategy is
+  **restart-from-zero**: the current chunk loop buffers the entire
+  .zip in RAM before writing .partial, so byte-level Range resume
+  needs a streaming-write refactor (queued for Phase 3b). Cores are
+  <10 MB; the re-download cost is acceptable for now.
+- **Slice D — register resumer + dispatch in setup()** (`3a4e4dc`).
+  In `main.rs::setup()` right after `promote_running_rows_to_interrupted`
+  and before `app.manage(registry)`: register the
+  `CoreDownloadResumer` (constructed with `resolve_cores_dir()`),
+  then call `registry.resume_interrupted_jobs(&app_handle)`. The
+  dispatch returns immediately because each per-kind resumer spawns
+  its own `tauri::async_runtime` worker.
+
+End-to-end crash-recovery path now works:
+1. App crashes mid-download → `<data_dir>/oa.lock` stays behind.
+2. Next launch: lock file detected → `running` rows promoted to
+   `interrupted`.
+3. `resume_interrupted_jobs` dispatches the `CoreDownloadResumer`
+   for each interrupted `core_download` row.
+4. Resumer drops `.partial`, attaches handle, marks running,
+   re-runs the full inner flow from the buildbot URL, finalizes.
+5. Bar surfaces the resumed download as soon as the StateChanged
+   event for `mark_running` fires.
+
+660 of 660 oa-shell tests green.
+
+**Almost:** End-to-end manual smoke test for the new surfaces:
+1. Spawn a test job → pause → confirm the row state pill flips to
+   "Paused" + the per-row button shows ▶ resume. Click resume →
+   pill clears, button returns to ⏸, ticks continue.
+2. Start a real `core_download` → kill the app (Task Manager →
+   End Task on `oa-shell.exe`) → relaunch → confirm the log shows
+   `dispatched 1 resume worker(s) for interrupted rows` and the
+   download restarts from zero (bar shows progress climbing
+   again).
+3. Spawn a test job → kill the app → relaunch → confirm the log
+   warns `no resumer registered for kind test_job; job N stays
+   interrupted`. (Phase 3a only resumes core_download.)
+
+**Next:** Phase 3b — byte-level Range resume for `core_download`
+(streaming-write refactor + HTTP Range request when `.partial`
+exists); `artwork_sync` + `hash_resolve` resumers; per-kind
+opt-out infrastructure (settings.json fields, Settings panel UI
+stays in Phase 5); duplicate-trigger Wait/Restart/Cancel dialog
+for second-click-while-running on the same kind+target. See plan
+§Sizing Phase 3.
+
+---
+
 ## 2026-06-02 — Phase 2 ships the BackgroundJobsBar (`feat/background-jobs-phase-2`)
 
 **Shipped:** Phase 2 of the 5-phase arc landed in four phase commits
