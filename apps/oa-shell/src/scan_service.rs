@@ -803,12 +803,64 @@ fn walk(
                 entry_path.display(), ext,
             );
         } else if wanted.contains(&ext) {
+            // .chd content peek (2026-06-02). Multiple systems claim
+            // `.chd` (mame + every CD-shape system that uses redump
+            // ISO archives — dreamcast / saturn / segacd / psx / etc.),
+            // so the frontend's extension→system map's last-write-wins
+            // picks one (currently mame) and silently misclassifies
+            // every other system's disc images. Same shape as the
+            // Neo Geo zip peek above: read the data-track header,
+            // run it through `detect_system_from_disc_header`, emit
+            // the resulting system_id as the row's `system_hint` so
+            // the smart classifier prefers it over the extension map.
+            //
+            // Performance: chd_reader::read_data_track_header reads
+            // ~32 KB of decompressed user data (worst case 2 CHD
+            // hunks); typical cost is single-digit milliseconds per
+            // file. The cancellable + timeout-bounded wrapper means
+            // a malformed .chd can't hang the walk.
+            //
+            // Fallback: when the peek fails (corrupted file, non-CD
+            // CHD shape, unknown signature) we emit the row with no
+            // hint and let the extension map fall through — same
+            // behavior as pre-2026-06-02 for every .chd.
+            let system_hint: Option<String> = if ext == "chd" {
+                match archive::run_with_timeout_and_cancel(
+                    {
+                        let path = entry_path.clone();
+                        move || crate::cd_id::detect_system_from_chd(&path)
+                    },
+                    Arc::clone(cancel),
+                    ARCHIVE_PEEK_TIMEOUT,
+                ) {
+                    Ok(Some(sys)) => Some(sys.to_string()),
+                    Ok(None) => None,
+                    Err(archive::PeekFailure::Cancelled) => return,
+                    Err(archive::PeekFailure::TimedOut) => {
+                        log::warn!(
+                            "scan_service: chd peek timed out after {}s, no system hint: {}",
+                            ARCHIVE_PEEK_TIMEOUT.as_secs(),
+                            entry_path.display(),
+                        );
+                        None
+                    }
+                    Err(archive::PeekFailure::Failed(e)) => {
+                        log::warn!(
+                            "scan_service: chd peek {} failed ({e}); no system hint",
+                            entry_path.display(),
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             out.push(ScannedRom {
                 path: entry_path.to_string_lossy().into_owned(),
                 file_name: name_owned.clone(),
                 extension: ext,
                 archive_inner_path: None,
-                system_hint: None,
+                system_hint,
                 ..ScannedRom::default()
             });
         }
