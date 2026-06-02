@@ -2837,7 +2837,7 @@ pub async fn sync_media_for_system(
     app: tauri::AppHandle,
 ) -> Result<SyncSummary, String> {
     use futures::stream::{self, StreamExt};
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
     // Per-system op gate (H11) — serializes concurrent sync/resolve
     // operations on the same system_id so the "click Sync media then
@@ -2845,6 +2845,40 @@ pub async fn sync_media_for_system(
     // gate is held for the lifetime of this function call.
     let gate = state.gate_for(&systemId);
     let _gate_guard = gate.lock().await;
+
+    // Phase 4b artwork_sync wiring — register the job so the bar
+    // surfaces "Syncing {system} artwork" with done / total ticking
+    // per repo boundary. Soft-fail when the registry isn't managed.
+    // Plan §"Kind taxonomy" originally split this into artwork_sync
+    // vs metadata_sync for per-kind concurrency, but the existing
+    // function bundles both — Phase 4b wires the whole pass as
+    // artwork_sync (26 of 27 MediaKind variants are art-shape; only
+    // Manual is metadata-shape) and defers the deeper split until a
+    // separate metadata-fetching path exists.
+    let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
+    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
+        let label = format!("Syncing {} artwork", systemId);
+        match reg.create_job(
+            crate::job_registry::JobKind::ArtworkSync {
+                system_id: systemId.clone(),
+            },
+            label,
+            Some(systemId.clone()),
+            None,
+            false,
+            "files",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = reg.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(artwork_sync) failed: {e}");
+                None
+            }
+        }
+    });
 
     let enabled_kinds = enabled_sync_kinds(&state.prefs);
     let only_identified = state.prefs.read().ok()
@@ -2974,7 +3008,22 @@ pub async fn sync_media_for_system(
     }));
     let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
+    // Phase 4b artwork_sync — initial tick so the bar shows
+    // "running" with a 0% bar (rather than indeterminate stripe).
+    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+        let _ = reg.progress(id, 0, Some(total as i64));
+    }
+
     for (repo, repo_entries) in by_repo {
+        // Phase 4b artwork_sync — per-repo boundary tick. Fine
+        // granularity per inner emit is overkill for the bar; this
+        // gives the operator a visible advance every time the worker
+        // moves to a new libretro-thumbnails repo (typically 1-3 per
+        // system).
+        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+            let cur = done.load(std::sync::atomic::Ordering::SeqCst);
+            let _ = reg.progress(id, cur as i64, Some(total as i64));
+        }
         // 1. Tree (cached 24h or fetched) — now carries all three subdirs.
         let tree = match get_repo_tree_cached(&client, &app_data_dir, repo).await {
             Ok(t) => t,
@@ -3203,6 +3252,15 @@ pub async fn sync_media_for_system(
         "oa-shell: sync_media_for_system({systemId}) done — matched {}, downloaded {}, cached {}, unmatched {}, errors {}",
         final_summary.matched, final_summary.downloaded, final_summary.cached, final_summary.unmatched, final_summary.errors,
     );
+    // Phase 4b artwork_sync — finalize. Always mark_completed
+    // because the function never returns Err on a partial sync
+    // (per-entry errors land in summary.errors but the function
+    // itself resolves Ok). The bar shows the row vanishing as the
+    // mark_completed StateChanged fires.
+    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+        let _ = reg.progress(id, total as i64, Some(total as i64));
+        let _ = reg.mark_completed(id);
+    }
     Ok(final_summary)
 }
 

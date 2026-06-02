@@ -85,6 +85,20 @@ pub enum JobKind {
     /// (`mame_import::refresh_mame_system_info`). Atomic — single
     /// XML parse + bake; cancel rolls back.
     MameListxmlImport,
+    /// Per-system artwork download from libretro-thumbnails
+    /// (`media::sync_media_for_system`). Plan §"Kind taxonomy"
+    /// originally split this into artwork_sync vs metadata_sync for
+    /// per-kind concurrency, but the existing function bundles both
+    /// into one per-game-per-kind pass — Phase 4b wires the whole
+    /// pass as artwork_sync (covers 26 of 27 MediaKind variants;
+    /// only Manual is metadata-shape). The deeper split deferred
+    /// until a separate metadata-fetching path exists.
+    ArtworkSync { system_id: String },
+    /// Parent row for Guided Setup's parallel install of N cores
+    /// (`MissingCoreBulkPrompt` → N download_core calls). Children
+    /// are individual CoreDownload jobs linked via parent_job_id;
+    /// the parent's `done` counts how many children have finalized.
+    BulkCoreInstall,
     /// Dev-only synthetic job for exercising the BackgroundJobsBar
     /// without burning bandwidth on a real download. Lives at the
     /// production level (not behind `cfg(debug_assertions)`) so
@@ -101,6 +115,8 @@ impl JobKind {
             Self::HashResolve { .. } => "hash_resolve",
             Self::DatSync { .. } => "dat_sync",
             Self::MameListxmlImport => "mame_listxml_import",
+            Self::ArtworkSync { .. } => "artwork_sync",
+            Self::BulkCoreInstall => "bulk_core_install",
             Self::TestJob { .. } => "test_job",
         }
     }
@@ -112,6 +128,8 @@ impl JobKind {
             Self::HashResolve { system_id } => Some(system_id.clone()),
             Self::DatSync { system_id } => Some(system_id.clone()),
             Self::MameListxmlImport => None,
+            Self::ArtworkSync { system_id } => Some(system_id.clone()),
+            Self::BulkCoreInstall => None,
             Self::TestJob { name } => Some(name.clone()),
         }
     }
