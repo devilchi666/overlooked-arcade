@@ -818,18 +818,63 @@ impl GameInfoIndex {
     }
 
     /// Convenience: resolve `docs/cores/` per [`resolve_docs_cores_dir`]
-    /// and call [`load_from_dir`](Self::load_from_dir). Falls back to
-    /// [`empty`](Self::empty) when no docs/cores directory is found.
+    /// and call [`load_from_dir`](Self::load_from_dir), then merge in
+    /// any per-system `games.yaml` records that the
+    /// [`crate::system_registry`] carries. Falls back to
+    /// [`empty`](Self::empty) when neither source resolves anything.
+    ///
+    /// Slice 1 of the per-system descriptor consolidation
+    /// (`docs/PLANS/per-system-descriptors.md`): pilot systems' game
+    /// records moved from `docs/cores/<id>/games-info.md` into
+    /// `config/systems/<id>/games.yaml`; the registry path merges
+    /// after the legacy docs/cores walk, so registry records overwrite
+    /// docs/cores records on the same `(system_id, rom_hash)` /
+    /// `(system_id, rom_title)` key (matches the "registry wins per
+    /// conflict" Slice 1 contract).
     pub fn load_default() -> Self {
-        match resolve_docs_cores_dir() {
+        let mut idx = match resolve_docs_cores_dir() {
             Some(dir) => Self::load_from_dir(&dir),
             None => {
                 log::warn!(
                     "game_info: could not resolve docs/cores directory \
-                     (checked <exe>/docs/cores and <repo>/docs/cores); index is empty"
+                     (checked <exe>/docs/cores and <repo>/docs/cores); falling back to registry-only"
                 );
                 Self::empty()
             }
+        };
+        let registry = crate::system_registry::global_registry();
+        let mut registry_records = 0usize;
+        for sys_id in registry.system_ids() {
+            if let Some(loaded) = registry.get(sys_id) {
+                if let Some(games) = &loaded.games {
+                    registry_records += games.games.len();
+                    idx.add_records(games.games.iter().cloned());
+                }
+            }
+        }
+        if registry_records > 0 {
+            log::info!(
+                "game_info: merged {registry_records} additional records from config/systems/*/games.yaml"
+            );
+        }
+        idx
+    }
+
+    /// Ingest a stream of [`GameInfo`] records into the index. New
+    /// hash + title keys overwrite existing entries — used by the
+    /// registry merge path in [`load_default`].
+    pub fn add_records(&mut self, records: impl IntoIterator<Item = GameInfo>) {
+        for gi in records {
+            let system_id = gi.id_key.system_id.clone();
+            if let Some(hash) = gi.id_key.rom_hash.as_ref() {
+                self.by_hash
+                    .insert((system_id.clone(), hash.clone()), gi.clone());
+            }
+            if let Some(title) = gi.id_key.rom_title.as_ref() {
+                self.by_title
+                    .insert((system_id.clone(), title.clone()), gi.clone());
+            }
+            self.all.push(gi);
         }
     }
 
@@ -1224,18 +1269,15 @@ date: 2024
     }
 
     #[test]
-    fn load_from_dir_loads_psx_sample_via_source_tree() {
-        // The Phase 1 sample at docs/cores/psx/games-info.md has 2
-        // entries — Tomb Raider (USA) + Final Fantasy VII (USA). The
-        // resolver should find the source-tree path when running under
-        // `cargo test` (the exe-dir candidate fails; CARGO_MANIFEST_DIR
-        // fallback succeeds). Use the resolved dir directly rather
-        // than the global singleton so the test doesn't poison
-        // OnceLock state for sibling tests.
-        let dir = resolve_docs_cores_dir().expect(
-            "resolve_docs_cores_dir must find the source-tree docs/cores under cargo test",
-        );
-        let idx = GameInfoIndex::load_from_dir(&dir);
+    fn load_default_loads_psx_sample_via_registry_after_slice1_migration() {
+        // Slice 1 Phase C (2026-06-02) — `psx` game records moved from
+        // docs/cores/psx/games-info.md into config/systems/psx/games.yaml.
+        // The legacy `load_from_dir` walk no longer finds them; the
+        // registry merge in `load_default` does.
+        //
+        // Tomb Raider (USA) + Final Fantasy VII (USA) are the two seed
+        // records carried through the migration.
+        let idx = GameInfoIndex::load_default();
         assert!(
             idx.lookup(
                 "psx",
@@ -1243,12 +1285,30 @@ date: 2024
                 None,
             )
             .is_some(),
-            "load_from_dir must include Tomb Raider record from docs/cores/psx/games-info.md"
+            "load_default must include Tomb Raider record from config/systems/psx/games.yaml via the registry merge"
         );
         assert!(
             idx.lookup("psx", None, Some("Final Fantasy VII (USA)"))
                 .is_some(),
-            "load_from_dir must include FF7 record by title fallback"
+            "load_default must include FF7 record by title fallback (registry-merged)"
+        );
+
+        // Regression guard against accidental re-creation of
+        // docs/cores/psx/games-info.md — the legacy walk alone must NOT
+        // produce these records anymore.
+        let dir = resolve_docs_cores_dir().expect(
+            "resolve_docs_cores_dir must find the source-tree docs/cores under cargo test",
+        );
+        let legacy_only = GameInfoIndex::load_from_dir(&dir);
+        assert!(
+            legacy_only
+                .lookup(
+                    "psx",
+                    Some("7a4b00112233445566778899aabbccddeeff0011"),
+                    None,
+                )
+                .is_none(),
+            "Tomb Raider must not be in docs/cores/ after the Slice 1 Phase C migration"
         );
     }
 

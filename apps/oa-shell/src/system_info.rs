@@ -1540,10 +1540,10 @@ meta:
         let dir = resolve_docs_cores_dir()
             .expect("docs/cores must resolve under cargo test");
         let records = load_curated_records(&dir);
-        for required in &["snes", "nes", "genesis", "psx"] {
+        for required in &["snes", "nes", "genesis"] {
             assert!(
                 records.iter().any(|r| r.system_id == *required),
-                "missing required system-info.yaml for {required} (it should still be in docs/cores until its Slice 1 / Slice 2 migration commit lands)"
+                "missing required system-info.yaml for {required} (it should still be in docs/cores until its Slice 2 migration commit lands)"
             );
         }
         // Spot-check that fields actually populated — catch the case
@@ -1592,6 +1592,36 @@ meta:
         assert!(
             !legacy.iter().any(|r| r.system_id == "gb"),
             "gb must not be in docs/cores/ after the Slice 1 Phase B migration"
+        );
+    }
+
+    #[test]
+    fn registry_load_finds_psx_via_config_systems_path() {
+        // Slice 1 Phase C (2026-06-02) — `psx`'s L2 record moved from
+        // docs/cores/psx/system-info.yaml into the embedded
+        // `system_info:` block of config/systems/psx/system.yaml.
+        let dir = resolve_docs_cores_dir()
+            .expect("docs/cores must resolve under cargo test");
+        let registry = crate::system_registry::SystemRegistry::load_default();
+        let records = load_curated_records_with_registry(&dir, &registry);
+        let psx = records
+            .iter()
+            .find(|r| r.system_id == "psx")
+            .expect("psx L2 record must surface via config/systems/psx/system.yaml");
+        assert_eq!(psx.manufacturer.as_deref(), Some("Sony"));
+        assert_eq!(psx.system_type.as_deref(), Some("Home Console"));
+        assert_eq!(psx.architecture.as_deref(), Some("32-Bit"));
+        assert!(
+            psx.blurb.as_deref().unwrap().contains("3D"),
+            "psx blurb should mention 3D per the migrated content; got {:?}",
+            psx.blurb
+        );
+
+        // Regression guard: psx must NOT be in the legacy docs/cores walk.
+        let legacy = load_curated_records(&dir);
+        assert!(
+            !legacy.iter().any(|r| r.system_id == "psx"),
+            "psx must not be in docs/cores/ after the Slice 1 Phase C migration"
         );
     }
 

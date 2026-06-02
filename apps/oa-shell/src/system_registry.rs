@@ -65,6 +65,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::system_descriptor::{
     parse_bios_yaml, parse_games_yaml, parse_system_yaml, BiosDescriptor, GamesDescriptor,
@@ -423,6 +424,19 @@ where
         message,
     })?;
     Ok(Some(parsed))
+}
+
+/// Process-wide singleton. Initialized lazily via
+/// [`SystemRegistry::load_default`] on first call so the startup path
+/// doesn't pay the parse cost until a consumer (BIOS check / games
+/// lookup / dat-refs) actually asks. Thread-safe; subsequent callers
+/// see the same instance for the lifetime of the process.
+///
+/// Companion to [`crate::game_info::global_index`] — same lazy-init
+/// pattern, different domain.
+pub fn global_registry() -> &'static SystemRegistry {
+    static REGISTRY: OnceLock<SystemRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(SystemRegistry::load_default)
 }
 
 /// Resolve `config/systems/` at runtime. Walks two candidates in
