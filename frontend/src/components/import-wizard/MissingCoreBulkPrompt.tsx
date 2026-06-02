@@ -208,6 +208,22 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
     for (const t of targets) {
       setRow(t.systemId, { status: "downloading", progress: undefined, errorMessage: undefined });
     }
+    // Phase 4b bulk_core_install — create the parent job up front so
+    // the BackgroundJobsBar shows ONE row "Installing N cores" with
+    // an N-children aggregate progress, in addition to each child
+    // core_download row. -1 sentinel means the backend's JobRegistry
+    // isn't managed; the downloads still proceed but without a parent.
+    let parentJobId: number | undefined;
+    try {
+      const id = await invoke<number>("start_bulk_core_install", {
+        n: targets.length,
+      });
+      if (id > 0) parentJobId = id;
+    } catch (e) {
+      // Soft-fail — downloads still proceed individually without a
+      // parent row in the bar.
+      console.warn("[oa-jobs] start_bulk_core_install failed:", e);
+    }
     // Fire downloads in parallel — core_installer extracts via a
     // .partial swap so concurrent writes to /cores/ don't trample.
     await Promise.all(
@@ -215,7 +231,10 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
         const cur = t.candidates[t.selectedIdx];
         if (!cur) return;
         try {
-          await invoke<string>("download_core", { base: cur.base });
+          await invoke<string>("download_core", {
+            base: cur.base,
+            parentJobId,
+          });
           // Final `phase: "done"` event already updates the row.
         } catch (e) {
           setRow(t.systemId, {

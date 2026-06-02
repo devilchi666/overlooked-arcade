@@ -2483,6 +2483,7 @@ fn main() {
             job_registry::pause_all_jobs,
             job_registry::cancel_all_jobs,
             job_registry::spawn_test_job,
+            job_registry::start_bulk_core_install,
             core_options::has_core_options_schema,
             get_core_pref,
             set_core_pref,

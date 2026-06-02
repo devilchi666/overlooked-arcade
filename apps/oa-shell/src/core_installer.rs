@@ -1135,8 +1135,16 @@ fn catalog_display_name_for(base: &str) -> &str {
 /// failure / cancel finalizers run in one place at the bottom of the
 /// function, regardless of which error path took us out.
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn download_core(
     base: String,
+    // Phase 4b — when invoked from Guided Setup's MissingCoreBulkPrompt,
+    // the frontend creates a `bulk_core_install` parent first via
+    // `start_bulk_core_install` and passes its id as parentJobId so the
+    // bar shows a parent row aggregating the N children. Standalone
+    // download_core invocations (right-click "Install core…", etc.)
+    // omit it; the resulting CoreDownload row sits at the top level.
+    parentJobId: Option<i64>,
     cores_dir: tauri::State<'_, CoresDir>,
     app: AppHandle,
 ) -> Result<String, String> {
@@ -1145,6 +1153,9 @@ pub async fn download_core(
     let dest_dir = cores_dir.0.clone();
 
     // === Background-jobs registration (soft-fail). ===
+    // -1 sentinel from start_bulk_core_install means the registry
+    // wasn't managed (bar shows nothing) — treat as None.
+    let parent_id_normalized = parentJobId.filter(|id| *id > 0);
     let registry_state = app.try_state::<JobRegistry>();
     let job_id: Option<i64> = registry_state.as_ref().and_then(|state| {
         let label = format!("Downloading {}", catalog_display_name_for(&base));
@@ -1154,7 +1165,7 @@ pub async fn download_core(
             },
             label,
             None,
-            None,
+            parent_id_normalized,
             false,
             "bytes",
             None,
