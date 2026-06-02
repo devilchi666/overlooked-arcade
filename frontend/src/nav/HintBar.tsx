@@ -128,7 +128,7 @@ export const HintBar: Component = () => {
   return (
     <Show when={shouldRender()}>
       <div
-        class="oa-hint-bar pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-3"
+        class="oa-hint-bar pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-3"
         aria-hidden="true"
       >
         <div class="oa-hint-bar-inner flex items-center gap-4 rounded-full border border-white/10 bg-black/60 px-4 py-1.5 text-[0.75rem] font-medium text-(--color-oa-ink) backdrop-blur-md">
