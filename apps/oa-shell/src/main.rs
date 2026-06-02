@@ -7457,9 +7457,52 @@ fn reset_mame_game_override(
 fn refresh_mame_system_info(
     mamePath: Option<String>,
     db: tauri::State<'_, library_db::LibraryDb>,
+    app: tauri::AppHandle,
 ) -> Result<mame_import::MameRefreshReport, String> {
+    // Phase 4a mame_listxml_import — atomic kind per plan §"Kind
+    // taxonomy" (the listxml parse takes 5–15 s on a recent MAME
+    // and we don't have a clean per-record total without re-walking
+    // the XML, so the bar shows running → indeterminate stripe →
+    // done). Soft-fail when the registry isn't managed.
+    let registry_state = app.try_state::<job_registry::JobRegistry>();
+    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
+        match reg.create_job(
+            job_registry::JobKind::MameListxmlImport,
+            "Refreshing MAME catalog".to_string(),
+            None,
+            None,
+            false,
+            "records",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = reg.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(mame_listxml_import) failed: {e}");
+                None
+            }
+        }
+    });
     let custom = mamePath.as_deref().map(std::path::Path::new);
-    mame_import::refresh_mame_system_info(custom, &db)
+    let result = mame_import::refresh_mame_system_info(custom, &db);
+    // Finalize — Ok carries the report, Err carries the error string.
+    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+        match &result {
+            Ok(report) => {
+                // Surface the record count post-hoc so the row's
+                // final state shows N/N rather than 0/0.
+                let n = (report.systems_refreshed + report.games_refreshed) as i64;
+                let _ = reg.progress(id, n, Some(n));
+                let _ = reg.mark_completed(id);
+            }
+            Err(e) => {
+                let _ = reg.mark_failed(id, e.clone());
+            }
+        }
+    }
+    result
 }
 
 /// Per-system cheat-code format declarations. Frontend's CheatsDialog
