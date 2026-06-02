@@ -9120,7 +9120,51 @@ async fn start_background_scan(
     }
 
     let job_id = scan_service::next_job_id();
-    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Phase 4a folder_scan — register a JobRegistry row so the bar
+    // surfaces the scan. The bar's cancel button needs to flip the
+    // SAME AtomicBool that cancel_background_scan does, so we use
+    // the JobHandle's cancel flag as the shared cancel signal when
+    // the registry is managed. Soft-fail when it isn't (matches
+    // every other kind's wiring shape) — the scan still proceeds
+    // with its own fresh AtomicBool.
+    let registry_state = handle.try_state::<job_registry::JobRegistry>();
+    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|state| {
+        let label = format!(
+            "Scanning {}",
+            folder_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| folder.clone()),
+        );
+        match state.create_job(
+            job_registry::JobKind::FolderScan {
+                folder: folder.clone(),
+            },
+            label,
+            None,
+            None,
+            false,
+            "files",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = state.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(folder_scan) failed: {e}");
+                None
+            }
+        }
+    });
+    let registry_handle = registry_job_id
+        .and_then(|id| registry_state.as_ref().and_then(|s| s.handle(id)));
+    let cancel = registry_handle
+        .as_ref()
+        .map(|h| h.cancel.clone())
+        .unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
+
     {
         let mut jobs = scan_state
             .jobs
@@ -9134,6 +9178,10 @@ async fn start_background_scan(
     let folder_for_task = folder_path.clone();
     let folder_str = folder.clone();
     let extension_to_system_for_task = extensionToSystem;
+    let registry_for_task: Option<job_registry::JobRegistry> = registry_state
+        .as_ref()
+        .map(|s| s.inner().clone());
+    let registry_job_id_for_task = registry_job_id;
 
     // spawn_blocking — fs walk is blocking. The Tokio runtime is already
     // present via reqwest's transitive use; we share it.
@@ -9151,8 +9199,29 @@ async fn start_background_scan(
             extension_to_system_for_task,
             &db_state,
             cancel.clone(),
+            registry_for_task.clone(),
+            registry_job_id_for_task,
         );
         let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Finalize the JobRegistry row before the existing
+        // de-registration. mark_cancelled covers both bar-cancel and
+        // cancel_background_scan paths because they share the same
+        // AtomicBool. mark_failed surfaces parse errors;
+        // mark_completed lands on successful walks.
+        if let (Some(reg), Some(id)) = (registry_for_task.as_ref(), registry_job_id_for_task) {
+            match (&result, cancelled) {
+                (_, true) => {
+                    let _ = reg.mark_cancelled(id);
+                }
+                (Ok(_), false) => {
+                    let _ = reg.mark_completed(id);
+                }
+                (Err(e), false) => {
+                    let _ = reg.mark_failed(id, e.clone());
+                }
+            }
+        }
 
         // De-register the job regardless of outcome.
         if let Ok(mut jobs) = jobs_handle.lock() {

@@ -158,6 +158,14 @@ pub fn run_scan_blocking(
     extension_to_system: HashMap<String, String>,
     db: &LibraryDb,
     cancel: Arc<AtomicBool>,
+    // Phase 4a folder_scan wiring — passes through to emit_progress
+    // so each oa://library-scan-progress emit also calls
+    // registry.progress(jobId, filesSeen, None). `None` reflects
+    // that folder_scan's total is unknown until the walk completes
+    // (plan §"Operations to consolidate" — folder_scan's
+    // "files_seen (no total until walk completes)" entry).
+    registry: Option<crate::job_registry::JobRegistry>,
+    registry_job_id: Option<i64>,
 ) -> Result<Vec<ScannedRom>, String> {
     let folder_str = folder.to_string_lossy().into_owned();
     log::info!(
@@ -178,6 +186,8 @@ pub fn run_scan_blocking(
         files_seen: u64,
         out: &[ScannedRom],
         current_file: &str,
+        registry: Option<&crate::job_registry::JobRegistry>,
+        registry_job_id: Option<i64>,
     ) {
         let archived = out.iter().filter(|r| r.archive_inner_path.is_some()).count() as u64;
         let progress = ScanProgress {
@@ -190,6 +200,15 @@ pub fn run_scan_blocking(
         };
         if let Err(e) = handle.emit("oa://library-scan-progress", progress) {
             log::warn!("scan_service: emit progress failed: {e:?}");
+        }
+        // Phase 4a folder_scan — registry progress tick. Total is
+        // None because we don't know the file count until the walk
+        // finishes; the bar shows an indeterminate progress bar
+        // (handled by the BackgroundJobsBar's `pct() === null`
+        // fallback). Registry debounces SQLite writes to 1 Hz, so
+        // calling on every emit is safe.
+        if let (Some(reg), Some(id)) = (registry, registry_job_id) {
+            let _ = reg.progress(id, files_seen as i64, None);
         }
     }
 
@@ -205,10 +224,21 @@ pub fn run_scan_blocking(
         &handle,
         job_id,
         &folder_str,
+        registry.as_ref(),
+        registry_job_id,
     );
 
     // Final walk progress emit so the UI bar lands at 100% / last filename.
-    emit_progress(&handle, job_id, &folder_str, files_seen, &out, "");
+    emit_progress(
+        &handle,
+        job_id,
+        &folder_str,
+        files_seen,
+        &out,
+        "",
+        registry.as_ref(),
+        registry_job_id,
+    );
 
     // Drop data-track rows (.bin / .img / .raw) when a sibling playlist
     // row (.cue / .m3u / .ccd / .toc / .gdi) exists in the same parent
@@ -640,6 +670,8 @@ fn walk(
     handle: &AppHandle,
     job_id: u64,
     folder_str: &str,
+    registry: Option<&crate::job_registry::JobRegistry>,
+    registry_job_id: Option<i64>,
 ) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
@@ -667,6 +699,8 @@ fn walk(
                     handle,
                     job_id,
                     folder_str,
+                    registry,
+                    registry_job_id,
                 );
             }
             continue;
@@ -882,6 +916,13 @@ fn walk(
             };
             if let Err(e) = handle.emit("oa://library-scan-progress", progress) {
                 log::warn!("scan_service: emit progress failed: {e:?}");
+            }
+            // Phase 4a folder_scan — mirror the throttled emit into
+            // the JobRegistry so the BackgroundJobsBar tracks the
+            // walk. None for total because folder_scan doesn't know
+            // its file count up front.
+            if let (Some(reg), Some(id)) = (registry, registry_job_id) {
+                let _ = reg.progress(id, *files_seen as i64, None);
             }
         }
     }
