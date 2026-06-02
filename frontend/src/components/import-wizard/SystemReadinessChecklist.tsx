@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import MissingCoreBulkPrompt from "./MissingCoreBulkPrompt";
+import BiosResolutionDetail, { type BiosFile } from "./BiosResolutionDetail";
 
 // Phase 1B Slice 3 — Per-system readiness checklist.
 //
@@ -69,6 +70,11 @@ type BiosStatusEntry = {
   required: string;
   status: BiosEntryStatus;
   detail: string;
+  /// Phase 1B Slice 5 — per-file inventory the readiness checklist
+  /// renders inline below the BIOS pill via BiosResolutionDetail.
+  /// Always present in the Slice 5+ response shape; pre-Slice-5
+  /// installs serialize an empty array via Vec::default.
+  files: BiosFile[];
 };
 
 type BiosStatusResponse = {
@@ -214,7 +220,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     }
   });
 
-  const [bios] = createResource(async () => {
+  const [bios, { refetch: refetchBios }] = createResource(async () => {
     try {
       return await invoke<BiosStatusResponse>("get_bios_status");
     } catch (e) {
@@ -426,6 +432,24 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
               </button>
             </Show>
           </div>
+        </Show>
+        {/* Phase 1B Slice 5: inline per-file BIOS detail. Auto-expands
+            when the BIOS pill is ⚠ (missing / unknown-hash / error) —
+            mirrors Slice 3's "action buttons only show on ⚠" pattern.
+            Ready / not-required rows stay compact. */}
+        <Show
+          when={
+            biosEntry() &&
+            biosEntry()!.status !== "ok" &&
+            (biosEntry()!.files?.length ?? 0) > 0
+          }
+        >
+          <BiosResolutionDetail
+            systemId={systemId}
+            files={biosEntry()!.files}
+            systemDir={bios()?.systemDir ?? ""}
+            onInstalled={() => void refetchBios()}
+          />
         </Show>
       </div>
     );
