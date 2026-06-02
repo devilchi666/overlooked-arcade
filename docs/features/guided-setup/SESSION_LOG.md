@@ -68,12 +68,16 @@ playtest fixes for divergences caught during shipping.
   pill has an "Open BIOS folder" button (lands the operator at
   `<exe_dir>/system/`). Slice 5 expands that to a richer surface:
   per-BIOS filename + SHA-1 hash + "where to get it" hint
-  (operator-supplied list of legal sources per-system), with the
-  ability to drop multiple BIOS files via drag-drop into the
-  checklist itself. The existing per-system BIOS check helpers
-  in `apps/oa-shell/src/main.rs::get_bios_status` already return
+  (operator-supplied list of legal sources per-system), with a
+  "Pick BIOS file…" per-file picker button (folder-picker via
+  `@tauri-apps/plugin-dialog`) that copies the chosen file into
+  `<exe_dir>/system/` after filename + hash verification. The
+  existing per-system BIOS check helpers in
+  `apps/oa-shell/src/main.rs::get_bios_status` already return
   filename + required string per entry — Slice 5 is mostly UI
   surfacing what's already in the response. Estimated 1 week.
+  (External drag-drop is parking-lotted Won't fix per
+  `docs/PARKING_LOT.md` — drop targets aren't an OA pattern.)
 
 ## 2026-06-01 — Phase 1B Slice 3: per-system readiness checklist
 

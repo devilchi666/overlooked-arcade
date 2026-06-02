@@ -369,13 +369,20 @@ what file they need + where to find it.
      list of legal sources, kept curated in
      `apps/oa-shell/src/bios_sources.rs` or similar — Slice 5
      defines the shape; populating is operator-driven)
-3. **Drag-drop BIOS files** — the readiness card itself becomes a
-   drop target. Files dropped here get filename-checked against the
-   active system's expected list and moved into `<exe_dir>/system/`.
-   The BIOS check refetch fires immediately. Operator doesn't have
-   to open the folder + drag files into Explorer.
+3. **"Pick BIOS file…" per missing file** — per-file folder-picker
+   button (`@tauri-apps/plugin-dialog`'s `open()`) that opens the OS
+   file picker scoped to the operator's chosen file. On selection,
+   the file is filename-checked against the active system's expected
+   list, hash-verified if a canonical SHA-1 is known, and copied
+   into `<exe_dir>/system/`. The BIOS check refetch fires
+   immediately so the pill flips ⚠ → ✓ in real time.
 4. **Keep "Open BIOS folder"** as the escape hatch for operators who
-   want to manage the folder manually.
+   prefer to manage `<exe_dir>/system/` themselves.
+
+(External drag-drop is parking-lotted Won't fix per
+`docs/PARKING_LOT.md` 2026-05-20 — drop targets aren't an OA
+pattern. The per-file picker covers the same convenience without
+introducing a new drop surface.)
 
 **Where the work lives:**
 - `apps/oa-shell/src/main.rs` (or split into a new
