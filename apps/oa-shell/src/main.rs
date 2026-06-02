@@ -2223,6 +2223,16 @@ fn main() {
         Arc::new(std::sync::OnceLock::new());
     let app_data_dir_for_setup_persist = app_data_dir_for_window_persist.clone();
     let app_data_dir_for_flusher = app_data_dir_for_window_persist.clone();
+
+    // Crash detection: `<data_dir>/oa.lock` is written in setup() at
+    // startup and removed AFTER `.run(...)` returns. Lock file present
+    // at the next startup → previous run did not exit cleanly. See
+    // docs/PLANS/background-jobs-and-progress-bar.md §"Crash detection".
+    // The OnceLock here shuttles the resolved path from inside the
+    // setup() closure to the post-.run() cleanup below.
+    let oa_lock_path_for_cleanup: Arc<std::sync::OnceLock<PathBuf>> =
+        Arc::new(std::sync::OnceLock::new());
+    let oa_lock_path_for_setup = oa_lock_path_for_cleanup.clone();
     let pending_window_writes: Arc<Mutex<std::collections::HashMap<String, (Instant, layout::WindowGeometry)>>> =
         Arc::new(Mutex::new(std::collections::HashMap::new()));
     let pending_for_handler = pending_window_writes.clone();
@@ -2546,6 +2556,28 @@ fn main() {
                     Ok(path) => log::info!("oa-shell: log file = {}", path.display()),
                     Err(e) => log::warn!("oa-shell: log file setup failed: {e}"),
                 }
+
+                // Background-jobs crash detection. Write a single-byte
+                // marker file at `<data_dir>/oa.lock`; check for its
+                // presence FIRST so the boolean reflects whether the
+                // PREVIOUS run exited cleanly (the write below resets
+                // it for this run). The JobRegistry init further down
+                // consumes the flag to promote `running` rows to
+                // `interrupted`.
+                let oa_lock_path = app_data_dir.join("oa.lock");
+                let oa_lock_was_present = oa_lock_path.exists();
+                if oa_lock_was_present {
+                    log::warn!(
+                        "oa-shell: oa.lock present at startup; previous run did not exit cleanly"
+                    );
+                }
+                if let Err(e) = std::fs::write(&oa_lock_path, b"") {
+                    log::warn!(
+                        "oa-shell: write oa.lock at {} failed: {e}",
+                        oa_lock_path.display()
+                    );
+                }
+                let _ = oa_lock_path_for_setup.set(oa_lock_path);
 
                 // In portable mode, widen the asset-protocol scope to cover
                 // the portable settings dir. tauri.conf.json scopes it to
@@ -2877,6 +2909,51 @@ fn main() {
                             log::warn!("mame_games: bake-on-launch failed: {e}");
                         }
 
+                        // Background-jobs registry — opens its own
+                        // connection to the same games.sqlite (WAL
+                        // mode keeps the two connections safe). Must
+                        // come AFTER LibraryDb's schema bootstrap above
+                        // because the registry's queries assume the
+                        // background_jobs table from migration v18.
+                        // If the lock-file detection above flagged a
+                        // crash, promote any orphan `running` rows to
+                        // `interrupted`; Phase 1 leaves them sitting
+                        // for operator retry (Phase 3 wires the
+                        // auto-resume dispatcher).
+                        let registry_db_path = job_registry::db_path_for(&app_data_dir);
+                        match job_registry::JobRegistry::new(
+                            &registry_db_path,
+                            app.handle().clone(),
+                        ) {
+                            Ok(registry) => {
+                                if oa_lock_was_present {
+                                    match registry.promote_running_rows_to_interrupted() {
+                                        Ok(n) if n > 0 => log::warn!(
+                                            "background_jobs: promoted {n} `running` row(s) \
+                                             to `interrupted` after crash detection"
+                                        ),
+                                        Ok(_) => {}
+                                        Err(e) => log::warn!(
+                                            "background_jobs: promote running→interrupted failed: {e}"
+                                        ),
+                                    }
+                                }
+                                app.manage(registry);
+                            }
+                            Err(e) => {
+                                // Soft-fail: the existing per-operation
+                                // event paths still work; only the new
+                                // job tracking degrades. Phase 1's
+                                // pilot kind checks try_state and skips
+                                // the registry calls when None.
+                                log::error!(
+                                    "background_jobs: JobRegistry open failed at {}: {e}; \
+                                     continuing without job tracking",
+                                    registry_db_path.display()
+                                );
+                            }
+                        }
+
                         app.manage(db);
                     }
                     Err(e) => {
@@ -2998,6 +3075,18 @@ fn main() {
 
     log::info!("oa-shell: tauri exited, signalling threads");
     running.store(false, Ordering::SeqCst);
+
+    // Clean shutdown: delete the `<data_dir>/oa.lock` crash marker so
+    // the next launch knows the previous run exited normally. Skipping
+    // this (panic / abort / kill -9) leaves the lock file behind; on
+    // next launch, the JobRegistry init promotes orphan `running`
+    // rows to `interrupted`.
+    if let Some(p) = oa_lock_path_for_cleanup.get() {
+        if let Err(e) = std::fs::remove_file(p) {
+            log::warn!("oa-shell: remove oa.lock at {} failed: {e}", p.display());
+        }
+    }
+
     log::info!("oa-shell: bye");
 }
 
