@@ -1,0 +1,18 @@
+id: atari7800
+display_name: Atari 7800 ProSystem
+short_name: Atari 7800
+schema_version: 1
+default_core: prosystem_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- a78
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Atari - 7800
+- subdir: metadat/headered
+  basename: Atari - 7800
+cores:
+- base: prosystem_libretro
+  display_name: ProSystem
+  blurb: Atari 7800. BIOS optional but recommended.
+  recommended: true

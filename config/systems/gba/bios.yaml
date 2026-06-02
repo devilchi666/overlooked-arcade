@@ -1,0 +1,7 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: gba_bios.bin
+  sha1: 300C20DF6731A33952DED8C436F7F186D25D3492
+  description: Game Boy Advance BIOS (16 KB, canonical)

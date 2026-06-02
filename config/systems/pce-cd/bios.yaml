@@ -1,0 +1,40 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: syscard3.pce
+  sha1: 1F8B161A2DB40DBA2079A87C10C0A3340B56ED3B
+  description: US TurboGrafx-CD System Card v3.00 (Mednafen-canonical)
+- name: syscard2.pce
+  sha1: 056E3A8A7F3B7BE60EE6DEAEB0BAA67E1BA62B18
+  description: US System Card v2.00 (Mednafen-canonical)
+- name: syscard1.pce
+  sha1: 6DCA8A0AFD0CB1C14CFFC1CFFEA34915CD496E44
+  description: US System Card v1.00 (Mednafen-canonical)
+- name: syscard3j.pce
+  sha1: A01CE5F5A90F9F3A2E76EC3D34D8B03B9BD9E62A
+  description: JP Super CD-ROM² System Card v3.00 (Mednafen-canonical)
+- name: gexpress.pce
+  sha1: F8A06F08F8E7BF4D7117F1B22DA5074E0F49C2BC
+  description: Games Express CD Card (Mednafen-canonical)
+- name: syscard1.pce
+  sha1: A39A66DA7DE6BA94AB84D04EEF7AFEEC7D4EE66A
+  description: JP CD-ROM² System Card v1.00 (libretro-database)
+- name: syscard2.pce
+  sha1: 88DA02E2503F7C32810F5D93A34849D470742B6D
+  description: JP CD-ROM² System Card v2.00 (libretro-database)
+- name: syscard2u.pce
+  sha1: 2BEA3DAC98F84B2F2F469FA77EA720B8770D598D
+  description: US TurboGrafx-CD System Card v2.00 (libretro-database)
+- name: syscard3.pce
+  sha1: 79F5FF55DD10187C7FD7B8DAAB0B3FFBD1F56A2C
+  description: JP Super CD-ROM² System Card v3.00 (libretro-database)
+- name: syscard3u.pce
+  sha1: D02611D99921986147C753DF14C7349B31D71950
+  description: US TurboGrafx-CD System Card v3.00 (libretro-database)
+- name: gecard.pce
+  sha1: 014881A959E045E00F4DB8F52955200865D40280
+  description: Games Express CD Card (libretro-database)
+- name: gexpress.pce
+  sha1: 014881A959E045E00F4DB8F52955200865D40280
+  description: Games Express CD Card (libretro-database alternate name)

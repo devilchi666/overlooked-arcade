@@ -1030,37 +1030,6 @@ pub fn load_curated_records_with_registry(
 /// Missing files contribute the literal byte string `"MISSING:<path>"`
 /// to the hash, so dropping a YAML or losing a slim file triggers a
 /// rebake on the next launch.
-pub fn hash_l1_l2_inputs(
-    listxml_path: &Path,
-    history_path: &Path,
-    docs_cores_dir: &Path,
-) -> String {
-    use sha1::{Digest, Sha1};
-
-    let mut hasher = Sha1::new();
-    hash_file_into(&mut hasher, listxml_path);
-    hash_file_into(&mut hasher, history_path);
-
-    // Walk docs/cores/<id>/system-info.yaml in sorted order so the
-    // hash is filesystem-walk-order independent.
-    let mut yamls: Vec<PathBuf> = match std::fs::read_dir(docs_cores_dir) {
-        Ok(e) => e
-            .filter_map(|x| x.ok())
-            .filter(|x| x.file_type().map(|t| t.is_dir()).unwrap_or(false))
-            .map(|x| x.path().join("system-info.yaml"))
-            .filter(|p| std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false))
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    yamls.sort();
-    for p in &yamls {
-        hash_file_into(&mut hasher, p);
-    }
-
-    let digest = hasher.finalize();
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    hex[..16].to_string()
-}
 
 fn hash_file_into<H: sha1::Digest>(hasher: &mut H, path: &Path) {
     match std::fs::read(path) {
@@ -1519,31 +1488,39 @@ meta:
     // ---- Hash --------------------------------------------------------
 
     #[test]
-    fn load_curated_records_parses_all_shipped_yamls() {
-        // Walks the real docs/cores/ tree from the source-tree
-        // fallback path and confirms every system-info.yaml under
-        // there parses cleanly. Run under `cargo test` so the
-        // CARGO_MANIFEST_DIR resolver finds the in-tree files.
-        //
-        // Pre-Slice-1 v1 shipped 5 hand-authored entries (snes / nes /
-        // genesis / psx / gb). The per-system descriptor consolidation
-        // arc migrates these out of docs/cores into
-        // config/systems/<id>/system.yaml one pilot at a time:
-        //   - Phase B (2026-06-02) — `gb` moved
-        //   - Phase C (Slice 1) — `psx` moves
-        //   - Slice 2 — `snes`, `nes`, `genesis` move alongside the
-        //     other 36 systems
-        // Migrated systems surface through `load_curated_records_with_registry`
-        // (covered by the registry_load_finds_gb_via_config_systems_path
-        // test below); this assertion tracks only the still-in-docs/cores
-        // remainder.
+    fn load_curated_records_legacy_docs_cores_is_now_empty() {
+        // Slice 2 Phase B (2026-06-02): every system-info.yaml under
+        // docs/cores/<id>/ has been migrated into
+        // config/systems/<id>/system.yaml's embedded `system_info:`
+        // block. The legacy walk now produces zero records; the
+        // `load_curated_records_with_registry` path is the live
+        // L2 source (covered by `registry_load_finds_all_v1_panel_systems`
+        // below).
         let dir = resolve_docs_cores_dir()
             .expect("docs/cores must resolve under cargo test");
         let records = load_curated_records(&dir);
-        for required in &["snes", "nes", "genesis"] {
+        assert!(
+            records.is_empty(),
+            "docs/cores walk should be empty post-Slice-2 Phase B; got: {:?}",
+            records.iter().map(|r| &r.system_id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn registry_load_finds_all_v1_panel_systems() {
+        // Slice 2 Phase B (2026-06-02): the pre-Slice-1 v1 lineup of
+        // hand-authored L2 entries (snes / nes / genesis / psx / gb)
+        // all surface through the registry path now that Phase B
+        // moved snes/nes/genesis to config/systems alongside the gb/
+        // psx/nds Slice 1 pilots.
+        let dir = resolve_docs_cores_dir()
+            .expect("docs/cores must resolve under cargo test");
+        let registry = crate::system_registry::SystemRegistry::load_default();
+        let records = load_curated_records_with_registry(&dir, &registry);
+        for required in &["snes", "nes", "genesis", "psx", "gb"] {
             assert!(
                 records.iter().any(|r| r.system_id == *required),
-                "missing required system-info.yaml for {required} (it should still be in docs/cores until its Slice 2 migration commit lands)"
+                "missing required L2 record for {required} via registry path"
             );
         }
         // Spot-check that fields actually populated — catch the case
@@ -1629,7 +1606,11 @@ meta:
     fn hash_changes_when_a_file_changes() {
         // Construct two tiny temp trees with the same files but one
         // differing byte, confirm the hash diverges. This is the
-        // bake-on-launch rebake trigger.
+        // bake-on-launch rebake trigger. Uses
+        // `hash_l1_l2_inputs_with_registry` (Slice 2 Phase D deleted
+        // the registry-less variant); an empty registry just means
+        // the hash folds the slim files alone, which is enough to
+        // exercise the byte-change-flips-hash invariant.
         let tmp = std::env::temp_dir().join(format!("oa-sysinfo-hash-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
@@ -1638,11 +1619,12 @@ meta:
         let cores = tmp.join("cores");
         std::fs::create_dir_all(&cores).unwrap();
 
+        let empty_registry = crate::system_registry::SystemRegistry::empty();
         std::fs::write(&listxml, "{}").unwrap();
         std::fs::write(&history, "<history/>").unwrap();
-        let h1 = hash_l1_l2_inputs(&listxml, &history, &cores);
+        let h1 = hash_l1_l2_inputs_with_registry(&listxml, &history, &cores, &empty_registry);
         std::fs::write(&listxml, "{ }").unwrap(); // single byte change
-        let h2 = hash_l1_l2_inputs(&listxml, &history, &cores);
+        let h2 = hash_l1_l2_inputs_with_registry(&listxml, &history, &cores, &empty_registry);
         assert_ne!(h1, h2, "single-byte change in slim must flip the hash");
 
         // Cleanup — best-effort.

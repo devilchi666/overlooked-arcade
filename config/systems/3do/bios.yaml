@@ -1,0 +1,43 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: panafz1.bin
+  sha1: 34BF189111295F74D7B7DFC1F304D98B8D36325A
+  description: Panasonic FZ-1 v1.x (1993 launch, most common)
+- name: panafz1-kanji.bin
+  sha1: ACD39A8FEE1B9D2950D5AB447846C11FB31AF63E
+  description: Panasonic FZ-1 with Kanji ROM (Japan)
+- name: panafz1j.bin
+  sha1: EC7EC62D60EC0459A14ED56EBC66761EF3C80EFC
+  description: Panasonic FZ-1 Japan-region BIOS
+- name: panafz1j-kanji.bin
+  sha1: 884515605EE243577AB20767EF8C1A7368E4E407
+  description: Panasonic FZ-1 Japan with Kanji ROM
+- name: panafz1j-norsa.bin
+  sha1: A417587AE3B0B8EF00C830920C21AF8BEE88E419
+  description: Panasonic FZ-1 Japan, RSA-stripped
+- name: panafz10.bin
+  sha1: 3C912300775D1AD730DC35757E279C274C0ACAAD
+  description: Panasonic FZ-10 v1.x (1994 revision)
+- name: panafz10-norsa.bin
+  sha1: F05E642322C03694F06A809C0B90FC27AC73C002
+  description: Panasonic FZ-10, RSA-stripped
+- name: panafz10e-anvil.bin
+  sha1: A900371F0CDCDC03F79557F11D406FD71251A5FD
+  description: Panasonic FZ-10 EU 'Anvil' v1.02d
+- name: panafz10e-anvil-norsa.bin
+  sha1: 2765C7B4557CC838B32567D2428D088980295159
+  description: Panasonic FZ-10 EU 'Anvil', RSA-stripped
+- name: panafz10ja-anvil-kanji.bin
+  sha1: 2E857B957803D0331FD229328DF01F3FFAB69EEE
+  description: Panasonic FZ-10 JA 'Anvil' with Kanji ROM
+- name: goldstar.bin
+  sha1: C4A2E5336F77FB5F743DE1EEA2CDA43675EE2DE7
+  description: GoldStar GDO-101M (1995)
+- name: sanyotry.bin
+  sha1: B01C53DA256DDE43FFEC4AD3FC3ADFA8D635E943
+  description: Sanyo TRY IMP-21J (Japan)
+- name: 3do_arcade_saot.bin
+  sha1: 520D3D1B5897800AF47F92EFD2444A26B7A7DEAD
+  description: 3DO Arcade SAOT firmware (M2 / arcade variant)

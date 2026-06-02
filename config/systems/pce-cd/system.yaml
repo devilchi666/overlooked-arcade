@@ -1,0 +1,23 @@
+id: pce-cd
+display_name: TurboGrafx-CD / PC Engine CD-ROM²
+short_name: TG-CD
+schema_version: 1
+default_shader_preset: plain
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+cores:
+- base: mednafen_pce_fast_libretro
+  display_name: Beetle PCE Fast
+  blurb: Mednafen-derived. Fast, plays HuCard + CD. OA default.
+  recommended: true
+- base: mednafen_pce_libretro
+  display_name: Beetle PCE (full Mednafen)
+  blurb: Higher-accuracy alternative. Heavier, same library coverage.
+- base: geargrafx_libretro
+  display_name: GearGrafx
+  blurb: Modern PC Engine core (gear* family). Active development.

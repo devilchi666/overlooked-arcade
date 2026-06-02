@@ -1,0 +1,17 @@
+id: dosbox
+display_name: DOSBox
+short_name: DOSBox
+schema_version: 1
+default_core: dosbox_pure_libretro.dll
+default_shader_preset: crt-lite
+cores:
+- base: dosbox_pure_libretro
+  display_name: DOSBox-Pure
+  blurb: DOS games — the standard libretro DOSBox. Mounts .zip / .iso directly.
+  recommended: true
+- base: dosbox_core_libretro
+  display_name: DOSBox (vanilla)
+  blurb: Closer-to-mainline DOSBox port.
+- base: dosbox_svn_libretro
+  display_name: DOSBox SVN
+  blurb: SVN-based DOSBox snapshot.

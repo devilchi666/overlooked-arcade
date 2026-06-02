@@ -1,0 +1,22 @@
+id: pcfx
+display_name: NEC PC-FX
+short_name: PC-FX
+schema_version: 1
+default_core: mednafen_pcfx_libretro.dll
+default_shader_preset: plain
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: NEC - PC-FX
+cores:
+- base: mednafen_pcfx_libretro
+  display_name: Beetle PC-FX
+  blurb: NEC PC-FX — Mednafen-derived. Sister system to PCE-CD.
+  recommended: true
+  bios_required: pcfx.rom

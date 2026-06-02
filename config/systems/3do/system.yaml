@@ -1,0 +1,19 @@
+id: 3do
+display_name: 3DO Interactive Multiplayer
+short_name: 3DO
+schema_version: 1
+default_core: opera_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+cores:
+- base: opera_libretro
+  display_name: Opera (4DO)
+  blurb: 3DO. Renamed from 4DO; the standard libretro 3DO pick.
+  recommended: true
+  bios_required: panafz1.bin / panafz10.bin / goldstar.bin / sanyotry.bin

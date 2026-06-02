@@ -1,0 +1,20 @@
+id: gamecube
+display_name: Nintendo GameCube + Wii
+short_name: GC / Wii
+schema_version: 1
+default_core: dolphin_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- iso
+- gcm
+- gcz
+- rvz
+- wbfs
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Nintendo - GameCube
+cores:
+- base: dolphin_libretro
+  display_name: Dolphin
+  blurb: GameCube + Wii. Very demanding — requires a strong host.
+  recommended: true

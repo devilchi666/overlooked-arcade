@@ -1,55 +1,28 @@
-# Nintendo DS — per-system descriptor
-#
-# Slice 1 pilot for the per-system descriptor consolidation arc
-# (docs/PLANS/per-system-descriptors.md). NDS is the all_required
-# multi-file BIOS pilot — 3 files must ALL be present for the system
-# to launch.
-#
-# NDS has no pre-existing docs/cores/nds/system-info.yaml (it was
-# never written; the System Info Panel v1 shipped 5 hand-authored L2
-# entries: snes / nes / genesis / psx / gb — NDS will get its L2
-# record when the operator hand-authors one).
-#
-# Sibling files:
-#   - bios.yaml — 3 required files (bios7.bin + bios9.bin + firmware.bin)
-#   - games.yaml — 3 seed records (Phantom Hourglass + Brain Age +
-#     Trauma Center) migrated from the deleted docs/cores/nds/games-info.md;
-#     each carries touch_hotspots for the TouchHotspotOverlay component.
-
 id: nds
 display_name: Nintendo DS
 short_name: NDS
 schema_version: 1
-
 default_core: melonds_libretro.dll
-
-# Headerless raw .nds dumps (No-Intro standard); raw sha1 matches the
-# no-intro NDS dat directly.
+default_shader_preset: crt-lite
 extensions:
-  - nds
-
+- nds
 libretro_dat_refs:
-  - subdir: metadat/no-intro
-    basename: Nintendo - Nintendo DS
-
+- subdir: metadat/no-intro
+  basename: Nintendo - Nintendo DS
 cores:
-  - base: melonds_libretro
-    display_name: melonDS
-    blurb: "Nintendo DS — high accuracy, modern."
-    recommended: true
-  - base: melondsds_libretro
-    display_name: melonDS DS
-    blurb: "melonDS variant with multi-screen UI options."
-    recommended: false
-  - base: desmume_libretro
-    display_name: DeSmuME
-    blurb: "Long-running DS core. Stable but slower than melonDS."
-    recommended: false
-  - base: desmume2015_libretro
-    display_name: DeSmuME 2015
-    blurb: "Older DeSmuME snapshot, lighter perf profile."
-    recommended: false
-  - base: noods_libretro
-    display_name: NooDS
-    blurb: "Modern DS core. Active development."
-    recommended: false
+- base: melonds_libretro
+  display_name: melonDS
+  blurb: Nintendo DS — high accuracy, modern.
+  recommended: true
+- base: melondsds_libretro
+  display_name: melonDS DS
+  blurb: melonDS variant with multi-screen UI options.
+- base: desmume_libretro
+  display_name: DeSmuME
+  blurb: Long-running DS core. Stable but slower than melonDS.
+- base: desmume2015_libretro
+  display_name: DeSmuME 2015
+  blurb: Older DeSmuME snapshot, lighter perf profile.
+- base: noods_libretro
+  display_name: NooDS
+  blurb: Modern DS core. Active development.

@@ -1,13 +1,13 @@
 # Per-system descriptor consolidation — multi-slice arc
 
-**Status:** Slice 1 SHIPPED 2026-06-02 (branch `feat/per-system-descriptors-slice-1`, five phase commits). Slices 2 + 3 remain — see updated status table below.
+**Status:** Slice 2 SHIPPED 2026-06-02 (branch `feat/per-system-descriptors-slice-2`, five phase commits). Slice 3 remains.
 
 **Slice progress:**
 
 | Slice | Status | Notes |
 | --- | --- | --- |
 | **Slice 1** — schema + loader + 3 pilots (GB / PSX / NDS) | ✅ Shipped 2026-06-02 | 643 oa-shell tests green (+28 from 615 pre-branch). 3 systems off the const tables; 38 unchanged. |
-| Slice 2 — migration tool + remaining 38 systems | ⬜ Queued (HIGH band in `docs/NEXT.md`) | ~2-3 weeks; bulk YAML emit + const-table deletion |
+| **Slice 2** — migration tool + remaining 38 systems + L1 const deletion | ✅ Shipped 2026-06-02 | 646 oa-shell tests green. ~2,750 LOC deleted (19 BIOS const tables + 45-arm dat-refs match + 41-arm default-core match + LIGHT_GUN_SYSTEMS reference table + migrate-systems tool). All 46 systems now load from `config/systems/<id>/{system,bios,games}.yaml`. |
 | Slice 3 — L3 content packs + L4 SQLite + JSON Schema + CI lint | ⬜ Queued | ~1 week; design intact |
 
 **Owner-of-decisions:** the operator. This document records what was decided + the implementation roadmap. Revisit individual decisions if any feel wrong when the executing session begins.

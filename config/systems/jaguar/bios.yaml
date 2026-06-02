@@ -1,0 +1,10 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: jagboot.rom
+  sha1: 10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5
+  description: Atari Jaguar boot ROM (8 KB, canonical)
+- name: jaguar_boot.rom
+  sha1: 10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5
+  description: Atari Jaguar boot ROM (alternate naming, same content)

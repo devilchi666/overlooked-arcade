@@ -1,0 +1,19 @@
+id: wonderswan
+display_name: Bandai WonderSwan
+short_name: WonderSwan
+schema_version: 1
+default_core: mednafen_wswan_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- ws
+- wsc
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Bandai - WonderSwan
+- subdir: metadat/no-intro
+  basename: Bandai - WonderSwan Color
+cores:
+- base: mednafen_wswan_libretro
+  display_name: Beetle WonderSwan
+  blurb: WonderSwan + WonderSwan Color.
+  recommended: true

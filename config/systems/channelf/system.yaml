@@ -1,0 +1,16 @@
+id: channelf
+display_name: Fairchild Channel F
+short_name: Channel F
+schema_version: 1
+default_core: freechaf_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- chf
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Fairchild - Channel F
+cores:
+- base: freechaf_libretro
+  display_name: FreeChaF
+  blurb: Fairchild Channel F.
+  recommended: true

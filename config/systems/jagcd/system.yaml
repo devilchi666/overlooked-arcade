@@ -1,0 +1,17 @@
+id: jagcd
+display_name: Atari Jaguar CD
+short_name: Jag CD
+schema_version: 1
+default_core: virtualjaguar_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- cue
+- chd
+- iso
+- m3u
+- ccd
+cores:
+- base: virtualjaguar_libretro
+  display_name: Virtual Jaguar
+  blurb: Atari Jaguar. Compatibility is patchy by game.
+  recommended: true

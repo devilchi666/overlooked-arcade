@@ -1,0 +1,13 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: bios_CD_E.bin
+  sha1: F891E0EA651E2232AF0C5C4CB46A0CAE2EE8F356
+  description: EU Mega-CD v1.00 (PAL, canonical)
+- name: bios_CD_J.bin
+  sha1: 4846F448160059A7DA0215A5DF12CA160F26DD69
+  description: JP Mega-CD v1.00 (canonical)
+- name: bios_CD_U.bin
+  sha1: F4F315ADCEF9B8FEB0364C21AB7F0EAF5457F3ED
+  description: US Sega CD v1.10 (canonical)

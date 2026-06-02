@@ -66,320 +66,48 @@ pub struct DatRef {
     pub basename: &'static str,
 }
 
-/// Map an OA SystemId to one or more libretro-database `.dat` files.
-/// Empty slice = no upstream dat for the system (sync is a no-op rather
-/// than an error). The `dat/` subdir we used to target is a small
-/// curated set; the canonical sources live under `metadat/no-intro/`
-/// (cart-based) and `metadat/redump/` (CD-based). For systems where the
-/// upstream curator also maintains a `metadat/headered/<sys>.dat`, we
-/// fetch that too so headered files match without needing our algorithmic
-/// header-strip pass (see `rom_header.rs`).
+
+/// libretro-database `.dat` references for `system_id`, sourced from
+/// `config/systems/<id>/system.yaml::libretro_dat_refs`.
 ///
-/// **New-core onboarding checklist item:** every system_id registered in
-/// `bindings.rs` (dispatch arms) **must** also get an arm here — even if
-/// the answer is `&[]` — so the wildcard fallback only ever fires on
-/// truly-unknown ids. Forgetting this leaves new-system ROMs unmatched
-/// against libretro-database with only an info-level log explaining why.
-/// The canonical onboarded list lives in `bindings.rs` test fixtures
-/// (search for `"tg16", "pce-cd", "lynx"`); keep this match in sync.
+/// **Implementation note (cache + leak):** [`DatRef`] carries
+/// `&'static str` fields because every consumer downstream
+/// (`fetch_libretro_dat`, `fetch_and_parse_all`) treats refs as if
+/// they were process-lifetime data. The registry returns owned
+/// `String`s, so we `Box::leak` once per system into a
+/// process-lifetime cache. Bounded one-time allocation per system
+/// (~50 bytes × 41 systems = ~2 KB lifetime).
 ///
-/// Reference: https://github.com/libretro/libretro-database/tree/master/metadat
-fn libretro_dat_refs_for_system(system_id: &str) -> &'static [DatRef] {
-    match system_id {
-        "tg16" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "NEC - PC Engine - TurboGrafx 16",
-        }],
-        // CD images aren't hash-matched against single-file sha1s — the
-        // disc-id extractor (Phase 2b) keys against game_serials instead.
-        // Once that lands, this arm should switch to the redump dat
-        // (metadat/redump/NEC - PC Engine CD - TurboGrafx-CD.dat) which
-        // populates game_serials via parse_libretro_dat's serial path.
-        "pce-cd" => &[],
-        "lynx" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "Atari - Lynx" },
-            DatRef { subdir: "metadat/headered", basename: "Atari - Lynx" },
-        ],
-        "nes" => &[
-            DatRef {
-                subdir: "metadat/no-intro",
-                basename: "Nintendo - Nintendo Entertainment System",
-            },
-            DatRef {
-                subdir: "metadat/headered",
-                basename: "Nintendo - Nintendo Entertainment System",
-            },
-        ],
-        "snes" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Super Nintendo Entertainment System",
-        }],
-        "atari7800" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "Atari - 7800" },
-            DatRef { subdir: "metadat/headered", basename: "Atari - 7800" },
-        ],
-        // Arcade ROM identification is set-based (MAME's own DAT/zip
-        // layout), not single-file sha1 against libretro-database.
-        "mame" => &[],
-        // Mega Drive / Genesis. libretro-database keeps the no-intro
-        // Sega MD dat in `metadat/no-intro/Sega - Mega Drive - Genesis.dat`.
-        // SMD-format dumps would hash to different sha1s after
-        // deinterleaving; no separate metadat/headered dat exists for
-        // MD (modern dump sets all ship .md/.bin raw), so first-pass
-        // identification will miss .smd files until rom_header.rs grows
-        // an SMD-deinterleaver in a follow-up. Plain .md dumps match.
-        "genesis" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Sega - Mega Drive - Genesis",
-        }],
-        // Sega CD / Mega-CD. CD-shape — hash-based identification keys
-        // against redump rather than no-intro because CD images aren't
-        // single-file sha1-matched. cd_id.rs::extractors::sega_cd reads
-        // the serial at offset 0x180 of the data track (after the
-        // "SEGADISCSYSTEM" signature); the redump dat's `serial` fields
-        // populate game_serials via parse_libretro_dat's serial path.
-        "segacd" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Sega - Mega-CD - Sega CD",
-        }],
-        // Sega 32X. Cart-shape addon — single no-intro dat covers the
-        // small library (~36 official cart releases + homebrew).
-        // Headerless raw .32x dumps; raw sha1 matches directly.
-        "sega32x" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Sega - 32X",
-        }],
-        // Sega Saturn. CD-shape — disc-id extraction via cd_id.rs reads
-        // the product number at offset 0x20 of the IP.BIN header (after
-        // the "SEGA SEGASATURN" signature). The redump dat's `serial`
-        // fields populate game_serials so the lookup chain hits.
-        "saturn" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Sega - Saturn",
-        }],
-        // Sony PlayStation. CD-shape — cd_id.rs::extractors::psx_family
-        // scans the first 32 KB of the data track for the SYSTEM.CNF
-        // BOOT line and normalizes the catalog code (SLUS_001.67 →
-        // SLUS-00167). The redump dat's `serial` field is the canonical
-        // shape libretro-database uses for cover-art keying.
-        "psx" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Sony - PlayStation",
-        }],
-        // SNK Neo Geo. Cart-shape ROM-sets. libretro-database catalogs
-        // the Neo Geo AES home + MVS arcade library under a single
-        // no-intro dat. ROM-set hash matching is set-based (multiple
-        // .p1/.c1/.m1 files per game), so the simple sha1 path matches
-        // .neo single-file dumps cleanly but .zip ROM-set dumps will
-        // need set-level matching — same gap MAME has. First-pass
-        // matches .neo; ROM-set support is a Phase 2 polish.
-        "neogeo" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "SNK - Neo Geo",
-        }],
-        // SNK Neo Geo CD. CD-shape — cd_id.rs::extractors::neo_geo_cd
-        // scans for SNK catalog code prefixes (NGCD-/ADCD-/NCDZ-/TBCD-)
-        // in the data track. The redump dat's `serial` field stores the
-        // canonical form (e.g. "NGCD-030", "ADCD-103").
-        "neocd" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "SNK - Neo Geo CD",
-        }],
-        // SNK Neo Geo Pocket / Color. Single slug covers both NGP +
-        // NGPC; libretro-database keeps them in separate no-intro
-        // dats — we merge into one local corpus via fetch_and_parse_all
-        // (same gb/WonderSwan pattern).
-        "ngp" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "SNK - Neo Geo Pocket" },
-            DatRef { subdir: "metadat/no-intro", basename: "SNK - Neo Geo Pocket Color" },
-        ],
-        // Atari Jaguar. Cart-shape; single no-intro dat covers retail
-        // + homebrew. Headerless raw .j64 / .jag dumps; raw sha1
-        // matches directly.
-        "jaguar" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Atari - Jaguar",
-        }],
-        // 3DO Interactive Multiplayer. CD-shape — STAYS empty even
-        // though the libretro-database 3DO dat exists, because that dat
-        // carries NO `serial` fields (3DO never standardized a catalog
-        // code). Disc-id lookup is structurally impossible — callers
-        // fall back to filename + fuzzy title matching. The library can
-        // still ID 3DO games by file SHA-1 against the redump dat if we
-        // ever wire that path (currently CD-shape sha1 matching is
-        // deferred because per-track .bin hashes vary by dump quality).
-        "3do" => &[],
-        // NEC PC-FX. CD-shape — cd_id.rs::extractors::pcfx scans for
-        // FX-prefixed catalog codes (FXNHE742 + optional -N disc suffix)
-        // after the "PC-FX:" signature. The redump dat's `serial` field
-        // is the canonical key.
-        "pcfx" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "NEC - PC-FX",
-        }],
-        // Nintendo 64. Cart-shape; single no-intro dat. .n64/.z64/.v64
-        // are different byte-order conventions for the same canonical
-        // content; the dat keys against the canonical Big-Endian (.z64)
-        // sha1. `rom_header::header_rules_for("n64")` adds two
-        // `HeaderRule::ByteSwap` candidates (Pairs16 for .v64, Words32
-        // for .n64) so dumps in either non-canonical byte order match
-        // the dat by normalizing to the .z64 BE SHA-1 at hash time.
-        "n64" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Nintendo 64",
-        }],
-        // Nintendo GameCube. Disc-image-shape — cd_id.rs::extractors::gamecube
-        // reads the 6-byte header at offset 0 (console + game + region +
-        // maker), synthesizes the canonical "DL-DOL-XXXX-REG" serial
-        // libretro-database uses, and the redump dat's `serial` field
-        // populates game_serials for lookup.
-        "gamecube" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Nintendo - GameCube",
-        }],
-        // Sega Dreamcast. GD-ROM disc-shape — cd_id.rs::extractors::dreamcast
-        // reads the product number at offset 0x40 of IP.BIN (after the
-        // "SEGA SEGAKATANA" signature). Wider window captures PAL "-50"
-        // suffix that overflows the on-disc 10-byte field. The redump
-        // dat's `serial` field populates game_serials.
-        "dreamcast" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Sega - Dreamcast",
-        }],
-        // Sony PlayStation Portable. UMD-shape (.iso/.cso/.pbp).
-        // Single-file dumps can match against the no-intro PSP dat —
-        // .iso/.cso are single-file containers that .pbp also wraps.
-        "psp" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Sony - PlayStation Portable",
-        }],
-        // Sony PlayStation 2. DVD-shape — disc-id extraction shares the
-        // PSX SYSTEM.CNF pattern (cd_id.rs::extractors::psx_family
-        // accepts both PSX SLUS/SLES and PS2 SLPM/SLPS prefixes). The
-        // redump dat's `serial` field populates game_serials.
-        "ps2" => &[DatRef {
-            subdir: "metadat/redump",
-            basename: "Sony - PlayStation 2",
-        }],
-        // Nintendo DS. Cart-shape (.nds single-file). Headerless raw
-        // dumps key directly against the no-intro NDS dat.
-        "nds" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Nintendo DS",
-        }],
-        // Sega Master System. libretro-database catalogs both the
-        // Western SMS lineup and the Japanese Mark III variants under
-        // the same no-intro dat. Plain .sms dumps are headerless raw,
-        // so the Raw candidate sha1 hits directly without header strip.
-        "sms" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Sega - Master System - Mark III",
-        }],
-        // Sega Game Gear. Headerless .gg dumps, raw sha1 hits directly.
-        "gamegear" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Sega - Game Gear",
-        }],
-        // Game Boy (DMG) and Game Boy Color (CGB) are now separate OA
-        // slugs after the sidebar-tier registry split. Each routes to
-        // its own libretro-database no-intro dat — .gb dumps match against
-        // the DMG corpus, .gbc dumps against the CGB corpus. (Before the
-        // split, both dats were merged into a combined `gb` corpus.)
-        "gb" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy" },
-        ],
-        "gbc" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "Nintendo - Game Boy Color" },
-        ],
-        // Game Boy Advance — single no-intro dat covers the entire library.
-        // GBA dumps are headerless raw .gba files; the raw sha1 candidate
-        // matches directly without header strip.
-        "gba" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Game Boy Advance",
-        }],
-        // Atari 2600 — single no-intro dat. 2600 dumps are headerless
-        // raw cart bytes; raw sha1 matches directly. NOTE: a small
-        // number of bankswitching schemes use a 256-byte header on
-        // disk for the "Supercharger" cassette / multicart formats;
-        // those would need a header-strip pass to match, but they're
-        // a niche subset of the 2600 corpus. First-pass identification
-        // matches stock .a26 dumps; the Supercharger / multicart pass
-        // is a follow-up.
-        "2600" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Atari - 2600",
-        }],
-        // ColecoVision — single no-intro dat. Headerless raw cart dumps.
-        "coleco" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Coleco - ColecoVision",
-        }],
-        // Mattel Intellivision — single no-intro dat. Headerless raw dumps.
-        "intv" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Mattel - Intellivision",
-        }],
-        // Magnavox Odyssey² + Videopac G7000. The libretro-database dat
-        // covers the US Odyssey² + EU Videopac G7000 + Videopac+ G7400
-        // libraries in one file.
-        "o2" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Magnavox - Odyssey2",
-        }],
-        // Fairchild Channel F — tiny library (~26 official titles +
-        // homebrew). Single no-intro dat.
-        "channelf" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Fairchild - Channel F",
-        }],
-        // GCE Vectrex — tiny library (~30 official titles + active
-        // homebrew). Single no-intro dat.
-        "vectrex" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "GCE - Vectrex",
-        }],
-        // Nintendo Virtual Boy — small library (~22 official titles).
-        // Headerless raw dumps; raw sha1 matches directly.
-        "virtualboy" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Virtual Boy",
-        }],
-        // Bandai WonderSwan + WonderSwan Color. Single slug covers both
-        // hardware variants; libretro-database keeps them in separate
-        // dats — we merge into one local corpus via fetch_and_parse_all.
-        "wonderswan" => &[
-            DatRef { subdir: "metadat/no-intro", basename: "Bandai - WonderSwan" },
-            DatRef { subdir: "metadat/no-intro", basename: "Bandai - WonderSwan Color" },
-        ],
-        // Atari 5200 SuperSystem. Cart-shape; headerless raw .a52 / .bin
-        // dumps. Atari800 reads them directly.
-        "5200" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Atari - 5200",
-        }],
-        // Nintendo Pokémon Mini. Cart-shape; raw .min dumps.
-        "pokemini" => &[DatRef {
-            subdir: "metadat/no-intro",
-            basename: "Nintendo - Pokemon Mini",
-        }],
-        // ScummVM — engine launcher, not a hardware platform. Game data
-        // files vary per release (different revisions, language packs,
-        // fan translations) so libretro-database doesn't ship a canonical
-        // SHA-1 set. The cover-sync pipeline falls back to fuzzy filename
-        // match at the 0.95 threshold, which works fine because operators
-        // (or LaunchBox's ScummVM importer) name `.scummvm` files after
-        // the canonical title ("Monkey Island.scummvm").
-        "scummvm" => &[],
-        // DOSBox — DOS-game runner, also no hardware platform. DOS
-        // games shipped on multiple media (floppy / CD / GOG re-releases)
-        // and through fan-curated patch sets; the directory contents
-        // vary enormously across releases. Cover sync falls back to
-        // fuzzy filename matching against the directory basename at
-        // the 0.95 threshold.
-        "dosbox" => &[],
-        _ => &[],
+/// Returns an empty slice for unregistered system_id or systems
+/// without a `libretro_dat_refs` block (the system has no upstream
+/// dat).
+pub fn libretro_dat_refs_for_system_resolved(system_id: &str) -> &'static [DatRef] {
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<HashMap<String, &'static [DatRef]>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(&refs) = cache.lock().unwrap().get(system_id) {
+        return refs;
     }
+
+    let resolved: &'static [DatRef] = crate::system_registry::global_registry()
+        .get(system_id)
+        .map(|loaded| {
+            let refs: Vec<DatRef> = loaded
+                .descriptor
+                .libretro_dat_refs
+                .iter()
+                .map(|r| DatRef {
+                    subdir: Box::leak(r.subdir.clone().into_boxed_str()),
+                    basename: Box::leak(r.basename.clone().into_boxed_str()),
+                })
+                .collect();
+            let slice: &'static [DatRef] = Box::leak(refs.into_boxed_slice());
+            slice
+        })
+        .unwrap_or(&[]);
+    cache.lock().unwrap().insert(system_id.to_string(), resolved);
+    resolved
 }
 
 /// Extensions we deliberately skip when computing hashes — CD-container
@@ -894,7 +622,7 @@ pub async fn sync_rom_hashes_for_system(
     let _gate_guard = gate.lock().await;
 
     let app_data_dir = state.app_data_dir.clone();
-    let refs = libretro_dat_refs_for_system(&systemId);
+    let refs = libretro_dat_refs_for_system_resolved(&systemId);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {systemId}; skipping sync");
         return Ok(RomHashSyncSummary {
@@ -1149,7 +877,7 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
     if db.count_rom_hashes(system_id)? > 0 {
         return Ok(());
     }
-    let refs = libretro_dat_refs_for_system(system_id);
+    let refs = libretro_dat_refs_for_system_resolved(system_id);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {system_id}");
         return Ok(());
@@ -1769,19 +1497,20 @@ game (
         assert!(it.next_pair().is_none());
     }
 
-    /// Every system registered in `bindings.rs` dispatch must also have
-    /// an explicit decision recorded in `libretro_dat_refs_for_system` —
-    /// either one or more `DatRef`s, or an empty slice (listed in
-    /// `NO_DAT_SYSTEMS` below) with the reason it's skipped. Forgetting
-    /// this leaves a new system silently unmatched at "Identify ROMs"
-    /// time (info-log only).
+    /// Every onboarded system must have an explicit decision recorded
+    /// in `config/systems/<id>/system.yaml::libretro_dat_refs` —
+    /// either one or more `DatRef`s, or an empty list (listed in
+    /// `NO_DAT_SYSTEMS` below) with the reason it's skipped.
+    /// Forgetting this leaves a new system silently unmatched at
+    /// "Identify ROMs" time (info-log only).
     ///
-    /// If you're adding a new core and this test fails: find the system
-    /// under https://github.com/libretro/libretro-database/tree/master/metadat
+    /// If you're adding a new core and this test fails: find the
+    /// system under
+    /// https://github.com/libretro/libretro-database/tree/master/metadat
     /// (no-intro for cart-based, redump for CD-based) and add a DatRef
-    /// to `libretro_dat_refs_for_system`. If the system genuinely has no
-    /// hash-based identification path, add it to `NO_DAT_SYSTEMS` below
-    /// with the reason.
+    /// to `config/systems/<id>/system.yaml`. If the system has no
+    /// hash-based identification path, add it to `NO_DAT_SYSTEMS`
+    /// below with the reason.
     #[test]
     fn every_onboarded_system_has_an_explicit_rom_hashes_decision() {
         // Keep in sync with the canonical onboarded list in
@@ -1799,8 +1528,8 @@ game (
             "5200", "pokemini",
             "scummvm", "dosbox",
         ];
-        // Systems whose `libretro_dat_refs_for_system` returns an empty
-        // slice on purpose. Document the reason next to the id.
+        // Systems whose libretro_dat_refs is empty on purpose. Document
+        // the reason next to the id.
         const NO_DAT_SYSTEMS: &[&str] = &[
             "pce-cd", // PCE-CD discs use catalog codes (Hu7-series) not present in libretro-database as standalone dat — game_serials is populated via the no-intro PCE dat which doesn't cover CD-shape titles.
             "3do",    // libretro-database 3DO dat carries NO `serial` fields — 3DO never standardized a catalog code, disc-id lookup is structurally impossible.
@@ -1809,18 +1538,18 @@ game (
             "dosbox", // DOS-game runner, also no hardware. Directory contents vary by media (floppy/CD/GOG re-release) + fan patches; fuzzy filename match at the 0.95 threshold against directory basename.
         ];
         for sys in ONBOARDED_SYSTEMS {
-            let refs = libretro_dat_refs_for_system(sys);
+            let refs = libretro_dat_refs_for_system_resolved(sys);
             if NO_DAT_SYSTEMS.contains(sys) {
                 assert!(
                     refs.is_empty(),
-                    "{sys} is in NO_DAT_SYSTEMS but libretro_dat_refs_for_system returned refs — pick one"
+                    "{sys} is in NO_DAT_SYSTEMS but config/systems/{sys}/system.yaml::libretro_dat_refs is non-empty — pick one"
                 );
             } else {
                 assert!(
                     !refs.is_empty(),
-                    "{sys} is onboarded but libretro_dat_refs_for_system returned no refs. \
-                     Add a DatRef pointing at the right metadat/ subdir + basename, or add \
-                     {sys} to NO_DAT_SYSTEMS with the reason."
+                    "{sys} is onboarded but config/systems/{sys}/system.yaml has no libretro_dat_refs. \
+                     Add a libretro_dat_refs entry pointing at the right metadat/ subdir + basename, \
+                     or add {sys} to NO_DAT_SYSTEMS with the reason."
                 );
                 // Sanity: subdirs should be one of the known layouts.
                 for r in refs {
@@ -1940,4 +1669,5 @@ game (
         assert_eq!(only_encoded, "a9993e364706816aba3e25717850c26c9cd0d89d");
         let _ = std::fs::remove_file(&tmp);
     }
+
 }

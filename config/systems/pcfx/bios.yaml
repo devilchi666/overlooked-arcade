@@ -1,0 +1,19 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: pcfx.rom
+  sha1: 1A77FD83E337F906AECAB27A1604DB064CF10074
+  description: NEC PC-FX BIOS v1.00 (canonical, Japan-only platform)
+- name: pcfxbios.bin
+  sha1: 1A77FD83E337F906AECAB27A1604DB064CF10074
+  description: NEC PC-FX BIOS v1.00 (alternate naming, same content)
+- name: pcfxv101.bin
+  sha1: 8B662F7548078BE52A871565E19511CCCA28C5C8
+  description: NEC PC-FX BIOS v1.01 (later revision)
+- name: pcfxga.rom
+  sha1: A9372202A5DB302064C994FCDA9B24D29BB1B41C
+  description: NEC PC-FXGA / FX-1 BIOS (PC-FX expansion card)
+- name: fx-scsi.rom
+  sha1: 65482A23AC5C10A6095AEE1DB5824CCA54EAD6E5
+  description: NEC PC-FX SCSI BIOS (expansion accessory)

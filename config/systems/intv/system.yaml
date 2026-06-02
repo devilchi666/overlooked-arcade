@@ -1,0 +1,17 @@
+id: intv
+display_name: Mattel Intellivision
+short_name: Intv
+schema_version: 1
+default_core: freeintv_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- int
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Mattel - Intellivision
+cores:
+- base: freeintv_libretro
+  display_name: FreeIntv
+  blurb: Intellivision.
+  recommended: true
+  bios_required: exec.bin + grom.bin

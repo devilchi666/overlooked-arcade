@@ -1,0 +1,19 @@
+id: dreamcast
+display_name: Sega Dreamcast
+short_name: Dreamcast
+schema_version: 1
+default_core: flycast_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- cdi
+- gdi
+- chd
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Sega - Dreamcast
+cores:
+- base: flycast_libretro
+  display_name: Flycast
+  blurb: Dreamcast / Naomi / Atomiswave. The standard DC pick.
+  recommended: true
+  bios_required: dc_boot.bin + dc_flash.bin

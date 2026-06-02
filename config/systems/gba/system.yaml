@@ -1,0 +1,29 @@
+id: gba
+display_name: Nintendo Game Boy Advance
+short_name: GBA
+schema_version: 1
+default_core: mgba_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- gba
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Game Boy Advance
+cores:
+- base: mgba_libretro
+  display_name: mGBA
+  blurb: GBA + GB / GBC — the standard pick.
+  recommended: true
+- base: vba_next_libretro
+  display_name: VBA Next
+  blurb: Lighter VBA-derived GBA core.
+- base: vbam_libretro
+  display_name: VBA-M
+  blurb: VisualBoyAdvance-M — community fork.
+- base: mednafen_gba_libretro
+  display_name: Beetle GBA
+  blurb: Mednafen GBA — VBA-derived, Mednafen wrapping.
+- base: gpsp_libretro
+  display_name: gpSP
+  blurb: Performance-focused GBA, originally for PSP.
+  bios_required: gba_bios.bin

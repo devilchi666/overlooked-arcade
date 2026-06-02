@@ -1,0 +1,31 @@
+id: lynx
+display_name: Atari Lynx
+short_name: Lynx
+schema_version: 1
+default_core: mednafen_lynx_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- lnx
+- lyx
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Atari - Lynx
+- subdir: metadat/headered
+  basename: Atari - Lynx
+cores:
+- base: mednafen_lynx_libretro
+  display_name: Beetle Lynx
+  blurb: Atari Lynx. Needs lynxboot.img in <exe_dir>/system/.
+  recommended: true
+  bios_required: lynxboot.img
+- base: handy_libretro
+  display_name: Handy
+  blurb: Older Lynx core, slightly different audio character.
+- base: gearlynx_libretro
+  display_name: GearLynx
+  blurb: Modern Lynx core (gear* family). Active development.
+  bios_required: lynxboot.img
+- base: holani_libretro
+  display_name: Holani
+  blurb: High-accuracy Lynx — newer entrant focused on chip-level accuracy.
+  bios_required: lynxboot.img

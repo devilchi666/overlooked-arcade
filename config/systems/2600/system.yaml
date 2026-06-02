@@ -1,0 +1,19 @@
+id: '2600'
+display_name: Atari 2600
+short_name: '2600'
+schema_version: 1
+default_core: stella_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- a26
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Atari - 2600
+cores:
+- base: stella_libretro
+  display_name: Stella
+  blurb: Atari 2600 — the standard pick.
+  recommended: true
+- base: stella2014_libretro
+  display_name: Stella 2014
+  blurb: Older Stella snapshot.

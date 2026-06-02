@@ -1,0 +1,17 @@
+id: vectrex
+display_name: GCE Vectrex
+short_name: Vectrex
+schema_version: 1
+default_core: vecx_libretro.dll
+default_shader_preset: vector-phosphor
+extensions:
+- vec
+- gam
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: GCE - Vectrex
+cores:
+- base: vecx_libretro
+  display_name: Vecx
+  blurb: Vectrex with optional overlay support.
+  recommended: true

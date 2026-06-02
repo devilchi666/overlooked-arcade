@@ -96,6 +96,69 @@ pub fn peek_disc_id(path: &Path, system_id: &str) -> Result<Option<DiscId>, Stri
     Ok(dispatch_extractor(system_id, &bytes))
 }
 
+/// Auto-detect a CD-shape system from the first data-track header
+/// bytes. Tries each per-system signature in order; first match
+/// wins. Returns `Some(system_id)` when one of the canonical
+/// extractors fires; `None` for non-disc bytes or systems we don't
+/// yet have an extractor for.
+///
+/// Used by the import wizard's scan-time peek for `.chd` (and
+/// eventually `.cue`) files where the extension is claimed by
+/// multiple systems and the per-folder rule mechanism is too coarse
+/// to disambiguate. The "right" system gets emitted as a `system_hint`
+/// alongside the row, overriding the default extension-only
+/// classification.
+///
+/// Order is deliberate: more-restrictive signatures first so the
+/// system whose signature is most uniquely-positioned in the header
+/// wins. `psx_family` covers both PSX and PS2 (same SYSTEM.CNF
+/// shape); we disambiguate by the PS2-only `BOOT2` keyword before
+/// falling back to PSX.
+pub fn detect_system_from_disc_header(bytes: &[u8]) -> Option<&'static str> {
+    if extractors::dreamcast(bytes).is_some() {
+        return Some("dreamcast");
+    }
+    if extractors::saturn(bytes).is_some() {
+        return Some("saturn");
+    }
+    if extractors::sega_cd(bytes).is_some() {
+        return Some("segacd");
+    }
+    if extractors::gamecube(bytes).is_some() {
+        return Some("gamecube");
+    }
+    if extractors::pce_cd(bytes).is_some() {
+        return Some("pce-cd");
+    }
+    if extractors::neo_geo_cd(bytes).is_some() {
+        return Some("neocd");
+    }
+    if extractors::pcfx(bytes).is_some() {
+        return Some("pcfx");
+    }
+    if extractors::psx_family(bytes).is_some() {
+        // PSX and PS2 share SYSTEM.CNF. PS2 boots specify `BOOT2 =`
+        // / `BOOT2=` instead of PSX's `BOOT = `, so look for the PS2
+        // marker first.
+        if bytes
+            .windows(6)
+            .any(|w| w == b"BOOT2 " || w == b"BOOT2=")
+        {
+            return Some("ps2");
+        }
+        return Some("psx");
+    }
+    None
+}
+
+/// Read a CHD's first data-track header + auto-detect the system
+/// via [`detect_system_from_disc_header`]. Convenience wrapper used
+/// by the import wizard's scan walk.
+pub fn detect_system_from_chd(path: &Path) -> Result<Option<&'static str>, String> {
+    let bytes = chd_reader::read_data_track_header(path)?;
+    Ok(detect_system_from_disc_header(&bytes))
+}
+
 /// Same as `peek_disc_id` but for a CD entry living inside an archive
 /// (.zip / .7z). Avoids extracting the whole archive — pulls just the
 /// cue (small) + the first ~64 KB of the data track's .bin via
@@ -1608,5 +1671,73 @@ FILE "Game (Track 2).bin" BINARY
         bytes[0..16].copy_from_slice(b"SEGA SEGASATURN ");
         // SEGA SEGASATURN ≠ SEGA SEGAKATANA → not Dreamcast.
         assert!(extractors::dreamcast(&bytes).is_none());
+    }
+
+    // ---- detect_system_from_disc_header (2026-06-02) ----
+
+    #[test]
+    fn detect_system_dreamcast_signature() {
+        // Synthetic header with the Dreamcast IP.BIN signature at byte 0.
+        // The extractor needs the product number at sig_pos + 0x40, so
+        // build a 0x100-byte buffer with both.
+        let mut bytes = vec![0u8; 0x100];
+        bytes[0..15].copy_from_slice(b"SEGA SEGAKATANA");
+        // Product number at offset 0x40 — Sonic Adventure US: MK-51000.
+        bytes[0x40..0x40 + 8].copy_from_slice(b"MK-51000");
+        assert_eq!(detect_system_from_disc_header(&bytes), Some("dreamcast"));
+    }
+
+    #[test]
+    fn detect_system_saturn_signature() {
+        // SEGA SEGASATURN signature at byte 0 + product number at 0x20.
+        let mut bytes = vec![0u8; 0x100];
+        bytes[0..16].copy_from_slice(b"SEGA SEGASATURN ");
+        bytes[0x20..0x20 + 9].copy_from_slice(b"GS-9067  ");
+        assert_eq!(detect_system_from_disc_header(&bytes), Some("saturn"));
+    }
+
+    #[test]
+    fn detect_system_psx_distinguishes_from_ps2_via_boot2() {
+        // SYSTEM.CNF with `BOOT = cdrom:\...` (PSX-style).
+        let body = b"\
+            BOOT = cdrom:\\SLUS_001.67;1\r\n\
+            TCB = 4\r\n\
+            EVENT = 16\r\n";
+        let mut bytes = vec![0u8; 0x4000];
+        // psx_family scans the first 32 KB for SYSTEM.CNF — plop the
+        // body at offset 0x100 so it falls within that window.
+        bytes[0x100..0x100 + body.len()].copy_from_slice(body);
+        assert_eq!(detect_system_from_disc_header(&bytes), Some("psx"));
+    }
+
+    #[test]
+    fn detect_system_ps2_distinguishes_from_psx_via_boot2() {
+        // SYSTEM.CNF with `BOOT2 = cdrom0:\...` (PS2-style).
+        let body = b"\
+            BOOT2 = cdrom0:\\SLES_010.49;1\r\n\
+            VER = 1.00\r\n";
+        let mut bytes = vec![0u8; 0x4000];
+        bytes[0x100..0x100 + body.len()].copy_from_slice(body);
+        assert_eq!(detect_system_from_disc_header(&bytes), Some("ps2"));
+    }
+
+    #[test]
+    fn detect_system_returns_none_for_unknown_bytes() {
+        // Random zeroes — no signature matches.
+        let bytes = vec![0u8; 0x4000];
+        assert_eq!(detect_system_from_disc_header(&bytes), None);
+    }
+
+    #[test]
+    fn detect_system_dreamcast_wins_over_iso9660() {
+        // ISO9660 PVD signature alone shouldn't trigger any of our
+        // per-system extractors. Drop "CD001" at offset 0x8001 (the
+        // ISO9660 conventional PVD location) plus the Dreamcast
+        // signature at byte 0 — Dreamcast must win.
+        let mut bytes = vec![0u8; 0x9000];
+        bytes[0..15].copy_from_slice(b"SEGA SEGAKATANA");
+        bytes[0x40..0x40 + 8].copy_from_slice(b"MK-51000");
+        bytes[0x8001..0x8001 + 5].copy_from_slice(b"CD001");
+        assert_eq!(detect_system_from_disc_header(&bytes), Some("dreamcast"));
     }
 }

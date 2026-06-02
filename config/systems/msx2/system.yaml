@@ -1,0 +1,11 @@
+id: msx2
+display_name: Microsoft MSX2
+short_name: MSX2
+schema_version: 1
+default_core: bluemsx_libretro.dll
+default_shader_preset: crt-lite
+cores:
+- base: bluemsx_libretro
+  display_name: blueMSX
+  blurb: MSX / MSX2 / MSX Turbo R. Broad coverage.
+  recommended: true

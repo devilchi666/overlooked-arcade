@@ -1,0 +1,10 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: colecovision.rom
+  sha1: 45BEDC4CBDEAC66C7DF59E9E599195C778D86A92
+  description: ColecoVision BIOS (8 KB, canonical)
+- name: coleco.rom
+  sha1: 45BEDC4CBDEAC66C7DF59E9E599195C778D86A92
+  description: ColecoVision BIOS (alternate naming, same content)

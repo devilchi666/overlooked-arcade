@@ -1,0 +1,16 @@
+id: virtualboy
+display_name: Nintendo Virtual Boy
+short_name: VB
+schema_version: 1
+default_core: mednafen_vb_libretro.dll
+default_shader_preset: vb-monochrome
+extensions:
+- vb
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Virtual Boy
+cores:
+- base: mednafen_vb_libretro
+  display_name: Beetle VB
+  blurb: Mednafen Virtual Boy. Anaglyph or split-screen 3D.
+  recommended: true

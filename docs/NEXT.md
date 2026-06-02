@@ -277,6 +277,118 @@ Surface structured reference data per game in OA's library — date, publisher, 
 
 ---
 
+## NEXT MAJOR ARC — Background jobs + persistent progress bar
+
+**Planning locked 2026-06-02.** Full plan at
+[docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
+**Operator priority: high — "a real progress bar at the bottom of
+the UI that says exactly what OA is doing, with real numbers, and
+that remembers what it was doing when I close the app."**
+
+OA runs a half-dozen long-running operations today — core downloads,
+libretro-dat sync, ROM hash resolve, media sync, MAME ROM-set
+imports, folder scans, the upcoming per-track SHA-1 work. Each
+announces itself with its own UI surface (toast, modal, debug-log
+only); none survive process restart. Three problems wrapped
+together:
+
+1. **No single surface** — operator can't see "what is OA doing
+   right now?" at a glance.
+2. **Fake progress in some places** — some ops report
+   "Processing..." or fake percentages because they don't know
+   the total cost up front. Operator hates this explicitly.
+3. **No persistence** — close mid-download, restart, work is gone
+   (or worse, `.partial` files left for the operator to clean up).
+
+**Scope (per plan §"Sizing"):** ~5-6 weeks across 5 phases.
+- **Phase 1** (~1 week) — `background_jobs` SQLite table +
+  `JobRegistry` Tauri-managed state + `JobHandle` shape + event
+  broadcast. One pilot kind wired (probably `download_core`).
+  End-to-end smoke: create → progress → cancel.
+- **Phase 2** (~1 week) — `BackgroundJobsBar` Solid component in
+  RetroverseShell. Auto-hide / single-line / expandable panel.
+  Listens to `JobEvent` broadcast.
+- **Phase 3** (~1.5 weeks) — `JobResumer` trait + 3 kinds wired
+  (core_download / media_sync / resolve_rom_hashes) +
+  app-launch interrupted-job prompt.
+- **Phase 4** (~1.5 weeks) — wire remaining kinds (folder scan
+  with unknown-total / pulsing-bar shape, thumbnail sync, MAME
+  listxml, per-track SHA-1 when that arc lands). Pause +
+  stale-job detection per kind.
+- **Phase 5** (~1 week) — operator playtest, performance check,
+  crash-recovery testing.
+
+**Cross-arc dependencies:** the per-track SHA-1 work
+([docs/PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md))
+is the canonical new "long-running operation that needs persistent
+progress" — these two arcs are mutually reinforcing. Either can
+ship first (disc-track integrates into the bar in Phase 4; the bar
+ships its pilot kinds without disc-track).
+
+**Critical open questions** (resolve before Phase 1):
+- Resume prompt vs auto-resume per kind — what's the right
+  default for each operation?
+- Pause semantics — actual mid-flight pause vs cancel-and-remember?
+- UI placement — bottom of window above HintBar feels right; needs
+  operator validation against the Retroverse layout.
+
+**Position:** queued in HIGH band — operator-driven "we need to
+plan soon" framing. Awaiting fresh green-light to kick off Phase 1.
+
+---
+
+## NEXT MAJOR ARC — Per-track SHA-1 matching for disc-shape systems
+
+**Planning locked 2026-06-02.** Full plan at
+[docs/PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md).
+**Operator priority: high — "needed to help new users out."**
+
+Cart-shape ROMs get full canonical identification today (SHA-1 →
+no-intro dat → title / serial / year / publisher stamped on the
+library row). Disc-shape systems do NOT — PSX / Saturn / Sega CD /
+Dreamcast / Neo Geo CD / PC Engine CD / PC-FX / 3DO / GameCube /
+PSP / PS2 dumps stay with whatever filename the operator's dump
+tool produced. Cover-art sync falls back to fuzzy filename match;
+year + publisher stay blank for the entire disc-game half of the
+library; DISCOVER's "By era" / "By publisher" axes go empty.
+
+Disc-ID extraction (the existing SYSTEM.CNF / IP.BIN serial-lookup
+path) closes some of the gap by matching against redump's `serial`
+field, but coverage isn't complete (homebrew, prototypes, region
+variants, truncated-serial dumps). Per-track SHA-1 matching closes
+the rest.
+
+**Scope (per plan §"Sizing"):** ~3-4 weeks across 4 phases.
+- **Phase 1** (~1 week) — schema (`rom_hashes_tracks` table or
+  extend `rom_hashes` with track_number column), `parse_libretro_dat`
+  extension to emit per-track rows, sync flow update.
+- **Phase 2** (~1 week) — per-track byte extraction for
+  `.cue + .bin` / `.chd` / `.gdi` / `.iso`, mode-aware sector
+  unwrapping, cancellable streaming SHA-1 per track.
+- **Phase 3** (~1 week) — `resolve_disc_hashes_for_system` Tauri
+  command, per-disc nested progress UI ("23 of 100 discs / Track
+  3 of 5"), library write that stamps canonical title + per-track
+  cache on the game row.
+- **Phase 4** (~3-4 days) — operator playtest on real PSX /
+  Saturn / Dreamcast folders. Hit-rate measurement target: 95%+
+  of redump-cataloged dumps identify cleanly. Per-core
+  README updates.
+
+**Critical open questions** (resolve before Phase 2):
+- Track-hashing convention — does redump hash MODE1/2352 tracks as
+  full 2352 bytes or just the 2048 user payload? Needs empirical
+  verification against a known disc + a known SHA-1.
+- Schema shape — separate `rom_hashes_tracks` table vs extended
+  `rom_hashes`. Depends on downstream-consumer count.
+- `.chd` per-track byte extraction — chd-crate API needs investigation.
+
+**Position:** queued in HIGH band — operator-driven "we need to plan
+soon" framing. Awaiting fresh green-light to kick off Phase 1.
+After kickoff, can pipeline alongside Slice 3 of the per-system
+descriptor consolidation (independent scopes).
+
+---
+
 ## HIGH — ready to ship next
 
 These are operator-independent and the infrastructure they sit on already exists.
@@ -433,38 +545,54 @@ the in-tree `config/` next to `oa-shell.exe` at install time.
 **Test count:** 643 oa-shell green (was 615 pre-branch; +28 new — 21
 in Phase A, 1 in B, 3 in C, 3 in D).
 
-### Per-system descriptor consolidation — Slice 2 (mass migration of remaining 38 systems)
+### ~~Per-system descriptor consolidation — Slice 2 (mass migration of remaining 38 systems)~~ ✅ SHIPPED 2026-06-02
 
-**Next slice of the per-system descriptor consolidation arc.**
-Awaiting fresh operator green-light. Slice 1 ships a clean pilot
-foundation that the operator may want to play with (drop a PSX game
-in, edit `config/systems/psx/bios.yaml` directly to add an experimental
-SHA-1, restart, see the readiness checklist reflect the edit) before
-kicking off the bulk migration.
+Five phase commits on `feat/per-system-descriptors-slice-2`:
 
-**Scope (per plan §"Slice 2"):**
-- New `apps/oa-shell/src/bin/migrate_systems.rs` dev binary that walks
-  the existing Rust const tables (`*_BIOS_KNOWN_HASHES`,
-  `core_installer::CATALOG`, `rom_hashes::libretro_dat_refs_for_system`,
-  `light_gun_systems::LIGHT_GUN_SYSTEMS`, `DEVICE_ID_OPTIONS_*`
-  arrays) plus the existing `docs/cores/<id>/system-info.yaml` +
-  `games-info.md` files, emits the 3 YAMLs per system into
-  `config/systems/<id>/`. Idempotent — re-running overwrites.
-- Hand-review the 38 emitted folders. Special cases worth eyes-on:
-  Neo Geo cart's bespoke zip handling, MAME's listxml integration,
-  ScummVM + DOSBox engine-launcher shapes, Channel F's optional
-  sl90025.bin entry.
-- Delete the const tables once every system migrates: ~1,800 LOC
-  removed, replaced by ~80 LOC of loader + accessor (already shipped
-  in Slice 1).
-- Sweep the four remaining Slice 1 consumer shims into direct
-  registry calls — `check_*_bios` (16 more functions),
-  `core_installer::available_cores`, `rom_hashes::libretro_dat_refs_for_system`,
-  `light_gun_systems::LIGHT_GUN_SYSTEMS`.
+- **Phase A** (`d4553d1`) — `tools/migrate-systems/` dev tool. Reads
+  OA's Rust sources as text + parses them with regex (5 parsers:
+  default_core_dll_for_system arms, *_BIOS_KNOWN_HASHES const tables,
+  known_hashes_for_system dispatcher, per-system BiosSemantics from
+  check_*_bios bodies, CATALOG, libretro_dat_refs_for_system arms),
+  emits the 3-file YAML triple per system. Embedded SYSTEM_THEMES
+  mirror of frontend systemThemes (41 entries). CLI: --check /
+  --dry-run / --systems subset.
+- **Phase B** (`d4e5b89`) — ran the migrator. 46 system.yaml + 19
+  bios.yaml emitted. Channel F's sl90025.bin hand-flagged
+  `optional: true` (only special-cased system). docs/cores/{snes,nes,
+  genesis}/system-info.yaml deleted (content moved into config/systems).
+  653 oa-shell tests green.
+- **Phase C** (`368b81c`) — wired the remaining 17 check_*_bios
+  functions, `libretro_dat_refs_for_system_resolved`, and
+  `default_core_dll_for_system_resolved` through the registry shim
+  pattern. 656 oa-shell tests green (+3 parametric registry-match
+  tests).
+- **Phase D** (this commit) — deleted ~2,750 LOC of L1 const tables:
+  19 `*_BIOS_KNOWN_HASHES` consts (~700 LOC), 45-arm
+  `libretro_dat_refs_for_system` match (~315 LOC), 41-arm
+  `default_core_dll_for_system` match (~315 LOC),
+  `known_hashes_for_system` dispatcher (~29 LOC), `scan_bios_table`
+  helper (~33 LOC), legacy `hash_l1_l2_inputs` (~31 LOC),
+  `LIGHT_GUN_SYSTEMS` reference table + entire module (~230 LOC),
+  the `tools/migrate-systems/` one-shot tool (~1,277 LOC). The 19
+  `check_*_bios` functions become one-line wrappers around
+  `check_bios_from_registry`. Channel F's post-scan optional
+  adjustment goes away (`bios.yaml` carries the flag).
+- **Phase E** — this docs flip.
 
-**Scope:** ~2-3 weeks. May want to split into two batches (half the
-systems first, half a week later) so the operator-playtest pass is
-scopeable.
+End state: **every per-system data point that used to live in a Rust
+const now lives in `config/systems/<id>/{system,bios,games}.yaml`.**
+46 systems. The registry is the only L1+L2 source; operators can edit
+the YAMLs directly + restart to pick up changes; `deny_unknown_fields`
+catches typos at load time. 646 oa-shell tests green (was 615
+pre-Slice-1 / 643 post-Slice-1; Slice 2 net -3 from tests deleted
+alongside their const-table references — the behavioral tests stay).
+
+**Slice 3 — L3 content packs + L4 SQLite + JSON Schema + CI lint**
+remains. ~1 week per the plan §"Slice 3". Adds `<appDataDir>/content-packs/<pack>/systems/<id>/`
+deep-merge layer, schemars-generated JSON Schema for external
+validators, CI guard that runs `cargo test descriptor_validate_all_in_tree`
+on PR. Queued — awaiting fresh operator green-light.
 
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 

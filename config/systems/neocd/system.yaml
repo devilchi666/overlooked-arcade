@@ -1,0 +1,22 @@
+id: neocd
+display_name: SNK Neo Geo CD
+short_name: Neo Geo CD
+schema_version: 1
+default_core: neocd_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: SNK - Neo Geo CD
+cores:
+- base: neocd_libretro
+  display_name: NeoCD
+  blurb: Neo Geo CD.
+  recommended: true
+  bios_required: neocd_z.rom + neocd_sp.rom + neocd_f.rom

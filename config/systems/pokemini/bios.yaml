@@ -1,0 +1,7 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: bios.min
+  sha1: DAAD4113713ED776FBD47727762BCA81BA74915F
+  description: Pokémon Mini boot ROM (4 KB, canonical)

@@ -53,7 +53,9 @@ cores are currently being worked on.
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
 - [PLANS/](PLANS/) — design docs for in-flight work
-- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Planning locked 2026-06-01; Slice 1 (GB + PSX + NDS pilot) queued in HIGH band of [NEXT.md](NEXT.md). Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
+- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Slices 1 + 2 shipped 2026-06-02; Slice 3 (L3 content packs + L4 SQLite + JSON Schema + CI lint) remains queued. Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
+- [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md) — per-track SHA-1 matching for disc-shape systems (4 phases, ~3-4 weeks). Planning locked 2026-06-02; queued in NEXT.md HIGH band as "needed to help new users out." Closes the canonical-identification gap for PSX / Saturn / Sega CD / Dreamcast / NeoCD / PCE-CD / PC-FX / 3DO / GameCube / PSP / PS2 — cart ROMs get SHA-1 lookup today; disc-shape systems will get the same machinery via per-track hashing against redump's per-track SHA-1 entries.
+- [PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md) — background-jobs registry + persistent progress bar (5 phases, ~5-6 weeks). Planning locked 2026-06-02; queued in NEXT.md HIGH band. Consolidates today's scattered per-operation toasts / modals / debug-log surfaces into one persistent bar across the bottom of the Retroverse shell, backed by a SQLite-persisted `background_jobs` table + per-kind resume handlers so operations survive app restart. Mutually reinforcing with the disc-track SHA-1 arc above (which becomes a Phase 4 consumer of the bar).
 
 ## Setup reference (off-repo)
 

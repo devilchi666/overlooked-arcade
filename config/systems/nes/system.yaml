@@ -1,0 +1,70 @@
+id: nes
+display_name: Nintendo Entertainment System
+short_name: NES
+schema_version: 1
+default_core: fceumm_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- nes
+- fds
+- unf
+- unif
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Nintendo Entertainment System
+- subdir: metadat/headered
+  basename: Nintendo - Nintendo Entertainment System
+cores:
+- base: fceumm_libretro
+  display_name: FCEUmm
+  blurb: FCEU + community mapper updates. Wide mapper coverage.
+  recommended: true
+- base: mesen_libretro
+  display_name: Mesen
+  blurb: Higher-accuracy NES. Cycle-stepped PPU.
+- base: nestopia_libretro
+  display_name: Nestopia UE
+  blurb: Long-running cycle-accurate NES core.
+- base: quicknes_libretro
+  display_name: QuickNES
+  blurb: Performance-focused NES. Lower compatibility, very fast.
+system_info:
+  system_id: nes
+  manufacturer: Nintendo
+  type: Home Console
+  generation: 3rd Generation
+  release_date: July 15, 1983
+  discontinued: August 14, 2003
+  units_sold: 61.91 Million
+  media: Cartridge
+  cpu: Ricoh 2A03 @ 1.79 MHz
+  sound: Ricoh 2A03 APU
+  resolution: 256 x 240
+  color_palette: 54 Colors
+  display_ratio: 8:7 (4:3)
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local; 4 via Four Score adapter
+  region: NTSC / PAL
+  storage: Cartridge (1MB Max)
+  ram: 2KB
+  video_output: RF / Composite
+  aspect_ratio: 4:3
+  peripherals:
+  - name: NES Controller
+    glyph: 🎮
+  - name: Zapper
+    glyph: 🔫
+  - name: Power Pad
+    glyph: 👣
+  - name: Four Score
+    glyph: 🔗
+  - name: R.O.B.
+    glyph: 🤖
+  release_flag: 🇯🇵
+  tagline: 8-BIT HOME CONSOLE
+  blurb: Nintendo's flagship console of the 1980s and the system that rebuilt the home video-game industry after the 1983 crash. Defined platformers, RPGs, and action games for a generation.
+  sidebar_subline: 8-BIT · 1983
+  meta:
+    schema_version: 1
+    last_updated: 2026-05-31
