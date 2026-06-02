@@ -2273,7 +2273,22 @@ fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> 
     let listxml_path = mame_dir.join("listxml-slim.json");
     let history_path = mame_dir.join("history-slim.xml");
 
-    let new_hash = system_info::hash_l1_l2_inputs(&listxml_path, &history_path, &cores_dir);
+    // Slice 1 of the per-system descriptor consolidation
+    // (docs/PLANS/per-system-descriptors.md): pilot systems' L2
+    // metadata lives in `config/systems/<id>/system.yaml` (embedded
+    // `system_info:` block) rather than the legacy
+    // `docs/cores/<id>/system-info.yaml` file. The hash + record-load
+    // helpers below walk both sources, registry winning on conflict.
+    // Empty registry (no config/systems/ dir) degrades to the
+    // pre-Slice-1 behaviour.
+    let registry = system_registry::SystemRegistry::load_default();
+
+    let new_hash = system_info::hash_l1_l2_inputs_with_registry(
+        &listxml_path,
+        &history_path,
+        &cores_dir,
+        &registry,
+    );
     let stored_hash = db.get_system_info_meta_hash()?;
     if stored_hash.as_deref() == Some(new_hash.as_str()) {
         log::info!(
@@ -2284,7 +2299,7 @@ fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> 
     }
 
     let l1 = system_info::load_mame_records(&listxml_path, &history_path)?;
-    let l2 = system_info::load_curated_records(&cores_dir);
+    let l2 = system_info::load_curated_records_with_registry(&cores_dir, &registry);
 
     db.bake_system_info_mame(&l1)?;
     db.bake_system_info_curated(&l2)?;

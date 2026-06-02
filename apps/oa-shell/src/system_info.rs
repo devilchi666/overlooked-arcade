@@ -973,6 +973,44 @@ pub fn load_curated_records(dir: &Path) -> Vec<SystemInfoCurated> {
     out
 }
 
+/// Slice 1 of the per-system descriptor consolidation
+/// (`docs/PLANS/per-system-descriptors.md`). Walks both the legacy
+/// `docs/cores/<id>/system-info.yaml` files AND any embedded
+/// `system_info:` blocks in `config/systems/<id>/system.yaml` via the
+/// supplied [`crate::system_registry::SystemRegistry`], merging both
+/// sources by `system_id` — **registry wins** when a system has L2
+/// data in both locations.
+///
+/// During Slice 1 the 3 pilot systems (GB, PSX, NDS) live in the
+/// registry; the other 38 still live in docs/cores. Slice 2 migrates
+/// the rest and removes the legacy walk.
+///
+/// Stable order: alphabetical by `system_id`, same as
+/// [`load_curated_records`].
+pub fn load_curated_records_with_registry(
+    docs_cores_dir: &Path,
+    registry: &crate::system_registry::SystemRegistry,
+) -> Vec<SystemInfoCurated> {
+    let mut by_id: HashMap<String, SystemInfoCurated> = HashMap::new();
+    for rec in load_curated_records(docs_cores_dir) {
+        by_id.insert(rec.system_id.clone(), rec);
+    }
+    for sys_id in registry.system_ids() {
+        let Some(loaded) = registry.get(sys_id) else {
+            continue;
+        };
+        if let Some(panel) = &loaded.descriptor.system_info {
+            // Embedded block's system_id was validated against the
+            // descriptor's id at registry load time
+            // (EmbeddedSystemInfoIdMismatch hot-fail), so insert is safe.
+            by_id.insert(panel.system_id.clone(), panel.clone());
+        }
+    }
+    let mut out: Vec<SystemInfoCurated> = by_id.into_values().collect();
+    out.sort_by(|a, b| a.system_id.cmp(&b.system_id));
+    out
+}
+
 // =====================================================================
 // Hash for bake-on-launch dirty detection (plan §5)
 // =====================================================================
@@ -1035,6 +1073,76 @@ fn hash_file_into<H: sha1::Digest>(hasher: &mut H, path: &Path) {
             hasher.update(path.to_string_lossy().as_bytes());
         }
     }
+}
+
+/// Slice 1 companion to [`hash_l1_l2_inputs`] that also folds every
+/// `config/systems/<id>/{system,bios,games}.yaml` file into the hash.
+/// Without this, edits to a pilot system's `system.yaml` (the new L2
+/// source) wouldn't trip the bake-on-launch dirty check and the SQLite
+/// `system_info_curated` table would lag the YAMLs across launches.
+///
+/// Returns the same shape as [`hash_l1_l2_inputs`] (16-char hex
+/// prefix of SHA-1) so callers can swap between them without changing
+/// the dirty-check comparison.
+///
+/// Falls back to [`hash_l1_l2_inputs`]'s output when `registry` has
+/// no source root (the empty-registry case during pilot transition).
+pub fn hash_l1_l2_inputs_with_registry(
+    listxml_path: &Path,
+    history_path: &Path,
+    docs_cores_dir: &Path,
+    registry: &crate::system_registry::SystemRegistry,
+) -> String {
+    use sha1::{Digest, Sha1};
+
+    let mut hasher = Sha1::new();
+    hash_file_into(&mut hasher, listxml_path);
+    hash_file_into(&mut hasher, history_path);
+
+    // Legacy docs/cores walk.
+    let mut yamls: Vec<PathBuf> = match std::fs::read_dir(docs_cores_dir) {
+        Ok(e) => e
+            .filter_map(|x| x.ok())
+            .filter(|x| x.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|x| x.path().join("system-info.yaml"))
+            .filter(|p| std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    yamls.sort();
+    for p in &yamls {
+        hash_file_into(&mut hasher, p);
+    }
+
+    // Registry walk — each per-system folder under config/systems/
+    // contributes its system.yaml + (optional) bios.yaml + games.yaml.
+    // Walk via the registry's source_root so the loader's path
+    // resolution stays the single source of truth (no duplicate
+    // exe-dir / source-tree fallback logic here).
+    if let Some(root) = registry.source_root() {
+        let mut reg_paths: Vec<PathBuf> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for entry in entries.flatten() {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    let folder = entry.path();
+                    for filename in ["system.yaml", "bios.yaml", "games.yaml"] {
+                        let candidate = folder.join(filename);
+                        if std::fs::metadata(&candidate).map(|m| m.is_file()).unwrap_or(false) {
+                            reg_paths.push(candidate);
+                        }
+                    }
+                }
+            }
+        }
+        reg_paths.sort();
+        for p in &reg_paths {
+            hash_file_into(&mut hasher, p);
+        }
+    }
+
+    let digest = hasher.finalize();
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    hex[..16].to_string()
 }
 
 // =====================================================================
@@ -1416,22 +1524,26 @@ meta:
         // fallback path and confirms every system-info.yaml under
         // there parses cleanly. Run under `cargo test` so the
         // CARGO_MANIFEST_DIR resolver finds the in-tree files.
+        //
+        // Pre-Slice-1 v1 shipped 5 hand-authored entries (snes / nes /
+        // genesis / psx / gb). The per-system descriptor consolidation
+        // arc migrates these out of docs/cores into
+        // config/systems/<id>/system.yaml one pilot at a time:
+        //   - Phase B (2026-06-02) — `gb` moved
+        //   - Phase C (Slice 1) — `psx` moves
+        //   - Slice 2 — `snes`, `nes`, `genesis` move alongside the
+        //     other 36 systems
+        // Migrated systems surface through `load_curated_records_with_registry`
+        // (covered by the registry_load_finds_gb_via_config_systems_path
+        // test below); this assertion tracks only the still-in-docs/cores
+        // remainder.
         let dir = resolve_docs_cores_dir()
             .expect("docs/cores must resolve under cargo test");
         let records = load_curated_records(&dir);
-        // v1 ships 5 hand-authored entries (snes / nes / genesis /
-        // psx / gb). More land over time but this lower bound stays.
-        assert!(
-            records.len() >= 5,
-            "expected at least 5 L2 records, got {}: {:?}",
-            records.len(),
-            records.iter().map(|r| &r.system_id).collect::<Vec<_>>()
-        );
-        // Confirm the five v1 systems are present.
-        for required in &["snes", "nes", "genesis", "psx", "gb"] {
+        for required in &["snes", "nes", "genesis", "psx"] {
             assert!(
                 records.iter().any(|r| r.system_id == *required),
-                "missing required system-info.yaml for {required}"
+                "missing required system-info.yaml for {required} (it should still be in docs/cores until its Slice 1 / Slice 2 migration commit lands)"
             );
         }
         // Spot-check that fields actually populated — catch the case
@@ -1445,6 +1557,42 @@ meta:
         assert_eq!(snes.architecture.as_deref(), Some("16-Bit"));
         assert!(snes.blurb.as_deref().unwrap().contains("Nintendo"));
         assert!(!snes.peripherals.is_empty());
+    }
+
+    #[test]
+    fn registry_load_finds_gb_via_config_systems_path() {
+        // Slice 1 Phase B (2026-06-02) — `gb`'s L2 record moved from
+        // docs/cores/gb/system-info.yaml into the embedded
+        // `system_info:` block of config/systems/gb/system.yaml.
+        // load_curated_records_with_registry must find it via the
+        // registry path. Validates the migration end-to-end.
+        let dir = resolve_docs_cores_dir()
+            .expect("docs/cores must resolve under cargo test");
+        let registry = crate::system_registry::SystemRegistry::load_default();
+        let records = load_curated_records_with_registry(&dir, &registry);
+        let gb = records
+            .iter()
+            .find(|r| r.system_id == "gb")
+            .expect("gb L2 record must surface via config/systems/gb/system.yaml");
+        assert_eq!(gb.manufacturer.as_deref(), Some("Nintendo"));
+        assert_eq!(gb.system_type.as_deref(), Some("Handheld"));
+        assert_eq!(gb.architecture.as_deref(), Some("8-Bit"));
+        assert!(
+            gb.blurb.as_deref().unwrap().contains("Tetris"),
+            "gb blurb should mention Tetris per the migrated content; got {:?}",
+            gb.blurb
+        );
+        assert!(!gb.peripherals.is_empty(), "gb peripherals must populate");
+
+        // Also confirm gb does NOT appear in the legacy
+        // docs/cores walk anymore (regression guard against a stray
+        // re-creation of docs/cores/gb/system-info.yaml in a future
+        // commit).
+        let legacy = load_curated_records(&dir);
+        assert!(
+            !legacy.iter().any(|r| r.system_id == "gb"),
+            "gb must not be in docs/cores/ after the Slice 1 Phase B migration"
+        );
     }
 
     #[test]
