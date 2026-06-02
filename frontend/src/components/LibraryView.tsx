@@ -32,6 +32,12 @@ type Props = {
   /// active pick.
   selectedId?: () => string | null;
   onPickFolder: () => void;
+  /// Phase 1B Slice 6 — primary CTA on the first-launch hero opens
+  /// the guided-setup wizard. Required so any caller wiring a
+  /// LibraryView gets a compile error if they forget to pass it.
+  /// The legacy `onPickFolder` stays as the secondary muted-link
+  /// affordance for operators who prefer the quick path.
+  onImportWizard: () => void;
   /// Retroverse-UI Phase C3 — pass-through favorite toggle. Forwarded
   /// to VirtualLibraryGrid → LibraryTile. When omitted the heart
   /// overlay hides (gracefully degrades for surfaces that don't wire
@@ -163,6 +169,7 @@ const LibraryView: Component<Props> = (props) => {
               hasQuery={props.searchQuery.length > 0}
               hasSeed={props.library.state.entries.some((e) => e.seed)}
               onPickFolder={props.onPickFolder}
+              onImportWizard={props.onImportWizard}
             />
           }
         >
@@ -211,10 +218,15 @@ const EmptyState: Component<{
   hasQuery: boolean;
   hasSeed: boolean;
   onPickFolder: () => void;
+  /// Phase 1B Slice 6 — primary path on first-launch hero. Opens the
+  /// guided-setup wizard. Required so any future caller wiring a
+  /// LibraryView gets a compile error if they forget to pass it
+  /// (legacy ad-hoc folder-picker stays as the muted secondary).
+  onImportWizard: () => void;
 }> = (props) => {
   return (
     <div class="grid h-full place-items-center px-8 py-16">
-      <div class="w-full max-w-md text-center">
+      <div class="w-full max-w-lg text-center">
         <Show
           when={!props.hasQuery}
           fallback={
@@ -229,23 +241,68 @@ const EmptyState: Component<{
             </>
           }
         >
-          <p class="text-4xl text-(--color-system-accent)">◐</p>
-          <p class="mt-4 text-xs uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-            {props.hasSeed ? "Library is full of placeholders" : "Library is empty"}
-          </p>
-          <p class="mt-2 text-sm text-(--color-oa-ink)">
-            Import a folder of ROMs to get started, or drop one onto this window.
-          </p>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              props.onPickFolder();
-            }}
-            class="mt-5 rounded-md bg-(--color-system-accent) px-4 py-2 text-xs font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
+          {/* Phase 1B Slice 6: first-launch hero. Single primary CTA
+              routes to the guided-setup wizard; the legacy single-shot
+              folder-picker is preserved as a muted secondary link so
+              power users who want the quick path don't lose it. The
+              hasSeed branch keeps the compact treatment for operators
+              past first launch who happen to have placeholder-only
+              libraries (rare; mostly post-seed cleanup state). */}
+          <Show
+            when={!props.hasSeed}
+            fallback={
+              <>
+                <p class="text-4xl text-(--color-system-accent)">◐</p>
+                <p class="mt-4 text-xs uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                  Library is full of placeholders
+                </p>
+                <p class="mt-2 text-sm text-(--color-oa-ink)">
+                  Clear the placeholder rows to start fresh, or import a folder of ROMs.
+                </p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    props.onPickFolder();
+                  }}
+                  class="mt-5 rounded-md bg-(--color-system-accent) px-4 py-2 text-xs font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
+                >
+                  Import folder
+                </button>
+              </>
+            }
           >
-            Import folder
-          </button>
+            <p class="text-4xl text-(--color-system-accent)">◐</p>
+            <h2 class="mt-5 text-3xl font-semibold leading-tight tracking-tight text-(--color-oa-ink)">
+              Welcome to Overlooked Arcade
+            </h2>
+            <p class="mt-3 text-sm leading-relaxed text-(--color-oa-ink-dim)">
+              Drop in your ROMs and OA will get them ready. We'll detect systems, pick cores that match your hardware, and walk you through anything that needs your input.
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                props.onImportWizard();
+              }}
+              class="mt-6 rounded-md bg-(--color-system-accent) px-5 py-2.5 text-sm font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
+            >
+              Set up your library
+            </button>
+            <p class="mt-4 text-[0.7rem] text-(--color-oa-ink-dim)">
+              Or{" "}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  props.onPickFolder();
+                }}
+                class="underline decoration-dotted underline-offset-2 hover:text-(--color-oa-ink)"
+              >
+                pick a folder the quick way
+              </button>
+            </p>
+          </Show>
         </Show>
       </div>
     </div>

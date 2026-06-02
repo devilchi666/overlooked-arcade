@@ -387,8 +387,8 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     };
     const corePillDetail = (): string | undefined => {
       if (hasCore()) return undefined;
-      if (hasCatalogRow()) return "Drop a .dll into /cores/";
-      return "Install manually via Settings → Cores";
+      if (hasCatalogRow()) return "Drop a .dll into /cores/ when you've got one";
+      return "Drop a .dll in manually via Settings → Cores";
     };
     const corePill = <Pill state={corePillState()} label={corePillLabel()} detail={corePillDetail()} />;
 
@@ -426,7 +426,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
       <Pill
         state={hasOptions() ? "ready" : "na"}
         label={hasOptions() ? "✓ Core options" : "↪ Core options"}
-        detail={hasOptions() ? undefined : "Schema populates on first game launch"}
+        detail={hasOptions() ? undefined : "Fills in the first time you launch a game of this system"}
       />
     );
 
@@ -519,8 +519,9 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
           <div class="flex items-center justify-between rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2">
             <div>
               <p class="text-xs font-semibold text-amber-300">
-                {missingCoreSystems().length}{" "}
-                {missingCoreSystems().length === 1 ? "system needs" : "systems need"} a core
+                {missingCoreSystems().length === 1
+                  ? "One system needs a core to launch"
+                  : `${missingCoreSystems().length} systems need a core to launch`}
               </p>
               <p class="mt-0.5 text-[0.65rem] text-(--color-oa-ink-dim)">
                 Download recommended cores from libretro buildbot — one click per system, or pick a different core per row.

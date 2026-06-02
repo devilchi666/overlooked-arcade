@@ -555,7 +555,7 @@ export const LibrarySettings: Component = () => {
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
-        title="Re-scan with smart detection"
+        title="Add or re-scan your library"
         description="Drop in your ROMs and OA will get them ready. We'll detect systems, suggest canonical titles via hash matching, and walk you through anything that needs your input."
       >
         <button
@@ -566,12 +566,12 @@ export const LibrarySettings: Component = () => {
             ctx.onOpenImportWizard();
           }}
         >
-          Open import wizard
+          Set up your library
         </button>
       </SettingsCard>
       <SettingsCard
         title="System readiness"
-        description="Per-system status across the library: which cores are installed, which systems still need a BIOS file, and where everything sits today. Same checklist the import wizard shows on Step 3."
+        description="Per-system status across your library — which cores are installed, which need a BIOS file, what's ready to play. Same checklist the import wizard shows on Step 3."
       >
         <SystemReadinessChecklist
           systems={librarySystems}

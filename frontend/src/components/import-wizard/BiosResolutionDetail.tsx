@@ -185,7 +185,7 @@ const BiosResolutionDetail: Component<BiosResolutionDetailProps> = (props) => {
               {busy()[file.expectedName] ? "Installing…" : "Pick BIOS file…"}
             </button>
             <span class="text-[0.6rem] text-(--color-oa-ink-dim)">
-              File copies to{" "}
+              Lands at{" "}
               <code class="font-mono text-(--color-oa-ink-dim)">
                 {props.systemDir}/{file.expectedName}
               </code>
@@ -199,7 +199,7 @@ const BiosResolutionDetail: Component<BiosResolutionDetailProps> = (props) => {
   return (
     <div class="flex flex-col gap-1.5">
       <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-        BIOS file detail · pick a file from your collection to install it under the expected name
+        Drop in the BIOS files OA needs for this system — pick a file from your collection and OA copies it under the right name
       </p>
       <For each={props.files}>{(f) => renderFileRow(f)}</For>
       <details class="mt-1 rounded-md border border-white/5 bg-black/20 px-3 py-2 text-[0.65rem] text-(--color-oa-ink-dim)">

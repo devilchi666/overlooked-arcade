@@ -723,7 +723,10 @@ const ResultsTable: Component<ResultsTableProps> = (props) => {
         </div>
         <Show when={visibleRows().length === 0}>
           <div class="flex flex-1 items-center justify-center text-xs text-(--color-oa-ink-dim)">
-            <Show when={props.rows().length === 0} fallback={<p>No rows match the current filter.</p>}>
+            <Show
+              when={props.rows().length === 0}
+              fallback={<p>Nothing matches that filter — try different words.</p>}
+            >
               <p>No ROMs found yet.</p>
             </Show>
           </div>
