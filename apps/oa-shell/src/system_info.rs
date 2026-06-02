@@ -1030,37 +1030,6 @@ pub fn load_curated_records_with_registry(
 /// Missing files contribute the literal byte string `"MISSING:<path>"`
 /// to the hash, so dropping a YAML or losing a slim file triggers a
 /// rebake on the next launch.
-pub fn hash_l1_l2_inputs(
-    listxml_path: &Path,
-    history_path: &Path,
-    docs_cores_dir: &Path,
-) -> String {
-    use sha1::{Digest, Sha1};
-
-    let mut hasher = Sha1::new();
-    hash_file_into(&mut hasher, listxml_path);
-    hash_file_into(&mut hasher, history_path);
-
-    // Walk docs/cores/<id>/system-info.yaml in sorted order so the
-    // hash is filesystem-walk-order independent.
-    let mut yamls: Vec<PathBuf> = match std::fs::read_dir(docs_cores_dir) {
-        Ok(e) => e
-            .filter_map(|x| x.ok())
-            .filter(|x| x.file_type().map(|t| t.is_dir()).unwrap_or(false))
-            .map(|x| x.path().join("system-info.yaml"))
-            .filter(|p| std::fs::metadata(p).map(|m| m.is_file()).unwrap_or(false))
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    yamls.sort();
-    for p in &yamls {
-        hash_file_into(&mut hasher, p);
-    }
-
-    let digest = hasher.finalize();
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    hex[..16].to_string()
-}
 
 fn hash_file_into<H: sha1::Digest>(hasher: &mut H, path: &Path) {
     match std::fs::read(path) {
@@ -1637,7 +1606,11 @@ meta:
     fn hash_changes_when_a_file_changes() {
         // Construct two tiny temp trees with the same files but one
         // differing byte, confirm the hash diverges. This is the
-        // bake-on-launch rebake trigger.
+        // bake-on-launch rebake trigger. Uses
+        // `hash_l1_l2_inputs_with_registry` (Slice 2 Phase D deleted
+        // the registry-less variant); an empty registry just means
+        // the hash folds the slim files alone, which is enough to
+        // exercise the byte-change-flips-hash invariant.
         let tmp = std::env::temp_dir().join(format!("oa-sysinfo-hash-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
@@ -1646,11 +1619,12 @@ meta:
         let cores = tmp.join("cores");
         std::fs::create_dir_all(&cores).unwrap();
 
+        let empty_registry = crate::system_registry::SystemRegistry::empty();
         std::fs::write(&listxml, "{}").unwrap();
         std::fs::write(&history, "<history/>").unwrap();
-        let h1 = hash_l1_l2_inputs(&listxml, &history, &cores);
+        let h1 = hash_l1_l2_inputs_with_registry(&listxml, &history, &cores, &empty_registry);
         std::fs::write(&listxml, "{ }").unwrap(); // single byte change
-        let h2 = hash_l1_l2_inputs(&listxml, &history, &cores);
+        let h2 = hash_l1_l2_inputs_with_registry(&listxml, &history, &cores, &empty_registry);
         assert_ne!(h1, h2, "single-byte change in slim must flip the hash");
 
         // Cleanup — best-effort.
