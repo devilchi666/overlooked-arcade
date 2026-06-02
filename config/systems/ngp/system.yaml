@@ -1,0 +1,22 @@
+id: ngp
+display_name: SNK Neo Geo Pocket Color
+short_name: NGP/C
+schema_version: 1
+default_core: mednafen_ngp_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- ngp
+- ngc
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: SNK - Neo Geo Pocket
+- subdir: metadat/no-intro
+  basename: SNK - Neo Geo Pocket Color
+cores:
+- base: mednafen_ngp_libretro
+  display_name: Beetle NeoPop
+  blurb: Neo Geo Pocket + NGP Color. Mednafen-wrapped NeoPop.
+  recommended: true
+- base: race_libretro
+  display_name: RACE
+  blurb: Lighter Neo Geo Pocket core.

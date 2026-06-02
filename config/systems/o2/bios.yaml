@@ -1,0 +1,16 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: o2rom.bin
+  sha1: B2E1955D957A475DE2411770452EFF4EA19F4CEE
+  description: Magnavox Odyssey² BIOS (US, canonical)
+- name: c52.bin
+  sha1: A6120AED50831C9C0D95DBDF707820F601D9452E
+  description: Philips Videopac G7400 BIOS variant (C52)
+- name: g7400.bin
+  sha1: 5130243429B40B01A14E1304D0394B8459A6FBAE
+  description: Philips Videopac+ G7400 BIOS
+- name: jopac.bin
+  sha1: 54B8D2C1317628DE51A85FC1C424423A986775E4
+  description: Philips Jopac BIOS (FR Videopac variant)

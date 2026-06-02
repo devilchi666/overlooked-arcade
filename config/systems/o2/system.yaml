@@ -1,0 +1,17 @@
+id: o2
+display_name: Magnavox Odyssey²
+short_name: Odyssey²
+schema_version: 1
+default_core: o2em_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- o2
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Magnavox - Odyssey2
+cores:
+- base: o2em_libretro
+  display_name: O2EM
+  blurb: Magnavox Odyssey² / Philips Videopac G7000.
+  recommended: true
+  bios_required: o2rom.bin

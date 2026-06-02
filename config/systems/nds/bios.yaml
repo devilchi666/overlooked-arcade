@@ -1,30 +1,13 @@
-# Nintendo DS — BIOS table
-#
-# Slice 1 pilot for the per-system descriptor consolidation arc
-# (docs/PLANS/per-system-descriptors.md). Migrated verbatim from
-# main.rs::NDS_BIOS_KNOWN_HASHES.
-#
-# melonDS requires ALL THREE files to be present + canonical-hash-matched.
-# Slice 5 of Phase 1B (guided BIOS resolution) introduced the per-file
-# pill expansion in the readiness checklist; operators see which
-# specific file is missing rather than a single opaque "missing"
-# state.
-
 schema_version: 1
 semantics: all_required
 required_for_launch: true
-
-sourcing_hint: >-
-  DS BIOS dumps are not shipped with OA. Dump from your own DS hardware
-  (homebrew tool DumpTool) or use a backup of your own dump.
-
 files:
-  - name: bios7.bin
-    sha1: 24F67BDEA115A2C847C8813A262502EE1607B7DF
-    description: "DS ARM7 BIOS (16 KB, coprocessor for audio/wireless/touch)"
-  - name: bios9.bin
-    sha1: BFAAC75F101C135E32E2AAF541DE6B1BE4C8C62D
-    description: "DS ARM9 BIOS (4 KB, main CPU boot + graphics)"
-  - name: firmware.bin
-    sha1: CFE072921EE3FB93F688743F8BEEF89043C3E9AD
-    description: "DS Firmware (256 KB, region + user settings)"
+- name: bios7.bin
+  sha1: 24F67BDEA115A2C847C8813A262502EE1607B7DF
+  description: DS ARM7 BIOS (16 KB, coprocessor for audio/wireless/touch)
+- name: bios9.bin
+  sha1: BFAAC75F101C135E32E2AAF541DE6B1BE4C8C62D
+  description: DS ARM9 BIOS (4 KB, main CPU boot + graphics)
+- name: firmware.bin
+  sha1: CFE072921EE3FB93F688743F8BEEF89043C3E9AD
+  description: DS Firmware (256 KB, region + user settings)

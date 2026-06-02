@@ -1,0 +1,7 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: 5200.rom
+  sha1: 6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530
+  description: Atari 5200 SuperSystem BIOS (2 KB, canonical)

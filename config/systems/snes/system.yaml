@@ -1,0 +1,81 @@
+id: snes
+display_name: Super Nintendo Entertainment System
+short_name: SNES
+schema_version: 1
+default_core: snes9x_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- sfc
+- smc
+- fig
+- swc
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Super Nintendo Entertainment System
+cores:
+- base: snes9x_libretro
+  display_name: Snes9x
+  blurb: Standard SNES core. Fast, broad compatibility.
+  recommended: true
+- base: bsnes_libretro
+  display_name: bsnes
+  blurb: Higher-accuracy SNES (byuu-derived).
+  recommended: true
+- base: mesen-s_libretro
+  display_name: Mesen-S
+  blurb: Mesen author's SNES core, accuracy-focused.
+- base: bsnes-jg_libretro
+  display_name: bsnes-jg
+  blurb: Modernized bsnes maintenance fork.
+- base: bsnes_hd_beta_libretro
+  display_name: bsnes-HD (beta)
+  blurb: bsnes with mode-7 hi-res rendering. Looks gorgeous on F-Zero etc.
+- base: mednafen_supafaust_libretro
+  display_name: Beetle Supafaust
+  blurb: Performance-focused SNES (Mednafen Faust fork).
+- base: snes9x2010_libretro
+  display_name: Snes9x 2010
+  blurb: Snes9x mid-2010 snapshot — lighter for older hardware.
+- base: snes9x2005_plus_libretro
+  display_name: Snes9x 2005 Plus
+  blurb: Even lighter Snes9x for ultra-low-end devices.
+system_info:
+  system_id: snes
+  manufacturer: Nintendo
+  type: Home Console
+  generation: 4th Generation
+  release_date: August 23, 1990
+  discontinued: September 25, 1997
+  units_sold: 49.10 Million
+  media: Cartridge
+  cpu: Ricoh 5A22 @ 3.58 MHz
+  sound: Sony SPC700
+  resolution: 256 x 224
+  color_palette: 32,768 Colors
+  display_ratio: 8:7 (4:3)
+  architecture: 16-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local; up to 5 via Super Multitap
+  region: NTSC / PAL
+  storage: Cartridge (4MB Max)
+  ram: 128KB
+  video_output: Composite / RGB
+  aspect_ratio: 4:3
+  peripherals:
+  - name: SNES Controller
+    glyph: 🎮
+  - name: Super Scope
+    glyph: 🔫
+  - name: Mouse
+    glyph: 🖱️
+  - name: Multitap (X4)
+    glyph: 🔗
+  - name: Wireless Adapter
+    glyph: 📡
+  release_flag: 🇺🇸
+  tagline: 16-BIT HOME CONSOLE
+  blurb: Nintendo's second home console and the successor to the NES. Famous for its vast library of RPGs, platformers, and classics that defined a generation of gaming.
+  sidebar_subline: 16-BIT · 1990
+  meta:
+    schema_version: 1
+    last_updated: 2026-05-31

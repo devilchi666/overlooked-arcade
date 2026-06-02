@@ -1,0 +1,26 @@
+id: stv
+display_name: Sega Titan Video
+short_name: ST-V
+schema_version: 1
+default_core: mame_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- zip
+- 7z
+cores:
+- base: mame_libretro
+  display_name: MAME (latest)
+  blurb: Latest MAME. Heaviest, broadest hardware coverage.
+- base: mame2003_plus_libretro
+  display_name: MAME 2003 Plus
+  blurb: MAME 2003 with community additions. Strong compat/perf balance.
+  recommended: true
+- base: mame2010_libretro
+  display_name: MAME 2010
+  blurb: MAME 2010 snapshot. Lighter than latest, narrower coverage.
+- base: mame2003_libretro
+  display_name: MAME 2003
+  blurb: MAME 2003 baseline. Lower system requirements.
+- base: mame2000_libretro
+  display_name: MAME 2000
+  blurb: Very old MAME snapshot for ultra-low-end devices.

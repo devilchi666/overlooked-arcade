@@ -1,0 +1,17 @@
+id: '5200'
+display_name: Atari 5200 SuperSystem
+short_name: '5200'
+schema_version: 1
+default_core: atari800_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- a52
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Atari - 5200
+cores:
+- base: a5200_libretro
+  display_name: Atari800-derived 5200
+  blurb: Atari 5200. BIOS required.
+  recommended: true
+  bios_required: 5200.rom

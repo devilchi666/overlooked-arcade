@@ -1,0 +1,21 @@
+id: ps2
+display_name: Sony PlayStation 2
+short_name: PS2
+schema_version: 1
+default_core: pcsx2_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- iso
+- chd
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Sony - PlayStation 2
+cores:
+- base: pcsx2_libretro
+  display_name: PCSX2
+  blurb: PS2 — official PCSX2 libretro core. Demanding.
+  recommended: true
+  bios_required: PS2 BIOS (ps2-0230a-20080220.bin etc.)
+- base: play_libretro
+  display_name: Play!
+  blurb: Lighter PS2 core. Lower compatibility.

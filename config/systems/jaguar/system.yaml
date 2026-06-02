@@ -1,0 +1,17 @@
+id: jaguar
+display_name: Atari Jaguar
+short_name: Jaguar
+schema_version: 1
+default_core: virtualjaguar_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- j64
+- jag
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Atari - Jaguar
+cores:
+- base: virtualjaguar_libretro
+  display_name: Virtual Jaguar
+  blurb: Atari Jaguar. Compatibility is patchy by game.
+  recommended: true

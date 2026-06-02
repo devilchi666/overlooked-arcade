@@ -1,0 +1,21 @@
+id: n64
+display_name: Nintendo 64
+short_name: N64
+schema_version: 1
+default_core: mupen64plus_next_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- n64
+- z64
+- v64
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Nintendo 64
+cores:
+- base: mupen64plus_next_libretro
+  display_name: Mupen64Plus-Next
+  blurb: N64 — GLideN64-based renderer. The standard pick.
+  recommended: true
+- base: parallel_n64_libretro
+  display_name: ParaLLEl N64
+  blurb: N64 with ParaLLEl-RDP/RSP. Accuracy-focused, demands a strong GPU.

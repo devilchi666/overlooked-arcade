@@ -1,0 +1,37 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: sega_100.bin
+  sha1: 2B8CB4F87580683EB4D760E4ED210813D667F0A2
+  description: JP Saturn BIOS v1.00 (1994 launch)
+- name: sega_100a.bin
+  sha1: 3BB41FEB82838AB9A35601AC666DE5AACFD17A58
+  description: JP Saturn BIOS v1.00a (revised 1994)
+- name: sega_101.bin
+  sha1: DF94C5B4D47EB3CC404D88B33A8FDA237EAF4720
+  description: JP Saturn BIOS v1.01 (1995 revision)
+- name: sega1003.bin
+  sha1: 7B23B53D62DE0F29A23E423D0FE751DFB469C2FA
+  description: JP Saturn ST-V Compatible BIOS v1.003
+- name: mpr-17933.bin
+  sha1: FAA8EA183A6D7BBE5D4E03BB1332519800D3FBC3
+  description: US/EU Saturn BIOS v1.00a (most common)
+- name: mpr-18100.bin
+  sha1: 8A22710E09CE75F39625894366CAFE503ED1942D
+  description: JP Saturn BIOS Special v1.01
+- name: mpr-18811-mx.ic1
+  sha1: A67CD4F550751F8B91DE2B8B74528AB4E0C11C77
+  description: JP Saturn Movie Card v1.10
+- name: mpr-19367-mx.ic1
+  sha1: 56C1B93DA6B660BF393FBF48CA47569000EF4047
+  description: EU Saturn Movie Card v1.20
+- name: saturn_bios.bin
+  sha1: 2B8CB4F87580683EB4D760E4ED210813D667F0A2
+  description: Generic Saturn BIOS (alias for sega_100.bin / JP v1.00)
+- name: hisaturn.bin
+  sha1: 49D8493008FA715CA0C94D99817A5439D6F2C796
+  description: Hitachi HiSaturn BIOS (1995 OEM clone)
+- name: vsaturn.bin
+  sha1: 4154E11959F3D5639B11D7902B3A393A99FB5776
+  description: JVC V-Saturn BIOS (1995 OEM clone)

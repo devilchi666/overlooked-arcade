@@ -1,0 +1,27 @@
+id: segacd
+display_name: Sega CD / Mega-CD
+short_name: Sega CD
+schema_version: 1
+default_core: genesis_plus_gx_libretro.dll
+default_shader_preset: plain
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Sega - Mega-CD - Sega CD
+cores:
+- base: genesis_plus_gx_libretro
+  display_name: Genesis Plus GX
+  blurb: SMS / GG / Mega Drive / Sega CD — the standard multi-Sega pick.
+  recommended: true
+- base: genesis_plus_gx_wide_libretro
+  display_name: Genesis Plus GX Wide
+  blurb: Genesis Plus GX with widescreen hacks.
+- base: picodrive_libretro
+  display_name: PicoDrive
+  blurb: Lighter Mega Drive / 32X / Sega CD.

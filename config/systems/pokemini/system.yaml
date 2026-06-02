@@ -1,0 +1,16 @@
+id: pokemini
+display_name: Nintendo Pokémon Mini
+short_name: PokeMini
+schema_version: 1
+default_core: pokemini_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- min
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Pokemon Mini
+cores:
+- base: pokemini_libretro
+  display_name: PokeMini
+  blurb: Pokémon Mini handheld.
+  recommended: true

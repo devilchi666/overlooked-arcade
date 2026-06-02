@@ -1,0 +1,71 @@
+id: genesis
+display_name: Sega Mega Drive / Genesis
+short_name: Genesis
+schema_version: 1
+default_core: clownmdemu_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- md
+- smd
+- gen
+- 68k
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Sega - Mega Drive - Genesis
+cores:
+- base: genesis_plus_gx_libretro
+  display_name: Genesis Plus GX
+  blurb: SMS / GG / Mega Drive / Sega CD — the standard multi-Sega pick.
+  recommended: true
+- base: genesis_plus_gx_wide_libretro
+  display_name: Genesis Plus GX Wide
+  blurb: Genesis Plus GX with widescreen hacks.
+- base: picodrive_libretro
+  display_name: PicoDrive
+  blurb: Lighter Mega Drive / 32X / Sega CD.
+- base: blastem_libretro
+  display_name: BlastEm
+  blurb: Higher-accuracy Mega Drive — chip-level focus.
+- base: clownmdemu_libretro
+  display_name: ClownMDEmu
+  blurb: Modern Mega Drive core, active development.
+system_info:
+  system_id: genesis
+  manufacturer: Sega
+  type: Home Console
+  generation: 4th Generation
+  release_date: October 29, 1988
+  discontinued: April 30, 1997
+  units_sold: 30.75 Million
+  media: Cartridge
+  cpu: Motorola 68000 @ 7.6 MHz
+  sound: Yamaha YM2612 + SN76489
+  resolution: 320 x 224
+  color_palette: 512 Colors
+  display_ratio: 32:35
+  architecture: 16-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local; 4 via Team Player
+  region: NTSC / PAL
+  storage: Cartridge (4MB Max)
+  ram: 64KB
+  video_output: Composite / RGB
+  aspect_ratio: 4:3
+  peripherals:
+  - name: 3-Button Pad
+    glyph: 🎮
+  - name: 6-Button Pad
+    glyph: 🎮
+  - name: Menacer
+    glyph: 🔫
+  - name: Team Player
+    glyph: 🔗
+  - name: Activator
+    glyph: 📡
+  release_flag: 🇯🇵
+  tagline: 16-BIT HOME CONSOLE
+  blurb: Sega's answer to Nintendo's dominance. A sharper, faster machine famous for arcade-quality ports, Sonic the Hedgehog, and a fierce mascot rivalry that defined the 90s.
+  sidebar_subline: 16-BIT · 1988
+  meta:
+    schema_version: 1
+    last_updated: 2026-05-31

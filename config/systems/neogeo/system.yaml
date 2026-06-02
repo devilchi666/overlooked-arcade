@@ -1,0 +1,21 @@
+id: neogeo
+display_name: SNK Neo Geo
+short_name: Neo Geo
+schema_version: 1
+default_core: fbneo_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- neo
+- zip
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: SNK - Neo Geo
+cores:
+- base: fbneo_libretro
+  display_name: FinalBurn Neo
+  blurb: Arcade — Neo Geo, CPS1/2/3, Cave, more. The standard arcade pick.
+  recommended: true
+- base: fbalpha2012_neogeo_libretro
+  display_name: FB Alpha 2012 (Neo Geo)
+  blurb: Neo Geo only — lighter for older devices.
+  bios_required: neogeo.zip

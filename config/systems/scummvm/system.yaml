@@ -1,0 +1,13 @@
+id: scummvm
+display_name: ScummVM
+short_name: ScummVM
+schema_version: 1
+default_core: scummvm_libretro.dll
+default_shader_preset: plain
+extensions:
+- scummvm
+cores:
+- base: scummvm_libretro
+  display_name: ScummVM
+  blurb: Point-and-click adventure runtime — Lucasarts, Sierra, etc.
+  recommended: true

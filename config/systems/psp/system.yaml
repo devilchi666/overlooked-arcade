@@ -1,0 +1,18 @@
+id: psp
+display_name: Sony PlayStation Portable
+short_name: PSP
+schema_version: 1
+default_core: ppsspp_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- iso
+- cso
+- pbp
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Sony - PlayStation Portable
+cores:
+- base: ppsspp_libretro
+  display_name: PPSSPP
+  blurb: PlayStation Portable. The standard pick, runs most games well.
+  recommended: true

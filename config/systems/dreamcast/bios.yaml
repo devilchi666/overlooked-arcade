@@ -1,0 +1,16 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: dc_boot.bin
+  sha1: 8951D1BB219AB2FF8583033D2119C899CC81F18C
+  description: Dreamcast Boot ROM (canonical, universal across regions)
+- name: boot.bin
+  sha1: 8951D1BB219AB2FF8583033D2119C899CC81F18C
+  description: Dreamcast Boot ROM (alternate naming, same content)
+- name: dc_flash.bin
+  sha1: 94D44D7F9529EC1642BA3771ED3C5F756D5BC872
+  description: Dreamcast Flash ROM (canonical factory dump)
+- name: flash.bin
+  sha1: 94D44D7F9529EC1642BA3771ED3C5F756D5BC872
+  description: Dreamcast Flash ROM (alternate naming, same content)

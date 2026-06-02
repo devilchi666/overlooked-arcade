@@ -1,0 +1,29 @@
+id: gbc
+display_name: Nintendo Game Boy Color
+short_name: Game Boy Color
+schema_version: 1
+default_core: gambatte_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- gbc
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Nintendo - Game Boy Color
+cores:
+- base: gambatte_libretro
+  display_name: Gambatte
+  blurb: GB / GBC — very high accuracy, the standard pick.
+  recommended: true
+- base: sameboy_libretro
+  display_name: SameBoy
+  blurb: Highest-accuracy GB / GBC core. Recommended for cycle-perfect.
+- base: gearboy_libretro
+  display_name: Gearboy
+  blurb: Modern GB / GBC (gear* family).
+- base: tgbdual_libretro
+  display_name: TGB Dual
+  blurb: Two GB / GBC instances simultaneously — link-cable simulation.
+- base: mgba_libretro
+  display_name: mGBA
+  blurb: GBA + GB / GBC — the standard pick.
+  recommended: true

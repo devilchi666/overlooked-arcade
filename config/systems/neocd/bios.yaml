@@ -1,0 +1,37 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: neocd.bin
+  sha1: 7BB26D1E5D1E930515219CB18BCDE5B7B23E2EDA
+  description: Neo Geo CD boot ROM (default libretro name)
+- name: neocd_f.rom
+  sha1: A5F4A7A627B3083C979F6EBE1FABC5D2DF6D083B
+  description: Neo Geo CD Front-loader BIOS (CD-F)
+- name: neocd_sf.rom
+  sha1: 4A94719EE5D0E3F2B981498F70EFC1B8F1CEF325
+  description: Neo Geo CD Front-loader BIOS (CD-SF revision)
+- name: neocd_t.rom
+  sha1: CC92B54A18A8BFF6E595AABE8E5C360BA9E62EB5
+  description: Neo Geo CDT BIOS (front-loader CDT model)
+- name: neocd_st.rom
+  sha1: 19729B51BDAB60C42AAFEF6E20EA9234C7EB8410
+  description: Neo Geo CDT BIOS (CD-ST revision)
+- name: neocd_z.rom
+  sha1: B0F1C4FA8D4492A04431805F6537138B842B549F
+  description: Neo Geo CDZ BIOS (top-loader)
+- name: neocd_sz.rom
+  sha1: 6A947457031DD3A702A296862446D7485AA89DBB
+  description: Neo Geo CDZ BIOS (CD-SZ revision)
+- name: front-sp1.bin
+  sha1: 53BC1F283CDF00FA2EFBB79F2E36D4C8038D743A
+  description: Neo Geo CD Front-loader system program
+- name: top-sp1.bin
+  sha1: 235F4D1D74364415910F73C10AE5482D90B4274F
+  description: Neo Geo CD Top-loader system program
+- name: 000-lo.lo
+  sha1: 5992277DEBADEB64D1C1C64B0A92D9293EAF7E4A
+  description: Neo Geo CD LO-ROM (shared with cart AES/MVS)
+- name: uni-bioscd.rom
+  sha1: 5142F205912869B673A71480C5828B1EAED782A8
+  description: Universe BIOS CD (community-modified, region toggle + cheats)

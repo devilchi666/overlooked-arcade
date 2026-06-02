@@ -1,0 +1,24 @@
+id: tg16
+display_name: TurboGrafx-16 / PC Engine
+short_name: TG-16
+schema_version: 1
+default_shader_preset: plain
+extensions:
+- pce
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: NEC - PC Engine - TurboGrafx 16
+cores:
+- base: mednafen_pce_fast_libretro
+  display_name: Beetle PCE Fast
+  blurb: Mednafen-derived. Fast, plays HuCard + CD. OA default.
+  recommended: true
+- base: mednafen_pce_libretro
+  display_name: Beetle PCE (full Mednafen)
+  blurb: Higher-accuracy alternative. Heavier, same library coverage.
+- base: mednafen_supergrafx_libretro
+  display_name: Beetle SuperGrafx
+  blurb: SGX-only — the four SuperGrafx-enhanced HuCards.
+- base: geargrafx_libretro
+  display_name: GearGrafx
+  blurb: Modern PC Engine core (gear* family). Active development.

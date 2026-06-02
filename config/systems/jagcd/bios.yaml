@@ -1,0 +1,10 @@
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+files:
+- name: jagcd.rom
+  sha1: 4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3
+  description: Atari Jaguar CD boot ROM (~262 KB, canonical)
+- name: jaguar_cd.rom
+  sha1: 4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3
+  description: Atari Jaguar CD boot ROM (alternate naming, same content)

@@ -1,0 +1,18 @@
+id: coleco
+display_name: ColecoVision
+short_name: Coleco
+schema_version: 1
+default_core: bluemsx_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- col
+- cv
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Coleco - ColecoVision
+cores:
+- base: gearcoleco_libretro
+  display_name: GearColeco
+  blurb: ColecoVision (gear* family).
+  recommended: true
+  bios_required: colecovision.col

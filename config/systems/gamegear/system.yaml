@@ -1,0 +1,22 @@
+id: gamegear
+display_name: Sega Game Gear
+short_name: Game Gear
+schema_version: 1
+default_core: genesis_plus_gx_libretro.dll
+default_shader_preset: lcd-handheld
+extensions:
+- gg
+libretro_dat_refs:
+- subdir: metadat/no-intro
+  basename: Sega - Game Gear
+cores:
+- base: genesis_plus_gx_libretro
+  display_name: Genesis Plus GX
+  blurb: SMS / GG / Mega Drive / Sega CD — the standard multi-Sega pick.
+  recommended: true
+- base: smsplus_libretro
+  display_name: SMS Plus GX
+  blurb: SMS / Game Gear-only alternative.
+- base: gearsystem_libretro
+  display_name: Gearsystem
+  blurb: Modern SMS / GG / SG-1000 / ColecoVision (gear* family).

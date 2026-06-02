@@ -1,0 +1,34 @@
+id: saturn
+display_name: Sega Saturn
+short_name: Saturn
+schema_version: 1
+default_core: mednafen_saturn_libretro.dll
+default_shader_preset: crt-lite
+extensions:
+- cue
+- chd
+- ccd
+- toc
+- m3u
+- iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Sega - Saturn
+cores:
+- base: mednafen_saturn_libretro
+  display_name: Beetle Saturn
+  blurb: Sega Saturn — Mednafen-derived, high accuracy. Demanding.
+  recommended: true
+  bios_required: sega_101.bin (or equivalent)
+- base: kronos_libretro
+  display_name: Kronos
+  blurb: Faster Saturn core. Lower accuracy, broader hardware reach.
+  bios_required: sega_101.bin (or equivalent)
+- base: yabasanshiro_libretro
+  display_name: YabaSanshiro
+  blurb: Yabause-derived Saturn core.
+  bios_required: sega_101.bin (or equivalent)
+- base: yabause_libretro
+  display_name: Yabause
+  blurb: Older Saturn core, original Yabause branch.
+  bios_required: sega_101.bin (or equivalent)

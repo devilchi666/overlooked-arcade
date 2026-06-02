@@ -1,0 +1,16 @@
+id: sega32xcd
+display_name: Sega 32X CD
+short_name: 32X-CD
+schema_version: 1
+default_core: picodrive_libretro.dll
+default_shader_preset: plain
+extensions:
+- cue
+- chd
+- iso
+- m3u
+- ccd
+cores:
+- base: picodrive_libretro
+  display_name: PicoDrive
+  blurb: Lighter Mega Drive / 32X / Sega CD.
