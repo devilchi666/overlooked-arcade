@@ -5,6 +5,7 @@ import {
   createSignal,
   For,
   onCleanup,
+  onMount,
   Show,
   type Accessor,
   type Component,
@@ -295,6 +296,47 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     if (unlistenDownloadProgress) unlistenDownloadProgress();
   });
 
+  /// Manual refetch of every readiness signal. Called by the
+  /// "Refresh" button + the window-focus handler below so operator
+  /// drops into <exe_dir>/system/ or /cores/ via the OS file
+  /// manager get picked up without a wizard close-and-reopen.
+  function refetchReadiness() {
+    void refetchCores();
+    void refetchAvailable();
+    void refetchBios();
+    // Re-derive the per-system Core options map too — operator may
+    // have launched a game between focus loss and regain, which would
+    // populate a new system's schema.
+    const systems = props.systems();
+    if (systems.length > 0) {
+      void (async () => {
+        const next = new Map<SystemId, boolean>();
+        const results = await Promise.allSettled(
+          systems.map((sid) =>
+            invoke<boolean>("has_core_options_schema", { systemId: sid }).catch(() => false),
+          ),
+        );
+        results.forEach((r, i) => {
+          const sid = systems[i];
+          next.set(sid, r.status === "fulfilled" ? r.value : false);
+        });
+        setOptionsBySystem(next);
+      })();
+    }
+  }
+
+  /// Refetch on OS-window focus. Operator clicks "Open BIOS folder"
+  /// (or alt-tabs out to drop a core .dll into /cores/), drops files,
+  /// switches back to OA — the readiness pills should reflect what's
+  /// now on disk without a manual refresh click. Tauri DOM focus
+  /// events are reliable per the saved memory; per-event refetch is
+  /// cheap (a few hundred ms of filesystem scans worst-case).
+  onMount(() => {
+    const onWindowFocus = () => refetchReadiness();
+    window.addEventListener("focus", onWindowFocus);
+    onCleanup(() => window.removeEventListener("focus", onWindowFocus));
+  });
+
   // Phase 1B Slice 4: bulk-prompt modal state. null = closed. Array =
   // systems to offer cores for. Both the per-row "Install core…"
   // button and the top-of-list "Install N missing cores…" button
@@ -497,11 +539,21 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
         <div class="flex flex-col gap-2">
           <For each={props.systems()}>{(sid) => renderRow(sid)}</For>
         </div>
-        <Show when={(bios()?.systemDir ?? "").length > 0}>
-          <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-            BIOS folder: <code class="font-mono text-(--color-oa-ink-dim)">{bios()?.systemDir}</code>
-          </p>
-        </Show>
+        <div class="flex items-center justify-between gap-2">
+          <Show when={(bios()?.systemDir ?? "").length > 0}>
+            <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              BIOS folder: <code class="font-mono text-(--color-oa-ink-dim)">{bios()?.systemDir}</code>
+            </p>
+          </Show>
+          <button
+            type="button"
+            class="shrink-0 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+            onClick={refetchReadiness}
+            title="Re-scan /cores/ and /system/ for newly-dropped files"
+          >
+            Refresh
+          </button>
+        </div>
       </Show>
       {/* Phase 1B Slice 4: bulk-install modal. Open state lives on
           this component because both the per-row "Install core…" button
