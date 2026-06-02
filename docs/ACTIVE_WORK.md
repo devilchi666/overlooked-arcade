@@ -182,6 +182,48 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)**
+  ([docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md))
+  — shipped 2026-06-02 across five phase commits on
+  `feat/per-system-descriptors-slice-1`. Replaces ~8 scattered
+  per-system data sources (hardcoded Rust const tables for BIOS
+  hashes, core catalog, libretro-dat refs + the in-tree
+  `docs/cores/<id>/system-info.yaml` + `games-info.md`) for 3 pilot
+  systems with a unified per-folder YAML triple
+  (`config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml`).
+  - **Phase A** (`0dd1e8c`): `apps/oa-shell/src/system_descriptor.rs`
+    + `system_registry.rs` scaffolding. serde-derived types with
+    `deny_unknown_fields`, runtime loader with hot-fail on malformed
+    YAML / id-folder mismatch / embedded system_info id mismatch /
+    duplicate id; `global_registry()` OnceLock singleton; resolver
+    mirrors `system_info::resolve_docs_cores_dir`. 21 new tests.
+  - **Phase B** (`5544390`): `config/systems/gb/system.yaml` with
+    embedded `SystemInfoCurated`. New `load_curated_records_with_registry`
+    + `hash_l1_l2_inputs_with_registry`; `bake_system_info_on_launch`
+    swapped through registry. Legacy `docs/cores/gb/system-info.yaml`
+    deleted.
+  - **Phase C** (`edc6bc4`): `config/systems/psx/{system,bios,games}.yaml`
+    (any_of 18 BIOS files). New `scan_bios_entries` +
+    `check_bios_from_registry` + `is_canonical_bios_hash` shims;
+    `check_psx_bios` + `install_bios_file` + `GameInfoIndex::load_default`
+    consume them. Legacy `docs/cores/psx/system-info.yaml` +
+    `games-info.md` deleted.
+  - **Phase D** (`e01d851`): `config/systems/nds/{system,bios,games}.yaml`
+    (all_required 3 BIOS files). `check_nds_bios` wired through the
+    same shim. Legacy `docs/cores/nds/games-info.md` deleted.
+  - **Phase E** (this commit): docs flips + SESSION_LOG entry.
+  - **Loader path decision** (resolved Slice 1): sibling
+    `<exe_dir>/config/systems/` with source-tree fallback for dev +
+    test. Chosen over `include_dir!` because Slice 2 Verification #3
+    requires operator-editable YAMLs without recompile. Bundling will
+    copy in-tree `config/` next to `oa-shell.exe` at install time.
+  - End state: 3 systems run off the registry; 38 unmigrated systems
+    unchanged (keep reading hardcoded const via the
+    "prefer-registry, fall back" shim pattern). 643 oa-shell tests
+    green (was 615 pre-branch; +28 new). Slice 2 (mass migration of
+    remaining 38 + const-table deletion) queued in HIGH band of
+    `docs/NEXT.md`.
+
 - **Guided Setup Phase 1B — wizard upgrade (CLOSED)** —
   ([features/guided-setup/](features/guided-setup/)). Six slices
   shipped 2026-06-01 (`5ef8062` / `04fa975` / `b57f3e7` / `923ea7b`
