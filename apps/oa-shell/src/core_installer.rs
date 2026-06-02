@@ -1206,19 +1206,23 @@ pub async fn download_core(
             }
             (Err(_), true) => {
                 // Per-kind cancel-cleanup contract (plan §"Cancel
-                // cleanup"): core_download cancel = delete the
-                // `.partial` file. Re-derive its path here from
-                // dest_dir + base (the in-closure `partial_path` is
-                // out of scope by now). The remove is best-effort —
-                // ENOENT (the more common case if cancel fired during
-                // the chunk loop, before extract wrote `.partial`)
-                // and any IO error both silently no-op.
+                // cleanup"): core_download cancel = drop the partial
+                // download state so the next attempt starts fresh.
+                // Phase 3b: now TWO partials to clean — the streaming
+                // .zip.partial holds the in-flight zip bytes, the
+                // .dll.partial only exists if extract ran (post-
+                // chunk-loop). Cancel during the chunk loop only has
+                // the former; cancel during extract has both.
                 let ext = dylib_ext();
                 let file_name = core_filename_for_host(&base);
-                let partial_path = dest_dir
+                let zip_partial_path = dest_dir
+                    .join(&file_name)
+                    .with_extension(format!("{ext}.zip.partial"));
+                let dll_partial_path = dest_dir
                     .join(&file_name)
                     .with_extension(format!("{ext}.partial"));
-                let _ = std::fs::remove_file(&partial_path);
+                let _ = std::fs::remove_file(&zip_partial_path);
+                let _ = std::fs::remove_file(&dll_partial_path);
                 let _ = state.mark_cancelled(id);
             }
             (Err(e), false) => {
@@ -1247,6 +1251,8 @@ async fn run_download_core_inner(
     job_id: Option<i64>,
     handle: Option<&crate::job_registry::JobHandle>,
 ) -> Result<String, String> {
+    use tokio::io::AsyncWriteExt;
+
     let url = buildbot_url_for(base).ok_or_else(|| {
         format!(
             "buildbot has no build for this OS/ARCH ({}/{})",
@@ -1256,9 +1262,35 @@ async fn run_download_core_inner(
     })?;
     let file_name = core_filename_for_host(base);
     let final_path = dest_dir.join(&file_name);
+    let ext = dylib_ext();
+
+    // Phase 3b — stream .zip bytes through to a `.zip.partial` file as
+    // they arrive (replaces the pre-3b in-RAM Vec<u8> buffer). On
+    // restart, the partial's size tells us the resume point; we send
+    // an HTTP Range request for the remainder. The .dll.partial step
+    // (extract + write) stays at the END so the dll only ever lands
+    // on disk after the full zip is verified.
+    let zip_partial_path = dest_dir
+        .join(&file_name)
+        .with_extension(format!("{ext}.zip.partial"));
+    let dll_partial_path = final_path.with_extension(format!("{ext}.partial"));
 
     if let Err(e) = std::fs::create_dir_all(dest_dir) {
         return Err(format!("create cores dir {}: {e}", dest_dir.display()));
+    }
+
+    // Existing .zip.partial → potential resume. Read its size up
+    // front; if non-zero, append + send Range. If 0 / missing, fresh
+    // download.
+    let existing_size: u64 = std::fs::metadata(&zip_partial_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if existing_size > 0 {
+        log::info!(
+            "core_installer: resuming download of {} ({} bytes already on disk)",
+            base,
+            existing_size
+        );
     }
 
     let client = reqwest::Client::builder()
@@ -1266,31 +1298,95 @@ async fn run_download_core_inner(
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
 
-    emit_progress(app, &file_name, 0, None, "downloading", None);
+    emit_progress(app, &file_name, existing_size, None, "downloading", None);
 
-    let resp = client
+    let mut request = client
         .get(&url)
-        .header("User-Agent", "OverlookedArcade")
-        .send()
-        .await
-        .map_err(|e| {
-            emit_progress(app, &file_name, 0, None, "error", Some(&format!("{e}")));
-            format!("GET {url}: {e}")
-        })?;
+        .header("User-Agent", "OverlookedArcade");
+    if existing_size > 0 {
+        request = request.header("Range", format!("bytes={}-", existing_size));
+    }
+
+    let resp = request.send().await.map_err(|e| {
+        emit_progress(
+            app,
+            &file_name,
+            existing_size,
+            None,
+            "error",
+            Some(&format!("{e}")),
+        );
+        format!("GET {url}: {e}")
+    })?;
+
+    // 416 = our partial is bigger than the server's current file (the
+    // upstream zip was updated or our partial is corrupt). Drop the
+    // partial and ask the operator to retry; recursion in async is
+    // awkward and a stale partial is rare enough to surface explicitly.
+    if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        log::warn!(
+            "core_installer: server returned 416 for {}; clearing stale partial",
+            base
+        );
+        let _ = std::fs::remove_file(&zip_partial_path);
+        return Err(
+            "downloaded partial is stale (server file changed); retry to start fresh".into(),
+        );
+    }
     if !resp.status().is_success() {
         let status = resp.status();
-        emit_progress(app, &file_name, 0, None, "error", Some(&format!("HTTP {status}")));
+        emit_progress(
+            app,
+            &file_name,
+            existing_size,
+            None,
+            "error",
+            Some(&format!("HTTP {status}")),
+        );
         return Err(format!("buildbot HTTP {status} for {url}"));
     }
-    let total = resp.content_length();
+
+    // 206 = resume worked; the response body is the remainder.
+    // 200 = server ignored Range (or we didn't send one); body is the
+    //       whole file from byte 0 — truncate our existing partial.
+    let resumed = resp.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+    let response_content_length = resp.content_length();
+    // Full file size = remainder + already-downloaded (if resumed),
+    // or just remainder (if not resumed since it's the whole file).
+    let total: Option<u64> = match (resumed, response_content_length) {
+        (true, Some(remaining)) => Some(existing_size + remaining),
+        (false, Some(len)) => Some(len),
+        (_, None) => None,
+    };
+    let mut downloaded: u64 = if resumed { existing_size } else { 0 };
+    if !resumed && existing_size > 0 {
+        log::info!(
+            "core_installer: server didn't honor Range for {} (status {}); restarting from 0",
+            base,
+            resp.status()
+        );
+    }
+
+    let mut file = if resumed {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&zip_partial_path)
+            .await
+            .map_err(|e| format!("open {} for append: {e}", zip_partial_path.display()))?
+    } else {
+        tokio::fs::File::create(&zip_partial_path)
+            .await
+            .map_err(|e| format!("create {}: {e}", zip_partial_path.display()))?
+    };
 
     use futures::StreamExt;
-    let mut downloaded: u64 = 0;
-    let mut zip_bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         if let Some(h) = handle {
             if h.is_cancelled() {
+                // Flush partial state before returning so the resumer
+                // can pick up from the latest byte boundary.
+                let _ = file.flush().await;
                 return Err("cancelled".into());
             }
             let mut was_paused = false;
@@ -1300,9 +1396,13 @@ async fn run_download_core_inner(
                     if let (Some(state), Some(id)) = (registry, job_id) {
                         let _ = state.mark_paused(id);
                     }
+                    // Flush partial so a kill-during-pause still
+                    // resumes cleanly from this point.
+                    let _ = file.flush().await;
                 }
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 if h.is_cancelled() {
+                    let _ = file.flush().await;
                     return Err("cancelled".into());
                 }
             }
@@ -1323,17 +1423,45 @@ async fn run_download_core_inner(
             );
             format!("download chunk: {e}")
         })?;
-        zip_bytes.extend_from_slice(&chunk);
+        file.write_all(&chunk).await.map_err(|e| {
+            emit_progress(
+                app,
+                &file_name,
+                downloaded,
+                total,
+                "error",
+                Some(&format!("{e}")),
+            );
+            format!("write {}: {e}", zip_partial_path.display())
+        })?;
         downloaded += chunk.len() as u64;
         emit_progress(app, &file_name, downloaded, total, "downloading", None);
         if let (Some(state), Some(id)) = (registry, job_id) {
             let _ = state.progress(id, downloaded as i64, total.map(|t| t as i64));
         }
     }
+    file.flush()
+        .await
+        .map_err(|e| format!("flush {}: {e}", zip_partial_path.display()))?;
+    drop(file);
 
     emit_progress(app, &file_name, downloaded, total, "extracting", None);
 
-    let ext = dylib_ext();
+    // Read the completed zip back from disk for extraction. (A
+    // streaming extractor would let us skip this read, but the .zip
+    // format requires the central directory at the END of the file —
+    // which we can't process until the download finishes anyway.)
+    let zip_bytes = std::fs::read(&zip_partial_path).map_err(|e| {
+        emit_progress(
+            app,
+            &file_name,
+            downloaded,
+            total,
+            "error",
+            Some(&format!("{e}")),
+        );
+        format!("read {}: {e}", zip_partial_path.display())
+    })?;
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes)).map_err(|e| {
         emit_progress(
             app,
@@ -1376,8 +1504,7 @@ async fn run_download_core_inner(
         return Err(format!("zip {url} contained no .{ext} entry"));
     };
 
-    let partial_path = final_path.with_extension(format!("{ext}.partial"));
-    std::fs::write(&partial_path, &payload).map_err(|e| {
+    std::fs::write(&dll_partial_path, &payload).map_err(|e| {
         emit_progress(
             app,
             &file_name,
@@ -1386,11 +1513,11 @@ async fn run_download_core_inner(
             "error",
             Some(&format!("{e}")),
         );
-        format!("write {}: {e}", partial_path.display())
+        format!("write {}: {e}", dll_partial_path.display())
     })?;
 
-    if let Err(e) = oa_libretro::probe(&partial_path) {
-        let _ = std::fs::remove_file(&partial_path);
+    if let Err(e) = oa_libretro::probe(&dll_partial_path) {
+        let _ = std::fs::remove_file(&dll_partial_path);
         emit_progress(
             app,
             &file_name,
@@ -1418,8 +1545,8 @@ async fn run_download_core_inner(
             ));
         }
     }
-    if let Err(e) = std::fs::rename(&partial_path, &final_path) {
-        let _ = std::fs::remove_file(&partial_path);
+    if let Err(e) = std::fs::rename(&dll_partial_path, &final_path) {
+        let _ = std::fs::remove_file(&dll_partial_path);
         emit_progress(
             app,
             &file_name,
@@ -1431,6 +1558,10 @@ async fn run_download_core_inner(
         return Err(format!("rename to {}: {e}", final_path.display()));
     }
 
+    // Success — drop the zip.partial since we're done with it. (The
+    // dll.partial got moved to final_path via rename.)
+    let _ = std::fs::remove_file(&zip_partial_path);
+
     emit_progress(app, &file_name, downloaded, total, "done", None);
     log::info!(
         "core_installer: installed {} from {url}",
@@ -1439,21 +1570,22 @@ async fn run_download_core_inner(
     Ok(final_path.to_string_lossy().into_owned())
 }
 
-/// Phase 3a resumer for `core_download` jobs. Registered in
+/// Resumer for `core_download` jobs. Registered in
 /// `main.rs::setup()` after the JobRegistry lands in Tauri state and
 /// before `resume_interrupted_jobs` dispatches. The lock-file
 /// detection promotes any `state='running'` rows from the previous
 /// crashed run to `state='interrupted'`; the dispatcher then routes
 /// each to this struct's `resume`.
 ///
-/// Phase 3a strategy: **restart from zero.** Drops the leftover
-/// `.partial` file (if any) and re-runs the full
-/// `run_download_core_inner` flow from the buildbot URL. The
-/// existing chunk-loop buffers the entire .zip in RAM before writing
-/// .partial; a future Phase 3b will refactor to streaming-write +
-/// HTTP Range so resume is byte-level. For Phase 3a a fresh
-/// re-download is acceptable — cores are <10 MB and crash recovery
-/// is rare enough that the bandwidth tradeoff is fine.
+/// Phase 3b strategy: **byte-level Range resume.** The streaming
+/// chunk loop in `run_download_core_inner` writes through to
+/// `<base>.dll.zip.partial` as bytes arrive — so a crashed run
+/// leaves an on-disk partial we can resume from. On resume the
+/// inner reads `metadata.len()` of the partial, sends `Range:
+/// bytes={size}-`, and appends the response body. The Phase 3a
+/// restart-from-zero fallback (drop the partial up front) is gone;
+/// the inner handles 416 Range Not Satisfiable + 200 Forced Restart
+/// edge cases internally.
 pub struct CoreDownloadResumer {
     cores_dir: PathBuf,
 }
@@ -1487,14 +1619,22 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
                 return;
             };
 
-            // Phase 3a: drop any leftover .partial from the crashed
-            // run. Best-effort; ENOENT is the common case.
+            // Phase 3b: do NOT drop the .zip.partial. The inner reads
+            // its size and sends Range. (Phase 3a dropped it for
+            // restart-from-zero; Phase 3b's whole point is to skip
+            // the re-download cost.)
+            //
+            // The .dll.partial — the EXTRACTED dll bytes written
+            // post-chunk-loop — is a different file. If it exists,
+            // it means the previous run got past the chunk loop and
+            // started extracting; drop it because a fresh extract
+            // happens after the (Range-resumed) zip completes.
             let ext = dylib_ext();
             let file_name = core_filename_for_host(&base);
-            let partial_path = cores_dir
+            let dll_partial_path = cores_dir
                 .join(&file_name)
                 .with_extension(format!("{ext}.partial"));
-            let _ = std::fs::remove_file(&partial_path);
+            let _ = std::fs::remove_file(&dll_partial_path);
 
             // Re-attach handle (fresh cancel + pause flags) so the
             // bar can route Pause / Cancel into the resumed worker.
@@ -1523,7 +1663,12 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
                     let _ = registry.mark_completed(snapshot.id);
                 }
                 (Err(_), true) => {
-                    let _ = std::fs::remove_file(&partial_path);
+                    // Cancel cleanup — drop both partials.
+                    let zip_partial_path = cores_dir
+                        .join(&file_name)
+                        .with_extension(format!("{ext}.zip.partial"));
+                    let _ = std::fs::remove_file(&zip_partial_path);
+                    let _ = std::fs::remove_file(&dll_partial_path);
                     let _ = registry.mark_cancelled(snapshot.id);
                 }
                 (Err(e), false) => {
