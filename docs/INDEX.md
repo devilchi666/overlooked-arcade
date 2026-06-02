@@ -53,7 +53,8 @@ cores are currently being worked on.
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
 - [PLANS/](PLANS/) — design docs for in-flight work
-- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Planning locked 2026-06-01; Slice 1 (GB + PSX + NDS pilot) queued in HIGH band of [NEXT.md](NEXT.md). Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
+- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Slices 1 + 2 shipped 2026-06-02; Slice 3 (L3 content packs + L4 SQLite + JSON Schema + CI lint) remains queued. Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
+- [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md) — per-track SHA-1 matching for disc-shape systems (4 phases, ~3-4 weeks). Planning locked 2026-06-02; queued in NEXT.md HIGH band as "needed to help new users out." Closes the canonical-identification gap for PSX / Saturn / Sega CD / Dreamcast / NeoCD / PCE-CD / PC-FX / 3DO / GameCube / PSP / PS2 — cart ROMs get SHA-1 lookup today; disc-shape systems will get the same machinery via per-track hashing against redump's per-track SHA-1 entries.
 
 ## Setup reference (off-repo)
 

@@ -277,6 +277,58 @@ Surface structured reference data per game in OA's library — date, publisher, 
 
 ---
 
+## NEXT MAJOR ARC — Per-track SHA-1 matching for disc-shape systems
+
+**Planning locked 2026-06-02.** Full plan at
+[docs/PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md).
+**Operator priority: high — "needed to help new users out."**
+
+Cart-shape ROMs get full canonical identification today (SHA-1 →
+no-intro dat → title / serial / year / publisher stamped on the
+library row). Disc-shape systems do NOT — PSX / Saturn / Sega CD /
+Dreamcast / Neo Geo CD / PC Engine CD / PC-FX / 3DO / GameCube /
+PSP / PS2 dumps stay with whatever filename the operator's dump
+tool produced. Cover-art sync falls back to fuzzy filename match;
+year + publisher stay blank for the entire disc-game half of the
+library; DISCOVER's "By era" / "By publisher" axes go empty.
+
+Disc-ID extraction (the existing SYSTEM.CNF / IP.BIN serial-lookup
+path) closes some of the gap by matching against redump's `serial`
+field, but coverage isn't complete (homebrew, prototypes, region
+variants, truncated-serial dumps). Per-track SHA-1 matching closes
+the rest.
+
+**Scope (per plan §"Sizing"):** ~3-4 weeks across 4 phases.
+- **Phase 1** (~1 week) — schema (`rom_hashes_tracks` table or
+  extend `rom_hashes` with track_number column), `parse_libretro_dat`
+  extension to emit per-track rows, sync flow update.
+- **Phase 2** (~1 week) — per-track byte extraction for
+  `.cue + .bin` / `.chd` / `.gdi` / `.iso`, mode-aware sector
+  unwrapping, cancellable streaming SHA-1 per track.
+- **Phase 3** (~1 week) — `resolve_disc_hashes_for_system` Tauri
+  command, per-disc nested progress UI ("23 of 100 discs / Track
+  3 of 5"), library write that stamps canonical title + per-track
+  cache on the game row.
+- **Phase 4** (~3-4 days) — operator playtest on real PSX /
+  Saturn / Dreamcast folders. Hit-rate measurement target: 95%+
+  of redump-cataloged dumps identify cleanly. Per-core
+  README updates.
+
+**Critical open questions** (resolve before Phase 2):
+- Track-hashing convention — does redump hash MODE1/2352 tracks as
+  full 2352 bytes or just the 2048 user payload? Needs empirical
+  verification against a known disc + a known SHA-1.
+- Schema shape — separate `rom_hashes_tracks` table vs extended
+  `rom_hashes`. Depends on downstream-consumer count.
+- `.chd` per-track byte extraction — chd-crate API needs investigation.
+
+**Position:** queued in HIGH band — operator-driven "we need to plan
+soon" framing. Awaiting fresh green-light to kick off Phase 1.
+After kickoff, can pipeline alongside Slice 3 of the per-system
+descriptor consolidation (independent scopes).
+
+---
+
 ## HIGH — ready to ship next
 
 These are operator-independent and the infrastructure they sit on already exists.
