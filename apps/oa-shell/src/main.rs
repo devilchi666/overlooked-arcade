@@ -2946,6 +2946,43 @@ fn main() {
                                         ),
                                     }
                                 }
+
+                                // Phase 3a — register per-kind resumers
+                                // BEFORE the dispatcher runs. Only
+                                // core_download in Phase 3a; Phase 3b adds
+                                // artwork_sync + hash_resolve; Phase 4
+                                // wires the rest. Rows whose kind has no
+                                // registered resumer stay `interrupted`
+                                // and log a warn (see
+                                // resume_interrupted_jobs).
+                                registry.register_resumer(std::sync::Arc::new(
+                                    core_installer::CoreDownloadResumer::new(
+                                        resolve_cores_dir(),
+                                    ),
+                                ));
+
+                                // Phase 3a auto-resume dispatch — pick up
+                                // every `interrupted` row (whether from
+                                // crash detection just now OR from a
+                                // clean shutdown that happened to fire
+                                // mark_paused mid-stream). The dispatcher
+                                // spawns per-kind workers via
+                                // tauri::async_runtime; this call returns
+                                // immediately.
+                                let app_handle_for_resume = app.handle().clone();
+                                match registry
+                                    .resume_interrupted_jobs(&app_handle_for_resume)
+                                {
+                                    Ok(0) => {}
+                                    Ok(n) => log::info!(
+                                        "background_jobs: dispatched {n} resume worker(s) for \
+                                         interrupted rows"
+                                    ),
+                                    Err(e) => log::warn!(
+                                        "background_jobs: resume_interrupted_jobs failed: {e}"
+                                    ),
+                                }
+
                                 app.manage(registry);
                             }
                             Err(e) => {
