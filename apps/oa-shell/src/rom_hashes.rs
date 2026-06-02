@@ -617,14 +617,47 @@ pub async fn sync_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomHashSyncSummary, String> {
+    use tauri::Manager;
     // Per-system op gate (H11) — see sync_media_for_system in media.rs.
     let gate = state.gate_for(&systemId);
     let _gate_guard = gate.lock().await;
+
+    // Phase 4a dat_sync wiring — register the job before the work
+    // starts. Atomic single fetch + parse; bar shows
+    // running → 100% → done. Soft-fail when the registry isn't
+    // managed (matches the wiring shape every other kind uses).
+    let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
+    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
+        let label = format!("Updating ROM database — {}", systemId);
+        match reg.create_job(
+            crate::job_registry::JobKind::DatSync {
+                system_id: systemId.clone(),
+            },
+            label,
+            Some(systemId.clone()),
+            None,
+            false,
+            "entries",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = reg.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(dat_sync) failed: {e}");
+                None
+            }
+        }
+    });
 
     let app_data_dir = state.app_data_dir.clone();
     let refs = libretro_dat_refs_for_system_resolved(&systemId);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {systemId}; skipping sync");
+        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+            let _ = reg.mark_completed(id);
+        }
         return Ok(RomHashSyncSummary {
             system_id: systemId,
             upstream_entries: 0,
@@ -667,6 +700,10 @@ pub async fn sync_rom_hashes_for_system(
                     written,
                     from_cache: true,
                 });
+                if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+                    let _ = reg.progress(id, upstream_entries as i64, Some(upstream_entries as i64));
+                    let _ = reg.mark_completed(id);
+                }
                 return Ok(RomHashSyncSummary {
                     system_id: systemId,
                     upstream_entries,
@@ -689,6 +726,9 @@ pub async fn sync_rom_hashes_for_system(
                 log::warn!(
                     "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
                 );
+                if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+                    let _ = reg.mark_completed(id);
+                }
                 return Ok(RomHashSyncSummary {
                     system_id: systemId,
                     upstream_entries: 0,
@@ -729,6 +769,13 @@ pub async fn sync_rom_hashes_for_system(
         from_cache: false,
     };
     let _ = app.emit("oa://rom-hashes-synced", &summary);
+    // Phase 4a dat_sync — finalize the registry row. Same shape as
+    // the early-return paths above (cache hit, empty refs, 404 dat) —
+    // each one finalizes its own outcome via finalize_dat_sync.
+    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+        let _ = reg.progress(id, upstream_entries as i64, Some(upstream_entries as i64));
+        let _ = reg.mark_completed(id);
+    }
     Ok(summary)
 }
 
@@ -950,6 +997,7 @@ pub async fn resolve_rom_hashes_for_system(
     state: tauri::State<'_, crate::media::MediaState>,
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<RomResolveSummary, String> {
+    use tauri::Manager;
     // Per-system op gate (H11) — held for the lifetime of this call.
     // resolve_rom_hashes_for_system also calls sync_rom_hashes_for_system
     // inline (auto-sync block below) — but that's a function inlined
@@ -959,6 +1007,36 @@ pub async fn resolve_rom_hashes_for_system(
     // parse + apply steps.
     let gate = state.gate_for(&systemId);
     let _gate_guard = gate.lock().await;
+
+    // Phase 4a hash_resolve wiring — register the job up front so the
+    // bar surfaces "Identifying {system} ROMs" with a real n_hashed /
+    // n_total. Total settles once `db.list_games_missing_hash` returns
+    // (`total` local below); we tick progress after every per-game
+    // iteration. Soft-fail when the registry isn't managed.
+    let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
+    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
+        let label = format!("Identifying {} ROMs", systemId);
+        match reg.create_job(
+            crate::job_registry::JobKind::HashResolve {
+                system_id: systemId.clone(),
+            },
+            label,
+            Some(systemId.clone()),
+            None,
+            false,
+            "games",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = reg.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(hash_resolve) failed: {e}");
+                None
+            }
+        }
+    });
 
     // Auto-sync if our local rom_hashes table is empty for this system.
     // Without this, "Identify ROMs" against an unsynced system returns
@@ -1006,6 +1084,9 @@ pub async fn resolve_rom_hashes_for_system(
             "rom_hashes: resolve {systemId} — no canonical entries available, returning early",
         );
         let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
+        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+            let _ = reg.mark_completed(id);
+        }
         return Ok(summary);
     }
     // Tiny in-process cache so re-hashing identical files in this batch
@@ -1108,6 +1189,13 @@ pub async fn resolve_rom_hashes_for_system(
     let mut done = 0usize;
     for g in games {
         done += 1;
+        // Phase 4a hash_resolve — registry tick. Total is fixed
+        // (`total` set above from list_games_missing_hash). 1 Hz
+        // SQLite debounce + 10 Hz Tauri event cap inside `progress`
+        // keeps the tight loop's overhead nil.
+        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+            let _ = reg.progress(id, done as i64, Some(total as i64));
+        }
         let ext = std::path::Path::new(g.archive_inner_path.as_deref().unwrap_or(&g.file_path))
             .extension()
             .and_then(|s| s.to_str())
@@ -1375,6 +1463,14 @@ pub async fn resolve_rom_hashes_for_system(
         summary.scanned, summary.matched, summary.unmatched, summary.skipped_cd, summary.errors,
     );
     let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
+    // Phase 4a hash_resolve — finalize the registry row at the end
+    // of the per-game iteration. Early-error paths above use `?` and
+    // would leave the row in `running` until the next launch's
+    // promote_running_rows_to_interrupted sweep; rare enough to defer
+    // a clean wrap to Phase 4b.
+    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+        let _ = reg.mark_completed(id);
+    }
     Ok(summary)
 }
 

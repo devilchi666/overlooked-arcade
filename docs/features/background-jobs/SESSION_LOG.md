@@ -7,6 +7,74 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-02 — Phase 4a wires 4 more kinds (`feat/background-jobs-phase-4a`)
+
+**Shipped:** Phase 4a (the first half of the original Phase 4 scope —
+matching the Phase 3 split convention). Four phase commits.
+
+- **Slice A — JobKind variants** (`4bbb40b`). New enum arms in
+  `apps/oa-shell/src/job_registry.rs`: `FolderScan { folder }`,
+  `HashResolve { system_id }`, `DatSync { system_id }`,
+  `MameListxmlImport`. `discriminator` + `target_id` impls so the
+  SQL row's `kind` + `target_id` columns get the right values per
+  plan §"Kind taxonomy." The frontend `KIND_GLYPH` map already
+  covers all nine plan kinds (seeded back in Phase 2 Slice C), so
+  no frontend change.
+- **Slice B — folder_scan wired** (`cdb17e0`).
+  `scan_service::run_scan_blocking` + the inner `walk` now take
+  `Option<&JobRegistry>` + `Option<i64>` and tick `progress(files_seen,
+  None)` at every throttled emit point (~12 Hz; registry debounces to
+  1 Hz internally). Total stays None because the file count is
+  unknown until the walk finishes — the bar's indeterminate stripe
+  kicks in. `main.rs::start_background_scan` registers the
+  FolderScan job, uses the JobHandle's `cancel` AtomicBool as the
+  shared cancel flag (bar cancel button + `cancel_background_scan`
+  Tauri command both flip the same flag), and finalizes via
+  mark_cancelled / mark_completed / mark_failed at the end of
+  spawn_blocking.
+- **Slice C — hash_resolve + dat_sync wired** (`0088ae4`). Both
+  Tauri commands in `rom_hashes.rs`. DatSync is atomic — create_job
+  + mark_running, mark_completed at each return point (success,
+  empty-refs, cache-hit, 404-dat). HashResolve ticks
+  `progress(done, Some(total))` after each per-game iteration's
+  `done += 1`. Labels follow plan §"Kind taxonomy" — "Updating ROM
+  database — {system_id}" + "Identifying {system_id} ROMs."
+- **Slice D — mame_listxml_import wired** (`4d99382`). The
+  `refresh_mame_system_info` Tauri command wraps the underlying
+  sync `mame_import::refresh_mame_system_info` body. Atomic-retry
+  kind: bar shows running → indeterminate stripe → done. On
+  success, finalize emits a synthetic `progress(N, Some(N))` so
+  the row's final state shows the total records refreshed.
+
+660 of 660 oa-shell tests green.
+
+**Almost:** End-to-end manual smoke test for the new surfaces:
+1. Import wizard → start a folder scan → bar surfaces "Scanning
+   {folder}" with files_seen ticking up. Cancel from the bar →
+   walk stops at the next entry, row vanishes. Cancel from the
+   wizard's existing button → same outcome (they share the
+   AtomicBool now).
+2. Settings → Library → identify ROMs button on a system →
+   bar surfaces "Updating ROM database — {system}" briefly
+   (DatSync) then "Identifying {system} ROMs" (HashResolve) with
+   n_hashed / n_total ticking up smoothly.
+3. Settings → MAME → Refresh MAME system info → bar surfaces
+   "Refreshing MAME catalog" with indeterminate stripe; lands on
+   done with the systems+games count.
+4. Kill the app mid-scan → relaunch → log warns "no resumer
+   registered for kind folder_scan" + the row stays interrupted
+   (Phase 3b adds the resumers).
+
+**Next:** Phase 4b — the remaining kinds + orchestration:
+artwork_sync + metadata_sync (the giant sync_media_for_system
+body), bulk_core_install with parent-row aggregation, the
+dependency graph (parent_job_id chain + auto-trigger prereqs so
+HashResolve auto-spawns DatSync as a visible child rather than
+inlining it silently), per-kind retry policy. Then the bigger
+Phase 4 stuff folds back into the arc plan.
+
+---
+
 ## 2026-06-02 — Phase 3a ships the JobResumer + pause/resume bridge (`feat/background-jobs-phase-3a`)
 
 **Shipped:** Phase 3a (the first half of the original Phase 3 scope,
