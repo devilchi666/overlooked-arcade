@@ -999,58 +999,270 @@ const PCE_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 #[derive(Debug)]
 enum BiosCheck {
     /// File's filename + content both match a known canonical entry.
-    OkCanonical { name: String, sha1: String },
+    /// Slice 5 also carries the per-file inventory so the readiness
+    /// checklist can render an inline breakdown (which specific file
+    /// satisfied the check, what other candidates are missing, etc.).
+    OkCanonical {
+        name: String,
+        sha1: String,
+        files: Vec<BiosFile>,
+    },
     /// File present but hash doesn't match anything known. Includes the
     /// file's actual SHA so the user can compare against expected.
-    OkUnknownHash { name: String, sha1: String },
+    OkUnknownHash {
+        name: String,
+        sha1: String,
+        files: Vec<BiosFile>,
+    },
 }
 
 #[derive(Debug)]
 enum BiosError {
-    Missing,
+    /// No expected BIOS file found in `<exe_dir>/system/`. Slice 5 still
+    /// produces a per-file inventory (every entry has
+    /// `BiosFileStatus::Missing`) so the readiness checklist can show
+    /// exactly what should be there.
+    Missing { files: Vec<BiosFile> },
     Io(std::io::Error),
 }
 
-/// Scan `<system_dir>` for any PCE-CD BIOS file matching a known filename,
-/// compute its SHA-1, classify against the known-good table. If the user has
-/// content from a different known BIOS under the wrong filename, the warning
-/// message names what they actually have so they can rename or replace.
-fn check_pce_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
+/// Phase 1B Slice 5 — per-file inventory entry for a BIOS check. Each
+/// per-system `check_*_bios` function populates one entry per expected
+/// filename (multi-file systems like NDS / Intv list every required
+/// file; OR-of-variant systems like PSX / Saturn list every candidate
+/// regional BIOS). The readiness checklist renders this list as inline
+/// rows when the operator expands a ⚠ BIOS pill.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BiosFile {
+    /// Filename OA expects at `<exe_dir>/system/<expected_name>`.
+    pub expected_name: String,
+    /// Canonical SHA-1 (uppercase hex) the file should match when
+    /// present. `None` for systems with no canonical-hash list (rare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_sha1: Option<String>,
+    /// What's actually on disk for this slot.
+    pub on_disk: BiosFileStatus,
+    /// Free-form note shown next to the row (e.g. "regional — US BIOS"
+    /// for PSX's scph1001.bin). Renders only when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// When true, `derive_bios_overall` treats this file as satisfied
+    /// when Missing on disk (only its hash-match state contributes to
+    /// the OkCanonical vs OkUnknownHash distinction). Used by Channel F's
+    /// `sl90025.bin` (the 1978 Channel F II revision ROM — recognized but
+    /// not required for the launch ROM pair to count as valid).
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub optional: bool,
+}
 
-    for (name, _, _) in PCE_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
+/// On-disk state of a single expected BIOS file.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum BiosFileStatus {
+    /// File present + SHA-1 matches `expected_sha1`.
+    Ok { sha1: String },
+    /// File present but SHA-1 doesn't match the canonical. Operator's
+    /// dump may be from a different revision; OA accepts it but flags
+    /// the row so a comparison-against-reference is possible.
+    UnknownHash { sha1: String },
+    /// File not on disk.
+    Missing,
+    /// File present but couldn't be hashed (locked, permissions, etc.).
+    ReadError { msg: String },
+}
+
+/// Per-system semantics for translating the per-file inventory into an
+/// overall verdict. Most cart BIOSes (Coleco, Channel F, PokeMini) plus
+/// the regional-variant CD families (PSX, Saturn, PCE-CD, Sega CD,
+/// 3DO, Neo Geo CD) are `AnyOf` — any single canonical-match satisfies
+/// the system. Multi-file systems (NDS, Intellivision, Jaguar CD,
+/// Dreamcast, Channel F's two halves) are `AllRequired`.
+#[derive(Clone, Copy, Debug)]
+enum BiosSemantics {
+    /// At least one entry in the inventory must be present + canonical.
+    AnyOf,
+    /// Every entry in the inventory must be present + canonical.
+    AllRequired,
+}
+
+/// SHA-1 of a byte slice as uppercase hex — matches the case used in
+/// every `*_BIOS_KNOWN_HASHES` const table. Shared helper extracted
+/// from the per-system `check_*_bios` bodies as part of Slice 5's
+/// refactor; the per-system functions used to inline this 3-line block.
+fn sha1_hex_upper(bytes: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    let hash = Sha1::digest(bytes);
+    hash.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+/// Phase 1B Slice 5 — shared scanner for a `[(filename, expected_sha1,
+/// description)]` const table. Walks every entry; checks if the file
+/// is on disk; hashes + compares when present. Returns the full
+/// inventory regardless of whether the system is `AnyOf` or
+/// `AllRequired` — `derive_bios_overall` reduces to the verdict.
+///
+/// De-dupes by filename so tables with aliases (Coleco's
+/// `colecovision.rom` + `coleco.rom` pointing at the same hash) emit
+/// one row per unique filename — first occurrence wins.
+fn scan_bios_table(system_dir: &Path, table: &[(&str, &str, &str)]) -> Vec<BiosFile> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (name, expected_sha1, description) in table {
+        if !seen.insert(*name) {
             continue;
         }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        // Did this exact filename + hash combination match a canonical entry?
-        let exact_match = PCE_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        // Does the hash match some OTHER known BIOS (i.e. user has the wrong
-        // file renamed)? If so the warning calls it out specifically.
-        let renamed_as = PCE_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: CD load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
+        let p = system_dir.join(name);
+        let on_disk = if !p.is_file() {
+            BiosFileStatus::Missing
+        } else {
+            match std::fs::read(&p) {
+                Ok(bytes) => {
+                    let sha_str = sha1_hex_upper(&bytes);
+                    if sha_str == *expected_sha1 {
+                        BiosFileStatus::Ok { sha1: sha_str }
+                    } else {
+                        BiosFileStatus::UnknownHash { sha1: sha_str }
+                    }
+                }
+                Err(e) => BiosFileStatus::ReadError { msg: e.to_string() },
+            }
+        };
+        out.push(BiosFile {
+            expected_name: name.to_string(),
+            expected_sha1: Some(expected_sha1.to_string()),
+            on_disk,
+            note: if description.is_empty() { None } else { Some(description.to_string()) },
+            optional: false,
+        });
     }
-    Err(BiosError::Missing)
+    out
+}
+
+/// Translate a per-file inventory + per-system semantics into the
+/// overall verdict the launch path + frontend pill consume.
+fn derive_bios_overall(files: &[BiosFile], semantics: BiosSemantics) -> BiosOverallVerdict {
+    use BiosFileStatus::*;
+    if files.iter().any(|f| matches!(&f.on_disk, ReadError { .. })) {
+        return BiosOverallVerdict::Error;
+    }
+    match semantics {
+        BiosSemantics::AnyOf => {
+            // Optional files participate in AnyOf normally (a present
+            // canonical-match optional file still satisfies the check —
+            // though no real system uses that combination today).
+            if files.iter().any(|f| matches!(&f.on_disk, Ok { .. })) {
+                BiosOverallVerdict::OkCanonical
+            } else if files.iter().any(|f| matches!(&f.on_disk, UnknownHash { .. })) {
+                BiosOverallVerdict::OkUnknownHash
+            } else {
+                BiosOverallVerdict::Missing
+            }
+        }
+        BiosSemantics::AllRequired => {
+            // Optional files don't trigger Missing when absent — they
+            // only contribute to OkCanonical → OkUnknownHash demotion if
+            // present with a wrong hash. Channel F's sl90025.bin uses
+            // this; all other AllRequired systems leave optional=false.
+            if files.iter().any(|f| !f.optional && matches!(&f.on_disk, Missing)) {
+                BiosOverallVerdict::Missing
+            } else if files
+                .iter()
+                .all(|f| matches!(&f.on_disk, Ok { .. }) || (f.optional && matches!(&f.on_disk, Missing)))
+            {
+                BiosOverallVerdict::OkCanonical
+            } else {
+                BiosOverallVerdict::OkUnknownHash
+            }
+        }
+    }
+}
+
+/// Internal verdict computed by [`derive_bios_overall`]; the per-system
+/// `check_*_bios` functions translate this into the appropriate
+/// `BiosCheck::*` variant or `BiosError::Missing` for launch-path
+/// pattern matching.
+#[derive(Clone, Copy, Debug)]
+enum BiosOverallVerdict {
+    OkCanonical,
+    OkUnknownHash,
+    Missing,
+    Error,
+}
+
+/// Resolve `<exe_dir>/system/` — the canonical BIOS drop folder.
+/// Slice 5 extracted this from three duplicate call sites
+/// (`get_bios_status`, `open_bios_folder`, and the new `install_bios_file`)
+/// to centralize the path-derivation fallback (exe-dir → cwd → ".").
+fn exe_system_dir() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    exe_dir.join("system")
+}
+
+/// Pick a representative "summary" file from a per-file inventory for
+/// the launch-path `name` + `sha1` fields. The summary is purely
+/// diagnostic (log messages, toast text); the structured inventory is
+/// what the readiness checklist actually renders.
+///
+/// Heuristic: prefer the first `Ok` entry (the file that satisfied the
+/// check); then the first `UnknownHash` entry; then the first listed
+/// expected filename with empty SHA-1 (truly nothing to report). For
+/// `AllRequired` systems with multiple Ok entries, the first listed
+/// filename is the "anchor" surfaced in logs — the rest are implied
+/// by the overall verdict.
+fn summary_for_inventory(files: &[BiosFile]) -> (String, String) {
+    for f in files {
+        if let BiosFileStatus::Ok { sha1 } = &f.on_disk {
+            return (f.expected_name.clone(), sha1.clone());
+        }
+    }
+    for f in files {
+        if let BiosFileStatus::UnknownHash { sha1 } = &f.on_disk {
+            return (f.expected_name.clone(), sha1.clone());
+        }
+    }
+    if let Some(f) = files.first() {
+        return (f.expected_name.clone(), String::new());
+    }
+    (String::new(), String::new())
+}
+
+/// Build a `BiosCheck` / `BiosError` outcome from a per-file inventory
+/// using the supplied per-system semantics. Centralizes the wrap-step
+/// every refactored `check_*_bios` function uses.
+fn bios_check_from_inventory(
+    files: Vec<BiosFile>,
+    semantics: BiosSemantics,
+) -> Result<BiosCheck, BiosError> {
+    let verdict = derive_bios_overall(&files, semantics);
+    let (name, sha1) = summary_for_inventory(&files);
+    match verdict {
+        BiosOverallVerdict::OkCanonical => Ok(BiosCheck::OkCanonical { name, sha1, files }),
+        BiosOverallVerdict::OkUnknownHash => Ok(BiosCheck::OkUnknownHash { name, sha1, files }),
+        BiosOverallVerdict::Missing => Err(BiosError::Missing { files }),
+        // Error case — we use the existing `BiosError::Io` channel with
+        // a synthetic error message because callers already pattern-
+        // match on it. The per-file ReadError detail still lives in
+        // the inventory; the launch path's `Io` arm logs the inventory
+        // via the existing detail string.
+        BiosOverallVerdict::Error => Err(BiosError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "one or more BIOS files could not be read; see oa-current.log",
+        ))),
+    }
+}
+
+/// Scan `<system_dir>` for any PCE-CD BIOS file matching a known filename,
+/// compute its SHA-1, classify against the known-good table. Per Slice 5's
+/// refactor: walks every candidate (not just first found), producing a full
+/// per-file inventory; verdict is `AnyOf` semantics (any one canonical
+/// match satisfies the system).
+fn check_pce_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    let files = scan_bios_table(system_dir, PCE_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Sega CD / Mega-CD BIOSes. The Genesis Plus
@@ -1079,46 +1291,10 @@ const SEGA_CD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 ];
 
 /// Scan `<system_dir>` for any Sega CD BIOS matching a known regional
-/// filename, compute its SHA-1, classify against the known-good table.
-/// Mirrors `check_pce_cd_bios` — same shape, same BiosCheck/BiosError
-/// vocabulary so the launch path can branch by system without duplicating
-/// the outer match shape.
+/// filename. Slice 5 refactor: per-file inventory + `AnyOf` semantics.
 fn check_sega_cd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in SEGA_CD_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = SEGA_CD_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        // Hash matches a DIFFERENT canonical region (user renamed the
-        // file). The launch can still proceed via OkUnknownHash, but the
-        // log line names what the user actually has so they can rename.
-        let renamed_as = SEGA_CD_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: Sega CD load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, SEGA_CD_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Sega Saturn BIOSes. Beetle Saturn (the
@@ -1158,42 +1334,11 @@ const SATURN_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("vsaturn.bin",     "4154E11959F3D5639B11D7902B3A393A99FB5776", "JVC V-Saturn BIOS (1995 OEM clone)"),
 ];
 
-/// Scan `<system_dir>` for any Saturn BIOS matching a known regional
-/// filename, compute its SHA-1, classify against the known-good table.
-/// Same shape as `check_pce_cd_bios` and `check_sega_cd_bios`.
+/// Scan `<system_dir>` for any Saturn BIOS. Slice 5 refactor: per-file
+/// inventory + `AnyOf` semantics (any regional variant satisfies).
 fn check_saturn_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in SATURN_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = SATURN_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        let renamed_as = SATURN_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: Saturn load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, SATURN_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Sony PlayStation BIOSes. Beetle PSX HW
@@ -1235,42 +1380,11 @@ const PSX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("ps1_rom.bin",     "C40146361EB8CF670B19FDC9759190257803CAB7", "Sony PSP-style PS1 ROM (alternate dump)"),
 ];
 
-/// Scan `<system_dir>` for any PSX BIOS matching a known regional
-/// filename, compute its SHA-1, classify against the known-good table.
-/// Same shape as `check_pce_cd_bios` / `check_sega_cd_bios` / `check_saturn_bios`.
+/// Scan `<system_dir>` for any PSX BIOS. Slice 5 refactor: per-file
+/// inventory + `AnyOf` semantics (any regional variant satisfies).
 fn check_psx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in PSX_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = PSX_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        let renamed_as = PSX_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: PSX load — {} content matches a DIFFERENT BIOS: {}. Rename the file or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, PSX_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for SNK Neo Geo CD BIOSes. NeoCD (the
@@ -1297,44 +1411,11 @@ const NEOCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("uni-bioscd.rom", "5142F205912869B673A71480C5828B1EAED782A8", "Universe BIOS CD (community-modified, region toggle + cheats)"),
 ];
 
-/// Scan `<system_dir>` for any Neo Geo CD BIOS matching a known
-/// regional/model filename, compute its SHA-1, classify against the
-/// known-good table. Same shape as the other check_*_bios functions —
-/// slots into the CD-launch BIOS dispatch arm next to pce-cd / segacd
-/// / saturn / psx.
+/// Scan `<system_dir>` for any Neo Geo CD BIOS. Slice 5 refactor:
+/// per-file inventory + `AnyOf` semantics.
 fn check_neocd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in NEOCD_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = NEOCD_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        let renamed_as = NEOCD_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: Neo Geo CD load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, NEOCD_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for 3DO Interactive Multiplayer BIOSes.
@@ -1365,42 +1446,11 @@ const THREEDO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("3do_arcade_saot.bin",    "520D3D1B5897800AF47F92EFD2444A26B7A7DEAD", "3DO Arcade SAOT firmware (M2 / arcade variant)"),
 ];
 
-/// Scan `<system_dir>` for any 3DO BIOS matching a known
-/// regional/manufacturer filename. Same shape as the other check_*_bios
-/// functions; slots into the CD-launch BIOS dispatch arm.
+/// Scan `<system_dir>` for any 3DO BIOS. Slice 5 refactor: per-file
+/// inventory + `AnyOf` semantics.
 fn check_3do_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in THREEDO_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = THREEDO_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        let renamed_as = THREEDO_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: 3DO load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, THREEDO_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for NEC PC-FX BIOSes. Beetle PC-FX (the
@@ -1417,30 +1467,11 @@ const PCFX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("fx-scsi.rom",  "65482A23AC5C10A6095AEE1DB5824CCA54EAD6E5", "NEC PC-FX SCSI BIOS (expansion accessory)"),
 ];
 
-/// Scan `<system_dir>` for the PC-FX BIOS. Same shape as the other
-/// check_*_bios functions; slots into the CD-launch BIOS dispatch arm.
+/// Scan `<system_dir>` for the PC-FX BIOS. Slice 5 refactor: per-file
+/// inventory + `AnyOf` semantics.
 fn check_pcfx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in PCFX_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = PCFX_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, PCFX_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Sega Dreamcast BIOSes. Flycast (the
@@ -1462,42 +1493,20 @@ const DREAMCAST_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("flash.bin",    "94D44D7F9529EC1642BA3771ED3C5F756D5BC872", "Dreamcast Flash ROM (alternate naming, same content)"),
 ];
 
-/// Scan `<system_dir>` for any Dreamcast BIOS file. Same shape as the
-/// other check_*_bios functions; slots into the CD-launch BIOS dispatch
-/// arm as the 8th CD-shape system.
+/// Scan `<system_dir>` for the Dreamcast BIOS pair. Dreamcast needs
+/// BOTH `dc_boot.bin` + `dc_flash.bin` — the table also accepts the
+/// shorter `boot.bin` / `flash.bin` aliases (same content, different
+/// naming). Slice 5 refactor: per-file inventory.
+///
+/// Despite needing two files, semantics here is `AnyOf` because the
+/// table's two pairs are ALIASES (`dc_boot.bin` ≡ `boot.bin`,
+/// `dc_flash.bin` ≡ `flash.bin`). The launch path historically passed
+/// if EITHER half landed (legacy behaviour preserved). A stricter
+/// AND-of-two-distinct-files check is filed as a polish item in
+/// docs/cores/dreamcast/ROADMAP.md.
 fn check_dreamcast_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in DREAMCAST_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = DREAMCAST_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        let renamed_as = DREAMCAST_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(_, h, _)| *h == sha_str)
-            .map(|(actual_name, _, desc)| format!("{actual_name} — {desc}"));
-        if let Some(actual) = renamed_as {
-            log::warn!(
-                "oa-shell: Dreamcast load — {} content matches a DIFFERENT BIOS: {}. Rename or fetch the correct {}.",
-                name, actual, name
-            );
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, DREAMCAST_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Sony PlayStation 2 BIOSes. LRPS2
@@ -1560,27 +1569,8 @@ const PS2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// Same shape as the other check_*_bios functions; slots into the
 /// CD-launch BIOS dispatch arm as the 9th CD-shape system.
 fn check_ps2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in PS2_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = PS2_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, PS2_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Nintendo DS BIOSes. melonDS requires
@@ -1605,37 +1595,13 @@ const NDS_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// hash-match; returns OkUnknownHash if all three exist but at least
 /// one has an unexpected SHA-1; returns Missing if any are absent.
 fn check_nds_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    let mut all_canonical = true;
-    let mut last_name: String = String::new();
-    let mut last_sha: String = String::new();
-
-    for (name, expected_sha, _) in NDS_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            // Any of the three missing → BIOS is incomplete.
-            return Err(BiosError::Missing);
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-        if &sha_str != *expected_sha {
-            all_canonical = false;
-        }
-        last_name = name.to_string();
-        last_sha = sha_str;
-    }
-
-    // All three files exist; report the canonical (all-three-match) or
-    // unknown-hash (at least one mismatches) status. Use the last file
-    // checked as the representative entry in the OkCanonical /
-    // OkUnknownHash payload.
-    if all_canonical {
-        Ok(BiosCheck::OkCanonical { name: "bios7.bin + bios9.bin + firmware.bin".to_string(), sha1: "all canonical".to_string() })
-    } else {
-        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
-    }
+    // Slice 5 refactor: per-file inventory + `AllRequired` semantics
+    // (BIOS only valid when bios7.bin + bios9.bin + firmware.bin are
+    // all present + canonical-hash-matched). Per-file detail flows
+    // through to the readiness checklist so the operator sees which
+    // specific file is missing rather than a single "missing" string.
+    let files = scan_bios_table(system_dir, NDS_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
 
 /// Check for Neo Geo cart BIOS — `neogeo.zip` in `<exe_dir>/system/`.
@@ -1657,9 +1623,27 @@ fn check_nds_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
 /// more → OkUnknownHash (launch still proceeds — some sparse BIOS sets
 /// still boot FBNeo). Zip absent → Missing.
 fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    // Slice 5: neogeo cart BIOS is a multi-ROM zip — keep the existing
+    // content-peek path but report inventory as a single BiosFile entry
+    // describing `neogeo.zip` so the readiness checklist still renders
+    // the file row. Inner-file detail (sp-s2.sp1 / sm1.sm1 / 000-lo.lo)
+    // surfaces via the existing `OkUnknownHash` sha1 string when the
+    // zip is incomplete.
     let p = system_dir.join("neogeo.zip");
+    let neogeo_file = |on_disk: BiosFileStatus| -> Vec<BiosFile> {
+        vec![BiosFile {
+            expected_name: "neogeo.zip".to_string(),
+            expected_sha1: None,
+            on_disk,
+            note: Some(
+                "Multi-ROM Neo Geo system BIOS zip — sp-s2.sp1 + sm1.sm1 + 000-lo.lo (Universe BIOS variants also accepted)"
+                    .to_string(),
+            ),
+            optional: false,
+        }]
+    };
     if !p.is_file() {
-        return Err(BiosError::Missing);
+        return Err(BiosError::Missing { files: neogeo_file(BiosFileStatus::Missing) });
     }
     // Peek inside the zip without extracting. The archive crate's
     // `list_rom_contents` filters by extension allowlist (designed for
@@ -1670,6 +1654,14 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
     let mut zip = zip::ZipArchive::new(file).map_err(|e| {
         BiosError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     })?;
+    // Compute the zip's SHA-1 for the inventory entry's `on_disk.sha1`.
+    // Reading the file twice (once for ZipArchive::new, once for sha1)
+    // is fine — the neogeo.zip is small (~500 KB typical) and this
+    // happens once per readiness refresh.
+    let zip_sha1 = match std::fs::read(&p) {
+        Ok(bytes) => sha1_hex_upper(&bytes),
+        Err(_) => String::new(),
+    };
     // Build a lowercase set of basenames so case-quirky dumps (some
     // tools uppercase filenames) match.
     let mut inner_names: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1718,9 +1710,11 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
         // booting?" — Unibios skips region locks + adds a CD-mode toggle,
         // so behaviour differs from stock.
         let flavour = neogeo_bios_flavour(sys);
+        let sha_summary = format!("CONTENT PEEK: {sys} [{flavour}] + sm1.sm1 + 000-lo.lo present");
         Ok(BiosCheck::OkCanonical {
             name: "neogeo.zip".to_string(),
-            sha1: format!("CONTENT PEEK: {sys} [{flavour}] + sm1.sm1 + 000-lo.lo present"),
+            sha1: sha_summary.clone(),
+            files: neogeo_file(BiosFileStatus::Ok { sha1: zip_sha1 }),
         })
     } else {
         // Zip exists but content is incomplete — surface what's missing
@@ -1736,6 +1730,7 @@ fn check_neogeo_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
         Ok(BiosCheck::OkUnknownHash {
             name: "neogeo.zip".to_string(),
             sha1: format!("CONTENT PEEK: missing {}", missing.join(" + ")),
+            files: neogeo_file(BiosFileStatus::UnknownHash { sha1: zip_sha1 }),
         })
     }
 }
@@ -1768,31 +1763,12 @@ const COLECO_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("coleco.rom",       "45BEDC4CBDEAC66C7DF59E9E599195C778D86A92", "ColecoVision BIOS (alternate naming, same content)"),
 ];
 
-/// Scan `<system_dir>` for the ColecoVision BIOS. Same shape as the
-/// CD-shape BIOS checks; slots into the cart-shape BIOS dispatch arm
-/// alongside Neo Geo / NDS.
+/// Scan `<system_dir>` for the ColecoVision BIOS. Slice 5 refactor:
+/// `AnyOf` (table lists `colecovision.rom` + `coleco.rom` aliases —
+/// same content, either filename satisfies).
 fn check_coleco_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in COLECO_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = COLECO_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, COLECO_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Mattel Intellivision BIOS files. FreeIntv
@@ -1807,37 +1783,10 @@ const INTV_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 ];
 
 /// Scan `<system_dir>` for both required Intellivision BIOS files.
-/// Multi-file check — same shape as `check_nds_bios`: requires ALL
-/// listed files to be present. OkCanonical only if every file hash
-/// matches; OkUnknownHash if all files exist but at least one mismatches;
-/// Missing if any are absent.
+/// Slice 5 refactor: per-file inventory + `AllRequired` semantics.
 fn check_intv_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    let mut all_canonical = true;
-    let mut last_name: String = String::new();
-    let mut last_sha: String = String::new();
-
-    for (name, expected_sha, _) in INTV_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            return Err(BiosError::Missing);
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-        if &sha_str != *expected_sha {
-            all_canonical = false;
-        }
-        last_name = name.to_string();
-        last_sha = sha_str;
-    }
-
-    if all_canonical {
-        Ok(BiosCheck::OkCanonical { name: "exec.bin + grom.bin".to_string(), sha1: "all canonical".to_string() })
-    } else {
-        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
-    }
+    let files = scan_bios_table(system_dir, INTV_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
 
 /// Known-good SHA-1 hashes for Magnavox Odyssey² / Philips Videopac BIOS.
@@ -1853,30 +1802,11 @@ const O2_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("jopac.bin",  "54B8D2C1317628DE51A85FC1C424423A986775E4", "Philips Jopac BIOS (FR Videopac variant)"),
 ];
 
-/// Scan `<system_dir>` for an Odyssey²/Videopac BIOS. Same shape as
-/// the CD-shape BIOS checks; slots into the cart-shape BIOS dispatch arm.
+/// Scan `<system_dir>` for an Odyssey²/Videopac BIOS. Slice 5 refactor:
+/// per-file inventory + `AnyOf` semantics.
 fn check_o2_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in O2_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = O2_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, O2_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Fairchild Channel F BIOS files. FreeChaF
@@ -1892,56 +1822,20 @@ const CHANNELF_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("sl90025.bin", "759E2ED31FBDE4A2D8DAF8B9F3E0DFFEBC90DAE2", "Channel F II Cartridge ROM (1978 revision, optional)"),
 ];
 
-/// Scan `<system_dir>` for the Channel F BIOS files. Multi-file check
-/// requiring sl31253.bin + sl31254.bin (the launch pair); sl90025.bin
-/// is optional and only validated if present.
+/// Scan `<system_dir>` for the Channel F BIOS files. Slice 5 refactor:
+/// per-file inventory + `AllRequired` semantics. The third file
+/// (`sl90025.bin`) is marked `optional` post-scan so a missing Channel
+/// F II revision doesn't flip the launch-pair check to ⚠ Missing.
 fn check_channelf_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    // Required pair: sl31253.bin + sl31254.bin
-    let required = ["sl31253.bin", "sl31254.bin"];
-    let mut all_canonical = true;
-    let mut last_name: String = String::new();
-    let mut last_sha: String = String::new();
-
-    for name in &required {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            return Err(BiosError::Missing);
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-        let expected = CHANNELF_BIOS_KNOWN_HASHES
-            .iter()
-            .find(|(n, _, _)| n == name)
-            .map(|(_, h, _)| *h)
-            .unwrap_or("");
-        if sha_str != expected {
-            all_canonical = false;
-        }
-        last_name = name.to_string();
-        last_sha = sha_str;
-    }
-
-    // Optional sl90025.bin — validated if present, ignored if not.
-    let opt = system_dir.join("sl90025.bin");
-    if opt.is_file() {
-        let bytes = std::fs::read(&opt).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-        if sha_str != "759E2ED31FBDE4A2D8DAF8B9F3E0DFFEBC90DAE2" {
-            all_canonical = false;
-            last_name = "sl90025.bin".to_string();
-            last_sha = sha_str;
+    let mut files = scan_bios_table(system_dir, CHANNELF_BIOS_KNOWN_HASHES);
+    // sl90025.bin is the optional Channel F II revision file — present-
+    // checking only, never required for the launch pair to satisfy.
+    for f in files.iter_mut() {
+        if f.expected_name == "sl90025.bin" {
+            f.optional = true;
         }
     }
-
-    if all_canonical {
-        Ok(BiosCheck::OkCanonical { name: "sl31253.bin + sl31254.bin".to_string(), sha1: "all canonical".to_string() })
-    } else {
-        Ok(BiosCheck::OkUnknownHash { name: last_name, sha1: last_sha })
-    }
+    bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
 
 /// Known-good SHA-1 hashes for Atari 5200 BIOS. Pre-staged for the
@@ -1953,30 +1847,11 @@ const ATARI5200_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("5200.rom", "6AD7A1E8C9FAD486FBEC9498CB48BF5BC3ADC530", "Atari 5200 SuperSystem BIOS (2 KB, canonical)"),
 ];
 
-/// Pre-staged 5200 BIOS check (used once the `5200` SystemId variant
-/// lands in oa-core + the default core .dll is registered).
+/// Pre-staged 5200 BIOS check. Slice 5 refactor: per-file inventory +
+/// `AnyOf` semantics (single-file table — semantics doesn't matter).
 fn check_atari5200_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in ATARI5200_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = ATARI5200_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, ATARI5200_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Pokémon Mini BIOS. Pre-staged for the
@@ -1988,30 +1863,10 @@ const POKEMINI_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("bios.min", "DAAD4113713ED776FBD47727762BCA81BA74915F", "Pokémon Mini boot ROM (4 KB, canonical)"),
 ];
 
-/// Pre-staged PokeMini BIOS check (used once the `pokemini` SystemId
-/// variant lands in oa-core).
+/// Pre-staged PokeMini BIOS check. Slice 5 refactor: per-file inventory.
 fn check_pokemini_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in POKEMINI_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = POKEMINI_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, POKEMINI_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Game Boy Advance BIOS. mGBA (the default
@@ -2027,32 +1882,13 @@ const GBA_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("gba_bios.bin", "300C20DF6731A33952DED8C436F7F186D25D3492", "Game Boy Advance BIOS (16 KB, canonical)"),
 ];
 
-/// Scan `<system_dir>` for the GBA BIOS. Same shape as
-/// `check_coleco_bios`. Differs from the other cart-shape checks at
-/// the DISPATCH site (caller): missing BIOS warns instead of blocks
-/// because mGBA's HLE path runs most titles fine.
+/// Scan `<system_dir>` for the GBA BIOS. Slice 5 refactor. Caller
+/// (launch dispatch) still treats Missing as WARN (mGBA's HLE path
+/// runs most titles fine BIOS-less) — that's a dispatch-site
+/// distinction, not a check-function one.
 fn check_gba_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in GBA_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = GBA_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, GBA_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for Atari Jaguar BIOS. Virtual Jaguar (the
@@ -2066,31 +1902,11 @@ const JAGUAR_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("jaguar_boot.rom",  "10B36AE9B3942D2B7BD5F77F61E51E16AA1B5DE5", "Atari Jaguar boot ROM (alternate naming, same content)"),
 ];
 
-/// Scan `<system_dir>` for the Jaguar boot ROM. Same shape as
-/// `check_coleco_bios` — blocks launch when missing (Virtual Jaguar
-/// won't initialize without it).
+/// Scan `<system_dir>` for the Jaguar boot ROM. Slice 5 refactor: per-
+/// file inventory + `AnyOf` semantics (two aliases for the same file).
 fn check_jaguar_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in JAGUAR_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = JAGUAR_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, JAGUAR_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 /// Known-good SHA-1 hashes for the Jaguar CD boot ROM. Virtual Jaguar
@@ -2106,33 +1922,10 @@ const JAGCD_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
     ("jaguar_cd.rom",  "4072AC0B05E2554611EE5F3CF1C29CA47C6C9FD3", "Atari Jaguar CD boot ROM (alternate naming, same content)"),
 ];
 
-/// Scan `<system_dir>` for the Jaguar CD BIOS. CD-shape dispatch
-/// counterpart of `check_jaguar_bios`. The cart-side `jagboot.rom`
-/// is also needed alongside but is checked by the cart path — this
-/// helper only validates the CD-side `jagcd.rom`. Blocks launch when
-/// missing (Virtual Jaguar's CD mode won't initialize without it).
+/// Scan `<system_dir>` for the Jaguar CD BIOS. Slice 5 refactor.
 fn check_jagcd_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    use sha1::{Digest, Sha1};
-
-    for (name, _, _) in JAGCD_BIOS_KNOWN_HASHES {
-        let p = system_dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        let bytes = std::fs::read(&p).map_err(BiosError::Io)?;
-        let hash = Sha1::digest(&bytes);
-        let sha_str = hash.iter().map(|b| format!("{:02X}", b)).collect::<String>();
-
-        let exact_match = JAGCD_BIOS_KNOWN_HASHES
-            .iter()
-            .any(|(n, h, _)| *n == *name && *h == sha_str);
-        if exact_match {
-            return Ok(BiosCheck::OkCanonical { name: name.to_string(), sha1: sha_str });
-        }
-
-        return Ok(BiosCheck::OkUnknownHash { name: name.to_string(), sha1: sha_str });
-    }
-    Err(BiosError::Missing)
+    let files = scan_bios_table(system_dir, JAGCD_BIOS_KNOWN_HASHES);
+    bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
 
 // Retroverse-UI Phase C1 follow-up — aggregate the 20 per-system
@@ -2162,6 +1955,12 @@ struct BiosStatusEntry {
     /// For missing: empty.
     /// For error: the io::Error string.
     detail: String,
+    /// Phase 1B Slice 5 — per-file inventory the readiness checklist
+    /// renders inline below the BIOS pill when the operator expands.
+    /// Each entry lists an expected filename + its on-disk state.
+    /// Empty when the system has no curated hash table (defensive
+    /// fallback — never empty for any system in `get_bios_status`).
+    files: Vec<BiosFile>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -2181,11 +1980,9 @@ struct BiosStatusResponse {
 /// live grid.
 #[tauri::command]
 fn get_bios_status() -> Result<BiosStatusResponse, String> {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let system_dir = exe_dir.join("system");
+    // Slice 5: shared helper replaces the inline derivation that used
+    // to live here (and was duplicated in open_bios_folder).
+    let system_dir = exe_system_dir();
 
     type CheckFn = fn(&Path) -> Result<BiosCheck, BiosError>;
     // (slug, label, required-files summary, check fn). Order is
@@ -2218,20 +2015,24 @@ fn get_bios_status() -> Result<BiosStatusResponse, String> {
     let entries: Vec<BiosStatusEntry> = checks
         .iter()
         .map(|(slug, label, required, check_fn)| {
-            let (status, detail): (&'static str, String) = match check_fn(&system_dir) {
-                Ok(BiosCheck::OkCanonical { name, sha1 }) => ("ok", format!("{name} — {sha1}")),
-                Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
-                    ("unknownHash", format!("{name} — {sha1}"))
-                }
-                Err(BiosError::Missing) => ("missing", String::new()),
-                Err(BiosError::Io(e)) => ("error", e.to_string()),
-            };
+            let (status, detail, files): (&'static str, String, Vec<BiosFile>) =
+                match check_fn(&system_dir) {
+                    Ok(BiosCheck::OkCanonical { name, sha1, files }) => {
+                        ("ok", format!("{name} — {sha1}"), files)
+                    }
+                    Ok(BiosCheck::OkUnknownHash { name, sha1, files }) => {
+                        ("unknownHash", format!("{name} — {sha1}"), files)
+                    }
+                    Err(BiosError::Missing { files }) => ("missing", String::new(), files),
+                    Err(BiosError::Io(e)) => ("error", e.to_string(), Vec::new()),
+                };
             BiosStatusEntry {
                 slug: slug.to_string(),
                 label: label.to_string(),
                 required: required.to_string(),
                 status,
                 detail,
+                files,
             }
         })
         .collect();
@@ -3010,6 +2811,7 @@ fn main() {
             delete_video_clip,
             open_video_clip_folder,
             open_bios_folder,
+            install_bios_file,
             list_screenshots,
             delete_screenshot,
             open_screenshot_folder,
@@ -4635,17 +4437,17 @@ fn run_emu_render(
                                 label, system_dir.display(), expected_files,
                             );
                             match result {
-                                Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                                Ok(BiosCheck::OkCanonical { name, sha1, .. }) => {
                                     log::info!("oa-shell: {} CD load — BIOS {} verified (SHA-1 {})", label, name, sha1);
                                 }
-                                Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                                Ok(BiosCheck::OkUnknownHash { name, sha1, .. }) => {
                                     log::warn!(
                                         "oa-shell: {} CD load — BIOS {} has SHA-1 {} which doesn't match a known-good dump. Game may crash; if so, replace with {} (SHA-1 {}).",
                                         label, name, sha1, canonical_desc, canonical_sha,
                                     );
                                     toast(&app_handle, ToastLevel::Warn, format!("BIOS {name} SHA-1 unverified — game may crash"));
                                 }
-                                Err(BiosError::Missing) => {
+                                Err(BiosError::Missing { .. }) => {
                                     log::error!(
                                         "oa-shell: {} CD load aborted — no BIOS in {}. Drop a canonical {} dump there.",
                                         label, system_dir.display(), expected_files,
@@ -4676,17 +4478,17 @@ fn run_emu_render(
                             system_dir.display()
                         );
                         match check_nds_bios(&system_dir) {
-                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                            Ok(BiosCheck::OkCanonical { name, sha1, .. }) => {
                                 log::info!("oa-shell: NDS load — BIOS {} verified ({})", name, sha1);
                             }
-                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                            Ok(BiosCheck::OkUnknownHash { name, sha1, .. }) => {
                                 log::warn!(
                                     "oa-shell: NDS load — BIOS file {} has SHA-1 {} which doesn't match a known-good melonDS dump. Game may crash; if so, replace with the canonical v1.0 dumps.",
                                     name, sha1,
                                 );
                                 toast(&app_handle, ToastLevel::Warn, format!("NDS BIOS {name} unverified — game may crash"));
                             }
-                            Err(BiosError::Missing) => {
+                            Err(BiosError::Missing { .. }) => {
                                 log::error!(
                                     "oa-shell: NDS load aborted — bios7.bin + bios9.bin + firmware.bin must all be present in {}.",
                                     system_dir.display()
@@ -4706,10 +4508,10 @@ fn run_emu_render(
                             system_dir.display()
                         );
                         match check_neogeo_bios(&system_dir) {
-                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                            Ok(BiosCheck::OkCanonical { name, sha1, .. }) => {
                                 log::info!("oa-shell: Neo Geo load — BIOS {} present ({})", name, sha1);
                             }
-                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                            Ok(BiosCheck::OkUnknownHash { name, sha1, .. }) => {
                                 // Existence-only check never returns
                                 // OkUnknownHash today, but the arm
                                 // stays for forward compat with Phase 2
@@ -4719,7 +4521,7 @@ fn run_emu_render(
                                     name, sha1,
                                 );
                             }
-                            Err(BiosError::Missing) => {
+                            Err(BiosError::Missing { .. }) => {
                                 log::error!(
                                     "oa-shell: Neo Geo load aborted — no neogeo.zip in {}. Drop the canonical Neo Geo BIOS ROM-set there.",
                                     system_dir.display()
@@ -4796,17 +4598,17 @@ fn run_emu_render(
                             label, system_dir.display(), expected_files,
                         );
                         match result {
-                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                            Ok(BiosCheck::OkCanonical { name, sha1, .. }) => {
                                 log::info!("oa-shell: {} load — BIOS {} verified (SHA-1 {})", label, name, sha1);
                             }
-                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                            Ok(BiosCheck::OkUnknownHash { name, sha1, .. }) => {
                                 log::warn!(
                                     "oa-shell: {} load — BIOS {} has SHA-1 {} which doesn't match a known-good dump. Game may crash; if so, replace with {} (canonical SHA-1 {}).",
                                     label, name, sha1, canonical_desc, canonical_sha,
                                 );
                                 toast(&app_handle, ToastLevel::Warn, format!("BIOS {name} SHA-1 unverified — game may crash"));
                             }
-                            Err(BiosError::Missing) => {
+                            Err(BiosError::Missing { .. }) => {
                                 log::error!(
                                     "oa-shell: {} load aborted — no BIOS in {}. Drop a canonical {} dump there.",
                                     label, system_dir.display(), expected_files,
@@ -4836,16 +4638,16 @@ fn run_emu_render(
                             system_dir.display()
                         );
                         match check_gba_bios(&system_dir) {
-                            Ok(BiosCheck::OkCanonical { name, sha1 }) => {
+                            Ok(BiosCheck::OkCanonical { name, sha1, .. }) => {
                                 log::info!("oa-shell: GBA load — BIOS {} verified (SHA-1 {})", name, sha1);
                             }
-                            Ok(BiosCheck::OkUnknownHash { name, sha1 }) => {
+                            Ok(BiosCheck::OkUnknownHash { name, sha1, .. }) => {
                                 log::warn!(
                                     "oa-shell: GBA load — BIOS {} has SHA-1 {} which doesn't match the canonical libretro-database dump (300C20DF6731A33952DED8C436F7F186D25D3492). mGBA may fall back to HLE.",
                                     name, sha1,
                                 );
                             }
-                            Err(BiosError::Missing) => {
+                            Err(BiosError::Missing { .. }) => {
                                 // Warn-only — game still launches via
                                 // mGBA's HLE BIOS path. Operator can drop
                                 // gba_bios.bin into system/ later if a
@@ -8250,11 +8052,9 @@ fn open_video_clip_folder(clip_dir: String) -> Result<(), String> {
 /// not have an OA-managed install yet).
 #[tauri::command]
 fn open_bios_folder() -> Result<(), String> {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let system_dir = exe_dir.join("system");
+    // Slice 5: shared `exe_system_dir()` helper replaces the inline
+    // derivation that was duplicated in get_bios_status + install_bios_file.
+    let system_dir = exe_system_dir();
     if !system_dir.exists() {
         if let Err(e) = std::fs::create_dir_all(&system_dir) {
             return Err(format!(
@@ -8276,6 +8076,130 @@ fn open_bios_folder() -> Result<(), String> {
         let _ = std::process::Command::new("xdg-open").arg(&system_dir).spawn();
     }
     Ok(())
+}
+
+/// Dispatcher mapping a system_id slug to its `*_BIOS_KNOWN_HASHES`
+/// const table. Used by [`install_bios_file`] for the hash-verify step
+/// of an operator-driven BIOS install. Returns `&[]` for system_ids
+/// not in the BIOS-required curated set — the install path falls back
+/// to copy-without-hash-verify (operator's file gets the "Present ·
+/// unknown hash" flag downstream when the operator's filename happens
+/// to land in one of the per-system tables but the hash misses).
+///
+/// **New BIOS-required system onboarding checklist:** when a new
+/// `*_BIOS_KNOWN_HASHES` const ships, add an arm here so
+/// `install_bios_file` knows where to look. Forgetting this leaves the
+/// install path permanently flagging operator-installed files as
+/// "unknown hash" even when the hash is canonical — silent regression
+/// from the operator's POV.
+fn known_hashes_for_system(system_id: &str) -> &'static [(&'static str, &'static str, &'static str)] {
+    match system_id {
+        "pce-cd" => PCE_BIOS_KNOWN_HASHES,
+        "segacd" => SEGA_CD_BIOS_KNOWN_HASHES,
+        "saturn" => SATURN_BIOS_KNOWN_HASHES,
+        "psx" => PSX_BIOS_KNOWN_HASHES,
+        "neocd" => NEOCD_BIOS_KNOWN_HASHES,
+        "3do" => THREEDO_BIOS_KNOWN_HASHES,
+        "pcfx" => PCFX_BIOS_KNOWN_HASHES,
+        "dreamcast" => DREAMCAST_BIOS_KNOWN_HASHES,
+        "ps2" => PS2_BIOS_KNOWN_HASHES,
+        "nds" => NDS_BIOS_KNOWN_HASHES,
+        "coleco" => COLECO_BIOS_KNOWN_HASHES,
+        "intv" => INTV_BIOS_KNOWN_HASHES,
+        "o2" => O2_BIOS_KNOWN_HASHES,
+        "channelf" => CHANNELF_BIOS_KNOWN_HASHES,
+        "5200" => ATARI5200_BIOS_KNOWN_HASHES,
+        "pokemini" => POKEMINI_BIOS_KNOWN_HASHES,
+        "gba" => GBA_BIOS_KNOWN_HASHES,
+        "jaguar" => JAGUAR_BIOS_KNOWN_HASHES,
+        "jagcd" => JAGCD_BIOS_KNOWN_HASHES,
+        // neogeo is a special-cased zip introspection (no flat hash
+        // table); the install command treats it as "unknown hash"
+        // always — operator should drop neogeo.zip via Open BIOS
+        // folder rather than this picker, but if they do pick it the
+        // copy still lands.
+        _ => &[],
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct InstallBiosResult {
+    /// "ok" — copy succeeded + SHA-1 matches a canonical entry for the
+    /// system; "unknownHash" — copy succeeded but hash isn't a known
+    /// canonical (operator's dump may be from a different revision).
+    status: &'static str,
+    /// SHA-1 (uppercase hex) of what was copied.
+    sha1: String,
+    /// Final destination path on disk.
+    destination: String,
+}
+
+/// Operator picks a file via the frontend's @tauri-apps/plugin-dialog
+/// `open()` call; the frontend hands the absolute source path + target
+/// filename here. This command reads the source, computes SHA-1,
+/// verifies against the system's known-hash table (WARN semantics —
+/// operator decision: copy regardless), and atomically swaps the
+/// destination at `<exe_dir>/system/<target_filename>` into place via
+/// a `.partial` intermediate (mirror of `core_installer::download_core`).
+///
+/// Phase 1B Slice 5. No drag-drop — `docs/PARKING_LOT.md` 2026-05-20
+/// won't-fix locked it out; per-file picker is the operator-facing
+/// install affordance.
+#[tauri::command]
+#[allow(non_snake_case)]
+async fn install_bios_file(
+    sourcePath: String,
+    targetFilename: String,
+    systemId: String,
+) -> Result<InstallBiosResult, String> {
+    let source = PathBuf::from(&sourcePath);
+    if !source.is_file() {
+        return Err(format!("source file not found: {sourcePath}"));
+    }
+    let bytes = std::fs::read(&source)
+        .map_err(|e| format!("read source {}: {e}", source.display()))?;
+    let sha = sha1_hex_upper(&bytes);
+    let canonical_match = known_hashes_for_system(&systemId)
+        .iter()
+        .any(|(_, h, _)| *h == sha.as_str());
+    let status = if canonical_match { "ok" } else { "unknownHash" };
+
+    let system_dir = exe_system_dir();
+    if !system_dir.exists() {
+        std::fs::create_dir_all(&system_dir).map_err(|e| {
+            format!("create system dir {}: {e}", system_dir.display())
+        })?;
+    }
+    let final_path = system_dir.join(&targetFilename);
+    if final_path.exists() {
+        log::info!(
+            "install_bios_file: overwriting existing {}",
+            final_path.display(),
+        );
+    }
+    let partial = system_dir.join(format!("{targetFilename}.partial"));
+    std::fs::write(&partial, &bytes)
+        .map_err(|e| format!("write partial {}: {e}", partial.display()))?;
+    if let Err(e) = std::fs::rename(&partial, &final_path) {
+        let _ = std::fs::remove_file(&partial);
+        return Err(format!(
+            "swap {} → {}: {e}",
+            partial.display(),
+            final_path.display(),
+        ));
+    }
+    log::info!(
+        "install_bios_file: installed {} ({}, sha1 {})",
+        final_path.display(),
+        status,
+        sha,
+    );
+    Ok(InstallBiosResult {
+        status,
+        sha1: sha,
+        destination: final_path.to_string_lossy().into_owned(),
+    })
 }
 
 #[tauri::command]
@@ -10504,7 +10428,7 @@ mod tests {
     fn gba_bios_missing_returns_missing_err() {
         let dir = fresh_tmp_dir("gba-missing");
         let r = check_gba_bios(&dir);
-        assert!(matches!(r, Err(BiosError::Missing)));
+        assert!(matches!(r, Err(BiosError::Missing { .. })));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10515,7 +10439,7 @@ mod tests {
         // the canonical 300C20... so check returns OkUnknownHash.
         std::fs::write(dir.join("gba_bios.bin"), b"not the real bios").expect("seed");
         match check_gba_bios(&dir).expect("check_gba_bios") {
-            BiosCheck::OkUnknownHash { name, sha1 } => {
+            BiosCheck::OkUnknownHash { name, sha1, .. } => {
                 assert_eq!(name, "gba_bios.bin");
                 assert_eq!(sha1.len(), 40, "sha1 should be 40 hex chars");
                 assert_ne!(sha1, "300C20DF6731A33952DED8C436F7F186D25D3492");
@@ -10544,7 +10468,7 @@ mod tests {
     fn jaguar_bios_missing_returns_missing_err() {
         let dir = fresh_tmp_dir("jag-missing");
         let r = check_jaguar_bios(&dir);
-        assert!(matches!(r, Err(BiosError::Missing)));
+        assert!(matches!(r, Err(BiosError::Missing { .. })));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10553,7 +10477,7 @@ mod tests {
         let dir = fresh_tmp_dir("jag-wrong");
         std::fs::write(dir.join("jagboot.rom"), b"not the real bios").expect("seed");
         match check_jaguar_bios(&dir).expect("check_jaguar_bios") {
-            BiosCheck::OkUnknownHash { name, sha1 } => {
+            BiosCheck::OkUnknownHash { name, sha1, .. } => {
                 assert_eq!(name, "jagboot.rom");
                 assert_eq!(sha1.len(), 40);
             }
