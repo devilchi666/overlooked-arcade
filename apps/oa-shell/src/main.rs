@@ -2482,6 +2482,7 @@ fn main() {
             job_registry::cancel_job,
             job_registry::pause_all_jobs,
             job_registry::cancel_all_jobs,
+            job_registry::spawn_test_job,
             core_options::has_core_options_schema,
             get_core_pref,
             set_core_pref,

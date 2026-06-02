@@ -66,18 +66,26 @@ const HEARTBEAT_SECS: u64 = 1;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JobKind {
     CoreDownload { base: String },
+    /// Dev-only synthetic job for exercising the BackgroundJobsBar
+    /// without burning bandwidth on a real download. Lives at the
+    /// production level (not behind `cfg(debug_assertions)`) so
+    /// operators can sanity-check the bar after settings changes too;
+    /// always-on cost is zero unless `spawn_test_job` is invoked.
+    TestJob { name: String },
 }
 
 impl JobKind {
     pub fn discriminator(&self) -> &'static str {
         match self {
             Self::CoreDownload { .. } => "core_download",
+            Self::TestJob { .. } => "test_job",
         }
     }
 
     pub fn target_id(&self) -> Option<String> {
         match self {
             Self::CoreDownload { base } => Some(base.clone()),
+            Self::TestJob { name } => Some(name.clone()),
         }
     }
 }
@@ -838,6 +846,73 @@ pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
     Ok(registry_handle(&app)
         .map(|reg| reg.signal_cancel_all())
         .unwrap_or(0))
+}
+
+/// Dev helper — spawn a synthetic background job that ticks
+/// progress at 10 Hz for `duration_secs` seconds. Lets the operator
+/// exercise the BackgroundJobsBar's pause / resume / cancel /
+/// auto-collapse / +N more affordances without a real long-running
+/// operation. Honors the JobHandle's cancel + pause flags exactly
+/// the same way `download_core`'s chunk loop does, so pause-then-
+/// cancel races behave identically.
+///
+/// Invoked from Settings → Library → "Background Jobs (dev test)".
+/// Stays in the production build because the always-on cost is zero
+/// (no spawn until invoked) and it remains useful for sanity-checking
+/// the bar after any settings change. Multiple calls produce N
+/// concurrent test jobs so the bar's 2+ / 3+ confirm thresholds can
+/// be exercised.
+#[tauri::command]
+pub async fn spawn_test_job(
+    duration_secs: Option<u64>,
+    app: tauri::AppHandle,
+) -> Result<i64, String> {
+    let secs = duration_secs.unwrap_or(30).clamp(1, 600);
+    let registry = registry_handle(&app)
+        .map(|s| (*s).clone())
+        .ok_or_else(|| "background-jobs registry not managed".to_string())?;
+    let total: i64 = (secs as i64) * 10; // 10 Hz ticks
+    // Make the label distinct so the operator can tell test jobs
+    // apart from real ones when both run together.
+    let suffix = now_ms() % 10_000;
+    let name = format!("test-{suffix:04}");
+    let job_id = registry.create_job(
+        JobKind::TestJob { name: name.clone() },
+        format!("Test job ({secs}s)"),
+        None,
+        None,
+        false,
+        "steps",
+        None,
+    )?;
+    registry.mark_running(job_id)?;
+    let handle = registry
+        .handle(job_id)
+        .ok_or_else(|| "test_job handle dropped before tick loop".to_string())?;
+    let registry_clone = registry.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut done: i64 = 0;
+        while done < total {
+            if handle.is_cancelled() {
+                let _ = registry_clone
+                    .flush_resume_state(job_id, serde_json::json!({ "done": done }));
+                let _ = registry_clone.mark_cancelled(job_id);
+                return;
+            }
+            while handle.is_paused() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                if handle.is_cancelled() {
+                    let _ = registry_clone.mark_cancelled(job_id);
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            done += 1;
+            let _ = registry_clone.progress(job_id, done, Some(total));
+        }
+        let _ = registry_clone.mark_completed(job_id);
+    });
+    Ok(job_id)
 }
 
 fn row_to_snapshot(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobSnapshot> {
