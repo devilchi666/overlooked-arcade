@@ -322,10 +322,23 @@ together:
   before `--no-ff` merge of `feat/background-jobs-phase-2`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
   for the slice breakdown.
-- ⬜ **Phase 3** (~1.5 weeks, next) — `JobResumer` trait + per-kind
-  handlers for `core_download` / `artwork_sync` / `hash_resolve`.
-  Cancel cleanup per kind. Auto-resume-on-launch flow w/ per-kind
-  opt-out prompt. Duplicate-trigger Wait/Restart/Cancel dialog.
+- ✅ **Phase 3a** (shipped 2026-06-02) — `JobResumer` trait +
+  registry plumbing + pause/resume state bridge in core_download
+  + spawn_test_job + the `CoreDownloadResumer` (restart-from-zero
+  strategy) + setup() registration + dispatch. End-to-end
+  crash-recovery works for core_download. Operator-confirmed via
+  smoke test before `--no-ff` merge of
+  `feat/background-jobs-phase-3a`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
+  for the slice breakdown.
+- ⬜ **Phase 3b** (~1 week, next) — Byte-level Range resume for
+  `core_download` (streaming-write refactor so the .partial file
+  exists DURING the download, then HTTP Range requests for the
+  remainder on resume). `artwork_sync` + `hash_resolve` resumers.
+  Per-kind opt-out infrastructure (settings.json fields; the
+  Settings panel UI stays in Phase 5). Duplicate-trigger
+  Wait/Restart/Cancel dialog for second-click-while-running on
+  the same kind+target tuple.
 - ⬜ **Phase 4** (~1.5 weeks) — wire remaining kinds
   (`folder_scan` w/ unknown-total pulsing handle, `metadata_sync`,
   `mame_listxml_import`, `dat_sync`, `bulk_core_install` w/

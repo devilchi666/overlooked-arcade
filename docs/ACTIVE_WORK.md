@@ -182,6 +182,38 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 3a (JobResumer + pause bridge)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-3a`).
+  Five phase commits implementing the first half of the original
+  Phase 3 scope, split per operator call to keep the biggest single
+  phase manageable.
+  - **Slice A** (`0a07a6c`) `JobResumer` trait + JobRegistry
+    plumbing — `register_resumer`, `resume_interrupted_jobs(&app)`
+    dispatcher, `attach_handle(job_id, kind)` for re-creating the
+    AtomicBool flags on a row that came back as `interrupted`.
+  - **Slice B** (`8deb7e2`) pause/resume state bridge in both
+    `core_download` and `spawn_test_job` chunk loops. `was_paused`
+    flag drives `mark_paused` on spin entry + `mark_running` on
+    spin exit, so the bar's per-row button correctly toggles
+    ⏸ ↔ ▶ — closes the operator-reported "pause stops streaming
+    but resume button never appears" issue from Phase 2.
+  - **Slice C** (`fb2b290`) extracted the ~200-line
+    download/extract/install body into `run_download_core_inner`
+    shared by both the `download_core` Tauri command and the new
+    `CoreDownloadResumer`. Phase 3a resumer strategy is
+    restart-from-zero (drops `.partial`, re-runs from buildbot
+    URL); byte-level Range resume needs a streaming-write
+    refactor queued for Phase 3b.
+  - **Slice D** (`3a4e4dc`) wired registration + dispatch in
+    `main.rs::setup()` right after `promote_running_rows_to_interrupted`.
+    End-to-end crash-recovery path now works: kill the app
+    mid-download → relaunch → `dispatched 1 resume worker(s)`
+    log line → download restarts from scratch and the bar
+    surfaces the resumed row as soon as `mark_running` fires.
+  - 660 of 660 oa-shell tests green. Operator smoke-tested the
+    pause/resume toggle + crash-recovery dispatch before merge.
+
 - **Background jobs + persistent progress bar — Phase 2 (BackgroundJobsBar)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-2`).
