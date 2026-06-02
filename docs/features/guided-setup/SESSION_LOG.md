@@ -1,5 +1,80 @@
 # Guided Setup — Session Log
 
+## 2026-06-01 — Phase 1B Slice 4: bulk missing-core download + Core options pill + catalog slug realignment
+
+Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-4`,
+merge `923ea7b`). Three phase commits — the main slice + two operator-
+playtest fixes for divergences caught during shipping.
+
+- **Shipped:**
+  - **Phase 1 — bulk-install modal + Core options pill (`4f46007`):**
+    new `frontend/src/components/import-wizard/MissingCoreBulkPrompt.tsx`
+    (~410 lines). Lists one row per system needing a core, with a
+    recommended-core dropdown when multiple candidates exist;
+    per-row checkbox; live progress bar via the existing
+    `oa://core-download-progress` event channel; concurrent
+    downloads via parallel `download_core(base)` invokes (the Rust
+    side's `.partial` swap means /cores/ writes don't trample).
+    New `has_core_options_schema(systemId)` Tauri command in
+    `core_options.rs` (~15 LOC) wrapping the existing `read()`
+    helper; checklist swaps the placeholder Core options pill to
+    real status (✓ when populated, ↪ "Schema populates on first
+    game launch" when empty). SystemReadinessChecklist adds a
+    top-of-list "Install N missing cores…" banner-button visible
+    when ≥1 system has ⚠ Core; per-row "Install core…" stub
+    rewired to open the modal scoped to that single system.
+    Subscribed to download-progress on phase=done → `refetchCores`
+    so the pill flips in real time.
+  - **Phase 2 — banner/modal source-of-truth alignment (`47b42d2`):**
+    operator-reported "install 1 missing core" → "no missing cores"
+    on click. Root cause: banner used extension-overlap heuristic
+    (does any installed core's validExtensions cover the system's?),
+    modal used catalog-membership (CATALOG entries with
+    `systems.includes(systemId) && recommended && !installed`).
+    Two heuristics could disagree (systems with no CATALOG entries,
+    only non-recommended candidates, or aliased slugs where
+    another already-installed core covers extensions). Refactored
+    `SystemReadinessChecklist` to fetch both `list_cores` AND
+    `available_cores` (the same catalog source the modal uses);
+    hybrid `coreInstalledFor` does catalog-check first, extension-
+    overlap fallback. Added `catalogHasEntry()` helper. Core pill
+    grew a third state ↪ "No catalog core" + "Install manually via
+    Settings → Cores" detail, distinct from ⚠ "No core". Modal
+    loosened filter to include non-recommended candidates with
+    recommended-first sort.
+  - **Phase 3 — CATALOG slug realignment (`46c28ed`):** operator
+    asked "no catalog core for atari 2600? which other systems?".
+    Investigation found 12 systems showing the ↪ fallback — 8 slug
+    mismatches between Rust CATALOG and frontend registry, 3
+    genuinely-missing rows (jagcd / sega32xcd / stv added
+    2026-05-27), 1 entirely missing (3do never had an entry).
+    Renamed slugs: `atari2600 → 2600`, `atari5200 → 5200`,
+    `gameboy → [gb, gbc]`, `gba + gameboy → [gba, gb, gbc]`,
+    `intellivision → intv`, `odyssey2 → o2`, `neogeocd → neocd`,
+    `dos → dosbox`. Extended existing entries: Virtual Jaguar
+    gained `jagcd`; PicoDrive gained `sega32xcd`; all 5 MAME family
+    entries gained `stv`; FBNeo main + FB Alpha 2012 Neo Geo
+    gained `neogeo`. New `opera_libretro` entry for 3DO. Every
+    registry slug now has at least one CATALOG entry; the ↪
+    fallback is now defensive code that shouldn't fire for any
+    onboarded system.
+
+- **Almost:** Operator playtest of the realigned catalog. Should
+  see ✓ or ⚠ on every Core pill (no ↪ "No catalog core" anywhere)
+  for a typical 5-15-system library. Bulk-install banner count
+  should equal modal row count exactly.
+
+- **Next:** Slice 5 — guided BIOS resolution. Today the ⚠ BIOS
+  pill has an "Open BIOS folder" button (lands the operator at
+  `<exe_dir>/system/`). Slice 5 expands that to a richer surface:
+  per-BIOS filename + SHA-1 hash + "where to get it" hint
+  (operator-supplied list of legal sources per-system), with the
+  ability to drop multiple BIOS files via drag-drop into the
+  checklist itself. The existing per-system BIOS check helpers
+  in `apps/oa-shell/src/main.rs::get_bios_status` already return
+  filename + required string per entry — Slice 5 is mostly UI
+  surfacing what's already in the response. Estimated 1 week.
+
 ## 2026-06-01 — Phase 1B Slice 3: per-system readiness checklist
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-3`,

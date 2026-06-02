@@ -12,8 +12,8 @@ spanned every system but was filed under whichever core happened to be active.
 ## In flight
 
 - **Guided Setup Phase 1B — wizard upgrade**
-  ([features/guided-setup/](features/guided-setup/)). Slices 1 + 2
-  + 3 all shipped 2026-06-01.
+  ([features/guided-setup/](features/guided-setup/)). Slices 1-4
+  all shipped 2026-06-01.
   - Slice 1 (`5ef8062` merge) — backend smart-scan emission +
     Settings → Library entry point. The Rust scanner now
     classifies + hashes during the walk and emits per-row
@@ -39,13 +39,33 @@ spanned every system but was filed under whichever core happened to be active.
     `3 → 4`, labels `Folder / Review / Readiness / Confirm`)
     AND a second "System readiness" SettingsCard alongside
     "Re-scan with smart detection". Working "Open BIOS folder"
-    action via new `open_bios_folder` Tauri command;
-    "Install core…" stub dispatches a CustomEvent for Slice 4
-    to wire to the real toast layer.
-  - **Slice 4 next** — bulk-prompt missing-core download.
-    Wires `core_installer.rs` to a real bulk-prompt UI behind
-    the Install-core stub; same slice can swap the Core options
-    placeholder into real per-system status. Detail in
+    action via new `open_bios_folder` Tauri command.
+  - Slice 4 (`923ea7b` merge) — bulk-install modal + Core
+    options pill + catalog slug realignment. Three phase
+    commits: (1) new `MissingCoreBulkPrompt.tsx` modal with
+    per-system rows + recommended-core dropdown + live
+    download progress + `has_core_options_schema` Tauri
+    command wrapping the existing options reader; readiness
+    checklist swaps the Core options placeholder pill to real
+    status and the "Install core…" stub to open the modal,
+    plus a top-of-list "Install N missing cores…" banner.
+    (2) banner/modal source-of-truth alignment fix after
+    operator playtest caught the count divergence (banner
+    used extension-overlap, modal used CATALOG-membership;
+    hybrid coreInstalledFor + new ↪ "No catalog core" pill
+    state). (3) CATALOG slug realignment fix after operator
+    asked "no catalog core for atari 2600?"; 8 slug renames
+    (`atari2600 → 2600` etc.), 4 systems added to existing
+    entries' arrays (jagcd / sega32xcd / stv / neogeo), new
+    `opera_libretro` entry for 3DO. Every registry slug now
+    has at least one CATALOG entry.
+  - **Slice 5 next** — guided BIOS resolution. Expands the ⚠
+    BIOS pill from "Open BIOS folder" to a richer surface
+    with per-file SHA-1 + filename + "where to get it"
+    inline. The existing `get_bios_status` response already
+    carries the per-system filename/required strings — Slice
+    5 is mostly UI on what's already in the payload, plus
+    drag-drop into the checklist. Detail in
     [features/guided-setup/README.md](features/guided-setup/README.md)
     Phase 1B slice table + the HIGH band entry in
     [NEXT.md](NEXT.md).

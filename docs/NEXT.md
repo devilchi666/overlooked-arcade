@@ -309,52 +309,91 @@ second "System readiness" SettingsCard in
 "Re-scan with smart detection" card. 615 oa-shell tests green; npm
 typecheck silent.
 
-### Guided Setup Phase 1B Slice 4 — bulk missing-core download + Core options pill
+### ~~Guided Setup Phase 1B Slice 4 — bulk missing-core download + Core options pill~~ ✅ SHIPPED 2026-06-01
 
-Two things land together because they share a Rust core-installer
-infrastructure and the Slice 3 placeholders are already shaped to
-consume the data they'll produce.
+Merged to main as `923ea7b` (`feat/guided-setup-phase-1b-slice-4`,
+three phase commits). New
+`frontend/src/components/import-wizard/MissingCoreBulkPrompt.tsx`
+(~410 lines) with per-system rows + recommended-core dropdown + live
+progress via `oa://core-download-progress`. New
+`has_core_options_schema` Tauri command (`core_options.rs`) wraps
+the existing `read()` helper; readiness checklist swaps the Core
+options placeholder pill to real status + the "Install core…" stub
+to open the modal, plus a top-of-list "Install N missing cores…"
+banner. Two operator-playtest fixes folded in: (1) banner/modal
+source-of-truth alignment via hybrid coreInstalledFor + new ↪
+"No catalog core" pill state; (2) CATALOG slug realignment — 8
+slug renames (`atari2600 → 2600` etc.), 4 systems added to existing
+entries (jagcd / sega32xcd / stv / neogeo), new `opera_libretro`
+entry for 3DO. Every registry slug now has at least one CATALOG
+entry. Part C (KNOWN_GAME_BUGS pill real status) intentionally
+deferred — coverage is sparse + the count API belongs with the
+broader `KNOWN_GAME_BUGS.md → games-info.md` migration arc.
 
-**Part A — Bulk core download.** Wire the existing
-`apps/oa-shell/src/core_installer.rs` to the "Install core…" stub on
-the readiness checklist. Per plan §5 Step 6: "We need 4 cores for
-these systems. Download from libretro buildbot? `[Download all
-(12 MB)]` `[Skip]` `[Pick individually]`". On-demand only — never
-silent. The stub today dispatches a `window.CustomEvent("oa://readiness-stub-toast")`;
-Slice 4 listens for that event from a real bulk-prompt modal +
-fires `core_installer::download_core` per selection.
+### Guided Setup Phase 1B Slice 5 — guided BIOS resolution
 
-**Part B — Core options pill.** Currently renders the muted
-`— Coming Slice 4` placeholder. Swap to a real ✓ / ↪ status by
-reading the per-system `core_options.rs` catalog. The `read()` /
-`write()` helpers are module-private today — Slice 4 needs to add a
-small `list_core_options_for_system(system_id) -> Option<usize>`
-Tauri command returning the option count (✓ when > 0, ↪ when 0 / no
-catalog).
+Today the readiness checklist's ⚠ BIOS pill has an "Open BIOS
+folder" button that lands the operator at `<exe_dir>/system/`
+(Slice 3's `open_bios_folder` Tauri command). Slice 5 expands the
+affordance into a richer surface that tells the operator exactly
+what file they need + where to find it.
 
-**Part C (optional, can defer)** — KNOWN_GAME_BUGS pill real status.
-The structured `games-info.md` schema (System Info Panel work)
-covers some systems but the count API doesn't exist yet. If
-Slice 4 grows too large, leave the KNOWN_GAME_BUGS pill as a
-placeholder + queue Slice 4b separately.
+**What's already in place:**
+- `apps/oa-shell/src/main.rs::get_bios_status` returns a
+  `BiosStatusResponse` with per-system `entries[]`. Each entry
+  carries `slug` / `label` / `required` (the filename(s) the check
+  function expects) / `status` / `detail`. The detail field already
+  contains the matched filename + SHA-1 on `ok` / `unknownHash`
+  and the io-error message on `error`.
+- Per-system `check_*_bios` helpers in main.rs know the canonical
+  SHA-1(s) for each expected file (they're how the `ok` / `unknownHash`
+  distinction is made). Slice 5 needs to expose those canonical
+  hashes to the frontend so the operator can verify-on-disk that
+  what they have is the right thing.
+
+**Slice 5 scope:**
+
+1. **New Tauri command** — extend the BIOS status response with
+   per-file detail: filename → expected SHA-1 mapping (where known)
+   + whether the file is present + whether its hash matches. The
+   existing `detail` string is already shaped close to this; the
+   refactor surfaces it as structured data rather than a
+   human-readable summary.
+2. **Expanded BIOS pill** — when ⚠, the row expands inline (no
+   modal — clutter-avoidance) to show:
+   - Filename + expected SHA-1 + "what to look for" hint
+   - For multi-file BIOSes (NDS needs three, Saturn needs regional
+     variants, etc.), one sub-row per file with its own
+     present-but-wrong-hash vs absent state
+   - Optional "where to get it" hint per system (operator-supplied
+     list of legal sources, kept curated in
+     `apps/oa-shell/src/bios_sources.rs` or similar — Slice 5
+     defines the shape; populating is operator-driven)
+3. **Drag-drop BIOS files** — the readiness card itself becomes a
+   drop target. Files dropped here get filename-checked against the
+   active system's expected list and moved into `<exe_dir>/system/`.
+   The BIOS check refetch fires immediately. Operator doesn't have
+   to open the folder + drag files into Explorer.
+4. **Keep "Open BIOS folder"** as the escape hatch for operators who
+   want to manage the folder manually.
 
 **Where the work lives:**
-- `apps/oa-shell/src/core_installer.rs` already exists with the
-  download path; needs a thin Tauri command wrapper (`download_core`,
-  `list_available_cores_for_system` if not present).
+- `apps/oa-shell/src/main.rs` (or split into a new
+  `bios_resolution.rs` module) — refactor `BiosStatusResponse`
+  shape; add structured per-file detail; expose canonical SHA-1s.
+- New `frontend/src/components/import-wizard/BiosResolutionDetail.tsx`
+  — inline-expandable per-row component rendering the filename +
+  SHA-1 + hint surface. Mounted inside `SystemReadinessChecklist`
+  when a row has ⚠ BIOS.
 - `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
-  — listen for the "Install core…" click directly (drop the
-  CustomEvent stub) and open a new `MissingCoreBulkPrompt.tsx` modal
-  (lives in the same `import-wizard/` subdir). The Core options pill
-  reads from a new `useCoreOptionsCount(systemId)` resource.
-- New `frontend/src/components/import-wizard/MissingCoreBulkPrompt.tsx`
-  — modal listing the missing systems' suggested cores, total
-  download size, per-row Skip / Pick toggle, primary "Download all"
-  button.
+  — add drop-target affordance + wire the per-file detail expansion.
 
-**Scope:** ~1 week for A + B; ~1.5 weeks if C lands too.
+**Scope:** ~1 week. The hardest part is the operator-curated
+"where to get it" hints — start with a stub (just the filename +
+hash; "consult your usual sources") and let the operator fill in
+per-system text over time.
 
-**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 6 + §13 Phase 2.
+**Plan:** [features/guided-setup/README.md](features/guided-setup/README.md) §"Phase 1B — Wizard upgrade" + `docs/PLANS/guided-setup.md` §5 Step 6 (BIOS branch) + §13 Phase 2.
 
 ### ~~Phase D dialog wiring — six orphaned per-game dialogs~~ ✅ SHIPPED 2026-06-01
 
