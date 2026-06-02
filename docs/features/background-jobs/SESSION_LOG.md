@@ -7,6 +7,80 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-02 — Phase 4b wires artwork_sync + bulk_core_install parent (`feat/background-jobs-phase-4b`)
+
+**Shipped:** Phase 4b (scoped down from the original Phase 4
+"remaining kinds + orchestration" to the two highest-value pieces;
+dependency graph + per-kind retry policy queued for Phase 4c).
+Two phase commits.
+
+- **Slice A — artwork_sync wiring** (`e04430e`). New
+  `ArtworkSync { system_id }` + `BulkCoreInstall` variants on
+  `JobKind`. `sync_media_for_system` gains create_job +
+  mark_running at entry, initial `progress(0, Some(total))` so the
+  bar opens with a determinate 0% bar, per-repo boundary tick
+  (1-3 advances per system; fine granularity per inner emit was
+  overkill), final tick + mark_completed before return. Plan
+  §"Kind taxonomy" originally split this into artwork_sync vs
+  metadata_sync for per-kind concurrency; the existing function
+  bundles both into one per-game-per-kind pass, so Phase 4b wires
+  the whole pass as artwork_sync (26 of 27 MediaKind variants are
+  art-shape) and defers the deeper split until a separate
+  metadata-fetching path exists.
+- **Slice B — bulk_core_install parent aggregation** (`b9e81a4`).
+  Guided Setup's "Install N missing cores" batch now surfaces a
+  parent row in the bar that aggregates the children.
+  - JobRegistry.tick_parent_if_any(child_id) hooks into the three
+    mark_* finalizers. When a child finalizes, the helper finds
+    its parent_job_id, COUNTs finished siblings, emits an
+    unthrottled progress event on the parent, and finalizes the
+    parent when the last sibling resolves. Phase 4b treats any
+    child failure as parent failure (mark_failed); Phase 4c retry
+    policy will refine.
+  - New `write_progress_unthrottled` helper — parents don't carry
+    a JobHandle in the active map, so they bypass the per-handle
+    1 Hz SQLite debounce.
+  - New `start_bulk_core_install(n)` Tauri command creates the
+    BulkCoreInstall parent (with `0 / n` initial progress) and
+    returns the id. Soft-fail returns -1 when the registry isn't
+    managed; the frontend treats that as "no parent" and
+    downloads proceed individually.
+  - `download_core` gains `parentJobId: Option<i64>` arg routed
+    through to create_job's parent_job_id slot. Standalone
+    callers (CoresPage, SystemCoresStrip) omit the field;
+    Tauri's serde deserializes the missing field as None.
+  - MissingCoreBulkPrompt.downloadAll invokes
+    start_bulk_core_install up front and passes the returned id
+    as parentJobId on each per-core download_core. Soft-fail
+    silent-on-error.
+
+660 of 660 oa-shell tests green; frontend `npm run typecheck`
+silent.
+
+**Almost:** End-to-end smoke test:
+1. Settings → Library → identify ROMs → wait for the HashResolve
+   pass to land; click "Sync media" → bar shows "Syncing {system}
+   artwork" with done / total ticking per repo. Cancel-via-bar
+   doesn't work yet (the per-repo loop doesn't poll the JobHandle
+   cancel flag — Phase 4c can add it).
+2. Import Wizard → "N missing cores" banner → "Install N cores"
+   button → bar surfaces a parent "Installing N cores" row at
+   0/N PLUS N child "Downloading {core}" rows. As each child
+   finishes the parent's done ticks. When the last child resolves
+   the parent finalizes (mark_completed if all succeeded, mark_failed
+   if any child failed).
+3. Standalone "Install core…" from CoresPage / SystemCoresStrip →
+   single child row (no parent), behavior unchanged from Phase 1.
+
+**Next:** Phase 4c — dependency graph (parent_job_id chain for
+auto-prereqs so HashResolve auto-spawns DatSync as a visible
+child rather than inlining it silently); per-kind retry policy
+(transient network errors 1s/5s/30s exponential backoff for
+3 attempts, refined by the Phase 5 Settings panel). Or Phase 3b /
+Phase 5 as alternatives.
+
+---
+
 ## 2026-06-02 — Phase 4a wires 4 more kinds (`feat/background-jobs-phase-4a`)
 
 **Shipped:** Phase 4a (the first half of the original Phase 4 scope —
