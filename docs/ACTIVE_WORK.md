@@ -182,6 +182,34 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 4a (4 more kinds wired)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-4a`).
+  Five phase commits surfacing four more operations in the
+  BackgroundJobsBar — every operator-triggered long-running
+  operation that was already firing its own `oa://*-progress` events
+  now ALSO appears in the bottom-of-viewport bar.
+  - **Slice A** (`4bbb40b`) `JobKind` enum variants:
+    `FolderScan { folder }`, `HashResolve { system_id }`,
+    `DatSync { system_id }`, `MameListxmlImport`.
+  - **Slice B** (`cdb17e0`) folder_scan via `scan_service.rs` +
+    `main.rs::start_background_scan`. JobHandle.cancel
+    AtomicBool shared with the existing
+    `scan_service::ScanServiceState` so bar Cancel + the existing
+    `cancel_background_scan` Tauri command flip the same flag.
+    Total stays None (file count unknown until walk completes); bar
+    shows indeterminate stripe.
+  - **Slice C** (`0088ae4`) hash_resolve + dat_sync in
+    `rom_hashes.rs`. HashResolve ticks per game with the smooth
+    n_hashed / n_total fill; DatSync is atomic with finalize at
+    each return point (success, empty-refs, cache-hit, 404-dat).
+  - **Slice D** (`4d99382`) mame_listxml_import at the Tauri
+    command wrapper around the sync `mame_import::refresh_mame_system_info`
+    body. Atomic-retry kind with a synthetic final tick showing
+    systems_refreshed + games_refreshed count.
+  - 660 of 660 oa-shell tests green. Operator confirmed all four
+    kinds surface end-to-end after rebuild.
+
 - **Background jobs + persistent progress bar — Phase 3a (JobResumer + pause bridge)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-3a`).

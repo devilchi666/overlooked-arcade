@@ -331,7 +331,7 @@ together:
   `feat/background-jobs-phase-3a`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
   for the slice breakdown.
-- ⬜ **Phase 3b** (~1 week, next) — Byte-level Range resume for
+- ⬜ **Phase 3b** (~1 week, queued) — Byte-level Range resume for
   `core_download` (streaming-write refactor so the .partial file
   exists DURING the download, then HTTP Range requests for the
   remainder on resume). `artwork_sync` + `hash_resolve` resumers.
@@ -339,6 +339,24 @@ together:
   Settings panel UI stays in Phase 5). Duplicate-trigger
   Wait/Restart/Cancel dialog for second-click-while-running on
   the same kind+target tuple.
+- ✅ **Phase 4a** (shipped 2026-06-02) — `JobKind` variants for the
+  four kinds + wiring through `scan_service::start_background_scan`
+  (folder_scan, shared cancel AtomicBool with the legacy scan-
+  service), `rom_hashes::sync_rom_hashes_for_system` (dat_sync,
+  atomic), `rom_hashes::resolve_rom_hashes_for_system`
+  (hash_resolve, per-game tick), and `refresh_mame_system_info`
+  (mame_listxml_import, atomic at the Tauri-command wrapper). Bar
+  now surfaces 6 kinds across the import wizard / Identify ROMs /
+  MAME refresh flows. Operator-confirmed via smoke test before
+  `--no-ff` merge of `feat/background-jobs-phase-4a`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
+- ⬜ **Phase 4b** (~1 week, next) — Remaining kinds + orchestration:
+  `artwork_sync` + `metadata_sync` (the giant `sync_media_for_system`
+  body — needs the artwork vs metadata split decided in plan §"Kind
+  taxonomy"), `bulk_core_install` with parent-row aggregation,
+  dependency graph (`parent_job_id` chain + auto-trigger prereqs so
+  HashResolve auto-spawns DatSync as a visible child rather than
+  inlining it silently), per-kind retry policy.
 - ⬜ **Phase 4** (~1.5 weeks) — wire remaining kinds
   (`folder_scan` w/ unknown-total pulsing handle, `metadata_sync`,
   `mame_listxml_import`, `dat_sync`, `bulk_core_install` w/
