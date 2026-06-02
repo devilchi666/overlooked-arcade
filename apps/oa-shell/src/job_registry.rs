@@ -235,6 +235,16 @@ pub enum JobEvent {
         job_id: i64,
         error: String,
     },
+    /// Phase 3b — emitted by `resume_interrupted_jobs` when an
+    /// interrupted row's kind has `prompt_before_resume_on_launch =
+    /// true` in JobPrefs. Frontend (Phase 5) will surface a dialog
+    /// offering Resume / Discard. For Phase 3b the event fires
+    /// unconsumed; the row sits at `state='interrupted'` until the
+    /// operator manually retries via the existing per-operation
+    /// modal, OR until they remove the opt-out and relaunch.
+    ResumePrompt {
+        snapshot: JobSnapshot,
+    },
 }
 
 /// Cancel + pause flags surfaced to per-kind workers. Clone the handle
@@ -382,9 +392,21 @@ impl JobRegistry {
     /// Phase 4 will register the rest of the kinds; Phase 3a only
     /// handles core_download.
     ///
-    /// Returns the count of resumers dispatched. Each resumer
-    /// spawns its own task; this call returns immediately.
-    pub fn resume_interrupted_jobs(&self, app: &AppHandle) -> Result<usize, String> {
+    /// `should_prompt` is the Phase 3b per-kind opt-out gate — when
+    /// it returns true for a kind, the dispatcher SKIPS the resumer
+    /// and emits a `ResumePrompt` event instead. Plan §"Resume on
+    /// app launch": auto-resume by default, opt-out via the
+    /// JobPrefs file. The frontend prompt dialog lands in Phase 5;
+    /// for Phase 3b the event fires unconsumed.
+    ///
+    /// Returns the count of resumers dispatched (NOT counting prompt
+    /// events). Each resumer spawns its own task; this call returns
+    /// immediately.
+    pub fn resume_interrupted_jobs(
+        &self,
+        app: &AppHandle,
+        should_prompt: impl Fn(&str) -> bool,
+    ) -> Result<usize, String> {
         let snapshots = self.list_interrupted()?;
         if snapshots.is_empty() {
             return Ok(0);
@@ -396,6 +418,17 @@ impl JobRegistry {
             .map_err(|e| format!("resumers lock: {e}"))?;
         let mut dispatched = 0;
         for snap in snapshots {
+            if should_prompt(snap.kind.as_str()) {
+                log::info!(
+                    "background_jobs: kind {} has prompt-before-resume opt-out; emitting prompt for job {}",
+                    snap.kind,
+                    snap.id
+                );
+                self.emit_event(&JobEvent::ResumePrompt {
+                    snapshot: snap.clone(),
+                });
+                continue;
+            }
             match resumers.get(snap.kind.as_str()) {
                 Some(resumer) => {
                     log::info!(

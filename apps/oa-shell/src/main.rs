@@ -23,6 +23,7 @@ mod cli;
 mod data_dir;
 mod game_info;
 mod http_retry;
+mod job_prefs;
 mod job_registry;
 mod core_installer;
 mod core_options;
@@ -2484,6 +2485,8 @@ fn main() {
             job_registry::cancel_all_jobs,
             job_registry::spawn_test_job,
             job_registry::start_bulk_core_install,
+            job_prefs::get_job_prefs,
+            job_prefs::set_job_resume_prompt,
             core_options::has_core_options_schema,
             get_core_pref,
             set_core_pref,
@@ -2970,10 +2973,21 @@ fn main() {
                                 // spawns per-kind workers via
                                 // tauri::async_runtime; this call returns
                                 // immediately.
+                                // Phase 3b — load the per-kind opt-out
+                                // prefs so kinds with
+                                // prompt_before_resume_on_launch=true
+                                // emit a ResumePrompt event instead
+                                // of being auto-dispatched. The
+                                // frontend dialog for that event
+                                // lands in Phase 5; for Phase 3b the
+                                // event fires unconsumed.
+                                let job_prefs_for_resume =
+                                    job_prefs::read_job_prefs(&app_data_dir);
                                 let app_handle_for_resume = app.handle().clone();
-                                match registry
-                                    .resume_interrupted_jobs(&app_handle_for_resume)
-                                {
+                                match registry.resume_interrupted_jobs(
+                                    &app_handle_for_resume,
+                                    |kind| job_prefs_for_resume.should_prompt(kind),
+                                ) {
                                     Ok(0) => {}
                                     Ok(n) => log::info!(
                                         "background_jobs: dispatched {n} resume worker(s) for \
