@@ -11,6 +11,18 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Background jobs + persistent progress bar — Phase 1**
+  ([features/background-jobs/](features/background-jobs/)) — branch
+  `feat/background-jobs-phase-1`. First slice of the 5-phase arc locked
+  2026-06-02 in [docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
+  Ships schema + `JobRegistry` + `<data_dir>/oa.lock` lifecycle + heartbeat
+  + `core_download` wired end-to-end as the pilot kind. **No frontend UI
+  this phase** (Phase 2 builds the `BackgroundJobsBar` Solid component);
+  **no auto-resume dispatch** (Phase 3 adds the `JobResumer` trait + per-
+  kind handlers). Phase 1's crash-recovery flow just promotes
+  `state='running'` rows to `interrupted` on next launch and leaves them
+  for operator-triggered retry.
+
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
