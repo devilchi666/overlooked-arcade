@@ -1,10 +1,11 @@
 # Background jobs + persistent progress bar
 
-**Status:** Planning (operator-requested 2026-06-02, execution deferred to a future session). No code yet.
+**Status:** Planning locked 2026-06-02 (6 rounds of operator Q&A; all design questions answered). Execution deferred to a future session.
 
 **Owner-of-decisions:** the operator. This document records the
-shape of the work + design questions still open. Revisit before
-kicking off.
+decisions that came out of the refinement Q&A. Implementation
+should follow them unless a code-time issue forces a revisit (in
+which case: check back in here first).
 
 ---
 
@@ -44,130 +45,271 @@ the UI that says exactly what OA is doing, with real numbers, and
 that remembers what it was doing when I close the app — so when I
 relaunch it picks up where it left off."
 
-That's three pieces of work bundled together:
-- **Real-progress contract** — every long-running op emits
-  authoritative `done / total` numbers, no fake percentages.
-- **Persistent job queue** — operations register as jobs that
-  survive process restart, with enough state on disk to resume.
-- **Single UI surface** — a persistent bar across the bottom of
-  the Retroverse shell showing the active job (and possibly a
-  queue of pending ones).
+---
+
+## Locked design decisions (from 6 rounds of refinement, 2026-06-02)
+
+### Concurrency + scheduling
+
+- **Per-kind parallel concurrency.** One job per kind can run at
+  any time; multiple kinds can run concurrently (a network
+  download + a CPU-bound hash resolve + a folder scan all happen
+  at once). Same-kind jobs queue.
+- **FIFO ordering within a kind.** No per-system priority, no
+  promotion (operator considered + rejected per-system priority in
+  Round 4). Whoever clicked first goes first.
+- **Duplicate same-job triggering:** second click while a
+  same-kind same-target job is running opens a
+  `Wait / Restart / Cancel` dialog:
+    - **Wait** — queue the second instance behind the first
+    - **Restart** — cancel current + start a fresh one
+    - **Cancel** — close the dialog, do nothing
+
+### Visibility scope
+
+- **Everything OA does in the background appears in the bar.**
+  Operator-initiated work (clicked a button) AND auto-triggered
+  work (post-scan media sync that fires implicitly) both show.
+  Maximal "I can see exactly what OA is doing."
+
+### Pause + cancel
+
+- **Pause semantics: cancel-and-remember.** Pause and "app closed
+  mid-job" are the same code path: flush state to SQLite,
+  terminate the worker cleanly, free resources. Resume re-enters
+  from the persisted state (HTTP Range request, scan-from-stamp,
+  per-track-cache lookup, etc.). One mechanism handles both pause
+  and restart.
+- **Cancel cleanup: per-kind contract.** Each kind defines what
+  "clean" means for cancel:
+    - `core_download` cancel = delete `.partial` file
+    - `folder_scan` cancel = discard partial rows
+    - `artwork_sync` / `metadata_sync` cancel = keep
+      already-downloaded items (idempotent, useful next run)
+    - `hash_resolve` cancel = keep already-stamped rows
+    - etc.
+
+### Job dependencies
+
+- **Explicit dependency graph.** Jobs auto-trigger their
+  prerequisites. Click "Identify PSX hashes" → if the dat table is
+  empty for psx, the system enqueues "Sync PSX dat" first as a
+  prereq, then "Identify PSX hashes" runs once the dat lands.
+  Schema models the chain via a `parent_job_id` + `prereq_of` link.
+- **Dependency cancellation: prompt the operator.** Cancel a job
+  that has in-flight prereqs → dialog: "Also cancel its
+  prereqs?" with `[Just this one] / [The whole chain]`. Operator
+  decides per cancel — never waste data the operator wanted; never
+  leave orphans the operator didn't expect.
+
+### Resume on app launch
+
+- **Auto-resume everything by default.** Interrupted jobs silently
+  resume on app launch. No prompt dialog at launch.
+- **Per-kind opt-out in Settings.** The "Download Settings" panel
+  (see §"Settings panel" below) exposes a per-kind toggle: "Prompt
+  before resuming on launch." All checkboxes unchecked by default.
+  Operator who wants their hash-resolve work to ask first checks
+  that one box.
+
+### Crash detection
+
+- **Lock file + heartbeat (belt + braces).**
+  - Lock file: OA writes `<data_dir>/oa.lock` at startup; deletes
+    on clean shutdown. Lock file present at launch = previous run
+    crashed = mark any `state = 'running'` rows as
+    `state = 'interrupted'`.
+  - Heartbeat: app updates `background_jobs.last_event_at` every
+    ~1s while jobs are running. Catches the case where the app is
+    alive but a worker thread died (panicked) — stale
+    `last_event_at` while the lock file is still held → row's
+    worker is gone, mark interrupted + re-queue for resume.
+
+### Failure handling
+
+- **Auto-retry transient network errors with exponential backoff.**
+  Network timeouts, 5xx HTTP, connection drops: retry 3 times with
+  backoff (1s, 5s, 30s). Each retry is invisible to the operator
+  (logged at warn).
+- **Persistent failures surface in the bar.** HTTP 404, file-not-
+  found, parse errors, hash mismatch: don't retry; mark the job
+  `state = 'failed'`; bar shows the failed row with
+  `[Retry] [Discard]` buttons.
+- **Retry from failed state re-runs the job from the last persisted
+  checkpoint.** Same code path as the auto-resume path.
+
+### Job history
+
+- **Keep the last 100 jobs across all kinds.** Rolling buffer.
+  When the 101st completes, the oldest finished row gets DELETE'd.
+- **Recent activity panel** — bar exposes a link to a panel that
+  shows the last-100 view. **Tabbed by outcome:** `Running /
+  Completed / Failed / Cancelled`. Each row: timestamp, kind icon,
+  label, duration, outcome glyph (✓ / ✗ / cancelled-X / paused).
+
+### Kind taxonomy (9 kinds)
+
+| Kind | What it is | Per-row label shape | Resumable | Default auto-resume |
+| --- | --- | --- | --- | --- |
+| `core_download` | Single libretro .dll download from buildbot | "Downloading {core display_name}" | yes (HTTP Range + .partial) | auto |
+| `bulk_core_install` | Guided Setup's parallel install of N cores | "Installing {n} cores" + children | parent yes; children individually resume | auto |
+| `dat_sync` | Fetch + parse a system's libretro-database dat | "Updating ROM database — {system}" | atomic retry | auto |
+| `hash_resolve` | Per-system cart ROM hash + lookup | "Identifying {system} ROMs" | yes (per-game cache) | auto |
+| `disc_track_hash` | Per-disc per-track SHA-1 + lookup (future arc) | "Identifying {system} discs" | yes (per-track cache) | auto |
+| `artwork_sync` | Cover / box / screenshot / banner / fanart / wheel art per system | "Syncing {system} artwork" | yes (per-art cache) | auto |
+| `metadata_sync` | Year + publisher + genre + descriptions per system | "Syncing {system} metadata" | yes (per-game cache) | auto |
+| `folder_scan` | Wizard's folder walk + classification | "Scanning {folder}" | partial (re-walks from start; cheap) | auto |
+| `mame_listxml_import` | Refresh MAME catalog from local MAME install | "Refreshing MAME catalog" | atomic retry | auto |
+
+Note on the artwork+metadata split: Round 3 picked "split into
+artwork vs metadata" rather than the bundled `media_sync` kind.
+Operator value: per-kind concurrency means an artwork sync for
+PSX + a metadata sync for the same PSX can run in parallel
+(different resource paths — artwork is downloads, metadata is
+local parsing of imported files for many sources).
+
+`thumbnail_repo_sync` (libretro-thumbnails GitHub repo sync) folds
+into `artwork_sync` — it's one of several artwork sources, not its
+own kind.
+
+### Notification on completion
+
+- **Subtle chime + bar slides out.** No completion toast. The
+  audio cue carries "something finished, check the bar if you
+  care"; the bar visual reflects the new state. Operator who
+  multitasked while OA worked in the background hears the chime.
+- **Per-kind chime variation:** all kinds use the same chime in
+  v1. Per-kind / per-system chime variants are a
+  PARKING_LOT-worthy polish item for later (mostly because the
+  audio bus already supports per-system theming if we want it).
+
+### Bar UI shape
+
+- **Auto-hide with persistent handle when work is active.**
+    - Idle (no jobs): nothing visible.
+    - Active jobs present, bar collapsed: a slim handle
+      (~12-16px) sits at the bottom of the window, always
+      clickable to expand. The handle pulses subtly when a job
+      progresses (so the operator's eye catches "still working").
+    - Active jobs present, bar expanded: the stack-visible bar
+      slides up from the bottom; auto-hide reactivates after 2s
+      of operator-input idle.
+- **Stack visible: max 3 visible rows + "+N more"** below.
+  Each running job gets its own thin row. Most-recently-started
+  jobs at the top (so a freshly-clicked operation appears right
+  away). 4+ concurrent jobs (rare) get truncated to 3 visible +
+  a "+N more" affordance that expands the full list.
+- **Bar header (visible when 2+ jobs run):** `Pause all` +
+  `Cancel all` buttons. Both confirm before applying when 3+ jobs
+  are active. Single-job and zero-job states hide these.
+- **Per-row controls:** label (kind icon + system + summary) /
+  progress bar / done-of-total numbers / per-row pause + cancel
+  buttons.
+- **Bar theming: neutral always.** OA accent (warm orange from the
+  Retroverse chrome) regardless of which system's jobs are
+  running. No per-system colors on the bar — keeps it
+  predictable and matches the rest of the Retroverse chrome.
+
+### Bar placement in the Retroverse layout
+
+- Anchored at the bottom of the main content area, above the
+  existing HintBar. When the bar is expanded, it slides into the
+  content area (pushing content up briefly). When collapsed, the
+  bottom-of-screen handle sits in HintBar-adjacent space without
+  competing.
+- **HintBar takes priority** when both want to show (e.g. operator
+  is mid-modal with a hint context). The bar can still be expanded
+  via the handle.
+
+### Existing per-operation UI — hybrid coexistence
+
+The architectural rule: **the job is the model; the modal is one
+optional view of it; the bar is the persistent view.** Operator can
+close the modal without losing the job; reopening reattaches.
+
+- **Toasts (per-operation completion notifications) RETIRE.**
+  The bar + completion chime carry the role today's
+  `✓ Downloaded Beetle PSX HW` toast does. Less visual noise.
+- **Modals KEEP their inline progress.** Identify ROMs modal,
+  the Import Wizard's scan-review step, the bulk core install
+  prompt all keep their dedicated UX. They register a job in the
+  bar AND show the same progress inline.
+- **Closing a modal mid-job does NOT cancel the job.** The job
+  continues in the background; the bar surfaces it.
+  Reopening the modal reattaches and shows the live state.
+
+### Settings panel
+
+- **Top-level Settings category: "Download Settings."** Sits in
+  the Retroverse SETTINGS sidebar alongside Display / Audio /
+  Library / Cores / etc.
+- **Panel contents:**
+    - **Per-kind auto-resume on launch** — 9 toggles
+      (one per kind). All unchecked by default = auto-resume
+      everything. Checked = prompt on launch for that kind.
+    - **Bar behavior:**
+        - "Always show the bar" toggle (default OFF; ON = bar
+          handle never auto-hides even when idle).
+        - "Sound on completion" toggle (default ON).
+    - **Failure handling:**
+        - "Auto-retry transient network errors" toggle
+          (default ON).
+        - Retry attempts (default 3; range 0-10).
+    - **History:**
+        - Read-only counter: "X of 100 history rows used."
+        - "Clear recent activity" button.
 
 ---
 
-## What this is + what it isn't
-
-**This arc:**
-- A `JobQueue` / `JobRegistry` Tauri-managed state holder that
-  every long-running operation registers itself with at start.
-- A job-status persistence layer in SQLite — jobs serialize their
-  state into `background_jobs` table on creation + at every
-  meaningful progress increment + at app close.
-- A standardized job-progress shape: `{ id, kind, label, done,
-  total, unit, state, last_event_at, can_resume, resume_payload }`.
-  `unit` is the unit being counted ("files" / "bytes" / "games" /
-  "tracks"); `state` is one of `pending | running | paused |
-  completed | failed | cancelled`. `resume_payload` is op-specific
-  JSON the kind's resume handler knows how to consume.
-- Per-job-kind resume handlers — each operation that wants to
-  survive restart implements a handler that takes the persisted
-  `resume_payload` + returns to where it left off.
-- A persistent progress-bar UI component in the Retroverse shell
-  showing the currently-running job + an expandable view of
-  pending / paused jobs. Probably at the bottom of the window
-  (HintBar adjacent), sized small enough to not steal real estate.
-- A pause/resume affordance per job (where resumability makes
-  sense — see §"Resumability per operation").
-- A cancel affordance per job (always available; cancelled jobs
-  leave on-disk state in a known-good shape).
-- An app-launch flow that surfaces interrupted jobs:
-  - "You had 3 unfinished jobs last session. Resume them now?"
-  - Or auto-resume per-job based on a per-kind policy (e.g. core
-    downloads auto-resume, media sync prompts).
-
-**Not this arc:**
-- New operations. We're consolidating + persisting + UI'ing the
-  operations that exist today (plus the disc-track SHA-1 work
-  that's queued). No new background work gets added by this arc.
-- Foreground-modal operations. Some operations are
-  operator-blocking by design (e.g. the wizard's pre-commit
-  review). Those stay foreground; the persistent bar surfaces
-  background work only.
-- Cross-app job scheduling. Each OA install runs its own queue;
-  no networked / shared / multi-install coordination.
-- The progress-event protocol redesign. Today's
-  `oa://core-download-progress` / `oa://library-scan-progress`
-  / etc. events stay; the job system listens to them + maps
-  them onto job rows. We don't rewrite every emitter.
-
----
-
-## Operations to consolidate (Phase 1 inventory)
-
-For each, note what the op does today + what its real-progress
-contract looks like + what resume-from-last looks like.
-
-| Operation | Today's surface | Real-progress contract | Resume-from-last |
-| --- | --- | --- | --- |
-| Core download (`download_core`) | per-call toast via `oa://core-download-progress` | bytes_downloaded / total_bytes (HTTP `Content-Length`); zips are typically <10 MB so total is always known | HTTP Range request from the existing `.partial` file's size — already most of the way there; needs the queue to remember WHICH core was being downloaded |
-| Bulk core install (Guided Setup) | `MissingCoreBulkPrompt` modal | n_completed / n_requested core IDs | Re-runs the per-system list, skips installed cores |
-| libretro-database dat sync (`sync_rom_hashes_for_system`) | inline progress in resolve flow | single HTTP fetch; cheap; no progress emit today | Atomic — retry on next launch |
-| ROM hash resolve (`resolve_rom_hashes_for_system`) | per-system progress emit via `oa://rom-hashes-resolved` | n_hashed / n_total per system | Per-game; rows already-stamped are skipped on re-run |
-| MAME ROM-set listxml import (`refresh_mame_system_info`) | dialog progress bar | listxml parse is fast; not really "long-running" — borderline | Atomic — retry on next launch |
-| Media sync (`sync_media_for_system`) | per-system; emits `oa://media-sync-progress` | n_games_resolved / n_games_total | Per-game; already-resolved games skip |
-| Folder scan (`start_background_scan`) | inline progress in wizard | files_seen + matches; total unknown up front (walking the tree) | Re-scans from the start (cheap; whole walk is single-digit seconds for a 10K-file folder) |
-| Disc-track SHA-1 (future arc) | not implemented yet | n_tracks_hashed / n_tracks_total per disc; bytes_hashed / bytes_total per track | Per-track cache on the game row |
-| Cover-art / fanart download (per game) | inline; `oa://media-sync-progress` carries it | n_arts_downloaded / n_arts_requested | Per-art; already-cached art is skipped |
-| Thumbnail repo sync (libretro-thumbnails) | per-system; events | n_files_downloaded / n_files_expected | Per-file; already-downloaded files skip |
-
-Operations marked "Atomic" don't really need resume — they're
-short enough that retry-from-scratch is cheaper than tracking
-mid-state. They still register as jobs so the operator can SEE
-them happening, but `can_resume` is false; cancel just kills the
-job without saving state.
-
-Operations marked "Per-game" / "Per-file" / "Per-track" resume
-trivially because their work is idempotent at the per-item level
-— resume = "iterate the work list, skip items already done."
-
-The HARD case is the single-stream operations (the core download
-HTTP fetch). HTTP Range request resume is the standard answer
-(already partly in place via the `.partial` file pattern); the
-job queue just needs to persist the URL + the destination path
-so the kind's resume handler knows where to pick up.
-
----
-
-## Technical shape
-
-### Schema
+## Schema
 
 New SQLite table:
 
 ```sql
 CREATE TABLE background_jobs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind            TEXT NOT NULL,    -- "core_download", "scan", "media_sync", ...
-    label           TEXT NOT NULL,    -- operator-facing "Downloading Beetle PSX HW"
-    state           TEXT NOT NULL,    -- pending | running | paused | completed | failed | cancelled
+    kind            TEXT NOT NULL,            -- "core_download", "scan", "artwork_sync", ...
+    label           TEXT NOT NULL,            -- operator-facing string
+    system_id       TEXT,                     -- nullable: jobs scoped to a single system
+    target_id       TEXT,                     -- nullable: kind-specific (core base name, game rom_id, etc.)
+    parent_job_id   INTEGER,                  -- nullable: for bulk children or dep chains; FK to id
+    is_prereq       INTEGER NOT NULL DEFAULT 0, -- bool: auto-triggered prereq vs operator-initiated
+    state           TEXT NOT NULL,            -- pending | running | paused | completed | failed | cancelled | interrupted
     done            INTEGER NOT NULL DEFAULT 0,
-    total           INTEGER,          -- nullable: some ops genuinely don't know
-    unit            TEXT NOT NULL,    -- "bytes" | "files" | "games" | "tracks"
-    last_event_at   INTEGER NOT NULL, -- unix ms; for stale-job detection
+    total           INTEGER,                  -- nullable: some kinds don't know up front
+    unit            TEXT NOT NULL,            -- "bytes" | "files" | "games" | "tracks" | "cores"
+    last_event_at   INTEGER NOT NULL,         -- unix ms; for heartbeat / stale detection
     started_at      INTEGER NOT NULL,
-    finished_at     INTEGER,          -- nullable
-    can_resume      INTEGER NOT NULL DEFAULT 0,  -- bool: kind supports resume
-    resume_payload  TEXT,             -- JSON: kind-specific resume state
-    error_message   TEXT              -- nullable: last error
+    finished_at     INTEGER,
+    can_resume      INTEGER NOT NULL DEFAULT 1,
+    resume_payload  TEXT,                     -- JSON: kind-specific resume state
+    error_message   TEXT,                     -- nullable: last error
+    retry_count     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_background_jobs_active ON background_jobs (state, last_event_at);
+CREATE INDEX idx_background_jobs_history ON background_jobs (state, finished_at);
+CREATE INDEX idx_background_jobs_parent ON background_jobs (parent_job_id);
 ```
 
-`state = 'running'` rows at app start are jobs interrupted by a
-crash / close. The launch flow looks at these.
+`state` machine:
+- `pending` (queued but not started)
+- `running` (active worker)
+- `paused` (operator paused or app restart interrupted)
+- `completed`
+- `failed`
+- `cancelled` (operator cancelled)
+- `interrupted` (crash detection; transitional state → auto-resume
+  flow promotes to `running` or `paused` based on settings)
 
-### Tauri-managed `JobRegistry`
+History rolling buffer: when total finished rows (completed +
+failed + cancelled) exceeds 100, DELETE the oldest by
+`finished_at`. Active rows (pending / running / paused /
+interrupted) are never counted toward the 100.
+
+---
+
+## JobRegistry — Tauri-managed state
 
 ```rust
 pub struct JobRegistry {
@@ -179,7 +321,7 @@ pub struct JobRegistry {
 pub struct JobHandle {
     job_id: i64,
     cancel: Arc<AtomicBool>,
-    pause: Arc<AtomicBool>,  // checked by long-running loops
+    pause: Arc<AtomicBool>,   // checked by long-running loops; flipping = pause request
     last_progress: AtomicI64,
 }
 
@@ -192,13 +334,19 @@ pub enum JobEvent {
 }
 ```
 
-Long-running operations create a job at start:
+Per-kind workers use the handle pattern:
+
 ```rust
-let job_id = registry.create_job(JobKind::CoreDownload, label, can_resume: true, payload)?;
+let job_id = registry.create_job(JobKind::CoreDownload {
+    base: "mednafen_psx_hw_libretro".into(),
+}, label, payload)?;
 let handle = registry.handle(job_id);
 
 while let Some(chunk) = stream.next().await {
-    if handle.cancel.load(Ordering::Relaxed) { return Err("cancelled"); }
+    if handle.cancel.load(Ordering::Relaxed) {
+        registry.flush_resume_state(job_id, partial_state)?;
+        return Err("cancelled");
+    }
     while handle.pause.load(Ordering::Relaxed) {
         tokio::time::sleep(Duration::from_millis(100)).await;
         if handle.cancel.load(Ordering::Relaxed) { return Err("cancelled"); }
@@ -208,157 +356,125 @@ while let Some(chunk) = stream.next().await {
 }
 ```
 
-`registry.progress(...)` debounces writes to SQLite (probably
-1 Hz max) so a tight loop doesn't thrash the DB.
+Performance contracts:
+- `registry.progress(...)` debounces SQLite writes to 1 Hz max.
+- Tauri broadcast events from `event_tx` cap at 10 Hz max to the
+  frontend.
+- Worker threads run on tokio's existing runtime; CPU-heavy work
+  uses `tokio::task::spawn_blocking` (already the pattern in
+  scan_service / rom_hashes).
 
-Tauri broadcast events from `event_tx` flow to the frontend at
-~10 Hz max so the progress bar updates smoothly without saturating
-the IPC channel.
+---
 
-### Per-kind resume handlers
+## Per-kind resume handlers
 
 ```rust
-pub trait JobResumer {
+pub trait JobResumer: Send + Sync {
     fn resume(
+        &self,
         job_id: i64,
         payload: serde_json::Value,
-        registry: &JobRegistry,
+        registry: Arc<JobRegistry>,
         app: AppHandle,
     ) -> tokio::task::JoinHandle<Result<(), String>>;
+
+    fn cleanup_on_cancel(
+        &self,
+        payload: &serde_json::Value,
+        app: &AppHandle,
+    ) -> Result<(), String>;
 }
+```
 
-// Per-kind impls live next to the operation they manage:
-impl JobResumer for CoreDownloadResumer { ... }
-impl JobResumer for MediaSyncResumer { ... }
-// ...
+Each kind owns its resumer alongside the operation it manages.
+At app start:
 
-// At app start:
-fn resume_interrupted_jobs(registry: &JobRegistry) {
-    for job in registry.list_resumable_interrupted()? {
-        let resumer = pick_resumer(&job.kind);
-        resumer.resume(job.id, job.resume_payload, registry, app.clone());
+```rust
+fn resume_interrupted_jobs(registry: &JobRegistry, settings: &Settings) {
+    for job in registry.list_interrupted()? {
+        let prompt = settings.prompt_before_resume(&job.kind);
+        let resumer = registry.resumer_for(&job.kind);
+        if prompt {
+            // emit event; UI prompts operator
+            emit_resume_prompt(job);
+        } else {
+            resumer.resume(job.id, job.resume_payload, ...);
+        }
     }
 }
 ```
 
-Each operation owns its own resume handler — no central dispatcher
-trying to understand every op's state. The handler knows what the
-payload means + how to re-enter the operation at the right point.
+---
 
-### Frontend UI
+## Frontend UI
 
-A new `BackgroundJobsBar` Solid component, mounted in
-`RetroverseShell` at the bottom of the window (above the existing
-HintBar; HintBar takes priority when shown). Layout:
+New `BackgroundJobsBar` Solid component, mounted in
+`RetroverseShell` between the main content area and the HintBar.
 
-```
-+--------------------------------------------------------------+
-| Downloading Beetle PSX HW   3.2 MB / 8.4 MB        [▢] [×]   |
-| ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 38%  +2 queued |
-+--------------------------------------------------------------+
-```
+**State machine:**
+- `Hidden` — no jobs, no handle visible
+- `HandleVisible` — jobs active, bar collapsed; thin handle at
+  bottom-of-window pulses on progress
+- `Expanded` — full bar visible with stack rows
+- `RecentActivity` — full-screen overlay with tabbed history
 
-- Single-line bar: label + numbers + bar + pause + cancel
-  buttons + a "+N queued" affordance
-- Clicking the bar expands a panel showing all active + queued
-  jobs (max-height; scrollable)
-- Auto-hides after 2 seconds of empty-queue
-- Listens to `JobEvent` broadcasts via a Tauri event subscription
-
-### Operator-facing resume prompt
-
-At app launch, IF there are any `state = 'running'` rows in
-`background_jobs`:
+**Layout (Expanded):**
 
 ```
-Last session had unfinished work
-┌─────────────────────────────────────────┐
-│ ▶ Downloading Beetle PSX HW             │
-│   38% complete (3.2 of 8.4 MB)          │
-│   [Resume] [Discard]                    │
-│                                         │
-│ ▶ Resolving NES ROM hashes              │
-│   145 of 200 ROMs hashed                │
-│   [Resume] [Discard]                    │
-└─────────────────────────────────────────┘
-        [Resume all] [Discard all]
+┌─────────────────────────────────────────────────────────────┐
+│ [Pause all] [Cancel all]              Recent activity > [×] │ <- header (when 2+ jobs)
+├─────────────────────────────────────────────────────────────┤
+│ ▣ Downloading Beetle PSX HW        3.2 MB / 8.4 MB  ⏸ ✕    │ <- per-job row
+│   ████████████░░░░░░░░░░░░░░░░░░░░░░ 38%                    │
+├─────────────────────────────────────────────────────────────┤
+│ 🔍 Identifying PSX ROMs            145 / 200 games   ⏸ ✕   │
+│   ████████████████████████░░░░░░░ 72%                       │
+├─────────────────────────────────────────────────────────────┤
+│ 🖼 Syncing PSX artwork              23 / 200 covers   ⏸ ✕   │
+│   ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 11%                      │
+├─────────────────────────────────────────────────────────────┤
+│ +2 more                                            [show all]│
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Alternative — auto-resume per kind based on a policy. Core
-downloads auto-resume (low-friction); scans + hash passes
-prompt (they're CPU-heavy and the operator might want to defer).
-Operator decides which kind goes which way.
+**Layout (HandleVisible):**
+
+```
+                                              ╲ active jobs ╱
+                                                 ▔▔▔▔▔▔▔
+```
+Thin (~12-16px) handle at bottom-of-window. Pulses softly on
+progress events. Click to expand.
+
+**Recent activity panel (full-screen overlay or settings drill-in):**
+
+Tabbed by outcome:
+- `Running (3)` (active jobs — same as the bar's expanded view)
+- `Completed (47)` (finished successfully)
+- `Failed (2)` (errored out)
+- `Cancelled (12)` (operator-cancelled)
+
+Each row shows timestamp, kind icon, label, duration, outcome
+glyph. Operator can click a row to see error details + [Retry]
+on failed rows.
 
 ---
 
-## Open design questions
+## Operations to consolidate (existing inventory)
 
-1. **Resume prompt vs auto-resume.** First-pass instinct is "always
-   prompt" — operator likes control. But for a core download
-   that's 90% done, asking "want to finish this?" every launch is
-   noise. Per-kind policy may be the answer; needs operator call
-   per kind.
-
-2. **Pause semantics — actual pause vs cancel-and-remember.**
-   Cleanest is `pause = stop work + persist resume state`. Then
-   resume is the same code path the app-restart resume uses. But
-   some ops (HTTP downloads) can pause without closing the
-   connection if the pause is short. Worth optimizing? Or just
-   always close + reopen on resume? Probably the simpler "close
-   and reopen" — handles every resume case uniformly.
-
-3. **Concurrent jobs — show one or stack?** Most users only have
-   1-2 jobs running at once. Showing the topmost active job
-   + "+N queued" feels right for the common case. Power users
-   might want a stack. Defer; ship with single-line UI + the
-   expandable panel for queue inspection.
-
-4. **What about jobs that genuinely can't measure `total`?**
-   Folder scans walk the FS — total file count is unknown until
-   the walk completes. Show "Scanning... 1,247 files seen" with a
-   pulsing bar (no percent), then switch to percent once the walk
-   finishes + the next phase (hashing / classifying) starts. Need
-   to handle the unknown-total case in the schema (`total NULL`)
-   and the UI (pulsing-bar mode).
-
-5. **Job priority + ordering.** When multiple ops are queued, who
-   runs first? FIFO? Per-kind priority (downloads first; sync
-   last)? Operator-promoted? Start with FIFO; revisit if a real
-   ordering need shows up.
-
-6. **What about the "Identify ROMs" flow's existing inline
-   progress?** Today the operator clicks Identify in
-   Settings → Library and a modal opens with a progress bar.
-   When the job system lands, do we (a) keep the modal but ALSO
-   register a job that shows in the bar, (b) drop the modal and
-   route everything through the bar? (a) is gentler; (b) is more
-   consistent. Probably (a) for the transition + revisit later.
-
-7. **What about toast notifications?** Today some ops emit toasts
-   on completion ("✓ Downloaded Beetle PSX HW"). The job system
-   could replace these (the bar shows the job; completion just
-   removes it). Or both could coexist. Probably both, with the
-   toasts as a celebration on completion + the bar for the
-   in-progress state.
-
-8. **Crash recovery.** If the app crashes mid-job, the
-   `background_jobs` row stays at `state = 'running'`. The
-   launch flow detects this via `last_event_at` being old (>5
-   seconds before crash) and flips to "interrupted" before
-   prompting. What about jobs that legitimately ran for hours
-   between events? Probably a stale-detection heuristic per
-   kind (some kinds expect frequent updates; others don't).
-
-9. **Disk-resident state outside SQLite.** A core download has a
-   `.partial` file on disk. A scan has cached file metadata.
-   These need consistent cleanup when a job is "Discard"ed at
-   app launch. Per-kind cleanup function alongside the resume
-   handler.
-
-10. **What if the user has reorganized their library between
-    sessions?** A scan job that was paused mid-folder might have
-    file paths that don't exist anymore. The resume handler needs
-    to be defensive — skip-missing rather than fail-the-job.
+| Operation | Kind | Today's surface (retires) | Real-progress contract |
+| --- | --- | --- | --- |
+| `download_core` | `core_download` | toast | bytes_downloaded / total_bytes (HTTP Content-Length) |
+| Guided Setup bulk install | `bulk_core_install` | modal w/ child progress | n_done / n_requested cores |
+| `sync_rom_hashes_for_system` | `dat_sync` | inline; no progress today | single fetch — show indeterminate / done split |
+| `resolve_rom_hashes_for_system` | `hash_resolve` | per-system events | n_hashed / n_total |
+| `refresh_mame_system_info` | `mame_listxml_import` | dialog progress | n_records / n_records (atomic) |
+| `sync_media_for_system` | `artwork_sync` | per-system events | n_arts_done / n_arts_total |
+| `sync_media_for_system` (metadata path) | `metadata_sync` | per-system events | n_games_metadata / n_games_total |
+| `start_background_scan` | `folder_scan` | inline wizard progress | files_seen (no total until walk completes) |
+| (future) per-track SHA-1 | `disc_track_hash` | n/a (planned) | n_tracks / n_total_tracks per disc; bytes / bytes per track |
+| Cover / fanart / wheel download | folds into `artwork_sync` | per-art event | per-art |
+| Thumbnail repo sync | folds into `artwork_sync` | per-file event | per-file |
 
 ---
 
@@ -368,115 +484,128 @@ Rough phasing — ~5-6 weeks total:
 
 - **Phase 1 — schema + JobRegistry + first kind wired** (~1 week):
   `background_jobs` SQLite table + migration. `JobRegistry`
-  Tauri-managed state. `JobHandle` shape + event broadcast
-  channel. Wire ONE operation (probably `download_core` — it's
-  the simplest with the clearest progress contract). End-to-end
-  smoke test: launch download → progress events → cancel works.
+  Tauri-managed state. `JobHandle` shape + event broadcast.
+  Lock file + heartbeat infrastructure. Wire `core_download`
+  end-to-end (smallest progress contract, easiest verify).
+  Smoke test: create → progress → cancel → resume → recover-from-crash.
 
 - **Phase 2 — BackgroundJobsBar UI** (~1 week): new Solid
-  component, mounted in RetroverseShell. Auto-hide / single-line
-  / expandable panel. Listens to `JobEvent` broadcast via Tauri
-  event. Pause + cancel buttons wired to the JobRegistry.
-  Validation: end-to-end with the Phase 1 download kind.
+  component, mounted in RetroverseShell. Handle / collapsed /
+  expanded states + animation. Stack-visible layout (max 3 +
+  "+N more"). Per-row controls. Bar header for 2+ jobs with
+  Pause-all / Cancel-all. Hooked to Tauri event broadcast.
 
-- **Phase 3 — resume infrastructure + 3 more kinds** (~1.5 weeks):
-  `JobResumer` trait. Per-kind handlers for `core_download`,
-  `media_sync`, `resolve_rom_hashes`. App-launch detect +
-  prompt flow. Each kind's resume tested end-to-end (close app
-  mid-job; relaunch; resume from where it left off).
+- **Phase 3 — Resume infrastructure + 3 more kinds** (~1.5
+  weeks): `JobResumer` trait + per-kind handlers for
+  `core_download` / `artwork_sync` / `hash_resolve`. Cancel
+  cleanup per kind. Auto-resume-on-launch flow w/ per-kind
+  opt-out prompt. Duplicate-trigger Wait/Restart/Cancel dialog.
 
-- **Phase 4 — wire remaining kinds + edge cases** (~1.5 weeks):
-  Folder scan (with unknown-total / pulsing-bar shape).
-  Thumbnail repo sync. MAME listxml import. Per-track SHA-1
-  matching (once that arc lands; this phase pipelines with it).
-  Pause-actually-works tests per kind. Stale-job detection.
+- **Phase 4 — wire remaining kinds + dependency graph** (~1.5
+  weeks): `folder_scan` (with unknown-total / pulsing handle
+  variant). `metadata_sync`. `mame_listxml_import`. `dat_sync`.
+  `bulk_core_install` with parent-row aggregation. Dependency
+  graph: `parent_job_id` chain, auto-trigger prereqs, cancel
+  prompt for "Just this one / The whole chain." Per-kind retry
+  policy. `disc_track_hash` integration once that arc lands
+  (this phase pipelines with the disc-track work).
 
-- **Phase 5 — operator playtest + polish** (~1 week):
-  Real-library testing. Performance check (does the 10 Hz
-  event rate saturate IPC on a noisy job?). Crash recovery
-  testing (kill app mid-job; verify clean recovery). Documentation
-  + per-core README mentions.
+- **Phase 5 — Settings panel + Recent activity + polish** (~1
+  week): "Download Settings" top-level category. Per-kind
+  auto-resume toggles. Bar behavior (always-show, sound on
+  completion). Retry policy controls. Recent activity full
+  panel (tabbed by outcome, last 100). Operator playtest;
+  performance check (10Hz event saturation); crash-recovery
+  testing.
 
 ---
 
 ## Risks
 
 - **Resume implementation per kind is real engineering.** Each
-  operation needs its handler. Costs grow with operation count.
-  Mitigation: ship Phase 3 with 3 kinds; document the trait so
-  future operations follow the pattern from day 1.
+  operation needs its handler. Phase 3 ships with 3 kinds (the
+  trait + the pattern); Phase 4 wires the rest. Operations that
+  already track per-item idempotent state (artwork, metadata,
+  hash_resolve) are easy; HTTP downloads need Range support
+  (already partly there via `.partial` pattern).
 
 - **State drift between app session + on-disk reality.** Half-
-  downloaded files, partial scan state, stale cache. Per-kind
-  cleanup function is the answer; needs to be wired alongside
-  every resume handler.
+  downloaded files, partial scan state, stale cache. The per-kind
+  `cleanup_on_cancel` contract is the answer; needs implementing
+  alongside every resumer.
 
-- **UI noise.** Operator wants to SEE progress, doesn't want to be
-  buried in it. The auto-hide + single-line + collapsed-by-default
-  design is the answer; needs validation in playtest.
+- **Performance.** SQLite write at every progress tick could
+  thrash the DB on a fast HTTP loop. The 1Hz debounce + 10Hz
+  Tauri event cap handle this. In-memory job state is always
+  current.
 
-- **Performance.** Persisting to SQLite at every progress tick
-  could thrash the DB on a fast loop (HTTP download chunks come
-  fast). Debounce at the source (1 Hz max persistence; 10 Hz max
-  event broadcast); the in-memory job state is always current.
-
-- **Concurrent jobs of the same kind.** What if the operator
-  triggers a media sync for psx while one for nes is already
-  running? Currently most operations use per-system mutexes
-  (`MediaState::gate_for`); jobs need to respect those + queue
-  rather than parallel-run. May require modeling job
-  dependencies / mutex relationships.
+- **Concurrent jobs of the same kind across different systems.**
+  Most operations already use per-system mutexes
+  (`MediaState::gate_for`). The job system needs to respect those
+  and queue same-(kind, system) tuples even though same-kind
+  different-system would otherwise run in parallel. The kind +
+  system_id tuple in the schema supports this; the queue dispatch
+  needs to check both.
 
 - **Operator confusion when a job "completes" but the underlying
-  data still updates.** Example: ROM hash resolve completes,
-  shows ✓, but the operator THEN runs media sync which kicks
-  off another job. Maintain the visual difference between
-  "this specific operation completed" and "all background work
-  is done."
+  data still updates.** Example: hash_resolve completes, shows ✓,
+  then artwork_sync kicks off automatically as a dependent. Make
+  the chain visible — the recent-activity panel shows what
+  triggered what (via `parent_job_id`).
+
+- **The bar feels too noisy.** The auto-hide + handle-only-when-
+  active design mitigates most of this. If real-world testing
+  shows the handle pulsing too often → tune the pulse to only
+  fire on state changes (progress ticks below 1% delta skip the
+  pulse).
 
 ---
 
 ## Out of scope (won't do here)
 
 - **Adding new background operations.** Consolidating + persisting
-  + UI'ing what's already there. New ops would slot into the
-  trait once it exists.
-- **Replacing the existing progress event protocol.** Today's
-  `oa://core-download-progress` / `oa://library-scan-progress`
-  etc. stay; the job system listens + maps. Future ops can
-  emit `oa://job-progress` directly.
+  + UI'ing what's already there + what the disc-track arc adds.
+  New ops slot in by implementing the `JobResumer` trait + adding
+  an entry in `JobKind`.
+- **Replacing the existing progress event protocol entirely.**
+  Today's `oa://core-download-progress` /
+  `oa://library-scan-progress` etc. emit unchanged; the job
+  system listens + maps them onto job rows. Future ops can emit
+  `oa://job-progress` directly with the job_id.
 - **Cross-machine sync of jobs.** Each install runs its own queue.
 - **Scheduled / cron-style background work.** Operator-triggered
   only.
 - **Modal-foreground operations** (wizard pre-commit review,
-  per-game settings dialog, etc.). Job system is for background
-  work that the operator can ignore + come back to.
+  per-game settings dialog, etc.). The job system is for
+  background work that the operator can ignore + come back to.
+- **Per-kind / per-system completion chime variants.** v1 ships
+  with a single shared chime. Per-kind / per-system variants are
+  a PARKING_LOT-worthy polish item.
 
 ---
 
 ## When this arc starts
 
-This plan is approved + queued (2026-06-02) but deferred. The
-executing session should:
+This plan is approved + queued (planning locked 2026-06-02) but
+deferred. The executing session should:
 
 1. **Re-read this plan in full.**
 2. **Re-validate the per-kind inventory** in §"Operations to
    consolidate". New ops may have landed; existing ops may have
    changed shape.
-3. **Confirm the schema + persistence model** with the operator
-   before kicking off Phase 1. The `background_jobs` table shape
-   is the foundation everything else depends on.
+3. **Confirm the schema** with the operator before kicking off
+   Phase 1. The `background_jobs` table shape is the foundation
+   everything else depends on; any schema drift here ripples
+   through every resumer.
 4. **Branch as `feat/background-jobs-phase-1`** per the standard
    workflow.
-5. **Pick the Phase 1 pilot operation** (default suggestion:
-   `download_core` — simplest progress contract, smallest UI
-   surface, easiest to verify end-to-end). Operator may prefer a
-   different pilot if a specific op's noisy progress bothers
-   them more.
+5. **Phase 1 pilot: `core_download`** — simplest progress
+   contract, smallest UI surface, easiest to verify end-to-end.
 
 ---
 
-*Plan written 2026-06-02 after the Slice 2 closure + the disc-track
-SHA-1 plan landed. Operator framing: "a real progress bar at the
-bottom of the UI that says exactly what OA is doing, with real
-numbers, and that remembers what it was doing when I close the app."*
+*Plan refined 2026-06-02 across 6 rounds of operator Q&A. 24
+design decisions locked. Original framing: "a real progress bar
+at the bottom of the UI that says exactly what OA is doing, with
+real numbers, and that remembers what it was doing when I close
+the app."*
