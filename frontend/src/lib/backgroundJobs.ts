@@ -15,6 +15,7 @@
 // rather than throwing into the UI.
 
 import { createSignal, type Accessor } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -79,11 +80,29 @@ export type JobEvent =
   | { type: "completed"; jobId: number }
   | { type: "failed"; jobId: number; error: string };
 
-const [activeJobsSig, setActiveJobsSig] = createSignal<JobSnapshot[]>([]);
 /// Reactive list of currently-active jobs (pending / running / paused).
 /// Ordered most-recently-started first so the bar's stack-visible
 /// layout puts the freshly-clicked operation at the top.
-export const activeJobs: Accessor<JobSnapshot[]> = activeJobsSig;
+///
+/// Backed by a Solid store so that Progressed events mutate the
+/// matching row's fields in PLACE rather than swapping in a new
+/// object reference. `<For>` keyed by identity then preserves the
+/// row's DOM across progress ticks — without this, the bar's
+/// pause/cancel buttons get destroyed and recreated 10×/sec and
+/// clicks never land (mousedown lands on one DOM node, mouseup on
+/// another, so the browser drops the click).
+type JobsStore = { items: JobSnapshot[] };
+const [store, setStore] = createStore<JobsStore>({ items: [] });
+export const activeJobs: Accessor<JobSnapshot[]> = () => store.items;
+
+/// Monotonic counter bumped on every Progressed event. The bar's
+/// handle-pulse animation keys off this so the dot re-animates on
+/// each tick. Lives separate from the store because store-field
+/// mutations don't surface through the array-identity subscription
+/// `activeJobs()` carries; without this signal the pulse would only
+/// fire when jobs are created or finished, not while they progress.
+const [progressTickSig, setProgressTickSig] = createSignal(0);
+export const progressTick: Accessor<number> = progressTickSig;
 
 let hydrated = false;
 const pendingEvents: JobEvent[] = [];
@@ -92,28 +111,33 @@ function applyEvent(evt: JobEvent): void {
   switch (evt.type) {
     case "created": {
       const incoming = evt.snapshot;
-      setActiveJobsSig((s) => {
-        // Hydrate + Created race: list_active_jobs may have already
-        // surfaced this row. Idempotent — replace if present, prepend
-        // otherwise.
-        const idx = s.findIndex((j) => j.id === incoming.id);
-        if (idx >= 0) {
-          const next = s.slice();
-          next[idx] = incoming;
-          return next;
-        }
-        return [incoming, ...s];
-      });
+      setStore(
+        "items",
+        produce((arr) => {
+          // Hydrate + Created race: list_active_jobs may have already
+          // surfaced this row. Idempotent — replace if present,
+          // prepend otherwise.
+          const idx = arr.findIndex((j) => j.id === incoming.id);
+          if (idx >= 0) {
+            arr[idx] = incoming;
+          } else {
+            arr.unshift(incoming);
+          }
+        }),
+      );
       break;
     }
     case "progressed":
-      setActiveJobsSig((s) =>
-        s.map((j) =>
-          j.id === evt.jobId
-            ? { ...j, done: evt.done, total: evt.total ?? j.total }
-            : j,
-        ),
+      setStore(
+        "items",
+        produce((arr) => {
+          const j = arr.find((j) => j.id === evt.jobId);
+          if (!j) return;
+          j.done = evt.done;
+          if (evt.total !== null) j.total = evt.total;
+        }),
       );
+      setProgressTickSig((t) => t + 1);
       break;
     case "state_changed":
       // Finished states drop the row from the active list outright —
@@ -121,10 +145,20 @@ function applyEvent(evt: JobEvent): void {
       // become no-ops here (Phase 5's recent-activity panel will
       // consume those separately).
       if (isFinished(evt.state)) {
-        setActiveJobsSig((s) => s.filter((j) => j.id !== evt.jobId));
+        setStore(
+          "items",
+          produce((arr) => {
+            const idx = arr.findIndex((j) => j.id === evt.jobId);
+            if (idx >= 0) arr.splice(idx, 1);
+          }),
+        );
       } else {
-        setActiveJobsSig((s) =>
-          s.map((j) => (j.id === evt.jobId ? { ...j, state: evt.state } : j)),
+        setStore(
+          "items",
+          produce((arr) => {
+            const j = arr.find((j) => j.id === evt.jobId);
+            if (j) j.state = evt.state;
+          }),
         );
       }
       break;
@@ -151,7 +185,7 @@ void listen<JobEvent>("oa://job-event", (event) => {
 
 void invoke<JobSnapshot[]>("list_active_jobs")
   .then((rows) => {
-    setActiveJobsSig(rows);
+    setStore("items", rows);
     hydrated = true;
     while (pendingEvents.length > 0) {
       const evt = pendingEvents.shift();

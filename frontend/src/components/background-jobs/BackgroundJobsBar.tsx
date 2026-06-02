@@ -39,6 +39,7 @@ import {
   cancelJob,
   pauseAllJobs,
   pauseJob,
+  progressTick,
   resumeJob,
   type JobSnapshot,
   type JobState,
@@ -124,7 +125,6 @@ function stateLabel(state: JobState): string {
 
 const BackgroundJobsBar: Component = () => {
   const [expanded, setExpanded] = createSignal(false);
-  const [pulseTick, setPulseTick] = createSignal(0);
 
   // Auto-collapse timer. Reset every time the operator interacts
   // with the bar. The bar is FIXED-position at the bottom of the
@@ -156,15 +156,10 @@ const BackgroundJobsBar: Component = () => {
   });
   onCleanup(cancelCollapseTimer);
 
-  // Pulse the handle whenever the active-jobs signal changes. The
-  // signal updates on every Created / Progressed / StateChanged event,
-  // which is exactly the cadence we want for "still working" feedback.
-  // A `pulseTick` counter + a CSS animation re-trigger via `key=`
-  // restarts the animation on each update.
-  createEffect(() => {
-    activeJobs(); // subscribe
-    setPulseTick((t) => t + 1);
-  });
+  // Pulse the handle on every Progressed event. `progressTick`
+  // increments inside the store's Progressed reducer; the pulse dot
+  // below reads it via a data attribute so the CSS animation
+  // re-triggers each tick.
 
   const jobs = () => activeJobs();
   const jobCount = () => jobs().length;
@@ -233,7 +228,7 @@ const BackgroundJobsBar: Component = () => {
             {/* Pulse dot keyed off pulseTick so it re-animates on
                 every activeJobs update (Progressed events). */}
             <span
-              data-pulse={pulseTick()}
+              data-pulse={progressTick()}
               class="oa-bg-jobs-handle-dot inline-block h-2 w-2 rounded-full bg-(--color-system-accent)"
             />
             <span>
