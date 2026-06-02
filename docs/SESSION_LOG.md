@@ -6,6 +6,109 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-02 — Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)
+
+First slice of the per-system descriptor consolidation arc planned
+2026-06-01 ([docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md)).
+Replaces the ad-hoc scatter of per-system data across ~8 sources
+(hardcoded Rust const tables for BIOS hashes, core catalog,
+libretro-dat refs + in-tree `docs/cores/<id>/system-info.yaml` +
+`games-info.md`) with a unified `config/systems/<id>/{system,bios,games}.yaml`
+triple. Five phase commits on `feat/per-system-descriptors-slice-1`;
+ends with 3 systems running off the registry and 38 unchanged
+(prefer-registry, fall-back-to-const shim pattern). Operator-editable
+YAMLs ship next to the binary so restart-to-reload works without a
+recompile (Slice 2 Verification #3 requirement).
+
+- **Shipped (Phase A, `0dd1e8c` — schema + loader):**
+  `apps/oa-shell/src/system_descriptor.rs` + `system_registry.rs`
+  scaffolding. serde-derived `SystemDescriptor` + `BiosDescriptor` +
+  `GamesDescriptor` with `deny_unknown_fields` for loud typo errors.
+  `SystemRegistry::load_from_in_tree` hot-fails on missing
+  `system.yaml`, id-folder mismatch, embedded system_info id
+  mismatch, malformed YAML, or duplicate id. `global_registry()`
+  OnceLock singleton mirrors `game_info::global_index()` pattern.
+  Resolver mirrors `system_info::resolve_docs_cores_dir` (exe-dir +
+  source-tree fallback). 21 new tests (9 descriptor parser + 12
+  registry loader).
+
+- **Shipped (Phase B, `5544390` — GB pilot, no-BIOS shape):**
+  `config/systems/gb/system.yaml` with the entire
+  `docs/cores/gb/system-info.yaml` content embedded under the
+  `system_info:` key. New `load_curated_records_with_registry` +
+  `hash_l1_l2_inputs_with_registry` in `system_info.rs`;
+  `bake_system_info_on_launch` constructs `SystemRegistry::load_default()`
+  inline + calls the registry-aware variants. Legacy
+  `docs/cores/gb/system-info.yaml` deleted. One new test —
+  `registry_load_finds_gb_via_config_systems_path` — validates
+  end-to-end + regression-guards against accidental docs/cores
+  re-creation.
+
+- **Shipped (Phase C, `edc6bc4` — PSX pilot, any_of BIOS):**
+  `config/systems/psx/{system,bios,games}.yaml`. 18 candidate
+  regional BIOS files with `semantics: any_of`; 2 seed game records
+  (Tomb Raider + Final Fantasy VII) migrated from the deleted
+  `games-info.md`. New `scan_bios_entries(system_dir, &[BiosFileEntry])`
+  — owned-string mirror of `scan_bios_table` that propagates the
+  `optional` flag. New `check_bios_from_registry(system_id,
+  system_dir) -> Option<Result<BiosCheck, BiosError>>` — returns
+  `Some(verdict)` when the registry has `bios.yaml`, `None` when the
+  caller should fall through to its const. `check_psx_bios` +
+  `install_bios_file` (via new `is_canonical_bios_hash`) +
+  `GameInfoIndex::load_default` (via new `add_records`) all consume
+  the registry first. Legacy `docs/cores/psx/system-info.yaml` +
+  `games-info.md` deleted. Three new tests: bios.yaml set-equivalence
+  with `PSX_BIOS_KNOWN_HASHES`, end-to-end check_psx_bios via
+  registry, registry-load finds psx via config/systems.
+
+- **Shipped (Phase D, `e01d851` — NDS pilot, all_required BIOS):**
+  `config/systems/nds/{system,bios,games}.yaml`. 3 required BIOS
+  files (bios7.bin + bios9.bin + firmware.bin) with `semantics:
+  all_required`; 3 seed game records (Phantom Hourglass + Brain Age
+  + Trauma Center) each carrying `touch_hotspots` inline. NDS had
+  no pre-existing `docs/cores/nds/system-info.yaml` so no embedded
+  `system_info:` block (operator can hand-author when ready).
+  `check_nds_bios` wired through the same `check_bios_from_registry`
+  shim as PSX. Three new tests: nds bios set-equivalence, partial-
+  present returns Missing (validates all_required propagation),
+  NDS records (with touch_hotspots) surface via registry merge.
+
+- **Shipped (Phase E — docs + verification):**
+  `docs/PLANS/per-system-descriptors.md` flipped to "Slice 1 SHIPPED";
+  `docs/ACTIVE_WORK.md` adds the Recently-completed entry;
+  `docs/NEXT.md` strikes Slice 1 from HIGH band + queues Slice 2 as
+  the next slice. This SESSION_LOG entry.
+
+- **Architecture decision (resolved during Slice 1):** Sibling
+  `config/` folder + source-tree fallback for the YAML location,
+  rejecting `include_dir!` embedding. Reason: Slice 2 Verification
+  #3 explicitly requires operators to be able to edit
+  `config/systems/<id>/bios.yaml` directly and restart OA to see new
+  known-hashes without a recompile. With `include_dir!`, that
+  edit-loop would require a rebuild — defeating one of the arc's
+  stated values. The bundling step (Slice 2 or Tauri config update)
+  will copy the in-tree `config/` next to `oa-shell.exe` at install
+  time, mirroring the existing `<exe_dir>/cores/` + `<exe_dir>/system/`
+  convention.
+
+- **Almost:** Operator playtest — `cargo tauri dev`; launch PSX with
+  canonical BIOS in `<exe_dir>/system/`; drop only `bios7.bin`
+  (NDS) and confirm pill expands inline showing per-file ✓/⚠;
+  drop PSX BIOS via "Pick BIOS file…"; open GB readiness checklist;
+  confirm `Help → Debug log…` shows
+  `system_registry: loaded 3 systems from config/systems/ in Xms`
+  at startup. All code-side verification (643 oa-shell tests, was
+  615 pre-branch; +28 new) is in.
+
+- **Next:** Slice 2 — bulk migration of remaining 38 systems via a
+  new `migrate_systems` dev binary, plus deletion of ~1,800 LOC of
+  L1 const tables (replaced by ~80 LOC of accessor methods already
+  shipped in Slice 1). Queued in HIGH band of
+  [docs/NEXT.md](NEXT.md). May want to split the 38 into two batches
+  for operator-playtest scopability.
+
+---
+
 ## 2026-05-31 — NDS per-game touch hotspots overlay
 
 Closes the second half of `docs/cores/nds/ROADMAP.md` "Per-game

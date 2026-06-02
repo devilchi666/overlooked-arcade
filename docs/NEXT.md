@@ -381,87 +381,90 @@ resolution, voice + hero polish. ~1,800 lines of new code total;
 log in
 [features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md).
 
-### Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)
+### ~~Per-system descriptor consolidation — Slice 1 (pilot: GB + PSX + NDS)~~ ✅ SHIPPED 2026-06-02
 
-**Major new arc, planning locked 2026-06-01.** Full plan at
-[docs/PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md).
-Off-tree planning context at
-`C:\Users\Devilchi\.claude\plans\spicy-shimmying-crescent.md` (the in-tree
-plan doc is the source of truth — operator may want a fresh
-green-light before kicking off Slice 1).
+Five phase commits on `feat/per-system-descriptors-slice-1` close
+Slice 1 of the consolidation arc planned 2026-06-01. **End state: 3
+systems run off the new registry** (PSX + NDS BIOS entirely; GB L2
+entirely); 38 unmigrated systems unchanged — they keep reading
+hardcoded const via the "prefer-registry, fall back" shim pattern.
 
-**Why this arc matters:** per-system data lives in ~8 scattered places
-today (hardcoded Rust const tables for BIOS hashes, core catalog,
-libretro-dat refs, light-gun systems, device-id options + in-tree
-`docs/cores/<id>/system-info.yaml` + `games-info.md`). The arc
-consolidates everything into `config/systems/<id>/system.yaml` +
-`bios.yaml` + `games.yaml` with serde + `deny_unknown_fields`, runtime
-load at app start, and an explicit L1/L2/L3/L4 layer model that L3
-content packs + L4 SQLite operator overrides slot into cleanly.
+- **Phase A** (`0dd1e8c`) — `apps/oa-shell/src/system_descriptor.rs` +
+  `system_registry.rs` scaffolding. serde-derived
+  `SystemDescriptor` + `BiosDescriptor` + `GamesDescriptor` with
+  `deny_unknown_fields`; runtime loader with hot-fail on missing
+  `system.yaml` / id-folder mismatch / embedded system_info id mismatch
+  / duplicate id; `global_registry()` OnceLock singleton; resolver
+  mirrors `system_info::resolve_docs_cores_dir` (exe-dir → source-tree
+  fallback). 21 new tests (9 descriptor parser, 12 registry loader).
+- **Phase B** (`5544390`) — `config/systems/gb/system.yaml` with the
+  full `docs/cores/gb/system-info.yaml` content embedded under
+  `system_info:`. New `load_curated_records_with_registry` +
+  `hash_l1_l2_inputs_with_registry` in `system_info.rs`;
+  `bake_system_info_on_launch` swapped to the registry-aware variants.
+  Legacy `docs/cores/gb/system-info.yaml` deleted (folder retains
+  README + ROADMAP + SESSION_LOG + KNOWN_GAME_BUGS + DECISIONS).
+- **Phase C** (`edc6bc4`) — `config/systems/psx/{system,bios,games}.yaml`
+  (any_of 18 BIOS files). New `scan_bios_entries` +
+  `check_bios_from_registry` + `is_canonical_bios_hash` shims in
+  `main.rs`; `check_psx_bios` + `install_bios_file` consume them.
+  `GameInfoIndex::load_default` merges registry games on top of the
+  docs/cores walk. Legacy `docs/cores/psx/system-info.yaml` +
+  `games-info.md` deleted.
+- **Phase D** (`e01d851`) — `config/systems/nds/{system,bios,games}.yaml`
+  (all_required 3 BIOS files: bios7 + bios9 + firmware).
+  `check_nds_bios` wired through the same shim as PSX. Legacy
+  `docs/cores/nds/games-info.md` deleted; NDS had no `system-info.yaml`
+  (no L2 record was ever hand-authored).
+- **Phase E** (this commit) — `docs/PLANS/per-system-descriptors.md`
+  status flip to "Slice 1 SHIPPED"; `docs/ACTIVE_WORK.md` +
+  `docs/NEXT.md` updates; `docs/SESSION_LOG.md` entry. NDS now also
+  carries an L2-deserving `system_info` block reserved in the schema
+  (operator can hand-author when ready).
 
-**Slice 1 scope:**
-- New `apps/oa-shell/src/system_descriptor.rs` — serde-derived
-  `SystemDescriptor` + `BiosDescriptor` + `GamesDescriptor` structs
-  matching the three YAML files.
-- New `apps/oa-shell/src/system_registry.rs` — runtime loader (walks
-  `config/systems/<id>/` subfolders, hot-fails on malformed YAML, logs
-  load summary at INFO).
-- Migrate 3 pilot systems: **GB** (no BIOS — small-cart shape), **PSX**
-  (any_of BIOS variants — 18 candidates), **NDS** (all_required
-  multi-file BIOS — 3 files). Each pilot writes `system.yaml` +
-  optional `bios.yaml` + optional `games.yaml` into
-  `config/systems/<id>/`, deleting the matching in-tree
-  `docs/cores/<id>/system-info.yaml` + `games-info.md`.
-- Wire pilot consumers via "prefer-registry, fall back to hardcoded
-  const" shims — `check_*_bios` for PSX + NDS, `available_cores`
-  (CATALOG merge), `libretro_dat_refs_for_system`,
-  `known_hashes_for_system`, `parse_games_info_file`, System Info
-  Panel L2 loader.
-- After Slice 1: PSX + NDS run entirely off the registry; GB runs off
-  it except for BIOS (it has none). The other 38 systems are unchanged
-  — they keep reading from hardcoded const until Slice 2's mass
-  migration.
+**Loader path decision (resolved during Slice 1):** sibling `config/`
+folder under `<exe_dir>/config/systems/` (with source-tree fallback to
+`<repo>/config/systems/` for `cargo tauri dev` + `cargo test`).
+Chosen over `include_dir!` because Slice 2 Verification #3 requires
+operators to edit `config/systems/<id>/bios.yaml` directly and restart
+OA to see new known-hashes without a recompile. Bundling will copy
+the in-tree `config/` next to `oa-shell.exe` at install time.
 
-**Where the work lives:**
-- `apps/oa-shell/src/system_descriptor.rs` (NEW)
-- `apps/oa-shell/src/system_registry.rs` (NEW)
-- `apps/oa-shell/src/main.rs` — shim 3 pilots' BIOS const consumers
-- `apps/oa-shell/src/core_installer.rs` — merge in-tree CATALOG with
-  registry
-- `apps/oa-shell/src/rom_hashes.rs` — shim
-  `libretro_dat_refs_for_system`
-- `apps/oa-shell/src/game_info.rs` + `system_info.rs` — change pilot
-  load paths
-- `config/systems/{gb,psx,nds}/system.yaml` + `bios.yaml` +
-  `games.yaml` (NEW)
+**Test count:** 643 oa-shell green (was 615 pre-branch; +28 new — 21
+in Phase A, 1 in B, 3 in C, 3 in D).
 
-**Verification target:** 615 → ~625 oa-shell tests green; `cargo tauri
-dev` launches a PSX game with canonical BIOS in `<exe_dir>/system/`;
-NDS multi-file BIOS pill expands inline showing per-file ✓/⚠ status;
-GB readiness checklist shows ✓ Core via the registry's cores list +
-↪ BIOS not required; `Help → Debug log…` shows `system_registry:
-loaded 3 systems from config/systems/ in Xms` at startup.
+### Per-system descriptor consolidation — Slice 2 (mass migration of remaining 38 systems)
 
-**Scope:** Slice 1 is ~1-2 weeks (design + loader + 3 pilots + ~10
-tests + verification). Slice 2 (mass migration of remaining 38 systems
-+ deletion of ~1,800 LOC of const tables) is ~2-3 weeks. Slice 3 (L3
-content-pack layer + L4 SQLite overrides + JSON Schema generation +
-CI lint) is ~1 week.
+**Next slice of the per-system descriptor consolidation arc.**
+Awaiting fresh operator green-light. Slice 1 ships a clean pilot
+foundation that the operator may want to play with (drop a PSX game
+in, edit `config/systems/psx/bios.yaml` directly to add an experimental
+SHA-1, restart, see the readiness checklist reflect the edit) before
+kicking off the bulk migration.
 
-**Open implementation decision** (during Slice 1): how the YAMLs ship
-with the binary — `include_dir!` (embed at compile-time) vs sibling
-`config/` folder next to `oa-shell.exe` vs `xtask` build-script copy.
-`include_dir!` is the most likely pick; revisit when Slice 1 starts.
+**Scope (per plan §"Slice 2"):**
+- New `apps/oa-shell/src/bin/migrate_systems.rs` dev binary that walks
+  the existing Rust const tables (`*_BIOS_KNOWN_HASHES`,
+  `core_installer::CATALOG`, `rom_hashes::libretro_dat_refs_for_system`,
+  `light_gun_systems::LIGHT_GUN_SYSTEMS`, `DEVICE_ID_OPTIONS_*`
+  arrays) plus the existing `docs/cores/<id>/system-info.yaml` +
+  `games-info.md` files, emits the 3 YAMLs per system into
+  `config/systems/<id>/`. Idempotent — re-running overwrites.
+- Hand-review the 38 emitted folders. Special cases worth eyes-on:
+  Neo Geo cart's bespoke zip handling, MAME's listxml integration,
+  ScummVM + DOSBox engine-launcher shapes, Channel F's optional
+  sl90025.bin entry.
+- Delete the const tables once every system migrates: ~1,800 LOC
+  removed, replaced by ~80 LOC of loader + accessor (already shipped
+  in Slice 1).
+- Sweep the four remaining Slice 1 consumer shims into direct
+  registry calls — `check_*_bios` (16 more functions),
+  `core_installer::available_cores`, `rom_hashes::libretro_dat_refs_for_system`,
+  `light_gun_systems::LIGHT_GUN_SYSTEMS`.
 
-**Position vs Guided Setup Phase 2:** both are HIGH band; either can
-go first. Operator picks per-session. Per-system descriptor arc is
-larger total effort but Slice 1 alone is comparable to Guided Setup
-Phase 2's ~1-week scope. Doing this arc first means Phase 2's
-per-system tier table in `core_installer.rs::CATALOG` lands directly
-in the new `config/systems/<id>/system.yaml` instead of as another
-hardcoded Rust const — small savings on Phase 2 + cleaner long-term
-shape. Doing Phase 2 first means the tier table ships as Rust const
-and migrates with the other 38 systems in Slice 2 — also fine.
+**Scope:** ~2-3 weeks. May want to split into two batches (half the
+systems first, half a week later) so the operator-playtest pass is
+scopeable.
 
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 

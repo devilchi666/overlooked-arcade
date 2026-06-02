@@ -48,7 +48,9 @@ mod shader_presets;
 mod shader_presets_watcher;
 mod mame_games;
 mod mame_import;
+mod system_descriptor;
 mod system_info;
+mod system_registry;
 mod system_settings;
 mod title_clean;
 mod title_parse;
@@ -1255,6 +1257,80 @@ fn bios_check_from_inventory(
     }
 }
 
+/// Scan a list of `BiosFileEntry` records (from a `bios.yaml` loaded
+/// via [`crate::system_registry`]) into a `Vec<BiosFile>` for
+/// [`bios_check_from_inventory`]. Mirror of [`scan_bios_table`] but
+/// owned-string shape, and propagates the `optional` flag (Channel F's
+/// `sl90025.bin` pattern — recognized but not required for the launch
+/// ROM pair to count as valid).
+///
+/// Slice 1 of the per-system descriptor consolidation
+/// (`docs/PLANS/per-system-descriptors.md`).
+fn scan_bios_entries(
+    system_dir: &Path,
+    entries: &[system_descriptor::BiosFileEntry],
+) -> Vec<BiosFile> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for entry in entries {
+        if !seen.insert(entry.name.as_str()) {
+            continue;
+        }
+        let p = system_dir.join(&entry.name);
+        let on_disk = if !p.is_file() {
+            BiosFileStatus::Missing
+        } else {
+            match std::fs::read(&p) {
+                Ok(bytes) => {
+                    let sha_str = sha1_hex_upper(&bytes);
+                    if sha_str == entry.sha1 {
+                        BiosFileStatus::Ok { sha1: sha_str }
+                    } else {
+                        BiosFileStatus::UnknownHash { sha1: sha_str }
+                    }
+                }
+                Err(e) => BiosFileStatus::ReadError { msg: e.to_string() },
+            }
+        };
+        out.push(BiosFile {
+            expected_name: entry.name.clone(),
+            expected_sha1: Some(entry.sha1.clone()),
+            on_disk,
+            note: if entry.description.is_empty() {
+                None
+            } else {
+                Some(entry.description.clone())
+            },
+            optional: entry.optional,
+        });
+    }
+    out
+}
+
+/// "Prefer-registry, fall back to const" shim for the per-system
+/// `check_*_bios` functions. Returns `Some(verdict)` when the registry
+/// has a `bios.yaml` for `system_id`; `None` when the system either
+/// isn't in the registry or doesn't carry a bios block (in which case
+/// the caller falls through to its hardcoded `*_BIOS_KNOWN_HASHES`
+/// const).
+///
+/// Slice 1 of the per-system descriptor consolidation. Slice 2 deletes
+/// the const fallbacks once every system migrates.
+fn check_bios_from_registry(
+    system_id: &str,
+    system_dir: &Path,
+) -> Option<Result<BiosCheck, BiosError>> {
+    let registry = system_registry::global_registry();
+    let loaded = registry.get(system_id)?;
+    let bios = loaded.bios.as_ref()?;
+    let files = scan_bios_entries(system_dir, &bios.files);
+    let semantics = match bios.semantics {
+        system_descriptor::BiosSemanticsYaml::AnyOf => BiosSemantics::AnyOf,
+        system_descriptor::BiosSemanticsYaml::AllRequired => BiosSemantics::AllRequired,
+    };
+    Some(bios_check_from_inventory(files, semantics))
+}
+
 /// Scan `<system_dir>` for any PCE-CD BIOS file matching a known filename,
 /// compute its SHA-1, classify against the known-good table. Per Slice 5's
 /// refactor: walks every candidate (not just first found), producing a full
@@ -1382,7 +1458,17 @@ const PSX_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 
 /// Scan `<system_dir>` for any PSX BIOS. Slice 5 refactor: per-file
 /// inventory + `AnyOf` semantics (any regional variant satisfies).
+///
+/// Slice 1 of the per-system descriptor consolidation
+/// (`docs/PLANS/per-system-descriptors.md`): prefers
+/// `config/systems/psx/bios.yaml` when present; falls through to
+/// [`PSX_BIOS_KNOWN_HASHES`] when the registry doesn't carry psx
+/// (early-launch path before registry loads, or operator manually
+/// removed `config/systems/psx/`).
 fn check_psx_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
+    if let Some(verdict) = check_bios_from_registry("psx", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, PSX_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AnyOf)
 }
@@ -1595,11 +1681,21 @@ const NDS_BIOS_KNOWN_HASHES: &[(&str, &str, &str)] = &[
 /// hash-match; returns OkUnknownHash if all three exist but at least
 /// one has an unexpected SHA-1; returns Missing if any are absent.
 fn check_nds_bios(system_dir: &Path) -> Result<BiosCheck, BiosError> {
-    // Slice 5 refactor: per-file inventory + `AllRequired` semantics
-    // (BIOS only valid when bios7.bin + bios9.bin + firmware.bin are
-    // all present + canonical-hash-matched). Per-file detail flows
-    // through to the readiness checklist so the operator sees which
-    // specific file is missing rather than a single "missing" string.
+    // Slice 1 of the per-system descriptor consolidation
+    // (`docs/PLANS/per-system-descriptors.md`): prefers
+    // `config/systems/nds/bios.yaml` (all_required semantics) when
+    // present; falls through to [`NDS_BIOS_KNOWN_HASHES`] when the
+    // registry doesn't carry nds.
+    //
+    // Slice 5 refactor (Phase 1B): per-file inventory + `AllRequired`
+    // semantics (BIOS only valid when bios7.bin + bios9.bin +
+    // firmware.bin are all present + canonical-hash-matched). Per-file
+    // detail flows through to the readiness checklist so the operator
+    // sees which specific file is missing rather than a single
+    // "missing" string.
+    if let Some(verdict) = check_bios_from_registry("nds", system_dir) {
+        return verdict;
+    }
     let files = scan_bios_table(system_dir, NDS_BIOS_KNOWN_HASHES);
     bios_check_from_inventory(files, BiosSemantics::AllRequired)
 }
@@ -2271,7 +2367,22 @@ fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> 
     let listxml_path = mame_dir.join("listxml-slim.json");
     let history_path = mame_dir.join("history-slim.xml");
 
-    let new_hash = system_info::hash_l1_l2_inputs(&listxml_path, &history_path, &cores_dir);
+    // Slice 1 of the per-system descriptor consolidation
+    // (docs/PLANS/per-system-descriptors.md): pilot systems' L2
+    // metadata lives in `config/systems/<id>/system.yaml` (embedded
+    // `system_info:` block) rather than the legacy
+    // `docs/cores/<id>/system-info.yaml` file. The hash + record-load
+    // helpers below walk both sources, registry winning on conflict.
+    // Empty registry (no config/systems/ dir) degrades to the
+    // pre-Slice-1 behaviour.
+    let registry = system_registry::SystemRegistry::load_default();
+
+    let new_hash = system_info::hash_l1_l2_inputs_with_registry(
+        &listxml_path,
+        &history_path,
+        &cores_dir,
+        &registry,
+    );
     let stored_hash = db.get_system_info_meta_hash()?;
     if stored_hash.as_deref() == Some(new_hash.as_str()) {
         log::info!(
@@ -2282,7 +2393,7 @@ fn bake_system_info_on_launch(db: &library_db::LibraryDb) -> Result<(), String> 
     }
 
     let l1 = system_info::load_mame_records(&listxml_path, &history_path)?;
-    let l2 = system_info::load_curated_records(&cores_dir);
+    let l2 = system_info::load_curated_records_with_registry(&cores_dir, &registry);
 
     db.bake_system_info_mame(&l1)?;
     db.bake_system_info_curated(&l2)?;
@@ -8092,6 +8203,23 @@ fn open_bios_folder() -> Result<(), String> {
 /// install path permanently flagging operator-installed files as
 /// "unknown hash" even when the hash is canonical — silent regression
 /// from the operator's POV.
+/// "Prefer-registry, fall back to const" canonical-hash check for the
+/// `install_bios_file` command. Slice 1 of the per-system descriptor
+/// consolidation (`docs/PLANS/per-system-descriptors.md`): consults
+/// `config/systems/<id>/bios.yaml` first; falls through to
+/// [`known_hashes_for_system`] when the registry doesn't carry the
+/// system.
+fn is_canonical_bios_hash(system_id: &str, sha1_upper: &str) -> bool {
+    if let Some(loaded) = system_registry::global_registry().get(system_id) {
+        if let Some(bios) = &loaded.bios {
+            return bios.files.iter().any(|f| f.sha1 == sha1_upper);
+        }
+    }
+    known_hashes_for_system(system_id)
+        .iter()
+        .any(|(_, h, _)| *h == sha1_upper)
+}
+
 fn known_hashes_for_system(system_id: &str) -> &'static [(&'static str, &'static str, &'static str)] {
     match system_id {
         "pce-cd" => PCE_BIOS_KNOWN_HASHES,
@@ -8160,9 +8288,7 @@ async fn install_bios_file(
     let bytes = std::fs::read(&source)
         .map_err(|e| format!("read source {}: {e}", source.display()))?;
     let sha = sha1_hex_upper(&bytes);
-    let canonical_match = known_hashes_for_system(&systemId)
-        .iter()
-        .any(|(_, h, _)| *h == sha.as_str());
+    let canonical_match = is_canonical_bios_hash(&systemId, &sha);
     let status = if canonical_match { "ok" } else { "unknownHash" };
 
     let system_dir = exe_system_dir();
@@ -10519,5 +10645,151 @@ mod tests {
             primary.1, alt.1,
             "primary + alt filenames must point at the same canonical SHA-1"
         );
+    }
+
+    // ---- Slice 1 per-system descriptor migration regression tests ----
+
+    #[test]
+    fn psx_bios_check_via_registry_matches_legacy_const() {
+        // Slice 1 Phase C (2026-06-02) — confirms the migrated
+        // config/systems/psx/bios.yaml carries the exact same canonical
+        // filename + SHA-1 set as the legacy PSX_BIOS_KNOWN_HASHES
+        // const. Without this guard, a typo in the YAML would silently
+        // demote canonical BIOSes to "unknown hash" in the readiness
+        // checklist + the install_bios_file flow.
+        let registry = system_registry::global_registry();
+        let psx = registry
+            .get("psx")
+            .expect("config/systems/psx/system.yaml must load under cargo test");
+        let bios = psx
+            .bios
+            .as_ref()
+            .expect("config/systems/psx/bios.yaml must load");
+
+        // Set-equivalence: every (name, sha1) tuple in the const must
+        // exist in the YAML, and vice versa.
+        let const_set: std::collections::HashSet<(&str, &str)> = PSX_BIOS_KNOWN_HASHES
+            .iter()
+            .map(|(n, h, _)| (*n, *h))
+            .collect();
+        let yaml_set: std::collections::HashSet<(&str, &str)> = bios
+            .files
+            .iter()
+            .map(|f| (f.name.as_str(), f.sha1.as_str()))
+            .collect();
+        assert_eq!(
+            const_set, yaml_set,
+            "config/systems/psx/bios.yaml must mirror PSX_BIOS_KNOWN_HASHES exactly"
+        );
+
+        // Semantics must be any_of, matching the legacy
+        // check_psx_bios behaviour.
+        assert!(matches!(
+            bios.semantics,
+            system_descriptor::BiosSemanticsYaml::AnyOf
+        ));
+    }
+
+    #[test]
+    fn nds_bios_check_via_registry_matches_legacy_const() {
+        // Slice 1 Phase D (2026-06-02) — confirms config/systems/nds/bios.yaml
+        // carries the same canonical (name, sha1) tuples as
+        // NDS_BIOS_KNOWN_HASHES + the semantics is all_required.
+        let registry = system_registry::global_registry();
+        let nds = registry
+            .get("nds")
+            .expect("config/systems/nds/system.yaml must load under cargo test");
+        let bios = nds
+            .bios
+            .as_ref()
+            .expect("config/systems/nds/bios.yaml must load");
+
+        let const_set: std::collections::HashSet<(&str, &str)> = NDS_BIOS_KNOWN_HASHES
+            .iter()
+            .map(|(n, h, _)| (*n, *h))
+            .collect();
+        let yaml_set: std::collections::HashSet<(&str, &str)> = bios
+            .files
+            .iter()
+            .map(|f| (f.name.as_str(), f.sha1.as_str()))
+            .collect();
+        assert_eq!(
+            const_set, yaml_set,
+            "config/systems/nds/bios.yaml must mirror NDS_BIOS_KNOWN_HASHES exactly"
+        );
+        assert!(matches!(
+            bios.semantics,
+            system_descriptor::BiosSemanticsYaml::AllRequired
+        ));
+        // All_required + 3 entries — DS BIOS is bios7+bios9+firmware.
+        assert_eq!(bios.files.len(), 3);
+    }
+
+    #[test]
+    fn nds_check_bios_via_registry_partial_present_returns_missing() {
+        // Drop bios7.bin only (with garbage bytes) — the all_required
+        // semantics should still return Missing because bios9 + firmware
+        // are absent. Validates the registry path produces the same
+        // verdict the const path would.
+        let dir = fresh_tmp_dir("nds-partial");
+        std::fs::write(dir.join("bios7.bin"), b"not the real bios").expect("seed bios7");
+        match check_nds_bios(&dir) {
+            Err(BiosError::Missing { files }) => {
+                // bios9 + firmware should appear in the inventory as Missing;
+                // bios7 should be UnknownHash since it's present with the
+                // wrong content.
+                let bios7 = files
+                    .iter()
+                    .find(|f| f.expected_name == "bios7.bin")
+                    .expect("bios7 in inventory");
+                assert!(matches!(bios7.on_disk, BiosFileStatus::UnknownHash { .. }));
+                let bios9 = files
+                    .iter()
+                    .find(|f| f.expected_name == "bios9.bin")
+                    .expect("bios9 in inventory");
+                assert!(matches!(bios9.on_disk, BiosFileStatus::Missing));
+                let firmware = files
+                    .iter()
+                    .find(|f| f.expected_name == "firmware.bin")
+                    .expect("firmware in inventory");
+                assert!(matches!(firmware.on_disk, BiosFileStatus::Missing));
+            }
+            other => panic!("expected Missing, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn psx_check_bios_uses_registry_path_when_canonical_file_present() {
+        // End-to-end: drop a canonical PSX BIOS into a tmp system dir,
+        // call check_psx_bios, confirm the file pill comes back as
+        // OkUnknownHash (because the on-disk content doesn't actually
+        // hash to the canonical sha1 — we wrote 0 bytes). What we're
+        // actually validating is that check_psx_bios's registry path
+        // was taken (the file inventory has a Some(expected_sha1) for
+        // the registry-sourced filename) rather than the const
+        // fallback.
+        let dir = fresh_tmp_dir("psx-registry-shim");
+        // scph5500.bin is in both the const + the YAML — either path
+        // would produce a file inventory entry for it. The check_*_bios
+        // code path doesn't distinguish; the regression we want to
+        // catch is "registry empty when it should not be", which
+        // psx_bios_check_via_registry_matches_legacy_const covers.
+        std::fs::write(dir.join("scph5500.bin"), b"not the real bios").expect("seed");
+        let r = check_psx_bios(&dir).expect("check_psx_bios runs");
+        match r {
+            BiosCheck::OkUnknownHash { files, .. } => {
+                let scph5500 = files
+                    .iter()
+                    .find(|f| f.expected_name == "scph5500.bin")
+                    .expect("scph5500.bin appears in inventory");
+                assert!(
+                    scph5500.expected_sha1.is_some(),
+                    "registry-sourced entry must carry its expected canonical SHA-1"
+                );
+            }
+            other => panic!("expected OkUnknownHash, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

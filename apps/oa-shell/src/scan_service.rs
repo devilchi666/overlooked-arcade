@@ -210,6 +210,22 @@ pub fn run_scan_blocking(
     // Final walk progress emit so the UI bar lands at 100% / last filename.
     emit_progress(&handle, job_id, &folder_str, files_seen, &out, "");
 
+    // Drop data-track rows (.bin / .img / .raw) when a sibling playlist
+    // row (.cue / .m3u / .ccd / .toc / .gdi) exists in the same parent
+    // (folder for raw rows; archive + inner-dir for archived rows). The
+    // playlist is the launch entry — the data tracks are tracked by the
+    // playlist's track list, not separately importable. Without this
+    // pass, archives like `Game.zip` containing `Game.cue` + `Game.bin`
+    // surface BOTH as rows; the .cue classifies as PSX via extension,
+    // the .bin can't classify (no system_theme claims .bin) and shows
+    // up as "NEEDS SYSTEM" forever.
+    let dropped = dedupe_disc_data_tracks(&mut out);
+    if dropped > 0 {
+        log::info!(
+            "scan_service: dropped {dropped} data-track row(s) paired with playlist siblings"
+        );
+    }
+
     // Phase 1B Slice 1: smart-classification pass. Walks the freshly-
     // collected rows, classifies each to a system via the supplied
     // extension→system mapping (overridden by `system_hint` when set),
@@ -235,6 +251,77 @@ pub fn run_scan_blocking(
         started.elapsed().as_millis(),
     );
     Ok(out)
+}
+
+/// Disc-image extensions OA treats as launch entries (playlist /
+/// indexed-track shape). Presence in a parent directory or archive
+/// marks the parent as "playlist-anchored" — sibling data-track files
+/// in the same parent get filtered out by [`dedupe_disc_data_tracks`].
+const PLAYLIST_EXTS: &[&str] = &["cue", "m3u", "ccd", "toc", "gdi"];
+
+/// Disc-image extensions that are typically referenced BY a playlist
+/// rather than launched directly. Operators see exactly one .cue + N
+/// .bin tracks per multi-track CD on disk; we want to surface only the
+/// .cue. `.iso` + `.chd` deliberately stay launchable (single-file
+/// container formats — operators DO drop those standalone).
+const DATA_TRACK_EXTS: &[&str] = &["bin", "img", "raw"];
+
+/// Compute the "parent key" for a row — the scope inside which a
+/// sibling playlist makes a data-track row redundant.
+///
+/// - **Raw rows**: parent directory. Operators organize loose CD
+///   images one-game-per-folder, so restricting to the immediate
+///   parent avoids cross-contamination between unrelated dumps.
+/// - **Archived rows**: the archive path itself, NOT the inner
+///   subfolder. Real-world Redump-style archives often place the
+///   `.cue` at the archive root with `.bin` tracks in a `tracks/`
+///   or `Disc 1/` subfolder; the looser per-archive match catches
+///   that layout. A single archive is almost always one game in
+///   practice (multi-disc Redump dumps pack each disc in its own
+///   `.zip`), so collateral drops across "unrelated" inner subdirs
+///   don't happen in real libraries.
+fn parent_key(row: &ScannedRom) -> String {
+    if row.archive_inner_path.is_some() {
+        let (archive_path, _) = crate::archive::decode_file_path(&row.path);
+        archive_path.to_string_lossy().into_owned()
+    } else {
+        Path::new(&row.path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+}
+
+/// Drop [`DATA_TRACK_EXTS`] rows whose parent (folder for raw rows;
+/// archive + inner-dir for archived rows) also contains at least one
+/// [`PLAYLIST_EXTS`] row. Returns the count of dropped rows for the
+/// log line in [`run_scan_blocking`].
+///
+/// Standalone data-track rows (no playlist in the same parent) are
+/// kept — some single-track PSX cores accept raw `.bin` directly, and
+/// the operator may genuinely want to import those.
+pub(crate) fn dedupe_disc_data_tracks(rows: &mut Vec<ScannedRom>) -> usize {
+    use std::collections::HashSet;
+    if rows.is_empty() {
+        return 0;
+    }
+    let mut playlist_parents: HashSet<String> = HashSet::new();
+    for r in rows.iter() {
+        if PLAYLIST_EXTS.contains(&r.extension.as_str()) {
+            playlist_parents.insert(parent_key(r));
+        }
+    }
+    if playlist_parents.is_empty() {
+        return 0;
+    }
+    let before = rows.len();
+    rows.retain(|r| {
+        if !DATA_TRACK_EXTS.contains(&r.extension.as_str()) {
+            return true;
+        }
+        !playlist_parents.contains(&parent_key(r))
+    });
+    before - rows.len()
 }
 
 /// Highest-priority classification source for a row. Hint > extension map.
@@ -920,5 +1007,186 @@ mod tests {
             swap: ByteSwapKind::Pairs16,
         };
         assert_eq!(confidence_from_rule(rule), Confidence::Header);
+    }
+
+    // ---- dedupe_disc_data_tracks (2026-06-02) ----
+
+    fn raw_row(path: &str, ext: &str) -> ScannedRom {
+        ScannedRom {
+            path: path.to_string(),
+            file_name: Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            extension: ext.to_string(),
+            ..ScannedRom::default()
+        }
+    }
+
+    fn archived_row(archive: &str, inner: &str, ext: &str) -> ScannedRom {
+        ScannedRom {
+            path: format!("{archive}#{inner}"),
+            file_name: Path::new(inner)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            extension: ext.to_string(),
+            archive_inner_path: Some(inner.to_string()),
+            ..ScannedRom::default()
+        }
+    }
+
+    #[test]
+    fn dedupe_drops_bin_when_sibling_cue_exists_raw_folder() {
+        let mut rows = vec![
+            raw_row("/games/psx/007.cue", "cue"),
+            raw_row("/games/psx/007.bin", "bin"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension, "cue");
+    }
+
+    #[test]
+    fn dedupe_keeps_standalone_bin_when_no_playlist_sibling() {
+        // Folder has only a .bin (some PSX cores accept single-track raw
+        // .bin directly). With no playlist sibling, keep it.
+        let mut rows = vec![raw_row("/games/psx/Single.bin", "bin")];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 0);
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn dedupe_drops_archived_bin_when_archive_has_cue_sibling() {
+        // Game.zip with Game.cue + Game.bin inside — typical multi-track
+        // CD layout. The .cue is the launch entry; .bin is referenced.
+        let mut rows = vec![
+            archived_row("/games/psx/Game.zip", "Game.cue", "cue"),
+            archived_row("/games/psx/Game.zip", "Game.bin", "bin"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension, "cue");
+    }
+
+    #[test]
+    fn dedupe_groups_archived_rows_by_whole_archive() {
+        // Per-archive grouping (2026-06-02 looser variant): any playlist
+        // anywhere in the archive marks ALL data tracks in that archive
+        // as paired. An archive holding Disc1/.cue + Disc1/.bin +
+        // Disc2/.bin (no Disc2 cue — likely orphan from a partial
+        // dump) drops both .bins; only the .cue survives. Operators
+        // organize multi-disc games as one .zip per disc, so
+        // collateral drops across inner subdirs don't show up in real
+        // libraries.
+        let mut rows = vec![
+            archived_row("/games/psx/Game.zip", "Disc1/Foo.cue", "cue"),
+            archived_row("/games/psx/Game.zip", "Disc1/Foo.bin", "bin"),
+            archived_row("/games/psx/Game.zip", "Disc2/Foo.bin", "bin"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 2);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension, "cue");
+    }
+
+    #[test]
+    fn dedupe_handles_cue_at_archive_root_with_bins_in_subfolder() {
+        // Real-world Redump shape: `.cue` at archive root referencing
+        // `.bin` tracks that live one level deeper. The strict-subdir
+        // matcher would miss this (cue's parent = ""; bin's parent =
+        // "tracks") — the looser per-archive rule catches it.
+        let mut rows = vec![
+            archived_row("/games/psx/3D Lemmings.zip", "3D Lemmings (USA).cue", "cue"),
+            archived_row(
+                "/games/psx/3D Lemmings.zip",
+                "tracks/3D Lemmings (USA) (Track 01).bin",
+                "bin",
+            ),
+            archived_row(
+                "/games/psx/3D Lemmings.zip",
+                "tracks/3D Lemmings (USA) (Track 02).bin",
+                "bin",
+            ),
+            archived_row(
+                "/games/psx/3D Lemmings.zip",
+                "tracks/3D Lemmings (USA) (Track 03).bin",
+                "bin",
+            ),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 3);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension, "cue");
+    }
+
+    #[test]
+    fn dedupe_does_not_drop_iso_or_chd_paired_with_cue() {
+        // .iso and .chd are launch-entry formats in their own right —
+        // even if a directory contains a .cue alongside them, the .iso
+        // / .chd rows must stay (they may be other games entirely).
+        let mut rows = vec![
+            raw_row("/games/psx/Game.cue", "cue"),
+            raw_row("/games/psx/OtherGame.iso", "iso"),
+            raw_row("/games/psx/AnotherGame.chd", "chd"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 0);
+        assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn dedupe_drops_multiple_data_tracks_across_a_multitrack_cd() {
+        // One .cue + N .bin tracks (Track01 / Track02 / Track03) — all
+        // the .bin tracks are referenced by the .cue and should drop.
+        let mut rows = vec![
+            raw_row("/games/psx/Game.cue", "cue"),
+            raw_row("/games/psx/Game (Track 01).bin", "bin"),
+            raw_row("/games/psx/Game (Track 02).bin", "bin"),
+            raw_row("/games/psx/Game (Track 03).bin", "bin"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 3);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].extension, "cue");
+    }
+
+    #[test]
+    fn dedupe_handles_m3u_playlist_for_multi_disc_psx() {
+        // Multi-disc PSX layout: Game.m3u in parent + Disc1/Game.cue +
+        // Disc1/Game.bin + Disc2/Game.cue + Disc2/Game.bin. The .m3u
+        // sits in the parent folder; the .cue + .bin pairs sit in
+        // per-disc subdirs. Per-disc .bin rows pair with their .cue
+        // siblings and drop; the .m3u stays as the multi-disc launch
+        // entry.
+        let mut rows = vec![
+            raw_row("/games/psx/Game/Game.m3u", "m3u"),
+            raw_row("/games/psx/Game/Disc1/Game.cue", "cue"),
+            raw_row("/games/psx/Game/Disc1/Game.bin", "bin"),
+            raw_row("/games/psx/Game/Disc2/Game.cue", "cue"),
+            raw_row("/games/psx/Game/Disc2/Game.bin", "bin"),
+        ];
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 2);
+        assert_eq!(rows.len(), 3);
+        // m3u + both cues survive.
+        assert_eq!(
+            rows.iter().filter(|r| r.extension == "m3u").count(),
+            1
+        );
+        assert_eq!(
+            rows.iter().filter(|r| r.extension == "cue").count(),
+            2
+        );
+    }
+
+    #[test]
+    fn dedupe_empty_rows_returns_zero() {
+        let mut rows: Vec<ScannedRom> = Vec::new();
+        let dropped = dedupe_disc_data_tracks(&mut rows);
+        assert_eq!(dropped, 0);
     }
 }

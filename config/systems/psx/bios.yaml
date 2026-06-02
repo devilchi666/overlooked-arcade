@@ -1,0 +1,89 @@
+# PlayStation — BIOS table
+#
+# Slice 1 pilot for the per-system descriptor consolidation arc
+# (docs/PLANS/per-system-descriptors.md). Migrated verbatim from
+# main.rs::PSX_BIOS_KNOWN_HASHES.
+#
+# Beetle PSX HW (the default psx core) requires a regional BIOS in
+# <exe_dir>/system/ matching the disc's region. PSX region-locking is
+# enforced at the BIOS level — JP discs need scph5500, US discs need
+# scph5501, EU discs need scph5502. All 18 entries below cover the
+# canonical regional + revision variants Mednafen-derived cores
+# accept.
+#
+# Beetle PSX SW + SwanStation + PCSX-ReARMed share this same BIOS
+# file set.
+
+schema_version: 1
+semantics: any_of
+required_for_launch: true
+
+sourcing_hint: >-
+  PSX BIOS dumps are not shipped with OA. Dump from your own PSX or
+  use a backup of your own dump.
+
+files:
+  # v1.x family — 1994-1995 SCPH-1000 / SCPH-3000 / SCPH-3500 launch units.
+  - name: scph1000.bin
+    sha1: 343883A7B555646DA8CEE54AADD2795B6E7DD070
+    description: "JP PSX BIOS v1.0 (SCPH-1000, 1994 launch)"
+  - name: scph1001.bin
+    sha1: 10155D8D6E6E832D6EA66DB9BC098321FB5E8EBF
+    description: "US PSX BIOS v2.2 (SCPH-1001, common North America)"
+  - name: scph1002.bin
+    sha1: 20B98F3D80F11CBF5A7BFD0779B0E63760ECC62C
+    description: "EU PSX BIOS v2.0 (SCPH-1002, PAL)"
+  - name: scph3000.bin
+    sha1: B06F4A861F74270BE819AA2A07DB8D0563A7CC4E
+    description: "JP PSX BIOS v2.1 (SCPH-3000)"
+  - name: scph3500.bin
+    sha1: E38466A4BA8005FBA7E9E3C7B9EFEBA7205BEE3F
+    description: "JP PSX BIOS v2.2 (SCPH-3500)"
+  - name: scph5000.bin
+    sha1: E340DB2696274DDA5FDC25E434A914DB71E8B02B
+    description: "JP PSX BIOS v3.0 (SCPH-5000)"
+
+  # v3.0 family — most-commonly-installed regional set. Sony shipped
+  # these in the 1995 launch / first-revision hardware.
+  - name: scph5500.bin
+    sha1: B05DEF971D8EC59F346F2D9AC21FB742E3EB6917
+    description: "JP PSX BIOS v3.0 (SCPH-5500, 1995)"
+  - name: scph5501.bin
+    sha1: 0555C6FAE8906F3F09BAF5988F00E55F88E9F30B
+    description: "US PSX BIOS v3.0 (SCPH-5501, 1995, most common NA)"
+  - name: scph5502.bin
+    sha1: F6BC2D1F5EB6593DE7D089C425AC681D6FFFD3F0
+    description: "EU PSX BIOS v3.0 (SCPH-5502, PAL)"
+
+  # v4.x family — 1997-1998 revisions.
+  - name: scph7001.bin
+    sha1: 14DF4F6C1E367CE097C11DEAE21566B4FE5647A9
+    description: "US PSX BIOS v4.1 (SCPH-7001, 1997)"
+  - name: scph7002.bin
+    sha1: 8D5DE56A79954F29E9006929BA3FED9B6A418C1D
+    description: "EU PSX BIOS v4.1 (SCPH-7002, 1997)"
+  - name: scph7003.bin
+    sha1: 0555C6FAE8906F3F09BAF5988F00E55F88E9F30B
+    description: "US PSX BIOS v3.0 (SCPH-7003, alias for SCPH-5501 content)"
+  - name: scph7502.bin
+    sha1: 8D5DE56A79954F29E9006929BA3FED9B6A418C1D
+    description: "EU PSX BIOS v4.1 (SCPH-7502, alias for SCPH-7002 content)"
+
+  # PSone (slim) BIOS — 2000-era. SCPH-100x / SCPH-101 are the PSone model line.
+  - name: scph100.bin
+    sha1: 339A48F4FCF63E10B5B867B8C93CFD40945FAF6C
+    description: "JP PSone BIOS v4.3 (SCPH-100)"
+  - name: scph101.bin
+    sha1: DCFFE16BD90A723499AD46C641424981338D8378
+    description: "US PSone BIOS v4.5 (SCPH-101)"
+  - name: scph102.bin
+    sha1: BEB0AC693C0DC26DAF5665B3314DB81480FA5C7C
+    description: "EU PSone BIOS v4.4 (SCPH-102, variant A)"
+
+  # PSP PS1 emulator BIOSes — present in PSone-on-PSP dumps.
+  - name: psxonpsp660.bin
+    sha1: 96880D1CA92A016FF054BE5159BB06FE03CB4E14
+    description: "Sony PSP PS1 emulator BIOS v6.60"
+  - name: ps1_rom.bin
+    sha1: C40146361EB8CF670B19FDC9759190257803CAB7
+    description: "Sony PSP-style PS1 ROM (alternate dump)"

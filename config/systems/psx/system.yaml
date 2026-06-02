@@ -1,0 +1,115 @@
+# PlayStation — per-system descriptor
+#
+# Slice 1 pilot for the per-system descriptor consolidation arc
+# (docs/PLANS/per-system-descriptors.md). Consolidates these legacy
+# PSX-relevant sources:
+#   - docs/cores/psx/system-info.yaml (System Info Panel L2; embedded
+#     below under `system_info:`)
+#   - core_installer.rs::CATALOG entries with `systems` matching "psx"
+#     (transcribed under `cores:` below)
+#   - rom_hashes.rs::libretro_dat_refs_for_system "psx" arm (redump
+#     dat — CD-shape disc-id matching)
+#
+# Sibling files:
+#   - bios.yaml — PSX has any_of regional BIOS (18 candidate files)
+#   - games.yaml — per-game records (Tomb Raider + Final Fantasy VII
+#     seeds, migrated from the deleted docs/cores/psx/games-info.md)
+
+id: psx
+display_name: Sony PlayStation
+short_name: PS1
+schema_version: 1
+
+default_core: mednafen_psx_hw_libretro.dll
+
+# Disc-shape extensions. .cue / .chd / .ccd / .toc / .m3u collide with
+# PCE-CD / segacd / saturn — Import Wizard disambiguates per-folder.
+# .pbp is PSX-unique (PSP-format PS1 EBOOT).
+extensions:
+  - cue
+  - chd
+  - ccd
+  - toc
+  - m3u
+  - iso
+  - pbp
+
+# CD-shape — hash-based identification keys against redump rather than
+# no-intro because CD images aren't single-file sha1-matched.
+# cd_id.rs::extractors::psx_family scans the first 32 KB of the data
+# track for the SYSTEM.CNF BOOT line and normalizes the catalog code
+# (SLUS_001.67 → SLUS-00167). The redump dat's `serial` field is the
+# canonical shape libretro-database uses for cover-art keying.
+libretro_dat_refs:
+  - subdir: metadat/redump
+    basename: Sony - PlayStation
+
+cores:
+  - base: mednafen_psx_hw_libretro
+    display_name: Beetle PSX HW
+    blurb: "Sony PlayStation, HW renderer. High accuracy."
+    recommended: true
+    bios_required: "scph5500.bin / scph5501.bin / scph5502.bin"
+  - base: swanstation_libretro
+    display_name: SwanStation
+    blurb: "Faster PSX, fork of DuckStation."
+    recommended: true
+    bios_required: "scph5500.bin / scph5501.bin / scph5502.bin"
+  - base: mednafen_psx_libretro
+    display_name: Beetle PSX (software)
+    blurb: "Beetle PSX without HW renderer. Lower system requirements."
+    recommended: false
+    bios_required: "scph5500.bin / scph5501.bin / scph5502.bin"
+  - base: pcsx_rearmed_libretro
+    display_name: PCSX-ReARMed
+    blurb: "Lightweight PSX, originally for ARM. Strong perf-per-watt."
+    recommended: false
+    bios_required: "scph5500.bin / scph5501.bin / scph5502.bin"
+
+system_info:
+  system_id: psx
+  manufacturer: Sony
+  type: Home Console
+  generation: 5th Generation
+  release_date: "December 3, 1994"
+  discontinued: "March 23, 2006"
+  units_sold: "102.50 Million"
+  media: CD-ROM
+  cpu: "MIPS R3000A @ 33.86 MHz"
+  sound: "SPU 24-channel"
+  resolution: "640 x 480 max"
+  color_palette: "16.7 Million"
+  display_ratio: "4:3"
+
+  architecture: 32-Bit
+  max_players: "1-2 Players (Multitap up to 8)"
+  multiplayer: "Yes — 2 local; up to 8 via Multitap"
+  region: "NTSC / PAL / NTSC-J"
+  storage: "Memory Card (128KB)"
+  ram: "2MB"
+  video_output: "Composite / S-Video / RGB"
+  aspect_ratio: "4:3"
+
+  peripherals:
+    - name: Digital Controller
+      glyph: "🎮"
+    - name: DualShock
+      glyph: "🎮"
+    - name: Multitap
+      glyph: "🔗"
+    - name: GunCon
+      glyph: "🔫"
+    - name: Mouse
+      glyph: "🖱️"
+
+  release_flag: "🇯🇵"
+  tagline: "32-BIT HOME CONSOLE"
+  blurb: >-
+    Sony's first console, and the system that brought 3D gaming to the
+    mainstream. Its CD-ROM media unlocked cinematic storytelling and a
+    JRPG renaissance.
+  sidebar_subline: "32-BIT · 1994"
+
+  meta:
+    schema_version: 1
+    last_updated: "2026-06-02"

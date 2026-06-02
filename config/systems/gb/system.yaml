@@ -1,0 +1,102 @@
+# Game Boy — per-system descriptor
+#
+# Slice 1 pilot for the per-system descriptor consolidation arc
+# (docs/PLANS/per-system-descriptors.md). Replaces the GB-relevant
+# slices of these legacy sources, now consolidated into this single
+# file:
+#   - docs/cores/gb/system-info.yaml (System Info Panel L2; embedded
+#     below under the `system_info:` block)
+#   - core_installer.rs::CATALOG entries with `systems` matching "gb"
+#     (transcribed under `cores:` below — Slice 2 deletes those rows
+#     from the const)
+#   - rom_hashes.rs::libretro_dat_refs_for_system "gb" arm (under
+#     `libretro_dat_refs:`)
+#
+# GB has no BIOS so there's no sibling `bios.yaml`. No `games.yaml`
+# either pre-Slice-1 — Game Info Panel v1 didn't seed any GB entries
+# (the migration of `KNOWN_GAME_BUGS.md` records lives on its own
+# track in docs/NEXT.md).
+
+id: gb
+display_name: Game Boy
+short_name: GB
+schema_version: 1
+
+default_core: gambatte_libretro.dll
+
+extensions:
+  - gb
+
+libretro_dat_refs:
+  - subdir: metadat/no-intro
+    basename: Nintendo - Game Boy
+
+cores:
+  - base: gambatte_libretro
+    display_name: Gambatte
+    blurb: "GB / GBC — very high accuracy, the standard pick."
+    recommended: true
+  - base: sameboy_libretro
+    display_name: SameBoy
+    blurb: "Highest-accuracy GB / GBC core. Recommended for cycle-perfect."
+    recommended: false
+  - base: gearboy_libretro
+    display_name: Gearboy
+    blurb: "Modern GB / GBC (gear* family)."
+    recommended: false
+  - base: tgbdual_libretro
+    display_name: TGB Dual
+    blurb: "Two GB / GBC instances simultaneously — link-cable simulation."
+    recommended: false
+  - base: mgba_libretro
+    display_name: mGBA
+    blurb: "GBA + GB / GBC — the standard pick."
+    recommended: true
+
+system_info:
+  system_id: gb
+  manufacturer: Nintendo
+  type: Handheld
+  generation: 4th Generation (handheld)
+  release_date: "April 21, 1989"
+  discontinued: "March 23, 2003"
+  units_sold: "118.69 Million"
+  media: Cartridge
+  cpu: "Sharp LR35902 @ 4.19 MHz"
+  sound: "4-channel PSG"
+  resolution: "160 x 144"
+  color_palette: "4 Shades of Green"
+  display_ratio: "10:9"
+
+  architecture: 8-Bit
+  max_players: "1-2 (Link Cable) / 4 (Adapter)"
+  multiplayer: "Yes — 2 via Link Cable; up to 4 via Four Player Adapter"
+  region: Worldwide
+  storage: Cartridge
+  ram: "8KB"
+  video_output: "Built-in LCD"
+  aspect_ratio: "10:9"
+
+  peripherals:
+    - name: Link Cable
+      glyph: "🔗"
+    - name: Camera
+      glyph: "📷"
+    - name: Printer
+      glyph: "🖨️"
+    - name: Super Game Boy
+      glyph: "🎮"
+    - name: Four Player Adapter
+      glyph: "👥"
+
+  release_flag: "🇯🇵"
+  tagline: "8-BIT HANDHELD"
+  blurb: >-
+    The handheld that took gaming on the road. Modest hardware, a
+    4-shade green screen, and an unmatched library — Tetris, Pokémon,
+    Zelda: Link's Awakening — that justified every pixel.
+  sidebar_subline: "8-BIT · 1989"
+
+  meta:
+    schema_version: 1
+    last_updated: "2026-06-02"
