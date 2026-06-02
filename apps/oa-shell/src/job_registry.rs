@@ -66,6 +66,25 @@ const HEARTBEAT_SECS: u64 = 1;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JobKind {
     CoreDownload { base: String },
+    /// Folder scan kicked off from the Import Wizard's smart-scan
+    /// pass (`scan_service::start_background_scan`). `folder` is the
+    /// absolute path being walked; doubles as the job label suffix.
+    FolderScan { folder: String },
+    /// Per-system ROM hash + lookup pass
+    /// (`rom_hashes::resolve_rom_hashes_for_system`). Operator-
+    /// triggered via the "Identify ROMs" button. `system_id` is the
+    /// OA slug — pce, psx, snes, etc.
+    HashResolve { system_id: String },
+    /// Per-system libretro-database `.dat` sync
+    /// (`rom_hashes::sync_rom_hashes_for_system`). Auto-triggered as
+    /// a prereq of HashResolve when the system's `rom_hashes` table
+    /// is empty (Phase 4a inlines this; Phase 4b's dependency graph
+    /// will surface it as a separate parent-job row).
+    DatSync { system_id: String },
+    /// MAME catalog refresh from a local MAME install
+    /// (`mame_import::refresh_mame_system_info`). Atomic — single
+    /// XML parse + bake; cancel rolls back.
+    MameListxmlImport,
     /// Dev-only synthetic job for exercising the BackgroundJobsBar
     /// without burning bandwidth on a real download. Lives at the
     /// production level (not behind `cfg(debug_assertions)`) so
@@ -78,6 +97,10 @@ impl JobKind {
     pub fn discriminator(&self) -> &'static str {
         match self {
             Self::CoreDownload { .. } => "core_download",
+            Self::FolderScan { .. } => "folder_scan",
+            Self::HashResolve { .. } => "hash_resolve",
+            Self::DatSync { .. } => "dat_sync",
+            Self::MameListxmlImport => "mame_listxml_import",
             Self::TestJob { .. } => "test_job",
         }
     }
@@ -85,6 +108,10 @@ impl JobKind {
     pub fn target_id(&self) -> Option<String> {
         match self {
             Self::CoreDownload { base } => Some(base.clone()),
+            Self::FolderScan { folder } => Some(folder.clone()),
+            Self::HashResolve { system_id } => Some(system_id.clone()),
+            Self::DatSync { system_id } => Some(system_id.clone()),
+            Self::MameListxmlImport => None,
             Self::TestJob { name } => Some(name.clone()),
         }
     }
