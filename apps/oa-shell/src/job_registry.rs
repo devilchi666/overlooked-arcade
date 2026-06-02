@@ -218,9 +218,51 @@ impl JobHandle {
 struct Inner {
     conn: Mutex<Connection>,
     active: RwLock<HashMap<i64, JobHandle>>,
+    // Per-kind resume handlers registered via `register_resumer`.
+    // Looked up by `resume_interrupted_jobs` at startup; rows whose
+    // kind doesn't have a registered resumer stay `interrupted` and
+    // are logged at warn.
+    resumers: RwLock<HashMap<&'static str, Arc<dyn JobResumer>>>,
     // `None` in unit tests so the registry can be constructed without
     // a Tauri runtime. Production callers always pass `Some`.
     app: Option<AppHandle>,
+}
+
+/// Per-kind resume handler. Phase 3a registers a CoreDownloadResumer;
+/// Phase 3b will add artwork_sync + hash_resolve. The dispatcher in
+/// `JobRegistry::resume_interrupted_jobs` iterates `state='interrupted'`
+/// rows on launch and dispatches each to its matching registered
+/// resumer (looked up by kind discriminator).
+///
+/// Implementation contract:
+///   1. Spawn a worker on `tauri::async_runtime::spawn` (NOT
+///      `tokio::spawn` — Tauri's setup() runs before the tokio
+///      runtime is entered; see the 2026-06-02 launch-crash fix
+///      in this module's git history).
+///   2. The worker first calls `registry.mark_running(snapshot.id)`
+///      to transition the row out of `interrupted` and emit a
+///      StateChanged event so the bar surfaces the resumed job.
+///   3. Re-enter the operation from `snapshot.resume_payload`
+///      (per-kind JSON checkpoint) OR from scratch if Phase 3a's
+///      simple "restart-from-zero" semantics are acceptable for
+///      the kind.
+///   4. Finalize via mark_completed / mark_cancelled / mark_failed
+///      as normal — the resumer doesn't need anything special for
+///      cleanup; the standard JobRegistry finalize path applies.
+pub trait JobResumer: Send + Sync {
+    /// Discriminator string matching `JobKind::discriminator()` —
+    /// e.g. `"core_download"`.
+    fn kind(&self) -> &'static str;
+
+    /// Spawn the resume worker. The returned JoinHandle is dropped
+    /// by Phase 3a's dispatcher (fire-and-forget). Phase 5's
+    /// recent-activity panel may want to observe completion via it.
+    fn resume(
+        &self,
+        snapshot: JobSnapshot,
+        registry: JobRegistry,
+        app: AppHandle,
+    ) -> tauri::async_runtime::JoinHandle<()>;
 }
 
 /// Public registry. Cheap to `Clone` — wraps an `Arc<Inner>`. The
@@ -267,11 +309,99 @@ impl JobRegistry {
         let inner = Arc::new(Inner {
             conn: Mutex::new(conn),
             active: RwLock::new(HashMap::new()),
+            resumers: RwLock::new(HashMap::new()),
             app,
         });
         Ok(Self {
             inner: Arc::clone(&inner),
         })
+    }
+
+    /// Register a per-kind resume handler. Idempotent — replaces any
+    /// existing entry for the same kind discriminator. Called at
+    /// startup, typically from `main.rs::setup()` right after the
+    /// JobRegistry itself lands in Tauri state.
+    pub fn register_resumer(&self, resumer: Arc<dyn JobResumer>) {
+        let kind = resumer.kind();
+        if let Ok(mut map) = self.inner.resumers.write() {
+            map.insert(kind, resumer);
+            log::info!("background_jobs: registered resumer for kind {kind}");
+        }
+    }
+
+    /// Dispatch every `state='interrupted'` row to its registered
+    /// resumer. Called from `main.rs::setup()` after
+    /// `promote_running_rows_to_interrupted` (Phase 1 Slice D) flags
+    /// the survivors of a crashed previous run. Rows whose kind has
+    /// no registered resumer stay `interrupted` and log a warn —
+    /// Phase 4 will register the rest of the kinds; Phase 3a only
+    /// handles core_download.
+    ///
+    /// Returns the count of resumers dispatched. Each resumer
+    /// spawns its own task; this call returns immediately.
+    pub fn resume_interrupted_jobs(&self, app: &AppHandle) -> Result<usize, String> {
+        let snapshots = self.list_interrupted()?;
+        if snapshots.is_empty() {
+            return Ok(0);
+        }
+        let resumers = self
+            .inner
+            .resumers
+            .read()
+            .map_err(|e| format!("resumers lock: {e}"))?;
+        let mut dispatched = 0;
+        for snap in snapshots {
+            match resumers.get(snap.kind.as_str()) {
+                Some(resumer) => {
+                    log::info!(
+                        "background_jobs: dispatching resume for job {} (kind={}, label={:?})",
+                        snap.id,
+                        snap.kind,
+                        snap.label
+                    );
+                    let _join = resumer.resume(snap.clone(), self.clone(), app.clone());
+                    dispatched += 1;
+                }
+                None => {
+                    log::warn!(
+                        "background_jobs: no resumer registered for kind {}; job {} stays interrupted",
+                        snap.kind,
+                        snap.id
+                    );
+                }
+            }
+        }
+        Ok(dispatched)
+    }
+
+    /// Re-attach a JobHandle for a job whose row already exists in
+    /// SQLite but was finalized as `interrupted` by a previous run
+    /// (or by an explicit pause that broke the worker out of its
+    /// loop). Allocates fresh AtomicBool flags and inserts the
+    /// handle into the active map so the bar's pause + cancel
+    /// buttons re-bind correctly. Idempotent — returns the existing
+    /// handle if one is already in the active map.
+    ///
+    /// Resumers call this BEFORE `mark_running` so the worker has
+    /// flags to poll for the rest of its lifetime.
+    pub fn attach_handle(&self, job_id: i64, kind: String) -> JobHandle {
+        if let Ok(active) = self.inner.active.read() {
+            if let Some(h) = active.get(&job_id) {
+                return h.clone();
+            }
+        }
+        let handle = JobHandle {
+            job_id,
+            kind,
+            cancel: Arc::new(AtomicBool::new(false)),
+            pause: Arc::new(AtomicBool::new(false)),
+            last_db_write_ms: Arc::new(AtomicI64::new(now_ms())),
+            last_event_ms: Arc::new(AtomicI64::new(0)),
+        };
+        if let Ok(mut active) = self.inner.active.write() {
+            active.insert(job_id, handle.clone());
+        }
+        handle
     }
 
     fn spawn_heartbeat(inner: Arc<Inner>) {
@@ -899,12 +1029,22 @@ pub async fn spawn_test_job(
                 let _ = registry_clone.mark_cancelled(job_id);
                 return;
             }
+            // Same paused → running state bridge core_download uses
+            // so the bar's resume button toggles for test jobs too.
+            let mut was_paused = false;
             while handle.is_paused() {
+                if !was_paused {
+                    was_paused = true;
+                    let _ = registry_clone.mark_paused(job_id);
+                }
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 if handle.is_cancelled() {
                     let _ = registry_clone.mark_cancelled(job_id);
                     return;
                 }
+            }
+            if was_paused {
+                let _ = registry_clone.mark_running(job_id);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
             done += 1;
