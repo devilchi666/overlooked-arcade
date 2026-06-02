@@ -350,13 +350,24 @@ together:
   MAME refresh flows. Operator-confirmed via smoke test before
   `--no-ff` merge of `feat/background-jobs-phase-4a`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
-- ⬜ **Phase 4b** (~1 week, next) — Remaining kinds + orchestration:
-  `artwork_sync` + `metadata_sync` (the giant `sync_media_for_system`
-  body — needs the artwork vs metadata split decided in plan §"Kind
-  taxonomy"), `bulk_core_install` with parent-row aggregation,
-  dependency graph (`parent_job_id` chain + auto-trigger prereqs so
-  HashResolve auto-spawns DatSync as a visible child rather than
-  inlining it silently), per-kind retry policy.
+- ✅ **Phase 4b** (shipped 2026-06-02) — `artwork_sync` wired
+  for the whole `sync_media_for_system` pass (locked artwork-vs-
+  metadata split deferred — needs a separate metadata-fetching
+  path before it's meaningful). `bulk_core_install` parent
+  aggregation via `JobRegistry::tick_parent_if_any` hooked into
+  the mark_* finalizers + new `start_bulk_core_install` Tauri
+  command + `parentJobId` arg on download_core. z-index fix (bar
+  z-30→55, HintBar z-40→60) so the bar stays visible above
+  modals. Operator-confirmed via smoke test before `--no-ff`
+  merge of `feat/background-jobs-phase-4b`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
+- ⬜ **Phase 4c** (~1 week, queued) — Dependency graph
+  (`parent_job_id` chain + auto-trigger prereqs so HashResolve
+  auto-spawns DatSync as a visible child rather than inlining it
+  silently). Per-kind retry policy (transient network errors:
+  1s/5s/30s exponential backoff for 3 attempts). MetadataSync
+  resumer once a metadata-fetching path exists separately from
+  artwork_sync.
 - ⬜ **Phase 4** (~1.5 weeks) — wire remaining kinds
   (`folder_scan` w/ unknown-total pulsing handle, `metadata_sync`,
   `mame_listxml_import`, `dat_sync`, `bulk_core_install` w/

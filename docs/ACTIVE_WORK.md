@@ -182,6 +182,35 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 4b (artwork_sync + bulk parent + z-fix)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-4b`).
+  Three phase commits scoping Phase 4 down to artwork_sync wiring +
+  bulk_core_install parent aggregation + a z-index fix that
+  unblocked the bar across modal surfaces.
+  - **Slice A** (`e04430e`) `ArtworkSync { system_id }` +
+    `BulkCoreInstall` JobKind variants. `sync_media_for_system`
+    registers + ticks per-repo boundary + finalizes at end. Locked
+    artwork-vs-metadata split deferred (existing function bundles
+    both; needs a separate metadata-fetching path before the split
+    is meaningful).
+  - **Slice B** (`b9e81a4`) `JobRegistry::tick_parent_if_any` +
+    `write_progress_unthrottled` + new `start_bulk_core_install(n)`
+    Tauri command. download_core gains `parentJobId: Option<i64>`
+    routed through to create_job. MissingCoreBulkPrompt invokes the
+    new command up front and threads the parent id into each per-
+    core invocation. When the last child finalizes, the parent
+    auto-finalizes (mark_completed if all succeeded, mark_failed
+    if any child failed/cancelled — Phase 4c retry policy will
+    refine).
+  - **z-index fix** (`b0c4036`) Bar 30→55, HintBar 40→60. Modals
+    at z-50 were covering both, hiding the bar across every
+    operation-kickoff surface (Import Wizard, MissingCoreBulkPrompt,
+    Settings dialogs). Plan §"Hybrid coexistence" locks the bar
+    must stay visible alongside modals; this restores that.
+  - 660 of 660 oa-shell tests green. Operator-confirmed smoke test
+    on the post-fix build.
+
 - **Background jobs + persistent progress bar — Phase 4a (4 more kinds wired)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-4a`).
