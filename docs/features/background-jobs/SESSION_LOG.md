@@ -7,6 +7,81 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-02 — Phase 2 ships the BackgroundJobsBar (`feat/background-jobs-phase-2`)
+
+**Shipped:** Phase 2 of the 5-phase arc landed in four phase commits
+on `feat/background-jobs-phase-2`, pending operator end-to-end smoke
+test before merge.
+
+- **Slice A — Tauri commands for the bar** (`cff3dbc`). New
+  JobRegistry methods (`signal_pause` / `signal_cancel` /
+  `signal_pause_all` / `signal_cancel_all`) flipping the
+  AtomicBool flags on the active-map handles. New
+  `#[tauri::command]` wrappers: `list_active_jobs`, `list_recent_jobs`,
+  `pause_job`, `resume_job`, `cancel_job`, `pause_all_jobs`,
+  `cancel_all_jobs`. All take AppHandle + `try_state` lookup so they
+  soft-fail when the registry isn't managed (matches the Phase 1
+  graceful-degradation shape).
+- **Slice B — frontend backgroundJobs store** (`bcd1498`). New
+  `frontend/src/lib/backgroundJobs.ts` mirroring the Rust JobState /
+  JobSnapshot / JobEvent types. Module-level `activeJobs()` signal
+  hydrates from `list_active_jobs` and stays in sync via
+  `oa://job-event`. Race-safe ordering — listener attaches BEFORE
+  the hydrate invoke so a Created event fired between them is
+  queued and replayed. Mutation helpers (pauseJob / resumeJob /
+  cancelJob / pauseAllJobs / cancelAllJobs) are best-effort
+  silent-on-error.
+- **Slice C — BackgroundJobsBar Solid component** (`2944c84`). New
+  `frontend/src/components/background-jobs/BackgroundJobsBar.tsx`
+  (~370 LOC) with the Hidden / HandleVisible / Expanded state
+  machine, max-3-rows + "+N more" stack layout, per-row kind icon +
+  label + state pill + done/total numbers + pause / cancel buttons,
+  header with Pause-all / Cancel-all (3+ jobs gets an extra confirm
+  per plan §"Bar header"; cancels always confirm because they're
+  destructive). 2 s bar-pointer-idle auto-collapse from Expanded
+  back to HandleVisible. Inline @keyframes for the handle's pulse
+  dot keyed off an activeJobs subscription so it re-animates on
+  every Progressed event. Fixed-position overlay at z-30 (below
+  HintBar's z-40 per plan §"HintBar takes priority").
+- **Slice D — mount in App.tsx** (`2765b9c`). Inserted between
+  ToastStack and HintBar in the App.tsx return tree. Reachable from
+  any Retroverse tab + the legacy fallback paths because App.tsx
+  mounts above the RetroverseShell vs Shell branch. Component
+  returns null when no active jobs, so the always-mounted cost is
+  near-zero when nothing is happening.
+
+660 of 660 oa-shell tests green; frontend `npm run typecheck` silent.
+
+**Almost:** End-to-end manual smoke test still pending operator
+validation:
+1. Trigger a core download → bar's handle appears at the bottom of
+   the viewport with the job count + pulse dot. Click the handle →
+   bar expands showing the one row with label, MB/MB progress
+   numbers, percentage bar, pause + cancel buttons.
+2. Click pause → the row's progress numbers freeze (chunk loop
+   spins on the flag). Click resume → progress resumes. Phase 1
+   caveat: the row state pill stays empty (i.e. "running") rather
+   than showing "Paused" because core_download doesn't yet bridge
+   the flag back to `mark_paused`. This is documented in the tooltip
+   strings + lands properly in Phase 3.
+3. Click cancel → confirm dialog → cancel applies, row vanishes
+   from the bar within ~100 ms, `.partial` cleanup runs per the
+   per-kind contract.
+4. Wait 2 s without hovering the bar → it auto-collapses to the
+   handle. Click handle → expands again.
+5. Start 2+ downloads → header gains Pause-all / Cancel-all
+   buttons. 3+ → both actions confirm before applying.
+
+**Next:** Phase 3 — `JobResumer` trait + per-kind handlers for
+`core_download` / `artwork_sync` / `hash_resolve` + auto-resume-on-
+launch flow with per-kind opt-out + duplicate-trigger
+Wait/Restart/Cancel dialog. Most importantly: wire `core_download`'s
+pause spin to flush its resume payload + call `mark_paused` so the
+operator's pause click produces a visible state change. See plan
+§Sizing Phase 3 for the ~1.5-week scope.
+
+---
+
 ## 2026-06-02 — Phase 1 ships the backend pilot (`feat/background-jobs-phase-1`)
 
 **Shipped:** Phase 1 of the 5-phase arc landed in five phase commits
