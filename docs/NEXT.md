@@ -277,6 +277,66 @@ Surface structured reference data per game in OA's library — date, publisher, 
 
 ---
 
+## NEXT MAJOR ARC — Background jobs + persistent progress bar
+
+**Planning locked 2026-06-02.** Full plan at
+[docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
+**Operator priority: high — "a real progress bar at the bottom of
+the UI that says exactly what OA is doing, with real numbers, and
+that remembers what it was doing when I close the app."**
+
+OA runs a half-dozen long-running operations today — core downloads,
+libretro-dat sync, ROM hash resolve, media sync, MAME ROM-set
+imports, folder scans, the upcoming per-track SHA-1 work. Each
+announces itself with its own UI surface (toast, modal, debug-log
+only); none survive process restart. Three problems wrapped
+together:
+
+1. **No single surface** — operator can't see "what is OA doing
+   right now?" at a glance.
+2. **Fake progress in some places** — some ops report
+   "Processing..." or fake percentages because they don't know
+   the total cost up front. Operator hates this explicitly.
+3. **No persistence** — close mid-download, restart, work is gone
+   (or worse, `.partial` files left for the operator to clean up).
+
+**Scope (per plan §"Sizing"):** ~5-6 weeks across 5 phases.
+- **Phase 1** (~1 week) — `background_jobs` SQLite table +
+  `JobRegistry` Tauri-managed state + `JobHandle` shape + event
+  broadcast. One pilot kind wired (probably `download_core`).
+  End-to-end smoke: create → progress → cancel.
+- **Phase 2** (~1 week) — `BackgroundJobsBar` Solid component in
+  RetroverseShell. Auto-hide / single-line / expandable panel.
+  Listens to `JobEvent` broadcast.
+- **Phase 3** (~1.5 weeks) — `JobResumer` trait + 3 kinds wired
+  (core_download / media_sync / resolve_rom_hashes) +
+  app-launch interrupted-job prompt.
+- **Phase 4** (~1.5 weeks) — wire remaining kinds (folder scan
+  with unknown-total / pulsing-bar shape, thumbnail sync, MAME
+  listxml, per-track SHA-1 when that arc lands). Pause +
+  stale-job detection per kind.
+- **Phase 5** (~1 week) — operator playtest, performance check,
+  crash-recovery testing.
+
+**Cross-arc dependencies:** the per-track SHA-1 work
+([docs/PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md))
+is the canonical new "long-running operation that needs persistent
+progress" — these two arcs are mutually reinforcing. Either can
+ship first (disc-track integrates into the bar in Phase 4; the bar
+ships its pilot kinds without disc-track).
+
+**Critical open questions** (resolve before Phase 1):
+- Resume prompt vs auto-resume per kind — what's the right
+  default for each operation?
+- Pause semantics — actual mid-flight pause vs cancel-and-remember?
+- UI placement — bottom of window above HintBar feels right; needs
+  operator validation against the Retroverse layout.
+
+**Position:** queued in HIGH band — operator-driven "we need to
+plan soon" framing. Awaiting fresh green-light to kick off Phase 1.
+
+---
+
 ## NEXT MAJOR ARC — Per-track SHA-1 matching for disc-shape systems
 
 **Planning locked 2026-06-02.** Full plan at
