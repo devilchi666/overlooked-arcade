@@ -7,6 +7,87 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-02 — Phase 3b ships Range resume + opt-out infra + dup-trigger (`feat/background-jobs-phase-3b`)
+
+**Shipped:** Phase 3b — the resume + UX polish half of the original
+Phase 3 scope. Three phase commits.
+
+- **Slice A — byte-level Range resume** (`f08c09d`). Refactors
+  `run_download_core_inner` from "buffer the whole .zip in RAM,
+  write to disk after" to "stream chunks through to .zip.partial
+  as they arrive."
+  - Two partial paths now: `<base>.dll.zip.partial` (streaming
+    write), `<base>.dll.partial` (post-extract).
+  - Existing .zip.partial → potential resume. Read size up front;
+    if non-zero, GET with Range: bytes={size}-. Handle 206
+    (partial content, append to existing), 200 (server ignored
+    Range, truncate + restart), 416 (stale partial, drop + surface
+    explicit error to operator).
+  - tokio::fs::File via AsyncWriteExt. Flushes before pause spin /
+    cancel return so kill-during-pause still resumes from the
+    latest byte boundary.
+  - CoreDownloadResumer no longer drops the .zip.partial up front
+    (would defeat byte-level resume). Drops the .dll.partial only
+    (a fresh extract runs after the Range-resumed zip lands).
+- **Slice B — per-kind opt-out infrastructure** (`dc2ef06`). Plan
+  §"Resume on app launch" auto-resume default + per-kind opt-out.
+  - New `apps/oa-shell/src/job_prefs.rs` module. `JobPrefs` carries
+    `prompt_before_resume_on_launch: HashMap<String, bool>` at
+    `<data_dir>/library/job-prefs.json`. Read/write helpers
+    mirroring library_prefs.rs.
+  - Tauri commands `get_job_prefs` + `set_job_resume_prompt(kind,
+    prompt)` — UI surface for these lands in Phase 5; for Phase 3b
+    operators can hand-edit job-prefs.json.
+  - JobEvent gains `ResumePrompt { snapshot }` variant.
+  - `JobRegistry::resume_interrupted_jobs` signature now takes a
+    `should_prompt: impl Fn(&str) -> bool`. When it returns true
+    for a row's kind, the dispatcher emits ResumePrompt instead of
+    calling the resumer. main.rs::setup() reads job-prefs.json and
+    passes the closure.
+- **Slice C — duplicate-trigger dialog** (`c236ce0`). Plan
+  §"Duplicate same-job triggering" — Wait/Restart/Cancel collapses
+  to a 2-option window.confirm for Phase 3b (Wait + Cancel are
+  operationally identical at the call-site level). Phase 5 may
+  upgrade to a richer 3-option Solid dialog.
+  - JobRegistry.find_active_by_kind_target +
+    `check_duplicate_job(kind, target_id)` Tauri command.
+  - lib/backgroundJobs.ts gains
+    `downloadCoreWithDuplicateCheck(base, parentJobId?)` helper
+    that pre-flights check_duplicate_job → window.confirm if hit
+    → cancelJob + 250ms wait + invoke download_core. Returns
+    null when the operator chose Wait.
+  - CoresPage migrated to the helper; MissingCoreBulkPrompt +
+    SystemCoresStrip still call download_core directly (lower
+    duplicate-trigger risk in those flows — can migrate later if
+    operators surface dupes in real use).
+
+660 of 660 oa-shell tests green; frontend `npm run typecheck`
+silent.
+
+**Almost:** End-to-end smoke test for the three new behaviors:
+1. Range resume: trigger a core download → kill the app
+   mid-stream → relaunch → log shows
+   `resuming download of {base} ({N} bytes already on disk)`
+   AND the download picks up from where it left off (faster
+   second download = working). Range header in the request can
+   be verified via Charles/Fiddler if needed.
+2. Opt-out: hand-edit `<data_dir>/library/job-prefs.json` to add
+   `{"promptBeforeResumeOnLaunch": {"core_download": true}}`,
+   trigger a download, kill mid-stream, relaunch → log shows
+   "emitting prompt for job N" instead of "dispatching resume."
+   Row stays interrupted.
+3. Duplicate trigger: start a download from Settings → Cores;
+   while it's running, click Install again on the same row →
+   confirm dialog appears with "Restart it? (Cancel keeps the
+   current download running.)" copy.
+
+**Next:** Phase 4c (dependency graph + retry policy) or Phase 5
+(Settings panel + Recent activity panel + polish — closes the
+arc as an operator-facing feature). Phase 3b's opt-out toggles
+are the most likely Phase 5 work-item.
+
+---
+
 ## 2026-06-02 — Phase 4b wires artwork_sync + bulk_core_install parent (`feat/background-jobs-phase-4b`)
 
 **Shipped:** Phase 4b (scoped down from the original Phase 4
