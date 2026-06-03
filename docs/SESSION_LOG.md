@@ -6,6 +6,15 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-03 — Settings declutter arc — merged to main
+
+Branch `feat/settings-declutter-system-health` merged via `--no-ff`
+(merge `dd430e4`) after operator playtest signed off. Branch deleted
+local + remote. The 5 phase commits + 2 polish commits + 2 docs
+commits all carry forward.
+
+---
+
 ## 2026-06-03 — Settings declutter arc — System Health hub + Game-media cards
 
 Six phase commits on `feat/settings-declutter-system-health` shipping
