@@ -269,6 +269,7 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
 // --- Experimental (hosts the Retroverse master toggle) ----------------
 
 export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (props) => {
+  const [devToolsOpen, setDevToolsOpen] = createSignal(false);
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -285,6 +286,69 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
           }}
           description="Top-toolbar tab IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS) replacing today's sidebar-driven layout. Flipping this OFF returns to the legacy Shell layout immediately — no restart required."
         />
+      </SettingsCard>
+
+      {/* Dev tools — collapsed-by-default disclosure for affordances only
+          developers ever need. Lives behind a click so it doesn't add
+          noise for normal operators. The Background Jobs test spawner
+          moved here from Settings → Library on 2026-06-03. */}
+      <SettingsCard title="Dev tools">
+        <button
+          type="button"
+          aria-expanded={devToolsOpen()}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setDevToolsOpen((v) => !v);
+          }}
+          class="flex w-full items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-[0.75rem] text-(--color-oa-ink) transition hover:border-white/20 hover:bg-white/[0.04]"
+        >
+          <span>
+            <span class="font-semibold">Background Jobs — test spawner</span>
+            <span class="ml-2 text-[0.65rem] text-(--color-oa-ink-dim)">
+              synthetic jobs to exercise the BackgroundJobsBar
+            </span>
+          </span>
+          <span class="shrink-0 text-(--color-oa-ink-dim)" aria-hidden="true">
+            {devToolsOpen() ? "▾" : "▸"}
+          </span>
+        </button>
+
+        <Show when={devToolsOpen()}>
+          <div class="mt-3 space-y-2 rounded-md border border-white/5 bg-white/[0.02] p-3">
+            <p class="text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+              Spawns a synthetic background job that ticks progress at 10 Hz.
+              Use it to exercise the bar's pause / resume / cancel /
+              auto-collapse without burning a real core download. Click
+              multiple times to test multi-job thresholds.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
+                    console.warn("[oa-jobs] spawn_test_job failed:", err);
+                  });
+                }}
+              >
+                Spawn 30 s test job
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
+                    console.warn("[oa-jobs] spawn_test_job failed:", err);
+                  });
+                }}
+              >
+                Spawn 10 s test job
+              </button>
+            </div>
+          </div>
+        </Show>
       </SettingsCard>
     </div>
   );
@@ -566,37 +630,6 @@ export const LibrarySettings: Component = () => {
         >
           Set up your library
         </button>
-      </SettingsCard>
-      <SettingsCard
-        title="Background Jobs — dev test"
-        description="Spawns a synthetic 30-second background job that ticks progress at 10 Hz. Use it to exercise the BackgroundJobsBar's pause / resume / cancel / auto-collapse without burning a real core download. Click multiple times for 2+ / 3+ concurrent jobs to test the Pause-all / Cancel-all thresholds."
-      >
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
-                console.warn("[oa-jobs] spawn_test_job failed:", err);
-              });
-            }}
-          >
-            Spawn 30 s test job
-          </button>
-          <button
-            type="button"
-            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
-                console.warn("[oa-jobs] spawn_test_job failed:", err);
-              });
-            }}
-          >
-            Spawn 10 s test job
-          </button>
-        </div>
       </SettingsCard>
       <div class="-mx-8 -mb-6">
         <LibraryManagerPage
