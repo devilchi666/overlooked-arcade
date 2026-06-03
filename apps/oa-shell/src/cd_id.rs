@@ -340,7 +340,8 @@ pub(crate) mod cue {
 
     /// One track entry parsed out of a .cue. Only the first MODE1 track
     /// matters for disc-ID extraction; we still collect everything so
-    /// future Phase 2b work (per-track SHA-1 against Redump) can use the
+    /// the per-track SHA-1 hashing path in `disc_track_hash` (Phase A1
+    /// Sub-phase 2 of the virtual library + launcher arc) can use the
     /// same parser.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct CueTrack {
@@ -352,6 +353,14 @@ pub(crate) mod cue {
         /// "MODE1/2048" / "MODE1/2352" / "MODE2/2352" / "AUDIO" / etc.
         /// We only care about distinguishing data tracks from audio.
         pub mode: String,
+        /// INDEX 01 position in CD sectors (1 sector = 1/75 second).
+        /// 0 when the cue has no explicit INDEX 01 (split-bin cues
+        /// where every track starts at the beginning of its own .bin).
+        /// For merged-bin cues (one .bin per disc, multiple TRACK
+        /// blocks sharing a single FILE), this drives per-track byte
+        /// offsets via `index01_sectors * sector_size`. Used by the
+        /// `disc_track_hash` module.
+        pub index01_sectors: u64,
     }
 
     impl CueTrack {
@@ -386,7 +395,9 @@ pub(crate) mod cue {
 
     /// Parse cue text. State machine: each `FILE "..." BINARY` sets the
     /// current file; each `TRACK NN MODE` emits a CueTrack carrying that
-    /// file. We ignore everything else (INDEX, PREGAP, FLAGS).
+    /// file; each `INDEX 01 MM:SS:FF` line that follows attaches its
+    /// sector position to the most-recently-emitted track. We ignore
+    /// everything else (PREGAP, FLAGS, ISRC, INDEX 00 / 02-99).
     ///
     /// Tolerant of quoting variants (some tools omit quotes around
     /// single-word filenames) and case differences (`Track 01 Mode1/2352`).
@@ -402,12 +413,45 @@ pub(crate) mod cue {
             } else if upper.starts_with("TRACK ") {
                 if let Some(file) = current_file.clone() {
                     if let Some((track_no, mode)) = parse_track_line(line) {
-                        out.push(CueTrack { file, track_no, mode });
+                        out.push(CueTrack {
+                            file,
+                            track_no,
+                            mode,
+                            index01_sectors: 0,
+                        });
+                    }
+                }
+            } else if upper.starts_with("INDEX ") {
+                if let Some((idx_no, sectors)) = parse_index_line(line) {
+                    if idx_no == 1 {
+                        if let Some(last) = out.last_mut() {
+                            last.index01_sectors = sectors;
+                        }
                     }
                 }
             }
         }
         out
+    }
+
+    /// `INDEX 01 MM:SS:FF` → `(1, sectors)`. Returns None on
+    /// malformed input (missing index number, malformed timestamp).
+    /// CD sectors are 1/75 second, so `sectors = MM*60*75 + SS*75 + FF`.
+    fn parse_index_line(line: &str) -> Option<(u32, u64)> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            return None;
+        }
+        let idx_no = parts[1].parse::<u32>().ok()?;
+        let ts = parts[2];
+        let segs: Vec<&str> = ts.split(':').collect();
+        if segs.len() != 3 {
+            return None;
+        }
+        let mm = segs[0].parse::<u64>().ok()?;
+        let ss = segs[1].parse::<u64>().ok()?;
+        let ff = segs[2].parse::<u64>().ok()?;
+        Some((idx_no, mm * 60 * 75 + ss * 75 + ff))
     }
 
     /// `FILE "Game (Track 1).bin" BINARY` → `"Game (Track 1).bin"`.
