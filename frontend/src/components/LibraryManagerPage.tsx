@@ -32,6 +32,7 @@ import SettingRow, { selectClass } from "./SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
+import GameMediaManagePanel from "./GameMediaManagePanel";
 
 type Props = {
   settings: SettingsStore;
@@ -711,13 +712,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
     }
   }
 
-  // Phase 4 of the 2026-06-03 declutter arc dropped the per-system action
-  // row that called these directly; Phase 5 wires them to the Manage…
-  // side panel. Keep the function bodies live so the wiring is a one-line
-  // change when Phase 5 lands. The `void` references silence tsc's
-  // unused-locals warning in the intermediate state.
-  void startHashSync;
-  void startClearMetadata;
+  // Active system for the Manage… side panel — set when the operator
+  // clicks [Manage…] on a card, cleared by panel close + Esc + backdrop
+  // click. The panel component renders nothing while null. Operators can
+  // switch active card while the panel is open; the panel re-targets
+  // without close + reopen.
+  const [managePanelFor, setManagePanelFor] = createSignal<SystemId | null>(null);
 
   // --- Game media per-system stats ---------------------------------------
   //
@@ -1228,9 +1228,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                             </Show>
                             <button
                               type="button"
-                              disabled
-                              class="rounded-md border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink-dim)/60 transition disabled:cursor-not-allowed"
-                              title="Per-system Manage panel lands in Phase 5 — exposes the 5 granular ops (Sync media / Sync metadata / Clear metadata / Sync hashes / Identify ROMs)."
+                              onClick={(e) => {
+                                e.currentTarget.blur();
+                                setManagePanelFor(id);
+                              }}
+                              class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                              title="Open the granular ops panel — Sync media / Sync metadata / Clear metadata / Sync hashes / Identify ROMs."
                             >
                               Manage…
                             </button>
@@ -1554,6 +1557,23 @@ const LibraryManagerPage: Component<Props> = (props) => {
       <PlatformMediaDialog
         open={platformMediaOpen()}
         onClose={() => setPlatformMediaOpen(false)}
+      />
+      <GameMediaManagePanel
+        systemId={managePanelFor}
+        stats={() => {
+          const id = managePanelFor();
+          return id ? perSystemStats().get(id) : undefined;
+        }}
+        busy={() => {
+          const id = managePanelFor();
+          return id ? isSystemBusy(id) : false;
+        }}
+        onSyncMedia={startSync}
+        onSyncMetadata={startMetadataSync}
+        onClearMetadata={startClearMetadata}
+        onSyncHashes={startHashSync}
+        onIdentifyRoms={startHashResolve}
+        onClose={() => setManagePanelFor(null)}
       />
     </>
   );
