@@ -491,6 +491,21 @@ pub struct RomTrackRow {
     pub size_bytes: i64,
 }
 
+/// Cached per-track hash bundle for one operator-side disc image.
+/// Returned by [`LibraryDb::get_game_disc_tracks`]. The mtime/size
+/// stamps drive cache invalidation — the caller stat()s the disc
+/// file at scan time and compares against these; drift means
+/// "operator replaced the dump" → re-hash via
+/// [`LibraryDb::clear_game_disc_tracks`] + a fresh
+/// [`LibraryDb::write_game_disc_tracks`] call.
+#[derive(Clone, Debug)]
+pub struct GameDiscTracksCache {
+    pub tracks: Vec<crate::disc_track_hash::TrackHash>,
+    pub file_mtime: i64,
+    pub file_size: i64,
+    pub last_hashed_at: i64,
+}
+
 /// One MAME ROM-set entry. Keyed by `rom_set` (the .zip basename without
 /// extension, e.g. "sf2ce") rather than SHA-1 because MAME's .zip
 /// contents drift across MAME versions while the filename stays stable.
@@ -2539,6 +2554,196 @@ impl LibraryDb {
             |r| r.get(0),
         )
         .map_err(|e| format!("count disc_sets: {e}"))
+    }
+
+    // ---- game_disc_tracks (operator-side per-track hash cache,
+    // Phase A1 Sub-phase 3). Stores the per-game per-track SHA-1s
+    // the operator's disc image hashed to, plus mtime+size stamps
+    // for cache invalidation. -----------------------------------------
+
+    /// Persist a per-game per-track hash cache row. `tracks` is the
+    /// output of [`crate::disc_track_hash::hash_disc`] (or pulled from
+    /// a cache hit). `file_mtime` / `file_size` stamp the file's
+    /// state at hash time so the next scan can stat() the file and
+    /// detect "operator replaced the dump" without re-hashing.
+    /// Wipes any existing rows for `game_id` then bulk-inserts.
+    pub fn write_game_disc_tracks(
+        &self,
+        game_id: &str,
+        tracks: &[crate::disc_track_hash::TrackHash],
+        file_mtime: i64,
+        file_size: i64,
+        last_hashed_at: i64,
+    ) -> Result<usize, String> {
+        let mut conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        tx.execute(
+            "DELETE FROM game_disc_tracks WHERE game_id = ?1",
+            params![game_id],
+        )
+        .map_err(|e| format!("clear game_disc_tracks for {game_id}: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO game_disc_tracks
+                       (game_id, track_number, sha1, track_mode, size_bytes,
+                        file_mtime, file_size, last_hashed_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                )
+                .map_err(|e| format!("prepare insert game_disc_tracks: {e}"))?;
+            for t in tracks {
+                stmt.execute(params![
+                    game_id,
+                    t.track_number as i64,
+                    t.sha1.to_ascii_lowercase(),
+                    t.track_mode,
+                    t.size_bytes as i64,
+                    file_mtime,
+                    file_size,
+                    last_hashed_at,
+                ])
+                .map_err(|e| {
+                    format!(
+                        "insert game_disc_tracks game_id={game_id} track={}: {e}",
+                        t.track_number
+                    )
+                })?;
+                written += 1;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("commit write_game_disc_tracks: {e}"))?;
+        Ok(written)
+    }
+
+    /// Fetch the cached per-track hashes for one game, plus the
+    /// mtime/size stamps at hash time. Returns `Ok(None)` when no
+    /// cache row exists yet (first identify) — the caller hashes the
+    /// disc fresh.
+    ///
+    /// The cache-validity check is the caller's responsibility: stat()
+    /// the disc file, compare its current mtime+size against the
+    /// returned stamps, and treat mismatch as "operator replaced the
+    /// dump" → delete + re-hash via [`clear_game_disc_tracks`].
+    pub fn get_game_disc_tracks(
+        &self,
+        game_id: &str,
+    ) -> Result<Option<GameDiscTracksCache>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT track_number, sha1, track_mode, size_bytes,
+                        file_mtime, file_size, last_hashed_at
+                 FROM game_disc_tracks
+                 WHERE game_id = ?1
+                 ORDER BY track_number ASC",
+            )
+            .map_err(|e| format!("prepare get_game_disc_tracks: {e}"))?;
+        let mut rows = stmt
+            .query(params![game_id])
+            .map_err(|e| format!("query get_game_disc_tracks: {e}"))?;
+        let mut tracks: Vec<crate::disc_track_hash::TrackHash> = Vec::new();
+        let mut stamps: Option<(i64, i64, i64)> = None;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("step get_game_disc_tracks: {e}"))?
+        {
+            let track_number: i64 = row.get(0).map_err(|e| format!("col: {e}"))?;
+            let sha1: String = row.get(1).map_err(|e| format!("col: {e}"))?;
+            let track_mode: String = row.get(2).map_err(|e| format!("col: {e}"))?;
+            let size_bytes: i64 = row.get(3).map_err(|e| format!("col: {e}"))?;
+            let file_mtime: i64 = row.get(4).map_err(|e| format!("col: {e}"))?;
+            let file_size: i64 = row.get(5).map_err(|e| format!("col: {e}"))?;
+            let last_hashed_at: i64 = row.get(6).map_err(|e| format!("col: {e}"))?;
+            tracks.push(crate::disc_track_hash::TrackHash {
+                track_number: track_number as u32,
+                track_mode,
+                sha1,
+                size_bytes: size_bytes as u64,
+            });
+            if stamps.is_none() {
+                stamps = Some((file_mtime, file_size, last_hashed_at));
+            }
+        }
+        if let Some((file_mtime, file_size, last_hashed_at)) = stamps {
+            Ok(Some(GameDiscTracksCache {
+                tracks,
+                file_mtime,
+                file_size,
+                last_hashed_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Drop every cached row for a game. Called when the cache-validity
+    /// check detects mtime/size drift, or via the games-table ON DELETE
+    /// CASCADE when the operator removes a game from the library.
+    #[allow(dead_code)]
+    pub fn clear_game_disc_tracks(&self, game_id: &str) -> Result<usize, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let n = conn
+            .execute(
+                "DELETE FROM game_disc_tracks WHERE game_id = ?1",
+                params![game_id],
+            )
+            .map_err(|e| format!("clear game_disc_tracks {game_id}: {e}"))?;
+        Ok(n)
+    }
+
+    /// Look up the canonical-side per-track entries for a game name +
+    /// system. Used by the strictness evaluator to verify the
+    /// operator's full track set against the candidate's full set
+    /// after a single-track SHA-1 hit narrowed down the candidate.
+    pub fn lookup_rom_hashes_tracks_for_game(
+        &self,
+        system_id: &str,
+        game_name: &str,
+    ) -> Result<Vec<RomTrackRow>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT sha1, system_id, game_name, serial, track_number, track_mode, size_bytes
+                 FROM rom_hashes_tracks
+                 WHERE system_id = ?1 AND game_name = ?2
+                 ORDER BY track_number ASC",
+            )
+            .map_err(|e| format!("prepare lookup_rom_hashes_tracks_for_game: {e}"))?;
+        let mut rows = stmt
+            .query(params![system_id, game_name])
+            .map_err(|e| format!("query lookup_rom_hashes_tracks_for_game: {e}"))?;
+        let mut out = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("step lookup_rom_hashes_tracks_for_game: {e}"))?
+        {
+            out.push(RomTrackRow {
+                sha1: row.get(0).map_err(|e| format!("col: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col: {e}"))?,
+                game_name: row.get(2).map_err(|e| format!("col: {e}"))?,
+                serial: row.get(3).map_err(|e| format!("col: {e}"))?,
+                track_number: row
+                    .get::<_, i64>(4)
+                    .map_err(|e| format!("col: {e}"))? as u32,
+                track_mode: row.get(5).map_err(|e| format!("col: {e}"))?,
+                size_bytes: row.get(6).map_err(|e| format!("col: {e}"))?,
+            });
+        }
+        Ok(out)
     }
 
     /// Bulk-upsert game_serials rows. Idempotent on (system_id, serial)
@@ -5926,6 +6131,176 @@ mod tests {
         assert_eq!(id_v3, id_v1, "id stable through disc_count change");
         assert_eq!(count_v3, 5);
         assert_eq!(db.count_disc_sets("psx").expect("count disc_sets"), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn game_disc_tracks_round_trip_through_cache_helpers() {
+        // Phase A1 Sub-phase 3 — verify the operator-side per-track
+        // cache writes / reads with stamps intact, clear empties, and
+        // mtime/size drift drives the caller (via stamp comparison)
+        // to re-hash.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-disc-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db = LibraryDb::open(&tmp).expect("open");
+        // FK requires a games row.
+        let mut g = row("g1", "Tomb Raider");
+        g.system_id = "psx".into();
+        g.file_path = "/roms/psx/tomb.cue".into();
+        db.add_games(&[g]).expect("add game");
+
+        let tracks = vec![
+            crate::disc_track_hash::TrackHash {
+                track_number: 1,
+                track_mode: "MODE1/2352".into(),
+                sha1: "1111111111111111111111111111111111111111".into(),
+                size_bytes: 622_272,
+            },
+            crate::disc_track_hash::TrackHash {
+                track_number: 2,
+                track_mode: "AUDIO".into(),
+                sha1: "2222222222222222222222222222222222222222".into(),
+                size_bytes: 33_840_960,
+            },
+        ];
+        let written = db
+            .write_game_disc_tracks("g1", &tracks, 1_700_000_000, 622_272 + 33_840_960, 1_700_000_001)
+            .expect("write_game_disc_tracks");
+        assert_eq!(written, 2);
+
+        // Read back; tracks come out in track_number order.
+        let cached = db
+            .get_game_disc_tracks("g1")
+            .expect("get_game_disc_tracks")
+            .expect("Some");
+        assert_eq!(cached.tracks.len(), 2);
+        assert_eq!(cached.tracks[0].track_number, 1);
+        assert_eq!(cached.tracks[0].track_mode, "MODE1/2352");
+        assert_eq!(cached.tracks[1].track_number, 2);
+        assert_eq!(cached.file_mtime, 1_700_000_000);
+        assert_eq!(cached.file_size, 622_272 + 33_840_960);
+        assert_eq!(cached.last_hashed_at, 1_700_000_001);
+
+        // Sha1 lower-cased on write.
+        let upper_sha = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let track_upper = vec![crate::disc_track_hash::TrackHash {
+            track_number: 1,
+            track_mode: "MODE1/2352".into(),
+            sha1: upper_sha.into(),
+            size_bytes: 1024,
+        }];
+        let _ = db
+            .write_game_disc_tracks("g1", &track_upper, 1_700_000_100, 1024, 1_700_000_101)
+            .expect("rewrite");
+        let cached = db.get_game_disc_tracks("g1").expect("get").expect("Some");
+        assert_eq!(cached.tracks.len(), 1, "rewrite replaces, not appends");
+        assert_eq!(cached.tracks[0].sha1, upper_sha.to_ascii_lowercase());
+
+        // Stamp drift simulates "operator replaced the dump."
+        // Caller logic: stat() returns different mtime/size → clear +
+        // re-hash. Tests the contract: stamps are returned faithfully
+        // so the caller can compare.
+        assert_eq!(cached.file_mtime, 1_700_000_100);
+        assert_eq!(cached.file_size, 1024);
+
+        // Clear empties.
+        let n = db.clear_game_disc_tracks("g1").expect("clear");
+        assert_eq!(n, 1);
+        assert!(db.get_game_disc_tracks("g1").expect("get post-clear").is_none());
+
+        // FK cascade: deleting the game cascades the disc-track rows.
+        let _ = db
+            .write_game_disc_tracks("g1", &tracks, 1, 1, 1)
+            .expect("rewrite-after-clear");
+        db.delete_game("g1").expect("delete game");
+        assert!(
+            db.get_game_disc_tracks("g1").expect("get after game delete").is_none(),
+            "FK CASCADE drops disc-track rows when game is deleted"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn lookup_rom_hashes_tracks_for_game_returns_sorted_by_track_number() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-lookup-tracks-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db = LibraryDb::open(&tmp).expect("open");
+        // Insert canonical tracks in REVERSE order — the lookup should
+        // re-sort.
+        db.replace_rom_hashes_tracks_for_system(
+            "psx",
+            &[
+                RomTrackRow {
+                    sha1: "33".into(),
+                    system_id: "psx".into(),
+                    game_name: "Foo (USA)".into(),
+                    serial: Some("SLUS-00001".into()),
+                    track_number: 3,
+                    track_mode: "AUDIO".into(),
+                    size_bytes: 100,
+                },
+                RomTrackRow {
+                    sha1: "11".into(),
+                    system_id: "psx".into(),
+                    game_name: "Foo (USA)".into(),
+                    serial: Some("SLUS-00001".into()),
+                    track_number: 1,
+                    track_mode: "DATA".into(),
+                    size_bytes: 100,
+                },
+                RomTrackRow {
+                    sha1: "22".into(),
+                    system_id: "psx".into(),
+                    game_name: "Foo (USA)".into(),
+                    serial: Some("SLUS-00001".into()),
+                    track_number: 2,
+                    track_mode: "AUDIO".into(),
+                    size_bytes: 100,
+                },
+                // Unrelated game — must not surface in this lookup.
+                RomTrackRow {
+                    sha1: "99".into(),
+                    system_id: "psx".into(),
+                    game_name: "Bar (USA)".into(),
+                    serial: None,
+                    track_number: 1,
+                    track_mode: "DATA".into(),
+                    size_bytes: 100,
+                },
+            ],
+        )
+        .expect("replace_rom_hashes_tracks_for_system");
+
+        let tracks = db
+            .lookup_rom_hashes_tracks_for_game("psx", "Foo (USA)")
+            .expect("lookup");
+        assert_eq!(tracks.len(), 3, "only Foo's tracks return");
+        assert_eq!(tracks[0].track_number, 1);
+        assert_eq!(tracks[1].track_number, 2);
+        assert_eq!(tracks[2].track_number, 3);
+
+        let none = db
+            .lookup_rom_hashes_tracks_for_game("psx", "Nonexistent")
+            .expect("lookup nonexistent");
+        assert!(none.is_empty());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

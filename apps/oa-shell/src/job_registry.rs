@@ -81,6 +81,12 @@ pub enum JobKind {
     /// is empty (Phase 4a inlines this; Phase 4b's dependency graph
     /// will surface it as a separate parent-job row).
     DatSync { system_id: String },
+    /// Per-system disc-track SHA-1 hashing
+    /// (`rom_hashes::resolve_rom_hashes_for_system`'s disc-shape
+    /// branch). Operator-triggered via "Identify ROMs" on a
+    /// disc-shape system; parallel to HashResolve for cart systems.
+    /// Phase A1 Sub-phase 3 of the virtual library + launcher arc.
+    DiscTrackHash { system_id: String },
     /// MAME catalog refresh from a local MAME install
     /// (`mame_import::refresh_mame_system_info`). Atomic — single
     /// XML parse + bake; cancel rolls back.
@@ -114,6 +120,7 @@ impl JobKind {
             Self::FolderScan { .. } => "folder_scan",
             Self::HashResolve { .. } => "hash_resolve",
             Self::DatSync { .. } => "dat_sync",
+            Self::DiscTrackHash { .. } => "disc_track_hash",
             Self::MameListxmlImport => "mame_listxml_import",
             Self::ArtworkSync { .. } => "artwork_sync",
             Self::BulkCoreInstall => "bulk_core_install",
@@ -127,6 +134,7 @@ impl JobKind {
             Self::FolderScan { folder } => Some(folder.clone()),
             Self::HashResolve { system_id } => Some(system_id.clone()),
             Self::DatSync { system_id } => Some(system_id.clone()),
+            Self::DiscTrackHash { system_id } => Some(system_id.clone()),
             Self::MameListxmlImport => None,
             Self::ArtworkSync { system_id } => Some(system_id.clone()),
             Self::BulkCoreInstall => None,
