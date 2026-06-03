@@ -21,6 +21,7 @@ mod cheat_formats;
 mod cheat_search;
 mod cli;
 mod data_dir;
+mod disc_track_hash;
 mod game_info;
 mod http_retry;
 mod job_prefs;
