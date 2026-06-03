@@ -243,3 +243,45 @@ export async function cancelAllJobs(): Promise<void> {
     console.warn("[oa-jobs] cancel_all_jobs failed:", e);
   }
 }
+
+/// Phase 3b duplicate-trigger helper. Wraps `invoke('download_core',
+/// ...)` with a check_duplicate_job pre-flight: when an existing
+/// core_download for the same `base` is active, prompts the operator
+/// to either restart it (cancel + retry) or wait for the current one
+/// to finish. Returns null when the operator chose to wait (so the
+/// caller knows the current invocation is a no-op) and the final
+/// path when the download proceeded.
+///
+/// Plan §"Duplicate same-job triggering" specifies three options
+/// (Wait / Restart / Cancel) but Wait + Cancel are operationally
+/// identical at the call-site level — both end up as "don't do
+/// anything new." Phase 3b collapses to a 2-option window.confirm;
+/// Phase 5 may upgrade to a richer 3-option dialog component.
+export async function downloadCoreWithDuplicateCheck(
+  base: string,
+  parentJobId?: number,
+): Promise<string | null> {
+  let existing: JobSnapshot | null = null;
+  try {
+    existing = await invoke<JobSnapshot | null>("check_duplicate_job", {
+      kind: "core_download",
+      targetId: base,
+    });
+  } catch (e) {
+    console.warn("[oa-jobs] check_duplicate_job failed:", e);
+    // Fall through to the invoke — the duplicate check is best-effort.
+  }
+  if (existing) {
+    const confirmed = window.confirm(
+      `${existing.label} is already in progress. Restart it? (Cancel keeps the current download running.)`,
+    );
+    if (!confirmed) return null;
+    await cancelJob(existing.id);
+    // Give the worker a moment to observe the cancel flag + finalize
+    // the row before we try to create a duplicate row for the new
+    // attempt. 250 ms covers the chunk-loop's 100 ms pause poll plus
+    // the cancel-cleanup contract.
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return invoke<string>("download_core", { base, parentJobId });
+}

@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
+import { downloadCoreWithDuplicateCheck } from "../lib/backgroundJobs";
 import type { CoreEntry } from "../settings/store";
 import { systemThemes, type SystemId } from "../themes/registry";
 import {
@@ -281,10 +282,18 @@ const CoresPage: Component<Props> = (props) => {
     setBusy(`install-${c.base}`);
     setStatus(`Downloading ${c.displayName}…`);
     try {
-      await invoke<string>("download_core", { base: c.base });
-      setStatus(`Installed ${c.displayName}.`);
-      refetch();
-      refreshCatalog();
+      // Phase 3b duplicate-trigger — if the same download is already
+      // in flight, prompt the operator before kicking off a second
+      // attempt. Returns null when they chose to wait; treat as no-op
+      // (the current download finishes on its own).
+      const result = await downloadCoreWithDuplicateCheck(c.base);
+      if (result === null) {
+        setStatus(`Already downloading ${c.displayName} — keeping current.`);
+      } else {
+        setStatus(`Installed ${c.displayName}.`);
+        refetch();
+        refreshCatalog();
+      }
     } catch (e) {
       setStatus(`Install failed: ${String(e)}`);
     } finally {
