@@ -4,11 +4,14 @@ Routing table. Read this first; it points to everything else.
 
 ## How docs are organized
 
-- **Cross-cutting work** lives under `docs/features/<name>/` — features that
-  don't belong to a single core (sidebar, UI polish, library import, kiosk).
-  Each carries its own README / ROADMAP / SESSION_LOG / DECISIONS.
+- **Active cross-cutting work** lives under `docs/features/<name>/` — features
+  currently in flight or queued. Each carries its own README / ROADMAP /
+  SESSION_LOG / DECISIONS.
 - **Per-core work** lives under `docs/cores/<id>/`. Same file shape.
 - **Project-wide** lives at `docs/` root.
+- **Shipped / closed work** lives under `docs/_archive/` (features + plans).
+  Read-on-need only — see [docs/_archive/INDEX.md](_archive/INDEX.md) for the
+  manifest. Loading discipline rules in CLAUDE.md "How to start a session".
 - **Old SESSION_LOG entries** spill to `SESSION_LOG_ARCHIVE.md` next to the
   live one when the live file grows past ~150 lines. Read the archive only
   when you need history older than the last ~5 entries.
@@ -24,20 +27,15 @@ Routing table. Read this first; it points to everything else.
 - [SESSION_LOG.md](SESSION_LOG.md) — project-wide entries (cross-stream)
 - [CHATGPT_BRIEFING.md](CHATGPT_BRIEFING.md) — self-contained briefing for ChatGPT / external LLM collaborators. Paste into a fresh session to get gap-spotting + feature-ideation help.
 
-## Cross-cutting features
+## Cross-cutting features (active)
 
-- [features/sidebar/](features/sidebar/) — library sidebar tier + view editor
-- [features/ui-polish/](features/ui-polish/) — menu-bar IA + dialog reorganization
-- [features/library-import/](features/library-import/) — import wizard, scanner, media sync
-- [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
-- [features/portable-install/](features/portable-install/) — `<exe_dir>/settings/` opt-in via portable.txt marker
-- [features/media-taxonomy/](features/media-taxonomy/) — full LaunchBox-shape art/audio/video/manual storage (✅ shipped 2026-05-24)
 - [features/dosbox-and-scummvm/](features/dosbox-and-scummvm/) — DOSBox + ScummVM onboarding plan (📐 planned, not yet implemented)
-- [features/controller-nav/](features/controller-nav/) — Phase 0 controller-nav primitives (focus manager + gamepad event layer + hint bar); shared foundation for guided-setup + per-system-UI
-- [features/guided-setup/](features/guided-setup/) — Guided Setup arc (wizard upgrade + smart-scan + readiness checklist + curated cores). Phase 1B Slice 1 shipped 2026-06-01; design lives at [docs/PLANS/guided-setup.md](PLANS/guided-setup.md).
-- [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI (audio / boot animations / tile flourishes / backgrounds, eventually layout + in-game overlays); Stage 1 in flight
-- [features/background-jobs/](features/background-jobs/) — Background jobs registry + persistent progress bar; Phase 1 in flight on `feat/background-jobs-phase-1`. 5-phase arc planned in `docs/PLANS/background-jobs-and-progress-bar.md`.
-- [features/retroverse-ui/](features/retroverse-ui/) — Experimental top-toolbar IA replacing the legacy sidebar Shell; 6 of 6 tabs operator-facing as of 2026-05-28. Design + planning docs in `docs/PLANS/retroverse-ui-rollout.md` + per-tab + content-packs docs. Deletion plan for the legacy Shell in `docs/PLANS/retroverse-flag-deprecation.md` (2026-05-30 audit; no code changes yet). System info panel v1 shipped 2026-06-01 (`feat/system-info-panel-v1`, six phase commits); design + retro at `docs/PLANS/system-info-panel-v1.md`. Schema reference appended to `docs/cores/SCHEMA.md`. Cross-system inventory entry in `docs/NEXT.md`.
+- [features/guided-setup/](features/guided-setup/) — Guided Setup arc. Phase 1B closed 2026-06-01; Phase 2 (curated CPU-tier core selection) queued. Design at [PLANS/guided-setup.md](PLANS/guided-setup.md).
+- [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
+- [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI. Stage 1 code arc complete; Stages 2+3 + content pilots pending.
+- [features/retroverse-ui/](features/retroverse-ui/) — Top-toolbar tab IA. 6/6 tabs operator-facing as of 2026-05-28. Design at [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md).
+
+**Shipped (archived):** sidebar, ui-polish, library-import, portable-install, media-taxonomy, controller-nav, background-jobs. See [_archive/INDEX.md](_archive/INDEX.md) for the manifest.
 
 ## Per-core docs
 
@@ -50,13 +48,19 @@ cores are currently being worked on.
   per-system `games-info.md` files that drive the Game Info Panel
   (factual + narrative reference data per game). Authoritative.
 
-## Research + plans (historical or pre-execution)
+## Research + plans (in flight / pre-execution)
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
-- [PLANS/](PLANS/) — design docs for in-flight work
-- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — per-system descriptor consolidation arc (3 slices). Slices 1 + 2 shipped 2026-06-02; Slice 3 (L3 content packs + L4 SQLite + JSON Schema + CI lint) remains queued. Unifies ~8 scattered per-system data sources into `config/systems/<id>/system.yaml` + `bios.yaml` + `games.yaml` with explicit L1/L2/L3/L4 layer model.
-- [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md) — per-track SHA-1 matching for disc-shape systems (4 phases, ~3-4 weeks). Planning locked 2026-06-02; queued in NEXT.md HIGH band as "needed to help new users out." Closes the canonical-identification gap for PSX / Saturn / Sega CD / Dreamcast / NeoCD / PCE-CD / PC-FX / 3DO / GameCube / PSP / PS2 — cart ROMs get SHA-1 lookup today; disc-shape systems will get the same machinery via per-track hashing against redump's per-track SHA-1 entries.
-- [PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md) — background-jobs registry + persistent progress bar (5 phases, ~5-6 weeks). Planning locked 2026-06-02; queued in NEXT.md HIGH band. Consolidates today's scattered per-operation toasts / modals / debug-log surfaces into one persistent bar across the bottom of the Retroverse shell, backed by a SQLite-persisted `background_jobs` table + per-kind resume handlers so operations survive app restart. Mutually reinforcing with the disc-track SHA-1 arc above (which becomes a Phase 4 consumer of the bar).
+- [PLANS/](PLANS/) — design docs for in-flight or queued work
+- [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md) — **major next arc** (2026-06-03, 8 phases, ~14–22 weeks). Promotes virtual-library grouping to SQLite schema + launcher-abstraction for external standalone emulators (Cemu / RPCS3 / Lime3DS). Reverses the 2026-05-16 libretro-only stance.
+- [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — Slices 1+2 shipped 2026-06-02; Slice 3 (L3 content packs + L4 SQLite + JSON Schema + CI lint) queued.
+- [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md) — per-track SHA-1 for disc-shape systems. **Folds into the virtual-library arc as Slice A1.**
+- [PLANS/content-packs.md](PLANS/content-packs.md) — content-pack distribution design (unbuilt).
+- [PLANS/guided-setup.md](PLANS/guided-setup.md) — Phase 2 (curated CPU-tier core selection) queued.
+- [PLANS/per-system-ui.md](PLANS/per-system-ui.md) — Stages 2+3 of the per-system UI arc.
+- [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md) — Retroverse §10 open work tracker.
+
+**Shipped plans (archived):** background-jobs-and-progress-bar, collections-tab-retroverse, discover-tab-retroverse, game-info-panel, main-window, play-now-tab-retroverse, retroverse-flag-deprecation, settings-declutter-system-health, settings-tab-retroverse, system-info-panel-v1, system-wiring-plan. See [_archive/INDEX.md](_archive/INDEX.md).
 
 ## Setup reference (off-repo)
 
