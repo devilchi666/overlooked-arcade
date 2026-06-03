@@ -25,6 +25,18 @@ spanned every system but was filed under whichever core happened to be active.
   - **Phase A — identification depth (~3–4 weeks, in flight via A1):** disc-track SHA-1
     (A1) + filename tag decode (A2, hacks/translations/bad dumps) +
     Tier 5 deep-dive (A3) + MAME parent/clone bridge (A4).
+    - **A1 Sub-phase 1 ✅ shipped 2026-06-03** (merge `1c319f8`).
+      Schema v18→v19 (rom_hashes_tracks + game_disc_tracks +
+      disc_sets + games.disc_set_id/disc_number), parser per-track
+      + multi-disc-parent emission, sync flow dispatch, full
+      disc-shape helper surface in library_db. 665 oa-shell tests
+      pass (660 baseline + 5 new); frontend typecheck silent.
+      Cart-shape `rom_hashes` path untouched. Plan + design
+      decisions in [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md).
+    - **A1 Sub-phase 2 — per-track hashing engine** (next). Container
+      parsers (.cue+split.bin / .cue+merged.bin / .chd / .gdi /
+      .iso), 4-frame CHDMAN padding + subchannel-strip handling per
+      the 2026-06-03 research pass, strictness modes.
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
