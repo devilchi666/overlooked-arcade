@@ -10,6 +10,9 @@ extensions:
 - toc
 - m3u
 - iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: NEC - PC Engine CD - TurboGrafx-CD
 cores:
 - base: mednafen_pce_fast_libretro
   display_name: Beetle PCE Fast

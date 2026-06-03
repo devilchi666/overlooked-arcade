@@ -906,7 +906,16 @@ pub async fn sync_rom_hashes_for_system(
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
+            // Phase A1 fix — disc-shape systems whose cache file
+            // was written before Sub-phase 1 deserialize with
+            // `tracks: []` via the #[serde(default)]. The cache-hit
+            // path would then wipe rom_hashes_tracks on every sync
+            // within the 24h TTL window. Treat that as a stale cache
+            // and fall through to fresh fetch instead.
+            let cache_is_useful_for_disc = !is_disc_shape_system(&systemId)
+                || !cached.tracks.is_empty();
             if !cached.entries.is_empty()
+                && cache_is_useful_for_disc
                 && now.saturating_sub(cached.fetched_at_unix_secs) < HASH_CACHE_TTL_SECS
             {
                 log::info!(
@@ -1202,6 +1211,23 @@ pub struct RomResolveSummary {
 /// upstream is offline or the system has no `libretro_dat_refs_for_system`
 /// mapping. Emits `oa://rom-hashes-synced` on success so any frontend
 /// listener picks up the populated state.
+/// Phase A1 fix — pure-Rust gate decision for `auto_sync_rom_hashes_if_empty`.
+/// Extracted from the async function so the matrix can be unit-tested
+/// without standing up a tokio runtime + Tauri state.
+///
+/// Returns `true` when the auto-sync should fetch fresh data. For
+/// cart-shape systems this is "the cart table is empty"; for
+/// disc-shape systems we ALSO require the per-track table to be
+/// non-empty, otherwise the per-track identify path stays dormant
+/// while the cart table looks populated (the bug Sub-phase 3.1 fixed).
+fn auto_sync_needed(is_disc_shape: bool, cart_count: i64, track_count: i64) -> bool {
+    if is_disc_shape {
+        cart_count == 0 || track_count == 0
+    } else {
+        cart_count == 0
+    }
+}
+
 pub(crate) async fn auto_sync_rom_hashes_if_empty(
     system_id: &str,
     app: &tauri::AppHandle,
@@ -1215,7 +1241,15 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
     parent_job_id: Option<i64>,
 ) -> Result<(), String> {
     use tauri::Manager;
-    if db.count_rom_hashes(system_id)? > 0 {
+    let cart_count = db.count_rom_hashes(system_id)?;
+    let track_count = if is_disc_shape_system(system_id) {
+        db.count_rom_hashes_tracks(system_id)?
+    } else {
+        // Cart-shape systems don't use the track table; treat as
+        // "data present" so it doesn't drag the gate.
+        1
+    };
+    if !auto_sync_needed(is_disc_shape_system(system_id), cart_count, track_count) {
         return Ok(());
     }
     let refs = libretro_dat_refs_for_system_resolved(system_id);
@@ -2151,6 +2185,34 @@ game (
     }
 
     #[test]
+    fn auto_sync_needed_cart_shape_fires_only_when_table_empty() {
+        // Cart-shape systems gate on rom_hashes alone.
+        assert!(auto_sync_needed(false, 0, 0));
+        assert!(auto_sync_needed(false, 0, 999));
+        assert!(!auto_sync_needed(false, 1, 0));
+        assert!(!auto_sync_needed(false, 1234, 0));
+    }
+
+    #[test]
+    fn auto_sync_needed_disc_shape_fires_when_either_table_empty() {
+        // Disc-shape systems require BOTH tables. Critical regression
+        // guard: pre-Sub-phase 1 caches populated rom_hashes from the
+        // redump dat but left rom_hashes_tracks empty; pre-fix the
+        // gate keyed on rom_hashes alone and the per-track identify
+        // path stayed dormant forever.
+        assert!(auto_sync_needed(true, 0, 0));
+        assert!(
+            auto_sync_needed(true, 1234, 0),
+            "rom_hashes populated but rom_hashes_tracks empty MUST fire sync"
+        );
+        assert!(
+            auto_sync_needed(true, 0, 1234),
+            "rom_hashes empty MUST fire sync regardless of track count"
+        );
+        assert!(!auto_sync_needed(true, 1234, 1234));
+    }
+
+    #[test]
     fn parser_emits_per_track_rows_for_redump_style_dat() {
         // Redump dats list one `rom (...)` entry per track of a disc-
         // shape game. Per-track rows derive track_number from the
@@ -2331,8 +2393,11 @@ game (
         // Systems whose libretro_dat_refs is empty on purpose. Document
         // the reason next to the id.
         const NO_DAT_SYSTEMS: &[&str] = &[
-            "pce-cd", // PCE-CD discs use catalog codes (Hu7-series) not present in libretro-database as standalone dat — game_serials is populated via the no-intro PCE dat which doesn't cover CD-shape titles.
-            "3do",    // libretro-database 3DO dat carries NO `serial` fields — 3DO never standardized a catalog code, disc-id lookup is structurally impossible.
+            // Phase A1 Sub-phase 3 update — pce-cd + 3do gained redump
+            // dat refs because the per-track SHA-1 path doesn't need
+            // serial data (the prior reason these were on this list).
+            // They're still serial-lookup-unfriendly but per-track
+            // matching covers them now.
             "mame",   // arcade ROM identification is set-based, not single-file.
             "scummvm",// engine launcher, not hardware. Game data files vary by release/translation; cover sync falls back to fuzzy filename match at the 0.95 threshold.
             "dosbox", // DOS-game runner, also no hardware. Directory contents vary by media (floppy/CD/GOG re-release) + fan patches; fuzzy filename match at the 0.95 threshold against directory basename.

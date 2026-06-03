@@ -11,6 +11,9 @@ extensions:
 - toc
 - m3u
 - iso
+libretro_dat_refs:
+- subdir: metadat/redump
+  basename: Panasonic - 3DO Interactive Multiplayer
 cores:
 - base: opera_libretro
   display_name: Opera (4DO)

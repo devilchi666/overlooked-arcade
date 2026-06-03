@@ -11,6 +11,11 @@ extensions:
 libretro_dat_refs:
 - subdir: metadat/no-intro
   basename: Sony - PlayStation Portable
+# UMD disc raw images go through the redump dat instead; both refs sync
+# so cart-shape ROMs (no-intro decrypted dumps) AND disc-shape per-track
+# rows (redump raw images) both land in their respective tables.
+- subdir: metadat/redump
+  basename: Sony - PlayStation Portable
 cores:
 - base: ppsspp_libretro
   display_name: PPSSPP
