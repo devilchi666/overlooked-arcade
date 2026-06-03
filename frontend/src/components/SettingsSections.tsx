@@ -756,6 +756,45 @@ export const BiosSettings: Component = () => {
     };
   });
 
+  /// Two-group split: Issues (missing / unknown hash / read error) on top,
+  /// Ready (ok) below. Each group sorted alphabetically by label so
+  /// position is predictable. Operator spec 2026-06-03.
+  const groupedEntries = createMemo(() => {
+    const entries = status()?.entries ?? [];
+    const byLabel = (a: BiosStatusEntry, b: BiosStatusEntry) =>
+      a.label.localeCompare(b.label);
+    return {
+      issues: entries.filter((e) => e.status !== "ok").sort(byLabel),
+      ready: entries.filter((e) => e.status === "ok").sort(byLabel),
+    };
+  });
+
+  const renderBiosRow = (entry: BiosStatusEntry): JSX.Element => {
+    const style = BIOS_PILL_STYLES[entry.status];
+    return (
+      <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+        <div class="min-w-0">
+          <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+            {entry.label}
+          </p>
+          <p class="mt-0.5 truncate text-[0.65rem] text-(--color-oa-ink-dim)" title={entry.required}>
+            {entry.required}
+          </p>
+        </div>
+        <span
+          class={`self-start rounded border ${style.ring} ${style.bg} px-2 py-0.5 text-[0.55rem] uppercase tracking-widest ${style.text}`}
+        >
+          {style.label}
+        </span>
+        <Show when={entry.detail}>
+          <p class="col-span-2 break-all border-t border-white/5 pt-1.5 font-mono text-[0.6rem] text-(--color-oa-ink-dim)">
+            {entry.detail}
+          </p>
+        </Show>
+      </li>
+    );
+  };
+
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="System directory">
@@ -792,39 +831,44 @@ export const BiosSettings: Component = () => {
         </div>
 
         <Show when={status()?.entries}>
-          {(entries) => (
-            <ul class="mt-2 flex flex-col gap-1.5">
-              <For each={entries()}>
-                {(entry) => {
-                  const style = BIOS_PILL_STYLES[entry.status];
-                  return (
-                    <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
-                      <div class="min-w-0">
-                        <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
-                          {entry.label}
-                        </p>
-                        <p class="mt-0.5 truncate text-[0.65rem] text-(--color-oa-ink-dim)" title={entry.required}>
-                          {entry.required}
-                        </p>
-                      </div>
-                      <span
-                        class={`self-start rounded border ${style.ring} ${style.bg} px-2 py-0.5 text-[0.55rem] uppercase tracking-widest ${style.text}`}
-                      >
-                        {style.label}
-                      </span>
-                      <Show when={entry.detail}>
-                        <p class="col-span-2 break-all border-t border-white/5 pt-1.5 font-mono text-[0.6rem] text-(--color-oa-ink-dim)">
-                          {entry.detail}
-                        </p>
-                      </Show>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
-          )}
+          <div class="mt-3 flex flex-col gap-4">
+            {/* Issues — anything not "ok". Hidden when empty so the
+                Ready section can sit flush against the header on a
+                fully-staged install. */}
+            <Show when={groupedEntries().issues.length > 0}>
+              <section>
+                <h4 class="mb-1.5 flex items-center gap-2 text-[0.55rem] uppercase tracking-[0.4em] text-amber-300/90">
+                  <span aria-hidden="true">⚠</span>
+                  Missing &amp; issues
+                  <span class="text-(--color-oa-ink-dim)/60">
+                    · {groupedEntries().issues.length}
+                  </span>
+                </h4>
+                <ul class="flex flex-col gap-1.5">
+                  <For each={groupedEntries().issues}>{(entry) => renderBiosRow(entry)}</For>
+                </ul>
+              </section>
+            </Show>
+
+            {/* Ready — all "ok" entries. Hidden when empty (a fresh
+                install with everything missing wouldn't have any). */}
+            <Show when={groupedEntries().ready.length > 0}>
+              <section>
+                <h4 class="mb-1.5 flex items-center gap-2 text-[0.55rem] uppercase tracking-[0.4em] text-emerald-300/90">
+                  <span aria-hidden="true">✓</span>
+                  Ready
+                  <span class="text-(--color-oa-ink-dim)/60">
+                    · {groupedEntries().ready.length}
+                  </span>
+                </h4>
+                <ul class="flex flex-col gap-1.5">
+                  <For each={groupedEntries().ready}>{(entry) => renderBiosRow(entry)}</For>
+                </ul>
+              </section>
+            </Show>
+          </div>
         </Show>
-        <p class="mt-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
+        <p class="mt-3 text-[0.65rem] text-(--color-oa-ink-dim)/70">
           Green = filename + content hash both match a known canonical
           dump. Amber = file is present under a known name but its
           content hash isn't in OA's table (the core usually still

@@ -343,6 +343,20 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   // funnel through this signal.
   const [bulkPromptSystems, setBulkPromptSystems] = createSignal<SystemId[] | null>(null);
 
+  /// Alphabetical-by-displayName ordering of the systems to render.
+  /// Matches the operator's expectation (2026-06-03): "I want the
+  /// list in alphabetical order." Position is then predictable
+  /// regardless of which order the wizard / library emits them in.
+  const sortedSystems = createMemo<SystemId[]>(() => {
+    const ids = [...props.systems()];
+    ids.sort((a, b) => {
+      const da = systemThemes[a]?.displayName ?? a;
+      const db = systemThemes[b]?.displayName ?? b;
+      return da.localeCompare(db);
+    });
+    return ids;
+  });
+
   const missingCoreSystems = createMemo<SystemId[]>(() => {
     if (cores.loading || available.loading) return [];
     // Two filters: (1) we don't already have a core for it, (2) the
@@ -538,7 +552,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
           </div>
         </Show>
         <div class="flex flex-col gap-2">
-          <For each={props.systems()}>{(sid) => renderRow(sid)}</For>
+          <For each={sortedSystems()}>{(sid) => renderRow(sid)}</For>
         </div>
         <div class="flex items-center justify-between gap-2">
           <Show when={(bios()?.systemDir ?? "").length > 0}>
