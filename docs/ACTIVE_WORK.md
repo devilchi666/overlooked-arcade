@@ -41,13 +41,25 @@ spanned every system but was filed under whichever core happened to be active.
       across Strict / Threshold / Lenient. `cd_id::cue::parse` extended
       to capture INDEX 01 positions for merged-bin slicing. 687 tests
       pass (665 baseline + 22 new); frontend typecheck silent.
-    - **A1 Sub-phase 3 — identify flow + cache + auto-trigger**
-      (next). Wire `hash_disc` into the resolve dispatch for
-      disc-shape systems; persist results to `game_disc_tracks` with
-      mtime/size invalidation; fire `artwork_sync` + `metadata_sync`
-      deps via the background-jobs graph; post-completion
-      identification toast + deep-link to unmatched library filter.
-    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (after #3).
+    - **A1 Sub-phase 3 ✅ shipped 2026-06-03** (merge `d2bf7db`).
+      Backend identify flow + game_disc_tracks cache + mtime/size
+      invalidation. `JobKind::DiscTrackHash` for disc-shape "Identify
+      ROMs" jobs; `DiscTrackStrictness` setting (Strict default) in
+      `LibraryPrefs`. `resolve_rom_hashes_for_system` gained a
+      per-track try block at the top of the CD branch: cache check
+      → spawn_blocking hash on miss → first-track-sha1 lookup →
+      `evaluate_match` per strictness → `apply_rom_hash` on pass.
+      Archived disc images defer to peek_disc_id for v1. 691 tests
+      pass (687 baseline + 4 new); frontend typecheck silent.
+    - **A1 Sub-phase 3.5 — frontend identify-flow UX** (next).
+      Post-completion toast surfacing "Identified N of M discs" +
+      "Show unidentified" deep-link that pre-filters the LIBRARY
+      view; Submit-to-redump.org link in `GameDetailPanel` for
+      unmatched disc-shape games; per-disc nested progress in the
+      BackgroundJobsBar. Held until the operator's first disc
+      folder import validates the Sub-phase 3 backend end-to-end
+      (gives us a concrete signal for what to surface and where).
+    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (after 3.5).
       Stamp `games.disc_set_id` + `games.disc_number` on identified
       multi-disc games; LIBRARY grid renders one tile per set;
       disc-picker overlay on tile click.
