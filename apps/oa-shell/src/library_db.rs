@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 18;
+const SCHEMA_VERSION: i32 = 19;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -465,6 +465,32 @@ pub struct RomHashRow {
     pub size_bytes: Option<i64>,
 }
 
+/// Per-track canonical hash entry for disc-shape systems — the
+/// source-of-truth shape pulled from libretro-database's redump
+/// `metadat/redump/<system>.dat` files. Stored in `rom_hashes_tracks`
+/// (parallel to `rom_hashes` for cart shape, per Phase A1 of the
+/// virtual library + launcher arc). One row per track of every
+/// redump-catalogued disc; the operator's per-track SHA-1 (extracted
+/// from .cue+.bin / .chd / .gdi / .iso at identify time) is looked up
+/// against this table.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RomTrackRow {
+    pub sha1: String,
+    pub system_id: String,
+    pub game_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+    pub track_number: u32,
+    /// Derived heuristic: "DATA" for track 01 (.bin) entries,
+    /// "AUDIO" for track 2+ (.bin) entries, "MODE1/2048" for .iso
+    /// entries. The dat format doesn't reliably encode mode; the
+    /// operator-side hashing path uses the real mode from cue/CHD
+    /// metadata, this column is informational only.
+    pub track_mode: String,
+    pub size_bytes: i64,
+}
+
 /// One MAME ROM-set entry. Keyed by `rom_set` (the .zip basename without
 /// extension, e.g. "sf2ce") rather than SHA-1 because MAME's .zip
 /// contents drift across MAME versions while the filename stays stable.
@@ -788,6 +814,148 @@ impl LibraryDb {
                 .map_err(|e| format!("set user_version=18: {e}"))?;
             log::info!("library_db: schema migrated to v18 (background_jobs)");
         }
+
+        // v18 → v19: per-track SHA-1 matching for disc-shape systems.
+        // Phase A1 of the virtual library + launcher arc — see
+        // docs/PLANS/disc-track-sha1-matching.md. Three new tables
+        // (rom_hashes_tracks for the canonical redump-synced lookup,
+        // game_disc_tracks for the operator's per-game per-track hash
+        // cache with mtime+size invalidation, disc_sets for multi-disc
+        // grouping) + two nullable columns on `games` (disc_set_id +
+        // disc_number). The existing cart-shape `rom_hashes` table is
+        // not touched — disc identification is a parallel path
+        // dispatched per system_id (matches the v8→v9 game_serials
+        // precedent of adding a parallel table rather than mutating
+        // rom_hashes' PK).
+        if current < 19 {
+            Self::migrate_v18_to_v19(conn)?;
+            conn.pragma_update(None, "user_version", 19)
+                .map_err(|e| format!("set user_version=19: {e}"))?;
+            log::info!(
+                "library_db: schema migrated to v19 (rom_hashes_tracks + game_disc_tracks + disc_sets + games.disc_set_id/disc_number)"
+            );
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v18_to_v19(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            -- Phase A1: per-track SHA-1 matching for disc-shape systems.
+            -- See docs/PLANS/disc-track-sha1-matching.md for the locked
+            -- plan; the 2026-06-03 research pass closed Q1 (full
+            -- 2352-byte hash convention), Q2 (separate-table shape vs
+            -- extending rom_hashes), and Q3 (chd-crate TOC walk via
+            -- manual CHT2 parse + 4-frame TRACK_PADDING accounting).
+
+            -- L1 — canonical SHA-1 lookup. One row per (track of every
+            -- redump-catalogued disc-shape game). Synced from the
+            -- libretro-database redump dats analogously to the
+            -- existing rom_hashes table. PK is (sha1, system_id) to
+            -- tighten the cart-shape table's "sha1 is globally unique"
+            -- assumption now that we're persisting per-track rows
+            -- (multiple disc games legitimately share Track 01 SHA-1s
+            -- across regions / revisions). The by_game index supports
+            -- the "find candidate from a single matching track, then
+            -- verify all tracks for that candidate" lookup pattern.
+            CREATE TABLE IF NOT EXISTS rom_hashes_tracks (
+                sha1            TEXT NOT NULL,
+                system_id       TEXT NOT NULL,
+                game_name       TEXT NOT NULL,
+                serial          TEXT,
+                track_number    INTEGER NOT NULL,
+                track_mode      TEXT NOT NULL,
+                size_bytes      INTEGER NOT NULL,
+                PRIMARY KEY (sha1, system_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_rom_hashes_tracks_by_game
+                ON rom_hashes_tracks (system_id, game_name);
+
+            -- Operator-side per-game cache. file_mtime + file_size
+            -- stamps drive cache invalidation — scan stats the disc
+            -- file and compares to the cached stamp; mismatch deletes
+            -- cache rows for that game and re-queues disc_track_hash.
+            -- ON DELETE CASCADE on the FK so deleting a game cleans
+            -- up its track cache. The PK is (game_id, track_number)
+            -- which already provides the lookup index for
+            -- "find all tracks for this game" (game_id is the prefix);
+            -- no extra by-game index needed.
+            CREATE TABLE IF NOT EXISTS game_disc_tracks (
+                game_id         TEXT NOT NULL,
+                track_number    INTEGER NOT NULL,
+                sha1            TEXT NOT NULL,
+                track_mode      TEXT NOT NULL,
+                size_bytes      INTEGER NOT NULL,
+                file_mtime      INTEGER NOT NULL,
+                file_size       INTEGER NOT NULL,
+                last_hashed_at  INTEGER NOT NULL,
+                PRIMARY KEY (game_id, track_number),
+                FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE
+            );
+
+            -- Multi-disc grouping. Auto-detected at sync time from the
+            -- redump title pattern `Foo (Disc N)` — see the plan's
+            -- "Sync flow" section. One row per logical multi-disc
+            -- game; individual disc rows in `games` reference it via
+            -- the new disc_set_id + disc_number columns added below.
+            -- UNIQUE (system_id, canonical_title) enables UPSERT
+            -- semantics in `replace_disc_sets_for_system`, which keeps
+            -- the autoincrement `id` stable across re-syncs so the
+            -- games-table FK references remain valid even when disc
+            -- count drifts upstream.
+            CREATE TABLE IF NOT EXISTS disc_sets (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_title     TEXT NOT NULL,
+                system_id           TEXT NOT NULL,
+                disc_count          INTEGER NOT NULL,
+                created_at          INTEGER NOT NULL,
+                UNIQUE (system_id, canonical_title)
+            );
+            CREATE INDEX IF NOT EXISTS idx_disc_sets_system
+                ON disc_sets (system_id);
+            "#,
+        )
+        .map_err(|e| format!("v18→v19 create tables: {e}"))?;
+
+        // games.disc_set_id + games.disc_number. SQLite ALTER TABLE has
+        // no IF NOT EXISTS for columns; use the PRAGMA table_info
+        // pattern from migrate_v7_to_v8 so re-runs after a partial
+        // failure are no-ops.
+        let existing_cols: std::collections::HashSet<String> = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(games)")
+                .map_err(|e| format!("table_info games: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| format!("query table_info: {e}"))?;
+            let mut out = std::collections::HashSet::new();
+            for r in rows {
+                out.insert(r.map_err(|e| format!("row table_info: {e}"))?);
+            }
+            out
+        };
+        if !existing_cols.contains("disc_set_id") {
+            conn.execute("ALTER TABLE games ADD COLUMN disc_set_id INTEGER", [])
+                .map_err(|e| format!("alter games add disc_set_id: {e}"))?;
+        }
+        if !existing_cols.contains("disc_number") {
+            conn.execute("ALTER TABLE games ADD COLUMN disc_number INTEGER", [])
+                .map_err(|e| format!("alter games add disc_number: {e}"))?;
+        }
+
+        // Partial index on the non-NULL disc_set_id rows — most games
+        // are not multi-disc-set members, so a full-table index would
+        // waste space on NULL rows. Lookup pattern is "find members of
+        // a set," which always filters by non-NULL.
+        conn.execute_batch(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_games_disc_set
+                ON games (disc_set_id)
+                WHERE disc_set_id IS NOT NULL;
+            "#,
+        )
+        .map_err(|e| format!("v18→v19 disc_set index: {e}"))?;
 
         Ok(())
     }
@@ -2180,6 +2348,197 @@ impl LibraryDb {
             |r| r.get(0),
         )
         .map_err(|e| format!("count rom_hashes: {e}"))
+    }
+
+    // ---- Disc-shape per-track hashes (Phase A1 of the virtual library
+    // + launcher arc). Parallel surface to the cart-shape rom_hashes
+    // functions above. ---------------------------------------------------
+
+    /// Look up a single SHA-1 in the disc-shape per-track table.
+    /// Returns the matched canonical entry (if any). Mirrors
+    /// `lookup_rom_hash`'s shape — sha1 is matched case-insensitively
+    /// (lowercased on read AND on insert). Called from Sub-phase 3's
+    /// resolve flow once per-track hashing lands.
+    #[allow(dead_code)]
+    pub fn lookup_rom_hash_track(
+        &self,
+        sha1: &str,
+    ) -> Result<Option<RomTrackRow>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT sha1, system_id, game_name, serial, track_number, track_mode, size_bytes
+                 FROM rom_hashes_tracks WHERE sha1 = ?1",
+            )
+            .map_err(|e| format!("prepare lookup_rom_hash_track: {e}"))?;
+        let mut rows = stmt
+            .query(params![sha1.to_ascii_lowercase()])
+            .map_err(|e| format!("query lookup_rom_hash_track: {e}"))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| format!("step lookup_rom_hash_track: {e}"))?
+        {
+            Ok(Some(RomTrackRow {
+                sha1: row.get(0).map_err(|e| format!("col sha1: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col system_id: {e}"))?,
+                game_name: row.get(2).map_err(|e| format!("col game_name: {e}"))?,
+                serial: row.get(3).map_err(|e| format!("col serial: {e}"))?,
+                track_number: row
+                    .get::<_, i64>(4)
+                    .map_err(|e| format!("col track_number: {e}"))? as u32,
+                track_mode: row.get(5).map_err(|e| format!("col track_mode: {e}"))?,
+                size_bytes: row.get(6).map_err(|e| format!("col size_bytes: {e}"))?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Bulk-replace every per-track row for a system. Wipe-and-replace
+    /// per system_id (DELETE then INSERT inside one transaction); the
+    /// upstream redump dat is the source of truth, so entries removed
+    /// upstream disappear locally rather than lingering as orphans.
+    ///
+    /// Mirrors `replace_rom_hashes_for_system`'s shape — entries whose
+    /// `system_id` doesn't match the argument are silently dropped
+    /// (defensive against caller bugs).
+    pub fn replace_rom_hashes_tracks_for_system(
+        &self,
+        system_id: &str,
+        entries: &[RomTrackRow],
+    ) -> Result<usize, String> {
+        let mut conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        tx.execute(
+            "DELETE FROM rom_hashes_tracks WHERE system_id = ?1",
+            params![system_id],
+        )
+        .map_err(|e| format!("delete rom_hashes_tracks for {system_id}: {e}"))?;
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO rom_hashes_tracks
+                       (sha1, system_id, game_name, serial, track_number, track_mode, size_bytes)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .map_err(|e| format!("prepare replace rom_hashes_tracks: {e}"))?;
+            for r in entries {
+                if r.system_id != system_id {
+                    continue;
+                }
+                stmt.execute(params![
+                    r.sha1.to_ascii_lowercase(),
+                    r.system_id,
+                    r.game_name,
+                    r.serial,
+                    r.track_number as i64,
+                    r.track_mode,
+                    r.size_bytes,
+                ])
+                .map_err(|e| {
+                    format!(
+                        "insert rom_hashes_track sha1={} track={}: {e}",
+                        r.sha1, r.track_number
+                    )
+                })?;
+                written += 1;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("commit replace_rom_hashes_tracks: {e}"))?;
+        Ok(written)
+    }
+
+    /// Diagnostic — how many per-track canonical rows we hold for a
+    /// given system. Parallel to `count_rom_hashes` for cart-shape
+    /// systems. Used by the disc-shape sync flow to surface "psx: 13,526
+    /// canonical track entries indexed" style telemetry.
+    #[allow(dead_code)]
+    pub fn count_rom_hashes_tracks(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM rom_hashes_tracks WHERE system_id = ?1",
+            params![system_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("count rom_hashes_tracks: {e}"))
+    }
+
+    /// UPSERT disc-set rows for a system from the latest sync. Uses
+    /// `INSERT ... ON CONFLICT(system_id, canonical_title) DO UPDATE`
+    /// so the autoincrement `id` stays stable across re-syncs (a
+    /// dropped row would orphan any games-table `disc_set_id` FK).
+    /// `disc_count` updates in place when upstream adds or removes a
+    /// disc from the set.
+    ///
+    /// Returns the count of rows written (inserted + updated).
+    pub fn upsert_disc_sets_for_system(
+        &self,
+        system_id: &str,
+        entries: &[(String, u32)], // (canonical_title, disc_count)
+    ) -> Result<usize, String> {
+        let mut conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {e}"))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let mut written = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO disc_sets
+                       (canonical_title, system_id, disc_count, created_at)
+                     VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT(system_id, canonical_title) DO UPDATE
+                       SET disc_count = excluded.disc_count",
+                )
+                .map_err(|e| format!("prepare upsert disc_sets: {e}"))?;
+            for (canonical_title, disc_count) in entries {
+                stmt.execute(params![
+                    canonical_title,
+                    system_id,
+                    *disc_count as i64,
+                    now,
+                ])
+                .map_err(|e| {
+                    format!("upsert disc_set {canonical_title}: {e}")
+                })?;
+                written += 1;
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("commit upsert_disc_sets: {e}"))?;
+        Ok(written)
+    }
+
+    /// Diagnostic — how many disc-set rows we hold for a system.
+    /// Parallel surface to `count_rom_hashes_tracks`.
+    #[allow(dead_code)]
+    pub fn count_disc_sets(&self, system_id: &str) -> Result<i64, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM disc_sets WHERE system_id = ?1",
+            params![system_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("count disc_sets: {e}"))
     }
 
     /// Bulk-upsert game_serials rows. Idempotent on (system_id, serial)
@@ -5398,6 +5757,177 @@ mod tests {
 
         // Clear is idempotent on missing rows.
         db.clear_game_group_default("tg16", "Nothing Set").expect("clear noop");
+    }
+
+    #[test]
+    fn schema_v18_to_v19_migration() {
+        // Build a v18 DB by hand (rom_hashes + background_jobs exist,
+        // no per-track tables), open through LibraryDb to migrate
+        // forward, exercise every new surface. Mirrors the v17→v18
+        // test pattern: pragma_update jumps to the pre-migration
+        // version and the bootstrap chain runs only from there.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v18-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            // Run every intermediate migration so the cart-shape
+            // rom_hashes table exists (created in v7→v8) — we want to
+            // verify it stays untouched by v18→v19. Mirrors the
+            // v8→v9 test's full-chain build pattern.
+            let conn = Connection::open(&db_path).expect("open v18");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            LibraryDb::migrate_v1_to_v2(&conn).expect("v2");
+            LibraryDb::migrate_v2_to_v3(&conn).expect("v3");
+            LibraryDb::migrate_v3_to_v4(&conn).expect("v4");
+            LibraryDb::migrate_v4_to_v5(&conn).expect("v5");
+            LibraryDb::migrate_v5_to_v6(&conn).expect("v6");
+            LibraryDb::migrate_v6_to_v7(&conn).expect("v7");
+            LibraryDb::migrate_v7_to_v8(&conn).expect("v8");
+            LibraryDb::migrate_v8_to_v9(&conn).expect("v9");
+            LibraryDb::migrate_v9_to_v10(&conn).expect("v10");
+            LibraryDb::migrate_v10_to_v11(&conn).expect("v11");
+            LibraryDb::migrate_v11_to_v12(&conn).expect("v12");
+            LibraryDb::migrate_v12_to_v13(&conn).expect("v13");
+            LibraryDb::migrate_v13_to_v14(&conn).expect("v14");
+            LibraryDb::migrate_v14_to_v15(&conn).expect("v15");
+            LibraryDb::migrate_v15_to_v16(&conn).expect("v16");
+            LibraryDb::migrate_v16_to_v17(&conn).expect("v17");
+            LibraryDb::migrate_v17_to_v18(&conn).expect("v18");
+            conn.pragma_update(None, "user_version", 18).expect("set v18");
+        }
+        let db = LibraryDb::open(&tmp).expect("open and migrate");
+
+        // All three new tables exist after migration.
+        let conn2 = Connection::open(&db_path).expect("reopen");
+        let table_count: i64 = conn2
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN \
+                 ('rom_hashes_tracks', 'game_disc_tracks', 'disc_sets')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query new tables presence");
+        assert_eq!(
+            table_count, 3,
+            "rom_hashes_tracks + game_disc_tracks + disc_sets should all exist after v19 migration"
+        );
+
+        // games.disc_set_id + games.disc_number columns exist.
+        let cols: std::collections::HashSet<String> = {
+            let mut stmt = conn2
+                .prepare("PRAGMA table_info(games)")
+                .expect("table_info games");
+            let mut out = std::collections::HashSet::new();
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .expect("query table_info");
+            for r in rows {
+                out.insert(r.expect("row"));
+            }
+            out
+        };
+        assert!(cols.contains("disc_set_id"), "games.disc_set_id missing post-v19");
+        assert!(cols.contains("disc_number"), "games.disc_number missing post-v19");
+
+        // Round-trip a row through the new rom_hashes_tracks surface.
+        let track = RomTrackRow {
+            sha1: "11111111111111111111111111111111111111aa".into(),
+            system_id: "psx".into(),
+            game_name: "Tomb Raider (USA)".into(),
+            serial: Some("SLUS-00152".into()),
+            track_number: 1,
+            track_mode: "DATA".into(),
+            size_bytes: 622_272,
+        };
+        let n = db
+            .replace_rom_hashes_tracks_for_system("psx", &[track.clone()])
+            .expect("replace_rom_hashes_tracks_for_system");
+        assert_eq!(n, 1);
+        let found = db
+            .lookup_rom_hash_track("11111111111111111111111111111111111111AA")
+            .expect("lookup_rom_hash_track")
+            .expect("hit");
+        assert_eq!(found.game_name, "Tomb Raider (USA)");
+        assert_eq!(found.track_number, 1);
+        assert_eq!(found.track_mode, "DATA");
+        assert_eq!(found.size_bytes, 622_272);
+        assert_eq!(db.count_rom_hashes_tracks("psx").expect("count"), 1);
+        // Cart-shape rom_hashes is untouched — no rows for the disc.
+        assert_eq!(
+            db.count_rom_hashes("psx").expect("count cart"),
+            0,
+            "rom_hashes shouldn't be touched by replace_rom_hashes_tracks_for_system"
+        );
+
+        // Wipe-and-replace semantics: writing an empty slice clears.
+        let n = db
+            .replace_rom_hashes_tracks_for_system("psx", &[])
+            .expect("clear via empty");
+        assert_eq!(n, 0);
+        assert_eq!(db.count_rom_hashes_tracks("psx").expect("count post-clear"), 0);
+
+        // disc_sets UPSERT — id stays stable across re-sync; disc_count
+        // updates in place.
+        let _ = db
+            .upsert_disc_sets_for_system(
+                "psx",
+                &[("Final Fantasy IX (USA)".to_string(), 4)],
+            )
+            .expect("first upsert");
+        let id_v1: i64 = conn2
+            .query_row(
+                "SELECT id FROM disc_sets WHERE system_id = 'psx' \
+                 AND canonical_title = 'Final Fantasy IX (USA)'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read id v1");
+        let _ = db
+            .upsert_disc_sets_for_system(
+                "psx",
+                &[("Final Fantasy IX (USA)".to_string(), 4)],
+            )
+            .expect("re-upsert");
+        let id_v2: i64 = conn2
+            .query_row(
+                "SELECT id FROM disc_sets WHERE system_id = 'psx' \
+                 AND canonical_title = 'Final Fantasy IX (USA)'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read id v2");
+        assert_eq!(
+            id_v1, id_v2,
+            "UPSERT must preserve the autoincrement id across re-sync"
+        );
+        // disc_count changes in place on conflict.
+        let _ = db
+            .upsert_disc_sets_for_system(
+                "psx",
+                &[("Final Fantasy IX (USA)".to_string(), 5)],
+            )
+            .expect("third upsert with new count");
+        let (id_v3, count_v3): (i64, i64) = conn2
+            .query_row(
+                "SELECT id, disc_count FROM disc_sets WHERE system_id = 'psx' \
+                 AND canonical_title = 'Final Fantasy IX (USA)'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read after disc_count change");
+        assert_eq!(id_v3, id_v1, "id stable through disc_count change");
+        assert_eq!(count_v3, 5);
+        assert_eq!(db.count_disc_sets("psx").expect("count disc_sets"), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

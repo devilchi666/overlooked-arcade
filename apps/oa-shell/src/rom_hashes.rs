@@ -45,7 +45,7 @@ use sha1::{Digest, Sha1};
 use tauri::Emitter;
 
 use crate::archive;
-use crate::library_db::{GameSerialRow, LibraryDb, RomHashRow};
+use crate::library_db::{GameSerialRow, LibraryDb, RomHashRow, RomTrackRow};
 use crate::rom_header::{candidate_sha1s, HeaderRule, Sha1Candidate};
 
 const HASH_CACHE_TTL_SECS: u64 = 86_400; // 24h, matches metadat cache
@@ -132,22 +132,38 @@ pub(crate) fn is_cd_container_ext(ext: &str, system_id: &str) -> bool {
     // disc media. Cart systems' `.bin` dumps go through the normal
     // hash path.
     if matches!(ext, "bin" | "iso") {
-        return matches!(
-            system_id,
-            "pce-cd"
-                | "segacd"
-                | "saturn"
-                | "psx"
-                | "ps2"
-                | "neocd"
-                | "pcfx"
-                | "gamecube"
-                | "dreamcast"
-                | "3do"
-                | "psp"
-        );
+        return is_disc_shape_system(system_id);
     }
     false
+}
+
+/// Disc-shape (CD/DVD-based) systems. Drives:
+/// - container-extension routing inside `is_cd_container_ext`,
+/// - sync-time dispatch in `sync_rom_hashes_for_system` (Phase A1):
+///   disc systems additionally populate `rom_hashes_tracks` +
+///   `disc_sets` alongside the existing cart-shape `rom_hashes` write,
+/// - per-track lookup branching in the identify flow (planned for
+///   Sub-phase 3 of A1).
+///
+/// Membership matches the redump-catalogued disc lineup as of
+/// 2026-06-03. Adding a new disc-shape system means registering it
+/// here AND ensuring its `config/systems/<id>/system.yaml` lists a
+/// redump `libretro_dat_refs` entry.
+pub(crate) fn is_disc_shape_system(system_id: &str) -> bool {
+    matches!(
+        system_id,
+        "pce-cd"
+            | "segacd"
+            | "saturn"
+            | "psx"
+            | "ps2"
+            | "neocd"
+            | "pcfx"
+            | "gamecube"
+            | "dreamcast"
+            | "3do"
+            | "psp"
+    )
 }
 
 fn hash_cache_path(app_data_dir: &Path, system_id: &str) -> PathBuf {
@@ -165,15 +181,116 @@ struct CachedHashDb {
     /// disk) deserialize cleanly; first sync after upgrade refills it.
     #[serde(default)]
     serials: Vec<GameSerialRow>,
+    /// Phase A1 — per-track canonical rows for disc-shape systems.
+    /// Empty for cart-shape systems AND for caches written by builds
+    /// before 2026-06-03. The first disc-shape sync after upgrade
+    /// refills this; older caches still deserialize cleanly via the
+    /// serde default.
+    #[serde(default)]
+    tracks: Vec<RomTrackRow>,
+    /// Phase A1 — multi-disc parent groupings auto-detected from the
+    /// `Foo (Disc N)` title pattern at parse time. Same backward-compat
+    /// shape as `tracks` (default empty for older caches).
+    #[serde(default)]
+    disc_set_candidates: Vec<DiscSetCandidate>,
 }
 
-/// Output of one `parse_libretro_dat` pass — both shapes the upstream
-/// `.dat` produces. `rom_hashes` is one row per `rom ( ... sha1 ... )`;
-/// `game_serials` is one row per `game (... serial ...)` block (zero
-/// rows for blocks with no serial).
+/// Output of one `parse_libretro_dat` pass — every shape the upstream
+/// `.dat` produces. `rom_hashes` is one row per `rom ( ... sha1 ... )`
+/// (consumed by cart-shape sync); `game_serials` is one row per
+/// `game (... serial ...)` block; `rom_hashes_tracks` is one row per
+/// non-sidecar track for disc-shape sync (Phase A1 of the virtual
+/// library + launcher arc — see `docs/PLANS/disc-track-sha1-matching.md`);
+/// `disc_set_candidates` flags multi-disc parent groupings detected
+/// from the title pattern `Foo (Disc N)`.
+///
+/// `rom_hashes` + `rom_hashes_tracks` are both populated unconditionally;
+/// the sync flow decides which to persist based on the system's
+/// disc-shape-ness (cart systems write `rom_hashes`; disc systems write
+/// `rom_hashes_tracks`). This avoids parse-time coupling to the
+/// system-shape registry.
 pub struct ParsedDat {
     pub rom_hashes: Vec<RomHashRow>,
     pub game_serials: Vec<GameSerialRow>,
+    pub rom_hashes_tracks: Vec<RomTrackRow>,
+    pub disc_set_candidates: Vec<DiscSetCandidate>,
+}
+
+/// One multi-disc set detected from `Foo (Disc N)` title patterns.
+/// Emitted when a system has ≥ 2 distinct disc numbers under the same
+/// base title. The sync flow persists these into the `disc_sets` table;
+/// individual disc rows in `games` later attach via `disc_set_id`.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscSetCandidate {
+    /// Base title with the `(Disc N)` suffix stripped.
+    pub canonical_title: String,
+    pub system_id: String,
+    /// Max disc number observed in the set. Used as the canonical
+    /// disc_count (covers dats that skip a disc number).
+    pub disc_count: u32,
+}
+
+/// Extract a 1-based disc number from a game title carrying a
+/// `(Disc N)` suffix. Returns the (base_title, disc_number) pair on
+/// match; None otherwise. The base title is everything before the
+/// `(Disc ` token, with trailing whitespace trimmed.
+fn extract_disc_set_candidate(game_name: &str) -> Option<(String, u32)> {
+    let start = game_name.find("(Disc ")?;
+    let rest = &game_name[start + 6..];
+    let end = rest.find(')')?;
+    let n = rest[..end].trim().parse::<u32>().ok()?;
+    let base = game_name[..start].trim_end().to_string();
+    if base.is_empty() {
+        return None;
+    }
+    Some((base, n))
+}
+
+/// Extract a 1-based track number from a rom filename. Looks for a
+/// `(Track NN)` substring (redump convention). Falls back to
+/// `position_in_block` (1-indexed) when no `(Track NN)` is present.
+fn extract_track_number(filename: &str, position_in_block: u32) -> u32 {
+    if let Some(start) = filename.find("(Track ") {
+        let rest = &filename[start + 7..];
+        if let Some(end) = rest.find(')') {
+            if let Ok(n) = rest[..end].trim().parse::<u32>() {
+                return n;
+            }
+        }
+    }
+    position_in_block
+}
+
+/// Derive a heuristic track_mode string from the rom filename + track
+/// number. Returns `None` for sidecar files we deliberately skip from
+/// the per-track table (.cue / .gdi / .toc / .ccd / .sub / .sbi / .sbx)
+/// — their SHA-1s vary by dump tool and aren't useful for the
+/// identification matcher.
+///
+/// Mode field is informational only — the operator-side hashing path
+/// reads the real mode from cue / CHD metadata. This heuristic exists
+/// so the canonical table's `track_mode` column is populated with
+/// something sensible at sync time.
+fn derive_track_mode(filename: &str, track_number: u32) -> Option<String> {
+    let lower = filename.to_ascii_lowercase();
+    for sidecar in &[".cue", ".gdi", ".toc", ".ccd", ".sub", ".sbi", ".sbx"] {
+        if lower.ends_with(sidecar) {
+            return None;
+        }
+    }
+    if lower.ends_with(".iso") {
+        return Some("MODE1/2048".to_string());
+    }
+    // Heuristic — track 01 is almost always the data track on CD
+    // systems; tracks 2+ are usually audio. Wrong for some games (e.g.
+    // PCE-CD games with multiple data tracks); refined at operator-side
+    // hashing time.
+    if track_number == 1 {
+        Some("DATA".to_string())
+    } else {
+        Some("AUDIO".to_string())
+    }
 }
 
 /// Parse the libretro-database clrmamepro-format .dat. Each `game (...)`
@@ -191,7 +308,11 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
     /// game.serial may appear before OR after the `rom ( ... )` line
     /// depending on the upstream dat, so we accumulate and stamp the
     /// final serial onto every rom in the block at the closing `)`.
+    /// `name` is the rom's filename ("Tomb Raider (USA) (Track 01).bin")
+    /// — needed for track_number + track_mode derivation in disc-shape
+    /// outputs.
     struct PendingRom {
+        name: String,
         sha1: String,
         crc32: Option<String>,
         size_bytes: Option<i64>,
@@ -199,6 +320,12 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
 
     let mut rom_hashes: Vec<RomHashRow> = Vec::new();
     let mut game_serials: Vec<GameSerialRow> = Vec::new();
+    let mut rom_hashes_tracks: Vec<RomTrackRow> = Vec::new();
+    // (system_id, base_title) → set of disc numbers observed. Finalized
+    // after the parse loop; sets with ≥ 2 distinct disc numbers become
+    // DiscSetCandidate rows.
+    let mut disc_set_first_pass: HashMap<(String, String), Vec<u32>> =
+        HashMap::new();
     let mut in_game = false;
     let mut current_name: Option<String> = None;
     let mut current_serial: Option<String> = None;
@@ -218,15 +345,35 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
         if line == ")" {
             in_game = false;
             if let Some(name) = current_name.take() {
+                let mut position_in_block: u32 = 0;
                 for r in pending.drain(..) {
                     rom_hashes.push(RomHashRow {
-                        sha1: r.sha1,
+                        sha1: r.sha1.clone(),
                         system_id: system_id.to_string(),
                         game_name: name.clone(),
                         serial: current_serial.clone(),
-                        crc32: r.crc32,
+                        crc32: r.crc32.clone(),
                         size_bytes: r.size_bytes,
                     });
+                    // Disc-shape per-track row. Skip sidecar files
+                    // (.cue / .gdi / etc — derive_track_mode returns
+                    // None) and rows where the dat omitted `size` (the
+                    // schema requires NOT NULL).
+                    position_in_block += 1;
+                    let track_number = extract_track_number(&r.name, position_in_block);
+                    if let Some(track_mode) = derive_track_mode(&r.name, track_number) {
+                        if let Some(size_bytes) = r.size_bytes {
+                            rom_hashes_tracks.push(RomTrackRow {
+                                sha1: r.sha1,
+                                system_id: system_id.to_string(),
+                                game_name: name.clone(),
+                                serial: current_serial.clone(),
+                                track_number,
+                                track_mode,
+                                size_bytes,
+                            });
+                        }
+                    }
                 }
                 // Emit one game_serials row per game block that carries
                 // a serial. Title is the same canonical `name` we'd have
@@ -238,10 +385,19 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
                         game_serials.push(GameSerialRow {
                             system_id: system_id.to_string(),
                             serial,
-                            canonical_title: name,
+                            canonical_title: name.clone(),
                             region: None,
                         });
                     }
+                }
+                // Multi-disc parent detection from `Foo (Disc N)`
+                // pattern. Finalized after the parse loop into
+                // disc_set_candidates.
+                if let Some((base_title, disc_n)) = extract_disc_set_candidate(&name) {
+                    disc_set_first_pass
+                        .entry((system_id.to_string(), base_title))
+                        .or_default()
+                        .push(disc_n);
                 }
             }
             current_serial = None;
@@ -259,16 +415,18 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
         }
         if let Some(rest) = line.strip_prefix("rom (") {
             // Format: `rom ( name "X" size N crc YYYY md5 ZZZZ sha1 WWWW )`
-            // Keys/values can come in any order; we want sha1 + crc + size.
-            // Trailing `)` is on the same line for libretro-database. Strip
-            // both ends defensively.
+            // Keys/values can come in any order; we want name + sha1 +
+            // crc + size. Trailing `)` is on the same line for
+            // libretro-database. Strip both ends defensively.
             let body = rest.trim_end_matches(')').trim();
+            let mut name: Option<String> = None;
             let mut sha1: Option<String> = None;
             let mut crc32: Option<String> = None;
             let mut size: Option<i64> = None;
             let mut tokens = TokenIter::new(body);
             while let Some((key, value)) = tokens.next_pair() {
                 match key.as_str() {
+                    "name"   => name = Some(value.to_string()),
                     "sha1"   => sha1 = Some(value.to_ascii_lowercase()),
                     "crc"    => crc32 = Some(value.to_ascii_lowercase()),
                     "size"   => size = value.parse::<i64>().ok(),
@@ -276,7 +434,12 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
                 }
             }
             if let Some(sha1) = sha1 {
-                pending.push(PendingRom { sha1, crc32, size_bytes: size });
+                pending.push(PendingRom {
+                    name: name.unwrap_or_default(),
+                    sha1,
+                    crc32,
+                    size_bytes: size,
+                });
             }
         }
     }
@@ -291,7 +454,41 @@ pub fn parse_libretro_dat(content: &str, system_id: &str) -> ParsedDat {
             deduped.push(row);
         }
     }
-    ParsedDat { rom_hashes, game_serials: deduped }
+    // Finalize disc-set candidates. Same base title across regions
+    // (Foo (Disc 1) (USA) + Foo (Disc 1) (Japan)) produces a single
+    // disc_n entry per region — dedup so we count distinct discs, not
+    // distinct dat entries. A "set" requires ≥ 2 distinct discs;
+    // disc_count is the max observed disc number (covers dats that
+    // skip a number, rare but possible).
+    let mut disc_set_candidates: Vec<DiscSetCandidate> = disc_set_first_pass
+        .into_iter()
+        .filter_map(|((sys, base), mut nums)| {
+            nums.sort_unstable();
+            nums.dedup();
+            if nums.len() < 2 {
+                return None;
+            }
+            let disc_count = *nums.iter().max().unwrap_or(&0);
+            Some(DiscSetCandidate {
+                canonical_title: base,
+                system_id: sys,
+                disc_count,
+            })
+        })
+        .collect();
+    // Stable output ordering — simplifies snapshot-style tests + makes
+    // the sync flow's bulk-replace deterministic.
+    disc_set_candidates.sort_by(|a, b| {
+        a.system_id
+            .cmp(&b.system_id)
+            .then_with(|| a.canonical_title.cmp(&b.canonical_title))
+    });
+    ParsedDat {
+        rom_hashes,
+        game_serials: deduped,
+        rom_hashes_tracks,
+        disc_set_candidates,
+    }
 }
 
 /// Parse a MAME-style clrmamepro dat into name-keyed title rows.
@@ -556,6 +753,8 @@ async fn fetch_and_parse_all(
 ) -> Result<Option<ParsedDat>, String> {
     let mut all_rom_hashes = Vec::new();
     let mut all_serials = Vec::new();
+    let mut all_tracks = Vec::new();
+    let mut all_disc_sets = Vec::new();
     let mut any_hit = false;
     for r in refs {
         match fetch_libretro_dat(client, *r).await? {
@@ -563,14 +762,18 @@ async fn fetch_and_parse_all(
                 any_hit = true;
                 let parsed = parse_libretro_dat(&text, system_id);
                 log::info!(
-                    "rom_hashes: {system_id} {}/{} → {} entries / {} serials",
+                    "rom_hashes: {system_id} {}/{} → {} entries / {} serials / {} tracks / {} disc-sets",
                     r.subdir,
                     r.basename,
                     parsed.rom_hashes.len(),
                     parsed.game_serials.len(),
+                    parsed.rom_hashes_tracks.len(),
+                    parsed.disc_set_candidates.len(),
                 );
                 all_rom_hashes.extend(parsed.rom_hashes);
                 all_serials.extend(parsed.game_serials);
+                all_tracks.extend(parsed.rom_hashes_tracks);
+                all_disc_sets.extend(parsed.disc_set_candidates);
             }
             None => {
                 log::debug!(
@@ -591,9 +794,38 @@ async fn fetch_and_parse_all(
     all_serials.retain(|row| {
         seen.insert((row.system_id.clone(), row.serial.clone()), ()).is_none()
     });
+    // Cross-dat dedupe for disc-set candidates by (system_id,
+    // canonical_title), keeping the max observed disc_count. Most
+    // systems have one redump dat so cross-dat overlap is rare, but
+    // headered/unheadered split dats CAN produce duplicate entries
+    // (same multi-disc parent across both); cleaner to merge here than
+    // in the sync layer.
+    let mut disc_by_key: HashMap<(String, String), u32> = HashMap::new();
+    for cand in all_disc_sets {
+        let key = (cand.system_id, cand.canonical_title);
+        let entry = disc_by_key.entry(key).or_insert(0);
+        if cand.disc_count > *entry {
+            *entry = cand.disc_count;
+        }
+    }
+    let mut merged_disc_sets: Vec<DiscSetCandidate> = disc_by_key
+        .into_iter()
+        .map(|((sys, title), count)| DiscSetCandidate {
+            canonical_title: title,
+            system_id: sys,
+            disc_count: count,
+        })
+        .collect();
+    merged_disc_sets.sort_by(|a, b| {
+        a.system_id
+            .cmp(&b.system_id)
+            .then_with(|| a.canonical_title.cmp(&b.canonical_title))
+    });
     Ok(Some(ParsedDat {
         rom_hashes: all_rom_hashes,
         game_serials: all_serials,
+        rom_hashes_tracks: all_tracks,
+        disc_set_candidates: merged_disc_sets,
     }))
 }
 
@@ -678,9 +910,11 @@ pub async fn sync_rom_hashes_for_system(
                 && now.saturating_sub(cached.fetched_at_unix_secs) < HASH_CACHE_TTL_SECS
             {
                 log::info!(
-                    "rom_hashes: {systemId} cache hit ({} entries, {} serials)",
+                    "rom_hashes: {systemId} cache hit ({} entries, {} serials, {} tracks, {} disc-sets)",
                     cached.entries.len(),
                     cached.serials.len(),
+                    cached.tracks.len(),
+                    cached.disc_set_candidates.len(),
                 );
                 let upstream_entries = cached.entries.len();
                 // Wipe-and-replace per system so the local table mirrors
@@ -694,6 +928,29 @@ pub async fn sync_rom_hashes_for_system(
                 // table for the system; the next fresh fetch fills it
                 // back in once the TTL expires.
                 let _ = db.replace_game_serials_for_system(&systemId, &cached.serials);
+                // Phase A1 disc-shape dispatch — write rom_hashes_tracks
+                // + disc_sets for systems that hash per-track. Cached
+                // files written by builds before 2026-06-03 have these
+                // fields empty (serde default); the next 24h cache cycle
+                // refills them via the fresh-fetch path below.
+                if is_disc_shape_system(&systemId) {
+                    let n_tracks = db.replace_rom_hashes_tracks_for_system(
+                        &systemId,
+                        &cached.tracks,
+                    )?;
+                    let disc_set_entries: Vec<(String, u32)> = cached
+                        .disc_set_candidates
+                        .iter()
+                        .map(|c| (c.canonical_title.clone(), c.disc_count))
+                        .collect();
+                    let n_sets = db.upsert_disc_sets_for_system(
+                        &systemId,
+                        &disc_set_entries,
+                    )?;
+                    log::info!(
+                        "rom_hashes: {systemId} disc-shape cache hit — wrote {n_tracks} tracks + {n_sets} disc-sets"
+                    );
+                }
                 let _ = app.emit("oa://rom-hashes-synced", &RomHashSyncSummary {
                     system_id: systemId.clone(),
                     upstream_entries,
@@ -719,28 +976,34 @@ pub async fn sync_rom_hashes_for_system(
         .build()
         .map_err(|e| format!("reqwest client: {e}"))?;
 
-    let ParsedDat { rom_hashes: entries, game_serials: serials } =
-        match fetch_and_parse_all(&client, refs, &systemId).await? {
-            Some(p) => p,
-            None => {
-                log::warn!(
-                    "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
-                );
-                if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-                    let _ = reg.mark_completed(id);
-                }
-                return Ok(RomHashSyncSummary {
-                    system_id: systemId,
-                    upstream_entries: 0,
-                    written: 0,
-                    from_cache: false,
-                });
+    let ParsedDat {
+        rom_hashes: entries,
+        game_serials: serials,
+        rom_hashes_tracks: tracks,
+        disc_set_candidates,
+    } = match fetch_and_parse_all(&client, refs, &systemId).await? {
+        Some(p) => p,
+        None => {
+            log::warn!(
+                "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
+            );
+            if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
+                let _ = reg.mark_completed(id);
             }
-        };
+            return Ok(RomHashSyncSummary {
+                system_id: systemId,
+                upstream_entries: 0,
+                written: 0,
+                from_cache: false,
+            });
+        }
+    };
     let upstream_entries = entries.len();
     let upstream_serials = serials.len();
+    let upstream_tracks = tracks.len();
+    let upstream_disc_sets = disc_set_candidates.len();
     log::info!(
-        "rom_hashes: merged {upstream_entries} entries / {upstream_serials} serials for {systemId}"
+        "rom_hashes: merged {upstream_entries} entries / {upstream_serials} serials / {upstream_tracks} tracks / {upstream_disc_sets} disc-sets for {systemId}"
     );
     // Replace the system's corpus rather than merging — upstream is the
     // source of truth, and stale entries from a prior sync with a
@@ -748,8 +1011,26 @@ pub async fn sync_rom_hashes_for_system(
     // linger.
     let written = db.replace_rom_hashes_for_system(&systemId, &entries)?;
     let _ = db.replace_game_serials_for_system(&systemId, &serials);
+    // Phase A1 disc-shape dispatch — write rom_hashes_tracks + disc_sets
+    // alongside the existing rom_hashes write. Cart-shape systems
+    // (where is_disc_shape_system returns false) skip both, matching
+    // pre-A1 behaviour exactly. Disc-shape systems get the per-track
+    // canonical lookup plus multi-disc parent groupings.
+    if is_disc_shape_system(&systemId) {
+        let n_tracks = db.replace_rom_hashes_tracks_for_system(&systemId, &tracks)?;
+        let disc_set_entries: Vec<(String, u32)> = disc_set_candidates
+            .iter()
+            .map(|c| (c.canonical_title.clone(), c.disc_count))
+            .collect();
+        let n_sets = db.upsert_disc_sets_for_system(&systemId, &disc_set_entries)?;
+        log::info!(
+            "rom_hashes: {systemId} disc-shape — wrote {n_tracks} tracks + {n_sets} disc-sets"
+        );
+    }
 
-    // Cache write (24h reuse).
+    // Cache write (24h reuse). Per-track + disc-set fields land in the
+    // same file via the extended CachedHashDb shape; older builds
+    // ignore them on read (serde defaults).
     if !entries.is_empty() {
         if let Some(parent) = cache_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -758,7 +1039,13 @@ pub async fn sync_rom_hashes_for_system(
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let cached = CachedHashDb { fetched_at_unix_secs: now, entries, serials };
+        let cached = CachedHashDb {
+            fetched_at_unix_secs: now,
+            entries,
+            serials,
+            tracks,
+            disc_set_candidates,
+        };
         let _ = std::fs::write(&cache_path, serde_json::to_vec(&cached).unwrap_or_default());
     }
 
@@ -984,14 +1271,33 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
         }
     };
     match fetch_and_parse_all(&client, refs, system_id).await {
-        Ok(Some(ParsedDat { rom_hashes: entries, game_serials: serials })) => {
+        Ok(Some(ParsedDat {
+            rom_hashes: entries,
+            game_serials: serials,
+            rom_hashes_tracks: tracks,
+            disc_set_candidates,
+        })) => {
             let n = entries.len();
             let s = serials.len();
+            let nt = tracks.len();
+            let nds = disc_set_candidates.len();
             log::info!(
-                "rom_hashes: auto-sync {system_id} fetched {n} entries / {s} serials"
+                "rom_hashes: auto-sync {system_id} fetched {n} entries / {s} serials / {nt} tracks / {nds} disc-sets"
             );
             let _ = db.replace_rom_hashes_for_system(system_id, &entries);
             let _ = db.replace_game_serials_for_system(system_id, &serials);
+            // Phase A1 disc-shape dispatch — same shape as the primary
+            // sync_rom_hashes_for_system path. Cart-shape systems skip.
+            if is_disc_shape_system(system_id) {
+                let _ =
+                    db.replace_rom_hashes_tracks_for_system(system_id, &tracks);
+                let disc_set_entries: Vec<(String, u32)> = disc_set_candidates
+                    .iter()
+                    .map(|c| (c.canonical_title.clone(), c.disc_count))
+                    .collect();
+                let _ =
+                    db.upsert_disc_sets_for_system(system_id, &disc_set_entries);
+            }
             if !entries.is_empty() {
                 let cache_path = hash_cache_path(app_data_dir, system_id);
                 if let Some(parent) = cache_path.parent() {
@@ -1005,6 +1311,8 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
                     fetched_at_unix_secs: now,
                     entries,
                     serials,
+                    tracks,
+                    disc_set_candidates,
                 };
                 let _ = std::fs::write(
                     &cache_path,
@@ -1620,9 +1928,120 @@ game (
 	serial "TGX040000"
 )
 "#;
-        let ParsedDat { rom_hashes, game_serials } = parse_libretro_dat(dat, "tg16");
+        let ParsedDat { rom_hashes, game_serials, .. } = parse_libretro_dat(dat, "tg16");
         assert_eq!(rom_hashes.len(), 2, "both rom rows survive");
         assert_eq!(game_serials.len(), 1, "duplicate serials dedupe");
+    }
+
+    #[test]
+    fn parser_emits_per_track_rows_for_redump_style_dat() {
+        // Redump dats list one `rom (...)` entry per track of a disc-
+        // shape game. Per-track rows derive track_number from the
+        // `(Track NN)` filename suffix, track_mode heuristically from
+        // position (DATA for track 01, AUDIO for tracks 2+). The .cue
+        // sidecar is skipped from the per-track output (sidecar SHA-1s
+        // vary by dump tool and aren't useful for identification).
+        let dat = r#"
+game (
+    name "Tomb Raider (USA)"
+    description "Tomb Raider (USA)"
+    serial "SLUS-00152"
+    rom ( name "Tomb Raider (USA) (Track 01).bin" size 622272 crc AAAAAAAA sha1 1111111111111111111111111111111111111111 )
+    rom ( name "Tomb Raider (USA) (Track 02).bin" size 33840960 crc BBBBBBBB sha1 2222222222222222222222222222222222222222 )
+    rom ( name "Tomb Raider (USA).cue" size 312 crc CCCCCCCC sha1 3333333333333333333333333333333333333333 )
+)
+"#;
+        let ParsedDat { rom_hashes_tracks, .. } = parse_libretro_dat(dat, "psx");
+        assert_eq!(rom_hashes_tracks.len(), 2, "sidecar .cue is skipped");
+        let t1 = &rom_hashes_tracks[0];
+        assert_eq!(t1.game_name, "Tomb Raider (USA)");
+        assert_eq!(t1.serial.as_deref(), Some("SLUS-00152"));
+        assert_eq!(t1.track_number, 1);
+        assert_eq!(t1.track_mode, "DATA");
+        assert_eq!(t1.size_bytes, 622_272);
+        let t2 = &rom_hashes_tracks[1];
+        assert_eq!(t2.track_number, 2);
+        assert_eq!(t2.track_mode, "AUDIO");
+        assert_eq!(t2.size_bytes, 33_840_960);
+    }
+
+    #[test]
+    fn parser_skips_all_sidecar_extensions_from_track_rows() {
+        let dat = r#"
+game (
+    name "Sample Multi-Sidecar"
+    rom ( name "Sample (Track 01).bin" size 1024 sha1 1111111111111111111111111111111111111111 )
+    rom ( name "Sample.cue" size 100 sha1 2222222222222222222222222222222222222222 )
+    rom ( name "Sample.gdi" size 100 sha1 3333333333333333333333333333333333333333 )
+    rom ( name "Sample.toc" size 100 sha1 4444444444444444444444444444444444444444 )
+    rom ( name "Sample.ccd" size 100 sha1 5555555555555555555555555555555555555555 )
+    rom ( name "Sample.sub" size 100 sha1 6666666666666666666666666666666666666666 )
+    rom ( name "Sample.sbi" size 100 sha1 7777777777777777777777777777777777777777 )
+    rom ( name "Sample.sbx" size 100 sha1 8888888888888888888888888888888888888888 )
+)
+"#;
+        let ParsedDat { rom_hashes_tracks, rom_hashes, .. } =
+            parse_libretro_dat(dat, "psx");
+        // Cart-shape rom_hashes keeps every entry (8 rows) — disc/cart
+        // dispatch happens at sync time, not at parse time.
+        assert_eq!(rom_hashes.len(), 8);
+        // Disc-shape rom_hashes_tracks keeps only the .bin track.
+        assert_eq!(rom_hashes_tracks.len(), 1);
+        assert_eq!(rom_hashes_tracks[0].track_mode, "DATA");
+    }
+
+    #[test]
+    fn parser_track_number_falls_back_to_position_in_block() {
+        // Single-track .iso with no `(Track NN)` suffix — track_number
+        // defaults to 1 (position in block). Mode is MODE1/2048 for
+        // .iso entries.
+        let dat = r#"
+game (
+    name "Quake III Arena (USA)"
+    rom ( name "Quake III Arena (USA).iso" size 1024 sha1 1111111111111111111111111111111111111111 )
+)
+"#;
+        let ParsedDat { rom_hashes_tracks, .. } =
+            parse_libretro_dat(dat, "dreamcast");
+        assert_eq!(rom_hashes_tracks.len(), 1);
+        assert_eq!(rom_hashes_tracks[0].track_number, 1);
+        assert_eq!(rom_hashes_tracks[0].track_mode, "MODE1/2048");
+    }
+
+    #[test]
+    fn parser_detects_multi_disc_parent_groupings() {
+        // Four discs sharing the base title "Final Fantasy IX (USA)"
+        // collapse to one DiscSetCandidate with disc_count=4. The
+        // single-disc "Standalone Game" entry produces no candidate.
+        let dat = r#"
+game (
+    name "Final Fantasy IX (USA) (Disc 1)"
+    rom ( name "FF9 (Disc 1) (Track 01).bin" size 1024 sha1 1111111111111111111111111111111111111111 )
+)
+game (
+    name "Final Fantasy IX (USA) (Disc 2)"
+    rom ( name "FF9 (Disc 2) (Track 01).bin" size 1024 sha1 2222222222222222222222222222222222222222 )
+)
+game (
+    name "Final Fantasy IX (USA) (Disc 3)"
+    rom ( name "FF9 (Disc 3) (Track 01).bin" size 1024 sha1 3333333333333333333333333333333333333333 )
+)
+game (
+    name "Final Fantasy IX (USA) (Disc 4)"
+    rom ( name "FF9 (Disc 4) (Track 01).bin" size 1024 sha1 4444444444444444444444444444444444444444 )
+)
+game (
+    name "Standalone Game (USA)"
+    rom ( name "Standalone (Track 01).bin" size 1024 sha1 5555555555555555555555555555555555555555 )
+)
+"#;
+        let ParsedDat { disc_set_candidates, .. } =
+            parse_libretro_dat(dat, "psx");
+        assert_eq!(disc_set_candidates.len(), 1);
+        let ff9 = &disc_set_candidates[0];
+        assert_eq!(ff9.canonical_title, "Final Fantasy IX (USA)");
+        assert_eq!(ff9.system_id, "psx");
+        assert_eq!(ff9.disc_count, 4);
     }
 
     #[test]
