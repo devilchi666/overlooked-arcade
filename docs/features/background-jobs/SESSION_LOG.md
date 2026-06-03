@@ -7,6 +7,79 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-03 — Polish branch closes the deferred items (`feat/background-jobs-polish`)
+
+**Shipped:** Phase 5 deferred three polish items (always-show-bar
+toggle, completion chime, ResumePrompt dialog). All three land in
+this branch as a follow-up to the closed arc. Four phase commits.
+
+- **Polish A** (`79e9248`) JobPrefs gains `sound_on_completion`
+  (default true) + `always_show_bar` (default false) fields. Two
+  new Tauri commands `set_job_sound_on_completion` +
+  `set_job_always_show_bar`. JobPrefs gets an explicit Default
+  impl since `#[derive(Default)]` doesn't compose with the
+  non-default `sound_on_completion` field's `#[serde(default =
+  "fn")]`.
+- **Polish B** (`0f746dd`) Completion chime — new Tauri command
+  `audio_player::resolve_completion_chime` looks up
+  `<exe_dir>/assets/oa-ui/sounds/job-complete.<ext>` (same
+  extension priority as the per-system UI sound resolver) and
+  returns Some(path) or None. Frontend `maybePlayCompletionChime`
+  fires on the `oa://job-event` completed handler when
+  `jobPrefs.soundOnCompletion` is true, dispatching through the
+  existing `playAudio("ui-sounds", path)` path. Silent fail when
+  the asset isn't bundled. New doc
+  `docs/features/background-jobs/ASSETS.md` explains exact
+  placement + supported formats + sourcing tips + the deliberate
+  silent-fallback semantics. Operator can drop the file whenever
+  they source it.
+- **Polish C** (`6555f56`) Always-show toggle — BackgroundJobsBar
+  reads `jobPrefs.alwaysShowBar`; when ON, renders the handle
+  even with no active jobs (label "No active jobs", pulse dot
+  static + dim). Settings → Background Jobs → Bar behavior card's
+  two toggles (Always show + Sound on completion) unstubbed and
+  wired through `set_job_always_show_bar` /
+  `set_job_sound_on_completion` Tauri commands. Each toggle
+  handler calls `refreshJobPrefs()` so the module-level live
+  signal syncs and the bar reacts immediately.
+- **Polish D** (`33be3fe`) ResumePrompt dialog — new
+  `resume_one_interrupted_job(job_id)` Tauri command dispatches
+  the registered resumer for one specific interrupted row. New
+  `ResumePromptDialog.tsx` consumes the `resumePromptQueue`
+  signal (added in polish B), shows a modal for the first row
+  with Resume / Discard buttons. Resume invokes the new command;
+  Discard invokes `cancel_job`. Escape + backdrop close without
+  action (the row stays interrupted for next launch). z-[70] so
+  it sits above the bar + HintBar + Recent activity panel.
+  Mounted in App.tsx as a sibling of BackgroundJobsBar.
+
+660 of 660 oa-shell tests green; frontend `npm run typecheck`
+silent.
+
+**Almost:** End-to-end smoke test:
+1. Settings → Background Jobs → Bar behavior → "Always show the
+   bar" ON → the handle stays visible at the bottom of the
+   viewport with "No active jobs" label even when nothing is
+   running.
+2. Same panel → "Sound on completion" ON (default) → trigger a
+   job → on success, no chime plays UNLESS the operator has
+   dropped a `job-complete.<ext>` into the assets folder. With
+   the asset present, the chime plays through the ui-sounds bus.
+3. Per-kind opt-out flow end-to-end: tick "Prompt before
+   resuming core downloads" → trigger a download → kill app
+   mid-stream → relaunch → ResumePromptDialog surfaces with the
+   download's label and Resume / Discard buttons. Resume
+   re-enters the Range-resumed download.
+
+**Asset placement reference:**
+`docs/features/background-jobs/ASSETS.md` is the operator-facing
+file. tldr: drop one file at
+`<exe_dir>/assets/oa-ui/sounds/job-complete.<ext>` where ext is
+one of ogg/opus/wav/mp3/flac/m4a (first match wins). Operator
+can source whenever; OA stays silent until then.
+
+---
+
 ## 2026-06-03 — Phase 5 closes the arc (`feat/background-jobs-phase-5`)
 
 **Shipped:** Phase 5 — the operator-facing polish that closes the

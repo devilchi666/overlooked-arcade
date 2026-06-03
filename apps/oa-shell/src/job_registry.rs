@@ -1169,6 +1169,43 @@ pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
         .unwrap_or(0))
 }
 
+/// Polish — dispatch the registered resumer for a single
+/// `state='interrupted'` row. Used by ResumePromptDialog: operator
+/// flipped a per-kind opt-out ON, then either chose "Resume" or
+/// "Discard" when the launch dialog surfaced. Resume calls this;
+/// Discard goes through the existing cancel_job command.
+///
+/// Returns true on dispatch, false when:
+///   - the row doesn't exist
+///   - the row isn't actually `interrupted`
+///   - no resumer is registered for the row's kind
+/// In all three cases the row state is unchanged.
+#[tauri::command]
+pub fn resume_one_interrupted_job(
+    job_id: i64,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    let Some(reg) = registry_handle(&app) else {
+        return Ok(false);
+    };
+    let Some(snap) = reg.snapshot(job_id)? else {
+        return Ok(false);
+    };
+    if snap.state != JobState::Interrupted {
+        return Ok(false);
+    }
+    let resumers = reg
+        .inner
+        .resumers
+        .read()
+        .map_err(|e| format!("resumers lock: {e}"))?;
+    let Some(resumer) = resumers.get(snap.kind.as_str()) else {
+        return Ok(false);
+    };
+    let _join = resumer.resume(snap, reg.inner().clone(), app.clone());
+    Ok(true)
+}
+
 /// Phase 5 — wipe every finished row (completed / failed / cancelled)
 /// from `background_jobs`. Active rows (pending / running / paused /
 /// interrupted) are preserved. Returns the deleted row count. Used by
