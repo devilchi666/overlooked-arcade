@@ -2530,6 +2530,7 @@ fn main() {
             job_registry::start_bulk_core_install,
             job_registry::check_duplicate_job,
             job_registry::clear_job_history,
+            job_registry::resume_one_interrupted_job,
             job_prefs::get_job_prefs,
             job_prefs::set_job_resume_prompt,
             job_prefs::set_job_sound_on_completion,
