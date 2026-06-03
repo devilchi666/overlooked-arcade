@@ -27,19 +27,60 @@ The human is the **project owner** and operator at the keyboard. Claude (me) is 
 - **No per-core ARCHITECTURE.md.** Chip behavior lives in upstream documentation. Per-core docs we DO keep: README (upstream info + our patches summary), ROADMAP, SESSION_LOG, KNOWN_GAME_BUGS, DECISIONS (integration choices).
 - **One core at a time.** `docs/ACTIVE_CORE.md` is the source of truth. Don't start Lynx work while TG-16 is mid-phase. Scope creep goes in `docs/PARKING_LOT.md`.
 
-## How to start a session
+## How to start a session — context loading discipline
 
-1. Read `CLAUDE.md` (this file).
-2. Read `docs/INDEX.md` — routing table for the docs tree.
-3. Read `docs/ACTIVE_WORK.md` — list of streams currently in flight (cores + features mixed).
-4. For each in-flight stream listed in ACTIVE_WORK.md:
-   - Read its README at `docs/features/<name>/README.md` or `docs/cores/<id>/README.md`.
-   - Read the most recent entry in the same folder's `SESSION_LOG.md` — what last session shipped, what's next.
-5. Read `docs/cores/<id>/KNOWN_GAME_BUGS.md` if working on per-game compatibility.
-6. Read the stream's `DECISIONS.md` if an architectural topic comes up.
-7. Read project-wide `docs/DECISIONS.md` for project-wide topics.
-8. **Summarize back to the human:** "Active streams are X (current task Y) and Z (current task W); confirming we're still on those?"
-9. Wait for confirmation before doing work.
+The docs tree is split into **active** (load on session start) and
+**archived** (read on explicit need). Keeping a tight active surface is
+deliberate — the goal is to always have what you need, never EVERYTHING.
+
+### Always load at session start
+
+1. `CLAUDE.md` (this file).
+2. `docs/INDEX.md` — routing table.
+3. `docs/ACTIVE_WORK.md` — **read the "In flight" section only**. The
+   "Recently completed" section is intentionally a compressed log of
+   1-liners; do not read past it preemptively.
+4. For each in-flight stream listed in the "In flight" section:
+   - Its `README.md` (per-feature or per-core).
+   - The most recent entry of its `SESSION_LOG.md` — what last session
+     shipped, what's next. Stop after the most recent entry; older
+     history is reference-only.
+5. **Summarize back to the human:** "Active streams are X (current
+   task Y) and Z (current task W); confirming we're still on those?"
+6. Wait for confirmation before doing work.
+
+### Read on explicit need (do NOT preemptively load)
+
+- **`docs/_archive/`** — all shipped feature folders + closed plans
+  live here. Manifest at [docs/_archive/INDEX.md](docs/_archive/INDEX.md).
+  Open ONLY when:
+  - Investigating "why was X done that way?" — read the relevant
+    closed plan or feature's DECISIONS.
+  - Matching a past pattern — open the closest analogous feature's
+    README or DECISIONS.
+  - Reconstructing context after a regression appears in code from a
+    shipped arc.
+- **`docs/ACTIVE_WORK.md` "Recently completed" section** — only
+  read past the line `## Recently completed` when a current task
+  explicitly references a recently-shipped arc.
+- **`docs/PARKING_LOT.md`** — read when a feature idea comes up that
+  might already be parked.
+- **`docs/DECISIONS.md`** — read when an architectural topic comes up.
+- **`docs/NEXT.md` MEDIUM / LOWER / DEFERRED bands** — only when
+  picking next work; HIGH band is the primary surface.
+- **Per-core `KNOWN_GAME_BUGS.md` / `DECISIONS.md`** — only when
+  working on that system.
+- **Per-stream `DECISIONS.md`** — only when an architectural topic in
+  that stream surfaces.
+
+### Never load proactively
+
+- Old SESSION_LOG archive files (rolled-over historical entries).
+- Closed-plan files under `docs/_archive/PLANS/`.
+- Closed-feature SESSION_LOGs under `docs/_archive/features/<name>/SESSION_LOG.md`.
+
+Grep into these on demand only — the files are searchable, just not
+worth burning context window on at session start.
 
 ## Switching streams
 
