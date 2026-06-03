@@ -7,6 +7,92 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-03 — Phase 5 closes the arc (`feat/background-jobs-phase-5`)
+
+**Shipped:** Phase 5 — the operator-facing polish that closes the
+7-phase arc as a finished feature. Three phase commits.
+
+- **Slice A — resumers for the remaining six kinds** (`a827c86`).
+  Generic `ReinvokeOperatorResumer` (a tiny inline impl in main.rs)
+  registered against artwork_sync, hash_resolve, dat_sync,
+  folder_scan, mame_listxml_import, bulk_core_install. Strategy:
+  mark_cancelled the orphan interrupted row + log a breadcrumb
+  with the operator's re-trigger path. The underlying operations
+  are all internally idempotent (artwork skips already-downloaded,
+  hash_resolve skips already-stamped, etc.) so an operator-
+  triggered re-run picks up where the crash left off. Distinct
+  from core_download's Phase 3a/3b byte-level Range resume — that
+  kind has on-disk state worth a true resume; the others don't.
+  Closes the "no resumer registered" warns the Phase 4a/4b kinds
+  were logging at every startup.
+- **Slice B — Settings → Background Jobs category** (`7c97639`).
+  New top-level System-group category in SettingsPage.tsx (glyph
+  ⟳). Four cards:
+  - **Auto-resume on launch** — per-kind opt-out toggles for the
+    seven operator-facing kinds, backed by Phase 3b's
+    get_job_prefs / set_job_resume_prompt commands.
+  - **Bar behavior** — Always-show + Sound-on-completion toggles,
+    stubbed-disabled (Phase 6 polish — neither the always-show
+    signal nor the completion chime asset exists yet).
+  - **Failure handling** — read-only summary of Phase 4c's
+    1s/5s/30s retry policy.
+  - **History** — live "X of 100 history rows used" counter + a
+    new `clear_job_history` Tauri command + button (wipes
+    finished rows, preserves active state).
+- **Slice C — Recent activity panel** (`ef543c0`). Full-viewport
+  overlay (z-65) tabbed by outcome (Running / Completed / Failed
+  / Cancelled). Per-row: kind icon + label + duration +
+  finished-at timestamp + outcome glyph. Failed rows show
+  error_message inline. Triggered from a new "Recent activity →"
+  link in the BackgroundJobsBar's expanded header. Reads
+  activeJobs() live for the Running tab; invokes list_recent_jobs
+  on open + click-Refresh for the three finished tabs. Escape +
+  backdrop-click close.
+
+660 of 660 oa-shell tests green; frontend `npm run typecheck`
+silent.
+
+**Almost:** End-to-end smoke test:
+1. Settings → Background Jobs → tick "Prompt before resuming
+   core downloads" → trigger a download → kill the app
+   mid-stream → relaunch → log shows "emitting prompt for job N"
+   instead of "dispatching resume"; the bar doesn't surface the
+   interrupted row (Phase 6 polish: surface ResumePrompt as a
+   bar dialog).
+2. Trigger several core downloads + a folder scan + an Identify
+   ROMs pass → expand the bar → click "Recent activity →" →
+   panel opens with Running tab showing 3+ rows; tab over to
+   Completed/Failed/Cancelled (will be empty on first launch);
+   click "Clear recent activity" in Settings to wipe finished
+   rows.
+3. Kill the app during an Identify ROMs pass → relaunch → log
+   shows "background_jobs: hash_resolve job N interrupted by
+   previous run; auto-cancelling — re-trigger via Settings →
+   Library → Identify ROMs". The row is cancelled, doesn't sit
+   in interrupted forever.
+
+**Arc closed.** Seven phases shipped end-to-end:
+  - Phase 1 (backend pilot)
+  - Phase 2 (BackgroundJobsBar + dev affordance)
+  - Phase 3a (JobResumer + pause/resume bridge + crash recovery)
+  - Phase 3b (byte-level Range resume + per-kind opt-out + dup-
+    trigger)
+  - Phase 4a (folder_scan + hash_resolve + dat_sync + MAME)
+  - Phase 4b (artwork_sync + bulk_core_install parent + z-fix)
+  - Phase 4c (dependency graph + retry policy)
+  - Phase 5 (resumers + Settings panel + Recent activity)
+
+The bar surfaces every long-running operation the operator can
+kick off; pause/resume + cancel work end-to-end; byte-level Range
+resume survives process exit for core downloads; per-kind opt-out
+gives operators control over the auto-resume default; recent
+activity panel + Settings → Background Jobs give the operator a
+permanent home for everything the system does behind the scenes.
+Plan §"Out of scope" items remain deferred (cross-machine sync,
+scheduled cron-style work, per-kind completion chime variants).
+
+---
+
 ## 2026-06-03 — Phase 4c ships dependency graph + retry policy (`feat/background-jobs-phase-4c`)
 
 **Shipped:** Phase 4c — the two main pieces of the original Phase 4
