@@ -167,7 +167,7 @@ const OverviewBody: Component<OverviewProps> = (props) => {
         </div>
       </section>
 
-      <section>
+      <section id="oa-health-readiness-detail" style="scroll-margin-top: 12px">
         <h2 class="mb-3 text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Per-system readiness
         </h2>
@@ -208,9 +208,10 @@ type StatusRollupCardProps = {
   primary: string;
   detail?: string;
   ctaLabel?: string;
-  /// Click handler for the CTA. If omitted, no CTA renders — useful for
-  /// rows that aren't actionable (e.g. Readiness, which doesn't have
-  /// its own tab; the readiness detail lives in this same view).
+  /// CTA glyph — defaults to → for tab deep-links. Use ↓ for the
+  /// Readiness card's same-page scroll-to-details affordance.
+  ctaArrow?: string;
+  /// Click handler for the CTA. If omitted, no CTA renders.
   onClick?: () => void;
 };
 
@@ -245,7 +246,7 @@ const StatusRollupCard: Component<StatusRollupCardProps> = (props): JSX.Element 
           }}
           class="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.65rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-(--color-system-accent)/40 hover:bg-(--color-system-accent)/10 hover:text-(--color-oa-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
         >
-          {props.ctaLabel} →
+          {props.ctaLabel} {props.ctaArrow ?? "→"}
         </button>
       </Show>
     </div>
@@ -412,7 +413,7 @@ const ReadinessRollupCard: Component<{
   const counts = createMemo(() => {
     const systems = props.librarySystems();
     if (systems.length === 0) {
-      return { total: 0, ready: 0, incomplete: 0 };
+      return { total: 0, ready: 0, incomplete: 0, incompleteIds: [] as SystemId[] };
     }
     const coresList = cores() ?? [];
     const availList = available() ?? [];
@@ -420,13 +421,20 @@ const ReadinessRollupCard: Component<{
     for (const e of bios()?.entries ?? []) biosBySlug.set(e.slug, e.status);
 
     let ready = 0;
+    const incompleteIds: SystemId[] = [];
     for (const id of systems) {
       const coreOk = isCoreInstalledFor(id, availList, coresList);
       const biosStatus = biosBySlug.get(id);
       const biosOk = biosStatus === undefined || biosStatus === "ok";
       if (coreOk && biosOk) ready += 1;
+      else incompleteIds.push(id);
     }
-    return { total: systems.length, ready, incomplete: systems.length - ready };
+    return {
+      total: systems.length,
+      ready,
+      incomplete: incompleteIds.length,
+      incompleteIds,
+    };
   });
 
   const loading = () => cores.loading || available.loading || bios.loading;
@@ -447,12 +455,35 @@ const ReadinessRollupCard: Component<{
     return `${c.ready}/${c.total} systems ready${c.incomplete > 0 ? ` · ${c.incomplete} incomplete` : ""}`;
   };
 
+  /// Names of incomplete systems for the detail line. First 3 by alpha
+  /// display name + "+ N more" when there are more, so the line stays
+  /// readable even when half the library is incomplete.
+  const detailLine = (): string | undefined => {
+    const c = counts();
+    if (c.incomplete === 0) return undefined;
+    const names = c.incompleteIds
+      .map((id) => systemThemes[id]?.displayName ?? id)
+      .sort((a, b) => a.localeCompare(b));
+    const shown = names.slice(0, 3);
+    const more = names.length - shown.length;
+    const list = shown.join(", ") + (more > 0 ? ` + ${more} more` : "");
+    return `${list} need${c.incomplete === 1 ? "s" : ""} attention`;
+  };
+
+  function jumpToDetails() {
+    const el = document.getElementById("oa-health-readiness-detail");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <StatusRollupCard
       status={status()}
       title="Library readiness"
       primary={primary()}
-      detail={counts().incomplete > 0 ? "See per-system checklist below" : undefined}
+      detail={detailLine()}
+      ctaLabel={counts().incomplete > 0 ? "Jump to details" : undefined}
+      ctaArrow="↓"
+      onClick={counts().incomplete > 0 ? jumpToDetails : undefined}
     />
   );
 };
