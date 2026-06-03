@@ -2532,6 +2532,8 @@ fn main() {
             job_registry::clear_job_history,
             job_prefs::get_job_prefs,
             job_prefs::set_job_resume_prompt,
+            job_prefs::set_job_sound_on_completion,
+            job_prefs::set_job_always_show_bar,
             core_options::has_core_options_schema,
             get_core_pref,
             set_core_pref,

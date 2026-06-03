@@ -16,21 +16,50 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct JobPrefs {
     /// Per-kind opt-out: when the kind's entry is `true`, the
     /// resume_interrupted_jobs dispatcher SKIPS its registered
     /// resumer and instead emits an `oa://job-event` ResumePrompt
-    /// variant carrying the snapshot. The frontend will eventually
-    /// (Phase 5) surface a prompt dialog at launch — for Phase 3b
-    /// the event fires unconsumed.
+    /// variant carrying the snapshot. The frontend surfaces a
+    /// prompt dialog at launch (Slice D of the polish branch).
     ///
     /// Empty map = auto-resume every kind (the plan's default).
     /// Insert `kind => true` to opt out of auto-resume for that kind.
     /// Insert `kind => false` (or omit) for the default behavior.
     #[serde(default)]
     pub prompt_before_resume_on_launch: HashMap<String, bool>,
+
+    /// Polish: play a subtle completion chime through the
+    /// `ui-sounds` audio bus when a job finalizes successfully.
+    /// Default ON. The frontend silently no-ops if the chime asset
+    /// isn't bundled — see docs/features/background-jobs/ASSETS.md
+    /// for where to drop the file.
+    #[serde(default = "default_true")]
+    pub sound_on_completion: bool,
+
+    /// Polish: keep the bar's collapsed handle visible even when
+    /// no jobs are active. Default OFF — the handle normally
+    /// auto-hides per plan §"Bar UI shape." Operators who want a
+    /// persistent "I can always see the bar" affordance flip
+    /// this ON.
+    #[serde(default)]
+    pub always_show_bar: bool,
+}
+
+impl Default for JobPrefs {
+    fn default() -> Self {
+        Self {
+            prompt_before_resume_on_launch: HashMap::new(),
+            sound_on_completion: true,
+            always_show_bar: false,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl JobPrefs {
@@ -88,6 +117,32 @@ pub fn set_job_resume_prompt(
     } else {
         prefs.prompt_before_resume_on_launch.remove(&kind);
     }
+    write_job_prefs(&state.0, &prefs)
+        .map_err(|e| format!("write job-prefs.json: {e}"))?;
+    Ok(prefs)
+}
+
+/// Toggle the completion chime. Returns the updated prefs.
+#[tauri::command]
+pub fn set_job_sound_on_completion(
+    enabled: bool,
+    state: tauri::State<'_, crate::AppDataDir>,
+) -> Result<JobPrefs, String> {
+    let mut prefs = read_job_prefs(&state.0);
+    prefs.sound_on_completion = enabled;
+    write_job_prefs(&state.0, &prefs)
+        .map_err(|e| format!("write job-prefs.json: {e}"))?;
+    Ok(prefs)
+}
+
+/// Toggle the always-show-bar handle. Returns the updated prefs.
+#[tauri::command]
+pub fn set_job_always_show_bar(
+    enabled: bool,
+    state: tauri::State<'_, crate::AppDataDir>,
+) -> Result<JobPrefs, String> {
+    let mut prefs = read_job_prefs(&state.0);
+    prefs.always_show_bar = enabled;
     write_job_prefs(&state.0, &prefs)
         .map_err(|e| format!("write job-prefs.json: {e}"))?;
     Ok(prefs)
