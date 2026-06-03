@@ -1191,3 +1191,230 @@ export const ThemesSettings: Component = () => {
     </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Background Jobs — Phase 5 of the background-jobs arc
+// ---------------------------------------------------------------------------
+
+type JobPrefsShape = {
+  promptBeforeResumeOnLaunch: Record<string, boolean>;
+};
+
+/// Plan §"Kind taxonomy" — display order + label for the per-kind
+/// auto-resume toggles. Mirrors the JobKind discriminator strings the
+/// Rust side stores; keep in lockstep when JobKind variants are added.
+const JOB_KINDS: readonly { id: string; label: string; description: string }[] = [
+  {
+    id: "core_download",
+    label: "Core downloads",
+    description:
+      "libretro core .dll downloads from buildbot. Phase 3b shipped byte-level Range resume — auto-resume picks up where the crash left off without re-downloading.",
+  },
+  {
+    id: "bulk_core_install",
+    label: "Bulk core installs",
+    description:
+      "Guided Setup's parallel install of N missing cores. Children are individual core downloads; auto-resume re-creates the parent and resumes each child.",
+  },
+  {
+    id: "hash_resolve",
+    label: "Identify ROMs",
+    description:
+      "Per-system ROM hash + canonical-title lookup. Re-trigger via Settings → Library; existing internal idempotency skips already-stamped rows.",
+  },
+  {
+    id: "dat_sync",
+    label: "ROM database sync",
+    description:
+      "libretro-database .dat fetch + parse for a system's hash table. Auto-triggered as a prereq when Identify ROMs runs against an empty table.",
+  },
+  {
+    id: "artwork_sync",
+    label: "Artwork sync",
+    description:
+      "Per-system artwork download from libretro-thumbnails. Re-trigger via Settings → Library → Sync media; internal idempotency skips already-downloaded files.",
+  },
+  {
+    id: "folder_scan",
+    label: "Folder scans",
+    description:
+      "Import wizard folder walks. Re-trigger via Import Wizard or Settings → Library → Re-scan; the walk re-runs from the folder root.",
+  },
+  {
+    id: "mame_listxml_import",
+    label: "MAME catalog refresh",
+    description:
+      "Refresh of the local MAME machine catalog from a MAME install's listxml output. Re-trigger via Settings → MAME → Refresh MAME system info.",
+  },
+];
+
+export const BackgroundJobsSettings: Component = () => {
+  const [prefs, setPrefs] = createSignal<JobPrefsShape>({
+    promptBeforeResumeOnLaunch: {},
+  });
+  const [historyCount, setHistoryCount] = createSignal<number>(0);
+  const [clearStatus, setClearStatus] = createSignal<string>("");
+
+  const refreshPrefs = async () => {
+    try {
+      const p = await invoke<JobPrefsShape>("get_job_prefs");
+      setPrefs(p);
+    } catch (e) {
+      console.warn("[bg-jobs-settings] get_job_prefs failed:", e);
+    }
+  };
+  const refreshHistory = async () => {
+    try {
+      const rows = await invoke<unknown[]>("list_recent_jobs", { limit: 100 });
+      setHistoryCount(rows.length);
+    } catch (e) {
+      console.warn("[bg-jobs-settings] list_recent_jobs failed:", e);
+    }
+  };
+
+  // Hydrate on mount.
+  void refreshPrefs();
+  void refreshHistory();
+
+  const togglePromptForKind = async (kindId: string, prompt: boolean) => {
+    try {
+      const updated = await invoke<JobPrefsShape>("set_job_resume_prompt", {
+        kind: kindId,
+        prompt,
+      });
+      setPrefs(updated);
+    } catch (e) {
+      console.warn(`[bg-jobs-settings] set_job_resume_prompt(${kindId}) failed:`, e);
+    }
+  };
+
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard
+        title="Auto-resume on launch"
+        description={
+          'When OA crashes mid-operation, the next launch detects the orphan via the `oa.lock` marker and either auto-resumes the interrupted work OR shows a prompt. Toggle ON for a kind = prompt before resuming. Default OFF = auto-resume silently.'
+        }
+      >
+        <div class="space-y-2">
+          {JOB_KINDS.map((kind) => (
+            <label class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+              <input
+                type="checkbox"
+                class="mt-1"
+                checked={prefs().promptBeforeResumeOnLaunch[kind.id] === true}
+                onChange={(e) => {
+                  void togglePromptForKind(kind.id, e.currentTarget.checked);
+                }}
+              />
+              <div class="min-w-0 flex-1">
+                <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+                  Prompt before resuming {kind.label.toLowerCase()}
+                </p>
+                <p class="mt-0.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                  {kind.description}
+                </p>
+              </div>
+            </label>
+          ))}
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Bar behavior"
+        description="How the persistent BackgroundJobsBar (bottom of the viewport) behaves while operations are running."
+      >
+        <div class="space-y-2 opacity-60">
+          <label class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+            <input type="checkbox" class="mt-0.5" disabled />
+            <div class="min-w-0 flex-1">
+              <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+                Always show the bar
+              </p>
+              <p class="mt-0.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                Default OFF — the bar's handle only appears while at
+                least one job is active. ON keeps the handle visible
+                always for monitoring. Phase 6 polish.
+              </p>
+            </div>
+          </label>
+          <label class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+            <input type="checkbox" class="mt-0.5" disabled checked />
+            <div class="min-w-0 flex-1">
+              <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+                Sound on completion
+              </p>
+              <p class="mt-0.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+                A subtle chime when a job completes (plan §"Notification
+                on completion"). Currently silent — chime asset +
+                wiring lands as Phase 6 polish.
+              </p>
+            </div>
+          </label>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Failure handling"
+        description="How OA recovers from transient network failures during a download."
+      >
+        <div class="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-3">
+          <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+            Auto-retry transient network errors
+          </p>
+          <p class="mt-1 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+            5xx server errors + dropped connections retry up to 3
+            attempts with 1 s / 5 s / 30 s exponential backoff before
+            mark_failed. Retries are invisible to the operator
+            (logged at warn-level in oa-current.log). Permanent 4xx
+            errors fail immediately. Operator-triggered cancel
+            during a backoff sleep takes effect within 100 ms.
+          </p>
+          <p class="mt-2 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)/70">
+            Always on · 3 attempts · 1 / 5 / 30 s
+          </p>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="History"
+        description="The recent-activity panel keeps the last 100 finished jobs (completed / failed / cancelled) in a rolling buffer."
+      >
+        <div class="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-3">
+          <p class="text-[0.75rem] text-(--color-oa-ink)">
+            <span class="tabular-nums font-semibold">
+              {historyCount()}
+            </span>{" "}
+            <span class="text-(--color-oa-ink-dim)">of 100 history rows used</span>
+          </p>
+          <button
+            type="button"
+            class="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-rose-200 transition hover:border-rose-400/60 hover:bg-rose-500/20"
+            onClick={async (e) => {
+              e.currentTarget.blur();
+              const ok = window.confirm(
+                "Clear all background-job history rows? Active rows (pending/running/paused) are preserved.",
+              );
+              if (!ok) return;
+              try {
+                await invoke<number>("clear_job_history");
+                await refreshHistory();
+                setClearStatus("History cleared.");
+                window.setTimeout(() => setClearStatus(""), 3000);
+              } catch (err) {
+                setClearStatus(`Clear failed: ${String(err)}`);
+              }
+            }}
+          >
+            Clear recent activity
+          </button>
+        </div>
+        <Show when={clearStatus() !== ""}>
+          <p class="mt-2 text-[0.7rem] text-(--color-oa-ink-dim)">
+            {clearStatus()}
+          </p>
+        </Show>
+      </SettingsCard>
+    </div>
+  );
+};
