@@ -1169,6 +1169,31 @@ pub fn cancel_all_jobs(app: tauri::AppHandle) -> Result<usize, String> {
         .unwrap_or(0))
 }
 
+/// Phase 5 — wipe every finished row (completed / failed / cancelled)
+/// from `background_jobs`. Active rows (pending / running / paused /
+/// interrupted) are preserved. Returns the deleted row count. Used by
+/// the Settings → Background Jobs → "Clear recent activity" button
+/// (plan §Settings panel §History).
+#[tauri::command]
+pub fn clear_job_history(app: tauri::AppHandle) -> Result<usize, String> {
+    let Some(reg) = registry_handle(&app) else {
+        return Ok(0);
+    };
+    let conn = reg
+        .inner
+        .conn
+        .lock()
+        .map_err(|e| format!("conn lock: {e}"))?;
+    let n = conn
+        .execute(
+            "DELETE FROM background_jobs \
+             WHERE state IN ('completed', 'failed', 'cancelled')",
+            [],
+        )
+        .map_err(|e| format!("clear_job_history delete: {e}"))?;
+    Ok(n)
+}
+
 /// Phase 3b — look up an active job by kind + target_id. Returns
 /// the snapshot when one exists (i.e. an operator-triggered duplicate
 /// of the same operation). The frontend uses this to drive the

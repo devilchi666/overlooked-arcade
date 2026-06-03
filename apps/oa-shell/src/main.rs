@@ -2529,6 +2529,7 @@ fn main() {
             job_registry::spawn_test_job,
             job_registry::start_bulk_core_install,
             job_registry::check_duplicate_job,
+            job_registry::clear_job_history,
             job_prefs::get_job_prefs,
             job_prefs::set_job_resume_prompt,
             core_options::has_core_options_schema,

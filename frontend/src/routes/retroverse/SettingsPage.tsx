@@ -18,6 +18,7 @@ import { HintRegion } from "../../nav/HintBar";
 import {
   AboutSettings,
   AudioSettings,
+  BackgroundJobsSettings,
   BiosSettings,
   ControllerNavSettings,
   CoresCategorySettings,
@@ -53,6 +54,7 @@ type CategoryId =
   | "cores"
   | "bios"
   | "storage"
+  | "background-jobs"
   | "profile"
   | "about"
   | "per-system";
@@ -189,6 +191,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Data directory + portable install + saves location.",
     helpText:
       "Shows whether you're running in AppData mode or portable mode (portable.txt next to oa-shell.exe). Lists save / state / log directories and free space on each.",
+  },
+  {
+    id: "background-jobs",
+    group: "system",
+    label: "Background Jobs",
+    glyph: "⟳",
+    description: "Auto-resume behavior + bar visibility + retry policy.",
+    helpText:
+      "Per-kind opt-out of auto-resume on launch (core downloads, identify ROMs, sync media, etc.). Bar visibility + sound-on-completion toggles. Failure retry policy (1s/5s/30s exponential backoff for transient network errors). Recent activity history (rolling buffer of last 100 jobs).",
   },
   {
     id: "profile",
@@ -497,6 +508,9 @@ const SettingsPage: Component = () => {
           </Match>
           <Match when={activeCategoryId() === "storage"}>
             <StorageSettings />
+          </Match>
+          <Match when={activeCategoryId() === "background-jobs"}>
+            <BackgroundJobsSettings />
           </Match>
           <Match when={activeCategoryId() === "profile"}>
             <ProfileSettings settings={ctx.settings} />
