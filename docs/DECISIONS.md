@@ -1126,3 +1126,113 @@ Also: shared infrastructure makes adjacency cheaper. The structured per-game dat
 - **Tile badge styling:** subtle ⚠ N for known issues; single small icon for operator-has-local-edits. Don't crowd the tile.
 - **"Submit correction" v1 stub behavior:** clipboard copy of operator's local edits as JSON + informational toast ("Your changes are copied. We're not yet set up to receive submissions automatically — coming soon"). Makes the UI surface visible without committing to v2 backend infrastructure.
 
+---
+
+## 2026-06-03 — Reversal: OA supports external standalone emulators via a Launcher abstraction
+
+**Decision:** Overlooked Arcade will support **both libretro cores AND external
+standalone emulators** via a `Launcher` trait abstraction in `oa-core`. Two
+trait impls: today's `LibretroLauncher` (wrapping the existing `LibretroCore`)
+and a new `ExternalProcessLauncher` (spawns a configured emulator binary via
+`tokio::process::Command`). Per-emulator profile YAMLs live in
+`config/emulators/<id>.yaml` (mirroring the per-system descriptor pattern from
+the 2026-06-02 consolidation arc).
+
+**This supersedes** the 2026-05-16 "Architecture pivot: libretro frontend"
+decision's framing as "libretro is the only FFI / launch boundary."
+That decision's *core* — libretro `.dll` loading via `libloading`, dynamic
+core swap, per-system + per-game core selection — all stands. What's
+reversed is the *exclusivity* claim. OA is now a frontend for retro emulation,
+period; libretro is the primary path, external standalone emulators are the
+secondary path.
+
+**Phase C of the new arc (see `docs/PLANS/virtual-library-and-launcher-arc.md`)
+implements the trait refactor.** Phase D ships the install pipeline. v1 pilot
+emulator set: Cemu (Wii U), RPCS3 (PS3), Lime3DS (3DS).
+
+**Why (reversed rationale):**
+
+1. **Vendor coverage gap.** Wii U, PS3, 3DS, Switch, recent PS2-via-PCSX2, and
+   modern Mac emulation targets all lack production-grade libretro paths today.
+   The libretro-only stance left those systems either unreachable from OA or
+   reachable only via a separate launcher app — which contradicts the "premium
+   frontend for retro emulation" pitch. The operator explicitly named this as
+   "needed for the future to not bite us" during the 2026-06-03 planning round.
+2. **Plugin-style install profile shape is constrained, not open-ended.** The
+   2026-06-02 PARKING_LOT entry rejected a generic "Plugin / Extension API"
+   for good reasons (security, version-compat, SDK contract burden). The
+   launcher install pipeline is NOT a generic plugin API — it's a closed set
+   of operator-editable per-emulator profile YAMLs with constrained semantics
+   (download URL, launch args template, install location, capability flags).
+   Reusing the per-system-descriptor pattern's discipline avoids the open-SDK
+   trap.
+3. **Variant model + per-game settings need launcher-agnostic shape from day
+   one.** The new arc's Phase A → E → B → C ordering deliberately puts the
+   launcher refactor (Phase C) before the variant tree + Casual/Preservation
+   UX (Phase B) crystallizes on libretro-only assumptions. Postponing the
+   reversal risks UX work that doesn't generalize.
+4. **The 2026-05-16 trade-off "Day-one install requires a cores/ folder" no
+   longer holds for all systems.** Wii U operators with a Cemu install
+   should be able to drop OA in and launch — no `.dll` curation step. The
+   install pipeline (Phase D) handles emulator delivery automatically for
+   profiles with clean redistribution stance.
+
+**Legal posture (unchanged from 2026-06-03 lock):**
+
+- OA downloads + sets up emulator binaries where legally clean (each profile
+  points at the emulator's official release endpoint — GitHub Releases for
+  Cemu / RPCS3 / Lime3DS / etc.).
+- OA **never** downloads or installs ROMs or BIOS files. "Emulation is legal;
+  redistribution of copyrighted ROMs and BIOS is not unless the user owns
+  them, and OA cannot guarantee that."
+- Emulators with ambiguous redistribution stance ship as profile-without-fetch
+  (operator points OA at an existing install rather than triggering an
+  auto-download).
+
+**Considered and rejected:**
+
+- **Stay libretro-only.** Cleanest architecture; leaves Wii U / PS3 / 3DS /
+  Switch operators stranded. Rejected by the operator on 2026-06-03 with the
+  framing "OA will have to take on the role of a front end for other emulators
+  eventually anyway — plan for it now so it doesn't bite us at the end."
+- **Generic plugin / SDK API.** The 2026-06-02 PARKING_LOT entry rejected this
+  for the right reasons (version-compat burden, security surface, contract
+  ossification). The launcher abstraction is **not** a plugin API — it's a
+  closed set of trait impls + operator-editable per-emulator profile YAMLs.
+  Different shape, narrower scope.
+- **Defer external-emulator support until after Phase E (schema promotion).**
+  Risks crystallizing the variant model + per-game settings shape on
+  libretro-only assumptions and forcing a second refactor later. The phase
+  order locks in: A (identification) → E (schema) → B (UX) → **C (launcher)**
+  → D (install) → F (Vault) → G (crate split). The launcher refactor lands
+  before the UX layer hardens.
+
+**CLAUDE.md update accompanies this decision:** the "libretro is the only FFI
+boundary" line in the "Architectural rules" section softens to "libretro is
+the primary launcher boundary; external standalone emulators reach the shell
+via the `Launcher` trait + `ExternalProcessLauncher` impl."
+
+---
+
+## 2026-06-03 — Reversal-partial: 2026-06-02 Plugin / Extension API parking-lot entry
+
+**Decision:** Un-park the 2026-06-02 PARKING_LOT entry on "Plugin / Extension
+API" — **partially**. The launcher abstraction + external-emulator install
+pipeline (recorded in the new DECISIONS entry above) DOES surface
+operator-editable per-emulator profile YAMLs that look superficially like
+"plugins" from the operator's POV. But the shape is constrained: closed set
+of trait impls, no third-party Rust-side extensibility, no SDK contract, no
+dynamic loading of arbitrary plugin code.
+
+**What stays parked:** the original parking-lot entry's rejection of a generic
+third-party Rust SDK for custom views / custom systems / arbitrary plugin
+code stays in force. That kind of plugin API still carries the security +
+version-compat + SDK-ossification costs the 2026-06-02 entry called out.
+
+**What's un-parked:** the narrow case of "operator points OA at additional
+emulator profiles." This is a configuration surface, not a code surface — same
+shape as `config/systems/<id>/system.yaml` editability.
+
+**Cross-ref:** [2026-06-03 Launcher abstraction reversal entry](#2026-06-03--reversal-oa-supports-external-standalone-emulators-via-a-launcher-abstraction);
+[docs/PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
+
