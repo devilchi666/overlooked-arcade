@@ -35,7 +35,6 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "../lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
-import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
 import {
@@ -546,13 +545,11 @@ export const LibrarySettings: Component = () => {
   // entry point per the guided-setup plan §12 IA. Re-establishes a
   // path to the Import Wizard (orphaned after the 2026-05-31 legacy-
   // Shell deletion).
+  //
+  // The System Readiness card lived here until 2026-06-03; it
+  // moved to Settings → System Health → Overview as part of the
+  // declutter arc (see docs/PLANS/settings-declutter-system-health.md).
   const ctx = useRetroverse();
-  // Phase 1B Slice 3 — derive the per-system list from the operator's
-  // shipped library. Reactive: when entries change (import, delete),
-  // the readiness checklist re-renders against the new system inventory.
-  const librarySystems = createMemo(() =>
-    Array.from(new Set(ctx.library.state.entries.map((e) => e.systemId))),
-  );
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -569,15 +566,6 @@ export const LibrarySettings: Component = () => {
         >
           Set up your library
         </button>
-      </SettingsCard>
-      <SettingsCard
-        title="System readiness"
-        description="Per-system status across your library — which cores are installed, which need a BIOS file, what's ready to play. Same checklist the import wizard shows on Step 3."
-      >
-        <SystemReadinessChecklist
-          systems={librarySystems}
-          emptyStateLabel="Library is empty — import a folder to get started."
-        />
       </SettingsCard>
       <SettingsCard
         title="Background Jobs — dev test"
