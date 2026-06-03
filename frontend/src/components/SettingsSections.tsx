@@ -33,6 +33,7 @@ import {
 } from "../library/systemInfo";
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
+import { refreshJobPrefs } from "../lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 import { useRetroverse } from "../routes/retroverse/context";
@@ -1198,6 +1199,8 @@ export const ThemesSettings: Component = () => {
 
 type JobPrefsShape = {
   promptBeforeResumeOnLaunch: Record<string, boolean>;
+  soundOnCompletion: boolean;
+  alwaysShowBar: boolean;
 };
 
 /// Plan §"Kind taxonomy" — display order + label for the per-kind
@@ -1251,6 +1254,8 @@ const JOB_KINDS: readonly { id: string; label: string; description: string }[] =
 export const BackgroundJobsSettings: Component = () => {
   const [prefs, setPrefs] = createSignal<JobPrefsShape>({
     promptBeforeResumeOnLaunch: {},
+    soundOnCompletion: true,
+    alwaysShowBar: false,
   });
   const [historyCount, setHistoryCount] = createSignal<number>(0);
   const [clearStatus, setClearStatus] = createSignal<string>("");
@@ -1324,9 +1329,27 @@ export const BackgroundJobsSettings: Component = () => {
         title="Bar behavior"
         description="How the persistent BackgroundJobsBar (bottom of the viewport) behaves while operations are running."
       >
-        <div class="space-y-2 opacity-60">
+        <div class="space-y-2">
           <label class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-            <input type="checkbox" class="mt-0.5" disabled />
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={prefs().alwaysShowBar}
+              onChange={async (e) => {
+                try {
+                  const updated = await invoke<JobPrefsShape>(
+                    "set_job_always_show_bar",
+                    { enabled: e.currentTarget.checked },
+                  );
+                  setPrefs(updated);
+                  // Sync the module-level live signal so the bar
+                  // reacts immediately.
+                  await refreshJobPrefs();
+                } catch (err) {
+                  console.warn("[bg-jobs-settings] set_job_always_show_bar:", err);
+                }
+              }}
+            />
             <div class="min-w-0 flex-1">
               <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
                 Always show the bar
@@ -1334,20 +1357,40 @@ export const BackgroundJobsSettings: Component = () => {
               <p class="mt-0.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
                 Default OFF — the bar's handle only appears while at
                 least one job is active. ON keeps the handle visible
-                always for monitoring. Phase 6 polish.
+                at all times (labels "No active jobs" when idle).
               </p>
             </div>
           </label>
           <label class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-            <input type="checkbox" class="mt-0.5" disabled checked />
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={prefs().soundOnCompletion}
+              onChange={async (e) => {
+                try {
+                  const updated = await invoke<JobPrefsShape>(
+                    "set_job_sound_on_completion",
+                    { enabled: e.currentTarget.checked },
+                  );
+                  setPrefs(updated);
+                  await refreshJobPrefs();
+                } catch (err) {
+                  console.warn("[bg-jobs-settings] set_job_sound_on_completion:", err);
+                }
+              }}
+            />
             <div class="min-w-0 flex-1">
               <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
                 Sound on completion
               </p>
               <p class="mt-0.5 text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
                 A subtle chime when a job completes (plan §"Notification
-                on completion"). Currently silent — chime asset +
-                wiring lands as Phase 6 polish.
+                on completion"). Silent fallback when the chime asset
+                isn't bundled — see{" "}
+                <span class="font-mono text-(--color-system-accent)/80">
+                  docs/features/background-jobs/ASSETS.md
+                </span>{" "}
+                for where to drop the file.
               </p>
             </div>
           </label>

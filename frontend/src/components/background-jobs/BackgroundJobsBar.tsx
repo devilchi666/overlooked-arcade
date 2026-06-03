@@ -37,6 +37,7 @@ import {
   activeJobs,
   cancelAllJobs,
   cancelJob,
+  jobPrefs,
   pauseAllJobs,
   pauseJob,
   progressTick,
@@ -203,11 +204,17 @@ const BackgroundJobsBar: Component = () => {
     await cancelJob(job.id);
   };
 
+  // Polish-C: when the always-show toggle is on, the bar's handle
+  // stays visible even with no active jobs (labels swap to "No
+  // active jobs"). When off (the default), the bar only renders
+  // while jobCount() > 0 per the original spec.
+  const visible = () => jobCount() > 0 || jobPrefs().alwaysShowBar;
+
   // Pulse-on-progress: a key off pulseTick re-triggers the
   // bar-handle's pulse animation. The actual CSS keyframe lives
   // inline below.
   return (
-    <Show when={jobCount() > 0}>
+    <Show when={visible()}>
       <div
         class="oa-bg-jobs-bar pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex justify-center px-4 pb-[60px]"
         onMouseMove={() => {
@@ -218,23 +225,44 @@ const BackgroundJobsBar: Component = () => {
         }}
       >
         {/* HandleVisible state — thin pill at the bottom of the
-            viewport showing the active job count. Click to expand. */}
+            viewport showing the active job count. Click to expand.
+            Polish-C: when always-show is on AND no jobs active,
+            the pill shows "No active jobs" and the pulse dot
+            stays static. */}
         <Show when={!expanded()}>
           <button
             type="button"
             class="oa-bg-jobs-handle pointer-events-auto group flex items-center gap-2 rounded-t-md border border-(--color-system-accent)/30 border-b-0 bg-(--color-oa-bg-deep)/95 px-4 py-1 text-[0.7rem] font-semibold uppercase tracking-widest text-(--color-oa-ink-dim) backdrop-blur transition hover:border-(--color-system-accent) hover:bg-(--color-oa-bg-deep) hover:text-(--color-oa-ink)"
             onClick={() => setExpanded(true)}
-            title={`${jobCount()} background job${jobCount() === 1 ? "" : "s"} active — click to expand`}
-            aria-label={`${jobCount()} active background jobs; click to expand`}
+            title={
+              jobCount() === 0
+                ? "No active background jobs — click to expand"
+                : `${jobCount()} background job${jobCount() === 1 ? "" : "s"} active — click to expand`
+            }
+            aria-label={
+              jobCount() === 0
+                ? "No active background jobs; click to expand"
+                : `${jobCount()} active background jobs; click to expand`
+            }
           >
             {/* Pulse dot keyed off pulseTick so it re-animates on
-                every activeJobs update (Progressed events). */}
+                every activeJobs update (Progressed events). Stays
+                static + dim when no jobs are active. */}
             <span
               data-pulse={progressTick()}
-              class="oa-bg-jobs-handle-dot inline-block h-2 w-2 rounded-full bg-(--color-system-accent)"
+              class="oa-bg-jobs-handle-dot inline-block h-2 w-2 rounded-full"
+              classList={{
+                "bg-(--color-system-accent)": jobCount() > 0,
+                "bg-(--color-oa-ink-dim)/40": jobCount() === 0,
+              }}
             />
             <span>
-              {jobCount()} background job{jobCount() === 1 ? "" : "s"}
+              <Show
+                when={jobCount() > 0}
+                fallback={<>No active jobs</>}
+              >
+                {jobCount()} background job{jobCount() === 1 ? "" : "s"}
+              </Show>
             </span>
             <span class="text-(--color-oa-ink-dim)/60 transition group-hover:text-(--color-system-accent)">
               ▲
