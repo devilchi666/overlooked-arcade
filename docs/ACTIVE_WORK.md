@@ -33,10 +33,24 @@ spanned every system but was filed under whichever core happened to be active.
       pass (660 baseline + 5 new); frontend typecheck silent.
       Cart-shape `rom_hashes` path untouched. Plan + design
       decisions in [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md).
-    - **A1 Sub-phase 2 — per-track hashing engine** (next). Container
-      parsers (.cue+split.bin / .cue+merged.bin / .chd / .gdi /
-      .iso), 4-frame CHDMAN padding + subchannel-strip handling per
-      the 2026-06-03 research pass, strictness modes.
+    - **A1 Sub-phase 2 ✅ shipped 2026-06-03** (merge `dc2a257`).
+      Per-track hashing engine in `apps/oa-shell/src/disc_track_hash.rs`:
+      `.iso` / `.cue` (split-bin + merged-bin via INDEX 01) / `.gdi` /
+      `.chd` (CHT2 parse + 4-frame padding + subchannel strip).
+      Streaming SHA-1 with 1 MiB cancel-check cadence. `evaluate_match`
+      across Strict / Threshold / Lenient. `cd_id::cue::parse` extended
+      to capture INDEX 01 positions for merged-bin slicing. 687 tests
+      pass (665 baseline + 22 new); frontend typecheck silent.
+    - **A1 Sub-phase 3 — identify flow + cache + auto-trigger**
+      (next). Wire `hash_disc` into the resolve dispatch for
+      disc-shape systems; persist results to `game_disc_tracks` with
+      mtime/size invalidation; fire `artwork_sync` + `metadata_sync`
+      deps via the background-jobs graph; post-completion
+      identification toast + deep-link to unmatched library filter.
+    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (after #3).
+      Stamp `games.disc_set_id` + `games.disc_number` on identified
+      multi-disc games; LIBRARY grid renders one tile per set;
+      disc-picker overlay on tile click.
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
