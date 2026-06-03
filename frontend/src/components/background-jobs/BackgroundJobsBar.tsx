@@ -44,6 +44,7 @@ import {
   type JobSnapshot,
   type JobState,
 } from "../../lib/backgroundJobs";
+import RecentActivityPanel from "./RecentActivityPanel";
 
 const MAX_VISIBLE_ROWS = 3;
 const AUTO_COLLAPSE_MS = 2000;
@@ -125,6 +126,7 @@ function stateLabel(state: JobState): string {
 
 const BackgroundJobsBar: Component = () => {
   const [expanded, setExpanded] = createSignal(false);
+  const [recentOpen, setRecentOpen] = createSignal(false);
 
   // Auto-collapse timer. Reset every time the operator interacts
   // with the bar. The bar is FIXED-position at the bottom of the
@@ -280,18 +282,31 @@ const BackgroundJobsBar: Component = () => {
                   {jobCount()} active
                 </span>
               </div>
-              <button
-                type="button"
-                class="text-(--color-oa-ink-dim) transition hover:text-(--color-oa-ink)"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  setExpanded(false);
-                }}
-                title="Collapse"
-                aria-label="Collapse background jobs bar"
-              >
-                ▼
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-oa-ink-dim) transition hover:text-(--color-system-accent)"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    setRecentOpen(true);
+                  }}
+                  title="Recent activity — last 100 finished jobs"
+                >
+                  Recent activity →
+                </button>
+                <button
+                  type="button"
+                  class="text-(--color-oa-ink-dim) transition hover:text-(--color-oa-ink)"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    setExpanded(false);
+                  }}
+                  title="Collapse"
+                  aria-label="Collapse background jobs bar"
+                >
+                  ▼
+                </button>
+              </div>
             </div>
 
             {/* Per-row stack. */}
@@ -327,6 +342,10 @@ const BackgroundJobsBar: Component = () => {
         }
         `}
       </style>
+      <RecentActivityPanel
+        open={recentOpen()}
+        onClose={() => setRecentOpen(false)}
+      />
     </Show>
   );
 };
