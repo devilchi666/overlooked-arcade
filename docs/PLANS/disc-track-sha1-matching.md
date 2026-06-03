@@ -1,6 +1,6 @@
 # Per-track SHA-1 matching for disc-shape systems
 
-**Status:** Planning locked 2026-06-02 (4 rounds of operator Q&A; all design questions answered). Execution deferred to a future session.
+**Status:** Planning locked 2026-06-02 (4 rounds of operator Q&A; all design questions answered). Research pass 2026-06-03 closed the three "resolve before Phase 2" open questions (Q1 hash convention, Q2 schema shape, Q3 chd-crate TOC). Execution in flight as Phase A1 of the [virtual library + launcher arc](virtual-library-and-launcher-arc.md).
 
 **Owner-of-decisions:** the operator. This document records the
 decisions that came out of the refinement Q&A. Implementation
@@ -58,13 +58,18 @@ asterisk: "...except disc-shape systems which sometimes work."
 
 ### Identification scope
 
-- **Hash data tracks only; skip audio entirely.** Redump publishes
-  per-track SHA-1s for every track including audio, but audio
-  tracks (CD-DA) vary by dump-tool conventions (pre-emphasis
-  flags, encoder differences) and cause false negatives on
-  legit dumps. Data tracks are byte-perfect across dump tools, so
-  the match decision is based on data tracks only. Audio sectors
-  are not read.
+- **Hash data tracks only; skip audio entirely for the
+  identification gate.** Redump publishes per-track SHA-1s for
+  every track including audio, but audio tracks (CD-DA) vary by
+  dump-tool conventions (drive offset correction not applied by
+  cdrdao raw / older EAC profiles) and cause false negatives on
+  legitimately good dumps. Data tracks are byte-perfect across
+  dump tools, so the *match decision* is based on data tracks
+  only. Audio matches are scored opportunistically as a "bonus
+  confidence" signal (DiscImageCreator + redumper dumps WILL
+  match) but never block identification. See "Research pass —
+  2026-06-03 findings" below for the redump-conventions
+  reasoning.
 - **Hash takes precedence over serial.** Hash result wins, always.
   The existing SYSTEM.CNF / IP.BIN serial-lookup path becomes the
   fallback when no hash match is found. Clean precedence hierarchy:
@@ -254,16 +259,39 @@ CREATE INDEX idx_games_disc_set ON games (disc_set_id);
 
 ### CHD per-track byte extraction
 
-- **Stream per-track using the CHD's embedded TOC.**
-    - Use the `chd` crate's TOC accessor to find each track's
-      hunk range.
-    - Decompress one hunk at a time; accumulate the current track's
-      user-data bytes; hash inline; free hunk memory immediately.
-    - Constant memory footprint (~one hunk = ~4 KB).
-- Matches the existing `cd_id::chd_reader::read_data_track_header`
-  pattern. The chd crate's TOC API needs investigation to confirm
-  it exposes per-track LBA ranges; Phase 1's verification pass
-  covers this.
+**Locked from 2026-06-03 research pass.** The `chd 0.3` crate
+already in tree does NOT expose a `Track` abstraction. We parse
+the CHT2 / CHTR / CHGD text metadata ourselves and walk hunks
+manually.
+
+- **Open** via `chd::Chd::open(reader, None)` — same as the
+  existing `cd_id::chd_reader::read_data_track_header` pattern
+  at `apps/oa-shell/src/cd_id.rs:533-609`.
+- **Parse track metadata** from `Chd::metadata_refs()`. CHT2
+  text format string (lifted from MAME `cdrom.cpp`):
+  `"TRACK:%d TYPE:%s SUBTYPE:%s FRAMES:%d PREGAP:%d PGTYPE:%s PGSUB:%s POSTGAP:%d"`.
+  Legacy CHTR omits PREGAP/POSTGAP; CHGD (GD-ROM) adds
+  PADFRAMES.
+- **Compute per-track phys ranges** with CHDMAN's 4-frame track
+  padding (`TRACK_PADDING = 4` in MAME `cdrom.h`):
+  `track[i].phys_start = sum over j<i of ceil(track[j].frames / 4) * 4`
+  `track[i].phys_end = track[i].phys_start + track[i].frames`
+  Padding frames are in the hunk stream but excluded from any
+  track's hash.
+- **Walk hunks** via `Chd::hunk(n)` + `Hunk::read_hunk_in`. For
+  each frame in the hunk (CD: `unit_bytes = 2448`), attribute
+  by global LBA to its track's SHA-1 hasher. Strip the 96-byte
+  subchannel tail (redump hashes bytes 0..2352 per frame).
+- **Hunk-straddles-track-boundary** is the caller's
+  responsibility; per-frame dispatch handles it naturally.
+- **DVD-shape CHDs** (GameCube / Wii / PS2): `unit_bytes = 2048`,
+  no subchannel, no CdRomTrack metadata. Detect via
+  `unit_bytes != 2448` and treat as single contiguous stream
+  per the .iso convention.
+- **Legacy CHCD format** (old CHDMAN): one combined blob; rare;
+  treat as not-matchable in v1.
+- Constant memory footprint: one hunk buffer (~20 KB) + N SHA-1
+  contexts. Scales to PS2 / GameCube multi-GB CHDs.
 
 ### Performance budget
 
@@ -272,6 +300,113 @@ CREATE INDEX idx_games_disc_set ON games (disc_set_id);
   pass. Re-runs are no-ops (cache hits). Operator imports, walks
   away, returns to identified library. Background-jobs bar
   surfaces progress; chime + post-completion toast acknowledge.
+
+### Research pass — 2026-06-03 findings locked
+
+Three open questions called out for "resolve before Phase 2" were
+researched in parallel via subagents (web research + codebase
+audit + chd-crate / libchdr survey). Outcomes:
+
+#### Q1 — Hash convention (resolved, gate removed)
+
+Redump hashes **the full raw 2352-byte sectors as written to
+the .bin file**, for both MODE1/2352 and MODE2/2352 (both
+forms). Audio is also full 2352 raw. The rule across all CD
+sector formats reduces to: **hash the file byte-for-byte, no
+preprocessing.** Verified empirically against the libretro PSX
+dat (13,526 track entries, every size cleanly divides 2352).
+
+Side findings:
+- **Audio is opportunistically matchable**, not unmatchable.
+  Tools that apply drive-offset correction (DiscImageCreator,
+  redumper) produce byte-identical audio .bin across dumpers.
+  Tools that don't (cdrdao raw, old EAC) fail audio matching
+  even on otherwise-good dumps. Recommendation: data tracks
+  gate identification; audio matches score as a "bonus
+  confidence" signal but never block.
+- **CHD files cannot be matched directly against redump.**
+  chdman recompresses + writes its own container SHA-1. We hash
+  the *decompressed raw frames* per track, never the .chd file
+  bytes themselves.
+- **MODE1/2048 cooked .iso for CD systems** is NOT in redump
+  (that's TOSEC convention). If the operator hands us a
+  2048-aligned CD .iso, we cannot match it against redump.
+- **Single-bin .cue dumps** (one merged .bin with multiple
+  INDEX 01 positions, common on PSX): split on-the-fly using
+  cue INDEX 01 positions × 2352 to derive per-track byte ranges
+  into the single .bin; stream slices per track for hashing.
+  Don't require re-dumping.
+
+Phase 1's "verification pass" is downgraded from a Phase 2
+*gate* to a smoke test (5 PSX + 5 Saturn + 5 Dreamcast)
+confirming our pipeline produces identical SHA-1s end-to-end.
+
+#### Q2 — Schema shape (separate `rom_hashes_tracks` confirmed)
+
+Plan-of-record (3 new tables, `rom_hashes` untouched) stands.
+Codebase audit confirmed:
+- Current `rom_hashes` PK is `sha1` alone
+  (`apps/oa-shell/src/library_db.rs:1229`). Extending it would
+  require the first PK-mutation migration in this codebase —
+  every prior migration is append-only column adds or new
+  tables.
+- Migration precedent: v8→v9 added `game_serials` as a separate
+  table for parallel disc-ID lookup rather than extending
+  `games`. Same pattern fits here.
+- Six consumer functions on `rom_hashes` stay untouched — zero
+  regression risk on the cart path.
+- Parser already emits one row per file in a multi-file game; we
+  add a `RomTrackRow` variant + a parallel
+  `replace_rom_hashes_tracks_for_system`.
+- Dispatch cost: ~5–8 lines in
+  `apps/oa-shell/src/scan_service.rs::apply_smart_classification`
+  (line 619) and in `resolve_rom_hashes_for_system`
+  (`apps/oa-shell/src/rom_hashes.rs:1351`) branching on
+  disc-shape system_id.
+
+New `rom_hashes_tracks` PK is `(sha1, system_id)` — tightens
+the implicit "SHA-1 is globally unique" assumption that holds
+in practice today but is unenforced.
+
+#### Q3 — CHD per-track extraction (feasible via streaming + manual TOC parse)
+
+`chd 0.3` (resolves 0.3.2) is already in tree at
+`apps/oa-shell/Cargo.toml`. Existing pattern at
+`apps/oa-shell/src/cd_id.rs:533-609`
+(`chd_reader::read_data_track_header`) is the open + hunk-read
+template.
+
+Critical findings from the chd-crate + libchdr + MAME survey:
+- **No `Track` struct, no `byte_range()`, no per-track hunk
+  iterator in chd-rs.** The crate stops at "hunks + metadata
+  refs." We parse CHT2 / CHTR / CHGD text blobs ourselves.
+- **CHT2 format string** (lifted from MAME
+  `src/lib/util/cdrom.cpp`):
+  `"TRACK:%d TYPE:%s SUBTYPE:%s FRAMES:%d PREGAP:%d PGTYPE:%s PGSUB:%s POSTGAP:%d"`.
+  Legacy CHTR omits PREGAP/POSTGAP; CHGD (GD-ROM) adds
+  PADFRAMES.
+- **4-frame track padding gotcha** — `TRACK_PADDING = 4` in
+  MAME `cdrom.h`. CHDMAN pads each track to a 4-frame boundary;
+  padding frames are in the hunk stream but excluded from any
+  track's hash. Per-track byte-range math:
+  `track[i].phys_start = sum over j<i of ceil(track[j].frames / 4) * 4`
+  `track[i].phys_end = track[i].phys_start + track[i].frames`
+- **Hunk-straddles-track-boundary is on the caller.** Walk per
+  frame (2448 bytes for CD), attribute each frame to its track
+  by global LBA, dispatch to that track's SHA-1 hasher.
+- **Subchannel data (last 96 of each 2448 frame) is excluded
+  from redump's hash.** Slice out bytes 0..2352 from each CD
+  frame before feeding the hasher.
+- **DVD-shape CHDs** (GameCube / Wii / PS2 .iso-style):
+  `unit_bytes = 2048`, no subchannel, no CdRomTrack metadata.
+  Detect via `unit_bytes != 2448` and treat as single contiguous
+  stream (aligns with Q1's DVD `.iso` finding — no track
+  abstraction).
+- **Legacy CHCD blob format** (old CHDMAN, one combined entry):
+  rare; treat as not-matchable in v1.
+
+Constant memory: one hunk buffer (~20 KB) + N SHA-1 contexts.
+Scales to PS2 / GameCube multi-GB CHDs without trouble.
 
 ---
 
@@ -313,31 +448,54 @@ For each disc image the operator has:
 
 ### Parse the tracks
 
-- **`.cue + .bin`:** cuesheet already parsed by `cd_id::cue::parse`
-  (Slice 2 used this for the data-track disc-id peek). Each
-  track points at a `.bin` file with a mode + sector size.
-- **`.chd`:** decompress (streaming, per-hunk), walk the embedded
-  TOC, extract per-track byte ranges.
+- **`.cue + split .bin` (one .bin per track):** cuesheet already
+  parsed by `cd_id::cue::parse` (Slice 2 used this for the
+  data-track disc-id peek). Each track points at a `.bin` file
+  with a mode + sector size. Hash each per-track .bin file
+  directly.
+- **`.cue + single merged .bin`** (common on PSX): parse INDEX 01
+  positions from the cuesheet; multiply by 2352 to derive
+  per-track byte offsets into the single .bin; stream byte
+  ranges per track.
+- **`.chd`:** decompress hunk-by-hunk; parse the embedded
+  CHT2 / CHTR / CHGD text metadata for per-track frame counts;
+  account for CHDMAN's 4-frame track padding; dispatch frames to
+  per-track hashers (subchannel-stripped). See "CHD per-track
+  byte extraction" below for the API + the 4-frame padding
+  details locked in the 2026-06-03 research pass.
 - **`.gdi`:** Dreamcast cuesheet shape
   (`track_no track_lba mode_str sector_size file_offset`).
   Parser analogous to `.cue`.
-- **`.iso`:** single track, full file is the data bytes. Trivial.
+- **`.iso`:** single track, full file is the data bytes.
+  Trivial. Note: only valid for DVD-shape systems (GameCube /
+  Wii / PS2 / PSP). MODE1/2048 cooked `.iso` for CD systems is
+  NOT in redump — see "Out of scope" for the reject path.
 
 ### Compute the per-track SHA-1
 
-Mode-aware:
-- **`MODE1/2048`:** file bytes ARE the user data; hash the file
-  contents directly.
-- **`MODE1/2352`:** each 2352-byte sector has 16 header bytes
-  (sync + address + mode) + 2048 user bytes + 288 ECC bytes.
-  Redump's convention varies — Phase 1 verification confirms
-  whether redump hashes the full 2352 or just the 2048 user
-  payload (likely full 2352 to preserve dump fidelity).
-- **`MODE2/2352`** (Form 1 / Form 2): 24-byte header + 2048
-  user bytes + 280 ECC, OR 24-byte header + 2324 user bytes + 4
-  ECC depending on form. Same verification gate as MODE1/2352.
+**Locked from 2026-06-03 research pass:** Redump hashes the full
+raw .bin bytes per track, no preprocessing — across MODE1,
+MODE2, and audio. The rule reduces to: **hash the file
+byte-for-byte.** Verified empirically against the libretro PSX
+dat (13,526 track entries, every size cleanly divides 2352).
 
-Audio tracks are skipped entirely per the locked decision.
+What this means for each container shape we have to handle:
+- **Split `.bin` per track** (the natural shape): stream the
+  per-track .bin file directly through SHA-1. No
+  mode-awareness needed at hash time.
+- **Single `.bin` for whole disc** (common on PSX): parse cue
+  INDEX 01 positions × 2352 to derive per-track byte ranges
+  into the single .bin; stream slices per track.
+- **CHD**: decompress hunk-by-hunk, walk frames, slice off the
+  96-byte subchannel tail per frame (CD: 2352 of 2448 keeps
+  the user-data bytes redump hashes), dispatch each frame's
+  bytes to the right track's hasher per the manual TOC walk.
+  See "CHD per-track byte extraction" above.
+
+Audio tracks are hashed the same way (full 2352 raw per sector).
+Identification gating uses data tracks only — see the locked
+decision in "Identification scope"; audio matches score
+opportunistically.
 
 ### Match all data tracks against a redump game entry
 
@@ -424,14 +582,16 @@ dependency graph:
 Rough phasing — ~4-5 weeks total (grew from the original 3-4 week
 estimate because of the multi-disc disc-set work added in Round 3):
 
-- **Phase 1 — schema + sync + verification** (~1 week):
+- **Phase 1 — schema + sync + smoke verification** (~1 week):
   Three new tables (`rom_hashes_tracks`, `game_disc_tracks`,
-  `disc_sets`). `parse_libretro_dat` extension. Sync flow update.
-  **Critical verification pass** — confirm redump's track-hash
-  convention (MODE1/2352 as full 2352 bytes vs just 2048 user
-  data; MODE2 variants) against a small set of known dumps.
-  Hand-pick 5 known PSX dumps + 5 Saturn + 5 Dreamcast; verify
-  hash convention before Phase 2.
+  `disc_sets`). `parse_libretro_dat` extension to emit
+  `RomTrackRow` per track. Sync flow update + parallel
+  `replace_rom_hashes_tracks_for_system`. The hash-convention
+  question is **resolved** per the 2026-06-03 research pass
+  (full 2352 bytes / hash file byte-for-byte); what remains is
+  a smoke test against 5 PSX + 5 Saturn + 5 Dreamcast known
+  dumps confirming the end-to-end pipeline reproduces redump
+  SHA-1s. No longer a Phase 2 gate.
 
 - **Phase 2 — per-track hashing engine** (~1.5 weeks):
   Container-specific track parsing: `.cue + .bin` (extend
@@ -468,21 +628,23 @@ estimate because of the multi-disc disc-set work added in Round 3):
 
 ## Risks
 
-- **Track-hashing convention drift.** Redump's per-track SHA-1
-  isn't documented as a clean convention — it's "whatever bytes
-  redump's dumping process produced." If different game eras have
-  different conventions, the matcher could miss valid dumps.
-  Mitigation: **Phase 1 verification pass is the gate to Phase
-  2.** Hand-pick 15 known dumps across systems; verify hash
-  output matches redump dat entries before writing the matcher.
+- **~~Track-hashing convention drift.~~** **Resolved 2026-06-03
+  research pass.** Redump hashes the full raw per-track .bin
+  byte-for-byte, no preprocessing — verified empirically against
+  the libretro PSX dat (13,526 track entries, every size cleanly
+  divides 2352). MODE1/2352, MODE2/2352 Form 1, MODE2/2352
+  Form 2, and audio all use the same convention. The 15-dump
+  check stays as a Phase 1 smoke test but no longer gates
+  Phase 2.
 
-- **`.chd` TOC complexity.** The `chd` crate has a TOC accessor
-  but per-track byte-range extraction may need additional work.
-  Worst case: re-encode `.chd` → raw `.bin` per track in-memory
-  for hashing. Memory cost is the disc size, which on PS2 is bad.
-  Mitigation: Phase 1 investigates chd-crate API + libchdr C
-  reference implementation before committing to the streaming
-  approach.
+- **~~`.chd` TOC complexity.~~** **Resolved 2026-06-03 research
+  pass.** The `chd 0.3` crate doesn't expose a per-track
+  abstraction — we parse CHT2 text metadata + walk hunks
+  frame-by-frame with a manual 4-frame padding accounting.
+  Worst-case "decompress whole disc" fallback is NOT needed. See
+  "CHD per-track byte extraction" for the locked approach.
+  Constant memory (~20 KB hunk buffer + N SHA-1 contexts)
+  regardless of disc size.
 
 - **Hash compute time on big libraries.** 500-disc PSX library is
   ~5 GB of disc data = ~90 minutes of SHA-1 work. Operator
@@ -544,13 +706,19 @@ estimate because of the multi-disc disc-set work added in Round 3):
   playlist workflow covers it.
 - **CD-DA-only audio discs (arcade music CDs).** Edge case;
   out of scope.
+- **MODE1/2048 cooked `.iso` for CD systems** (e.g. a PSX disc
+  ripped with 2048-byte sectors). Not in redump (TOSEC
+  convention). When detected, the library row stays on the
+  filename-based title path; GameDetailPanel surfaces a hint
+  that a raw 2352-byte re-rip would unlock identification.
 
 ---
 
 ## When this arc starts
 
-This plan is approved + queued (planning locked 2026-06-02) but
-deferred. The executing session should:
+This plan is in flight as Phase A1 of the
+[virtual library + launcher arc](virtual-library-and-launcher-arc.md).
+The executing session should:
 
 1. **Re-read this plan in full.**
 2. **Hard dependency check:** confirm the background-jobs
@@ -562,13 +730,15 @@ deferred. The executing session should:
    This arc CAN proceed without the bar (the dat-sync extension +
    per-track hashing can land independently) but the eager
    auto-trigger + post-completion toast both want the bar
-   present.
-3. **Phase 1 verification** is the gate to Phase 2. Don't write
-   the matcher before confirming redump's track-hash convention
-   against real dumps. 15-disc sample (5 PSX + 5 Saturn + 5
-   Dreamcast) is the smoke test.
-4. **Branch as `feat/disc-track-sha1-phase-1`** per the standard
-   workflow.
+   present. (Background-jobs foundation shipped 2026-06-03;
+   prerequisite met.)
+3. **Phase 1 verification** is a smoke test, not a gate (per
+   the 2026-06-03 research pass). The track-hash convention is
+   resolved; the 15-disc sample (5 PSX + 5 Saturn + 5 Dreamcast)
+   confirms our end-to-end pipeline reproduces redump SHA-1s
+   but does not block Phase 2.
+4. **Branch as `feat/virtual-library-phase-a1-disc-track-sha1`**
+   per the standard workflow.
 
 ---
 
