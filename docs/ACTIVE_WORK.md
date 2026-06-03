@@ -15,14 +15,14 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  Foundation (Phase 0 — paperwork) on branch
-  `feat/virtual-library-arc-foundation`.
-  - **Phase 0 — paperwork (~1 day, in flight):** DECISIONS reversal
-    of the 2026-05-16 libretro-only stance; PARKING_LOT
-    partial-un-park of the 2026-06-02 plugin-API entry; CLAUDE.md
-    softening of "libretro is the only FFI boundary"; this
-    ACTIVE_WORK entry; NEXT.md reshuffle.
-  - **Phase A — identification depth (~3–4 weeks):** disc-track SHA-1
+  **Current slice: Phase A1 — disc-track SHA-1 matching.**
+  - **Phase 0 ✅ shipped 2026-06-03** (merged from
+    `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
+    + the subsequent docs cleanup merged to main together). DECISIONS
+    reversal of the 2026-05-16 libretro-only stance + partial un-park
+    of the 2026-06-02 plugin-API entry + CLAUDE.md softening + plan
+    committed at the path above.
+  - **Phase A — identification depth (~3–4 weeks, in flight via A1):** disc-track SHA-1
     (A1) + filename tag decode (A2, hacks/translations/bad dumps) +
     Tier 5 deep-dive (A3) + MAME parent/clone bridge (A4).
   - **Phase E — schema promotion (~3–4 weeks):** new
