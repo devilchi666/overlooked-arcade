@@ -182,6 +182,36 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — polish (always-show + chime + ResumePromptDialog + ASSETS.md)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-03 (`--no-ff` from `feat/background-jobs-polish`).
+  Five phase commits closing the three items Phase 5 deferred.
+  - **Polish A** (`79e9248`) JobPrefs gains `sound_on_completion`
+    (default true) + `always_show_bar` (default false) +
+    explicit Default impl + two new Tauri commands.
+  - **Polish B** (`0f746dd`) `resolve_completion_chime` Tauri
+    command resolves `<exe_dir>/assets/oa-ui/sounds/job-complete.<ext>`.
+    Frontend `maybePlayCompletionChime` fires on Completed
+    events when the toggle is on; silent fallback when asset
+    missing. New `docs/features/background-jobs/ASSETS.md`
+    documents exact path + supported formats + silent-fallback
+    semantics for operators sourcing the chime.
+  - **Polish C** (`6555f56`) `BackgroundJobsBar` reads
+    `jobPrefs.alwaysShowBar`; ON keeps handle visible with "No
+    active jobs" label. Settings → Background Jobs → Bar
+    behavior card unstubbed and wired through the new commands;
+    each handler calls `refreshJobPrefs()` so the live signal
+    syncs and the bar reacts immediately.
+  - **Polish D** (`33be3fe`) `resume_one_interrupted_job(job_id)`
+    Tauri command + new `ResumePromptDialog.tsx`. Closes the
+    Phase 3b opt-out loop end-to-end: tick the per-kind toggle
+    → kill app mid-op → relaunch → dialog surfaces with Resume
+    (re-enters via the registered resumer) or Discard
+    (cancel_job). Mounted in App.tsx at z-[70].
+  - 660 of 660 oa-shell tests green. Operator-confirmed all
+    three behaviors (always-show, chime toggle path, ResumePrompt
+    flow) before merge.
+
 - **Background jobs + persistent progress bar — Phase 5 (arc-close: Settings + Recent activity + final resumers)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-5`).
