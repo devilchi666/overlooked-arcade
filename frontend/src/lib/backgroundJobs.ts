@@ -18,6 +18,7 @@ import { createSignal, type Accessor } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { playAudio } from "./audio";
 
 /// Mirrors `apps/oa-shell/src/job_registry.rs::JobState` serialized
 /// as snake_case. Keep in lockstep when new states are added.
@@ -78,7 +79,49 @@ export type JobEvent =
     }
   | { type: "state_changed"; jobId: number; state: JobState }
   | { type: "completed"; jobId: number }
-  | { type: "failed"; jobId: number; error: string };
+  | { type: "failed"; jobId: number; error: string }
+  | { type: "resume_prompt"; snapshot: JobSnapshot };
+
+/// Mirrors `apps/oa-shell/src/job_prefs.rs::JobPrefs`. Read once at
+/// module load + refreshed when the Settings UI mutates a value via
+/// `refreshJobPrefs()`. The signal exposed below lets the bar +
+/// dialogs react to changes in-flight.
+export type JobPrefs = {
+  promptBeforeResumeOnLaunch: Record<string, boolean>;
+  soundOnCompletion: boolean;
+  alwaysShowBar: boolean;
+};
+
+const [jobPrefsSig, setJobPrefsSig] = createSignal<JobPrefs>({
+  promptBeforeResumeOnLaunch: {},
+  soundOnCompletion: true,
+  alwaysShowBar: false,
+});
+
+export const jobPrefs: Accessor<JobPrefs> = jobPrefsSig;
+
+/// Refresh the JobPrefs signal from the backend. Called once at
+/// module load + after the Settings panel toggles update a value
+/// (the toggle handlers receive the updated prefs back and can call
+/// this for free, but the explicit refresh keeps the API simple).
+export async function refreshJobPrefs(): Promise<void> {
+  try {
+    const p = await invoke<JobPrefs>("get_job_prefs");
+    setJobPrefsSig(p);
+  } catch (e) {
+    console.warn("[oa-jobs] refresh job prefs failed:", e);
+  }
+}
+void refreshJobPrefs();
+
+/// Pending ResumePrompt snapshots (kinds with opt-out + interrupted
+/// rows from the previous crashed run). Drained by ResumePromptDialog.
+const [resumePromptQueueSig, setResumePromptQueueSig] = createSignal<JobSnapshot[]>([]);
+export const resumePromptQueue: Accessor<JobSnapshot[]> = resumePromptQueueSig;
+
+export function dismissResumePrompt(jobId: number): void {
+  setResumePromptQueueSig((q) => q.filter((s) => s.id !== jobId));
+}
 
 /// Reactive list of currently-active jobs (pending / running / paused).
 /// Ordered most-recently-started first so the bar's stack-visible
@@ -163,11 +206,42 @@ function applyEvent(evt: JobEvent): void {
       }
       break;
     case "completed":
+      // No-op for the active list; state_changed already filtered.
+      // Polish-B: dispatch the completion chime if enabled. Resolver
+      // returns null when no asset is bundled (silent fallback).
+      void maybePlayCompletionChime();
+      break;
     case "failed":
       // No-op for the active list; state_changed already filtered.
-      // Phase 5 will hook these for the recent-activity panel +
-      // completion chime.
+      // No chime on failure (per plan §"Notification on completion"
+      // — chime signals "something finished, check if you care."
+      // Failures already surface via the bar's red state pill +
+      // recent-activity Failed tab).
       break;
+    case "resume_prompt":
+      // Polish-D: enqueue the snapshot for ResumePromptDialog.
+      // Each kind+target pair only enqueues once even if the
+      // backend re-emits (idempotent prepend like Created).
+      setResumePromptQueueSig((q) => {
+        if (q.some((s) => s.id === evt.snapshot.id)) return q;
+        return [evt.snapshot, ...q];
+      });
+      break;
+  }
+}
+
+async function maybePlayCompletionChime(): Promise<void> {
+  if (!jobPrefsSig().soundOnCompletion) return;
+  try {
+    const path = await invoke<string | null>("resolve_completion_chime");
+    if (path) {
+      await playAudio("ui-sounds", path, false);
+    }
+    // path === null → no chime bundled → silent fallback per spec.
+  } catch (e) {
+    // Resolver / play failure shouldn't surface to the operator;
+    // background-jobs UX is about visibility, not soundtrack.
+    console.warn("[oa-jobs] completion chime dispatch failed:", e);
   }
 }
 

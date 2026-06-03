@@ -501,6 +501,25 @@ fn resolve_assets_dir() -> PathBuf {
 /// can decode with the `symphonia-all` feature.
 const BUNDLED_UI_SOUND_EXTS: &[&str] = &["ogg", "opus", "wav", "mp3", "flac", "m4a"];
 
+/// Background-jobs arc polish — resolve the OA-wide completion chime
+/// asset. Returns Some(path) when `<exe_dir>/assets/oa-ui/sounds/
+/// job-complete.<ext>` exists; None otherwise (frontend silently
+/// no-ops). Separate from the per-system UI sound path because the
+/// chime is OA-wide, not per-system. Documented operator-side at
+/// docs/features/background-jobs/ASSETS.md.
+#[tauri::command]
+pub fn resolve_completion_chime() -> Option<String> {
+    let assets_dir = resolve_assets_dir();
+    let base = assets_dir.join("oa-ui").join("sounds");
+    for ext in BUNDLED_UI_SOUND_EXTS {
+        let p = base.join(format!("job-complete.{ext}"));
+        if p.is_file() {
+            return Some(p.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 /// Pure resolver — given an assets dir, system slug, and event name,
 /// return the first bundled UI sound file that exists. Checks the
 /// per-system directory first, then the `_baseline` fallback. Returns

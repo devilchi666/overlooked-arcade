@@ -2560,6 +2560,7 @@ fn main() {
             audio_player::set_audio_volume,
             audio_player::resolve_platform_music,
             audio_player::resolve_ui_sound,
+            audio_player::resolve_completion_chime,
             system_ui_assets::resolve_background_asset,
             platform_media::get_platform_media_index,
             platform_media::set_platform_media,
