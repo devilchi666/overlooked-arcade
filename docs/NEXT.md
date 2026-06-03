@@ -466,9 +466,43 @@ the rest.
 - `.chd` per-track byte extraction — chd-crate API needs investigation.
 
 **Position:** queued in HIGH band — operator-driven "we need to plan
-soon" framing. Awaiting fresh green-light to kick off Phase 1.
-After kickoff, can pipeline alongside Slice 3 of the per-system
-descriptor consolidation (independent scopes).
+soon" framing. **2026-06-03 update: this work folds in as Slice A1 of
+the new "Virtual library + preservation architecture + launcher-agnostic
+frontend" arc** ([docs/PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md)).
+Same scope, same plan; sequenced as the first slice of Phase A
+(identification depth). After kickoff, can pipeline alongside Slice 3
+of the per-system descriptor consolidation (independent scopes).
+
+---
+
+## NEXT MAJOR ARC — Virtual library + preservation architecture + launcher-agnostic frontend
+
+**Planning locked 2026-06-03.** Full plan at
+[docs/PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
+**Operator priority: high — drives the next ~14–22 weeks.**
+
+Two strategic shifts pulling the next arc:
+1. The virtual library + preservation depth (Pokémon Red as one
+   parent identity, variants as children) gets promoted from "runtime
+   view" (already shipped in `library_groups.rs`) to "schema model"
+   (new `game_identities` SQLite table).
+2. OA's role shifts from "premium libretro frontend" to "premium
+   frontend for retro emulation, period" — external standalone
+   emulators (Cemu / RPCS3 / Lime3DS) join libretro cores via a new
+   `Launcher` trait. Reverses the 2026-05-16 libretro-only DECISIONS
+   entry; partially un-parks the 2026-06-02 plugin-API PARKING_LOT
+   entry.
+
+**Phase order:** A (identification depth) → E (schema promotion) → B
+(two-mode UX + Collection Health) → C (launcher abstraction) → D
+(external install pipeline) → F (Preservation Vault) → G (crates
+split). Phase H (CLI) deferred.
+
+**Phase A absorbs the disc-track SHA-1 plan above as Slice A1.**
+
+**Position:** Foundation (Phase 0 — paperwork) in flight on
+`feat/virtual-library-arc-foundation`. Phase A1 (disc-track SHA-1)
+queued behind operator review of the Phase 0 commit.
 
 ---
 

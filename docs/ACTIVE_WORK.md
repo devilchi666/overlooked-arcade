@@ -11,6 +11,50 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Virtual library + preservation architecture + launcher-agnostic frontend**
+  — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
+  → D → F → G; Phase H deferred). Plan at
+  [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
+  Foundation (Phase 0 — paperwork) on branch
+  `feat/virtual-library-arc-foundation`.
+  - **Phase 0 — paperwork (~1 day, in flight):** DECISIONS reversal
+    of the 2026-05-16 libretro-only stance; PARKING_LOT
+    partial-un-park of the 2026-06-02 plugin-API entry; CLAUDE.md
+    softening of "libretro is the only FFI boundary"; this
+    ACTIVE_WORK entry; NEXT.md reshuffle.
+  - **Phase A — identification depth (~3–4 weeks):** disc-track SHA-1
+    (A1) + filename tag decode (A2, hacks/translations/bad dumps) +
+    Tier 5 deep-dive (A3) + MAME parent/clone bridge (A4).
+  - **Phase E — schema promotion (~3–4 weeks):** new
+    `game_identities` SQLite table; per-group MediaDb keys; per-group
+    metadata + play_time + favorites.
+  - **Phase B — two-mode UX + Collection Health (~2 weeks):** global
+    Casual / Preservation toggle; Variants tab on GameDetailPanel;
+    System Health Overview gains % verified / % covers / % metadata
+    rollups.
+  - **Phase C — launcher abstraction (~2–3 weeks):** `oa-core::Core`
+    → `Launcher` trait refactor; `LibretroLauncher` +
+    `ExternalProcessLauncher` impls; `config/emulators/<id>.yaml`
+    profile registry.
+  - **Phase D — external emulator install pipeline (~2–3 weeks):**
+    download + setup for v1 pilot trio (Cemu / RPCS3 / Lime3DS) from
+    official release endpoints; plugin-style updater; legal posture
+    locked (zero ROMs / zero BIOS, ever).
+  - **Phase F — Preservation Vault polish (~1–2 weeks):** dedicated
+    surface with deep variant tree filter ribbon.
+  - **Phase G — `crates/oa-preserve` workspace split (~1–2 weeks):**
+    refactor identification + grouping + DAT parsing into a
+    standalone crate.
+  - **Phase H — `oa-preserve-cli`:** deferred — back burner.
+  - Two strategic shifts: (1) virtual library moves from runtime
+    grouping to SQLite schema; (2) external standalone emulators
+    (Cemu / RPCS3 / Lime3DS / Ryujinx / Suyu / Dolphin standalone)
+    join libretro cores via the `Launcher` trait. Reverses the
+    2026-05-16 libretro-only DECISIONS entry; partially un-parks the
+    2026-06-02 plugin-API PARKING_LOT entry. Driven by 2026-06-03
+    advisor proposal (ChatGPT + Gemini) + three rounds of operator
+    Q&A. Total estimate ~14–22 weeks.
+
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
