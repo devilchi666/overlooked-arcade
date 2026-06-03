@@ -82,6 +82,49 @@ use bindings::Bindings;
 /// the catch-all for commands that don't fit elsewhere.
 pub struct AppDataDir(pub PathBuf);
 
+/// Phase 5 generic resumer for operation kinds whose Tauri command
+/// always creates a fresh job_id (artwork_sync, hash_resolve, etc.).
+/// Cleans up the orphan interrupted row from the previous crashed
+/// run + logs the path the operator should take to re-trigger.
+/// Underlying operations are internally idempotent (skip already-
+/// completed work), so an operator-triggered re-run is the
+/// functional equivalent of resume — the difference is just that
+/// the history shows two rows (cancelled + completed) instead of
+/// one. Phase 6 may extract the inner logic to enable true
+/// attach-to-existing-job_id resume.
+struct ReinvokeOperatorResumer {
+    kind_str: &'static str,
+    retrigger_path: &'static str,
+}
+
+impl job_registry::JobResumer for ReinvokeOperatorResumer {
+    fn kind(&self) -> &'static str {
+        self.kind_str
+    }
+
+    fn resume(
+        &self,
+        snapshot: job_registry::JobSnapshot,
+        registry: job_registry::JobRegistry,
+        _app: tauri::AppHandle,
+    ) -> tauri::async_runtime::JoinHandle<()> {
+        let kind = self.kind_str;
+        let retrigger_path = self.retrigger_path;
+        tauri::async_runtime::spawn(async move {
+            log::info!(
+                "background_jobs: {} job {} (target={:?}) interrupted by previous run; \
+                 auto-cancelling — re-trigger via {} (the underlying operation skips \
+                 already-completed work, so re-running picks up where the crash left off)",
+                kind,
+                snapshot.id,
+                snapshot.target_id,
+                retrigger_path
+            );
+            let _ = registry.mark_cancelled(snapshot.id);
+        })
+    }
+}
+
 /// Toast event payload sent to the frontend over the `oa://toast` channel.
 /// `level` drives the leading glyph + per-level accent (info/success neutral,
 /// warn amber, error red); `system` lets the toast pick up that system's CSS
@@ -2964,6 +3007,59 @@ fn main() {
                                     core_installer::CoreDownloadResumer::new(
                                         resolve_cores_dir(),
                                     ),
+                                ));
+
+                                // Phase 5 — auto-cancel resumers for the
+                                // kinds whose Tauri commands create their
+                                // own job_id on each invocation (a true
+                                // attach-to-existing-id resume would need
+                                // inner-fn extraction across multiple
+                                // big functions). The existing operations
+                                // are internally idempotent (skip already-
+                                // completed work), so an operator-triggered
+                                // re-run is equivalent to a resume. The
+                                // resumer just cleans up the orphan
+                                // interrupted row + logs the
+                                // re-trigger path the operator should
+                                // take. Recent activity panel will
+                                // surface the cancelled history rows
+                                // alongside the new fresh row when the
+                                // operator re-triggers.
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "artwork_sync",
+                                        retrigger_path: "Settings → Library → Sync media",
+                                    },
+                                ));
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "hash_resolve",
+                                        retrigger_path: "Settings → Library → Identify ROMs",
+                                    },
+                                ));
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "dat_sync",
+                                        retrigger_path: "automatic when Identify ROMs runs against an empty hash table",
+                                    },
+                                ));
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "folder_scan",
+                                        retrigger_path: "Import Wizard or Settings → Library → Re-scan",
+                                    },
+                                ));
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "mame_listxml_import",
+                                        retrigger_path: "Settings → MAME → Refresh MAME system info",
+                                    },
+                                ));
+                                registry.register_resumer(std::sync::Arc::new(
+                                    ReinvokeOperatorResumer {
+                                        kind_str: "bulk_core_install",
+                                        retrigger_path: "Import Wizard → Install N missing cores",
+                                    },
                                 ));
 
                                 // Phase 3a auto-resume dispatch — pick up
