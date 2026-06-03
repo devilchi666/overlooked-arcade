@@ -2122,17 +2122,33 @@ impl LibraryDb {
     pub fn list_games_missing_hash(
         &self,
         system_id: &str,
+        include_disc_id_stamped: bool,
     ) -> Result<Vec<GameRow>, String> {
+        // Phase A1 Sub-phase 3 fix — disc-shape callers pass true so
+        // games previously stamped with disc_id by the old peek_disc_id
+        // flow (Sub-phase 0/1 — see `apply_disc_id` callers in
+        // rom_hashes.rs) get a per-track retry. The per-track path is
+        // strictly more accurate than serial-lookup, so re-running it
+        // on disc-id-stamped games is the correct semantic. Cart-shape
+        // callers pass false to preserve the pre-fix exclusion of
+        // disc-id-stamped rows.
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let query = if include_disc_id_stamped {
+            "SELECT id, system_id, file_path, title, added_at,
+                    core_override, cover_path, seed, archive_inner_path,
+                    sha1, serial, disc_id
+             FROM games
+             WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')"
+        } else {
+            "SELECT id, system_id, file_path, title, added_at,
+                    core_override, cover_path, seed, archive_inner_path,
+                    sha1, serial, disc_id
+             FROM games
+             WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')
+               AND (disc_id IS NULL OR disc_id = '')"
+        };
         let mut stmt = conn
-            .prepare(
-                "SELECT id, system_id, file_path, title, added_at,
-                        core_override, cover_path, seed, archive_inner_path,
-                        sha1, serial, disc_id
-                 FROM games
-                 WHERE system_id = ?1 AND (sha1 IS NULL OR sha1 = '')
-                   AND (disc_id IS NULL OR disc_id = '')",
-            )
+            .prepare(query)
             .map_err(|e| format!("prepare list_games_missing_hash: {e}"))?;
         let rows = stmt
             .query_map(params![system_id], |row| {
@@ -5702,7 +5718,7 @@ mod tests {
 
         // missing-hash query now excludes g1 (it has a sha1) but still
         // returns g2.
-        let missing = db.list_games_missing_hash("tg16").expect("missing");
+        let missing = db.list_games_missing_hash("tg16", false).expect("missing");
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].id, "g2");
     }
@@ -5718,7 +5734,7 @@ mod tests {
         let game = db.list_games().expect("list").into_iter().find(|g| g.id == "g1").unwrap();
         assert_eq!(game.title, "User Title");
         // And the missing-hash query no longer returns it.
-        assert!(db.list_games_missing_hash("tg16").expect("missing").is_empty());
+        assert!(db.list_games_missing_hash("tg16", false).expect("missing").is_empty());
     }
 
     #[test]
@@ -5922,14 +5938,27 @@ mod tests {
         assert_eq!(g2.title, "Mystery Disc.cue"); // unchanged
         assert_eq!(g2.disc_id.as_deref(), Some("UNKNOWN001"));
 
-        // list_games_missing_hash should now exclude both — neither has
-        // a sha1 but BOTH have a disc_id (the new WHERE clause excludes
-        // them).
+        // list_games_missing_hash with include_disc_id_stamped=false
+        // excludes both — neither has a sha1 but BOTH have a disc_id.
         assert!(db
-            .list_games_missing_hash("tg16")
-            .expect("missing-hash")
+            .list_games_missing_hash("tg16", false)
+            .expect("missing-hash cart-shape")
             .iter()
             .all(|r| r.id != "g1" && r.id != "g2"));
+        // include_disc_id_stamped=true (the disc-shape resolve flow)
+        // surfaces them again for per-track retry — the Phase A1
+        // Sub-phase 3 fix that unblocked Dreamcast.
+        let disc_retry: Vec<String> = db
+            .list_games_missing_hash("tg16", true)
+            .expect("missing-hash disc-shape")
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+        assert!(
+            disc_retry.contains(&"g1".to_string()) && disc_retry.contains(&"g2".to_string()),
+            "disc-id-stamped games must be re-surfaced when include_disc_id_stamped=true \
+             (the fix that unblocks per-track identify after a prior disc-id pass)"
+        );
     }
 
     #[test]

@@ -1484,7 +1484,12 @@ pub async fn resolve_rom_hashes_for_system(
     let canonical_entries = db.count_rom_hashes(&systemId)?;
     let library_total = db.count_games_for_system(&systemId)?;
     let already_identified = db.count_games_with_hash_for_system(&systemId)?;
-    let games = db.list_games_missing_hash(&systemId)?;
+    // Phase A1 Sub-phase 3 fix — disc-shape systems pass true so the
+    // per-track path retries games the old peek_disc_id flow stamped
+    // with disc_id (which previously excluded them from re-resolution
+    // forever). Cart-shape systems keep the exclusion: a sha1 OR
+    // disc_id stamp is a terminal state for them.
+    let games = db.list_games_missing_hash(&systemId, disc_shape)?;
     let total = games.len();
     let mut summary = RomResolveSummary {
         system_id: systemId.clone(),
