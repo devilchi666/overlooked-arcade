@@ -182,6 +182,38 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 4c (dependency graph + retry policy)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-4c`).
+  Three phase commits implementing two of the three originally-
+  planned Phase 4c pieces; the third (artwork/hash resumers) scoped
+  out as a follow-up because the inner operation functions need
+  refactoring to attach to an existing job_id at resume time.
+  - **Slice A** (`9713d7d`) Dependency graph —
+    `auto_sync_rom_hashes_if_empty` gains a `parent_job_id`
+    argument. When called from `resolve_rom_hashes_for_system` it
+    registers a visible DatSync prereq row with `is_prereq=true` +
+    " (prereq)" label suffix; Phase 4b's `tick_parent_if_any`
+    handles the parent updates as the prereq finalizes.
+    `scan_service::start_background_scan` passes None (no parent —
+    DatSync appears top-level for pre-scan auto-sync).
+  - **Slice B** (`8116c2a`) Retry policy — Plan §"Failure handling"
+    3 attempts with 1s/5s/30s backoff on 5xx + network errors in
+    core_download's GET. Inline retry loop in
+    `run_download_core_inner`. New `sleep_with_cancel_check`
+    helper polls the cancel flag every 100 ms during backoff so
+    operator-triggered cancel during the 30 s sleep takes effect
+    within 100 ms instead of waiting for the sleep.
+  - **Scoped out** — Slice C (artwork_sync + hash_resolve
+    resumers). Snapshot carries only system_id, but
+    sync_media_for_system + resolve_rom_hashes_for_system both
+    need entries lists and create their own job_id on each call;
+    a real resume requires extracting the inner logic into
+    `*_with_existing_job_id` variants. Deferred to Phase 5 or
+    a separate follow-up.
+  - 660 of 660 oa-shell tests green. Operator-confirmed smoke test
+    of the prereq + retry behavior before merge.
+
 - **Background jobs + persistent progress bar — Phase 3b (Range resume + opt-out + dup-trigger)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-3b`).

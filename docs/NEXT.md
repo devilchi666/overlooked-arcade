@@ -371,13 +371,20 @@ together:
   modals. Operator-confirmed via smoke test before `--no-ff`
   merge of `feat/background-jobs-phase-4b`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
-- ⬜ **Phase 4c** (~1 week, queued) — Dependency graph
-  (`parent_job_id` chain + auto-trigger prereqs so HashResolve
-  auto-spawns DatSync as a visible child rather than inlining it
-  silently). Per-kind retry policy (transient network errors:
-  1s/5s/30s exponential backoff for 3 attempts). MetadataSync
-  resumer once a metadata-fetching path exists separately from
-  artwork_sync.
+- ✅ **Phase 4c** (shipped 2026-06-03) — Dependency graph (
+  `auto_sync_rom_hashes_if_empty` registers a visible DatSync
+  prereq with `parent_job_id` + `is_prereq=true` when called from
+  `resolve_rom_hashes_for_system`; Phase 4b's `tick_parent_if_any`
+  rolls the prereq's completion into the parent). Per-kind retry
+  policy (1s/5s/30s exponential backoff for 5xx + network errors,
+  with cancel-poll-during-sleep so operator-triggered cancel
+  during the 30 s backoff takes effect within 100 ms). Slice C
+  (artwork_sync + hash_resolve resumers) scoped out as a
+  follow-up — the inner operation functions need refactoring to
+  attach to an existing job_id at resume time. Operator-confirmed
+  via smoke test before `--no-ff` merge of
+  `feat/background-jobs-phase-4c`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
 - ⬜ **Phase 4** (~1.5 weeks) — wire remaining kinds
   (`folder_scan` w/ unknown-total pulsing handle, `metadata_sync`,
   `mame_listxml_import`, `dat_sync`, `bulk_core_install` w/
