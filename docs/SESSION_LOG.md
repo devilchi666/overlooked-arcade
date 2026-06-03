@@ -6,6 +6,83 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-03 — Settings declutter arc — System Health hub + Game-media cards
+
+Six phase commits on `feat/settings-declutter-system-health` shipping
+the SETTINGS-page declutter the operator asked for: System Readiness
+gets its own home, BIOS / Cores / Storage / Background Jobs absorb
+into a new System Health hub with an internal tab strip, and the
+Game-media tab's 225-button per-system grid collapses to a status-
+first card grid + a per-system Manage… side panel.
+
+- **Shipped (Phase 1, `21d803d` — System Health scaffolding):**
+  New `system-health` category in the SETTINGS sidebar's SYSTEM
+  group. Four previously-standalone categories (BIOS / Cores /
+  Storage / Background Jobs) absorbed as internal tabs of the new
+  category's body; sidebar shrinks from 16 entries to 12. New
+  `frontend/src/routes/retroverse/SystemHealthPage.tsx` with the
+  tab strip (Overview / BIOS / Cores / Storage / Jobs). Tab bodies
+  render the existing settings components verbatim — no behavior
+  change inside each. System Readiness card removed from Settings →
+  Library; lives in System Health → Overview now.
+
+- **Shipped (Phase 2, `9bfbc96` — Overview rollup cards):** The
+  Overview tab gets a live status rollup with 5 horizontal rows
+  (Cores · BIOS · Library readiness · Background jobs · Storage).
+  Each row computes a green/amber/red dot + one-line summary against
+  existing Tauri commands (list_cores / available_cores /
+  get_bios_status / get_job_prefs + activeJobs() /
+  get_system_status), and a CTA button deep-links the parent tab
+  strip into the relevant deep-dive tab. Per-system readiness
+  checklist (lifted in Phase 1) renders below the rollup grid.
+
+- **Shipped (Phase 3, `cb33089` — Dev test relocation):** The
+  "Background Jobs — test spawner" affordance moves out of
+  Settings → Library (where it sat as visible clutter for every
+  operator) into a collapsed-by-default disclosure inside
+  Experimental → Dev tools. Same `invoke("spawn_test_job", …)`
+  under the hood; ordinary operators never see the buttons.
+
+- **Shipped (Phase 4, `910ba27` — Game media card grid + Freshen):**
+  Replaces the per-system action row layout (45 systems × 5 buttons =
+  ~225 buttons in one scroll) with a status-first card grid.
+  Cards alphabetical, 3-col on xl / 2-col on md / 1-col on small.
+  Per-card status rows (identified / covers / metadata) with ✓ / ⚠ /
+  ✗ glyphs computed against library entries + MediaDb. Single
+  [Freshen] button per card runs the smallest set of ops needed
+  (Identify → Sync media → Sync metadata) routed through Background
+  Jobs. Top-right [Freshen all systems] CTA chains every library
+  system. Preferences (Only sync identified + Kinds to fetch +
+  Region priority) hoisted into a top Preferences card with the
+  region list collapsed in a details disclosure.
+
+- **Shipped (Phase 5, `e087caf` — Manage side panel):** New
+  `GameMediaManagePanel` slides in from the right when the operator
+  clicks [Manage…] on a system card. Five op cards (Identify ROMs /
+  Sync covers / Sync metadata / Clear metadata / Refresh hash
+  database) with one-line descriptions + current counts + single
+  [Run] buttons. Operator can switch active card while the panel is
+  open; the panel re-targets without close + reopen. Esc + backdrop
+  click + ✕ + Done all close. z-45 sits above page chrome and below
+  modals / BackgroundJobsBar so the bar stays visible while the
+  panel is open.
+
+- **Tests:** 660 of 660 oa-shell tests green (no Rust touched).
+  `npm run typecheck` silent across all five phase commits.
+
+- **Almost:** operator playtest of the full arc on Phase 5 build —
+  visual review of the new System Health page, the Game-media cards,
+  and the Manage panel before merging.
+
+- **Next:** Phase 6 — operator playtest + merge to main; `--no-ff`
+  per the locked feature-branch workflow.
+
+- **Plan:** [docs/PLANS/settings-declutter-system-health.md](PLANS/settings-declutter-system-health.md)
+  (six phases; one back-and-forth Q&A round on 2026-06-03 locked the
+  shape).
+
+---
+
 ## 2026-06-02 — Per-system descriptor consolidation — Slice 2 (mass migration + L1 const deletion)
 
 Second slice of the per-system descriptor consolidation arc, closing

@@ -1,4 +1,14 @@
-import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type Component,
+} from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -22,6 +32,7 @@ import SettingRow, { selectClass } from "./SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
+import GameMediaManagePanel from "./GameMediaManagePanel";
 
 type Props = {
   settings: SettingsStore;
@@ -253,8 +264,6 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // pane; the legacy page-mode equivalent (which set
   // `setCurrentView({ kind: "all" })`) is no longer reachable.
 
-  const systemIds = Object.keys(systemThemes) as SystemId[];
-
   // --- Library prefs: region + revision priority for the multi-variant
   //     grouping. Fetched once at mount; writes go straight through to
   //     `set_library_prefs` then re-fetch the groups so tiles re-rank.
@@ -331,22 +340,20 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // top-of-component pattern so a button in the media tab can open it.
   const [platformMediaOpen, setPlatformMediaOpen] = createSignal(false);
 
-  // Per-system live sync progress, keyed by systemId. Updated by oa://library-sync events.
-  const [syncProgress, setSyncProgress] = createSignal<Record<string, SyncProgressPayload>>({});
-  // Per-system "is sync running" flag, used to disable the button.
+  // Per-system live sync progress, keyed by systemId. The signal's value
+  // is no longer read by the Game-media card grid (the BackgroundJobsBar
+  // surfaces progress globally now), but the listener writes still happen
+  // and Phase 5's Manage panel may consume the getter; destructure-skip
+  // the unused getter to keep tsc quiet.
+  const [, setSyncProgress] = createSignal<Record<string, SyncProgressPayload>>({});
+  // Per-system "is sync running" flag — read by `isSystemBusy`.
   const [syncing, setSyncing] = createSignal<Record<string, boolean>>({});
-  // Same shape for the per-system metadata sync — independent signals so
-  // the two buttons can run independently and don't share progress state.
-  const [metaProgress, setMetaProgress] = createSignal<Record<string, SyncProgressPayload>>({});
+  // Same shape for the per-system metadata sync.
+  const [, setMetaProgress] = createSignal<Record<string, SyncProgressPayload>>({});
   const [metaSyncing, setMetaSyncing] = createSignal<Record<string, boolean>>({});
-  // Per-system metadata-clear loading state. No progress bar — the
-  // server-side call is O(N) over library_db ids and completes in well
-  // under a second even on large libraries; a binary "clearing…" pill
-  // is enough. metaClearStatus is the last-action line shown under the
-  // button row (same shape as the other Sync status lines); empty
-  // string = no status to show yet.
+  // Per-system metadata-clear loading state.
   const [metaClearing, setMetaClearing] = createSignal<Record<string, boolean>>({});
-  const [metaClearStatus, setMetaClearStatus] = createSignal<Record<string, string>>({});
+  const [, setMetaClearStatus] = createSignal<Record<string, string>>({});
   let unlistenSync: UnlistenFn | undefined;
   let unlistenSyncDone: UnlistenFn | undefined;
   let unlistenMeta: UnlistenFn | undefined;
@@ -491,11 +498,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
     alreadyIdentified: number;
   };
   const [hashSyncing, setHashSyncing] = createSignal<Record<string, boolean>>({});
-  const [hashSyncSummary, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
+  // Summary signals dropped from inline UI on 2026-06-03 (declutter arc) —
+  // BackgroundJobsBar carries the operator-visible progress now. Setters
+  // stay live for the event listeners + Phase 5 Manage panel readers.
+  const [, setHashSyncSummary] = createSignal<Record<string, HashSyncSummaryPayload>>({});
   const [hashResolving, setHashResolving] = createSignal<Record<string, boolean>>({});
-  const [hashResolveProgress, setHashResolveProgress] =
+  const [, setHashResolveProgress] =
     createSignal<Record<string, HashResolveProgressPayload>>({});
-  const [hashResolveSummary, setHashResolveSummary] =
+  const [, setHashResolveSummary] =
     createSignal<Record<string, HashResolveSummaryPayload>>({});
 
   /// Cross-button gating (H9). Any per-system sync op in flight
@@ -702,6 +712,112 @@ const LibraryManagerPage: Component<Props> = (props) => {
     }
   }
 
+  // Active system for the Manage… side panel — set when the operator
+  // clicks [Manage…] on a card, cleared by panel close + Esc + backdrop
+  // click. The panel component renders nothing while null. Operators can
+  // switch active card while the panel is open; the panel re-targets
+  // without close + reopen.
+  const [managePanelFor, setManagePanelFor] = createSignal<SystemId | null>(null);
+
+  // --- Game media per-system stats ---------------------------------------
+  //
+  // Per-system status counts derived from library entries + MediaDb. Used
+  // by the Game-media card grid (status-first layout, 2026-06-03 declutter
+  // arc) to drive the three status rows (identified / covers / metadata).
+  // Memoized once over the entire library; per-card consumers index by
+  // systemId. Reactive — Solid re-tracks when entries OR media records
+  // change.
+
+  type MediaCardStats = {
+    total: number;
+    identified: number;
+    covered: number;
+    metadataed: number;
+  };
+
+  const perSystemStats = createMemo<Map<SystemId, MediaCardStats>>(() => {
+    const out = new Map<SystemId, MediaCardStats>();
+    for (const e of props.library.state.entries) {
+      if (e.seed) continue;
+      const id = e.systemId as SystemId;
+      let s = out.get(id);
+      if (!s) {
+        s = { total: 0, identified: 0, covered: 0, metadataed: 0 };
+        out.set(id, s);
+      }
+      s.total += 1;
+      if (e.sha1) s.identified += 1;
+      const m = media.media(e.id);
+      // Cover detection — primary slot is boxFront (post-taxonomy
+      // pivot); legacy boxart still readable for one-release fallback.
+      if ((m?.boxFront && m.boxFront.length > 0) || (m?.boxart && m.boxart.length > 0)) {
+        s.covered += 1;
+      }
+      const md = m?.metadata;
+      if (md && (md.year || md.genre || md.developer || md.publisher)) {
+        s.metadataed += 1;
+      }
+    }
+    return out;
+  });
+
+  /// Systems with at least one non-seed entry in the operator's library —
+  /// alphabetical by displayName per the 2026-06-03 spec ("cards stay in
+  /// alphabetical order regardless of status").
+  const sortedLibrarySystems = createMemo<SystemId[]>(() => {
+    const ids = Array.from(perSystemStats().keys());
+    ids.sort((a, b) => {
+      const da = systemThemes[a]?.displayName ?? a;
+      const db = systemThemes[b]?.displayName ?? b;
+      return da.localeCompare(db);
+    });
+    return ids;
+  });
+
+  /// Incomplete = at least one of identified / covers / metadata is
+  /// behind. Drives the header counter ("N systems · K incomplete").
+  const incompleteSystemsCount = createMemo<number>(() => {
+    let k = 0;
+    for (const s of perSystemStats().values()) {
+      if (s.total === 0) continue;
+      if (s.identified < s.total || s.covered < s.total || s.metadataed < s.total) k += 1;
+    }
+    return k;
+  });
+
+  /// Smart "Freshen" — runs the three pipeline ops in sequence, skipping
+  /// any that are already 100% complete for this system. Each underlying
+  /// op is already idempotent and already routes through Background Jobs,
+  /// so the bar surfaces progress and the operator can leave the page.
+  async function startFreshen(systemId: SystemId): Promise<void> {
+    const stats = perSystemStats().get(systemId);
+    if (!stats || stats.total === 0) return;
+    if (stats.identified < stats.total) {
+      await startHashResolve(systemId);
+    }
+    if (stats.covered < stats.total) {
+      await startSync(systemId);
+    }
+    if (stats.metadataed < stats.total) {
+      await startMetadataSync(systemId);
+    }
+  }
+
+  /// Freshen every library system in sequence. Per-kind concurrency is
+  /// enforced server-side by JobRegistry (one job per kind at a time);
+  /// awaiting per-system here keeps the queue depth predictable for the
+  /// operator. Skips systems already busy on some op.
+  async function startFreshenAll(): Promise<void> {
+    for (const id of sortedLibrarySystems()) {
+      if (isSystemBusy(id)) continue;
+      try {
+        await startFreshen(id);
+      } catch (e) {
+        console.warn(`[oa-media] freshen-all: ${id} threw`, e);
+      }
+    }
+  }
+
   // Region priority list — bound to MediaContext (which hydrates from Rust).
   const [regionDraft, setRegionDraft] = createSignal<string[]>([]);
   createEffect(() => {
@@ -804,8 +920,9 @@ const LibraryManagerPage: Component<Props> = (props) => {
               <ViewsManagerTab views={props.views} library={props.library} />
             </Show>
             <Show when={activeTab() === "media"}>
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
+            <div class="space-y-5">
+              {/* Header — page title + top-level entry-point buttons. */}
+              <div class="flex items-center justify-between gap-3">
                 <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
                   Game media
                 </h3>
@@ -843,286 +960,292 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 </div>
               </div>
 
-              {/* Only-sync-identified gate. Default on — the fuzzy
-                  filename matcher produced a lot of wrong-art mismatches
-                  in the field, especially for repacked / renamed sets.
-                  When this is on, only ROMs whose sha1 matched a
-                  libretro-database canonical entry (via Identify ROMs)
-                  get their art synced. Turn it off to fall back to
-                  fuzzy filename matching against ALL library entries
-                  at the strict 0.95 threshold. */}
-              <SettingRow
-                label="Only sync identified ROMs"
-                hint="Recommended"
-                inherited={null}
-                overridden={false}
-                toggle={{
-                  checked: onlySyncIdentified(),
-                  onChange: (v) => void setOnlySyncIdentifiedPref(v),
-                }}
-                description="Skip ROMs that haven't been hash-identified via Identify ROMs. Stops the fuzzy filename matcher from producing wrong-art mismatches on repacked or renamed sets."
-              />
+              {/* Preferences card — the things that are settings, not
+                  actions. Hoisted here on 2026-06-03 (declutter arc) so
+                  the per-system action area below stays a clean grid. */}
+              <div class="space-y-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
+                <h4 class="text-[0.6rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                  Preferences
+                </h4>
 
-              {/* Kinds to fetch — controls which libretro-thumbnails subdirs
-                  the sync pulls per ROM. Defaults to all three; users on
-                  metered connections can drop the extras to cut sync
-                  bandwidth ~3×. */}
-              <div class="space-y-1">
-                <p class="text-xs text-(--color-oa-ink-dim)">
-                  Kinds to fetch (per-ROM downloads during sync)
+                <SettingRow
+                  label="Only sync identified ROMs"
+                  hint="Recommended"
+                  inherited={null}
+                  overridden={false}
+                  toggle={{
+                    checked: onlySyncIdentified(),
+                    onChange: (v) => void setOnlySyncIdentifiedPref(v),
+                  }}
+                  description="Skip ROMs that haven't been hash-identified via Identify ROMs. Stops the fuzzy filename matcher from producing wrong-art mismatches on repacked or renamed sets."
+                />
+
+                <div class="space-y-1">
+                  <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+                    Kinds to fetch (per-ROM downloads during sync)
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <For each={["box-front", "screenshot-gameplay", "screenshot-title"] as const}>
+                      {(k) => {
+                        const checked = () => media.kindsToFetch().includes(k);
+                        const label =
+                          k === "box-front" ? "Boxart"
+                          : k === "screenshot-gameplay" ? "Snapshots"
+                          : "Title screens";
+                        return (
+                          <label class="flex cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) transition hover:bg-white/[0.08]">
+                            <input
+                              type="checkbox"
+                              checked={checked()}
+                              onChange={(e) => {
+                                const enabled = e.currentTarget.checked;
+                                const current = media.kindsToFetch();
+                                const next = enabled
+                                  ? Array.from(new Set([...current, k]))
+                                  : current.filter((x) => x !== k);
+                                void media.setKindsToFetch(next);
+                              }}
+                              class="h-3.5 w-3.5 accent-(--color-system-accent)"
+                            />
+                            <span>{label}</span>
+                          </label>
+                        );
+                      }}
+                    </For>
+                  </div>
+                </div>
+
+                {/* Region priority — collapsed by default so the
+                    preferences card stays compact. Operator expands when
+                    they need to reorder. */}
+                <details class="group">
+                  <summary class="cursor-pointer select-none list-none text-[0.7rem] text-(--color-oa-ink-dim) transition hover:text-(--color-oa-ink) [&::-webkit-details-marker]:hidden">
+                    <span class="mr-1 inline-block transition group-open:rotate-90" aria-hidden="true">▸</span>
+                    Region priority (first match wins) — drag to reorder
+                  </summary>
+                  <div class="mt-2 space-y-1">
+                    <DragDropProvider
+                      onDragEnd={handleMediaRegionDragEnd}
+                      collisionDetector={closestCenter}
+                    >
+                      <DragDropSensors />
+                      <SortableProvider ids={regionDraft()}>
+                        <ul class="space-y-1">
+                          <For each={regionDraft()}>
+                            {(region, i) => (
+                              <SortableMediaRegionRow
+                                region={region}
+                                idx={i()}
+                                onRemove={removeRegionByName}
+                              />
+                            )}
+                          </For>
+                        </ul>
+                      </SortableProvider>
+                    </DragDropProvider>
+                    <select
+                      onChange={(e) => {
+                        const v = e.currentTarget.value;
+                        if (v) addRegion(v);
+                        e.currentTarget.value = "";
+                      }}
+                      class={selectClass("oa")}
+                    >
+                      <option value="">+ Add region…</option>
+                      <Show when={!regionDraft().includes("USA")}><option value="USA">USA</option></Show>
+                      <Show when={!regionDraft().includes("Japan")}><option value="Japan">Japan</option></Show>
+                      <Show when={!regionDraft().includes("Europe")}><option value="Europe">Europe</option></Show>
+                      <Show when={!regionDraft().includes("World")}><option value="World">World</option></Show>
+                      <Show when={!regionDraft().includes("Asia")}><option value="Asia">Asia</option></Show>
+                      <Show when={!regionDraft().includes("Korea")}><option value="Korea">Korea</option></Show>
+                    </select>
+                  </div>
+                </details>
+              </div>
+
+              {/* Per-system section header. */}
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+                  <span class="text-(--color-oa-ink)">
+                    {sortedLibrarySystems().length}
+                  </span>{" "}
+                  system{sortedLibrarySystems().length === 1 ? "" : "s"} in your library
+                  <Show when={incompleteSystemsCount() > 0}>
+                    {" · "}
+                    <span class="text-amber-300">
+                      {incompleteSystemsCount()} incomplete
+                    </span>
+                  </Show>
                 </p>
-                <div class="flex flex-wrap gap-2">
-                  <For each={["box-front", "screenshot-gameplay", "screenshot-title"] as const}>
-                    {(k) => {
-                      const checked = () => media.kindsToFetch().includes(k);
-                      const label =
-                        k === "box-front" ? "Boxart"
-                        : k === "screenshot-gameplay" ? "Snapshots"
-                        : "Title screens";
+                <button
+                  type="button"
+                  disabled={sortedLibrarySystems().length === 0}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    void startFreshenAll();
+                  }}
+                  class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Run Identify + Sync media + Sync metadata across every system in your library, skipping ops already complete per-system."
+                >
+                  Freshen all systems
+                </button>
+              </div>
+
+              {/* Per-system card grid — status-first, alphabetical. Each
+                  card shows 3 status rows (identified / covers / metadata)
+                  + a Freshen button. The Manage… side panel (Phase 5) will
+                  drop in here next, surfacing the 5 granular ops. */}
+              <Show
+                when={sortedLibrarySystems().length > 0}
+                fallback={
+                  <p class="rounded-lg border border-dashed border-white/10 bg-white/[0.02] p-6 text-center text-sm text-(--color-oa-ink-dim)">
+                    No systems in your library yet. Add a folder via the
+                    Library tab to populate this grid.
+                  </p>
+                }
+              >
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <For each={sortedLibrarySystems()}>
+                    {(id) => {
+                      const theme = () => systemThemes[id];
+                      const stats = (): MediaCardStats =>
+                        perSystemStats().get(id) ?? {
+                          total: 0,
+                          identified: 0,
+                          covered: 0,
+                          metadataed: 0,
+                        };
+
+                      type RowState = "ok" | "partial" | "none";
+                      function rowState(n: number, total: number): RowState {
+                        if (total === 0 || n === 0) return n === 0 ? "none" : "partial";
+                        if (n >= total) return "ok";
+                        return "partial";
+                      }
+                      const STATE_GLYPH: Record<RowState, string> = {
+                        ok: "✓",
+                        partial: "⚠",
+                        none: "✗",
+                      };
+                      const STATE_CLASS: Record<RowState, string> = {
+                        ok: "text-emerald-300",
+                        partial: "text-amber-300",
+                        none: "text-rose-300",
+                      };
+
+                      const identifiedState = () => rowState(stats().identified, stats().total);
+                      const coveredState = () => rowState(stats().covered, stats().total);
+                      const metaState = () => rowState(stats().metadataed, stats().total);
+
+                      const isComplete = () =>
+                        stats().total > 0 &&
+                        identifiedState() === "ok" &&
+                        coveredState() === "ok" &&
+                        metaState() === "ok";
+
+                      const busy = () => isSystemBusy(id);
+
                       return (
-                        <label class="flex cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-(--color-oa-ink) transition hover:bg-white/[0.08]">
-                          <input
-                            type="checkbox"
-                            checked={checked()}
-                            onChange={(e) => {
-                              const enabled = e.currentTarget.checked;
-                              const current = media.kindsToFetch();
-                              const next = enabled
-                                ? Array.from(new Set([...current, k]))
-                                : current.filter((x) => x !== k);
-                              void media.setKindsToFetch(next);
-                            }}
-                            class="h-3.5 w-3.5 accent-(--color-system-accent)"
-                          />
-                          <span>{label}</span>
-                        </label>
+                        <div
+                          class="flex h-full flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/20"
+                          data-system={id}
+                        >
+                          {/* Card header — theme stripe + system name + game count. */}
+                          <div class="flex items-start gap-3">
+                            <span
+                              class="mt-1 h-8 w-1 shrink-0 rounded-full bg-(--color-system-accent)"
+                              aria-hidden="true"
+                            />
+                            <div class="min-w-0 flex-1">
+                              <h4 class="truncate text-sm font-semibold text-(--color-oa-ink)">
+                                {theme()?.displayName ?? id}
+                              </h4>
+                              <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+                                {stats().total} game{stats().total === 1 ? "" : "s"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Status rows. */}
+                          <ul class="flex flex-col gap-1 text-[0.7rem]">
+                            <li class="flex items-center justify-between gap-2">
+                              <span class="flex items-center gap-1.5 text-(--color-oa-ink-dim)">
+                                <span class={`${STATE_CLASS[identifiedState()]} w-3 text-center`}>
+                                  {STATE_GLYPH[identifiedState()]}
+                                </span>
+                                identified
+                              </span>
+                              <span class="tabular-nums text-(--color-oa-ink-dim)">
+                                {stats().identified}/{stats().total}
+                              </span>
+                            </li>
+                            <li class="flex items-center justify-between gap-2">
+                              <span class="flex items-center gap-1.5 text-(--color-oa-ink-dim)">
+                                <span class={`${STATE_CLASS[coveredState()]} w-3 text-center`}>
+                                  {STATE_GLYPH[coveredState()]}
+                                </span>
+                                covers
+                              </span>
+                              <span class="tabular-nums text-(--color-oa-ink-dim)">
+                                {stats().covered}/{stats().total}
+                              </span>
+                            </li>
+                            <li class="flex items-center justify-between gap-2">
+                              <span class="flex items-center gap-1.5 text-(--color-oa-ink-dim)">
+                                <span class={`${STATE_CLASS[metaState()]} w-3 text-center`}>
+                                  {STATE_GLYPH[metaState()]}
+                                </span>
+                                metadata
+                              </span>
+                              <span class="tabular-nums text-(--color-oa-ink-dim)">
+                                {stats().metadataed}/{stats().total}
+                              </span>
+                            </li>
+                          </ul>
+
+                          {/* Actions. */}
+                          <div class="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                            <Show
+                              when={!isComplete()}
+                              fallback={
+                                <span class="text-[0.65rem] uppercase tracking-wider text-emerald-300/80">
+                                  All complete
+                                </span>
+                              }
+                            >
+                              <button
+                                type="button"
+                                disabled={busy()}
+                                onClick={(e) => {
+                                  e.currentTarget.blur();
+                                  void startFreshen(id);
+                                }}
+                                class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Runs the smallest set of ops needed to complete identification + covers + metadata for this system."
+                              >
+                                {busy() ? "Working…" : "Freshen"}
+                              </button>
+                            </Show>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.currentTarget.blur();
+                                setManagePanelFor(id);
+                              }}
+                              class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                              title="Open the granular ops panel — Sync media / Sync metadata / Clear metadata / Sync hashes / Identify ROMs."
+                            >
+                              Manage…
+                            </button>
+                          </div>
+                        </div>
                       );
                     }}
                   </For>
                 </div>
-              </div>
+              </Show>
 
-              {/* Per-system sync rows. Each shows a Sync button + the last
-                  emitted progress line + an inline bar. The button disables
-                  while that system is syncing. */}
-              <For each={systemIds}>
-                {(id) => {
-                  const prog = () => syncProgress()[id];
-                  const isSyncing = () => syncing()[id] === true;
-                  const metaProg = () => metaProgress()[id];
-                  const isMetaSyncing = () => metaSyncing()[id] === true;
-                  const pct = () => {
-                    const p = prog();
-                    if (!p || p.total === 0) return 0;
-                    return Math.round((p.done / p.total) * 100);
-                  };
-                  const metaPct = () => {
-                    const p = metaProg();
-                    if (!p || p.total === 0) return 0;
-                    return Math.round((p.done / p.total) * 100);
-                  };
-                  return (
-                    <div class="space-y-1 rounded border border-white/5 bg-white/[0.02] px-3 py-2" data-system={id}>
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-medium text-(--color-oa-ink)">
-                          {systemThemes[id].displayName}
-                        </span>
-                        <span class="flex gap-1.5">
-                          <button
-                            type="button"
-                            disabled={isSystemBusy(id)}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              void startSync(id);
-                            }}
-                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isSyncing() ? "Syncing…" : "Sync media"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSystemBusy(id)}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              void startMetadataSync(id);
-                            }}
-                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isMetaSyncing() ? "Syncing…" : "Sync metadata"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSystemBusy(id)}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              void startClearMetadata(id);
-                            }}
-                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Clear metadata (genre / developer / publisher / year / players) for every game in this system. Cover art is NOT touched. Use after the 2026-05-21 metadata-routing fix to scrub stale cross-system data."
-                          >
-                            {metaClearing()[id] ? "Clearing…" : "Clear metadata"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSystemBusy(id)}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              void startHashSync(id);
-                            }}
-                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Fetch libretro-database hash DB for this system"
-                          >
-                            {hashSyncing()[id] ? "Syncing…" : "Sync hashes"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSystemBusy(id)}
-                            onClick={(e) => {
-                              e.currentTarget.blur();
-                              void startHashResolve(id);
-                            }}
-                            class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Hash every ROM in this system and rename to the canonical title on a match"
-                          >
-                            {hashResolving()[id] ? "Identifying…" : "Identify ROMs"}
-                          </button>
-                        </span>
-                      </div>
-                      <Show when={prog()}>
-                        {(p) => (
-                          <>
-                            <div class="h-1 w-full overflow-hidden rounded-full bg-white/5">
-                              <div
-                                class="h-full bg-(--color-system-accent) transition-[width] duration-200"
-                                style={{ width: `${pct()}%` }}
-                              />
-                            </div>
-                            <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                              media · {p().done}/{p().total} · {p().currentRomTitle || p().lastAction}
-                            </p>
-                          </>
-                        )}
-                      </Show>
-                      <Show when={metaProg()}>
-                        {(p) => (
-                          <>
-                            <div class="h-1 w-full overflow-hidden rounded-full bg-white/5">
-                              <div
-                                class="h-full bg-(--color-system-accent) transition-[width] duration-200"
-                                style={{ width: `${metaPct()}%` }}
-                              />
-                            </div>
-                            <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                              metadata · {p().done}/{p().total} · {p().currentRomTitle || p().lastAction}
-                            </p>
-                          </>
-                        )}
-                      </Show>
-                      <Show when={metaClearStatus()[id]}>
-                        {(s) => (
-                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            clear metadata · {s()}
-                          </p>
-                        )}
-                      </Show>
-                      <Show when={hashSyncSummary()[id]}>
-                        {(s) => (
-                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            hashes ·
-                            {s().written > 0
-                              ? ` ${s().written} canonical entries indexed${s().fromCache ? " (from cache)" : ""}`
-                              : " no upstream dat for this system"}
-                          </p>
-                        )}
-                      </Show>
-                      <Show when={hashResolveProgress()[id]}>
-                        {(p) => {
-                          const pct = (): number => {
-                            const v = p();
-                            return v.total === 0 ? 0 : Math.round((v.done / v.total) * 100);
-                          };
-                          return (
-                            <>
-                              <div class="h-1 w-full overflow-hidden rounded-full bg-white/5">
-                                <div
-                                  class="h-full bg-(--color-system-accent) transition-[width] duration-200"
-                                  style={{ width: `${pct()}%` }}
-                                />
-                              </div>
-                              <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                                identify · {p().done}/{p().total} · {p().currentTitle || p().lastAction}
-                              </p>
-                            </>
-                          );
-                        }}
-                      </Show>
-                      <Show when={hashResolveSummary()[id]}>
-                        {(s) => (
-                          <p class="truncate text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                            {(() => {
-                              const v = s();
-                              if (v.canonicalEntries === 0) {
-                                return "identify · libretro-database has no hash DB for this system";
-                              }
-                              if (v.libraryTotal === 0) {
-                                return `identify · no games in library for this system (${v.canonicalEntries} canonical entries in DB)`;
-                              }
-                              if (v.scanned === 0 && v.alreadyIdentified === v.libraryTotal) {
-                                return `identify · all ${v.libraryTotal} games already identified (re-runs are no-ops)`;
-                              }
-                              return `identify done · ${v.matched} matched · ${v.unmatched} unknown · ${v.skippedCd} CD-skipped · ${v.errors} errors · ${v.alreadyIdentified} of ${v.libraryTotal} stamped (${v.canonicalEntries} canonical entries in DB)`;
-                            })()}
-                          </p>
-                        )}
-                      </Show>
-                    </div>
-                  );
-                }}
-              </For>
-
-              {/* Region priority — drag-reorder + remove + add. */}
-              <div class="space-y-1">
-                <p class="text-xs text-(--color-oa-ink-dim)">
-                  Region priority (first match wins) — drag to reorder
-                </p>
-                <DragDropProvider
-                  onDragEnd={handleMediaRegionDragEnd}
-                  collisionDetector={closestCenter}
-                >
-                  <DragDropSensors />
-                  <SortableProvider ids={regionDraft()}>
-                    <ul class="space-y-1">
-                      <For each={regionDraft()}>
-                        {(region, i) => (
-                          <SortableMediaRegionRow
-                            region={region}
-                            idx={i()}
-                            onRemove={removeRegionByName}
-                          />
-                        )}
-                      </For>
-                    </ul>
-                  </SortableProvider>
-                </DragDropProvider>
-                <select
-                  onChange={(e) => {
-                    const v = e.currentTarget.value;
-                    if (v) addRegion(v);
-                    e.currentTarget.value = "";
-                  }}
-                  class={selectClass("oa")}
-                >
-                  <option value="">+ Add region…</option>
-                  <Show when={!regionDraft().includes("USA")}><option value="USA">USA</option></Show>
-                  <Show when={!regionDraft().includes("Japan")}><option value="Japan">Japan</option></Show>
-                  <Show when={!regionDraft().includes("Europe")}><option value="Europe">Europe</option></Show>
-                  <Show when={!regionDraft().includes("World")}><option value="World">World</option></Show>
-                  <Show when={!regionDraft().includes("Asia")}><option value="Asia">Asia</option></Show>
-                  <Show when={!regionDraft().includes("Korea")}><option value="Korea">Korea</option></Show>
-                </select>
-              </div>
-
-              {/* Disk usage */}
+              {/* Disk usage. */}
               <Show when={storageStats()}>
                 {(s) => (
                   <p class="text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
@@ -1434,6 +1557,23 @@ const LibraryManagerPage: Component<Props> = (props) => {
       <PlatformMediaDialog
         open={platformMediaOpen()}
         onClose={() => setPlatformMediaOpen(false)}
+      />
+      <GameMediaManagePanel
+        systemId={managePanelFor}
+        stats={() => {
+          const id = managePanelFor();
+          return id ? perSystemStats().get(id) : undefined;
+        }}
+        busy={() => {
+          const id = managePanelFor();
+          return id ? isSystemBusy(id) : false;
+        }}
+        onSyncMedia={startSync}
+        onSyncMetadata={startMetadataSync}
+        onClearMetadata={startClearMetadata}
+        onSyncHashes={startHashSync}
+        onIdentifyRoms={startHashResolve}
+        onClose={() => setManagePanelFor(null)}
       />
     </>
   );

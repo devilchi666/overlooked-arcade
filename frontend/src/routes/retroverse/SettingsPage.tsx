@@ -18,10 +18,7 @@ import { HintRegion } from "../../nav/HintBar";
 import {
   AboutSettings,
   AudioSettings,
-  BackgroundJobsSettings,
-  BiosSettings,
   ControllerNavSettings,
-  CoresCategorySettings,
   DisplayBaseSettings,
   ExperimentalSettings,
   GameplaySettings,
@@ -30,10 +27,10 @@ import {
   PerSystemUiSettings,
   ProfileSettings,
   ShadersSettings,
-  StorageSettings,
   ThemesSettings,
 } from "../../components/SettingsSections";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
+import SystemHealthPage from "./SystemHealthPage";
 import { useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import { useRetroverse } from "./context";
@@ -51,10 +48,7 @@ type CategoryId =
   | "themes"
   | "library"
   | "media"
-  | "cores"
-  | "bios"
-  | "storage"
-  | "background-jobs"
+  | "system-health"
   | "profile"
   | "about"
   | "per-system";
@@ -164,42 +158,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     helpText:
       "Banner / clear-logo / console / controller / fanart / marquee / photo / wheel / background per system. Operator-supplied art always wins over synced art.",
   },
-  {
-    id: "cores",
-    group: "content",
-    label: "Cores",
-    glyph: "⊙",
-    description: "Installed libretro cores.",
-    helpText:
-      "Status view of installed .dll cores in <exe_dir>/cores/. Versions + last-modified + which systems each is wired to. Updates flow through RetroArch's own buildbot — OA doesn't bundle its own core updater.",
-  },
-  {
-    id: "bios",
-    group: "content",
-    label: "BIOS",
-    glyph: "⊟",
-    description: "Per-system BIOS file status.",
-    helpText:
-      "Status grid showing which systems have their required BIOS files staged in <exe_dir>/system/. Green = ready, amber = present-but-untested, red = missing.",
-  },
   // SYSTEM.
   {
-    id: "storage",
+    id: "system-health",
     group: "system",
-    label: "Storage",
-    glyph: "⌑",
-    description: "Data directory + portable install + saves location.",
+    label: "System Health",
+    glyph: "⚕",
+    description: "Operational status of your OA install.",
     helpText:
-      "Shows whether you're running in AppData mode or portable mode (portable.txt next to oa-shell.exe). Lists save / state / log directories and free space on each.",
-  },
-  {
-    id: "background-jobs",
-    group: "system",
-    label: "Background Jobs",
-    glyph: "⟳",
-    description: "Auto-resume behavior + bar visibility + retry policy.",
-    helpText:
-      "Per-kind opt-out of auto-resume on launch (core downloads, identify ROMs, sync media, etc.). Bar visibility + sound-on-completion toggles. Failure retry policy (1s/5s/30s exponential backoff for transient network errors). Recent activity history (rolling buffer of last 100 jobs).",
+      "Status rollup of Cores / BIOS / Readiness / Background jobs / Storage in one place. Internal tabs hold the deep-dive editors for each — the categories that used to live in the sidebar (BIOS / Cores / Storage / Background Jobs) all live here now.",
   },
   {
     id: "profile",
@@ -500,17 +467,8 @@ const SettingsPage: Component = () => {
           <Match when={activeCategoryId() === "media"}>
             <MediaSettings />
           </Match>
-          <Match when={activeCategoryId() === "cores"}>
-            <CoresCategorySettings />
-          </Match>
-          <Match when={activeCategoryId() === "bios"}>
-            <BiosSettings />
-          </Match>
-          <Match when={activeCategoryId() === "storage"}>
-            <StorageSettings />
-          </Match>
-          <Match when={activeCategoryId() === "background-jobs"}>
-            <BackgroundJobsSettings />
+          <Match when={activeCategoryId() === "system-health"}>
+            <SystemHealthPage />
           </Match>
           <Match when={activeCategoryId() === "profile"}>
             <ProfileSettings settings={ctx.settings} />

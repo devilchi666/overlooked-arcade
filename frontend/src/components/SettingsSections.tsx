@@ -35,7 +35,6 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "../lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
-import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
 import {
@@ -270,6 +269,7 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
 // --- Experimental (hosts the Retroverse master toggle) ----------------
 
 export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (props) => {
+  const [devToolsOpen, setDevToolsOpen] = createSignal(false);
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -286,6 +286,69 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
           }}
           description="Top-toolbar tab IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS) replacing today's sidebar-driven layout. Flipping this OFF returns to the legacy Shell layout immediately — no restart required."
         />
+      </SettingsCard>
+
+      {/* Dev tools — collapsed-by-default disclosure for affordances only
+          developers ever need. Lives behind a click so it doesn't add
+          noise for normal operators. The Background Jobs test spawner
+          moved here from Settings → Library on 2026-06-03. */}
+      <SettingsCard title="Dev tools">
+        <button
+          type="button"
+          aria-expanded={devToolsOpen()}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setDevToolsOpen((v) => !v);
+          }}
+          class="flex w-full items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-[0.75rem] text-(--color-oa-ink) transition hover:border-white/20 hover:bg-white/[0.04]"
+        >
+          <span>
+            <span class="font-semibold">Background Jobs — test spawner</span>
+            <span class="ml-2 text-[0.65rem] text-(--color-oa-ink-dim)">
+              synthetic jobs to exercise the BackgroundJobsBar
+            </span>
+          </span>
+          <span class="shrink-0 text-(--color-oa-ink-dim)" aria-hidden="true">
+            {devToolsOpen() ? "▾" : "▸"}
+          </span>
+        </button>
+
+        <Show when={devToolsOpen()}>
+          <div class="mt-3 space-y-2 rounded-md border border-white/5 bg-white/[0.02] p-3">
+            <p class="text-[0.65rem] leading-relaxed text-(--color-oa-ink-dim)">
+              Spawns a synthetic background job that ticks progress at 10 Hz.
+              Use it to exercise the bar's pause / resume / cancel /
+              auto-collapse without burning a real core download. Click
+              multiple times to test multi-job thresholds.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
+                    console.warn("[oa-jobs] spawn_test_job failed:", err);
+                  });
+                }}
+              >
+                Spawn 30 s test job
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
+                    console.warn("[oa-jobs] spawn_test_job failed:", err);
+                  });
+                }}
+              >
+                Spawn 10 s test job
+              </button>
+            </div>
+          </div>
+        </Show>
       </SettingsCard>
     </div>
   );
@@ -546,13 +609,11 @@ export const LibrarySettings: Component = () => {
   // entry point per the guided-setup plan §12 IA. Re-establishes a
   // path to the Import Wizard (orphaned after the 2026-05-31 legacy-
   // Shell deletion).
+  //
+  // The System Readiness card lived here until 2026-06-03; it
+  // moved to Settings → System Health → Overview as part of the
+  // declutter arc (see docs/PLANS/settings-declutter-system-health.md).
   const ctx = useRetroverse();
-  // Phase 1B Slice 3 — derive the per-system list from the operator's
-  // shipped library. Reactive: when entries change (import, delete),
-  // the readiness checklist re-renders against the new system inventory.
-  const librarySystems = createMemo(() =>
-    Array.from(new Set(ctx.library.state.entries.map((e) => e.systemId))),
-  );
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -569,46 +630,6 @@ export const LibrarySettings: Component = () => {
         >
           Set up your library
         </button>
-      </SettingsCard>
-      <SettingsCard
-        title="System readiness"
-        description="Per-system status across your library — which cores are installed, which need a BIOS file, what's ready to play. Same checklist the import wizard shows on Step 3."
-      >
-        <SystemReadinessChecklist
-          systems={librarySystems}
-          emptyStateLabel="Library is empty — import a folder to get started."
-        />
-      </SettingsCard>
-      <SettingsCard
-        title="Background Jobs — dev test"
-        description="Spawns a synthetic 30-second background job that ticks progress at 10 Hz. Use it to exercise the BackgroundJobsBar's pause / resume / cancel / auto-collapse without burning a real core download. Click multiple times for 2+ / 3+ concurrent jobs to test the Pause-all / Cancel-all thresholds."
-      >
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
-                console.warn("[oa-jobs] spawn_test_job failed:", err);
-              });
-            }}
-          >
-            Spawn 30 s test job
-          </button>
-          <button
-            type="button"
-            class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
-                console.warn("[oa-jobs] spawn_test_job failed:", err);
-              });
-            }}
-          >
-            Spawn 10 s test job
-          </button>
-        </div>
       </SettingsCard>
       <div class="-mx-8 -mb-6">
         <LibraryManagerPage
@@ -735,6 +756,45 @@ export const BiosSettings: Component = () => {
     };
   });
 
+  /// Two-group split: Issues (missing / unknown hash / read error) on top,
+  /// Ready (ok) below. Each group sorted alphabetically by label so
+  /// position is predictable. Operator spec 2026-06-03.
+  const groupedEntries = createMemo(() => {
+    const entries = status()?.entries ?? [];
+    const byLabel = (a: BiosStatusEntry, b: BiosStatusEntry) =>
+      a.label.localeCompare(b.label);
+    return {
+      issues: entries.filter((e) => e.status !== "ok").sort(byLabel),
+      ready: entries.filter((e) => e.status === "ok").sort(byLabel),
+    };
+  });
+
+  const renderBiosRow = (entry: BiosStatusEntry): JSX.Element => {
+    const style = BIOS_PILL_STYLES[entry.status];
+    return (
+      <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+        <div class="min-w-0">
+          <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
+            {entry.label}
+          </p>
+          <p class="mt-0.5 truncate text-[0.65rem] text-(--color-oa-ink-dim)" title={entry.required}>
+            {entry.required}
+          </p>
+        </div>
+        <span
+          class={`self-start rounded border ${style.ring} ${style.bg} px-2 py-0.5 text-[0.55rem] uppercase tracking-widest ${style.text}`}
+        >
+          {style.label}
+        </span>
+        <Show when={entry.detail}>
+          <p class="col-span-2 break-all border-t border-white/5 pt-1.5 font-mono text-[0.6rem] text-(--color-oa-ink-dim)">
+            {entry.detail}
+          </p>
+        </Show>
+      </li>
+    );
+  };
+
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="System directory">
@@ -771,39 +831,44 @@ export const BiosSettings: Component = () => {
         </div>
 
         <Show when={status()?.entries}>
-          {(entries) => (
-            <ul class="mt-2 flex flex-col gap-1.5">
-              <For each={entries()}>
-                {(entry) => {
-                  const style = BIOS_PILL_STYLES[entry.status];
-                  return (
-                    <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
-                      <div class="min-w-0">
-                        <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">
-                          {entry.label}
-                        </p>
-                        <p class="mt-0.5 truncate text-[0.65rem] text-(--color-oa-ink-dim)" title={entry.required}>
-                          {entry.required}
-                        </p>
-                      </div>
-                      <span
-                        class={`self-start rounded border ${style.ring} ${style.bg} px-2 py-0.5 text-[0.55rem] uppercase tracking-widest ${style.text}`}
-                      >
-                        {style.label}
-                      </span>
-                      <Show when={entry.detail}>
-                        <p class="col-span-2 break-all border-t border-white/5 pt-1.5 font-mono text-[0.6rem] text-(--color-oa-ink-dim)">
-                          {entry.detail}
-                        </p>
-                      </Show>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
-          )}
+          <div class="mt-3 flex flex-col gap-4">
+            {/* Issues — anything not "ok". Hidden when empty so the
+                Ready section can sit flush against the header on a
+                fully-staged install. */}
+            <Show when={groupedEntries().issues.length > 0}>
+              <section>
+                <h4 class="mb-1.5 flex items-center gap-2 text-[0.55rem] uppercase tracking-[0.4em] text-amber-300/90">
+                  <span aria-hidden="true">⚠</span>
+                  Missing &amp; issues
+                  <span class="text-(--color-oa-ink-dim)/60">
+                    · {groupedEntries().issues.length}
+                  </span>
+                </h4>
+                <ul class="flex flex-col gap-1.5">
+                  <For each={groupedEntries().issues}>{(entry) => renderBiosRow(entry)}</For>
+                </ul>
+              </section>
+            </Show>
+
+            {/* Ready — all "ok" entries. Hidden when empty (a fresh
+                install with everything missing wouldn't have any). */}
+            <Show when={groupedEntries().ready.length > 0}>
+              <section>
+                <h4 class="mb-1.5 flex items-center gap-2 text-[0.55rem] uppercase tracking-[0.4em] text-emerald-300/90">
+                  <span aria-hidden="true">✓</span>
+                  Ready
+                  <span class="text-(--color-oa-ink-dim)/60">
+                    · {groupedEntries().ready.length}
+                  </span>
+                </h4>
+                <ul class="flex flex-col gap-1.5">
+                  <For each={groupedEntries().ready}>{(entry) => renderBiosRow(entry)}</For>
+                </ul>
+              </section>
+            </Show>
+          </div>
         </Show>
-        <p class="mt-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
+        <p class="mt-3 text-[0.65rem] text-(--color-oa-ink-dim)/70">
           Green = filename + content hash both match a known canonical
           dump. Amber = file is present under a known name but its
           content hash isn't in OA's table (the core usually still

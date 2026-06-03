@@ -11,6 +11,33 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **SETTINGS declutter — System Health hub + Game-media cards** —
+  branch `feat/settings-declutter-system-health`, five phase commits
+  + this docs commit. Closes the operator's 2026-06-03 ask:
+  "Settings → Library is too cluttered; move System Readiness to its
+  own category and rework Game media."
+  - **Phase 1** (`21d803d`) — new System Health category absorbs
+    BIOS / Cores / Storage / Background Jobs as internal tabs;
+    sidebar shrinks 16 → 12 entries.
+  - **Phase 2** (`9bfbc96`) — Overview rollup cards (5 status rows
+    with green/amber/red dots + CTAs deep-linking into tabs) +
+    lifted readiness checklist.
+  - **Phase 3** (`cb33089`) — dev test spawner relocated from
+    Settings → Library into a collapsed disclosure in
+    Experimental → Dev tools.
+  - **Phase 4** (`910ba27`) — Game-media tab refactored into
+    a status-first card grid (alphabetical, 3-col grid, per-card
+    Freshen smart-runner) + Preferences card + top-right
+    [Freshen all systems] CTA.
+  - **Phase 5** (`e087caf`) — `GameMediaManagePanel` side panel
+    surfaces the 5 granular ops (Identify / Sync covers / Sync
+    metadata / Clear metadata / Refresh hash DB) when the operator
+    clicks [Manage…] on a system card.
+  - 660 of 660 oa-shell tests green. Frontend `npm run typecheck`
+    silent.
+  - Plan: [PLANS/settings-declutter-system-health.md](PLANS/settings-declutter-system-health.md).
+  - Awaiting operator playtest before `--no-ff` merge.
+
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
