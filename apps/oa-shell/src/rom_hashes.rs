@@ -920,7 +920,14 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
     app: &tauri::AppHandle,
     app_data_dir: &Path,
     db: &LibraryDb,
+    // Phase 4c dependency graph — when the auto-sync is invoked from
+    // resolve_rom_hashes_for_system, pass the HashResolve job id here
+    // so the visible DatSync row in the bar is linked to its parent
+    // (plan §"Job dependencies": auto-trigger prereqs). Pass None
+    // when the caller has no parent (e.g. the scan_service pre-walk).
+    parent_job_id: Option<i64>,
 ) -> Result<(), String> {
+    use tauri::Manager;
     if db.count_rom_hashes(system_id)? > 0 {
         return Ok(());
     }
@@ -929,6 +936,40 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
         log::info!("rom_hashes: no libretro-database mapping for {system_id}");
         return Ok(());
     }
+
+    // Phase 4c — register the auto-sync as a visible DatSync prereq
+    // row in the bar. Bar will show "Updating ROM database — {system}
+    // (prereq)" while it runs; the parent_job_id link makes it clear
+    // it's part of the HashResolve flow.
+    let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
+    let prereq_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
+        let label = if parent_job_id.is_some() {
+            format!("Updating ROM database — {} (prereq)", system_id)
+        } else {
+            format!("Updating ROM database — {}", system_id)
+        };
+        match reg.create_job(
+            crate::job_registry::JobKind::DatSync {
+                system_id: system_id.to_string(),
+            },
+            label,
+            Some(system_id.to_string()),
+            parent_job_id,
+            parent_job_id.is_some(),
+            "entries",
+            None,
+        ) {
+            Ok(id) => {
+                let _ = reg.mark_running(id);
+                Some(id)
+            }
+            Err(e) => {
+                log::warn!("background_jobs: create_job(dat_sync prereq) failed: {e}");
+                None
+            }
+        }
+    });
+
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
@@ -936,6 +977,9 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
         Ok(c) => c,
         Err(e) => {
             log::warn!("rom_hashes: reqwest client build failed: {e}");
+            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
+                let _ = reg.mark_failed(id, format!("reqwest client: {e}"));
+            }
             return Ok(());
         }
     };
@@ -976,14 +1020,27 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
                     from_cache: false,
                 },
             );
+            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
+                let _ = reg.progress(id, n as i64, Some(n as i64));
+                let _ = reg.mark_completed(id);
+            }
         }
         Ok(None) => {
             log::warn!(
                 "rom_hashes: upstream has no dat for {system_id} (every ref 404'd)"
             );
+            // No dat present upstream is a "success" from the prereq's
+            // perspective — the parent (HashResolve) proceeds with an
+            // empty hash table and lights up no canonical matches.
+            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
+                let _ = reg.mark_completed(id);
+            }
         }
         Err(e) => {
             log::warn!("rom_hashes: auto-sync {system_id} fetch failed: {e}");
+            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
+                let _ = reg.mark_failed(id, e);
+            }
         }
     }
     Ok(())
@@ -1042,7 +1099,18 @@ pub async fn resolve_rom_hashes_for_system(
     // Without this, "Identify ROMs" against an unsynced system returns
     // N unknown / 0 matched with no obvious cause; auto-syncing turns
     // the typical one-click flow into "fetch then resolve" transparently.
-    auto_sync_rom_hashes_if_empty(&systemId, &app, &state.app_data_dir, &db).await?;
+    // Phase 4c — pass the HashResolve job id as parent so the
+    // auto-sync DatSync row in the bar links to its parent (visible
+    // child of "Identifying {system} ROMs" rather than an
+    // unrelated row).
+    auto_sync_rom_hashes_if_empty(
+        &systemId,
+        &app,
+        &state.app_data_dir,
+        &db,
+        registry_job_id,
+    )
+    .await?;
 
     let canonical_entries = db.count_rom_hashes(&systemId)?;
     let library_total = db.count_games_for_system(&systemId)?;

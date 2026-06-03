@@ -1234,6 +1234,29 @@ pub async fn download_core(
     result
 }
 
+/// Phase 4c — sleep for `total_ms` while polling the cancel flag
+/// every 100 ms so an operator-triggered cancel during the retry
+/// backoff takes effect within the current tick. Returns true on
+/// natural completion, false if the cancel flag flipped during the
+/// sleep.
+async fn sleep_with_cancel_check(
+    handle: Option<&crate::job_registry::JobHandle>,
+    total_ms: u64,
+) -> bool {
+    let mut remaining = total_ms;
+    while remaining > 0 {
+        if let Some(h) = handle {
+            if h.is_cancelled() {
+                return false;
+            }
+        }
+        let tick = remaining.min(100);
+        tokio::time::sleep(Duration::from_millis(tick)).await;
+        remaining = remaining.saturating_sub(tick);
+    }
+    true
+}
+
 /// Shared download/extract/install body. Both `download_core` (the
 /// Tauri command — creates a fresh job row) and `CoreDownloadResumer`
 /// (Phase 3a auto-resume — attaches to an existing interrupted job
@@ -1300,24 +1323,98 @@ async fn run_download_core_inner(
 
     emit_progress(app, &file_name, existing_size, None, "downloading", None);
 
-    let mut request = client
-        .get(&url)
-        .header("User-Agent", "OverlookedArcade");
-    if existing_size > 0 {
-        request = request.header("Range", format!("bytes={}-", existing_size));
-    }
-
-    let resp = request.send().await.map_err(|e| {
-        emit_progress(
-            app,
-            &file_name,
-            existing_size,
-            None,
-            "error",
-            Some(&format!("{e}")),
-        );
-        format!("GET {url}: {e}")
-    })?;
+    // Phase 4c — retry policy. Plan §"Failure handling": 3 attempts
+    // with 1s/5s/30s backoff on 5xx + network errors; permanent
+    // 4xx errors (other than 416 which is handled specially below)
+    // and the success codes (2xx, 206 partial content) return
+    // immediately. Cancel/pause flags are polled between attempts so
+    // an operator-triggered abort during the backoff sleep takes
+    // effect within the current sleep tick.
+    const BACKOFFS_MS: [u64; 3] = [1_000, 5_000, 30_000];
+    let resp = {
+        let mut attempt: usize = 0;
+        loop {
+            // Build the request fresh each attempt — reqwest's
+            // RequestBuilder isn't Clone in older versions and the
+            // overhead of rebuilding is nil.
+            let mut req = client
+                .get(&url)
+                .header("User-Agent", "OverlookedArcade");
+            if existing_size > 0 {
+                req = req.header("Range", format!("bytes={}-", existing_size));
+            }
+            match req.send().await {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success()
+                        || status == reqwest::StatusCode::PARTIAL_CONTENT
+                        || status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE
+                        || status.is_client_error()
+                    {
+                        // Success or definitive failure — stop retrying.
+                        // (4xx non-416 will surface as the permanent
+                        // !is_success error below; 416 has its own
+                        // branch right after; 2xx + 206 are success.)
+                        break r;
+                    }
+                    // 5xx (server error). Retry if we have attempts left.
+                    if attempt + 1 >= BACKOFFS_MS.len() + 1 {
+                        emit_progress(
+                            app,
+                            &file_name,
+                            existing_size,
+                            None,
+                            "error",
+                            Some(&format!("HTTP {status} after {} attempts", attempt + 1)),
+                        );
+                        return Err(format!(
+                            "buildbot HTTP {status} for {url} after {} attempts",
+                            attempt + 1
+                        ));
+                    }
+                    let sleep_ms = BACKOFFS_MS[attempt];
+                    log::warn!(
+                        "core_installer: HTTP {status} for {base} (attempt {}/{}); retrying in {}s",
+                        attempt + 1,
+                        BACKOFFS_MS.len() + 1,
+                        sleep_ms / 1000
+                    );
+                    if !sleep_with_cancel_check(handle, sleep_ms).await {
+                        return Err("cancelled".into());
+                    }
+                    attempt += 1;
+                }
+                Err(e) => {
+                    // Network error — retry.
+                    if attempt + 1 >= BACKOFFS_MS.len() + 1 {
+                        emit_progress(
+                            app,
+                            &file_name,
+                            existing_size,
+                            None,
+                            "error",
+                            Some(&format!("{e}")),
+                        );
+                        return Err(format!(
+                            "GET {url}: {e} (after {} attempts)",
+                            attempt + 1
+                        ));
+                    }
+                    let sleep_ms = BACKOFFS_MS[attempt];
+                    log::warn!(
+                        "core_installer: network error for {base} (attempt {}/{}): {e}; retrying in {}s",
+                        attempt + 1,
+                        BACKOFFS_MS.len() + 1,
+                        sleep_ms / 1000
+                    );
+                    if !sleep_with_cancel_check(handle, sleep_ms).await {
+                        return Err("cancelled".into());
+                    }
+                    attempt += 1;
+                }
+            }
+        }
+    };
 
     // 416 = our partial is bigger than the server's current file (the
     // upstream zip was updated or our partial is corrupt). Drop the

@@ -7,6 +7,64 @@ for the arc design is [`docs/PLANS/background-jobs-and-progress-bar.md`](../../P
 
 ---
 
+## 2026-06-03 — Phase 4c ships dependency graph + retry policy (`feat/background-jobs-phase-4c`)
+
+**Shipped:** Phase 4c — the two main pieces of the original Phase 4
+orchestration scope. Two phase commits; the third planned slice
+(artwork_sync + hash_resolve resumers) scoped out as a follow-up.
+
+- **Slice A — dependency graph (HashResolve → DatSync prereq)**
+  (`9713d7d`). `auto_sync_rom_hashes_if_empty` gains a
+  `parent_job_id: Option<i64>` argument. When the caller passes
+  `Some(id)`, the auto-sync registers itself as a visible DatSync
+  row with `parent_job_id = id` + `is_prereq = true` and a
+  " (prereq)" label suffix. Plan §"Job dependencies": auto-trigger
+  prereqs. `resolve_rom_hashes_for_system` passes its HashResolve
+  id so the auto-sync is linked to its parent; the Phase 4b
+  `tick_parent_if_any` machinery handles the rest.
+  `scan_service::start_background_scan` passes None (pre-scan
+  auto-sync runs before any HashResolve, so the DatSync appears
+  as a top-level row).
+- **Slice B — retry policy** (`8116c2a`). Plan §"Failure handling":
+  3 attempts with 1s/5s/30s backoff on 5xx + network errors,
+  invisible at warn-log level. Inline retry loop in
+  `run_download_core_inner`'s initial GET. Cancel flag polled
+  between attempts via new `sleep_with_cancel_check` helper so
+  operator-triggered cancel during the 30 s backoff takes effect
+  within 100 ms. Permanent 4xx (other than 416) + 2xx/206 break
+  out immediately; only 5xx and network errors trigger retry.
+
+660 of 660 oa-shell tests green.
+
+**Scoped out:** Slice C (artwork_sync + hash_resolve resumers).
+These operations need their inner logic refactored to attach to
+an existing job_id at resume time rather than create a new one
+(the snapshot only carries system_id, not the entries list each
+function needs). That's a bigger refactor than fits Phase 4c.
+Today's behavior is unchanged: interrupted rows for kinds without
+registered resumers stay in the `interrupted` state and log a
+warn at startup. Phase 5's Settings panel may surface a "clear
+interrupted history" affordance.
+
+**Almost:** End-to-end manual smoke test:
+1. Trigger an "Identify ROMs" on a system with an empty
+   rom_hashes table → bar shows TWO rows: parent "Identifying
+   {system} ROMs" + visible child "Updating ROM database —
+   {system} (prereq)." Child finalizes first; parent then proceeds.
+2. Disconnect network mid-download → retry-policy log lines fire
+   with the 1s/5s/30s sequence; on final attempt the row
+   mark_failed with "after N attempts" suffix. Reconnect during
+   the 30s window → the third attempt succeeds and the bar
+   continues normally.
+3. Cancel from the bar during a retry backoff sleep → cancel
+   takes effect within 100ms instead of waiting for the sleep
+   to complete.
+
+**Next:** Phase 5 — Settings panel + Recent activity panel +
+polish. Closes the arc as an operator-facing feature.
+
+---
+
 ## 2026-06-02 — Phase 3b ships Range resume + opt-out infra + dup-trigger (`feat/background-jobs-phase-3b`)
 
 **Shipped:** Phase 3b — the resume + UX polish half of the original

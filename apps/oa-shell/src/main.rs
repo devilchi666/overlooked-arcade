@@ -9171,6 +9171,10 @@ async fn start_background_scan(
             &handle,
             &media_state.app_data_dir,
             &db,
+            // No parent — scan_service pre-walk runs before any
+            // HashResolve. The DatSync row appears as a top-level
+            // entry in the bar.
+            None,
         )
         .await
         {
