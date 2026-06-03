@@ -331,14 +331,24 @@ together:
   `feat/background-jobs-phase-3a`. See
   [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md)
   for the slice breakdown.
-- ⬜ **Phase 3b** (~1 week, queued) — Byte-level Range resume for
-  `core_download` (streaming-write refactor so the .partial file
-  exists DURING the download, then HTTP Range requests for the
-  remainder on resume). `artwork_sync` + `hash_resolve` resumers.
-  Per-kind opt-out infrastructure (settings.json fields; the
-  Settings panel UI stays in Phase 5). Duplicate-trigger
-  Wait/Restart/Cancel dialog for second-click-while-running on
-  the same kind+target tuple.
+- ✅ **Phase 3b** (shipped 2026-06-03) — Byte-level Range resume
+  for `core_download` (streaming-write to `.zip.partial` via
+  `tokio::fs::File` + HTTP `Range: bytes={size}-` on resume +
+  206/200/416 handling). Per-kind opt-out infrastructure
+  (`<data_dir>/library/job-prefs.json` + `JobPrefs` module +
+  `get_job_prefs` / `set_job_resume_prompt` Tauri commands +
+  `JobEvent::ResumePrompt` + `should_prompt` closure threaded
+  through `resume_interrupted_jobs`). Duplicate-trigger 2-option
+  window.confirm via `check_duplicate_job` + frontend
+  `downloadCoreWithDuplicateCheck` helper (CoresPage migrated).
+  Operator-confirmed via smoke test before `--no-ff` merge of
+  `feat/background-jobs-phase-3b`. See
+  [docs/features/background-jobs/SESSION_LOG.md](features/background-jobs/SESSION_LOG.md).
+  The Phase 3b "other resumers" item (artwork_sync, hash_resolve)
+  remains queued — those operations already finalize cleanly on
+  completion so no in-flight state survives crash; the resumer
+  question is whether to RE-RUN them on launch if interrupted.
+  Folds into Phase 4c.
 - ✅ **Phase 4a** (shipped 2026-06-02) — `JobKind` variants for the
   four kinds + wiring through `scan_service::start_background_scan`
   (folder_scan, shared cancel AtomicBool with the legacy scan-

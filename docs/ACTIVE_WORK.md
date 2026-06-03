@@ -182,6 +182,45 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 3b (Range resume + opt-out + dup-trigger)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-3b`).
+  Four phase commits implementing the second half of the original
+  Phase 3 scope (Phase 3a was the trait + pause bridge).
+  - **Slice A** (`f08c09d`) Byte-level Range resume —
+    `run_download_core_inner` refactored from "buffer the whole .zip
+    in RAM" to "stream chunks through to `<base>.dll.zip.partial`
+    via `tokio::fs::File::write_all` as they arrive." On restart,
+    the partial's size tells us the resume point; we send
+    `Range: bytes={size}-` and append. Handles 206 (resume), 200
+    (server ignored Range — truncate + restart), 416 (stale partial
+    — surface error). Flushes before pause spin / cancel return so
+    kill-during-pause still resumes from a valid byte boundary.
+    CoreDownloadResumer no longer drops the .zip.partial up front
+    (would defeat byte-level resume); drops the .dll.partial only.
+  - **Slice B** (`dc2ef06`) Per-kind opt-out infrastructure —
+    plan §"Resume on app launch" auto-resume default + per-kind
+    opt-out. New `apps/oa-shell/src/job_prefs.rs` module with
+    `JobPrefs.prompt_before_resume_on_launch: HashMap<String, bool>`
+    at `<data_dir>/library/job-prefs.json`. Tauri commands
+    `get_job_prefs` + `set_job_resume_prompt(kind, prompt)`. New
+    `JobEvent::ResumePrompt { snapshot }` variant fires when a
+    kind has opt-out set. `JobRegistry::resume_interrupted_jobs`
+    signature gains a `should_prompt: impl Fn(&str) -> bool` arg;
+    main.rs::setup() reads job-prefs.json and threads the closure
+    through. UI surface for the toggles lands in Phase 5.
+  - **Slice C** (`c236ce0`) Duplicate-trigger dialog — plan
+    §"Duplicate same-job triggering" 3-option Wait/Restart/Cancel
+    collapses to a 2-option window.confirm (Wait + Cancel are
+    operationally identical at the call-site level). New
+    `JobRegistry::find_active_by_kind_target` + `check_duplicate_job`
+    Tauri command. Frontend helper
+    `downloadCoreWithDuplicateCheck(base, parentJobId?)` in
+    lib/backgroundJobs.ts pre-flights the check → window.confirm →
+    cancelJob + 250 ms wait + retry on Restart. CoresPage migrated.
+  - 660 of 660 oa-shell tests green. Operator smoke-tested before
+    merge.
+
 - **Background jobs + persistent progress bar — Phase 4b (artwork_sync + bulk parent + z-fix)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-02 (`--no-ff` from `feat/background-jobs-phase-4b`).
