@@ -182,6 +182,55 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## Recently completed (this session)
 
+- **Background jobs + persistent progress bar — Phase 5 (arc-close: Settings + Recent activity + final resumers)**
+  ([features/background-jobs/](features/background-jobs/)) — merged to
+  main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-5`).
+  Four phase commits closing the 7-phase arc as a complete
+  operator-facing feature.
+  - **Slice A** (`a827c86`) Generic `ReinvokeOperatorResumer`
+    registered for the six remaining kinds (artwork_sync,
+    hash_resolve, dat_sync, folder_scan, mame_listxml_import,
+    bulk_core_install). mark_cancelled the orphan interrupted row
+    + log re-trigger path. Internally-idempotent operations make
+    operator re-trigger functionally equivalent to resume.
+    core_download keeps its Phase 3a/3b byte-level Range resume.
+  - **Slice B** (`7c97639`) New "Background Jobs" Settings
+    category (glyph ⟳). Per-kind auto-resume toggles (Phase 3b
+    backend) + bar behavior stubs (Phase 6 polish target) +
+    failure-handling summary + history counter + `clear_job_history`
+    Tauri command + button.
+  - **Slice C** (`ef543c0`) `RecentActivityPanel.tsx` — full-
+    viewport overlay (z-65) tabbed by outcome. Triggered from a
+    new "Recent activity →" link in the BackgroundJobsBar's
+    expanded header. Reads activeJobs() live for the Running tab;
+    invokes list_recent_jobs for finished tabs. Escape +
+    backdrop close.
+  - **Wrap** (`e32ec65`) SESSION_LOG arc-close entry.
+  - 660 of 660 oa-shell tests green. Operator-confirmed all four
+    surfaces (Settings, Recent activity panel, resumer log lines,
+    clear-history button) before merge.
+
+  **Arc summary** — seven phases shipped end-to-end in two
+  consecutive sessions:
+  - Phase 1 (backend pilot) / Phase 2 (BackgroundJobsBar + dev
+    affordance) / Phase 3a (JobResumer + pause bridge + crash
+    recovery) / Phase 3b (Range resume + opt-out + dup-trigger) /
+    Phase 4a (folder/hash/dat/MAME) / Phase 4b (artwork +
+    bulk-install parent + z-fix) / Phase 4c (deps graph + retry
+    policy) / Phase 5 (final resumers + Settings + Recent
+    activity).
+  - Bar surfaces every long-running operation operators can
+    trigger; pause/resume + cancel work end-to-end; byte-level
+    Range resume survives crashes for core_download; per-kind
+    opt-out gives operators control over auto-resume; recent
+    activity + Settings → Background Jobs give the operator a
+    permanent home for everything OA does behind the scenes.
+  - Plan §"Out of scope" items remain deferred (cross-machine
+    sync, scheduled cron-style work, per-kind completion chime
+    variants). Phase 6 polish targets: always-show bar toggle,
+    completion chime asset + wiring, ResumePrompt dialog
+    surfacing.
+
 - **Background jobs + persistent progress bar — Phase 4c (dependency graph + retry policy)**
   ([features/background-jobs/](features/background-jobs/)) — merged to
   main 2026-06-03 (`--no-ff` from `feat/background-jobs-phase-4c`).

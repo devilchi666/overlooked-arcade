@@ -277,7 +277,7 @@ Surface structured reference data per game in OA's library — date, publisher, 
 
 ---
 
-## NEXT MAJOR ARC — Background jobs + persistent progress bar
+## ✅ CLOSED ARC — Background jobs + persistent progress bar
 
 **Planning locked 2026-06-02.** Full plan at
 [docs/PLANS/background-jobs-and-progress-bar.md](PLANS/background-jobs-and-progress-bar.md).
