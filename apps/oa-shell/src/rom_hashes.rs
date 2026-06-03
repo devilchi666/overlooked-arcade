@@ -1373,23 +1373,50 @@ pub async fn resolve_rom_hashes_for_system(
     let gate = state.gate_for(&systemId);
     let _gate_guard = gate.lock().await;
 
+    // Read OA-wide prefs once at the top — used by the disc-shape
+    // per-track branch's strictness mode below.
+    let disc_strictness = crate::library_prefs::read_library_prefs(&state.app_data_dir)
+        .disc_track_strictness
+        .to_engine();
+
     // Phase 4a hash_resolve wiring — register the job up front so the
     // bar surfaces "Identifying {system} ROMs" with a real n_hashed /
     // n_total. Total settles once `db.list_games_missing_hash` returns
     // (`total` local below); we tick progress after every per-game
     // iteration. Soft-fail when the registry isn't managed.
+    //
+    // Phase A1 Sub-phase 3 — disc-shape systems get a separate
+    // `disc_track_hash` JobKind + a "discs" rather than "ROMs" label,
+    // so the BackgroundJobsBar can surface the right progress shape
+    // (per-disc nested progress lands in Sub-phase 3.5; this commit
+    // wires the kind + label).
     let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
+    let disc_shape = is_disc_shape_system(&systemId);
     let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        let label = format!("Identifying {} ROMs", systemId);
+        let (label, kind, unit) = if disc_shape {
+            (
+                format!("Identifying {} discs", systemId),
+                crate::job_registry::JobKind::DiscTrackHash {
+                    system_id: systemId.clone(),
+                },
+                "discs",
+            )
+        } else {
+            (
+                format!("Identifying {} ROMs", systemId),
+                crate::job_registry::JobKind::HashResolve {
+                    system_id: systemId.clone(),
+                },
+                "games",
+            )
+        };
         match reg.create_job(
-            crate::job_registry::JobKind::HashResolve {
-                system_id: systemId.clone(),
-            },
+            kind,
             label,
             Some(systemId.clone()),
             None,
             false,
-            "games",
+            unit,
             None,
         ) {
             Ok(id) => {
@@ -1397,7 +1424,7 @@ pub async fn resolve_rom_hashes_for_system(
                 Some(id)
             }
             Err(e) => {
-                log::warn!("background_jobs: create_job(hash_resolve) failed: {e}");
+                log::warn!("background_jobs: create_job(identify) failed: {e}");
                 None
             }
         }
@@ -1578,6 +1605,80 @@ pub async fn resolve_rom_hashes_for_system(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
         if is_cd_container_ext(&ext, &systemId) {
+            // Phase A1 Sub-phase 3 — per-track SHA-1 identification.
+            // Highest-precedence disc-shape path: hash the disc image
+            // (or use the cached per-track hashes from
+            // game_disc_tracks), look up the first data track's SHA-1
+            // in rom_hashes_tracks, verify all tracks under the
+            // operator's chosen strictness, stamp canonical title +
+            // sha1 + serial on hit. Falls through to the existing
+            // serial-lookup (peek_disc_id) path on miss/error.
+            //
+            // Skips when: system isn't disc-shape (cart with .bin/.iso
+            // extensions doesn't apply), rom_hashes_tracks is empty
+            // (auto-sync hasn't populated it yet — fall through),
+            // the disc is inside an archive (archived disc per-track
+            // hashing deferred to a follow-up; reads through the
+            // archive layer aren't streaming-friendly for multi-GB
+            // images).
+            let try_per_track = disc_shape
+                && g.archive_inner_path.is_none()
+                && matches!(db.count_rom_hashes_tracks(&systemId), Ok(n) if n > 0);
+            if try_per_track {
+                match try_identify_disc_via_track_hashes(
+                    &g.id,
+                    &g.file_path,
+                    &systemId,
+                    disc_strictness,
+                    &db,
+                )
+                .await
+                {
+                    Ok(Some(canonical)) => {
+                        summary.scanned += 1;
+                        summary.matched += 1;
+                        if let Err(e) = db.apply_rom_hash(
+                            &g.id,
+                            &canonical.sha1,
+                            Some(&canonical.game_name),
+                            canonical.serial.as_deref(),
+                        ) {
+                            log::warn!(
+                                "rom_hashes: apply_rom_hash (per-track) {} failed: {e}",
+                                g.id
+                            );
+                            summary.errors += 1;
+                        }
+                        let _ = app.emit(
+                            "oa://rom-hash-resolve-progress",
+                            &RomResolveProgress {
+                                system_id: systemId.clone(),
+                                done,
+                                total,
+                                current_title: g.title.clone(),
+                                last_action: format!(
+                                    "matched (per-track) → {}",
+                                    canonical.game_name
+                                ),
+                            },
+                        );
+                        continue;
+                    }
+                    Ok(None) => {
+                        // Fall through to serial-lookup path below.
+                    }
+                    Err(e) => {
+                        // Soft-fail — log and fall through. A hash
+                        // error shouldn't block the rest of the resolve
+                        // pass.
+                        log::warn!(
+                            "rom_hashes: per-track identify {} failed: {e}",
+                            g.id
+                        );
+                    }
+                }
+            }
+
             // CD path: peek the disc-id from the data track, look it up
             // in `game_serials`, stamp `games.disc_id` so re-scans skip
             // the peek. Archived CDs use `peek_disc_id_archived` which
@@ -1859,6 +1960,122 @@ pub fn lookup_rom_hash(
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<Option<RomHashRow>, String> {
     db.lookup_rom_hash(&sha1)
+}
+
+/// Phase A1 Sub-phase 3 — per-track SHA-1 identification for one
+/// disc-shape game. Called from the resolve flow's CD-container
+/// branch when the system is disc-shape and rom_hashes_tracks is
+/// populated.
+///
+/// Returns the canonical [`RomTrackRow`] match on success, `None`
+/// when no candidate was found or the strictness check failed. The
+/// caller stamps `apply_rom_hash` with the returned values on
+/// `Ok(Some(_))` and falls through to the existing serial-lookup
+/// path on `Ok(None)`.
+///
+/// Cache behaviour: stats the disc file; if its mtime+size match the
+/// last cached `game_disc_tracks` row, the cached track set is used
+/// directly (no re-hash). Drift triggers a fresh hash + cache
+/// refresh. First identification (no cache row) does the same fresh
+/// hash + cache write.
+///
+/// Hashing runs on Tokio's blocking pool — disc hashes range from
+/// seconds (PSX HuCard-shape) to multiple minutes (PS2/GameCube
+/// multi-GB ISOs); blocking the async runtime is unacceptable.
+async fn try_identify_disc_via_track_hashes(
+    game_id: &str,
+    file_path: &str,
+    system_id: &str,
+    strictness: crate::disc_track_hash::Strictness,
+    db: &LibraryDb,
+) -> Result<Option<crate::library_db::RomTrackRow>, String> {
+    let path = std::path::PathBuf::from(file_path);
+    let metadata = std::fs::metadata(&path)
+        .map_err(|e| format!("stat {}: {e}", path.display()))?;
+    let file_size = metadata.len() as i64;
+    let file_mtime = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Cache lookup. Stamps match → use cached tracks; otherwise hash
+    // fresh and refresh the cache.
+    let cached = db.get_game_disc_tracks(game_id)?;
+    let tracks = match cached {
+        Some(c) if c.file_mtime == file_mtime && c.file_size == file_size => {
+            log::debug!(
+                "disc_track_hash: cache hit for {game_id} ({} tracks)",
+                c.tracks.len()
+            );
+            c.tracks
+        }
+        _ => {
+            let path_for_blocking = path.clone();
+            let game_id_for_log = game_id.to_string();
+            let fresh = tokio::task::spawn_blocking(move || {
+                crate::disc_track_hash::hash_disc(&path_for_blocking, None)
+            })
+            .await
+            .map_err(|e| format!("hash_disc join {game_id_for_log}: {e}"))?
+            .map_err(|e| format!("hash_disc {game_id_for_log}: {e}"))?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            if let Err(e) = db.write_game_disc_tracks(
+                game_id, &fresh, file_mtime, file_size, now,
+            ) {
+                log::warn!(
+                    "disc_track_hash: write cache for {game_id} failed: {e}"
+                );
+            }
+            fresh
+        }
+    };
+
+    // Candidate selection: look up the first data track's SHA-1 in
+    // the canonical rom_hashes_tracks. All-audio discs (CD-DA) have
+    // no data track and are not identifiable via this path.
+    let Some(first_data) = tracks.iter().find(|t| !t.is_audio()) else {
+        log::debug!(
+            "disc_track_hash: {game_id} all-audio disc, skip per-track match"
+        );
+        return Ok(None);
+    };
+    let candidate = match db.lookup_rom_hash_track(&first_data.sha1)? {
+        Some(c) => c,
+        None => return Ok(None),
+    };
+
+    // Verify candidate's full canonical track set against the
+    // operator's per the chosen strictness.
+    let canonical_tracks =
+        db.lookup_rom_hashes_tracks_for_game(system_id, &candidate.game_name)?;
+    let result = crate::disc_track_hash::evaluate_match(
+        &tracks,
+        &canonical_tracks,
+        strictness,
+    );
+    if result.passes_strictness {
+        log::info!(
+            "disc_track_hash: {game_id} matched '{}' ({}/{} data tracks)",
+            candidate.game_name,
+            result.matched_tracks,
+            result.total_data_tracks
+        );
+        Ok(Some(candidate))
+    } else {
+        log::debug!(
+            "disc_track_hash: {game_id} partial match '{}' ({}/{} under {:?})",
+            candidate.game_name,
+            result.matched_tracks,
+            result.total_data_tracks,
+            strictness
+        );
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

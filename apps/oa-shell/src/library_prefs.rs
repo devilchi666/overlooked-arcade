@@ -30,6 +30,40 @@ pub enum RevisionPriority {
     Oldest,
 }
 
+/// Match strictness for disc-shape per-track SHA-1 identification.
+/// Plan-locked at three steps; default Strict per the plan §"Match
+/// strictness". File-persisted alongside the rest of LibraryPrefs.
+/// Maps to [`crate::disc_track_hash::Strictness`] at the call site.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiscTrackStrictness {
+    /// Every data track must match. Default — silent green
+    /// confidence pill on success.
+    #[default]
+    Strict,
+    /// At least 80% of data tracks must match. Shows the ⚠ partial-
+    /// match badge on the library tile when it passes via this mode
+    /// rather than Strict.
+    Threshold80,
+    /// At least one data track matches. Most permissive; same partial-
+    /// match badge.
+    Lenient,
+}
+
+impl DiscTrackStrictness {
+    /// Translate the persistence enum into the matcher's runtime enum.
+    /// Threshold80 fixes the percentage at 80 per the plan; if v2 ever
+    /// exposes a custom percentage, add a `Threshold(u8)` variant
+    /// here with a `pct: u8` field.
+    pub fn to_engine(self) -> crate::disc_track_hash::Strictness {
+        match self {
+            Self::Strict => crate::disc_track_hash::Strictness::Strict,
+            Self::Threshold80 => crate::disc_track_hash::Strictness::Threshold(80),
+            Self::Lenient => crate::disc_track_hash::Strictness::Lenient,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryPrefs {
@@ -39,6 +73,12 @@ pub struct LibraryPrefs {
     /// find the first region that any variant of a group provides.
     pub region_priority: Vec<String>,
     pub revision_priority: RevisionPriority,
+    /// Phase A1 — strictness mode for disc-shape per-track SHA-1
+    /// identification. Default [`DiscTrackStrictness::Strict`]; serde
+    /// default makes prefs files written before this field shipped
+    /// migrate cleanly.
+    #[serde(default)]
+    pub disc_track_strictness: DiscTrackStrictness,
 }
 
 impl Default for LibraryPrefs {
@@ -46,6 +86,7 @@ impl Default for LibraryPrefs {
         Self {
             region_priority: default_region_priority(),
             revision_priority: RevisionPriority::Newest,
+            disc_track_strictness: DiscTrackStrictness::default(),
         }
     }
 }
@@ -130,9 +171,65 @@ mod tests {
         let prefs = LibraryPrefs {
             region_priority: vec!["Japan".to_string(), "USA".to_string()],
             revision_priority: RevisionPriority::Oldest,
+            disc_track_strictness: DiscTrackStrictness::Threshold80,
         };
         write_library_prefs(&tmp, &prefs).expect("write");
         assert_eq!(read_library_prefs(&tmp), prefs);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn disc_track_strictness_serde_round_trip() {
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-libprefs-strictness-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        // Default is Strict.
+        let defaults = LibraryPrefs::default();
+        assert_eq!(defaults.disc_track_strictness, DiscTrackStrictness::Strict);
+        // Round-trip each variant through disk.
+        for variant in [
+            DiscTrackStrictness::Strict,
+            DiscTrackStrictness::Threshold80,
+            DiscTrackStrictness::Lenient,
+        ] {
+            let _ = std::fs::remove_dir_all(&tmp);
+            let prefs = LibraryPrefs {
+                disc_track_strictness: variant,
+                ..LibraryPrefs::default()
+            };
+            write_library_prefs(&tmp, &prefs).expect("write");
+            assert_eq!(read_library_prefs(&tmp).disc_track_strictness, variant);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn legacy_prefs_without_strictness_field_deserializes_with_default() {
+        // Simulate a prefs.json written by a build before this field
+        // shipped. The serde default should hydrate disc_track_strictness
+        // to Strict without erroring.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-libprefs-legacy-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let legacy = r#"{"regionPriority":["USA","Europe"],"revisionPriority":"newest"}"#;
+        std::fs::write(tmp.join("library").join("prefs.json"), legacy).expect("write");
+        let loaded = read_library_prefs(&tmp);
+        assert_eq!(loaded.region_priority, vec!["USA", "Europe"]);
+        assert_eq!(loaded.revision_priority, RevisionPriority::Newest);
+        assert_eq!(loaded.disc_track_strictness, DiscTrackStrictness::Strict);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
