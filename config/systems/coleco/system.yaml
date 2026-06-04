@@ -16,3 +16,40 @@ cores:
   blurb: ColecoVision (gear* family).
   recommended: true
   bios_required: colecovision.col
+system_info:
+  system_id: coleco
+  manufacturer: Coleco
+  type: Home Console
+  generation: 2nd Generation
+  release_date: August 1982 (NA)
+  discontinued: 1985
+  units_sold: ~2 Million
+  media: Cartridge
+  cpu: Zilog Z80A @ 3.58 MHz
+  sound: SN76489 (3 channels + noise)
+  resolution: 256 x 192
+  color_palette: 16 colors
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local
+  region: NTSC
+  storage: Cartridge (8 KB - 32 KB)
+  ram: 1 KB main / 16 KB VRAM
+  video_output: RF / Composite
+  aspect_ratio: 4:3
+  peripherals:
+  - name: ColecoVision Controller
+    glyph: 🎮
+  - name: Roller Controller
+    glyph: 🟢
+  - name: Super Action Controller
+    glyph: 🎮
+  - name: Expansion Module #1 (Atari 2600 adapter)
+    glyph: 🔌
+  release_flag: 🇺🇸
+  tagline: 8-BIT HOME CONSOLE
+  blurb: Coleco's brief but brilliant moment in the home-console sun — launched with an arcade-perfect Donkey Kong pack-in that genuinely impressed people in 1982, then killed in the 1983 crash before a second wave could land. Ported the Atari 2600 library via Expansion Module #1, which prompted an actual lawsuit from Atari.
+  sidebar_subline: 8-BIT · 1982
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

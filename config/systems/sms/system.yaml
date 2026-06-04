@@ -20,3 +20,41 @@ cores:
 - base: gearsystem_libretro
   display_name: Gearsystem
   blurb: Modern SMS / GG / SG-1000 / ColecoVision (gear* family).
+system_info:
+  system_id: sms
+  manufacturer: Sega
+  type: Home Console
+  generation: 3rd Generation
+  release_date: October 20, 1985 (JP — as Mark III) / June 1986 (NA)
+  discontinued: 1996 (still produced in Brazil into the 2010s)
+  units_sold: ~13 Million (worldwide)
+  media: Cartridge / Sega Card
+  cpu: Zilog Z80A @ 3.58 MHz
+  sound: SN76489 (4 channels) + YM2413 FM (Japan only)
+  resolution: 256 x 192
+  color_palette: 64 colors (32 on-screen)
+  display_ratio: 4:3
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local
+  region: NTSC / PAL
+  storage: Cartridge (32 KB - 1 MB) / Sega Card (32 KB)
+  ram: 8 KB main / 16 KB VRAM
+  video_output: RF / Composite / RGB
+  aspect_ratio: 4:3
+  peripherals:
+  - name: Control Pad
+    glyph: 🎮
+  - name: Light Phaser
+    glyph: 🔫
+  - name: 3-D Glasses
+    glyph: 🕶️
+  - name: Sports Pad
+    glyph: ⚾
+  release_flag: 🇯🇵
+  tagline: 8-BIT HOME CONSOLE
+  blurb: Sega's first global home console — a refined SG-1000 successor that outsold the NES in Europe and South America but lost decisively to Nintendo in Japan and North America. Massive in Brazil where Tectoy kept it in production for decades. The home of Wonder Boy, Phantasy Star, and the early Sonic prequel Master of Darkness.
+  sidebar_subline: 8-BIT · 1985
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

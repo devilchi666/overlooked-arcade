@@ -17,3 +17,37 @@ cores:
   display_name: Beetle WonderSwan
   blurb: WonderSwan + WonderSwan Color.
   recommended: true
+system_info:
+  system_id: wonderswan
+  manufacturer: Bandai
+  type: Handheld
+  generation: 5th Generation
+  release_date: March 4, 1999 (JP, monochrome) / December 9, 2000 (JP, Color)
+  discontinued: 2003
+  units_sold: ~3.5 Million (all models, Japan)
+  media: Cartridge
+  cpu: NEC V30 MZ @ 3.072 MHz (16-bit, x86-compatible)
+  sound: Custom 4-channel PCM + noise (mono speaker)
+  resolution: 224 x 144 (LCD)
+  color_palette: 8 shades (mono) / 4,096 colors with 241 on-screen (Color)
+  architecture: 16-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 via link cable
+  region: NTSC-J (Japan only)
+  storage: Cartridge (1 MB - 16 MB) + EEPROM
+  ram: 16 KB (mono) / 64 KB (Color)
+  aspect_ratio: 14:9 / 9:14 (rotatable LCD — portrait + landscape)
+  peripherals:
+  - name: D-Pad + Buttons (4-direction × 2 sets)
+    glyph: 🎮
+  - name: Link Cable
+    glyph: 🔗
+  - name: Headphone Adapter
+    glyph: 🎧
+  release_flag: 🇯🇵
+  tagline: 16-BIT HANDHELD
+  blurb: Gunpei Yokoi's final handheld design, finished after his death by Bandai — Japan-only, two-axis controls (rotate the screen), and one of the longest battery lives ever on a portable. Famous for the only handheld Final Fantasy ports of the era, Klonoa Moonlight Museum, and a slim but cherished library.
+  sidebar_subline: 16-BIT HANDHELD · 1999
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

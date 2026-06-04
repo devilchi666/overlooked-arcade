@@ -20,3 +20,37 @@ cores:
 - base: gearsystem_libretro
   display_name: Gearsystem
   blurb: Modern SMS / GG / SG-1000 / ColecoVision (gear* family).
+system_info:
+  system_id: gamegear
+  manufacturer: Sega
+  type: Handheld
+  generation: 4th Generation
+  release_date: October 6, 1990 (JP) / April 26, 1991 (NA)
+  discontinued: 1997
+  units_sold: ~10.62 Million
+  media: Cartridge
+  cpu: Zilog Z80 @ 3.58 MHz
+  sound: SN76489 (4 channels)
+  resolution: 160 x 144 (LCD)
+  color_palette: 4,096 colors (32 on-screen)
+  architecture: 8-Bit
+  max_players: 1-2 Players (via Gear-to-Gear link)
+  multiplayer: Yes — 2 players via Gear-to-Gear cable
+  region: NTSC / PAL
+  storage: Cartridge (32 KB - 1 MB)
+  ram: 8 KB main / 16 KB VRAM
+  aspect_ratio: 10:9 (LCD)
+  peripherals:
+  - name: D-Pad + Buttons
+    glyph: 🎮
+  - name: Gear-to-Gear Cable
+    glyph: 🔗
+  - name: TV Tuner
+    glyph: 📺
+  release_flag: 🇯🇵
+  tagline: COLOR HANDHELD
+  blurb: Sega's handheld counter to the Game Boy — landscape-oriented, full color LCD, and built on Master System hardware so much of the SMS library was straightforwardly ported. Lost to Nintendo's battery life and price, but cherished for genuinely colorful Sonic, Shinobi, and arcade ports. Battery-hungry to a legendary degree.
+  sidebar_subline: 8-BIT HANDHELD · 1990
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

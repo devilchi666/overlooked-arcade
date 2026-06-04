@@ -29,3 +29,35 @@ cores:
   display_name: Holani
   blurb: High-accuracy Lynx — newer entrant focused on chip-level accuracy.
   bios_required: lynxboot.img
+system_info:
+  system_id: lynx
+  manufacturer: Atari
+  type: Handheld
+  generation: 4th Generation
+  release_date: September 1, 1989 (NA)
+  discontinued: 1995
+  units_sold: ~2 Million
+  media: Cartridge
+  cpu: MOS 65SC02 @ 4 MHz (with Suzy + Mikey custom chips)
+  sound: Mikey (4 channels, 8-bit)
+  resolution: 160 x 102 (LCD)
+  color_palette: 4,096 colors (16 on-screen)
+  architecture: 8/16-Bit Hybrid
+  max_players: 1-8 Players (via ComLynx daisy-chain)
+  multiplayer: Yes — up to 8 via ComLynx serial cable
+  region: NTSC
+  storage: Cartridge (128 KB - 2 MB)
+  ram: 64 KB
+  aspect_ratio: 1.57:1 (LCD)
+  peripherals:
+  - name: D-Pad + Buttons
+    glyph: 🎮
+  - name: ComLynx Cable
+    glyph: 🔗
+  release_flag: 🇺🇸
+  tagline: COLOR HANDHELD
+  blurb: The first handheld with a color LCD, beating the Game Gear by a year and outclassing the Game Boy on every spec. Lost the market to Nintendo despite genuinely revolutionary hardware. Famous for shooters, racers, and Lemmings — and for the fact that you could flip the screen upside-down for left-handed players.
+  sidebar_subline: 16-BIT HANDHELD · 1989
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04
