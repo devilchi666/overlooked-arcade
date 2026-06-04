@@ -170,6 +170,61 @@ export function metadataYear(meta: GameMetadata | undefined): number | undefined
  * The Map only contains entries for groups with `variants.length > 1`;
  * single-file games are absent and pass through unchanged.
  */
+/**
+ * Phase A1 Sub-phase 4 — collapse multi-disc set members down to one
+ * representative tile per set. The representative is the lowest-
+ * `discNumber` entry; its title is stripped of the "(Disc N)" suffix
+ * at render time. Standalone games (undefined `discSetId`) pass
+ * through unchanged.
+ *
+ * The LibraryTile checks `discSetId` to decide whether to open the
+ * disc-picker overlay on click instead of launching directly. This
+ * collapse intentionally KEEPS the representative's other fields
+ * (id, filePath, etc.) so existing context-menu actions (Show saves,
+ * Show info, etc.) still target a real game.
+ */
+export function collapseDiscSets(entries: RomEntry[]): RomEntry[] {
+  // First pass: find the lowest-discNumber entry per disc_set_id.
+  const byDiscSet = new Map<number, RomEntry>();
+  for (const entry of entries) {
+    if (entry.discSetId === undefined) continue;
+    const existing = byDiscSet.get(entry.discSetId);
+    if (
+      !existing ||
+      (entry.discNumber ?? Number.POSITIVE_INFINITY) <
+        (existing.discNumber ?? Number.POSITIVE_INFINITY)
+    ) {
+      byDiscSet.set(entry.discSetId, entry);
+    }
+  }
+  // Second pass: emit representatives once per set, standalone games
+  // pass through in input order.
+  const seen = new Set<number>();
+  const out: RomEntry[] = [];
+  for (const entry of entries) {
+    if (entry.discSetId !== undefined) {
+      if (seen.has(entry.discSetId)) continue;
+      seen.add(entry.discSetId);
+      const representative = byDiscSet.get(entry.discSetId)!;
+      out.push({
+        ...representative,
+        title: stripDiscSuffix(representative.title),
+      });
+    } else {
+      out.push(entry);
+    }
+  }
+  return out;
+}
+
+/// Strip the redump "(Disc N)" suffix from a multi-disc game title so
+/// the collapsed set tile reads "Final Fantasy IX (USA)" rather than
+/// "Final Fantasy IX (USA) (Disc 1)". Case-insensitive, tolerates one
+/// or more spaces between "Disc" and the number.
+function stripDiscSuffix(title: string): string {
+  return title.replace(/\s*\(\s*Disc\s+\d+\s*\)/gi, "").trim();
+}
+
 export function collapseVariantGroups(
   entries: RomEntry[],
   groupsByVariantId: Map<string, GameGroupInfo>,

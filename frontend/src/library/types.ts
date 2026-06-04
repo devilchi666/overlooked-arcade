@@ -53,6 +53,14 @@ export type RomEntry = {
   /// Editorial rating 0.0–5.0 from metadata enrichment. Will drive
   /// Hidden Gems smart-list in a follow-up once populated.
   rating?: number;
+  /// Phase A1 Sub-phase 4 — FK into the disc_sets table for one disc
+  /// of a multi-disc game. Undefined for single-disc and cart games.
+  /// Drives library tile grouping (one tile per set rather than one
+  /// per disc); see DiscPickerOverlay for the disc selection UX.
+  discSetId?: number;
+  /// 1-based disc index within the parent set ("Disc 1" / "Disc 2"
+  /// / …). Undefined for standalone games. Orders the disc-picker.
+  discNumber?: number;
 };
 
 export type LibraryState = {

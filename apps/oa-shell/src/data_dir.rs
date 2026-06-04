@@ -676,6 +676,8 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
+            disc_set_id: None,
+            disc_number: None,
         };
         library.add_games(&[row]).expect("seed row");
         rom_id.to_string()
