@@ -2163,6 +2163,10 @@ fn disc_filename_fuzzy_key_relaxed(s: &str) -> String {
     };
     let s = s.to_lowercase();
     let s = relax_paren_groups(&s);
+    // v2 — insert space between adjacent `)(` so TOSEC's "no space
+    // between paren groups" shape (`(USA)(Disc 1 of 2)`) collapses to
+    // the same key as Redump's space-separated form (`(USA) (Disc 1)`).
+    let s = s.replace(")(", ") (");
     let s: String = s
         .chars()
         .map(|c| match c {
@@ -2174,9 +2178,9 @@ fn disc_filename_fuzzy_key_relaxed(s: &str) -> String {
 }
 
 /// Walk the input character-by-character; for each `(...)` paren group,
-/// either drop it (revision marker), collapse it (multi-country region),
-/// or keep it verbatim (everything else — Disc N, Unl, language tags,
-/// etc.). Lowercase is assumed.
+/// either drop it (revision marker, language group, `(unl)` operator
+/// tag), normalize it (`(disc N of M)` → `(disc N)`, multi-country
+/// region collapse), or keep it verbatim. Lowercase is assumed.
 fn relax_paren_groups(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -2202,16 +2206,75 @@ fn relax_paren_groups(s: &str) -> String {
             return out;
         }
         let trimmed = body.trim();
-        if is_revision_marker(trimmed) {
-            // Drop the entire group — relaxed key is rev-agnostic.
+        // v2 — drop categories that catalog rows don't carry:
+        //   - revision markers (existing)
+        //   - language-code paren groups (`(En,Ja)`, `(En,Fr,De,Es,It)`)
+        //     because Redump catalog adds them but TOSEC/operator
+        //     filenames typically don't
+        //   - bare `(unl)` operator-side "unlicensed" tag — catalog
+        //     doesn't disambiguate licensed vs unlicensed at the name
+        //     level (Code Breaker (USA) (Unl) → Code Breaker (USA))
+        if is_revision_marker(trimmed)
+            || is_language_group(trimmed)
+            || trimmed == "unl"
+        {
             continue;
         }
-        let collapsed = collapse_region_group(trimmed);
+        // Disc-of-M normalization: `(Disc 1 of 2)` → `(Disc 1)` to
+        // match Redump's bare `(Disc N)` shape.
+        let body_out = normalize_disc_of_m(trimmed);
+        let body_out = collapse_region_group(&body_out);
         out.push('(');
-        out.push_str(&collapsed);
+        out.push_str(&body_out);
         out.push(')');
     }
     out
+}
+
+/// True when the bracket body is a comma-separated list of ISO 639-1
+/// language codes (e.g. `en,ja,fr,de,es`). Single-code parens like
+/// `(en)` deliberately do NOT match — they could collide with regions
+/// (`en` isn't a region but bare 2-letter strings are too ambiguous
+/// to strip safely without a comma-separated context confirming the
+/// language-list shape).
+fn is_language_group(body: &str) -> bool {
+    const LANG_CODES: &[&str] = &[
+        "en", "ja", "fr", "de", "es", "it", "pt", "ko", "ru", "ar",
+        "zh", "nl", "sv", "no", "fi", "da", "pl", "cs", "hu", "tr",
+        "el", "th", "vi", "he", "id", "uk", "hr", "ro", "sk", "sl",
+        "lt", "lv", "et", "bg", "ca",
+    ];
+    let segments: Vec<&str> = body.split(',').map(str::trim).collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.iter().all(|s| LANG_CODES.contains(s))
+}
+
+/// Normalize a `disc <n> of <m>` body to `disc <n>` so TOSEC's
+/// `(Disc 1 of 2)` collapses to the same shape as Redump's `(Disc 1)`.
+/// Returns the input unchanged for any non-matching body so legitimate
+/// `(Disc N)` groups (already in the Redump shape) flow through.
+fn normalize_disc_of_m(body: &str) -> String {
+    let mut iter = body.split_whitespace();
+    if iter.next() != Some("disc") {
+        return body.to_string();
+    }
+    let Some(n) = iter.next() else { return body.to_string(); };
+    if !n.chars().all(|c| c.is_ascii_digit()) {
+        return body.to_string();
+    }
+    if iter.next() != Some("of") {
+        return body.to_string();
+    }
+    let Some(m) = iter.next() else { return body.to_string(); };
+    if !m.chars().all(|c| c.is_ascii_digit()) {
+        return body.to_string();
+    }
+    if iter.next().is_some() {
+        return body.to_string();
+    }
+    format!("disc {n}")
 }
 
 /// True when the bracket body looks like a revision marker:
@@ -2630,12 +2693,15 @@ game (
         let d1 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 1).cue");
         let d2 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 2).cue");
         assert_ne!(d1, d2);
-        // Language code brackets (En, Fr, Es) are NOT region groups —
-        // their segments aren't in the known-region list — so they
-        // stay verbatim. They'd otherwise collapse to "en" and
-        // collide on every language-pack release.
+        // v2 — language-code groups (En, Fr, Es) are stripped from the
+        // relaxed key so operator's bare `(USA)` collapses to the same
+        // key as catalog's `(USA) (En,Fr,Es)`. v1's comment said
+        // "language brackets stay" — v2 deliberately reverses that
+        // because catalog adds lang tags that operator filenames don't
+        // carry, and stripping them is what makes Crazy Taxi (USA)
+        // match Crazy Taxi (USA) (En,Ja).
         let langs = disc_filename_fuzzy_key_relaxed("Game (USA) (En, Fr, Es).cue");
-        assert!(langs.contains("(en fr es)"), "got: {langs}");
+        assert!(!langs.contains("(en"), "got: {langs}");
     }
 
     #[test]
@@ -2651,10 +2717,12 @@ game (
     }
 
     #[test]
-    fn relaxed_key_handles_unl_and_unusual_brackets() {
-        // (Unl) for unlicensed dumps stays (not a rev marker).
-        let key = disc_filename_fuzzy_key_relaxed("Action Replay (USA) (Unl).cue");
-        assert!(key.contains("(unl)"), "got: {key}");
+    fn relaxed_key_handles_unusual_brackets() {
+        // v2 — (Unl) is now stripped (operator tag, not on catalog).
+        // The dedicated relaxed_key_strips_unl_operator_tag test
+        // covers that contract; here we focus on near-miss patterns
+        // that look like rev markers but shouldn't be.
+        //
         // "v" prefix without a dot is NOT a revision marker — could be
         // "Vol 1" or game title text. Stays.
         let key = disc_filename_fuzzy_key_relaxed("Game (USA) (v1).cue");
@@ -2662,6 +2730,106 @@ game (
         // "rev" without a trailing digit is NOT a marker either.
         let key = disc_filename_fuzzy_key_relaxed("Game (USA) (revision).cue");
         assert!(key.contains("(revision)"), "got: {key}");
+    }
+
+    // v2 — TOSEC-vs-Redump bridge --------------------------------------
+
+    #[test]
+    fn relaxed_key_strips_language_code_paren_groups() {
+        // TOSEC/operator filenames typically don't carry the language
+        // tags Redump appends. Stripping them on the catalog side lets
+        // operator's bare `(USA)` hit catalog's `(USA) (En,Ja)`.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Crazy Taxi (USA).chd"),
+            disc_filename_fuzzy_key_relaxed("Crazy Taxi (USA) (En,Ja)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("ChuChu Rocket! (USA).chd"),
+            disc_filename_fuzzy_key_relaxed("ChuChu Rocket! (USA) (En,Ja,Fr,De,Es)")
+        );
+        // Single-code group like `(en)` does NOT trigger the strip —
+        // requires comma-separated list to confirm language-list shape.
+        let single = disc_filename_fuzzy_key_relaxed("Game (USA) (en).cue");
+        assert!(single.contains("(en)"), "got: {single}");
+    }
+
+    #[test]
+    fn relaxed_key_normalizes_disc_n_of_m_to_disc_n() {
+        // TOSEC writes `(Disc 1 of 2)`; Redump writes `(Disc 1)`. The
+        // relaxed key normalizes the former to the latter so they match.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("D2 (USA) (Disc 1 of 4).chd"),
+            disc_filename_fuzzy_key_relaxed("D2 (USA) (Disc 1)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Alone in the Dark (USA) (Disc 2 of 2).chd"),
+            disc_filename_fuzzy_key_relaxed("Alone in the Dark (USA) (Disc 2)")
+        );
+        // Disc number distinctions preserved through normalization —
+        // (Disc 1 of 4) and (Disc 2 of 4) still produce different keys.
+        let d1 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 1 of 4).chd");
+        let d2 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 2 of 4).chd");
+        assert_ne!(d1, d2);
+    }
+
+    #[test]
+    fn relaxed_key_inserts_space_between_adjacent_parens() {
+        // TOSEC convention `(USA)(Disc 1 of 2)` has no space between
+        // paren groups; Redump uses `(USA) (Disc 1)`. The post-step
+        // insertion makes the no-space shape collapse to the
+        // space-separated key.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Shenmue (USA)(Disc 1 of 4).chd"),
+            disc_filename_fuzzy_key_relaxed("Shenmue (USA) (Disc 1)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Carrier (USA)(Disc 2).chd"),
+            disc_filename_fuzzy_key_relaxed("Carrier (USA) (Disc 2)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_strips_unl_operator_tag() {
+        // Operator-side `(Unl)` marker for unlicensed cheat-disc
+        // utilities doesn't appear on catalog rows. Strip so
+        // `Code Breaker (USA) (Unl)` hits catalog's `Code Breaker (USA)`.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Code Breaker (USA) (Unl).cue"),
+            disc_filename_fuzzy_key_relaxed("Code Breaker (USA)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Code Breaker Version 3 (USA) (Unl).cue"),
+            disc_filename_fuzzy_key_relaxed("Code Breaker Version 3 (USA)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_preserves_catalog_variant_tags() {
+        // Beta / Proto / Demo / Sample are GENUINE Redump variant
+        // tags — catalog rows distinguish licensed-final from these.
+        // Must NOT strip; stripping would collapse distinct catalog
+        // rows onto the same key and mis-identify the operator's dump.
+        let final_ = disc_filename_fuzzy_key_relaxed("Game (USA).cue");
+        let beta = disc_filename_fuzzy_key_relaxed("Game (USA) (Beta).cue");
+        let proto = disc_filename_fuzzy_key_relaxed("Game (USA) (Proto).cue");
+        let demo = disc_filename_fuzzy_key_relaxed("Game (USA) (Demo).cue");
+        assert_ne!(final_, beta, "Beta variant must stay distinct");
+        assert_ne!(final_, proto, "Proto variant must stay distinct");
+        assert_ne!(final_, demo, "Demo variant must stay distinct");
+    }
+
+    #[test]
+    fn relaxed_key_v2_stacks_all_normalizations_for_tosec_dreamcast() {
+        // End-to-end check: a TOSEC-style filename with double-space,
+        // adjacent-paren, Disc-of-M shape collapses to the same key
+        // as the Redump catalog row carrying language tags.
+        let tosec = disc_filename_fuzzy_key_relaxed(
+            "Alone in the Dark - The New Nightmare  (USA)(Disc 1 of 2).chd"
+        );
+        let redump = disc_filename_fuzzy_key_relaxed(
+            "Alone in the Dark - The New Nightmare (USA) (En,Fr,De,Es,It) (Disc 1)"
+        );
+        assert_eq!(tosec, redump);
     }
 
     #[test]
