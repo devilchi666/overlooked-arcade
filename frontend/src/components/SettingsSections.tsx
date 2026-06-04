@@ -20,6 +20,7 @@ import {
   createResource,
   createSignal,
   For,
+  onMount,
   Show,
   type Component,
   type JSX,
@@ -268,8 +269,39 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
 
 // --- Experimental (hosts the Retroverse master toggle) ----------------
 
+/// Mirror of Rust `LibraryPrefs` (camelCase via #[serde(rename_all)]).
+/// Only the fields ExperimentalSettings actually reads/writes are
+/// typed — others survive round-trip via JS spread.
+type LibraryPrefsLike = Record<string, unknown> & {
+  discTrackExperimentalEnabled?: boolean;
+};
+
 export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (props) => {
   const [devToolsOpen, setDevToolsOpen] = createSignal(false);
+
+  // Mirror of LibraryPrefs.disc_track_experimental_enabled from the
+  // backend (prefs.json). Fetched once on mount; writes round-trip
+  // through set_library_prefs with the rest of the prefs object
+  // spread-preserved so we don't reset region/revision priority.
+  // Default false matches the Rust default after the 2026-06-03 pivot.
+  const [libraryPrefs, setLibraryPrefs] = createSignal<LibraryPrefsLike | null>(null);
+  onMount(() => {
+    invoke<LibraryPrefsLike>("get_library_prefs")
+      .then((p) => setLibraryPrefs(p))
+      .catch((e) => console.warn("get_library_prefs failed:", e));
+  });
+  async function setDiscTrackExperimental(v: boolean) {
+    const current = libraryPrefs();
+    if (!current) return;
+    const next = { ...current, discTrackExperimentalEnabled: v };
+    setLibraryPrefs(next);
+    try {
+      await invoke("set_library_prefs", { prefs: next });
+    } catch (e) {
+      console.warn("set_library_prefs failed:", e);
+    }
+  }
+
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -285,6 +317,18 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
             onChange: (v) => props.settings.setExperimentalRetroverseUi(v),
           }}
           description="Top-toolbar tab IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS) replacing today's sidebar-driven layout. Flipping this OFF returns to the legacy Shell layout immediately — no restart required."
+        />
+        <SettingRow
+          label="Per-track SHA-1 disc identification"
+          inherited={null}
+          overridden={false}
+          toggle={{
+            checked: !!libraryPrefs()?.discTrackExperimentalEnabled,
+            onChange: (v) => {
+              void setDiscTrackExperimental(v);
+            },
+          }}
+          description="When ON, Identify ROMs on disc-shape systems (PSX / Saturn / Sega CD / Dreamcast / PCE-CD / etc.) computes per-track SHA-1 hashes against the redump catalog before falling back to filename match. Costs 5–60 seconds per disc on the first run; later runs hit the per-game cache. Works only on raw, unarchived .cue+.bin or .gdi extracted directly from DiscImageCreator — CHD-stored discs and archived ZIPs won't match the redump-published bytes regardless. Default OFF; filename-based fuzzy matching is the primary path."
         />
       </SettingsCard>
 
