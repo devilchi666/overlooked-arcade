@@ -1148,47 +1148,31 @@ pub async fn download_core(
     cores_dir: tauri::State<'_, CoresDir>,
     app: AppHandle,
 ) -> Result<String, String> {
-    use crate::job_registry::{JobKind, JobRegistry};
+    use crate::job_registry::{JobKind, JobRegistry, JobScope};
 
     let dest_dir = cores_dir.0.clone();
 
-    // === Background-jobs registration (soft-fail). ===
+    // === Background-jobs registration via JobScope (soft-fail). ===
     // -1 sentinel from start_bulk_core_install means the registry
     // wasn't managed (bar shows nothing) — treat as None.
     let parent_id_normalized = parentJobId.filter(|id| *id > 0);
     let registry_state = app.try_state::<JobRegistry>();
-    let job_id: Option<i64> = registry_state.as_ref().and_then(|state| {
-        let label = format!("Downloading {}", catalog_display_name_for(&base));
-        match state.create_job(
-            JobKind::CoreDownload {
-                base: base.clone(),
-            },
-            label,
-            None,
-            parent_id_normalized,
-            false,
-            "bytes",
-            None,
-        ) {
-            Ok(id) => {
-                if let Err(e) = state.mark_running(id) {
-                    log::warn!("background_jobs: mark_running({id}) failed: {e}");
-                }
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(core_download) failed: {e}");
-                None
-            }
-        }
-    });
+    let scope = JobScope::start(
+        registry_state.as_deref(),
+        JobKind::CoreDownload { base: base.clone() },
+        format!("Downloading {}", catalog_display_name_for(&base)),
+        None,
+        parent_id_normalized,
+        false,
+        "bytes",
+        None,
+    );
+    let job_id = scope.id();
     let handle = job_id.and_then(|id| registry_state.as_ref().and_then(|s| s.handle(id)));
 
     // === Run the actual download/extract/install via the shared inner
-    //     fn. Wrapped so finalization runs exactly once regardless of
-    //     which error path took us out, AND so the resumer (Phase 3a
-    //     §CoreDownloadResumer below) can share the same flow without
-    //     duplicating ~200 lines of body. ===
+    //     fn. JobScope's Drop catches any `?`-early-return inside
+    //     run_download_core_inner so the row never leaks `running`. ===
     let result = run_download_core_inner(
         &base,
         &dest_dir,
@@ -1199,38 +1183,31 @@ pub async fn download_core(
     )
     .await;
 
-    // === Finalize the job row. ===
-    if let (Some(state), Some(id)) = (registry_state.as_ref(), job_id) {
-        let was_cancelled = handle.as_ref().is_some_and(|h| h.is_cancelled());
-        match (&result, was_cancelled) {
-            (Ok(_), _) => {
-                let _ = state.mark_completed(id);
-            }
-            (Err(_), true) => {
-                // Per-kind cancel-cleanup contract (plan §"Cancel
-                // cleanup"): core_download cancel = drop the partial
-                // download state so the next attempt starts fresh.
-                // Phase 3b: now TWO partials to clean — the streaming
-                // .zip.partial holds the in-flight zip bytes, the
-                // .dll.partial only exists if extract ran (post-
-                // chunk-loop). Cancel during the chunk loop only has
-                // the former; cancel during extract has both.
-                let ext = dylib_ext();
-                let file_name = core_filename_for_host(&base);
-                let zip_partial_path = dest_dir
-                    .join(&file_name)
-                    .with_extension(format!("{ext}.zip.partial"));
-                let dll_partial_path = dest_dir
-                    .join(&file_name)
-                    .with_extension(format!("{ext}.partial"));
-                let _ = std::fs::remove_file(&zip_partial_path);
-                let _ = std::fs::remove_file(&dll_partial_path);
-                let _ = state.mark_cancelled(id);
-            }
-            (Err(e), false) => {
-                let _ = state.mark_failed(id, e.clone());
-            }
+    // === Finalize the job row through the scope. ===
+    let was_cancelled = handle.as_ref().is_some_and(|h| h.is_cancelled());
+    match (&result, was_cancelled) {
+        (Ok(_), _) => scope.complete(),
+        (Err(_), true) => {
+            // Per-kind cancel-cleanup contract (plan §"Cancel cleanup"):
+            // core_download cancel = drop the partial download state so
+            // the next attempt starts fresh. Phase 3b: now TWO partials
+            // to clean — the streaming .zip.partial holds the in-flight
+            // zip bytes, the .dll.partial only exists if extract ran
+            // (post-chunk-loop). Cancel during the chunk loop only has
+            // the former; cancel during extract has both.
+            let ext = dylib_ext();
+            let file_name = core_filename_for_host(&base);
+            let zip_partial_path = dest_dir
+                .join(&file_name)
+                .with_extension(format!("{ext}.zip.partial"));
+            let dll_partial_path = dest_dir
+                .join(&file_name)
+                .with_extension(format!("{ext}.partial"));
+            let _ = std::fs::remove_file(&zip_partial_path);
+            let _ = std::fs::remove_file(&dll_partial_path);
+            scope.cancel();
         }
+        (Err(e), false) => scope.fail(e.clone()),
     }
 
     result
@@ -1735,15 +1712,19 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
                 .with_extension(format!("{ext}.partial"));
             let _ = std::fs::remove_file(&dll_partial_path);
 
-            // Re-attach handle (fresh cancel + pause flags) so the
-            // bar can route Pause / Cancel into the resumed worker.
-            let handle = registry.attach_handle(snapshot.id, "core_download".to_string());
-            if let Err(e) = registry.mark_running(snapshot.id) {
-                log::warn!(
-                    "background_jobs: mark_running on resumed job {} failed: {e}",
-                    snapshot.id
-                );
-            }
+            // Re-attach via JobScope::resume so the worker gets the
+            // same Drop-on-`?` protection download_core has, AND the
+            // bar can route Pause / Cancel into the resumed worker
+            // through the freshly-attached handle.
+            let scope = crate::job_registry::JobScope::resume(
+                Some(&registry),
+                snapshot.id,
+                "core_download".to_string(),
+                None,
+            );
+            let handle = registry
+                .handle(snapshot.id)
+                .expect("attach_handle just inserted it");
 
             let result = run_download_core_inner(
                 &base,
@@ -1758,9 +1739,7 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
             // Finalize — identical shape to download_core's tail.
             let was_cancelled = handle.is_cancelled();
             match (&result, was_cancelled) {
-                (Ok(_), _) => {
-                    let _ = registry.mark_completed(snapshot.id);
-                }
+                (Ok(_), _) => scope.complete(),
                 (Err(_), true) => {
                     // Cancel cleanup — drop both partials.
                     let zip_partial_path = cores_dir
@@ -1768,11 +1747,9 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
                         .with_extension(format!("{ext}.zip.partial"));
                     let _ = std::fs::remove_file(&zip_partial_path);
                     let _ = std::fs::remove_file(&dll_partial_path);
-                    let _ = registry.mark_cancelled(snapshot.id);
+                    scope.cancel();
                 }
-                (Err(e), false) => {
-                    let _ = registry.mark_failed(snapshot.id, e.clone());
-                }
+                (Err(e), false) => scope.fail(e.clone()),
             }
         })
     }

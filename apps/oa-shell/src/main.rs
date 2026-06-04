@@ -9292,6 +9292,12 @@ async fn start_background_scan(
     // the registry is managed. Soft-fail when it isn't (matches
     // every other kind's wiring shape) — the scan still proceeds
     // with its own fresh AtomicBool.
+    // === Background-jobs registration. ===
+    // The Tauri command creates the row synchronously so it can return
+    // the job_id to the frontend (for cancel-routing). The spawn_blocking
+    // closure picks up the row via JobScope::resume so the worker gets
+    // Drop-on-`?` protection — a panic or early-return inside the walker
+    // can no longer leak a `running` row.
     let registry_state = handle.try_state::<job_registry::JobRegistry>();
     let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|state| {
         let label = format!(
@@ -9312,10 +9318,7 @@ async fn start_background_scan(
             "files",
             None,
         ) {
-            Ok(id) => {
-                let _ = state.mark_running(id);
-                Some(id)
-            }
+            Ok(id) => Some(id),
             Err(e) => {
                 log::warn!("background_jobs: create_job(folder_scan) failed: {e}");
                 None
@@ -9350,6 +9353,23 @@ async fn start_background_scan(
     // spawn_blocking — fs walk is blocking. The Tokio runtime is already
     // present via reqwest's transitive use; we share it.
     tokio::task::spawn_blocking(move || {
+        // JobScope::resume flips the pre-created row from pending to
+        // running AND installs Drop-on-`?`/panic protection. Without
+        // this, a panic anywhere in run_scan_blocking would leak the
+        // row in `pending` until the next launch's crash-recovery
+        // sweep flagged it. Only construct a real scope when BOTH the
+        // registry and the job_id exist — otherwise a no-op scope so
+        // the work still proceeds (bar just shows nothing).
+        let scope = match (registry_for_task.as_ref(), registry_job_id_for_task) {
+            (Some(reg), Some(id)) => job_registry::JobScope::resume(
+                Some(reg),
+                id,
+                "folder_scan".to_string(),
+                None,
+            ),
+            _ => job_registry::JobScope::resume(None, 0, String::new(), None),
+        };
+
         // Get a borrow of LibraryDb from inside the closure — the State<T>
         // returned by app.state::<T>() derefs to &T. LibraryDb is Send+Sync
         // (Mutex<Connection> internally) so the borrow is safe across the
@@ -9368,23 +9388,15 @@ async fn start_background_scan(
         );
         let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
 
-        // Finalize the JobRegistry row before the existing
-        // de-registration. mark_cancelled covers both bar-cancel and
-        // cancel_background_scan paths because they share the same
-        // AtomicBool. mark_failed surfaces parse errors;
-        // mark_completed lands on successful walks.
-        if let (Some(reg), Some(id)) = (registry_for_task.as_ref(), registry_job_id_for_task) {
-            match (&result, cancelled) {
-                (_, true) => {
-                    let _ = reg.mark_cancelled(id);
-                }
-                (Ok(_), false) => {
-                    let _ = reg.mark_completed(id);
-                }
-                (Err(e), false) => {
-                    let _ = reg.mark_failed(id, e.clone());
-                }
-            }
+        // Finalize through the scope. Drop catches the panic case;
+        // these branches handle the explicit outcomes. mark_cancelled
+        // covers both bar-cancel and cancel_background_scan paths
+        // because they share the same AtomicBool. mark_failed surfaces
+        // parse errors; mark_completed lands on successful walks.
+        match (&result, cancelled) {
+            (_, true) => scope.cancel(),
+            (Ok(_), false) => scope.complete(),
+            (Err(e), false) => scope.fail(e.clone()),
         }
 
         // De-register the job regardless of outcome.
