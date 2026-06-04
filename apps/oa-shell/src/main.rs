@@ -2444,6 +2444,7 @@ fn main() {
             add_to_custom_collection,
             remove_from_custom_collection,
             list_collection_members,
+            list_disc_set_members,
             find_game_id_by_path,
             delete_games_for_system,
             delete_all_games,
@@ -8861,6 +8862,17 @@ fn list_collection_members(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<Vec<String>, String> {
     db.list_collection_members(&collection_id)
+}
+
+/// List every game row that belongs to a multi-disc set, ordered by
+/// disc_number. Used by the Sub-phase 4 frontend disc-picker overlay
+/// when the operator clicks a collapsed multi-disc tile.
+#[tauri::command]
+fn list_disc_set_members(
+    disc_set_id: i64,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<library_db::GameRow>, String> {
+    db.list_disc_set_members(disc_set_id)
 }
 
 /// Look up a game's id by its file path. Returns null if no row matches.

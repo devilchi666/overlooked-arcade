@@ -2556,6 +2556,112 @@ impl LibraryDb {
         Ok(written)
     }
 
+    /// Look up the auto-incremented `disc_sets.id` for a
+    /// (system_id, canonical_title) pair. Used by the
+    /// `maybe_stamp_disc_set_membership` helper at identify time:
+    /// after the fuzzy / per-track path stamps a multi-disc canonical
+    /// game name like "Final Fantasy IX (USA) (Disc 1)", strip the
+    /// `(Disc N)` suffix to get "Final Fantasy IX (USA)", call this,
+    /// and on hit stamp `games.disc_set_id` + `games.disc_number`.
+    ///
+    /// Returns `Ok(None)` when no disc-set row exists for that base
+    /// title — e.g. the redump parser didn't detect a multi-disc
+    /// parent group (most single-disc games), or the operator's
+    /// rom_hashes_tracks sync hasn't run.
+    pub fn lookup_disc_set_id(
+        &self,
+        system_id: &str,
+        canonical_title: &str,
+    ) -> Result<Option<i64>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT id FROM disc_sets WHERE system_id = ?1 AND canonical_title = ?2",
+            params![system_id, canonical_title],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| format!("lookup_disc_set_id: {e}"))
+    }
+
+    /// Stamp `games.disc_set_id` + `games.disc_number` on a single
+    /// game. Called from the resolve flow's disc-set helper after a
+    /// successful canonical title match revealed the game belongs to
+    /// a multi-disc set. Doesn't validate the disc_set_id is real —
+    /// caller's responsibility via [`lookup_disc_set_id`] first.
+    pub fn apply_disc_set_membership(
+        &self,
+        game_id: &str,
+        disc_set_id: i64,
+        disc_number: u32,
+    ) -> Result<(), String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "UPDATE games SET disc_set_id = ?1, disc_number = ?2 WHERE id = ?3",
+            params![disc_set_id, disc_number as i64, game_id],
+        )
+        .map_err(|e| format!("apply_disc_set_membership: {e}"))?;
+        Ok(())
+    }
+
+    /// List all game rows that belong to a disc-set, sorted by
+    /// `disc_number` ascending. Used by the frontend disc-picker
+    /// overlay (Sub-phase 4 UI) when the operator clicks a collapsed
+    /// set tile.
+    pub fn list_disc_set_members(
+        &self,
+        disc_set_id: i64,
+    ) -> Result<Vec<GameRow>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, added_at,
+                        core_override, cover_path, seed, archive_inner_path,
+                        sha1, serial, disc_id
+                 FROM games
+                 WHERE disc_set_id = ?1
+                 ORDER BY disc_number ASC, title ASC",
+            )
+            .map_err(|e| format!("prepare list_disc_set_members: {e}"))?;
+        let rows = stmt
+            .query_map(params![disc_set_id], |row| {
+                Ok(GameRow {
+                    id: row.get(0)?,
+                    system_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    title: row.get(3)?,
+                    added_at: row.get(4)?,
+                    core_override: row.get(5)?,
+                    cover_path: row.get(6)?,
+                    seed: row.get::<_, i64>(7)? != 0,
+                    archive_inner_path: row.get(8)?,
+                    sha1: row.get(9)?,
+                    serial: row.get(10)?,
+                    disc_id: row.get(11)?,
+                    // Sub-phase 4 frontend doesn't need these for the
+                    // disc-picker overlay; leave at defaults.
+                    favorite: false,
+                    completed: false,
+                    last_played_at: None,
+                    play_time_secs: 0,
+                    players: None,
+                    rating: None,
+                })
+            })
+            .map_err(|e| format!("query list_disc_set_members: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect list_disc_set_members: {e}"))?;
+        Ok(rows)
+    }
+
     /// Diagnostic — how many disc-set rows we hold for a system.
     /// Parallel surface to `count_rom_hashes_tracks`.
     #[allow(dead_code)]
@@ -6383,6 +6489,88 @@ mod tests {
             .lookup_rom_hashes_tracks_for_game("psx", "Nonexistent")
             .expect("lookup nonexistent");
         assert!(none.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn disc_set_membership_round_trips_through_helpers() {
+        // Phase A1 Sub-phase 4 — verify the disc-set lookup + membership
+        // stamp + member-list helpers compose correctly.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-disc-set-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db = LibraryDb::open(&tmp).expect("open");
+
+        // Seed a disc_sets row via the existing UPSERT helper.
+        db.upsert_disc_sets_for_system(
+            "psx",
+            &[("Final Fantasy IX (USA)".to_string(), 4)],
+        )
+        .expect("seed disc_sets");
+
+        // lookup_disc_set_id hits on exact (system_id, canonical_title).
+        let ff9_id = db
+            .lookup_disc_set_id("psx", "Final Fantasy IX (USA)")
+            .expect("lookup")
+            .expect("disc set exists");
+        // Wrong title returns None.
+        assert!(
+            db.lookup_disc_set_id("psx", "Final Fantasy IX")
+                .expect("lookup")
+                .is_none(),
+            "exact-match on canonical_title; trailing region tag is part of the key"
+        );
+        // Wrong system returns None.
+        assert!(
+            db.lookup_disc_set_id("saturn", "Final Fantasy IX (USA)")
+                .expect("lookup")
+                .is_none()
+        );
+
+        // Seed 4 game rows for FF9 discs 1-4 + 1 standalone game.
+        let mut g1 = row("ff9-d1", "Final Fantasy IX (USA) (Disc 1)");
+        g1.system_id = "psx".into();
+        let mut g2 = row("ff9-d2", "Final Fantasy IX (USA) (Disc 2)");
+        g2.system_id = "psx".into();
+        let mut g3 = row("ff9-d3", "Final Fantasy IX (USA) (Disc 3)");
+        g3.system_id = "psx".into();
+        let mut g4 = row("ff9-d4", "Final Fantasy IX (USA) (Disc 4)");
+        g4.system_id = "psx".into();
+        let mut standalone = row("tomb", "Tomb Raider (USA)");
+        standalone.system_id = "psx".into();
+        db.add_games(&[g1, g2, g3, g4, standalone]).expect("seed games");
+
+        // Stamp membership on the 4 FF9 disc rows in non-sequential order
+        // to verify list_disc_set_members sorts by disc_number ASC.
+        db.apply_disc_set_membership("ff9-d3", ff9_id, 3).expect("stamp d3");
+        db.apply_disc_set_membership("ff9-d1", ff9_id, 1).expect("stamp d1");
+        db.apply_disc_set_membership("ff9-d4", ff9_id, 4).expect("stamp d4");
+        db.apply_disc_set_membership("ff9-d2", ff9_id, 2).expect("stamp d2");
+
+        // list_disc_set_members returns all 4 in disc_number ASC order.
+        let members = db.list_disc_set_members(ff9_id).expect("list members");
+        assert_eq!(members.len(), 4, "all four FF9 discs return");
+        assert_eq!(members[0].id, "ff9-d1");
+        assert_eq!(members[1].id, "ff9-d2");
+        assert_eq!(members[2].id, "ff9-d3");
+        assert_eq!(members[3].id, "ff9-d4");
+        // Standalone game is NOT in the member list.
+        assert!(
+            members.iter().all(|g| g.id != "tomb"),
+            "standalone game with NULL disc_set_id excluded"
+        );
+
+        // Empty result for a nonexistent disc_set_id.
+        let empty = db.list_disc_set_members(99_999).expect("empty");
+        assert!(empty.is_empty());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

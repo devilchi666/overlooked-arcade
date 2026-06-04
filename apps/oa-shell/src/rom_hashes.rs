@@ -1718,10 +1718,28 @@ pub async fn resolve_rom_hashes_for_system(
                         );
                         summary.errors += 1;
                     } else {
-                        log::info!(
-                            "rom_hashes: fuzzy match {} → '{}'",
-                            g.id, candidate.game_name
-                        );
+                        // Phase A1 Sub-phase 4 — stamp disc-set membership
+                        // when the canonical title carries a `(Disc N)`
+                        // suffix that matches a disc_sets row.
+                        match maybe_stamp_disc_set_membership(
+                            &db,
+                            &g.id,
+                            &systemId,
+                            &candidate.game_name,
+                        ) {
+                            Ok(Some((set_id, disc_n))) => log::info!(
+                                "rom_hashes: fuzzy match {} → '{}' (disc-set #{set_id} disc {disc_n})",
+                                g.id, candidate.game_name
+                            ),
+                            Ok(None) => log::info!(
+                                "rom_hashes: fuzzy match {} → '{}'",
+                                g.id, candidate.game_name
+                            ),
+                            Err(e) => log::warn!(
+                                "rom_hashes: disc-set stamp {} failed: {e}",
+                                g.id
+                            ),
+                        }
                     }
                     let _ = app.emit(
                         "oa://rom-hash-resolve-progress",
@@ -1778,6 +1796,20 @@ pub async fn resolve_rom_hashes_for_system(
                                 g.id
                             );
                             summary.errors += 1;
+                        } else {
+                            // Phase A1 Sub-phase 4 — stamp disc-set
+                            // membership on multi-disc canonical titles.
+                            if let Err(e) = maybe_stamp_disc_set_membership(
+                                &db,
+                                &g.id,
+                                &systemId,
+                                &canonical.game_name,
+                            ) {
+                                log::warn!(
+                                    "rom_hashes: disc-set stamp {} failed: {e}",
+                                    g.id
+                                );
+                            }
                         }
                         let _ = app.emit(
                             "oa://rom-hash-resolve-progress",
@@ -2090,6 +2122,29 @@ pub fn lookup_rom_hash(
     db: tauri::State<'_, LibraryDb>,
 ) -> Result<Option<RomHashRow>, String> {
     db.lookup_rom_hash(&sha1)
+}
+
+/// Phase A1 Sub-phase 4 — stamp `games.disc_set_id` + `games.disc_number`
+/// when an identification result has a canonical title carrying a
+/// `(Disc N)` suffix that matches an existing row in `disc_sets`.
+/// Called from both the fuzzy-match Ok path AND the per-track-match
+/// Ok(Some) path; no-op when the canonical title isn't multi-disc OR
+/// no disc_sets row exists for the base title (covers single-disc
+/// games and systems whose redump dat hasn't synced yet).
+fn maybe_stamp_disc_set_membership(
+    db: &LibraryDb,
+    game_id: &str,
+    system_id: &str,
+    canonical_title: &str,
+) -> Result<Option<(i64, u32)>, String> {
+    let Some((base_title, disc_n)) = extract_disc_set_candidate(canonical_title) else {
+        return Ok(None);
+    };
+    let Some(disc_set_id) = db.lookup_disc_set_id(system_id, &base_title)? else {
+        return Ok(None);
+    };
+    db.apply_disc_set_membership(game_id, disc_set_id, disc_n)?;
+    Ok(Some((disc_set_id, disc_n)))
 }
 
 /// Phase A1 pivot 2026-06-03 — normalize a filename for fuzzy
