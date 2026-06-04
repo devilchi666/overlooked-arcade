@@ -208,6 +208,20 @@ Compressed log. Full per-arc detail lives in `docs/_archive/` — see
   intentionally NOT shipped — emit and tick fire at different cadences
   by design. Dual-channel retirement parked. See
   [DECISIONS.md](DECISIONS.md) 2026-06-04 "Audit-derived sweep" entry.
+- Unidentified-games audit surface + tiered disc-filename matcher
+  (v1→v2). Bundle merge `902ecf2`. Three deliverables: (a) per-system
+  "View N unidentified ▸" dialog from LibraryManagerPage's Manage
+  panel with reveal-in-folder per row + Re-run Identify ROMs footer;
+  (b) v1 tiered matcher (strict + relaxed-fallback) bridging
+  No-Intro `(v1.1)`/Redump `(Rev 1)` + single-region `(USA)`/
+  multi-country `(USA, Canada)`; (c) v2 TOSEC-vs-Redump bridge adding
+  language-code paren strip + `(Disc N of M)`→`(Disc N)` + `)( `→`) (`
+  spacing + `(Unl)` strip. Operator-library outcome: PSX 98→13 (87%),
+  Dreamcast 105→27 (74%), PCE-CD 59→24 with Identify re-run. 33
+  rom_hashes tests cover both tiers + regression-guard preserved
+  distinctions (Beta/Proto/Demo, Disc 1≠Disc 2, USA≠Japan≠Europe).
+  See [DECISIONS.md](DECISIONS.md) 2026-06-04 "Unidentified-games
+  audit surface" + "Tiered disc-filename fuzzy matcher" entries.
 
 **2026-06-03**
 - SETTINGS declutter — System Health hub + Game-media status-first

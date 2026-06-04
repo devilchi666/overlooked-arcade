@@ -1333,3 +1333,73 @@ After 1 + 2: per-track works only for **raw, unarchived, DiscImageCreator-shape 
 **Cross-ref:** merges `78cbd13` (silent-bug), `ede2473` (fragile), `4091804` (boilerplate). Audit source: 2026-06-04 multi-agent report stored in operator session log.
 
 ---
+
+## 2026-06-04 — Unidentified-games audit surface: read-only listing + reveal-in-folder (no manual-identify UI)
+
+**Decision:** Ship the operator-facing "which games in this system haven't been identified" surface as a **read-only list with per-row reveal-in-OS-file-manager affordance** plus a footer "Re-run Identify ROMs" button. **Defer** the manual-identify input form (operator types in a canonical title / pastes a SHA-1 / browses to a missing sidecar) to a later arc.
+
+**Why:**
+- Operator's question that triggered this work was *"how do I see what hasn't been identified, so I can manually identify them or find files I need?"* Two operator workflows: (a) audit + investigate (which games, where on disk), (b) manually intervene.
+- Workflow (a) is structurally complete with just a list + reveal-in-folder: the operator can see *which* games miss, *where* the files live, and *why* they likely missed (filename hints, archive inner paths, has-disc-id badge for legacy peek_disc_id rows). They then fix the underlying issue (rename file to match Redump convention, drop a missing .bin sidecar next to the .cue, etc.) and re-run Identify ROMs.
+- Workflow (b) — actual manual identify input — needs many bespoke decisions: do we accept a canonical title and stamp it as-if-fuzzy-matched? do we accept a pasted SHA-1 and look it up in `rom_hashes` first? what about disc-id-only stamping? what about a "won't fix / hidden" state? Each one is a distinct UI surface with persistence implications. Operator hadn't actually expressed which one they want, so shipping the listing first and letting subsequent operator usage clarify the needed input form is the right sequencing.
+
+**Definition of "identified":** `games.sha1 IS NOT NULL AND sha1 != ''`. Carts store the operator's real file SHA-1 (against libretro-database no-intro dat); disc fuzzy/per-track matches store the canonical's first-track SHA-1 as a foreign-key marker. Legacy `peek_disc_id` stamps `games.disc_id` without touching `sha1`, so disc-id-only rows appear in the unidentified list with an amber "Disc-ID stamped — needs fuzzy re-pass" badge — the operator can tell which rows a re-run will likely succeed on.
+
+**Excludes:** seed rows (`seed = 1`) — these are placeholder tiles with no real file path.
+
+**Surface choice — LibraryManagerPage's per-system GameMediaManagePanel rather than a library-grid filter chip.** The Manage panel is already the home for per-system identification controls (Identify ROMs, Refresh hash database). Adding "View N unidentified ▸" to the Identify ROMs op row puts the surface adjacent to the action that fixes it. A separate library-grid filter chip would also be valuable (operator can browse the unidentified tiles in-context) but is a much larger UX change and deferred.
+
+**Considered and rejected:**
+- **Backend `count_unidentified_per_system` aggregate command.** The frontend `LibraryManagerPage::perSystemStats` createMemo already computes `s.total - s.identified` per system from the local library store (which keys on `entry.sha1`). Adding a backend command would duplicate logic and risk drift. Skip.
+- **Manual identify by title input + fuzzy search.** Defer (see Why).
+- **Library-grid filter chip + per-tile context-menu identify.** Defer; larger arc.
+
+**Cross-ref:** merge `3a08d51` (initial surface) plus `db0bc4b` + `78b905f` (matcher v1 + v2 that reduce the listing's size). Component: `frontend/src/components/UnidentifiedGamesDialog.tsx`. Backend: `library_db::list_unidentified_games_for_system` + Tauri commands `list_unidentified_games` + `reveal_game_file_in_folder`.
+
+---
+
+## 2026-06-04 — Tiered disc-filename fuzzy matcher (v1 → v2): strict + relaxed-fallback bridges naming-convention drift
+
+**Decision:** Replace the single-pass `disc_filename_fuzzy_key` strict matcher with a **two-tier index** (`DiscFuzzyIndex { strict, relaxed }`) where strict tries first (preserving Redump precision when filenames already match) and relaxed falls back when strict misses. The relaxed key bridges No-Intro `(v1.1)`/Redump `(Rev 1)` revision notation, single-region `(USA)`/multi-country `(USA, Canada)` region grouping, language-code paren strip `(En,Ja)`, TOSEC's `(Disc N of M)` ↔ Redump's `(Disc N)`, adjacent-paren `)( ` → `) (` spacing, and the operator-side `(Unl)` "unlicensed" tag.
+
+**Why:** Operator's PSX library reported 98 unidentified despite mostly-obvious filenames. Then DC reported 105 unidentified with the same shape. Two distinct upstream naming conventions drove the misses:
+
+- **PSX ⟶ No-Intro vs Redump axis (v1):** operator filenames carry No-Intro-style `(v1.1)` / Redump catalog rows have `(Rev 1)`; operator tags single-region `(USA)` / catalog has multi-country `(USA, Canada)`. Both are name-only differences for the same physical disc. v1's `disc_filename_fuzzy_key_relaxed` + `collapse_region_group` handled these — 82 of 98 PSX recovered (84%).
+
+- **DC ⟶ TOSEC vs Redump axis (v2):** operator filenames are TOSEC-format throughout (double-space before paren, `(Disc N of M)`, `(USA)(Disc N of M)` no-space-between-parens, `(Publisher)` prefix tags). Catalog is Redump-style with language-code groups (`(En,Ja,Fr,De,Es)`). Even v1's relaxed matcher hit ZERO of 105 DC games. v2 added the four TOSEC-bridging behaviors (language strip, Disc-N-of-M, paren spacing, `(Unl)`) — 78 of 105 DC recovered (74%).
+
+**Storage semantics:** Both tiers stamp the canonical track-1 SHA-1 + canonical title via `apply_rom_hash`. The stored sha1 is a **foreign-key marker into the catalog**, not a hash of the operator's bytes. This is a deliberate design choice — there's no single SHA-1 for a multi-track disc, and per-track-vs-redump matching is structurally broken on CHD + archived dumps (see 2026-06-03 disc-track pivot entry above). The marker approach makes "identified" mean "operator dumps map to catalog entry X" which is what every downstream consumer (RetroAchievements, media-sync, metadata-sync, disc-set grouping) actually needs.
+
+**Match-tier surfacing:** Resolve progress events surface the tier as `matched (filename)` for strict hits and `matched (filename, relaxed)` for relaxed hits. Operator can audit which naming-convention drift caught which game from the BackgroundJobsBar's live updates. Same info lands in the structured log under `rom_hashes: fuzzy match (Strict|Relaxed) <id> → '<canonical_title>'`.
+
+**What stays preserved through relaxed (regression-guarded by tests):**
+- Region distinctions — `(USA)` vs `(Japan)` vs `(Europe)` MUST stay different keys; relaxed only collapses multi-country groupings whose every comma-segment is in a known-region whitelist.
+- Disc number — `(Disc 1)` vs `(Disc 2)` MUST stay different; Disc-N-of-M normalization preserves N.
+- Catalog variant tags — `(Beta)`, `(Proto)`, `(Demo)`, `(Sample)` are Redump's distinct catalog variants and stripping them would mis-identify the operator's dump.
+- Single-code parens like `(en)` — comma-context required to confirm language-list shape before stripping.
+
+**Considered and rejected:**
+
+- **Aggressive publisher-tag strip** (catches `Carrier (Jaleco)(USA)`, `Daytona USA (Hasbro - Sega)(USA)`, etc.). Would recover ~10 more DC games. Rejected for now: rule shape would be "strip any single-segment paren that ISN'T in a preserve-keyword whitelist" — risks false positives on legitimate Redump tags as new variants land upstream. Will reconsider if next operator audit shows publisher-tag misses are a persistent class. Parked at PARKING_LOT 2026-06-04.
+
+- **Title-similarity / edit-distance matching** for catalog-side disambiguators (catalog `Disney-Pixar Buzz Lightyear of Star Command` vs operator's `Buzz Lightyear of Star Command`; catalog `Fisher-Price Rescue Heroes - Molten Menace` vs operator's `Rescue Heroes - Molten Menace`). Would need a similarity-ranked top-N candidate set + a confidence threshold + UI to pick the best match. Materially larger arc; defer until a substantial residual remains after v2 ships. Parked at PARKING_LOT 2026-06-04.
+
+- **Fuzzy with edit-distance over the strict key.** Same scope as title-similarity above; rejected for similar reasons.
+
+- **Source No-Intro disc dats as alternate canonical column.** No-Intro doesn't catalog PS1/DC discs — `libretro-database/metadat/no-intro/` carries only `Sony - PlayStation 3 (PSN).dat`, `Sony - PlayStation Portable.dat`, `Sony - PlayStation Vita.dat` for the Sony family. The PSX `(v1.1)` naming the operator uses isn't actually No-Intro; it's a community-curated convention that maps to Redump's `(Rev 1)`. Bridging is correctly the matcher's job, not the dat-source's. Direct downloads from `datomatic.no-intro.org` are also blocked by their captcha + ToS for automated tools; libretro-database's GitHub mirror is the only practical pipeline.
+
+**Trigger criteria for v3 (aggressive publisher strip / title-similarity):** Next operator audit reports a substantial residual (>15% of library) where v2 already handled the structural-naming drift but the remaining misses cluster in publisher-prefix or title-disambiguator categories. Until then, v2 is the right ceiling.
+
+**Operator-side real-library outcome (2026-06-04 simulation):**
+
+| System    | Before | After v1 | After v2 |
+|-----------|--------|----------|----------|
+| PSX       | 98     | 16       | 13       |
+| Dreamcast | 105    | 105      | 27       |
+| PCE-CD    | 59     | 59       | 24 (with Identify re-run) |
+
+Dreamcast going 0% → 74% recovery on a single deploy was the v2 thesis; PSX going 84% → 87% was the v1-with-bonus.
+
+**Cross-ref:** v1 merge `db0bc4b`; v2 merge `78b905f`; both inside `feat/unidentified-games-surface` bundle merge `902ecf2`. Code: `apps/oa-shell/src/rom_hashes.rs` — `disc_filename_fuzzy_key_relaxed`, `relax_paren_groups`, `is_language_group`, `normalize_disc_of_m`, `collapse_region_group`, `is_revision_marker`, `DiscFuzzyIndex`, `MatchTier`. 33 rom_hashes tests cover behavior + regression-guard preserved-distinctions.
+
+---
