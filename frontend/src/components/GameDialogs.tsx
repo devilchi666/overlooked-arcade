@@ -13,14 +13,12 @@ import {
   createEffect,
   createSignal,
   For,
-  onCleanup,
-  onMount,
   Show,
   type Accessor,
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenScoped } from "../lib/eventListener";
 import { Dialog, DialogSection } from "../layout/Dialog";
 import SettingRow, { selectClass } from "./SettingRow";
 import {
@@ -1208,12 +1206,8 @@ export const MilestonesDialog: Component<{
   });
 
   // Live refresh on milestone trigger.
-  onMount(() => {
-    let unlisten: (() => void) | undefined;
-    void listen("oa://milestone-triggered", () => {
-      if (props.open && props.entry) void refresh();
-    }).then((un) => (unlisten = un));
-    onCleanup(() => unlisten?.());
+  listenScoped("oa://milestone-triggered", () => {
+    if (props.open && props.entry) void refresh();
   });
 
   async function save(m: Milestone) {

@@ -59,6 +59,7 @@ import {
   type ScanProgress,
 } from "./library/ingest";
 import { listen } from "@tauri-apps/api/event";
+import { listenScoped } from "./lib/eventListener";
 import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from "./themes/registry";
 import { launchRom, type LaunchResult } from "./library/launch";
 import { MediaProvider } from "./library/media";
@@ -1163,60 +1164,48 @@ const App: Component = () => {
     );
   });
 
-  onMount(async () => {
-    let unlistenFound: (() => void) | undefined;
-    let unlistenRemoved: (() => void) | undefined;
-    try {
-      unlistenFound = await listen<{
-        path: string;
-        fileName: string;
-        extension: string;
-        archiveInnerPath?: string;
-      }>("oa://library-watch-found", async (event) => {
-        const r = event.payload;
-        const systemId = systemForExtension(r.extension);
-        if (!systemId) return;
-        console.log("[oa-watch] new ROM detected:", r.fileName);
-        await library.addScannedRoms([{
-          id: romIdFromPath(r.path),
-          title: titleFromFileName(r.fileName),
-          systemId,
-          filePath: r.path,
-          addedAt: Date.now(),
-          ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
-        }]);
-      });
-      unlistenRemoved = await listen<{ path: string }>(
-        "oa://library-watch-removed",
-        async (event) => {
-          // Soft policy by default: keep the entry (user might be moving
-          // the file). Settings → Library → "Auto-remove on file delete"
-          // flips this to a hard policy where the matching DB row gets
-          // removed when the watcher reports the file gone.
-          if (!settings.autoRemoveOnDelete()) {
-            console.log("[oa-watch] file removed (kept in library):", event.payload.path);
-            return;
-          }
-          try {
-            const id = await invoke<string | null>("find_game_id_by_path", {
-              path: event.payload.path,
-            });
-            if (id) {
-              await library.remove(id);
-              console.log("[oa-watch] auto-removed from library:", event.payload.path, "->", id);
-            }
-          } catch (e) {
-            console.warn("[oa-watch] auto-remove failed:", e);
-          }
-        },
-      );
-    } catch (e) {
-      console.warn("[oa-watch] listener setup failed:", e);
+  // Watcher events — listenScoped bakes in onCleanup. Both listeners
+  // attach in parallel microtasks, identical race-window behavior to
+  // the previous Promise-pair attach.
+  listenScoped<{
+    path: string;
+    fileName: string;
+    extension: string;
+    archiveInnerPath?: string;
+  }>("oa://library-watch-found", async (event) => {
+    const r = event.payload;
+    const systemId = systemForExtension(r.extension);
+    if (!systemId) return;
+    console.log("[oa-watch] new ROM detected:", r.fileName);
+    await library.addScannedRoms([{
+      id: romIdFromPath(r.path),
+      title: titleFromFileName(r.fileName),
+      systemId,
+      filePath: r.path,
+      addedAt: Date.now(),
+      ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
+    }]);
+  });
+  listenScoped<{ path: string }>("oa://library-watch-removed", async (event) => {
+    // Soft policy by default: keep the entry (user might be moving
+    // the file). Settings → Library → "Auto-remove on file delete"
+    // flips this to a hard policy where the matching DB row gets
+    // removed when the watcher reports the file gone.
+    if (!settings.autoRemoveOnDelete()) {
+      console.log("[oa-watch] file removed (kept in library):", event.payload.path);
+      return;
     }
-    onCleanup(() => {
-      unlistenFound?.();
-      unlistenRemoved?.();
-    });
+    try {
+      const id = await invoke<string | null>("find_game_id_by_path", {
+        path: event.payload.path,
+      });
+      if (id) {
+        await library.remove(id);
+        console.log("[oa-watch] auto-removed from library:", event.payload.path, "->", id);
+      }
+    } catch (e) {
+      console.warn("[oa-watch] auto-remove failed:", e);
+    }
   });
 
   // Diagnostic — log EVERY click reaching the document, with the target's

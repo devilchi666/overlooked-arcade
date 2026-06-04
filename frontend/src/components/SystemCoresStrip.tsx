@@ -13,13 +13,11 @@ import {
   createResource,
   createSignal,
   For,
-  onCleanup,
-  onMount,
   Show,
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenScoped } from "../lib/eventListener";
 import type { SystemId } from "../themes/registry";
 import {
   CatalogCoreCard,
@@ -53,15 +51,11 @@ const SystemCoresStrip: Component<Props> = (props) => {
   const [progress, setProgress] = createSignal<Record<string, DownloadProgress>>({});
   const [busy, setBusy] = createSignal<string | null>(null);
 
-  onMount(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<DownloadProgress>("oa://core-download-progress", (e) => {
-      setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
-      if (e.payload.phase === "done" || e.payload.phase === "error") {
-        refresh();
-      }
-    }).then((un) => (unlisten = un));
-    onCleanup(() => unlisten?.());
+  listenScoped<DownloadProgress>("oa://core-download-progress", (e) => {
+    setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
+    if (e.payload.phase === "done" || e.payload.phase === "error") {
+      refresh();
+    }
   });
 
   // Filter the catalog to cores that target this system. Both wired

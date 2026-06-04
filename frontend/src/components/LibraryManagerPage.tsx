@@ -4,13 +4,12 @@ import {
   createResource,
   createSignal,
   For,
-  onCleanup,
   onMount,
   Show,
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listenScoped } from "../lib/eventListener";
 import {
   closestCenter,
   createSortable,
@@ -354,61 +353,43 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // Per-system metadata-clear loading state.
   const [metaClearing, setMetaClearing] = createSignal<Record<string, boolean>>({});
   const [, setMetaClearStatus] = createSignal<Record<string, string>>({});
-  let unlistenSync: UnlistenFn | undefined;
-  let unlistenSyncDone: UnlistenFn | undefined;
-  let unlistenMeta: UnlistenFn | undefined;
-  let unlistenMetaDone: UnlistenFn | undefined;
 
-  onMount(async () => {
-    // Attach all four listeners in parallel so the microtask window
-    // between them is zero — sequential awaits previously meant a
-    // sync-complete event arriving between listens #1–#4 would slip
-    // through. Promise.all collapses that window.
-    try {
-      [unlistenSync, unlistenSyncDone, unlistenMeta, unlistenMetaDone] = await Promise.all([
-        listen<SyncProgressPayload>("oa://library-sync", (ev) => {
-          setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
-        }),
-        listen<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
-          setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
-          // Surface the final tally as the "last progress" line.
-          setSyncProgress((prev) => ({
-            ...prev,
-            [ev.payload.systemId]: {
-              systemId: ev.payload.systemId,
-              done: ev.payload.total,
-              total: ev.payload.total,
-              currentRomTitle: "",
-              lastAction: `done: ${ev.payload.downloaded} new / ${ev.payload.cached} cached / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
-            },
-          }));
-        }),
-        listen<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
-          setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
-        }),
-        listen<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
-          setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
-          setMetaProgress((prev) => ({
-            ...prev,
-            [ev.payload.systemId]: {
-              systemId: ev.payload.systemId,
-              done: ev.payload.total,
-              total: ev.payload.total,
-              currentRomTitle: "",
-              lastAction: `done: ${ev.payload.updated} updated / ${ev.payload.unchanged} unchanged / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
-            },
-          }));
-        }),
-      ]);
-    } catch (e) {
-      console.warn("LibraryManagerPage: listen('oa://library-(metadata-)sync*') failed:", e);
-    }
+  // Four parallel media-sync + metadata-sync listeners. listenScoped
+  // bakes in onCleanup; all four listen() Promises fire in adjacent
+  // microticks so there's no sequential-await window where a
+  // sync-complete event could slip through.
+  listenScoped<SyncProgressPayload>("oa://library-sync", (ev) => {
+    setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
   });
-  onCleanup(() => {
-    unlistenSync?.();
-    unlistenSyncDone?.();
-    unlistenMeta?.();
-    unlistenMetaDone?.();
+  listenScoped<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
+    setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
+    // Surface the final tally as the "last progress" line.
+    setSyncProgress((prev) => ({
+      ...prev,
+      [ev.payload.systemId]: {
+        systemId: ev.payload.systemId,
+        done: ev.payload.total,
+        total: ev.payload.total,
+        currentRomTitle: "",
+        lastAction: `done: ${ev.payload.downloaded} new / ${ev.payload.cached} cached / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
+      },
+    }));
+  });
+  listenScoped<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
+    setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
+  });
+  listenScoped<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
+    setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
+    setMetaProgress((prev) => ({
+      ...prev,
+      [ev.payload.systemId]: {
+        systemId: ev.payload.systemId,
+        done: ev.payload.total,
+        total: ev.payload.total,
+        currentRomTitle: "",
+        lastAction: `done: ${ev.payload.updated} updated / ${ev.payload.unchanged} unchanged / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
+      },
+    }));
   });
 
   async function startSync(systemId: SystemId) {
@@ -531,32 +512,16 @@ const LibraryManagerPage: Component<Props> = (props) => {
     );
   }
 
-  onMount(() => {
-    let un1: UnlistenFn | undefined;
-    let un2: UnlistenFn | undefined;
-    let un3: UnlistenFn | undefined;
-    void (async () => {
-      try {
-        un1 = await listen<HashSyncSummaryPayload>("oa://rom-hashes-synced", (ev) => {
-          setHashSyncSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
-          setHashSyncing((p) => ({ ...p, [ev.payload.systemId]: false }));
-        });
-        un2 = await listen<HashResolveProgressPayload>("oa://rom-hash-resolve-progress", (ev) => {
-          setHashResolveProgress((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
-        });
-        un3 = await listen<HashResolveSummaryPayload>("oa://rom-hash-resolve-complete", (ev) => {
-          setHashResolveSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
-          setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
-        });
-      } catch (e) {
-        console.warn("LibraryManagerPage: hash listen failed:", e);
-      }
-    })();
-    onCleanup(() => {
-      un1?.();
-      un2?.();
-      un3?.();
-    });
+  listenScoped<HashSyncSummaryPayload>("oa://rom-hashes-synced", (ev) => {
+    setHashSyncSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+    setHashSyncing((p) => ({ ...p, [ev.payload.systemId]: false }));
+  });
+  listenScoped<HashResolveProgressPayload>("oa://rom-hash-resolve-progress", (ev) => {
+    setHashResolveProgress((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+  });
+  listenScoped<HashResolveSummaryPayload>("oa://rom-hash-resolve-complete", (ev) => {
+    setHashResolveSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
+    setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
   });
 
   async function startHashSync(systemId: SystemId) {
