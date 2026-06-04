@@ -885,7 +885,7 @@ pub async fn sync_rom_hashes_for_system(
 
     // Cache lookup — same TTL as the metadat cache.
     let cache_path = hash_cache_path(&app_data_dir, &systemId);
-    if let Ok(bytes) = std::fs::read(&cache_path) {
+    if let Ok(bytes) = tokio::fs::read(&cache_path).await {
         if let Ok(cached) = serde_json::from_slice::<CachedHashDb>(&bytes) {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -1023,7 +1023,7 @@ pub async fn sync_rom_hashes_for_system(
     // ignore them on read (serde defaults).
     if !entries.is_empty() {
         if let Some(parent) = cache_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            let _ = tokio::fs::create_dir_all(parent).await;
         }
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1036,7 +1036,7 @@ pub async fn sync_rom_hashes_for_system(
             tracks,
             disc_set_candidates,
         };
-        let _ = std::fs::write(&cache_path, serde_json::to_vec(&cached).unwrap_or_default());
+        let _ = tokio::fs::write(&cache_path, serde_json::to_vec(&cached).unwrap_or_default()).await;
     }
 
     let summary = RomHashSyncSummary {

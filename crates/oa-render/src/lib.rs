@@ -14,9 +14,54 @@
 
 use std::borrow::Cow;
 use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use oa_core::Framebuffer;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+
+// 2026-06-04 — Bind-group allocation instrumentation. The 2026-06-04
+// audit flagged hot-path `create_bind_group` calls in present() and
+// run_effect_chain() (Phosphor / VectorPhosphor presets allocate 2-3
+// bind groups per frame). Whether building a bind-group pool is worth
+// the engineering depends on the actual per-frame allocation cost on
+// real hardware. These counters let the operator run for ~5 seconds
+// and read the answer from oa-current.log instead of guessing.
+//
+// Removable as a unit: delete this block + the four call sites that
+// reference it (record_bind_group_alloc / tick_render_frame). All
+// atomic-only, zero per-frame heap allocations.
+
+static BIND_GROUP_ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
+static BIND_GROUP_TOTAL_NANOS: AtomicU64 = AtomicU64::new(0);
+static RENDER_FRAME_COUNT: AtomicU64 = AtomicU64::new(0);
+const PERF_LOG_EVERY_N_FRAMES: u64 = 300; // ~5s at 60 fps
+
+fn record_bind_group_alloc(elapsed: std::time::Duration) {
+    BIND_GROUP_ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+    BIND_GROUP_TOTAL_NANOS.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
+}
+
+fn tick_render_frame() {
+    let frames = RENDER_FRAME_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if frames % PERF_LOG_EVERY_N_FRAMES != 0 {
+        return;
+    }
+    let allocs = BIND_GROUP_ALLOC_COUNT.load(Ordering::Relaxed);
+    let total_ns = BIND_GROUP_TOTAL_NANOS.load(Ordering::Relaxed);
+    let avg_per_frame_us = (total_ns as f64) / (frames as f64) / 1000.0;
+    let avg_per_alloc_us = if allocs > 0 {
+        (total_ns as f64) / (allocs as f64) / 1000.0
+    } else {
+        0.0
+    };
+    let allocs_per_frame = (allocs as f64) / (frames as f64);
+    log::info!(
+        "oa-render: bind-group perf — frames={frames}, allocs={allocs}, \
+         per_frame={allocs_per_frame:.2} allocs / {avg_per_frame_us:.2}µs, \
+         per_alloc={avg_per_alloc_us:.2}µs"
+    );
+}
 
 /// Errors the renderer can surface during construction or present.
 #[derive(Debug, thiserror::Error)]
@@ -1184,6 +1229,7 @@ impl Renderer {
         let prev_view = if prev_index == 0 { &h_a.view } else { &h_b.view };
         let curr_view = if self.history_write_index == 0 { &h_a.view } else { &h_b.view };
 
+        let _bind_group_alloc_start = Instant::now();
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("oa-render persistence bind group"),
             layout: &self.final_blit_bgl,
@@ -1195,6 +1241,7 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&self.sampler) },
             ],
         });
+        record_bind_group_alloc(_bind_group_alloc_start.elapsed());
 
         let mut encoder = self
             .device
@@ -1527,7 +1574,8 @@ impl Renderer {
                     if last_intermediate_was_a { &a.view } else { &b.view }
                 }
             } else if last_intermediate_was_a { &a.view } else { &b.view };
-            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            let bg_start = Instant::now();
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("oa-render final-blit bind group (source + chain output)"),
                 layout: &self.final_blit_bgl,
                 entries: &[
@@ -1537,7 +1585,9 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(chain_output_view) },
                     wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                 ],
-            }))
+            });
+            record_bind_group_alloc(bg_start.elapsed());
+            Some(bg)
         };
 
         let mut encoder = self
@@ -1630,6 +1680,7 @@ impl Renderer {
         frame.present();
 
         self.frames_presented = self.frames_presented.wrapping_add(1);
+        tick_render_frame();
     }
 
     /// Run every entry in the effect chain into the ping-pong intermediates.
@@ -1660,6 +1711,7 @@ impl Renderer {
             let output_view: &wgpu::TextureView = if i % 2 == 0 { &a.view } else { &b.view };
             last_was_a = i % 2 == 0;
 
+            let bg_start = Instant::now();
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("oa-render chain pass bind group"),
                 layout: &self.bind_group_layout,
@@ -1669,6 +1721,7 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 2, resource: pass.uniform_buffer.as_entire_binding() },
                 ],
             });
+            record_bind_group_alloc(bg_start.elapsed());
 
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(pass.label),
