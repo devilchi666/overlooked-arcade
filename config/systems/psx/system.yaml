@@ -36,24 +36,24 @@ cores:
   bios_required: scph5500.bin / scph5501.bin / scph5502.bin
 system_info:
   system_id: psx
-  manufacturer: Sony
+  manufacturer: Sony Computer Entertainment
   type: Home Console
   generation: 5th Generation
-  release_date: December 3, 1994
+  release_date: December 3, 1994 (JP) / September 9, 1995 (NA) / September 29, 1995 (EU)
   discontinued: March 23, 2006
-  units_sold: 102.50 Million
+  units_sold: 102.49 Million
   media: CD-ROM
-  cpu: MIPS R3000A @ 33.86 MHz
-  sound: SPU 24-channel
+  cpu: MIPS R3000A @ 33.87 MHz
+  sound: 16-bit SPU — 24 ADPCM channels @ 44.1 kHz
   resolution: 640 x 480 max
-  color_palette: 16.7 Million
+  color_palette: 16.7 Million (32 levels of transparency)
   display_ratio: 4:3
   architecture: 32-Bit
-  max_players: 1-2 Players (Multitap up to 8)
+  max_players: 1-2 Players (up to 8 via Multitap)
   multiplayer: Yes — 2 local; up to 8 via Multitap
-  region: NTSC / PAL / NTSC-J
-  storage: Memory Card (128KB)
-  ram: 2MB
+  region: NTSC / PAL / NTSC-J (region-locked via disc pregap)
+  storage: 2 MB RAM / 1 MB VRAM; Memory Card (128 KB)
+  ram: 2 MB main / 1 MB VRAM
   video_output: Composite / S-Video / RGB
   aspect_ratio: 4:3
   peripherals:
@@ -63,14 +63,18 @@ system_info:
     glyph: 🎮
   - name: Multitap
     glyph: 🔗
-  - name: GunCon
+  - name: GunCon / G-Con
     glyph: 🔫
-  - name: Mouse
+  - name: PlayStation Mouse
     glyph: 🖱️
+  - name: PocketStation (JP)
+    glyph: ⌚
   release_flag: 🇯🇵
   tagline: 32-BIT HOME CONSOLE
   blurb: Sony's first console, and the system that brought 3D gaming to the mainstream. Its CD-ROM media unlocked cinematic storytelling and a JRPG renaissance.
   sidebar_subline: 32-BIT · 1994
   meta:
     schema_version: 1
-    last_updated: 2026-06-02
+    last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/PlayStation_(console)
