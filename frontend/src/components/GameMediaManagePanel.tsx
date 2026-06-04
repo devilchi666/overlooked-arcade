@@ -48,6 +48,10 @@ export type GameMediaManagePanelProps = {
   onClearMetadata: (id: SystemId) => Promise<void> | void;
   onSyncHashes: (id: SystemId) => Promise<void> | void;
   onIdentifyRoms: (id: SystemId) => Promise<void> | void;
+  /// Opens the per-system unidentified-games audit dialog. Shown as a
+  /// "View N unidentified ▸" button on the Identify ROMs op row when
+  /// the stats indicate at least one unidentified row.
+  onViewUnidentified: (id: SystemId) => void;
   onClose: () => void;
 };
 
@@ -240,6 +244,32 @@ const GameMediaManagePanel: Component<GameMediaManagePanelProps> = (props) => {
                       <p class="mt-1.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)/80">
                         {opCountLine(op)}
                       </p>
+                    </Show>
+                    <Show
+                      when={
+                        op.id === "identify" &&
+                        (() => {
+                          const s = props.stats();
+                          const id = props.systemId();
+                          return id && s && s.total - s.identified > 0;
+                        })()
+                      }
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          const id = props.systemId();
+                          if (id) props.onViewUnidentified(id);
+                        }}
+                        class="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-amber-200 transition hover:border-amber-400/60 hover:bg-amber-400/20"
+                      >
+                        {(() => {
+                          const s = props.stats();
+                          const n = s ? s.total - s.identified : 0;
+                          return `View ${n} unidentified ▸`;
+                        })()}
+                      </button>
                     </Show>
                   </div>
                   <button

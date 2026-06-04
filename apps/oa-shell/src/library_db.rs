@@ -503,6 +503,26 @@ pub struct RomTrackRow {
     pub size_bytes: i64,
 }
 
+/// Slim "unidentified game" payload returned by
+/// [`LibraryDb::list_unidentified_games_for_system`] for the operator's
+/// audit UI. Excludes seed rows. `has_disc_id=true` means the legacy
+/// `peek_disc_id` flow stamped a publisher catalog code but the new
+/// fuzzy/per-track path hasn't landed a sha1 yet — re-running Identify
+/// ROMs will send these through the new path.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnidentifiedGameRow {
+    pub id: String,
+    pub system_id: String,
+    pub title: String,
+    /// Operator-visible filesystem path. For archived ROMs this is the
+    /// outer .zip/.7z; the inner entry lives on `archive_inner_path`.
+    pub file_path: String,
+    pub archive_inner_path: Option<String>,
+    /// Legacy disc_id stamped without a corresponding sha1 fuzzy match.
+    pub has_disc_id: bool,
+}
+
 /// Cached per-track hash bundle for one operator-side disc image.
 /// Returned by [`LibraryDb::get_game_disc_tracks`]. The mtime/size
 /// stamps drive cache invalidation — the caller stat()s the disc
@@ -2265,6 +2285,51 @@ impl LibraryDb {
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("collect list_games_missing_hash: {e}"))?;
+        Ok(rows)
+    }
+
+    /// List every TRULY unidentified game in the given system — `sha1` is
+    /// NULL/empty. Excludes seed rows (placeholder tiles). Returns the
+    /// slim payload the UI needs: id, title, file_path, archive_inner_path,
+    /// plus a `has_disc_id` flag so the operator can tell which rows were
+    /// stamped by the legacy `peek_disc_id` flow (semi-identified, but
+    /// still actionable — re-running Identify ROMs sends them through the
+    /// new fuzzy path).
+    ///
+    /// Cart games: `has_disc_id` is always false.
+    /// Disc games: `has_disc_id=true` means a publisher catalog code was
+    /// extracted but no fuzzy/per-track match landed; `false` means no
+    /// disc-id read either (truly unmatched).
+    pub fn list_unidentified_games_for_system(
+        &self,
+        system_id: &str,
+    ) -> Result<Vec<UnidentifiedGameRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, file_path, title, archive_inner_path, disc_id
+                 FROM games
+                 WHERE system_id = ?1
+                   AND (sha1 IS NULL OR sha1 = '')
+                   AND seed = 0
+                 ORDER BY title ASC",
+            )
+            .map_err(|e| format!("prepare list_unidentified_games_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], |row| {
+                let disc_id: Option<String> = row.get(5)?;
+                Ok(UnidentifiedGameRow {
+                    id: row.get(0)?,
+                    system_id: row.get(1)?,
+                    file_path: row.get(2)?,
+                    title: row.get(3)?,
+                    archive_inner_path: row.get(4)?,
+                    has_disc_id: disc_id.as_deref().is_some_and(|s| !s.is_empty()),
+                })
+            })
+            .map_err(|e| format!("query list_unidentified_games_for_system: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect list_unidentified_games_for_system: {e}"))?;
         Ok(rows)
     }
 
