@@ -2712,7 +2712,7 @@ impl LibraryDb {
             .prepare(
                 "SELECT id, system_id, file_path, title, added_at,
                         core_override, cover_path, seed, archive_inner_path,
-                        sha1, serial, disc_id
+                        sha1, serial, disc_id, disc_set_id, disc_number
                  FROM games
                  WHERE disc_set_id = ?1
                  ORDER BY disc_number ASC, title ASC",
@@ -2733,6 +2733,10 @@ impl LibraryDb {
                     sha1: row.get(9)?,
                     serial: row.get(10)?,
                     disc_id: row.get(11)?,
+                    disc_set_id: row.get(12)?,
+                    // SQLite returns disc_number as i64; downcast to
+                    // u32 for the camelCase JSON the frontend reads.
+                    disc_number: row.get::<_, Option<i64>>(13)?.map(|n| n as u32),
                     // Sub-phase 4 frontend doesn't need these for the
                     // disc-picker overlay; leave at defaults.
                     favorite: false,
@@ -2741,8 +2745,6 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
-                    disc_set_id: None,
-                    disc_number: None,
                 })
             })
             .map_err(|e| format!("query list_disc_set_members: {e}"))?
@@ -6742,6 +6744,17 @@ mod tests {
         assert_eq!(members[1].id, "ff9-d2");
         assert_eq!(members[2].id, "ff9-d3");
         assert_eq!(members[3].id, "ff9-d4");
+        // Regression guard for the 2026-06-04 "Disc ?" frontend bug —
+        // ensure disc_number AND disc_set_id come through populated
+        // (the SELECT used to omit both columns, leaving them None
+        // and breaking the DiscPickerDialog's button labels).
+        assert_eq!(members[0].disc_number, Some(1));
+        assert_eq!(members[1].disc_number, Some(2));
+        assert_eq!(members[2].disc_number, Some(3));
+        assert_eq!(members[3].disc_number, Some(4));
+        for m in &members {
+            assert_eq!(m.disc_set_id, Some(ff9_id), "disc_set_id surfaced for {}", m.id);
+        }
         // Standalone game is NOT in the member list.
         assert!(
             members.iter().all(|g| g.id != "tomb"),
