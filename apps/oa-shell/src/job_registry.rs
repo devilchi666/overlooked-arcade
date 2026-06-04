@@ -912,6 +912,58 @@ impl<'a> JobScope<'a> {
             }
         }
     }
+
+    /// Mark cancelled. Use when an operator-triggered cancel is the
+    /// reason work is stopping (as opposed to a real failure). Idempotent —
+    /// second call is a no-op, and Drop will not re-finalize.
+    pub fn cancel(&self) {
+        if let Some(i) = &self.inner {
+            if !i.finalized.swap(true, Ordering::AcqRel) {
+                let _ = i.registry.mark_cancelled(i.id);
+            }
+        }
+    }
+
+    /// Re-attach to an existing job row whose lifecycle a worker is about
+    /// to run. Use this when:
+    ///   - a Tauri command created the row and returned its job_id to the
+    ///     frontend, and a follow-up worker task (`spawn_blocking` /
+    ///     `async_runtime::spawn`) needs Drop-on-`?` protection;
+    ///   - a `JobResumer` is picking up an `interrupted` row left by a
+    ///     previous run.
+    ///
+    /// Internally calls `attach_handle` + `mark_running`. `total` is
+    /// optional — pass the known value when available so the bar shows
+    /// the right denominator on the first tick. Drop semantics match
+    /// `start()`: on scope drop without explicit complete/fail/cancel,
+    /// the row is marked failed.
+    pub fn resume(
+        registry: Option<&'a JobRegistry>,
+        job_id: i64,
+        kind: String,
+        total: Option<i64>,
+    ) -> Self {
+        let Some(reg) = registry else {
+            return Self { inner: None };
+        };
+        let _handle = reg.attach_handle(job_id, kind);
+        if let Err(e) = reg.mark_running(job_id) {
+            log::warn!("background_jobs: JobScope::resume mark_running failed: {e}");
+        }
+        if let Some(t) = total {
+            if let Err(e) = reg.force_set_total(job_id, t) {
+                log::warn!("background_jobs: JobScope::resume force_set_total failed: {e}");
+            }
+        }
+        Self {
+            inner: Some(JobScopeInner {
+                registry: reg,
+                id: job_id,
+                total: AtomicI64::new(total.unwrap_or(JOB_SCOPE_NO_TOTAL)),
+                finalized: AtomicBool::new(false),
+            }),
+        }
+    }
 }
 
 impl Drop for JobScope<'_> {
@@ -1505,6 +1557,11 @@ pub fn start_bulk_core_install(n: usize, app: tauri::AppHandle) -> Result<i64, S
         );
         return Ok(-1);
     };
+    // JobScope intentionally NOT used here: the parent has no worker —
+    // its lifecycle is driven by `tick_parent_if_any` ticks fired when
+    // child download_core jobs finalize. A JobScope would Drop on
+    // command return and incorrectly mark_failed the parent before any
+    // child even started.
     let label = format!("Installing {} core{}", n, if n == 1 { "" } else { "s" });
     let id = reg.create_job(
         JobKind::BulkCoreInstall,
@@ -1515,10 +1572,14 @@ pub fn start_bulk_core_install(n: usize, app: tauri::AppHandle) -> Result<i64, S
         "cores",
         None,
     )?;
-    let _ = reg.mark_running(id);
+    if let Err(e) = reg.mark_running(id) {
+        log::warn!("background_jobs: bulk_core_install mark_running({id}) failed: {e}");
+    }
     // Pre-set the parent's total so the bar opens with "0 / N" rather
     // than blank.
-    let _ = reg.write_progress_unthrottled(id, 0, Some(n as i64));
+    if let Err(e) = reg.write_progress_unthrottled(id, 0, Some(n as i64)) {
+        log::warn!("background_jobs: bulk_core_install initial total failed: {e}");
+    }
     Ok(id)
 }
 
@@ -1550,6 +1611,9 @@ pub async fn spawn_test_job(
     // apart from real ones when both run together.
     let suffix = now_ms() % 10_000;
     let name = format!("test-{suffix:04}");
+    // Create the row in the command so we can return job_id to the
+    // frontend synchronously; the worker task picks it up via
+    // JobScope::resume so any panic in the loop auto-finalizes the row.
     let job_id = registry.create_job(
         JobKind::TestJob { name: name.clone() },
         format!("Test job ({secs}s)"),
@@ -1559,22 +1623,29 @@ pub async fn spawn_test_job(
         "steps",
         None,
     )?;
-    registry.mark_running(job_id)?;
     let handle = registry
         .handle(job_id)
         .ok_or_else(|| "test_job handle dropped before tick loop".to_string())?;
     let registry_clone = registry.clone();
     tauri::async_runtime::spawn(async move {
+        let scope = JobScope::resume(
+            Some(&registry_clone),
+            job_id,
+            "test_job".to_string(),
+            Some(total),
+        );
         let mut done: i64 = 0;
         while done < total {
             if handle.is_cancelled() {
                 let _ = registry_clone
                     .flush_resume_state(job_id, serde_json::json!({ "done": done }));
-                let _ = registry_clone.mark_cancelled(job_id);
+                scope.cancel();
                 return;
             }
-            // Same paused → running state bridge core_download uses
-            // so the bar's resume button toggles for test jobs too.
+            // Same paused → running state bridge core_download uses so
+            // the bar's resume button toggles for test jobs too. These
+            // are non-finalize transitions so they go direct to the
+            // registry; JobScope only tracks finalize.
             let mut was_paused = false;
             while handle.is_paused() {
                 if !was_paused {
@@ -1583,7 +1654,7 @@ pub async fn spawn_test_job(
                 }
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 if handle.is_cancelled() {
-                    let _ = registry_clone.mark_cancelled(job_id);
+                    scope.cancel();
                     return;
                 }
             }
@@ -1592,9 +1663,9 @@ pub async fn spawn_test_job(
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
             done += 1;
-            let _ = registry_clone.progress(job_id, done, Some(total));
+            scope.tick(done);
         }
-        let _ = registry_clone.mark_completed(job_id);
+        scope.complete();
     });
     Ok(job_id)
 }
