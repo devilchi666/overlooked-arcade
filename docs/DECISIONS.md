@@ -1304,3 +1304,32 @@ After 1 + 2: per-track works only for **raw, unarchived, DiscImageCreator-shape 
 **Trigger criteria for adopting (c):** If progress-bar bugs keep surfacing in the consumers that JobScope already covers — i.e. the RAII finalization isn't enough and we need to push more of the wiring into a shared helper — revisit. Specifically, watch for: bars that fail to start (suggests we need a `run_job_over` style that owns the iteration too), bars that fail to tick (suggests we need a built-in periodic ticker), or bars that fail to finalize despite Drop (suggests the closure isn't dropping reliably). Until any of those land, JobScope is the right ceiling.
 
 **Cross-ref:** `apps/oa-shell/src/job_registry.rs::JobScope` doc comment; operator playtest report 2026-06-04.
+
+---
+
+## 2026-06-04 — Audit-derived sweep: JobScope expansion + frontend listenScoped helper
+
+**Decision:** After the JobScope RAII guard shipped, an audit of the rest of the codebase for same-shape structural bugs surfaced three tiers of follow-on work. All three landed on `main` in sequence (silent-bug → fragile → boilerplate), each behind operator playtest. The notable structural results:
+
+1. **JobScope grew two new constructors / methods to cover the consumers the original entry called out as "not migrated."** The 2026-06-04 prior entry kept `core_installer::download_core` and `main::start_background_scan` on the manual pattern because (a) tri-state finalization needed a cancel branch and (b) the spawn_blocking boundary couldn't carry a borrowed-lifetime scope. Both now migrate via the new API:
+   - `JobScope::cancel()` — mirrors `complete()`/`fail()` but routes to `mark_cancelled`. Resolves (a).
+   - `JobScope::resume(registry, job_id, kind, total)` — re-attach to a row created earlier by a Tauri command (which needed to return the id synchronously) and pick up Drop-on-`?` protection inside the spawned worker. Resolves (b).
+   - With these in place, the migrated callers are: `download_core`, `CoreDownloadResumer::resume`, `start_background_scan`, `spawn_test_job`. The only intentional remainder is `start_bulk_core_install` (parent rows finalized by `tick_parent_if_any` driven by child completion ticks; JobScope's Drop would prematurely fail it on Tauri-command return).
+
+2. **Frontend `listenScoped` helper at `frontend/src/lib/eventListener.ts`** replaces the recurring "`await listen(...).then(un => unlisten = un); onCleanup(() => un?.())`" ceremony with a single synchronous call. Race-safe across "scope unmounts before listen() resolves." Migrated 8 sites (ToastStack, CoresPage, SystemCoresStrip, GameDialogs, SystemReadinessChecklist, LibraryManagerPage × 7 listens, App.tsx × 2 listens). 6 sites intentionally NOT migrated (load-bearing install-before-hydrate ordering in `library/media.tsx` + `library/platformMedia.tsx` + `PlatformMediaDialog`; tightly-sequenced await chains in `ImportWizard`; reactive re-attach in `MissingCoreBulkPrompt`; non-Solid scope in `ingest.ts`).
+
+3. **Silent-bug surfacing on the frontend** — replaced 6+ `.catch(() => {})` swallows on user-initiated setter `invoke()`s with the existing `oa://toast` channel via a new `pushToast` / `reportInvokeError` helper at `frontend/src/lib/toast.ts`. Per-frame drag handlers and unload-cleanup paths stay console-only by design (toast spam vs. silent breakage tradeoff applied per call site, not blanket).
+
+**Considered and rejected:**
+
+- **Backend `JobScope::tick_and_emit<P>(app, channel, payload, done)` helper.** Originally promised to fuse the `app.emit("oa://*-progress", payload)` + `scope.tick(done)` pairs flagged in the audit. Reading the actual code showed the audit overstated this: in `media.rs` the bespoke per-rom emit fires inside `buffer_unordered`'s per-item closure while `scope.tick` fires at per-repo boundaries; in `rom_hashes.rs` the emits fire per-inner-branch while `scope.tick` fires once per outer-game-loop iteration. The two channels report at *different cadences by design* (rich per-item for the page UI, coarse for the bar registry). A fused helper would force unnatural lockstep and pull the per-item data into the bar (wasted IPC) or lose granularity from the page.
+
+- **Migrating `media.tsx` / `platformMedia.tsx` / `PlatformMediaDialog` to `listenScoped`.** All three have a critical "install listener BEFORE hydrate" ordering — the await on `listen()` ensures the handler is bound before the hydrate `invoke()` runs, so events fired during hydrate aren't dropped between hydrate-await and listen-await. `listenScoped` is fire-and-forget (its listen Promise resolves async), which would break that guarantee. The `await listen(...)` pattern is load-bearing at these sites.
+
+- **Wholesale retirement of the bespoke `oa://library-sync` / `oa://library-metadata-sync` / `oa://rom-hash-resolve-progress` / `oa://library-scan-progress` event streams** in favor of `oa://job-event` as the single progress channel. This IS the structural fix for the dual-channel state finding in the audit's §3 — but it's a multi-file frontend refactor (LibraryManagerPage, ImportWizard, ingest.ts all switch from bespoke listeners to filtering `oa://job-event` snapshots by `target_id` / `system_id`). Out of scope for this sweep; parked at PARKING_LOT 2026-06-04.
+
+**Trigger criteria for unparking:** Another operator-reported "progress UI doesn't match registry state" bug where the root cause is the bespoke channel and the registry channel having diverged. Until then, the per-call-site discipline introduced by JobScope keeps the two in sync where it matters.
+
+**Cross-ref:** merges `78cbd13` (silent-bug), `ede2473` (fragile), `4091804` (boilerplate). Audit source: 2026-06-04 multi-agent report stored in operator session log.
+
+---

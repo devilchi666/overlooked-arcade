@@ -196,6 +196,19 @@ spanned every system but was filed under whichever core happened to be active.
 Compressed log. Full per-arc detail lives in `docs/_archive/` — see
 [_archive/INDEX.md](_archive/INDEX.md) for the searchable manifest.
 
+**2026-06-04**
+- Audit-derived structural sweep — three tiers landed in sequence:
+  silent-bug (frontend `.catch(() => {})` swallows replaced with
+  toast/console surfacing; merge `78cbd13`), fragile (JobScope
+  adoption extended via new `cancel()` + `resume()` constructors,
+  covering `core_installer`, `start_background_scan`, `spawn_test_job`,
+  `CoreDownloadResumer`; merge `ede2473`), boilerplate (frontend
+  `listenScoped` helper retiring 8 manual `listen`/`onCleanup`
+  ceremonies; merge `4091804`). Backend `JobScope::tick_and_emit`
+  intentionally NOT shipped — emit and tick fire at different cadences
+  by design. Dual-channel retirement parked. See
+  [DECISIONS.md](DECISIONS.md) 2026-06-04 "Audit-derived sweep" entry.
+
 **2026-06-03**
 - SETTINGS declutter — System Health hub + Game-media status-first
   cards. Sidebar shrank 16 → 12. Merge `dd430e4`. Plan:
