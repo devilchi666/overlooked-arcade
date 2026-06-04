@@ -2,6 +2,7 @@ id: tg16
 display_name: TurboGrafx-16 / PC Engine
 short_name: TG-16
 schema_version: 1
+default_core: mednafen_pce_fast_libretro.dll
 default_shader_preset: plain
 extensions:
 - pce

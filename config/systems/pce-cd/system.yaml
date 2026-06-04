@@ -2,6 +2,7 @@ id: pce-cd
 display_name: TurboGrafx-CD / PC Engine CD-ROM²
 short_name: TG-CD
 schema_version: 1
+default_core: mednafen_pce_fast_libretro.dll
 default_shader_preset: plain
 extensions:
 - cue

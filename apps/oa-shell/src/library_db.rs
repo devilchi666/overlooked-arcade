@@ -2049,6 +2049,63 @@ impl LibraryDb {
         }
     }
 
+    /// Batched variant of [`lookup_rom_hash`] for the resolve loop's
+    /// per-game candidate set. Replaces the per-candidate N+1 pattern
+    /// `for c in candidates { db.lookup_rom_hash(&c.sha1)? }` with a
+    /// single `WHERE sha1 IN (?,?,?,...)` query whose result is keyed
+    /// on the lowercased sha1 for O(1) per-candidate lookup.
+    ///
+    /// Empty `sha1s` returns an empty map. The lookup is
+    /// case-insensitive: input sha1s are lowercased before the query
+    /// AND the keys in the returned map are lowercase. Callers can
+    /// either lowercase their probe key OR call `.to_ascii_lowercase()`
+    /// on it before `get()`.
+    ///
+    /// SQLite imposes a default variable limit (typically 999 in older
+    /// builds, 32766 in modern). For OA's resolve loop this caps at the
+    /// header-rule expansion (3–5 candidates per game) which is well
+    /// under the limit; if a future caller wants to batch hundreds of
+    /// sha1s at once they should chunk into batches of 500.
+    pub fn lookup_rom_hashes_batch(
+        &self,
+        sha1s: &[String],
+    ) -> Result<std::collections::HashMap<String, RomHashRow>, String> {
+        let mut out: std::collections::HashMap<String, RomHashRow> =
+            std::collections::HashMap::with_capacity(sha1s.len());
+        if sha1s.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let lowered: Vec<String> = sha1s.iter().map(|s| s.to_ascii_lowercase()).collect();
+        let placeholders = vec!["?"; lowered.len()].join(",");
+        let sql = format!(
+            "SELECT sha1, system_id, game_name, serial, crc32, size_bytes
+             FROM rom_hashes WHERE sha1 IN ({placeholders})"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("prepare lookup_rom_hashes_batch: {e}"))?;
+        let params_iter = rusqlite::params_from_iter(lowered.iter());
+        let mut rows = stmt
+            .query(params_iter)
+            .map_err(|e| format!("query lookup_rom_hashes_batch: {e}"))?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("step lookup_rom_hashes_batch: {e}"))?
+        {
+            let r = RomHashRow {
+                sha1: row.get(0).map_err(|e| format!("col sha1: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col system_id: {e}"))?,
+                game_name: row.get(2).map_err(|e| format!("col game_name: {e}"))?,
+                serial: row.get(3).map_err(|e| format!("col serial: {e}"))?,
+                crc32: row.get(4).map_err(|e| format!("col crc32: {e}"))?,
+                size_bytes: row.get(5).map_err(|e| format!("col size_bytes: {e}"))?,
+            };
+            out.insert(r.sha1.clone(), r);
+        }
+        Ok(out)
+    }
+
     /// Find a library row by SHA-1 hash. Used by direct-launch to discover
     /// an existing library entry (and its per-game overrides) when the
     /// user spawns oa-shell with a ROM path from an external frontend.
@@ -6116,6 +6173,51 @@ mod tests {
             .expect("lookup 4")
             .expect("hit");
         assert_eq!(fresh.game_name, "Fresh TG-16");
+    }
+
+    #[test]
+    fn lookup_rom_hashes_batch_returns_hits_and_skips_misses() {
+        let db = fresh_db();
+        db.upsert_rom_hashes(&[
+            RomHashRow {
+                sha1: "a".repeat(40),
+                system_id: "snes".into(),
+                game_name: "Game A".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+            RomHashRow {
+                sha1: "b".repeat(40),
+                system_id: "snes".into(),
+                game_name: "Game B".into(),
+                serial: None,
+                crc32: None,
+                size_bytes: None,
+            },
+        ])
+        .expect("upsert");
+
+        // Mix of two hits, one miss. Batched lookup returns 2 rows.
+        let probes = vec!["a".repeat(40), "b".repeat(40), "c".repeat(40)];
+        let out = db.lookup_rom_hashes_batch(&probes).expect("batch");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.get(&"a".repeat(40)).unwrap().game_name, "Game A");
+        assert_eq!(out.get(&"b".repeat(40)).unwrap().game_name, "Game B");
+        assert!(out.get(&"c".repeat(40)).is_none());
+
+        // Case-insensitive matching: uppercase probe still hits.
+        let upper = vec!["A".repeat(40)];
+        let out = db.lookup_rom_hashes_batch(&upper).expect("batch upper");
+        assert_eq!(out.len(), 1);
+        // Returned map is keyed on the stored (lowercase) sha1.
+        assert!(out.get(&"a".repeat(40)).is_some());
+
+        // Empty input returns empty map without locking the connection
+        // or hitting SQLite.
+        let empty: Vec<String> = Vec::new();
+        let out = db.lookup_rom_hashes_batch(&empty).expect("batch empty");
+        assert!(out.is_empty());
     }
 
     #[test]
