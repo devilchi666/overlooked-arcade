@@ -1,5 +1,5 @@
-import { createSignal, For, onCleanup, onMount, type Component } from "solid-js";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { createSignal, For, onCleanup, type Component } from "solid-js";
+import { listenScoped } from "../lib/eventListener";
 
 // Mirror of the Rust ToastPayload struct in oa-shell/src/main.rs. `system`
 // is optional — when present it picks up that system's CSS cascade colors
@@ -34,7 +34,6 @@ const GLYPH: Record<ToastLevel, string> = {
 const ToastStack: Component = () => {
   const [toasts, setToasts] = createSignal<Toast[]>([]);
   let nextId = 1;
-  let unlisten: UnlistenFn | undefined;
   const timers = new Map<number, number>();
 
   const cancelTimer = (id: number) => {
@@ -66,16 +65,9 @@ const ToastStack: Component = () => {
     timers.set(id, handle);
   };
 
-  onMount(async () => {
-    try {
-      unlisten = await listen<ToastPayload>("oa://toast", (e) => push(e.payload));
-    } catch (e) {
-      console.warn("ToastStack: listen('oa://toast') failed:", e);
-    }
-  });
+  listenScoped<ToastPayload>("oa://toast", (e) => push(e.payload));
 
   onCleanup(() => {
-    unlisten?.();
     timers.forEach((h) => window.clearTimeout(h));
     timers.clear();
   });

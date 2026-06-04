@@ -1,6 +1,6 @@
-import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createMemo, createResource, createSignal, For, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenScoped } from "../lib/eventListener";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { downloadCoreWithDuplicateCheck } from "../lib/backgroundJobs";
 import type { CoreEntry } from "../settings/store";
@@ -137,18 +137,14 @@ const CoresPage: Component<Props> = (props) => {
   // Per-base progress map. Phase + downloaded/total bytes feed the row's
   // little progress strip while a download is in flight.
   const [progress, setProgress] = createSignal<Record<string, DownloadProgress>>({});
-  onMount(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<DownloadProgress>("oa://core-download-progress", (e) => {
-      setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
-      if (e.payload.phase === "done" || e.payload.phase === "error") {
-        // Refresh the installed-cores list once the .dll lands so the
-        // row flips to "Installed (v…)".
-        refetch();
-        refreshCatalog();
-      }
-    }).then((un) => (unlisten = un));
-    onCleanup(() => unlisten?.());
+  listenScoped<DownloadProgress>("oa://core-download-progress", (e) => {
+    setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
+    if (e.payload.phase === "done" || e.payload.phase === "error") {
+      // Refresh the installed-cores list once the .dll lands so the
+      // row flips to "Installed (v…)".
+      refetch();
+      refreshCatalog();
+    }
   });
 
   // Accordion expanded-state. Wired-in-OA sections + Multi-system start

@@ -12,7 +12,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listenScoped } from "../../lib/eventListener";
 import { systemThemes, type SystemId } from "../../themes/registry";
 import MissingCoreBulkPrompt from "./MissingCoreBulkPrompt";
 import BiosResolutionDetail, { type BiosFile } from "./BiosResolutionDetail";
@@ -276,25 +276,15 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   // Both resources refetch — the catalog-aware `available` drives
   // the primary pill state, the `cores` extension-overlap drives
   // the no-catalog-entry fallback.
-  let unlistenDownloadProgress: UnlistenFn | undefined;
-  void (async () => {
-    try {
-      unlistenDownloadProgress = await listen<{ fileName: string; phase: string }>(
-        "oa://core-download-progress",
-        (event) => {
-          if (event.payload.phase === "done") {
-            void refetchCores();
-            void refetchAvailable();
-          }
-        },
-      );
-    } catch (e) {
-      console.warn("[oa-readiness] listen oa://core-download-progress failed:", e);
-    }
-  })();
-  onCleanup(() => {
-    if (unlistenDownloadProgress) unlistenDownloadProgress();
-  });
+  listenScoped<{ fileName: string; phase: string }>(
+    "oa://core-download-progress",
+    (event) => {
+      if (event.payload.phase === "done") {
+        void refetchCores();
+        void refetchAvailable();
+      }
+    },
+  );
 
   /// Manual refetch of every readiness signal. Called by the
   /// "Refresh" button + the window-focus handler below so operator
