@@ -664,6 +664,11 @@ Not code — content / curation / validation work.
 - **2600 homebrew / hack tile distinction** — per-game source-of-origin tag.
 - **NEC PC-FX cover-art curation** — Japan-only library; titles ship Japanese by default and need operator-set English aliases for searchability.
 - ~~**MAME ROM-set name resolution** — per-game metadata sync against MAME listxml.~~ ✅ Shipped 2026-06-01 (bundled `mame-games-slim.json` + L1/L3 SQLite tables + ingest cutover; see `docs/cores/mame/ROADMAP.md` Phase 1.5).
+- **System info content — Wave 2 (Pass C)** — 29 systems still need their `system_info:` block in `config/systems/<id>/system.yaml`. Wikipedia-sourced methodology established in Pass A + B (5 + 12 systems shipped 2026-06-04 via `content/system-info-pass-a-pre-wave-1` + `content/system-info-pass-b-wave-1-verify`). Each entry needs: WebFetch Wikipedia → identify fields → drop where uncertain → write with established blurb voice → add `meta.contributors: [URL]`. Split into three sub-passes:
+  - **C1 — Mainstream consoles + handhelds (12 systems)**: `gba, gbc, n64, gamecube, ps2, psp, nds, dreamcast, saturn, segacd, neogeo, neocd`. Wikipedia coverage strong; expect ~1 session at the Pass B cadence. Operator likely has editorial opinions on the big-name blurbs.
+  - **C2 — Long-tail consoles (14 systems)**: `2600, 3do, 5200, channelf, intv, jagcd, jaguar, ngp, o2, pcfx, pokemini, sega32x, sega32xcd, stv`. Wikipedia coverage variable — well-covered for 2600 / Jaguar / Intellivision, thinner for PC-FX / ST-V / Channel F / Odyssey². Expect more honest field-dropping per the "no fabrication" methodology. ~1 session.
+  - **C3 — Emulator host platforms (3 systems)**: `mame, scummvm, dosbox`. These aren't consoles — they're software platforms hosting other games. The `system_info` block needs adapting before writing (units_sold, media, release_date don't apply in the console sense). Schema-fit discussion before writing. ~0.5 session.
+  Where the work lands: `config/systems/<id>/system.yaml` per system, `meta.contributors` list per entry. Tests at `apps/oa-shell/src/system_info.rs::tests::registry_load_finds_all_v1_panel_systems` exercise every shipped YAML at load time — green = parses cleanly. No code changes expected unless schema-fit adjustment is needed for C3.
 
 ---
 

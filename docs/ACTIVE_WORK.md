@@ -222,6 +222,31 @@ Compressed log. Full per-arc detail lives in `docs/_archive/` — see
   distinctions (Beta/Proto/Demo, Disc 1≠Disc 2, USA≠Japan≠Europe).
   See [DECISIONS.md](DECISIONS.md) 2026-06-04 "Unidentified-games
   audit surface" + "Tiered disc-filename fuzzy matcher" entries.
+- Spot-audit derived fast wins. Merge `1bb9489`: `tg16` + `pce-cd`
+  default_core wiring (BROKEN — both YAMLs lacked the field) + N+1
+  batched cart lookup via new `library_db::lookup_rom_hashes_batch`
+  (~1500 → ~500 SELECTs per Identify ROMs pass on a 500-game cart
+  library). Plus `perf/async-fs-and-render-measurement` (merge
+  `23b4f50`): tokio::fs cutover for `metadata.rs` + `rom_hashes.rs`
+  cache I/O (4 sync-fs-in-async sites), and measure-before-build
+  instrumentation for the renderer bind-group pool which the data
+  rejected at 0.10% of frame budget (DECISIONS.md 2026-06-04
+  "Bind-group pool" entry). Parked: async-fs Phase 2 for
+  `core_installer.rs` (PARKING_LOT 2026-06-04 with trigger criteria).
+- System info content arc — Wave 1 + Pass A + Pass B shipped. Bundle
+  merges `4d2c41d` (Wave 1: 12 overlooked-focus systems written from
+  training knowledge), `94845e4` (Pass A: 5 pre-Wave-1 entries
+  re-verified against Wikipedia — caught a 1-year SNES release-date
+  error, NES discontinue mix-up, PSX manufacturer precision, units_sold
+  caveats), `49e311b` (Pass B: 11 Wave 1 entries re-verified —
+  caught wrong `virtualboy` RAM by ~3×, wrong `tg16` units_sold by
+  ~2.5×, wrong `pce-cd` Arcade Card size by ~8×, plus several
+  manufacturer + release-date + storage-cap fixes). Methodology:
+  WebFetch Wikipedia per system → identify verifiable fields → drop
+  unsourced numbers → write with established blurb voice →
+  `meta.contributors` carries source URLs. 17 of 46 systems now
+  Wikipedia-sourced. Remaining 29 (Pass C1/C2/C3) tracked at
+  [NEXT.md](NEXT.md) DOC / DATA / TRIAGE section.
 
 **2026-06-03**
 - SETTINGS declutter — System Health hub + Game-media status-first
