@@ -14,12 +14,12 @@ cores:
   blurb: Lighter MSX alternative.
 system_info:
   system_id: msx
-  manufacturer: Microsoft / ASCII (standard) — built by Sony, Panasonic, Sanyo, Toshiba, Yamaha, Pioneer, Philips, et al.
+  manufacturer: ASCII Corporation + Microsoft (standard) — Sony, Panasonic, Sanyo, Toshiba, Yamaha, Pioneer, Philips, Canon, Casio, Fujitsu, Sharp (manufacturers)
   type: Home Computer
   generation: 3rd Generation
-  release_date: October 21, 1983 (JP)
-  discontinued: 1995 (entire MSX family)
-  units_sold: ~9 Million (MSX1 + MSX2 combined estimates)
+  release_date: October 21, 1983 (JP, Mitsubishi ML-8000 first sale)
+  discontinued: mid-1980s (MSX1 line; MSX2 launched 1985)
+  units_sold: ~4-9 Million (disputed — Wikipedia notes "9 Million worldwide" vs Nishi's claim of "3M JP + 1M overseas")
   media: Cartridge / Cassette / Floppy Disk
   cpu: Zilog Z80A @ 3.58 MHz
   sound: General Instrument AY-3-8910 PSG (3 channels)
@@ -28,9 +28,9 @@ system_info:
   architecture: 8-Bit
   max_players: 1-2 Players
   multiplayer: Yes — 2 via joystick ports
-  region: Worldwide (multi-manufacturer)
+  region: Worldwide (multi-manufacturer; strong in JP, KR, BR, NL, ES, AR)
   storage: Cartridge (32 KB - 4 MB via mapper) / Floppy / Cassette
-  ram: 8 KB - 64 KB (model-dependent)
+  ram: 8 KB minimum, most models 32 or 64 KB
   video_output: RF / Composite / RGB
   aspect_ratio: 4:3
   peripherals:
@@ -49,3 +49,5 @@ system_info:
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/MSX

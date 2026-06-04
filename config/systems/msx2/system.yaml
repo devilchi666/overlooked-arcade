@@ -11,22 +11,22 @@ cores:
   recommended: true
 system_info:
   system_id: msx2
-  manufacturer: ASCII / Microsoft (standard) — multiple manufacturers
+  manufacturer: ASCII Corporation + Microsoft (standard) — multiple manufacturers
   type: Home Computer
   generation: 3rd Generation
   release_date: 1985 (JP)
-  discontinued: 1990 (MSX2+ continued, full family discontinued 1995)
+  discontinued: MSX2+ launched 1988; MSX TurboR 1990; full family discontinued mid-1990s
   media: Cartridge / Floppy Disk / Cassette
   cpu: Zilog Z80A @ 3.58 MHz
-  sound: AY-3-8910 PSG + optional MSX-MUSIC (YM2413 FM)
-  resolution: 512 x 424 (interlaced) / 256 x 212 standard
+  sound: Yamaha YM2149 PSG (AY-3-8910 clone) + optional YM2413 FM (MSX-MUSIC)
+  resolution: 256 x 212 / 512 x 212 / 256 x 424 (interlaced) / 512 x 424 (interlaced)
   color_palette: 512 colors (16 on-screen) / 256 in YJK modes
   architecture: 8-Bit
   max_players: 1-2 Players
   multiplayer: Yes — 2 via joystick ports
   region: Worldwide (multi-manufacturer)
   storage: Cartridge (up to 4 MB) / Floppy (720 KB)
-  ram: 64 KB - 128 KB main / 64 KB - 128 KB VRAM
+  ram: 64 KB minimum (128 KB common in EU) / 128 KB VRAM
   video_output: RF / Composite / RGB (SCART common in EU)
   aspect_ratio: 4:3
   peripherals:
@@ -40,8 +40,10 @@ system_info:
     glyph: 🖱️
   release_flag: 🇯🇵
   tagline: 8-BIT HOME COMPUTER
-  blurb: The MSX upgrade that made it competitive with the Amiga and Atari ST for several years — Yamaha V9938 graphics with vertical scrolling hardware, palette mode, and 80-column text. Pumped out a wave of late-Konami legends (Metal Gear 2, SD Snatcher, Space Manbow) before falling to the PC's dominance in the 90s.
+  blurb: The MSX upgrade that made it competitive with the Amiga and Atari ST for several years — Yamaha V9938 graphics with hardware acceleration (copy, line, fill), palette mode, and 80-column text. Pumped out a wave of late-Konami legends (Metal Gear 2, SD Snatcher, Space Manbow) before falling to the PC's dominance in the 90s.
   sidebar_subline: 8-BIT COMPUTER · 1985
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/MSX2

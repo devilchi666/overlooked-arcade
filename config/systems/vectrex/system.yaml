@@ -17,33 +17,33 @@ cores:
   recommended: true
 system_info:
   system_id: vectrex
-  manufacturer: General Consumer Electronics / Milton Bradley
+  manufacturer: Smith Engineering (designed) / GCE — General Consumer Electronics (1982-83) / Milton Bradley (1983-84)
   type: Home Console (Built-in Display)
   generation: 2nd Generation
-  release_date: November 1982 (NA)
-  discontinued: 1984
-  units_sold: ~500,000
+  release_date: October 1982 (NA) / 1983 (EU, JP via Bandai as Kōsokusen)
+  discontinued: February 1984
+  units_sold: estimated ~500,000 (Milton Bradley reported $31.6M loss)
   media: Cartridge + Overlay
-  cpu: Motorola MC6809 @ 1.5 MHz
+  cpu: Motorola MC68A09 @ 1.5 MHz
   sound: General Instrument AY-3-8912 (3 channels)
-  resolution: Vector graphics (no raster — 330 × 410 effective)
+  resolution: Vector graphics (no raster)
   color_palette: Monochrome with translucent plastic overlays
   architecture: 8-Bit
   max_players: 1-2 Players
   multiplayer: Yes — 2 via dual controller ports
   region: NTSC
-  storage: Cartridge (4 KB - 16 KB)
-  ram: 1 KB
+  storage: Cartridge (up to 32 KB)
+  ram: 1 KB / 8 KB on-board ROM
   video_output: Built-in 9-inch monochrome vector CRT
   aspect_ratio: 3:4 (portrait CRT)
   peripherals:
   - name: Vectrex Controller
     glyph: 🎮
-  - name: 3D Imager
+  - name: 3-D Imager (spinning color filter)
     glyph: 🥽
   - name: Light Pen
     glyph: 🖊️
-  - name: Plastic Color Overlays
+  - name: Color Overlay Sheets
     glyph: 🌈
   release_flag: 🇺🇸
   tagline: VECTOR-GRAPHICS HOME CONSOLE
@@ -52,3 +52,5 @@ system_info:
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Vectrex
