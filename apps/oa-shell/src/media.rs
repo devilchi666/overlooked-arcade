@@ -2855,30 +2855,25 @@ pub async fn sync_media_for_system(
     // artwork_sync (26 of 27 MediaKind variants are art-shape; only
     // Manual is metadata-shape) and defers the deeper split until a
     // separate metadata-fetching path exists.
+    // Phase 4b artwork_sync — RAII guard for the bar row. JobScope
+    // takes ownership of the lifecycle: any `?` early-return in the
+    // body now auto-marks the row as failed via Drop, instead of
+    // leaving it stuck in `running` until the next launch's
+    // promote_running_rows_to_interrupted sweep. (Hotfix 2026-06-04.)
     let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
-    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        let label = format!("Syncing {} artwork", systemId);
-        match reg.create_job(
-            crate::job_registry::JobKind::ArtworkSync {
-                system_id: systemId.clone(),
-            },
-            label,
-            Some(systemId.clone()),
-            None,
-            false,
-            "files",
-            None,
-        ) {
-            Ok(id) => {
-                let _ = reg.mark_running(id);
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(artwork_sync) failed: {e}");
-                None
-            }
-        }
-    });
+    let scope = crate::job_registry::JobScope::start(
+        registry_state.as_deref(),
+        crate::job_registry::JobKind::ArtworkSync {
+            system_id: systemId.clone(),
+        },
+        format!("Syncing {} artwork", systemId),
+        Some(systemId.clone()),
+        None,
+        false,
+        "files",
+        None,
+    );
+    let scope_id = scope.id();
 
     let enabled_kinds = enabled_sync_kinds(&state.prefs);
     let only_identified = state.prefs.read().ok()
@@ -3008,22 +3003,17 @@ pub async fn sync_media_for_system(
     }));
     let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    // Phase 4b artwork_sync — initial tick so the bar shows
-    // "running" with a 0% bar (rather than indeterminate stripe).
-    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-        let _ = reg.progress(id, 0, Some(total as i64));
-    }
+    // Now that the total is known, set it on the scope — flushes
+    // straight to SQLite so the bar gets the right denominator on
+    // its first paint. Initial 0% tick comes for free via the
+    // create_job side.
+    scope.set_total(total as i64);
 
     for (repo, repo_entries) in by_repo {
-        // Phase 4b artwork_sync — per-repo boundary tick. Fine
-        // granularity per inner emit is overkill for the bar; this
-        // gives the operator a visible advance every time the worker
-        // moves to a new libretro-thumbnails repo (typically 1-3 per
-        // system).
-        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-            let cur = done.load(std::sync::atomic::Ordering::SeqCst);
-            let _ = reg.progress(id, cur as i64, Some(total as i64));
-        }
+        // Per-repo boundary tick — coarse but visible. The per-rom
+        // ticker inside the buffer_unordered closure below handles
+        // fine-grained advancement.
+        scope.tick(done.load(std::sync::atomic::Ordering::SeqCst) as i64);
         // 1. Tree (cached 24h or fetched) — now carries all three subdirs.
         let tree = match get_repo_tree_cached(&client, &app_data_dir, repo).await {
             Ok(t) => t,
@@ -3212,6 +3202,23 @@ pub async fn sync_media_for_system(
                             current_rom_title: entry.title.clone(),
                             last_action: action,
                         });
+                        // Phase 4b artwork_sync — per-rom registry tick
+                        // so the BackgroundJobsBar advances during the
+                        // big inner loop (not just at repo boundaries).
+                        // Re-fetches the registry State per iteration
+                        // because JobScope's `&JobRegistry` borrow can't
+                        // be moved into the stream closure. progress()
+                        // internally rate-limits to ~10 Hz via
+                        // EVENT_DEBOUNCE_MS + 1 Hz to SQLite via
+                        // SQL_DEBOUNCE_MS, so calling it per rom is
+                        // cheap even at thousand-rom scale.
+                        if let Some(id) = scope_id {
+                            if let Some(reg) =
+                                app.try_state::<crate::job_registry::JobRegistry>()
+                            {
+                                let _ = reg.progress(id, d as i64, Some(total as i64));
+                            }
+                        }
                     }
                 })
                 .buffer_unordered(8)
@@ -3252,15 +3259,13 @@ pub async fn sync_media_for_system(
         "oa-shell: sync_media_for_system({systemId}) done — matched {}, downloaded {}, cached {}, unmatched {}, errors {}",
         final_summary.matched, final_summary.downloaded, final_summary.cached, final_summary.unmatched, final_summary.errors,
     );
-    // Phase 4b artwork_sync — finalize. Always mark_completed
-    // because the function never returns Err on a partial sync
-    // (per-entry errors land in summary.errors but the function
-    // itself resolves Ok). The bar shows the row vanishing as the
-    // mark_completed StateChanged fires.
-    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-        let _ = reg.progress(id, total as i64, Some(total as i64));
-        let _ = reg.mark_completed(id);
-    }
+    // Phase 4b artwork_sync — finalize via the RAII guard.
+    // scope.complete() force-flushes done=total to SQLite (bypasses
+    // the SQL debounce) so the bar shows 100% before transitioning
+    // to history. Any `?` early-return earlier in the body would
+    // skip this call; JobScope's Drop catches that case and marks
+    // the row as failed instead of leaking a `running` state.
+    scope.complete();
     Ok(final_summary)
 }
 

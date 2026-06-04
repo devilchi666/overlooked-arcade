@@ -7584,41 +7584,28 @@ fn refresh_mame_system_info(
     // the XML, so the bar shows running → indeterminate stripe →
     // done). Soft-fail when the registry isn't managed.
     let registry_state = app.try_state::<job_registry::JobRegistry>();
-    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        match reg.create_job(
-            job_registry::JobKind::MameListxmlImport,
-            "Refreshing MAME catalog".to_string(),
-            None,
-            None,
-            false,
-            "records",
-            None,
-        ) {
-            Ok(id) => {
-                let _ = reg.mark_running(id);
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(mame_listxml_import) failed: {e}");
-                None
-            }
-        }
-    });
+    let scope = job_registry::JobScope::start(
+        registry_state.as_deref(),
+        job_registry::JobKind::MameListxmlImport,
+        "Refreshing MAME catalog".to_string(),
+        None,
+        None,
+        false,
+        "records",
+        None,
+    );
     let custom = mamePath.as_deref().map(std::path::Path::new);
     let result = mame_import::refresh_mame_system_info(custom, &db);
-    // Finalize — Ok carries the report, Err carries the error string.
-    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-        match &result {
-            Ok(report) => {
-                // Surface the record count post-hoc so the row's
-                // final state shows N/N rather than 0/0.
-                let n = (report.systems_refreshed + report.games_refreshed) as i64;
-                let _ = reg.progress(id, n, Some(n));
-                let _ = reg.mark_completed(id);
-            }
-            Err(e) => {
-                let _ = reg.mark_failed(id, e.clone());
-            }
+    match &result {
+        Ok(report) => {
+            // Surface the record count post-hoc so the row's final
+            // state shows N/N rather than 0/0.
+            let n = (report.systems_refreshed + report.games_refreshed) as i64;
+            scope.set_total(n);
+            scope.complete();
+        }
+        Err(e) => {
+            scope.fail(e.clone());
         }
     }
     result

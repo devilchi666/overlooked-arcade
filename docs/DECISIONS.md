@@ -1268,3 +1268,39 @@ After 1 + 2: per-track works only for **raw, unarchived, DiscImageCreator-shape 
 - ⚠️ Sub-phase 4 (multi-disc disc-set wiring on `games.disc_set_id`) — deferred. The fuzzy path's canonical names carry the "(Disc N)" suffix; grouping moves to display-time rather than data-model-time. Re-evaluate once fuzzy hit-rate is measured operator-side.
 
 **Cross-ref:** [docs/PLANS/disc-track-sha1-matching.md "Pivot 2026-06-03" section](PLANS/disc-track-sha1-matching.md); operator playtest in oa-current.log 2026-06-03 17:27–20:20.
+
+---
+
+## 2026-06-04 — JobScope RAII guard for background-jobs lifecycles (option B; C deferred)
+
+**Decision:** Replace the verbose `create_job → mark_running → progress×N → mark_completed/mark_failed` boilerplate that every background-jobs consumer carried with a `JobScope` RAII guard. Drop auto-fails on dropped-without-finalize so a `?` early-return between create_job and mark_completed can no longer leak a `running` row.
+
+**Why:** Operator-reported bug 2026-06-04 — media sync's progress bar "shows but doesn't advance and then sits there even after the work is done." Audit found three structural problems:
+
+1. **Per-consumer boilerplate fragility.** Every consumer manually wired `if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) { ... }` at every progress tick and every completion path. A `?` between create_job and the final mark_completed silently left the row in `running` until next launch's `promote_running_rows_to_interrupted` sweep.
+2. **Media-sync progress granularity.** Ticks only fired at per-repo boundaries (typically 1–3 events per multi-thousand-rom sync). The per-rom inner loop emitted `oa://library-sync` (a separate Tauri event) but never ticked the registry. Bar visibly stuck.
+3. **Two parallel event streams.** `oa://library-sync` + `JobEvent::Progressed` carried the same media-sync progress through different channels; the BackgroundJobsBar reads only the latter.
+
+**What `JobScope` does:**
+- `start(reg, kind, label, ..., total) -> Self` calls `create_job` + `mark_running` atomically. Returns a no-op scope when `reg` is None or create_job fails.
+- `tick(done)`, `set_total(total)` — update progress; both bypass the SQL debounce so the bar UI sees the values immediately.
+- `complete()` — force-flushes done=total then `mark_completed`. Idempotent.
+- `fail(error)` — `mark_failed`. Idempotent.
+- `Drop` — auto-fails with `"JobScope dropped without explicit complete() or fail() — likely a `?` early-return in the consumer"` if neither was called.
+
+**Migrated consumers (RAII path):**
+- `media.rs::sync_media_for_system` (THE bug). Per-rom tick added inside `buffer_unordered` via `app.try_state::<JobRegistry>()` (the scope's `&JobRegistry` borrow can't move into the stream closure).
+- `rom_hashes.rs::sync_rom_hashes_for_system` + `resolve_rom_hashes_for_system` + `auto_sync_rom_hashes_if_empty`.
+- `main.rs::refresh_mame_system_info` (simple 2-state finalization).
+
+**Not migrated (kept manual):**
+- `core_installer.rs::download_core` — tri-state finalization (`mark_cancelled` vs `mark_completed` vs `mark_failed`) AND the cancel branch does per-kind cleanup (deletes `.zip.partial` + `.dll.partial` before marking cancelled). JobScope's binary `complete()` / `fail()` model would lose the cancellation distinction.
+- `main.rs::start_background_scan` — tri-state finalization across a `tokio::task::spawn_blocking` boundary that clones the `JobRegistry` into the blocking task. JobScope holds `&JobRegistry` (lifetime-bound) and can't cross that boundary.
+- These two stay on the manual pattern. Their hand-rolled finalization is fully exercised today and the operator has not reported issues with either.
+
+**Considered and rejected (deferred to "(c)" if needed):**
+- **`run_job_over_iter<I, F, Fut>` higher-order helper** that wraps the entire "create + iterate + complete" pattern with automatic per-item progress. Cleaner for the simple-loop consumers (hash_resolve, dat_sync) but forces every consumer into one iterator shape. `media.rs`'s repo-grouped concurrent work and `scan_service`'s rayon-based parallel classification have legitimate reasons for hand-rolled iteration; constraining them to a single iterator shape would either bloat the helper API or leave those consumers on the manual path anyway.
+
+**Trigger criteria for adopting (c):** If progress-bar bugs keep surfacing in the consumers that JobScope already covers — i.e. the RAII finalization isn't enough and we need to push more of the wiring into a shared helper — revisit. Specifically, watch for: bars that fail to start (suggests we need a `run_job_over` style that owns the iteration too), bars that fail to tick (suggests we need a built-in periodic ticker), or bars that fail to finalize despite Drop (suggests the closure isn't dropping reliably). Until any of those land, JobScope is the right ceiling.
+
+**Cross-ref:** `apps/oa-shell/src/job_registry.rs::JobScope` doc comment; operator playtest report 2026-06-04.
