@@ -1403,3 +1403,51 @@ Dreamcast going 0% → 74% recovery on a single deploy was the v2 thesis; PSX go
 **Cross-ref:** v1 merge `db0bc4b`; v2 merge `78b905f`; both inside `feat/unidentified-games-surface` bundle merge `902ecf2`. Code: `apps/oa-shell/src/rom_hashes.rs` — `disc_filename_fuzzy_key_relaxed`, `relax_paren_groups`, `is_language_group`, `normalize_disc_of_m`, `collapse_region_group`, `is_revision_marker`, `DiscFuzzyIndex`, `MatchTier`. 33 rom_hashes tests cover behavior + regression-guard preserved-distinctions.
 
 ---
+
+## 2026-06-04 — Bind-group pool in oa-render: considered, measured, rejected
+
+**Decision:** **Do NOT build a wgpu bind-group pool/cache for the per-frame `create_bind_group` calls in `present()` + `run_effect_chain()`.** The 2026-06-04 spot-audit flagged these as a potential hot-path optimization; instrumentation shipped on `perf/async-fs-and-render-measurement` (commit `b894ef4`), measurement ran on the operator's actual rig, and the data confirms the per-frame cost is well below any meaningful budget threshold.
+
+**Why instrument first instead of just building the pool:**
+The audit identified bind-group churn by pattern (`create_bind_group` called inside `present()` per frame, Phosphor presets allocating 2/frame, VectorPhosphor 3/frame), not by measurement. Scoping work pegged the pool implementation at medium complexity (~80–120 LOC) with reasonable invalidation logic. Before committing to that, an atomic-counter instrumentation block (~50 LOC, removable as a unit) was added to record allocation count + total nanoseconds and log every 300 frames. The cost of measuring was much lower than the cost of building.
+
+**Measurement (oa-current.log 2026-06-04 18:34–18:36, multi-pass shader path):**
+
+| Metric | Value | Verdict |
+|---|---|---|
+| Bind-group allocations per frame (steady-state) | 3.54 | matches expectation for VectorPhosphor preset |
+| Cost per allocation | 5.5 µs | ~5× higher than wgpu's typical ~1 µs but absolute number is still small |
+| Total cost per frame | **~19.5 µs** | — |
+| Observed FPS | ~50 (frame budget 20,000 µs) | — |
+| Fraction of frame budget | **0.10%** | far below threshold |
+| Fraction at 60fps (16,667 µs) | 0.12% | below |
+| Fraction at 120fps (8,333 µs) | 0.23% | below 0.3% borderline |
+| Plain shader path baseline | 0 allocs, 0 µs | ✓ as designed (no churn outside multi-pass presets) |
+
+**Decision thresholds set in advance** (before measurement, on `perf/async-fs-and-render-measurement` branch's commit message): `<50 µs/frame` (<0.3% at 60fps) → skip the pool; `>100 µs/frame` (>0.6%) → build it; in-between borderline. The 19.5 µs reading lands deep in the "skip" tier even at 120fps targeting.
+
+**What this also tells us:**
+- The agent's scoping prediction of "<1 µs per bind group" was off by ~5× on this hardware. wgpu bind-group creation costs ~5.5 µs on the operator's GPU+driver stack (likely Windows + DX12 backend). Worth noting because future audits should not anchor on the agent's typical-cost numbers without measuring.
+- The plain shader path's zero-allocation baseline confirms the renderer's per-preset structure correctly isolates the multi-pass cost path. Single-pass presets pay nothing.
+- Operators running on lower-end hardware (e.g., 2–3× slower GPU) would see ~60 µs/frame in this path. Still below the 100 µs build-it threshold, but if that combined with high-refresh-rate displays (240Hz, 4 ms budget) lands in budget-tight territory, the pool work could become worthwhile. That's an exception case, not the operator's current rig.
+
+**Considered and rejected:**
+- **Build the pool anyway as "future-proofing."** Premature optimization. Audit's other findings (async-fs Phase 1, N+1 cart lookup, default_core wiring) all had clear, measurable returns. The pool would consume ~1 day of engineering for a finding that the measurement says doesn't matter.
+- **Keep the instrumentation in place "in case it's useful later."** Always-on counters add no observable runtime cost (Relaxed atomics, no allocation) but they're noise in the log and the codebase. The measurement was structured as a single-purpose probe; removing it keeps the renderer source clean. If the question resurfaces (different hardware target, different preset, etc.), re-adding the same 50-line block from this entry's git history is trivial.
+
+**What's removed in the strip commit** (`perf/async-fs-and-render-measurement` follow-up):
+- Top-of-file static counter block + `record_bind_group_alloc` / `tick_render_frame` helpers (~50 lines)
+- 3× call sites in `present()` + `run_effect_chain()` (timing wrappers + record calls)
+- 1× `tick_render_frame()` call at end of `present()`
+- Imports for `AtomicU64`, `Ordering`, `Instant`
+
+**Trigger criteria for revisiting:**
+1. Operator targets a frame budget tighter than 8 ms (>120 fps display) AND runs on a GPU 2× slower than the measurement rig.
+2. A future preset adds ≥6 effect-chain passes (the measured 3.54 allocs/frame steady state doubles).
+3. The renderer's per-pass cost grows such that the per-allocation 5.5 µs becomes ≥20 µs (e.g., adding much larger uniform buffers to the bind group layouts).
+
+Until one of those lands, this is closed.
+
+**Cross-ref:** instrumentation commit `b894ef4` (added the counters); strip commit on the same branch removes them; measurement raw data in `oa-current.log` 2026-06-04 18:34:52 – 18:36:48 entries beginning with `oa-render: bind-group perf`.
+
+---
