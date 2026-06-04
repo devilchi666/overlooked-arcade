@@ -83,20 +83,30 @@ pub fn build_groups(
 ) -> Vec<GameGroup> {
     use std::collections::HashMap;
 
-    // Bucket games by (system_id, base_title_key). Parse each title
-    // once and stash the result alongside the row so the resolver
-    // doesn't re-parse.
+    // Bucket games by (system_id, base_title_key, disc_number). The
+    // disc_number is part of the key so multi-disc games stay in
+    // separate per-disc buckets — operator clicking the "Run version"
+    // submenu on FF7 Disc 1 sees regional variants of Disc 1 only,
+    // not Disc 1 + Disc 2 + Disc 3 as if they were regional dumps of
+    // the same disc (Phase A1 Sub-phase 4 hotfix 2026-06-04).
+    // Single-disc games (disc_number = None) keep the original
+    // bucketing behaviour.
+    //
+    // Note: this requires v20 migration to have stamped disc_number
+    // on pre-existing multi-disc identifications; pre-v20 games stay
+    // grouped via the title-parser's flags path, which is the
+    // pre-Sub-phase-4 behaviour.
     struct Bucket {
         system_id: String,
         base_key: String,
         display_base: String,
         entries: Vec<(GameRow, ParsedTitle)>,
     }
-    let mut buckets: HashMap<(String, String), Bucket> = HashMap::new();
+    let mut buckets: HashMap<(String, String, Option<u32>), Bucket> = HashMap::new();
     for g in games {
         let parsed = parse_canonical_title(&g.title);
         let base_key = parsed.base.to_lowercase();
-        let key = (g.system_id.clone(), base_key.clone());
+        let key = (g.system_id.clone(), base_key.clone(), g.disc_number);
         let bucket = buckets.entry(key).or_insert_with(|| Bucket {
             system_id: g.system_id.clone(),
             base_key: base_key.clone(),
@@ -299,6 +309,81 @@ mod tests {
         assert_eq!(groups[0].variants.len(), 1);
         assert_eq!(groups[0].variants[0].is_default, true);
         assert_eq!(groups[0].display_base_title, "Castlevania");
+    }
+
+    #[test]
+    fn multi_disc_games_stay_in_separate_buckets_per_disc() {
+        // Phase A1 Sub-phase 4 hotfix — FF7 Disc 1 / 2 / 3 used to
+        // collapse into ONE variant group (the title parser strips
+        // "(Disc N)" from the base). After including disc_number in
+        // the bucket key, each disc gets its own group so the operator
+        // can pick a specific disc via the existing "Run version" menu
+        // AND the disc-set collapse / DiscPickerDialog flow can light
+        // up via the disc_set_id linkage.
+        let mut d1 = row("ff7-d1", "Final Fantasy VII (USA) (Disc 1)");
+        d1.system_id = "psx".into();
+        d1.disc_number = Some(1);
+        let mut d2 = row("ff7-d2", "Final Fantasy VII (USA) (Disc 2)");
+        d2.system_id = "psx".into();
+        d2.disc_number = Some(2);
+        let mut d3 = row("ff7-d3", "Final Fantasy VII (USA) (Disc 3)");
+        d3.system_id = "psx".into();
+        d3.disc_number = Some(3);
+        let groups = build_groups(
+            vec![d1, d2, d3],
+            &default_regions(),
+            RevisionPriority::Newest,
+            &HashMap::new(),
+        );
+        assert_eq!(
+            groups.len(),
+            3,
+            "three discs become three separate variant groups (one per disc), \
+             NOT one 3-variant group where all three discs claim to be regional \
+             variants of each other"
+        );
+        for g in &groups {
+            assert_eq!(g.variants.len(), 1, "each disc bucket has one variant");
+        }
+    }
+
+    #[test]
+    fn multi_disc_multi_region_groups_per_disc_across_regions() {
+        // FF7 Disc 1 in three regions should form ONE 3-variant group
+        // (USA + Japan + Europe variants of Disc 1), and similarly for
+        // Disc 2 and Disc 3. End state: 3 groups (one per disc) each
+        // with 3 variants (one per region).
+        let mut games = Vec::new();
+        for (region_id, region) in [("us", "USA"), ("jp", "Japan"), ("eu", "Europe")] {
+            for disc in [1u32, 2, 3] {
+                let id = format!("ff7-{region_id}-d{disc}");
+                let title = format!("Final Fantasy VII ({region}) (Disc {disc})");
+                let mut g = row(&id, &title);
+                g.system_id = "psx".into();
+                g.disc_number = Some(disc);
+                games.push(g);
+            }
+        }
+        let groups = build_groups(
+            games,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &HashMap::new(),
+        );
+        assert_eq!(groups.len(), 3, "one group per disc_number");
+        for g in &groups {
+            assert_eq!(
+                g.variants.len(),
+                3,
+                "each disc bucket has 3 regional variants"
+            );
+            // Default variant ranking: USA wins per the default region
+            // priority.
+            assert!(
+                g.variants[0].id.contains("-us-"),
+                "USA picked as default within each disc bucket"
+            );
+        }
     }
 
     #[test]
