@@ -8,6 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { reportInvokeError } from "../lib/toast";
 import { eventCodeToRustKey, formatKey } from "../systems/keymap";
 import type { SystemId } from "../themes/registry";
 
@@ -129,10 +130,16 @@ const AnalogBindingsSection: Component<Props> = (props) => {
   const [capture, setCapture] = createSignal<string | null>(null);
   createEffect(() => {
     const c = capture();
-    void invoke("set_ui_intercepting", { intercepting: c !== null }).catch(() => {});
+    void invoke("set_ui_intercepting", { intercepting: c !== null }).catch((e) =>
+      reportInvokeError("set_ui_intercepting", e),
+    );
   });
   onCleanup(() => {
-    void invoke("set_ui_intercepting", { intercepting: false }).catch(() => {});
+    // Cleanup on unmount — log only; if we already navigated away there's
+    // no toast surface to bother the operator with.
+    void invoke("set_ui_intercepting", { intercepting: false }).catch((e) =>
+      console.warn("[analog] set_ui_intercepting(false) on unmount failed:", e),
+    );
   });
 
   async function pushPort(port: number, routing: AnalogPortRouting) {

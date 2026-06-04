@@ -10,6 +10,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { reportInvokeError } from "../lib/toast";
 import type { RomEntry } from "../library/types";
 import { systemThemes } from "../themes/registry";
 import type { SettingsStore } from "../settings/store";
@@ -223,8 +224,12 @@ const QuickSettings: Component<Props> = (props) => {
         e.preventDefault();
         e.stopPropagation();
         if (view() === "rewind") {
-          // Cancel restores history; close overlay too.
-          void invoke("end_rewind_scrub", { commit: false }).catch(() => {});
+          // Cancel restores history; close overlay too. Esc-cleanup is
+          // fire-and-forget — if the backend rejects, the overlay is
+          // already closing so a toast would be confusing.
+          void invoke("end_rewind_scrub", { commit: false }).catch((e) =>
+            console.warn("[quick-settings] end_rewind_scrub on esc failed:", e),
+          );
           setView("actions");
         }
         props.onClose();
@@ -239,7 +244,9 @@ const QuickSettings: Component<Props> = (props) => {
   // when the overlay closes, so a re-open doesn't land in rewind by accident.
   createEffect(() => {
     if (props.open) {
-      void invoke("set_ui_intercepting", { intercepting: true }).catch(() => {});
+      void invoke("set_ui_intercepting", { intercepting: true }).catch((e) =>
+        reportInvokeError("set_ui_intercepting", e),
+      );
       // Hydrate ring stats + TAS state so the action-row hints reflect
       // current Rust-side state. Both are non-blocking.
       void invoke<RewindState>("get_rewind_state")
@@ -264,12 +271,16 @@ const QuickSettings: Component<Props> = (props) => {
         firstBtn?.focus();
       });
     } else {
-      void invoke("set_ui_intercepting", { intercepting: false }).catch(() => {});
+      void invoke("set_ui_intercepting", { intercepting: false }).catch((e) =>
+        reportInvokeError("set_ui_intercepting", e),
+      );
       // If we got closed while in rewind view (overlay close path that
       // doesn't go through Esc), cancel the scrub server-side. Safe to
       // call when not scrubbing — the Rust side ignores the message.
       if (view() === "rewind") {
-        void invoke("end_rewind_scrub", { commit: false }).catch(() => {});
+        void invoke("end_rewind_scrub", { commit: false }).catch((e) =>
+          console.warn("[quick-settings] end_rewind_scrub on close failed:", e),
+        );
       }
       // Stop polling TAS state when the overlay closes. Recording /
       // replay themselves keep going server-side — only the UI poll
@@ -656,7 +667,10 @@ const QuickSettings: Component<Props> = (props) => {
                 const max = s ? Math.max(s.snapshotCount - 1, 0) : 0;
                 const clamped = Math.max(0, Math.min(max, pos));
                 setScrubPosition(clamped);
-                void invoke("set_rewind_scrub_position", { stepsBack: clamped }).catch(() => {});
+                // Per-frame drag — keep console-only to avoid toast spam.
+                void invoke("set_rewind_scrub_position", { stepsBack: clamped }).catch((e) =>
+                  console.warn("[quick-settings] set_rewind_scrub_position failed:", e),
+                );
               }}
               onCommit={() => void commitRewind()}
               onCancel={() => void cancelRewind()}

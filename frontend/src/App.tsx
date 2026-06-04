@@ -1101,23 +1101,27 @@ const App: Component = () => {
       // inherit stale state from the game that just unloaded. The settings
       // store's createEffect would catch some of these on subsequent signal
       // changes, but pushing them explicitly here is the safer guarantee.
-      void Promise.all([
-        invoke("set_shader_preset", { preset: settings.shaderPreset() }).catch(() => {}),
-        invoke("set_scaling_mode", { mode: settings.scalingMode() }).catch(() => {}),
-        invoke("set_window_mode", { mode: settings.windowMode(), monitorIndex: settings.monitorIndex() }).catch(() => {}),
-        invoke("set_rewind_config", {
+      const reverts: Array<[string, Promise<unknown>]> = [
+        ["set_shader_preset", invoke("set_shader_preset", { preset: settings.shaderPreset() })],
+        ["set_scaling_mode", invoke("set_scaling_mode", { mode: settings.scalingMode() })],
+        ["set_window_mode", invoke("set_window_mode", { mode: settings.windowMode(), monitorIndex: settings.monitorIndex() })],
+        ["set_rewind_config", invoke("set_rewind_config", {
           enabled: settings.rewindEnabled(),
           captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
           maxMegabytes: settings.rewindBufferMegabytes(),
-        }).catch(() => {}),
-        // Drop any per-game / per-system display-aspect override so the
-        // next launch starts from the core-reported value.
-        invoke("set_display_aspect_override", { aspect: null }).catch(() => {}),
-        // Drop any overscan crop so the next launch starts un-cropped.
-        invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 }).catch(() => {}),
-        // Drop any per-game / per-system bezel override.
-        invoke("clear_bezel_image_override").catch(() => {}),
-      ]);
+        })],
+        ["set_display_aspect_override", invoke("set_display_aspect_override", { aspect: null })],
+        ["set_overscan_crop", invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 })],
+        ["clear_bezel_image_override", invoke("clear_bezel_image_override")],
+      ];
+      void Promise.allSettled(reverts.map(([, p]) => p)).then((results) => {
+        const failures = results
+          .map((r, i) => (r.status === "rejected" ? `${reverts[i][0]}: ${String(r.reason)}` : null))
+          .filter((s): s is string => s !== null);
+        if (failures.length > 0) {
+          console.warn("[oa-unload] revert-to-defaults failed:", failures);
+        }
+      });
     } catch (e) {
       console.warn("unload_rom failed:", e);
       setStatus(`Unload failed: ${e}`);
