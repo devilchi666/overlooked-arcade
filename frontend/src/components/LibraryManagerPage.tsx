@@ -360,40 +360,46 @@ const LibraryManagerPage: Component<Props> = (props) => {
   let unlistenMetaDone: UnlistenFn | undefined;
 
   onMount(async () => {
+    // Attach all four listeners in parallel so the microtask window
+    // between them is zero — sequential awaits previously meant a
+    // sync-complete event arriving between listens #1–#4 would slip
+    // through. Promise.all collapses that window.
     try {
-      unlistenSync = await listen<SyncProgressPayload>("oa://library-sync", (ev) => {
-        setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
-      });
-      unlistenSyncDone = await listen<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
-        setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
-        // Surface the final tally as the "last progress" line.
-        setSyncProgress((prev) => ({
-          ...prev,
-          [ev.payload.systemId]: {
-            systemId: ev.payload.systemId,
-            done: ev.payload.total,
-            total: ev.payload.total,
-            currentRomTitle: "",
-            lastAction: `done: ${ev.payload.downloaded} new / ${ev.payload.cached} cached / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
-          },
-        }));
-      });
-      unlistenMeta = await listen<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
-        setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
-      });
-      unlistenMetaDone = await listen<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
-        setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
-        setMetaProgress((prev) => ({
-          ...prev,
-          [ev.payload.systemId]: {
-            systemId: ev.payload.systemId,
-            done: ev.payload.total,
-            total: ev.payload.total,
-            currentRomTitle: "",
-            lastAction: `done: ${ev.payload.updated} updated / ${ev.payload.unchanged} unchanged / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
-          },
-        }));
-      });
+      [unlistenSync, unlistenSyncDone, unlistenMeta, unlistenMetaDone] = await Promise.all([
+        listen<SyncProgressPayload>("oa://library-sync", (ev) => {
+          setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
+        }),
+        listen<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
+          setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
+          // Surface the final tally as the "last progress" line.
+          setSyncProgress((prev) => ({
+            ...prev,
+            [ev.payload.systemId]: {
+              systemId: ev.payload.systemId,
+              done: ev.payload.total,
+              total: ev.payload.total,
+              currentRomTitle: "",
+              lastAction: `done: ${ev.payload.downloaded} new / ${ev.payload.cached} cached / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
+            },
+          }));
+        }),
+        listen<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
+          setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
+        }),
+        listen<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
+          setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
+          setMetaProgress((prev) => ({
+            ...prev,
+            [ev.payload.systemId]: {
+              systemId: ev.payload.systemId,
+              done: ev.payload.total,
+              total: ev.payload.total,
+              currentRomTitle: "",
+              lastAction: `done: ${ev.payload.updated} updated / ${ev.payload.unchanged} unchanged / ${ev.payload.unmatched} unmatched / ${ev.payload.errors} errors`,
+            },
+          }));
+        }),
+      ]);
     } catch (e) {
       console.warn("LibraryManagerPage: listen('oa://library-(metadata-)sync*') failed:", e);
     }

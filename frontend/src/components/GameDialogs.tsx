@@ -584,7 +584,10 @@ export const GameShadersDialog: Component<{
               value: overrides().bloomAmount ?? systemSettings().bloomAmount ?? 0.6,
               onInput: (v) => {
                 void patch({ bloomAmount: v });
-                void invoke("set_bloom_amount", { amount: v }).catch(() => {});
+                // Per-drag-frame — keep console-only to avoid toast spam.
+                void invoke("set_bloom_amount", { amount: v }).catch((e) =>
+                  console.warn("[game-dialogs] set_bloom_amount failed:", e),
+                );
               },
             }}
             onReset={() => void patch({ bloomAmount: null })}

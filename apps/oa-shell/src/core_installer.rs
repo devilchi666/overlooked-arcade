@@ -1171,7 +1171,9 @@ pub async fn download_core(
             None,
         ) {
             Ok(id) => {
-                let _ = state.mark_running(id);
+                if let Err(e) = state.mark_running(id) {
+                    log::warn!("background_jobs: mark_running({id}) failed: {e}");
+                }
                 Some(id)
             }
             Err(e) => {
