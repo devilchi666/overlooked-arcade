@@ -67,12 +67,17 @@ spanned every system but was filed under whichever core happened to be active.
       serial-lookup path). Hit rate measurement determines whether
       Sub-phase 4 (multi-disc grouping) is built on top of fuzzy
       or whether further architectural work is needed.
-    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (deferred).
-      Was built on top of per-track stamping `games.disc_set_id`.
-      With fuzzy as primary, the canonical `game_name` carries the
-      "(Disc N)" suffix and grouping can move to display-time
-      rather than data-model-time. Re-evaluate after the operator
-      reports fuzzy hit rate from real libraries.
+    - **A1 Sub-phase 4 ✅ shipped 2026-06-04** (backend `b6b4ae6` +
+      frontend `f42c567`). Multi-disc disc-set wiring on top of the
+      fuzzy primary. Backend: `maybe_stamp_disc_set_membership` at
+      identify time stamps `games.disc_set_id` + `games.disc_number`
+      when a canonical title's `(Disc N)` suffix matches a disc_sets
+      row. Frontend: `collapseDiscSets` representative-per-set tile
+      collapse + DiscPickerDialog overlay (lists members via
+      `list_disc_set_members`, click → launch that disc). Works for
+      multi-disc games on PSX / Saturn / Sega CD / PCE-CD where
+      redump catalogs the parent group. Single-disc games and cart
+      libraries unchanged.
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
