@@ -32,31 +32,31 @@ system_info:
   manufacturer: Nintendo
   type: Handheld
   generation: 4th Generation (handheld)
-  release_date: April 21, 1989
-  discontinued: March 23, 2003
-  units_sold: 118.69 Million
+  release_date: April 21, 1989 (JP) / July 31, 1989 (NA) / September 28, 1990 (EU)
+  discontinued: March 31, 2003 (monochrome Game Boy line worldwide)
+  units_sold: 118.69 Million (includes Game Boy Pocket / Light / Color); original DMG only — 59.89 Million through Sept 1997
   media: Cartridge
-  cpu: Sharp LR35902 @ 4.19 MHz
-  sound: 4-channel PSG
-  resolution: 160 x 144
-  color_palette: 4 Shades of Green
+  cpu: Sharp SM83 / LR35902 (DMG-CPU) @ 4.19 MHz
+  sound: 4 channels — 2 pulse waves, wave (4-bit DAC), white noise
+  resolution: 160 x 144 (2.5" reflective STN monochrome LCD)
+  color_palette: 4 shades of grey (rendered green on Game Boy LCD)
   display_ratio: 10:9
   architecture: 8-Bit
-  max_players: 1-2 (Link Cable) / 4 (Adapter)
-  multiplayer: Yes — 2 via Link Cable; up to 4 via Four Player Adapter
-  region: Worldwide
-  storage: Cartridge
-  ram: 8KB
-  video_output: Built-in LCD
+  max_players: 1-4 (Link Cable / Four Player Adapter)
+  multiplayer: Yes — up to 4 via Game Link Cable + Four Player Adapter
+  region: Regionless (worldwide)
+  storage: Cartridge (32 KB - 1 MB via MBC bank-switching)
+  ram: 8 KB main / 8 KB video
+  video_output: Built-in reflective STN monochrome LCD
   aspect_ratio: 10:9
   peripherals:
-  - name: Link Cable
+  - name: Game Link Cable
     glyph: 🔗
-  - name: Camera
+  - name: Game Boy Camera
     glyph: 📷
-  - name: Printer
+  - name: Game Boy Printer
     glyph: 🖨️
-  - name: Super Game Boy
+  - name: Super Game Boy (SNES adapter)
     glyph: 🎮
   - name: Four Player Adapter
     glyph: 👥
@@ -66,4 +66,6 @@ system_info:
   sidebar_subline: 8-BIT · 1989
   meta:
     schema_version: 1
-    last_updated: 2026-06-02
+    last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Game_Boy

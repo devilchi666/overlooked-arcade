@@ -34,21 +34,21 @@ system_info:
   manufacturer: Sega
   type: Home Console
   generation: 4th Generation
-  release_date: October 29, 1988
-  discontinued: April 30, 1997
-  units_sold: 30.75 Million
+  release_date: October 29, 1988 (JP — Mega Drive) / August 1989 (NA — Genesis) / September 1990 (EU — Mega Drive)
+  discontinued: 1997 (Sega; Tectoy Brazil continued production into the 2010s)
+  units_sold: 30.75 Million (Sega first-party only, excludes Majesco + Tectoy)
   media: Cartridge
-  cpu: Motorola 68000 @ 7.6 MHz
-  sound: Yamaha YM2612 + SN76489
-  resolution: 320 x 224
-  color_palette: 512 Colors
+  cpu: Motorola 68000 @ 7.6 MHz / Zilog Z80 @ 3.58 MHz (sound + SMS compatibility)
+  sound: Yamaha YM2612 FM + SN76489 PSG (stereo via Z80)
+  resolution: 320 x 224 (NTSC) / 320 x 240 (PAL); also 256-wide modes + interlaced
+  color_palette: 512 colors (61 simultaneous on-screen)
   display_ratio: 32:35
   architecture: 16-Bit
-  max_players: 1-2 Players
-  multiplayer: Yes — 2 local; 4 via Team Player
+  max_players: 1-2 Players (4 via Team Player / 4 Way Play)
+  multiplayer: Yes — 2 local; 4 via Team Player or EA 4 Way Play
   region: NTSC / PAL
-  storage: Cartridge (4MB Max)
-  ram: 64KB
+  storage: Cartridge (up to ~4 MB / 32 Mbit commercial max)
+  ram: 64 KB main / 64 KB VRAM / 8 KB audio
   video_output: Composite / RGB
   aspect_ratio: 4:3
   peripherals:
@@ -60,12 +60,18 @@ system_info:
     glyph: 🔫
   - name: Team Player
     glyph: 🔗
-  - name: Activator
-    glyph: 📡
+  - name: 4 Way Play (EA)
+    glyph: 🔗
+  - name: Sega Mega Mouse
+    glyph: 🖱️
+  - name: Power Base Converter (SMS adapter)
+    glyph: 🔌
   release_flag: 🇯🇵
   tagline: 16-BIT HOME CONSOLE
   blurb: Sega's answer to Nintendo's dominance. A sharper, faster machine famous for arcade-quality ports, Sonic the Hedgehog, and a fierce mascot rivalry that defined the 90s.
   sidebar_subline: 16-BIT · 1988
   meta:
     schema_version: 1
-    last_updated: 2026-05-31
+    last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Sega_Genesis

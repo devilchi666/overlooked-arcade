@@ -1585,7 +1585,7 @@ meta:
             .iter()
             .find(|r| r.system_id == "psx")
             .expect("psx L2 record must surface via config/systems/psx/system.yaml");
-        assert_eq!(psx.manufacturer.as_deref(), Some("Sony"));
+        assert_eq!(psx.manufacturer.as_deref(), Some("Sony Computer Entertainment"));
         assert_eq!(psx.system_type.as_deref(), Some("Home Console"));
         assert_eq!(psx.architecture.as_deref(), Some("32-Bit"));
         assert!(

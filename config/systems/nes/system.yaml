@@ -33,21 +33,21 @@ system_info:
   manufacturer: Nintendo
   type: Home Console
   generation: 3rd Generation
-  release_date: July 15, 1983
-  discontinued: August 14, 2003
+  release_date: July 15, 1983 (JP — Famicom) / October 18, 1985 (NA test) / September 27, 1986 (NA nationwide) / 1986–87 (EU)
+  discontinued: August 14, 1995 (NA/EU) / September 25, 2003 (JP Famicom)
   units_sold: 61.91 Million
   media: Cartridge
-  cpu: Ricoh 2A03 @ 1.79 MHz
-  sound: Ricoh 2A03 APU
+  cpu: Ricoh 2A03 @ 1.79 MHz (NTSC) / 1.66 MHz (PAL)
+  sound: Ricoh 2A03 APU — 5 channels (2 pulse, triangle, noise, DPCM)
   resolution: 256 x 240
-  color_palette: 54 Colors
+  color_palette: 54 colors (up to 25 simultaneous on-screen)
   display_ratio: 8:7 (4:3)
   architecture: 8-Bit
-  max_players: 1-2 Players
+  max_players: 1-2 Players (1-4 via Four Score)
   multiplayer: Yes — 2 local; 4 via Four Score adapter
-  region: NTSC / PAL
-  storage: Cartridge (1MB Max)
-  ram: 2KB
+  region: NTSC / PAL (region-locked variants)
+  storage: Cartridge (up to ~1 MB with MMC mappers)
+  ram: 2 KB work / 2 KB video
   video_output: RF / Composite
   aspect_ratio: 4:3
   peripherals:
@@ -67,4 +67,6 @@ system_info:
   sidebar_subline: 8-BIT · 1983
   meta:
     schema_version: 1
-    last_updated: 2026-05-31
+    last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Nintendo_Entertainment_System
