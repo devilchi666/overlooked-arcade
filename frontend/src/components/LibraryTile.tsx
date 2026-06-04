@@ -268,6 +268,20 @@ const LibraryTile: Component<Props> = (props) => {
             ▼ {props.variantCount}
           </span>
         </Show>
+        {/* Phase A1 Sub-phase 4 polish — disc-set badge. Renders in
+            the top-left corner when the entry is a collapsed multi-
+            disc representative. Distinct from the variant ▼N badge
+            (bottom-left) so multi-region multi-disc games show BOTH
+            at once. Click on the tile opens DiscPickerDialog (wired
+            via LibraryView's intercepted onLaunch). */}
+        <Show when={!props.entry.seed && (props.entry.discSetMemberCount ?? 0) > 1}>
+          <span
+            class="absolute top-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur"
+            title={`${props.entry.discSetMemberCount} disc set — click to pick`}
+          >
+            💿 {props.entry.discSetMemberCount}
+          </span>
+        </Show>
         {/* Game Info Panel v1 — tile badges (bottom-right corner). The
             warning indicator surfaces known-issue count, tinted by max
             severity (red for blocker, amber for major, neutral for

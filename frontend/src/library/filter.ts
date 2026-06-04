@@ -184,18 +184,29 @@ export function metadataYear(meta: GameMetadata | undefined): number | undefined
  * Show info, etc.) still target a real game.
  */
 export function collapseDiscSets(entries: RomEntry[]): RomEntry[] {
-  // First pass: find the lowest-discNumber entry per disc_set_id.
-  const byDiscSet = new Map<number, RomEntry>();
+  // First pass: bucket every disc-set member, ordered by discNumber.
+  // Builds both the representative (lowest discNumber) AND a fallback
+  // cover (first member with a non-empty coverPath in disc order) +
+  // the member count for the LibraryTile badge.
+  type SetState = {
+    members: RomEntry[]; // sorted by discNumber ASC
+  };
+  const byDiscSet = new Map<number, SetState>();
   for (const entry of entries) {
     if (entry.discSetId === undefined) continue;
-    const existing = byDiscSet.get(entry.discSetId);
-    if (
-      !existing ||
-      (entry.discNumber ?? Number.POSITIVE_INFINITY) <
-        (existing.discNumber ?? Number.POSITIVE_INFINITY)
-    ) {
-      byDiscSet.set(entry.discSetId, entry);
+    let state = byDiscSet.get(entry.discSetId);
+    if (!state) {
+      state = { members: [] };
+      byDiscSet.set(entry.discSetId, state);
     }
+    state.members.push(entry);
+  }
+  for (const state of byDiscSet.values()) {
+    state.members.sort(
+      (a, b) =>
+        (a.discNumber ?? Number.POSITIVE_INFINITY) -
+        (b.discNumber ?? Number.POSITIVE_INFINITY),
+    );
   }
   // Second pass: emit representatives once per set, standalone games
   // pass through in input order.
@@ -205,10 +216,21 @@ export function collapseDiscSets(entries: RomEntry[]): RomEntry[] {
     if (entry.discSetId !== undefined) {
       if (seen.has(entry.discSetId)) continue;
       seen.add(entry.discSetId);
-      const representative = byDiscSet.get(entry.discSetId)!;
+      const state = byDiscSet.get(entry.discSetId)!;
+      const representative = state.members[0];
+      // Cover fallback — if the lowest-disc entry has no coverPath,
+      // scan subsequent discs in order and use the first non-empty
+      // one. Saves the operator from "Disc 1 has no boxart so the
+      // set tile is blank" when their Disc 2 dump happens to have
+      // artwork attached.
+      const coverProvider = representative.coverPath
+        ? representative
+        : state.members.find((m) => m.coverPath);
       out.push({
         ...representative,
         title: stripDiscSuffix(representative.title),
+        coverPath: coverProvider?.coverPath ?? representative.coverPath,
+        discSetMemberCount: state.members.length,
       });
     } else {
       out.push(entry);
