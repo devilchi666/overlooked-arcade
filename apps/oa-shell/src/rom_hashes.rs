@@ -1997,11 +1997,18 @@ pub async fn resolve_rom_hashes_for_system(
         summary.scanned += 1;
         // Try every candidate against the DB; first hit wins. Logging the
         // rule on hit is genuinely diagnostic — it tells the operator
-        // whether their library is headered or not.
+        // whether their library is headered or not. 2026-06-04 — batched
+        // lookup collapses the per-candidate N+1 pattern (one locked SELECT
+        // per header variant per game) into a single `WHERE sha1 IN (...)`
+        // query per game, so a 500-game cart library with 3 header variants
+        // each goes from ~1500 SELECTs to ~500.
+        let candidate_sha1s: Vec<String> =
+            candidates.iter().map(|c| c.sha1.clone()).collect();
+        let batch = db.lookup_rom_hashes_batch(&candidate_sha1s)?;
         let mut matched: Option<(RomHashRow, HeaderRule, String)> = None;
         for c in &candidates {
-            if let Some(row) = db.lookup_rom_hash(&c.sha1)? {
-                matched = Some((row, c.rule, c.sha1.clone()));
+            if let Some(row) = batch.get(&c.sha1.to_ascii_lowercase()) {
+                matched = Some((row.clone(), c.rule, c.sha1.clone()));
                 break;
             }
         }
