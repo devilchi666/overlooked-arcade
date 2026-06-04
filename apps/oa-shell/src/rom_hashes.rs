@@ -1489,17 +1489,19 @@ pub async fn resolve_rom_hashes_for_system(
     scope.set_total(total as i64);
 
     // Phase A1 pivot — build the filename-fuzzy index for disc-shape
-    // systems once at the top. Keyed on `disc_filename_fuzzy_key` of
-    // the canonical game_name; lookup in the per-game loop is O(1).
-    // For systems with no rom_hashes_tracks rows (or cart-shape
-    // systems), the index is empty and the fuzzy try block below
-    // short-circuits cleanly.
-    let disc_fuzzy_index: HashMap<String, crate::library_db::RomTrackRow> = if disc_shape {
+    // systems once at the top. 2026-06-04 tiered matcher: now a
+    // two-tier struct (strict + relaxed); lookup tries strict first
+    // and falls back to relaxed for (v1.1)/(Rev 1) + (USA)/(USA, Canada)
+    // naming convention drift. For systems with no rom_hashes_tracks
+    // rows (or cart-shape systems), the index is empty and the fuzzy
+    // try block below short-circuits cleanly.
+    let disc_fuzzy_index: DiscFuzzyIndex = if disc_shape {
         match build_disc_fuzzy_index(&db, &systemId) {
             Ok(idx) => {
                 log::info!(
-                    "rom_hashes: resolve {systemId} fuzzy index built ({} canonical titles)",
-                    idx.len()
+                    "rom_hashes: resolve {systemId} fuzzy index built ({} strict / {} relaxed keys)",
+                    idx.strict.len(),
+                    idx.relaxed.len()
                 );
                 idx
             }
@@ -1507,11 +1509,11 @@ pub async fn resolve_rom_hashes_for_system(
                 log::warn!(
                     "rom_hashes: resolve {systemId} fuzzy index build failed: {e}"
                 );
-                HashMap::new()
+                DiscFuzzyIndex { strict: HashMap::new(), relaxed: HashMap::new() }
             }
         }
     } else {
-        HashMap::new()
+        DiscFuzzyIndex { strict: HashMap::new(), relaxed: HashMap::new() }
     };
     // Tiny in-process cache so re-hashing identical files in this batch
     // (e.g. user has the same ROM in two folders) doesn't pay for it
@@ -1649,8 +1651,10 @@ pub async fn resolve_rom_hashes_for_system(
                     .file_name()
                     .and_then(|s| s.to_str())
                     .unwrap_or(raw_name);
-                let key = disc_filename_fuzzy_key(stem);
-                if let Some(candidate) = disc_fuzzy_index.get(&key) {
+                // 2026-06-04 tiered matcher — `lookup` tries the strict
+                // (current) key first, then the relaxed fallback that
+                // bridges (v1.1)/(Rev 1) and (USA)/(USA, Canada) drift.
+                if let Some((candidate, tier)) = disc_fuzzy_index.lookup(stem) {
                     summary.scanned += 1;
                     summary.matched += 1;
                     if let Err(e) = db.apply_rom_hash(
@@ -1660,7 +1664,7 @@ pub async fn resolve_rom_hashes_for_system(
                         candidate.serial.as_deref(),
                     ) {
                         log::warn!(
-                            "rom_hashes: apply_rom_hash (fuzzy) {} failed: {e}",
+                            "rom_hashes: apply_rom_hash (fuzzy {tier:?}) {} failed: {e}",
                             g.id
                         );
                         summary.errors += 1;
@@ -1675,11 +1679,11 @@ pub async fn resolve_rom_hashes_for_system(
                             &candidate.game_name,
                         ) {
                             Ok(Some((set_id, disc_n))) => log::info!(
-                                "rom_hashes: fuzzy match {} → '{}' (disc-set #{set_id} disc {disc_n})",
+                                "rom_hashes: fuzzy match ({tier:?}) {} → '{}' (disc-set #{set_id} disc {disc_n})",
                                 g.id, candidate.game_name
                             ),
                             Ok(None) => log::info!(
-                                "rom_hashes: fuzzy match {} → '{}'",
+                                "rom_hashes: fuzzy match ({tier:?}) {} → '{}'",
                                 g.id, candidate.game_name
                             ),
                             Err(e) => log::warn!(
@@ -1696,7 +1700,8 @@ pub async fn resolve_rom_hashes_for_system(
                             total,
                             current_title: g.title.clone(),
                             last_action: format!(
-                                "matched (filename) → {}",
+                                "matched ({}) → {}",
+                                tier.label(),
                                 candidate.game_name
                             ),
                         },
@@ -2120,25 +2125,280 @@ fn disc_filename_fuzzy_key(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Build a fuzzy-key → canonical-row index for a disc-shape system.
-/// Called once per resolve call (not per-game) so the operator pays
-/// O(N) up front and O(1) per game during the loop. Empty when the
-/// system has no `rom_hashes_tracks` rows.
+/// 2026-06-04 tiered matcher — RELAXED fallback key for when the strict
+/// `disc_filename_fuzzy_key` misses. Bridges the two common
+/// naming-convention drifts that drove operator-reported PSX
+/// 98-unidentified investigation:
+///
+/// 1. **Revision suffix style.** Operator filenames sometimes carry
+///    No-Intro-flavor `(v1.1)` / `(v1.2)` while the libretro-database
+///    `metadat/redump/` dat uses Redump-flavor `(Rev 1)` / `(Rev 2)`.
+///    Same physical disc, different label. The relaxed key strips
+///    revision parens from both sides so they collapse to the same
+///    key.
+///
+/// 2. **Multi-country region grouping.** Redump groups
+///    `(USA, Canada)`, `(Japan, Asia)`, `(Europe, Australia)` into one
+///    canonical row; operator filenames typically tag a single region
+///    `(USA)` / `(Japan)` / `(Europe)`. The relaxed key collapses
+///    multi-country groupings to the first region so single-region
+///    operator filenames hit the multi-country catalog row.
+///
+/// Bracket structure is otherwise preserved — `(Disc N)`, `(Unl)`,
+/// language tags like `(En, Fr, Es)` (non-region content), and bare
+/// title text all flow through unchanged. The strict key is tried
+/// first; this fallback only fires on a strict miss, so canonical
+/// regional precision is the default.
+///
+/// Collisions on the relaxed key are first-write-wins per SQL
+/// alphabetical order: `Alundra (USA)` lands before
+/// `Alundra (USA) (Rev 1)` so the non-Rev catalog row wins when the
+/// operator's filename collapses to ambiguity. Semantic loss is
+/// minor — same game, slightly different canonical title — and the
+/// alternative (no match at all) is worse.
+fn disc_filename_fuzzy_key_relaxed(s: &str) -> String {
+    let s = match s.rsplit_once('.') {
+        Some((stem, ext)) if ext.len() <= 5 => stem,
+        _ => s,
+    };
+    let s = s.to_lowercase();
+    let s = relax_paren_groups(&s);
+    // v2 — insert space between adjacent `)(` so TOSEC's "no space
+    // between paren groups" shape (`(USA)(Disc 1 of 2)`) collapses to
+    // the same key as Redump's space-separated form (`(USA) (Disc 1)`).
+    let s = s.replace(")(", ") (");
+    let s: String = s
+        .chars()
+        .map(|c| match c {
+            '_' | '-' | '.' | ':' | ',' | '+' | '/' | '\\' => ' ',
+            other => other,
+        })
+        .collect();
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Walk the input character-by-character; for each `(...)` paren group,
+/// either drop it (revision marker, language group, `(unl)` operator
+/// tag), normalize it (`(disc N of M)` → `(disc N)`, multi-country
+/// region collapse), or keep it verbatim. Lowercase is assumed.
+fn relax_paren_groups(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '(' {
+            out.push(c);
+            continue;
+        }
+        // Collect the bracket body (until matching close paren).
+        let mut body = String::new();
+        let mut closed = false;
+        for cc in chars.by_ref() {
+            if cc == ')' {
+                closed = true;
+                break;
+            }
+            body.push(cc);
+        }
+        if !closed {
+            // Unclosed paren — emit verbatim and bail.
+            out.push('(');
+            out.push_str(&body);
+            return out;
+        }
+        let trimmed = body.trim();
+        // v2 — drop categories that catalog rows don't carry:
+        //   - revision markers (existing)
+        //   - language-code paren groups (`(En,Ja)`, `(En,Fr,De,Es,It)`)
+        //     because Redump catalog adds them but TOSEC/operator
+        //     filenames typically don't
+        //   - bare `(unl)` operator-side "unlicensed" tag — catalog
+        //     doesn't disambiguate licensed vs unlicensed at the name
+        //     level (Code Breaker (USA) (Unl) → Code Breaker (USA))
+        if is_revision_marker(trimmed)
+            || is_language_group(trimmed)
+            || trimmed == "unl"
+        {
+            continue;
+        }
+        // Disc-of-M normalization: `(Disc 1 of 2)` → `(Disc 1)` to
+        // match Redump's bare `(Disc N)` shape.
+        let body_out = normalize_disc_of_m(trimmed);
+        let body_out = collapse_region_group(&body_out);
+        out.push('(');
+        out.push_str(&body_out);
+        out.push(')');
+    }
+    out
+}
+
+/// True when the bracket body is a comma-separated list of ISO 639-1
+/// language codes (e.g. `en,ja,fr,de,es`). Single-code parens like
+/// `(en)` deliberately do NOT match — they could collide with regions
+/// (`en` isn't a region but bare 2-letter strings are too ambiguous
+/// to strip safely without a comma-separated context confirming the
+/// language-list shape).
+fn is_language_group(body: &str) -> bool {
+    const LANG_CODES: &[&str] = &[
+        "en", "ja", "fr", "de", "es", "it", "pt", "ko", "ru", "ar",
+        "zh", "nl", "sv", "no", "fi", "da", "pl", "cs", "hu", "tr",
+        "el", "th", "vi", "he", "id", "uk", "hr", "ro", "sk", "sl",
+        "lt", "lv", "et", "bg", "ca",
+    ];
+    let segments: Vec<&str> = body.split(',').map(str::trim).collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.iter().all(|s| LANG_CODES.contains(s))
+}
+
+/// Normalize a `disc <n> of <m>` body to `disc <n>` so TOSEC's
+/// `(Disc 1 of 2)` collapses to the same shape as Redump's `(Disc 1)`.
+/// Returns the input unchanged for any non-matching body so legitimate
+/// `(Disc N)` groups (already in the Redump shape) flow through.
+fn normalize_disc_of_m(body: &str) -> String {
+    let mut iter = body.split_whitespace();
+    if iter.next() != Some("disc") {
+        return body.to_string();
+    }
+    let Some(n) = iter.next() else { return body.to_string(); };
+    if !n.chars().all(|c| c.is_ascii_digit()) {
+        return body.to_string();
+    }
+    if iter.next() != Some("of") {
+        return body.to_string();
+    }
+    let Some(m) = iter.next() else { return body.to_string(); };
+    if !m.chars().all(|c| c.is_ascii_digit()) {
+        return body.to_string();
+    }
+    if iter.next().is_some() {
+        return body.to_string();
+    }
+    format!("disc {n}")
+}
+
+/// True when the bracket body looks like a revision marker:
+///   - `v1.1`, `v2.0`, `v1.10` — No-Intro style
+///   - `rev 1`, `rev-1`, `rev1` — Redump style
+/// Conservative: we only strip groups that match these patterns
+/// unambiguously. `vol 1` / `version 1` / arbitrary `(v ...)` text
+/// stays intact.
+fn is_revision_marker(body: &str) -> bool {
+    if let Some(rest) = body.strip_prefix('v') {
+        // v<digit>.<digit>(.<digit>)? — must contain at least one dot
+        // and the first char after `v` must be a digit. Bare `v1`
+        // would be ambiguous (could mean "volume 1"); requiring a dot
+        // pins us to the version-number-with-decimal shape.
+        return rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && rest.contains('.');
+    }
+    if let Some(rest) = body.strip_prefix("rev") {
+        let rest = rest.trim_start_matches([' ', '-']);
+        return rest.chars().next().is_some_and(|c| c.is_ascii_digit());
+    }
+    false
+}
+
+/// Collapse multi-country region groups to their first segment.
+/// `(usa, canada)` → `usa`, `(japan, asia)` → `japan`, etc. Only fires
+/// when EVERY comma-separated segment is in a known-region whitelist —
+/// `(en, fr, es)` (language codes) stays intact because those aren't in
+/// the region list.
+fn collapse_region_group(body: &str) -> String {
+    const KNOWN_REGIONS: &[&str] = &[
+        "usa", "canada", "japan", "asia", "korea", "europe", "australia",
+        "world", "germany", "france", "spain", "italy", "brazil",
+        "netherlands", "sweden", "norway", "finland", "denmark", "russia",
+        "china", "hong kong", "taiwan", "mexico", "uk",
+    ];
+    let segments: Vec<&str> = body.split(',').map(str::trim).collect();
+    if segments.len() < 2 {
+        return body.to_string();
+    }
+    if segments.iter().all(|s| KNOWN_REGIONS.contains(s)) {
+        return segments[0].to_string();
+    }
+    body.to_string()
+}
+
+/// Match tier reported back from `DiscFuzzyIndex::lookup` so the
+/// resolve loop can label the progress event accordingly. Operators
+/// reading the bar see `matched (filename)` for strict hits and
+/// `matched (filename, relaxed)` for fallback hits — useful for
+/// auditing which naming convention drift caught which game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatchTier {
+    Strict,
+    Relaxed,
+}
+
+impl MatchTier {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Strict => "filename",
+            Self::Relaxed => "filename, relaxed",
+        }
+    }
+}
+
+/// Two-tier filename-fuzzy index over a system's canonical disc titles.
+/// `strict` preserves bracket content exactly — the cheapest, most
+/// precise hit. `relaxed` strips revision parens + collapses
+/// multi-country region tags so No-Intro-style operator names can hit
+/// Redump-style catalog names. Lookups try strict first; relaxed is
+/// the fallback.
+struct DiscFuzzyIndex {
+    strict: HashMap<String, crate::library_db::RomTrackRow>,
+    relaxed: HashMap<String, crate::library_db::RomTrackRow>,
+}
+
+impl DiscFuzzyIndex {
+    fn is_empty(&self) -> bool {
+        // Both maps come from the same canonical list, so emptiness is
+        // a single property. Strict is the cheaper check.
+        self.strict.is_empty()
+    }
+
+    fn lookup(
+        &self,
+        filename: &str,
+    ) -> Option<(&crate::library_db::RomTrackRow, MatchTier)> {
+        let strict_key = disc_filename_fuzzy_key(filename);
+        if let Some(row) = self.strict.get(&strict_key) {
+            return Some((row, MatchTier::Strict));
+        }
+        let relaxed_key = disc_filename_fuzzy_key_relaxed(filename);
+        if let Some(row) = self.relaxed.get(&relaxed_key) {
+            return Some((row, MatchTier::Relaxed));
+        }
+        None
+    }
+}
+
+/// Build the tiered fuzzy-key → canonical-row index for a disc-shape
+/// system. Called once per resolve call. Empty when the system has no
+/// `rom_hashes_tracks` rows. First-write-wins per SQL alphabetical
+/// order keeps the simpler-named canonical row in front of the
+/// Rev-suffixed variant when they collapse to the same key.
 fn build_disc_fuzzy_index(
     db: &LibraryDb,
     system_id: &str,
-) -> Result<HashMap<String, crate::library_db::RomTrackRow>, String> {
+) -> Result<DiscFuzzyIndex, String> {
     let canonical = db.list_canonical_disc_titles(system_id)?;
-    let mut by_key: HashMap<String, crate::library_db::RomTrackRow> =
+    let mut strict: HashMap<String, crate::library_db::RomTrackRow> =
+        HashMap::with_capacity(canonical.len());
+    let mut relaxed: HashMap<String, crate::library_db::RomTrackRow> =
         HashMap::with_capacity(canonical.len());
     for row in canonical {
-        let key = disc_filename_fuzzy_key(&row.game_name);
-        // First-write-wins on collision. The regional bracket suffix
-        // disambiguates most pairs; surviving collisions are
-        // alphabetical-first via SQL order.
-        by_key.entry(key).or_insert(row);
+        let strict_key = disc_filename_fuzzy_key(&row.game_name);
+        let relaxed_key = disc_filename_fuzzy_key_relaxed(&row.game_name);
+        // Insert into strict first so the row is still available for
+        // the relaxed clone. .entry().or_insert() is first-write-wins
+        // (alphabetical-first via SQL order).
+        strict.entry(strict_key).or_insert_with(|| row.clone());
+        relaxed.entry(relaxed_key).or_insert(row);
     }
-    Ok(by_key)
+    Ok(DiscFuzzyIndex { strict, relaxed })
 }
 
 /// Phase A1 Sub-phase 3 — per-track SHA-1 identification for one
@@ -2370,6 +2630,217 @@ game (
         let disc1 = disc_filename_fuzzy_key("Final Fantasy IX (USA) (Disc 1).cue");
         let disc2 = disc_filename_fuzzy_key("Final Fantasy IX (USA) (Disc 2).cue");
         assert_ne!(disc1, disc2);
+    }
+
+    #[test]
+    fn relaxed_key_bridges_v_dot_vs_rev_revision_notation() {
+        // 2026-06-04 tiered matcher — operator's No-Intro-style (v1.1)
+        // collapses to the same relaxed key as Redump-style (Rev 1).
+        let op = disc_filename_fuzzy_key_relaxed("Alundra (USA) (v1.1).cue");
+        let cat_rev = disc_filename_fuzzy_key_relaxed("Alundra (USA) (Rev 1)");
+        let cat_plain = disc_filename_fuzzy_key_relaxed("Alundra (USA)");
+        assert_eq!(op, "alundra (usa)");
+        assert_eq!(cat_rev, "alundra (usa)");
+        assert_eq!(cat_plain, "alundra (usa)");
+        // Bare digit forms still strip: (v2.0), (Rev 2), (rev-3).
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Game (USA) (v2.0).cue"),
+            disc_filename_fuzzy_key_relaxed("Game (USA) (Rev 2)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Game (USA) (rev-3).cue"),
+            disc_filename_fuzzy_key_relaxed("Game (USA)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_collapses_multi_country_region_groups() {
+        // Operator `(USA)` matches catalog `(USA, Canada)` after relax.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Chrono Cross (USA) (Disc 1).cue"),
+            disc_filename_fuzzy_key_relaxed("Chrono Cross (USA, Canada) (Disc 1)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Game (Japan).cue"),
+            disc_filename_fuzzy_key_relaxed("Game (Japan, Asia)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Game (Europe).cue"),
+            disc_filename_fuzzy_key_relaxed("Game (Europe, Australia)")
+        );
+        // Both directions — operator with multi-country also matches
+        // single-country catalog entry.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Game (USA, Canada).cue"),
+            disc_filename_fuzzy_key_relaxed("Game (USA)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_stacks_both_normalizations() {
+        // FF9 USA Disc 1 v1.1 vs catalog FF9 (USA, Canada) (Disc 1) (Rev 1)
+        // — both axes mismatched in strict, both bridged in relaxed.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Final Fantasy IX (USA) (Disc 1) (v1.1).cue"),
+            disc_filename_fuzzy_key_relaxed("Final Fantasy IX (USA, Canada) (Disc 1) (Rev 1)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_preserves_disc_number_and_language_brackets() {
+        // (Disc 1), (Disc 2) must stay distinct after relax —
+        // multi-disc games would otherwise all collide.
+        let d1 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 1).cue");
+        let d2 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 2).cue");
+        assert_ne!(d1, d2);
+        // v2 — language-code groups (En, Fr, Es) are stripped from the
+        // relaxed key so operator's bare `(USA)` collapses to the same
+        // key as catalog's `(USA) (En,Fr,Es)`. v1's comment said
+        // "language brackets stay" — v2 deliberately reverses that
+        // because catalog adds lang tags that operator filenames don't
+        // carry, and stripping them is what makes Crazy Taxi (USA)
+        // match Crazy Taxi (USA) (En,Ja).
+        let langs = disc_filename_fuzzy_key_relaxed("Game (USA) (En, Fr, Es).cue");
+        assert!(!langs.contains("(en"), "got: {langs}");
+    }
+
+    #[test]
+    fn relaxed_key_preserves_different_regions_as_distinct() {
+        // (USA) vs (Japan) vs (Europe) must NEVER collapse to the same
+        // relaxed key — that would canonicalize the wrong title.
+        let usa = disc_filename_fuzzy_key_relaxed("Game (USA).cue");
+        let jp = disc_filename_fuzzy_key_relaxed("Game (Japan).cue");
+        let eu = disc_filename_fuzzy_key_relaxed("Game (Europe).cue");
+        assert_ne!(usa, jp);
+        assert_ne!(usa, eu);
+        assert_ne!(jp, eu);
+    }
+
+    #[test]
+    fn relaxed_key_handles_unusual_brackets() {
+        // v2 — (Unl) is now stripped (operator tag, not on catalog).
+        // The dedicated relaxed_key_strips_unl_operator_tag test
+        // covers that contract; here we focus on near-miss patterns
+        // that look like rev markers but shouldn't be.
+        //
+        // "v" prefix without a dot is NOT a revision marker — could be
+        // "Vol 1" or game title text. Stays.
+        let key = disc_filename_fuzzy_key_relaxed("Game (USA) (v1).cue");
+        assert!(key.contains("(v1)"), "got: {key}");
+        // "rev" without a trailing digit is NOT a marker either.
+        let key = disc_filename_fuzzy_key_relaxed("Game (USA) (revision).cue");
+        assert!(key.contains("(revision)"), "got: {key}");
+    }
+
+    // v2 — TOSEC-vs-Redump bridge --------------------------------------
+
+    #[test]
+    fn relaxed_key_strips_language_code_paren_groups() {
+        // TOSEC/operator filenames typically don't carry the language
+        // tags Redump appends. Stripping them on the catalog side lets
+        // operator's bare `(USA)` hit catalog's `(USA) (En,Ja)`.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Crazy Taxi (USA).chd"),
+            disc_filename_fuzzy_key_relaxed("Crazy Taxi (USA) (En,Ja)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("ChuChu Rocket! (USA).chd"),
+            disc_filename_fuzzy_key_relaxed("ChuChu Rocket! (USA) (En,Ja,Fr,De,Es)")
+        );
+        // Single-code group like `(en)` does NOT trigger the strip —
+        // requires comma-separated list to confirm language-list shape.
+        let single = disc_filename_fuzzy_key_relaxed("Game (USA) (en).cue");
+        assert!(single.contains("(en)"), "got: {single}");
+    }
+
+    #[test]
+    fn relaxed_key_normalizes_disc_n_of_m_to_disc_n() {
+        // TOSEC writes `(Disc 1 of 2)`; Redump writes `(Disc 1)`. The
+        // relaxed key normalizes the former to the latter so they match.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("D2 (USA) (Disc 1 of 4).chd"),
+            disc_filename_fuzzy_key_relaxed("D2 (USA) (Disc 1)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Alone in the Dark (USA) (Disc 2 of 2).chd"),
+            disc_filename_fuzzy_key_relaxed("Alone in the Dark (USA) (Disc 2)")
+        );
+        // Disc number distinctions preserved through normalization —
+        // (Disc 1 of 4) and (Disc 2 of 4) still produce different keys.
+        let d1 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 1 of 4).chd");
+        let d2 = disc_filename_fuzzy_key_relaxed("Game (USA) (Disc 2 of 4).chd");
+        assert_ne!(d1, d2);
+    }
+
+    #[test]
+    fn relaxed_key_inserts_space_between_adjacent_parens() {
+        // TOSEC convention `(USA)(Disc 1 of 2)` has no space between
+        // paren groups; Redump uses `(USA) (Disc 1)`. The post-step
+        // insertion makes the no-space shape collapse to the
+        // space-separated key.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Shenmue (USA)(Disc 1 of 4).chd"),
+            disc_filename_fuzzy_key_relaxed("Shenmue (USA) (Disc 1)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Carrier (USA)(Disc 2).chd"),
+            disc_filename_fuzzy_key_relaxed("Carrier (USA) (Disc 2)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_strips_unl_operator_tag() {
+        // Operator-side `(Unl)` marker for unlicensed cheat-disc
+        // utilities doesn't appear on catalog rows. Strip so
+        // `Code Breaker (USA) (Unl)` hits catalog's `Code Breaker (USA)`.
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Code Breaker (USA) (Unl).cue"),
+            disc_filename_fuzzy_key_relaxed("Code Breaker (USA)")
+        );
+        assert_eq!(
+            disc_filename_fuzzy_key_relaxed("Code Breaker Version 3 (USA) (Unl).cue"),
+            disc_filename_fuzzy_key_relaxed("Code Breaker Version 3 (USA)")
+        );
+    }
+
+    #[test]
+    fn relaxed_key_preserves_catalog_variant_tags() {
+        // Beta / Proto / Demo / Sample are GENUINE Redump variant
+        // tags — catalog rows distinguish licensed-final from these.
+        // Must NOT strip; stripping would collapse distinct catalog
+        // rows onto the same key and mis-identify the operator's dump.
+        let final_ = disc_filename_fuzzy_key_relaxed("Game (USA).cue");
+        let beta = disc_filename_fuzzy_key_relaxed("Game (USA) (Beta).cue");
+        let proto = disc_filename_fuzzy_key_relaxed("Game (USA) (Proto).cue");
+        let demo = disc_filename_fuzzy_key_relaxed("Game (USA) (Demo).cue");
+        assert_ne!(final_, beta, "Beta variant must stay distinct");
+        assert_ne!(final_, proto, "Proto variant must stay distinct");
+        assert_ne!(final_, demo, "Demo variant must stay distinct");
+    }
+
+    #[test]
+    fn relaxed_key_v2_stacks_all_normalizations_for_tosec_dreamcast() {
+        // End-to-end check: a TOSEC-style filename with double-space,
+        // adjacent-paren, Disc-of-M shape collapses to the same key
+        // as the Redump catalog row carrying language tags.
+        let tosec = disc_filename_fuzzy_key_relaxed(
+            "Alone in the Dark - The New Nightmare  (USA)(Disc 1 of 2).chd"
+        );
+        let redump = disc_filename_fuzzy_key_relaxed(
+            "Alone in the Dark - The New Nightmare (USA) (En,Fr,De,Es,It) (Disc 1)"
+        );
+        assert_eq!(tosec, redump);
+    }
+
+    #[test]
+    fn relaxed_key_falls_back_to_strict_when_no_normalization_needed() {
+        // Plain redump-style names already match strict — relaxed
+        // produces the same key, so a strict-only library has zero
+        // change in matcher behavior.
+        assert_eq!(
+            disc_filename_fuzzy_key("Tomb Raider (USA).cue"),
+            disc_filename_fuzzy_key_relaxed("Tomb Raider (USA).cue")
+        );
     }
 
     #[test]

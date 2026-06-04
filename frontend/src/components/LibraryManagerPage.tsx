@@ -32,6 +32,7 @@ import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import GameMediaManagePanel from "./GameMediaManagePanel";
+import UnidentifiedGamesDialog from "./UnidentifiedGamesDialog";
 
 type Props = {
   settings: SettingsStore;
@@ -689,6 +690,9 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // switch active card while the panel is open; the panel re-targets
   // without close + reopen.
   const [managePanelFor, setManagePanelFor] = createSignal<SystemId | null>(null);
+  // Operator-audit dialog state — system id whose unidentified-games
+  // list is currently open, or null when closed.
+  const [unidentifiedDialogFor, setUnidentifiedDialogFor] = createSignal<SystemId | null>(null);
 
   // --- Game media per-system stats ---------------------------------------
   //
@@ -1544,7 +1548,17 @@ const LibraryManagerPage: Component<Props> = (props) => {
         onClearMetadata={startClearMetadata}
         onSyncHashes={startHashSync}
         onIdentifyRoms={startHashResolve}
+        onViewUnidentified={(id) => setUnidentifiedDialogFor(id)}
         onClose={() => setManagePanelFor(null)}
+      />
+      <UnidentifiedGamesDialog
+        systemId={unidentifiedDialogFor()}
+        totalGames={(() => {
+          const id = unidentifiedDialogFor();
+          return id ? perSystemStats().get(id)?.total ?? 0 : 0;
+        })()}
+        onRunIdentify={startHashResolve}
+        onClose={() => setUnidentifiedDialogFor(null)}
       />
     </>
   );

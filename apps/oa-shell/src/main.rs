@@ -2407,6 +2407,8 @@ fn main() {
             delete_milestone,
             reset_milestone_progress,
             arm_milestones,
+            list_unidentified_games,
+            reveal_game_file_in_folder,
             set_window_mode,
             get_shell_mode,
             get_shell_mode_pref,
@@ -7227,6 +7229,65 @@ fn delete_milestone(id: i64, db: tauri::State<'_, library_db::LibraryDb>) -> Res
 #[tauri::command]
 fn reset_milestone_progress(id: i64, db: tauri::State<'_, library_db::LibraryDb>) -> Result<(), String> {
     db.reset_milestone_progress(id)
+}
+
+// ---- Unidentified-games audit surface (2026-06-04) --------------------
+//
+// Operator-facing list of games in a system that don't have a sha1 yet.
+// Backs the "View N unidentified ▸" affordance on LibraryManagerPage's
+// GameMediaManagePanel. Doesn't itself trigger any work — pure read +
+// reveal-in-OS-file-manager affordance.
+
+/// Slim payload list of every TRULY unidentified game in `systemId`.
+/// "Unidentified" = `sha1 IS NULL OR sha1 = ''`. Excludes seed rows.
+#[tauri::command]
+fn list_unidentified_games(
+    #[allow(non_snake_case)] systemId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<library_db::UnidentifiedGameRow>, String> {
+    db.list_unidentified_games_for_system(&systemId)
+}
+
+/// Open the OS file manager at `filePath` with the file highlighted
+/// (Windows + macOS) or — on Linux — just open the parent directory
+/// (`xdg-open` has no platform-portable "select" flag). Used by the
+/// unidentified-games dialog so the operator can quickly inspect the
+/// file on disk to figure out why it didn't match (missing .bin
+/// sidecar, weird filename, etc.).
+#[tauri::command]
+#[allow(non_snake_case)]
+fn reveal_game_file_in_folder(filePath: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&filePath);
+    if !path.exists() {
+        return Err(format!("path does not exist: {filePath}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // /select, highlights the file in its parent folder.
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map_err(|e| format!("spawn explorer /select: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // -R reveals the file in Finder (highlights it in its parent).
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("spawn open -R: {e}"))?;
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        // Linux: open the parent folder — xdg-open has no select flag.
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("spawn xdg-open: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Push the current game's milestone list into the emu thread's
