@@ -22,3 +22,39 @@ cores:
 - base: geargrafx_libretro
   display_name: GearGrafx
   blurb: Modern PC Engine core (gear* family). Active development.
+system_info:
+  system_id: tg16
+  manufacturer: NEC / Hudson Soft
+  type: Home Console
+  generation: 4th Generation
+  release_date: October 30, 1987 (JP) / August 29, 1989 (NA)
+  discontinued: 1995
+  units_sold: ~10 Million (worldwide)
+  media: HuCard
+  cpu: HuC6280 @ 7.16 MHz
+  sound: HuC6280 PSG (6 channels)
+  resolution: 256 x 224 (typical)
+  color_palette: 482 colors (16 on-screen palettes × 16)
+  display_ratio: 8:7 (4:3)
+  architecture: 8/16-Bit Hybrid
+  max_players: 1-5 Players (with TurboTap)
+  multiplayer: Yes — up to 5 via TurboTap multiplayer adapter
+  region: NTSC / NTSC-J
+  storage: HuCard (2-20 Mbit)
+  ram: 8 KB main / 64 KB VRAM
+  video_output: RF / Composite / RGB (Japanese PC Engine)
+  aspect_ratio: 4:3
+  peripherals:
+  - name: TurboPad
+    glyph: 🎮
+  - name: TurboTap
+    glyph: 🔗
+  - name: TurboStick
+    glyph: 🕹️
+  release_flag: 🇯🇵
+  tagline: 8/16-BIT HOME CONSOLE
+  blurb: NEC's compact answer to Nintendo and Sega — an 8-bit CPU paired with a 16-bit graphics chip. Outsold the Famicom in Japan during its peak years, but never broke through in the West. Famous for vibrant shoot-'em-ups, Bonk, and a HuCard library packed onto credit-card-sized cartridges.
+  sidebar_subline: 8/16-BIT · 1987
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

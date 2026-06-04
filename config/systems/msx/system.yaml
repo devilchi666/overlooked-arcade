@@ -12,3 +12,40 @@ cores:
 - base: fmsx_libretro
   display_name: fMSX
   blurb: Lighter MSX alternative.
+system_info:
+  system_id: msx
+  manufacturer: Microsoft / ASCII (standard) — built by Sony, Panasonic, Sanyo, Toshiba, Yamaha, Pioneer, Philips, et al.
+  type: Home Computer
+  generation: 3rd Generation
+  release_date: October 21, 1983 (JP)
+  discontinued: 1995 (entire MSX family)
+  units_sold: ~9 Million (MSX1 + MSX2 combined estimates)
+  media: Cartridge / Cassette / Floppy Disk
+  cpu: Zilog Z80A @ 3.58 MHz
+  sound: General Instrument AY-3-8910 PSG (3 channels)
+  resolution: 256 x 192
+  color_palette: 16 colors
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 via joystick ports
+  region: Worldwide (multi-manufacturer)
+  storage: Cartridge (32 KB - 4 MB via mapper) / Floppy / Cassette
+  ram: 8 KB - 64 KB (model-dependent)
+  video_output: RF / Composite / RGB
+  aspect_ratio: 4:3
+  peripherals:
+  - name: Keyboard (built-in)
+    glyph: ⌨️
+  - name: Joystick
+    glyph: 🕹️
+  - name: Cassette Drive
+    glyph: 📼
+  - name: Floppy Drive
+    glyph: 💾
+  release_flag: 🇯🇵
+  tagline: 8-BIT HOME COMPUTER STANDARD
+  blurb: A 1983 cross-manufacturer hardware spec — the closest the 8-bit era got to a global PC standard. Built by a dozen Japanese firms (Sony, Panasonic, Sanyo, Yamaha…) plus Philips in Europe. Dominant in Japan, Brazil, Spain, and the Netherlands. The home of Konami's Z80 masterpieces (Metal Gear's original release, Vampire Killer, Salamander).
+  sidebar_subline: 8-BIT COMPUTER · 1983
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

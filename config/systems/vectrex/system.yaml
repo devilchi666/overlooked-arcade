@@ -15,3 +15,40 @@ cores:
   display_name: Vecx
   blurb: Vectrex with optional overlay support.
   recommended: true
+system_info:
+  system_id: vectrex
+  manufacturer: General Consumer Electronics / Milton Bradley
+  type: Home Console (Built-in Display)
+  generation: 2nd Generation
+  release_date: November 1982 (NA)
+  discontinued: 1984
+  units_sold: ~500,000
+  media: Cartridge + Overlay
+  cpu: Motorola MC6809 @ 1.5 MHz
+  sound: General Instrument AY-3-8912 (3 channels)
+  resolution: Vector graphics (no raster — 330 × 410 effective)
+  color_palette: Monochrome with translucent plastic overlays
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 via dual controller ports
+  region: NTSC
+  storage: Cartridge (4 KB - 16 KB)
+  ram: 1 KB
+  video_output: Built-in 9-inch monochrome vector CRT
+  aspect_ratio: 3:4 (portrait CRT)
+  peripherals:
+  - name: Vectrex Controller
+    glyph: 🎮
+  - name: 3D Imager
+    glyph: 🥽
+  - name: Light Pen
+    glyph: 🖊️
+  - name: Plastic Color Overlays
+    glyph: 🌈
+  release_flag: 🇺🇸
+  tagline: VECTOR-GRAPHICS HOME CONSOLE
+  blurb: The only consumer console ever built around vector graphics — a self-contained unit with a 9-inch portrait CRT, plastic color overlays for the bezel, and a library of arcade-vector ports (Star Castle, Berzerk, Star Trek). Died in the 1983 crash but spawned a passionate homebrew scene that still ships new cartridges today.
+  sidebar_subline: VECTOR · 1982
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

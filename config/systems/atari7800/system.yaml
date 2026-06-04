@@ -16,3 +16,36 @@ cores:
   display_name: ProSystem
   blurb: Atari 7800. BIOS optional but recommended.
   recommended: true
+system_info:
+  system_id: atari7800
+  manufacturer: Atari
+  type: Home Console
+  generation: 3rd Generation
+  release_date: May 1986 (NA)
+  discontinued: 1992
+  units_sold: ~3.77 Million
+  media: Cartridge
+  cpu: Atari SALLY (MOS 6502C) @ 1.79 MHz
+  sound: TIA (2 channels) + optional POKEY (4 channels, in cart)
+  resolution: 320 x 224
+  color_palette: 256 colors (25 on-screen typical)
+  architecture: 8-Bit
+  max_players: 1-2 Players
+  multiplayer: Yes — 2 local
+  region: NTSC / PAL
+  storage: Cartridge (16 KB - 144 KB)
+  ram: 4 KB
+  video_output: RF / Composite
+  aspect_ratio: 4:3
+  peripherals:
+  - name: ProLine Controller
+    glyph: 🎮
+  - name: 2600 Joystick (backwards compatible)
+    glyph: 🕹️
+  release_flag: 🇺🇸
+  tagline: 8-BIT ARCADE-AT-HOME
+  blurb: Atari's late answer to the NES — a system designed to bring arcade-quality graphics home, with bytes-on-the-screen sprite hardware that genuinely outclassed Nintendo's PPU. Doomed by Atari's post-crash distribution collapse rather than the hardware itself. Plays the 2600 catalog natively as a bonus.
+  sidebar_subline: 8-BIT · 1986
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

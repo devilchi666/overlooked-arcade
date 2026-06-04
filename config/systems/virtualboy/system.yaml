@@ -14,3 +14,35 @@ cores:
   display_name: Beetle VB
   blurb: Mednafen Virtual Boy. Anaglyph or split-screen 3D.
   recommended: true
+system_info:
+  system_id: virtualboy
+  manufacturer: Nintendo
+  type: Tabletop / Portable Console
+  generation: 5th Generation
+  release_date: July 21, 1995 (JP) / August 14, 1995 (NA)
+  discontinued: 1996
+  units_sold: ~770,000
+  media: Cartridge
+  cpu: NEC V810 @ 20 MHz
+  sound: Custom VSU (6 PCM + 1 noise channels)
+  resolution: 384 x 224 (per eye, dual displays)
+  color_palette: 4 shades of red
+  architecture: 32-Bit
+  max_players: 1 Player
+  multiplayer: Link cable promised but never released
+  region: NTSC / NTSC-J
+  storage: Cartridge (1 MB - 2 MB) + SRAM in some carts
+  ram: 1 MB DRAM
+  video_output: Stereoscopic red LED arrays (224 LEDs × 2)
+  peripherals:
+  - name: VB Controller
+    glyph: 🎮
+  - name: Adjustable Stand
+    glyph: 🦵
+  release_flag: 🇯🇵
+  tagline: STEREOSCOPIC 32-BIT
+  blurb: Nintendo's stereoscopic 3D experiment — a tabletop visor with twin red-LED displays that shipped before the technology was ready. Sold under a million units worldwide, killed within a year. Defended by enthusiasts for genuinely good games (Mario's Tennis, Virtual Boy Wario Land, Jack Bros.) hidden inside hardware that gave players headaches.
+  sidebar_subline: 32-BIT 3D · 1995
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04

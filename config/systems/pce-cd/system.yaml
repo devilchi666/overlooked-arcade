@@ -24,3 +24,38 @@ cores:
 - base: geargrafx_libretro
   display_name: GearGrafx
   blurb: Modern PC Engine core (gear* family). Active development.
+system_info:
+  system_id: pce-cd
+  manufacturer: NEC / Hudson Soft
+  type: Home Console Add-on
+  generation: 4th Generation
+  release_date: December 4, 1988 (JP) / November 1989 (NA)
+  discontinued: 1995
+  media: CD-ROM
+  cpu: HuC6280 @ 7.16 MHz
+  sound: HuC6280 PSG + CD-DA + ADPCM
+  resolution: 256 x 224 (typical)
+  color_palette: 482 colors (16 on-screen palettes × 16)
+  display_ratio: 8:7 (4:3)
+  architecture: 8/16-Bit Hybrid
+  max_players: 1-5 Players (with TurboTap)
+  multiplayer: Yes — up to 5 via TurboTap multiplayer adapter
+  region: NTSC / NTSC-J
+  storage: CD-ROM (~540 MB) + 192 KB BRAM
+  ram: 64 KB main / 64 KB VRAM / 256 KB Arcade Card extension
+  video_output: RF / Composite / RGB
+  aspect_ratio: 4:3
+  peripherals:
+  - name: TurboPad
+    glyph: 🎮
+  - name: TurboTap
+    glyph: 🔗
+  - name: Arcade Card
+    glyph: 💾
+  release_flag: 🇯🇵
+  tagline: 8/16-BIT CD ADD-ON
+  blurb: The world's first commercial CD-ROM add-on for a console — bolted onto the PC Engine and shipped a year before Sega CD. Defined the early-90s anime-cutscene-and-redbook-audio aesthetic; home to Ys, Snatcher, Lords of Thunder, and a deep library of import-only JRPGs and shooters.
+  sidebar_subline: CD ADD-ON · 1988
+  meta:
+    schema_version: 1
+    last_updated: 2026-06-04
