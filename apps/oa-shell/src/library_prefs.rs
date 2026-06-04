@@ -79,6 +79,27 @@ pub struct LibraryPrefs {
     /// migrate cleanly.
     #[serde(default)]
     pub disc_track_strictness: DiscTrackStrictness,
+    /// Phase A1 pivot 2026-06-03 — gate per-track SHA-1 disc
+    /// identification behind an experimental flag. Default OFF after
+    /// operator playtest revealed two architectural limitations:
+    ///
+    /// 1. `chdman extractcd` produces .bin files that differ from
+    ///    redump's source DiscImageCreator dumps (verified 225-frame
+    ///    offset on Dreamcast GD-ROM). Per-track SHA-1s computed via
+    ///    the CHD path never match redump's published catalog.
+    /// 2. Archived disc images (.cue inside .zip) skip per-track
+    ///    entirely (Sub-phase 3 deferral). Most operator libraries
+    ///    are archived to save space.
+    ///
+    /// Result: 0% per-track match rate on real-world libraries.
+    /// The architecture is correct for raw, unarchived
+    /// DiscImageCreator-shape dumps — a niche of operators. Filename-
+    /// based fuzzy matching is the new primary identification path
+    /// (cheap, works on any container). Per-track stays available
+    /// for the niche behind this flag. See `docs/PLANS/disc-track-
+    /// sha1-matching.md` for the pivot decision.
+    #[serde(default)]
+    pub disc_track_experimental_enabled: bool,
 }
 
 impl Default for LibraryPrefs {
@@ -87,6 +108,7 @@ impl Default for LibraryPrefs {
             region_priority: default_region_priority(),
             revision_priority: RevisionPriority::Newest,
             disc_track_strictness: DiscTrackStrictness::default(),
+            disc_track_experimental_enabled: false,
         }
     }
 }
@@ -172,9 +194,43 @@ mod tests {
             region_priority: vec!["Japan".to_string(), "USA".to_string()],
             revision_priority: RevisionPriority::Oldest,
             disc_track_strictness: DiscTrackStrictness::Threshold80,
+            disc_track_experimental_enabled: true,
         };
         write_library_prefs(&tmp, &prefs).expect("write");
         assert_eq!(read_library_prefs(&tmp), prefs);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn disc_track_experimental_default_is_off_and_serde_round_trips() {
+        // Per the Phase A1 pivot (2026-06-03), per-track SHA-1 is
+        // OFF by default. Legacy prefs.json files (without this field)
+        // must hydrate to false via serde default.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-libprefs-experimental-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        // Default is OFF.
+        assert!(!LibraryPrefs::default().disc_track_experimental_enabled);
+        // Legacy prefs.json without this field hydrates to false.
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let legacy = r#"{"regionPriority":["USA"],"revisionPriority":"newest","discTrackStrictness":"strict"}"#;
+        std::fs::write(tmp.join("library").join("prefs.json"), legacy).expect("write");
+        let loaded = read_library_prefs(&tmp);
+        assert!(!loaded.disc_track_experimental_enabled);
+        // Round-trip ON survives.
+        let prefs_on = LibraryPrefs {
+            disc_track_experimental_enabled: true,
+            ..LibraryPrefs::default()
+        };
+        write_library_prefs(&tmp, &prefs_on).expect("write on");
+        let reloaded = read_library_prefs(&tmp);
+        assert!(reloaded.disc_track_experimental_enabled);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

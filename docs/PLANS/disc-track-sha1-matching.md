@@ -1,6 +1,20 @@
 # Per-track SHA-1 matching for disc-shape systems
 
-**Status:** Planning locked 2026-06-02 (4 rounds of operator Q&A; all design questions answered). Research pass 2026-06-03 closed the three "resolve before Phase 2" open questions (Q1 hash convention, Q2 schema shape, Q3 chd-crate TOC). Execution in flight as Phase A1 of the [virtual library + launcher arc](virtual-library-and-launcher-arc.md).
+**Status:** Planning locked 2026-06-02 (4 rounds of operator Q&A; all design questions answered). Research pass 2026-06-03 closed the three "resolve before Phase 2" open questions (Q1 hash convention, Q2 schema shape, Q3 chd-crate TOC). Sub-phases 1+2+3 shipped 2026-06-03.
+
+**PIVOTED 2026-06-03 (post-Sub-phase 3 operator playtest):** Per-track SHA-1 against redump was found structurally incompatible with the operator's actual library shape. Two architectural limitations:
+
+1. **CHD round-trips lose bytes.** `chdman extractcd` produces .bin files that differ from redump's source DiscImageCreator dumps. Measured 225-frame (529,200-byte) offset on Dreamcast "4 Wheel Thunder (USA)" Track 18 — exactly 225 sectors short of the redump-cataloged size. Likely consistent across all GD-ROM CHDs; possibly different offsets for other system CHDs. The bytes redump hashed are not reachable from the CHD container via any chdman extract path.
+
+2. **Archived disc images are skipped entirely.** Sub-phase 3 deferred per-track-through-archive to v2 because multi-GB image streaming through `oa-shell`'s archive reader would OOM. Most real-world operator libraries are .zip-compressed to save space.
+
+After 1 + 2: the per-track architecture works only for **raw, unarchived, DiscImageCreator-shape dumps**, which is a niche of operators. On the operator's actual library (Dreamcast .chd + PSX .zip) the per-track match rate was 0%.
+
+**New primary identification path:** filename-fuzzy matching against `rom_hashes_tracks.game_name`. Cheap (microseconds per game), works on any container (.chd / .zip / .cue / .gdi / .iso) and any storage shape (compressed / archived / raw). Hits whenever the operator's filename normalizes to the same key as a canonical redump title. See the [Pivot 2026-06-03 section](#pivot-2026-06-03-fuzzy-primary-per-track-experimental) below.
+
+**Per-track stays available behind an experimental flag** (`LibraryPrefs.disc_track_experimental_enabled`, default OFF) for the niche of operators with raw split-bin DiscImageCreator dumps. They can opt in via Settings → Display → Experimental → Per-track SHA-1 disc identification.
+
+Plan docs below stay as the historical record of the per-track architecture. Sub-phase 4 (multi-disc disc-set wiring) is deferred — it was designed on top of per-track + game_identities, and the new fuzzy-primary architecture doesn't need it yet.
 
 **Owner-of-decisions:** the operator. This document records the
 decisions that came out of the refinement Q&A. Implementation
@@ -300,6 +314,41 @@ manually.
   pass. Re-runs are no-ops (cache hits). Operator imports, walks
   away, returns to identified library. Background-jobs bar
   surfaces progress; chime + post-completion toast acknowledge.
+
+### Pivot 2026-06-03 — fuzzy primary, per-track experimental
+
+**Trigger:** operator playtest on Dreamcast (.chd) + PSX (.zip).
+Result: 0% per-track match rate.
+
+**Operator-side measurements:**
+
+| Test | Result | Reason |
+|---|---|---|
+| Dreamcast .chd hashed via `hash_disc` | 0 / 298 per-track matches | chdman extract is 225 frames short of redump's .bin (verified by `chdman extractcd` + `Get-FileHash` on 4 Wheel Thunder (USA) Track 18: extracted 338,704,464 bytes vs redump-cataloged 339,233,664). The byte difference is exactly 225 × 2352. |
+| PSX archived (.zip with inner .cue+.bin) | Per-track skipped entirely | Sub-phase 3 archive deferral; all 1,048 games hit `peek_disc_id_archived` instead. |
+
+**Architectural conclusion:** per-track-SHA-1 vs redump requires the operator's bytes to byte-match what DiscImageCreator originally wrote. Neither CHD compression nor ZIP archiving preserves that property cleanly in OA's current architecture. The architecture is correct only for an idealized library shape that few operators have.
+
+**New primary path — filename-fuzzy matching:**
+
+- At resolve start (disc-shape systems only), build a `HashMap<fuzzy_key, RomTrackRow>` from `rom_hashes_tracks` distinct game_names. One canonical row per game (min-track-number), used as the identification marker (its SHA-1 stamps `games.sha1` so re-runs skip).
+- Per-game: take the file_name (or archive_inner_path's basename if archived), normalize via `disc_filename_fuzzy_key` (strip extension, lowercase, separators→space, preserve regional brackets), look up.
+- On hit: `apply_rom_hash` with canonical title + serial + marker SHA-1. Game appears identified in library tile UI.
+- Works on .cue / .chd / .gdi / .iso / .zip / .7z / anything — only the filename matters.
+
+**Per-track stays as opt-in:**
+
+- `LibraryPrefs.disc_track_experimental_enabled: bool` (default false). When true, the existing per-track try block (Sub-phase 3) fires after fuzzy miss for raw unarchived discs. Strictness setting + game_disc_tracks cache + canonical-track verification all still work.
+- Settings UI: Settings → Display → Experimental → Per-track SHA-1 disc identification (frontend hookup is a small follow-up; backend lands in this commit).
+
+**What this preserves vs throws away:**
+
+- ✅ Sub-phase 1 schema (rom_hashes_tracks, game_disc_tracks, disc_sets) — still useful for fuzzy index source data, and necessary for opt-in per-track.
+- ✅ Sub-phase 2 hashing engine (disc_track_hash.rs) — still correct, just gated.
+- ✅ Sub-phase 3 plumbing (per-game cache, strictness setting, JobKind::DiscTrackHash) — still functional behind the flag.
+- ⚠️ Sub-phase 4 (multi-disc disc-set wiring on games table) — deferred. Built on top of per-track identification stamping `games.disc_set_id`; with fuzzy as primary, the canonical game_name carries the "(Disc N)" suffix and grouping happens at display time rather than data-model time. Re-evaluate when fuzzy hit rate is measured.
+
+**Open question:** what's fuzzy's actual hit rate? Plan estimate is 80–95% on libraries with redump-style filenames. Sub-fuzzy operators (truncated names, custom rename schemes, no-region tags) will fall through to peek_disc_id. Hit-rate measurement is the next operator-facing test.
 
 ### Research pass — 2026-06-03 findings locked
 

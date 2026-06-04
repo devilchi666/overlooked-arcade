@@ -1408,10 +1408,16 @@ pub async fn resolve_rom_hashes_for_system(
     let _gate_guard = gate.lock().await;
 
     // Read OA-wide prefs once at the top — used by the disc-shape
-    // per-track branch's strictness mode below.
-    let disc_strictness = crate::library_prefs::read_library_prefs(&state.app_data_dir)
-        .disc_track_strictness
-        .to_engine();
+    // identification branches below.
+    let library_prefs = crate::library_prefs::read_library_prefs(&state.app_data_dir);
+    let disc_strictness = library_prefs.disc_track_strictness.to_engine();
+    // Phase A1 pivot — per-track SHA-1 is gated behind an experimental
+    // flag (default OFF) after the 2026-06-03 operator playtest
+    // surfaced the chdman/redump byte divergence + archived-disc skip
+    // limitation. The filename-fuzzy path below is the new primary
+    // identification mechanism for disc-shape systems; per-track is
+    // available for raw-dump libraries that opt in.
+    let disc_track_experimental = library_prefs.disc_track_experimental_enabled;
 
     // Phase 4a hash_resolve wiring — register the job up front so the
     // bar surfaces "Identifying {system} ROMs" with a real n_hashed /
@@ -1531,6 +1537,32 @@ pub async fn resolve_rom_hashes_for_system(
         }
         return Ok(summary);
     }
+
+    // Phase A1 pivot — build the filename-fuzzy index for disc-shape
+    // systems once at the top. Keyed on `disc_filename_fuzzy_key` of
+    // the canonical game_name; lookup in the per-game loop is O(1).
+    // For systems with no rom_hashes_tracks rows (or cart-shape
+    // systems), the index is empty and the fuzzy try block below
+    // short-circuits cleanly.
+    let disc_fuzzy_index: HashMap<String, crate::library_db::RomTrackRow> = if disc_shape {
+        match build_disc_fuzzy_index(&db, &systemId) {
+            Ok(idx) => {
+                log::info!(
+                    "rom_hashes: resolve {systemId} fuzzy index built ({} canonical titles)",
+                    idx.len()
+                );
+                idx
+            }
+            Err(e) => {
+                log::warn!(
+                    "rom_hashes: resolve {systemId} fuzzy index build failed: {e}"
+                );
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
     // Tiny in-process cache so re-hashing identical files in this batch
     // (e.g. user has the same ROM in two folders) doesn't pay for it
     // twice. Keyed on `(file_path, archive_inner)`; value is the full
@@ -1644,23 +1676,82 @@ pub async fn resolve_rom_hashes_for_system(
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
         if is_cd_container_ext(&ext, &systemId) {
-            // Phase A1 Sub-phase 3 — per-track SHA-1 identification.
-            // Highest-precedence disc-shape path: hash the disc image
-            // (or use the cached per-track hashes from
-            // game_disc_tracks), look up the first data track's SHA-1
-            // in rom_hashes_tracks, verify all tracks under the
-            // operator's chosen strictness, stamp canonical title +
-            // sha1 + serial on hit. Falls through to the existing
-            // serial-lookup (peek_disc_id) path on miss/error.
+            // Phase A1 pivot 2026-06-03 — filename-fuzzy identification.
+            // New primary disc-shape identification path after operator
+            // playtest showed per-track SHA-1 vs redump structurally
+            // fails on CHD (chdman extract bytes differ from
+            // DiscImageCreator source) AND skips archived discs (most
+            // libraries). Filename match works on any container with
+            // any storage shape — it just compares names.
             //
-            // Skips when: system isn't disc-shape (cart with .bin/.iso
-            // extensions doesn't apply), rom_hashes_tracks is empty
-            // (auto-sync hasn't populated it yet — fall through),
-            // the disc is inside an archive (archived disc per-track
-            // hashing deferred to a follow-up; reads through the
-            // archive layer aren't streaming-friendly for multi-GB
-            // images).
+            // Normalize the operator's filename (file_name of inner
+            // archive entry if archived, else the outer file_path) via
+            // `disc_filename_fuzzy_key` and look up in the index built
+            // at the top of resolve. On hit: stamp canonical title +
+            // serial + the canonical's first-track sha1 as the
+            // identification marker.
+            //
+            // Empty index → noop, falls through to per-track (if
+            // experimental ON) or peek_disc_id (existing path).
+            if !disc_fuzzy_index.is_empty() {
+                let raw_name = g
+                    .archive_inner_path
+                    .as_deref()
+                    .unwrap_or(&g.file_path);
+                let stem = std::path::Path::new(raw_name)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(raw_name);
+                let key = disc_filename_fuzzy_key(stem);
+                if let Some(candidate) = disc_fuzzy_index.get(&key) {
+                    summary.scanned += 1;
+                    summary.matched += 1;
+                    if let Err(e) = db.apply_rom_hash(
+                        &g.id,
+                        &candidate.sha1,
+                        Some(&candidate.game_name),
+                        candidate.serial.as_deref(),
+                    ) {
+                        log::warn!(
+                            "rom_hashes: apply_rom_hash (fuzzy) {} failed: {e}",
+                            g.id
+                        );
+                        summary.errors += 1;
+                    } else {
+                        log::info!(
+                            "rom_hashes: fuzzy match {} → '{}'",
+                            g.id, candidate.game_name
+                        );
+                    }
+                    let _ = app.emit(
+                        "oa://rom-hash-resolve-progress",
+                        &RomResolveProgress {
+                            system_id: systemId.clone(),
+                            done,
+                            total,
+                            current_title: g.title.clone(),
+                            last_action: format!(
+                                "matched (filename) → {}",
+                                candidate.game_name
+                            ),
+                        },
+                    );
+                    continue;
+                }
+            }
+
+            // Phase A1 Sub-phase 3 — per-track SHA-1 identification.
+            // Gated behind the experimental flag since the 2026-06-03
+            // pivot. Works correctly for raw split-bin libraries
+            // (operator opts in via Settings → Experimental →
+            // Per-track SHA-1 disc identification); falls back to
+            // peek_disc_id below otherwise.
+            //
+            // Skips when: not disc-shape, experimental flag OFF,
+            // archived disc (multi-GB stream through archive layer
+            // not implemented), or rom_hashes_tracks empty.
             let try_per_track = disc_shape
+                && disc_track_experimental
                 && g.archive_inner_path.is_none()
                 && matches!(db.count_rom_hashes_tracks(&systemId), Ok(n) if n > 0);
             if try_per_track {
@@ -2001,6 +2092,57 @@ pub fn lookup_rom_hash(
     db.lookup_rom_hash(&sha1)
 }
 
+/// Phase A1 pivot 2026-06-03 — normalize a filename for fuzzy
+/// matching against canonical disc titles. Strips the extension,
+/// lowercases, converts separator punctuation (`_-:,+/\\`) to spaces,
+/// collapses whitespace. **Preserves bracketed region tags** so
+/// "Tomb Raider (USA)" and "Tomb Raider (Japan)" don't collide on
+/// the same normalized key.
+///
+/// This is intentionally simpler than [`crate::normalize::normalize_title`]
+/// (which aggressively strips region/version tags + tag words +
+/// articles): for disc identification we want regional precision,
+/// not the broad coalescence that media-sync needs for fuzzy artwork
+/// match. Operators with consistent redump-style filenames
+/// (`Game (USA).cue` / `Game (USA).chd` / `Game (USA).zip`) will hit
+/// canonical entries exactly via this key.
+fn disc_filename_fuzzy_key(s: &str) -> String {
+    let s = match s.rsplit_once('.') {
+        Some((stem, ext)) if ext.len() <= 5 => stem,
+        _ => s,
+    };
+    let s = s.to_lowercase();
+    let s: String = s
+        .chars()
+        .map(|c| match c {
+            '_' | '-' | '.' | ':' | ',' | '+' | '/' | '\\' => ' ',
+            other => other,
+        })
+        .collect();
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Build a fuzzy-key → canonical-row index for a disc-shape system.
+/// Called once per resolve call (not per-game) so the operator pays
+/// O(N) up front and O(1) per game during the loop. Empty when the
+/// system has no `rom_hashes_tracks` rows.
+fn build_disc_fuzzy_index(
+    db: &LibraryDb,
+    system_id: &str,
+) -> Result<HashMap<String, crate::library_db::RomTrackRow>, String> {
+    let canonical = db.list_canonical_disc_titles(system_id)?;
+    let mut by_key: HashMap<String, crate::library_db::RomTrackRow> =
+        HashMap::with_capacity(canonical.len());
+    for row in canonical {
+        let key = disc_filename_fuzzy_key(&row.game_name);
+        // First-write-wins on collision. The regional bracket suffix
+        // disambiguates most pairs; surviving collisions are
+        // alphabetical-first via SQL order.
+        by_key.entry(key).or_insert(row);
+    }
+    Ok(by_key)
+}
+
 /// Phase A1 Sub-phase 3 — per-track SHA-1 identification for one
 /// disc-shape game. Called from the resolve flow's CD-container
 /// branch when the system is disc-shape and rom_hashes_tracks is
@@ -2187,6 +2329,62 @@ game (
         let ParsedDat { rom_hashes, game_serials, .. } = parse_libretro_dat(dat, "tg16");
         assert_eq!(rom_hashes.len(), 2, "both rom rows survive");
         assert_eq!(game_serials.len(), 1, "duplicate serials dedupe");
+    }
+
+    #[test]
+    fn disc_filename_fuzzy_key_normalizes_redump_filenames() {
+        // Identical canonical + operator names produce identical keys.
+        assert_eq!(
+            disc_filename_fuzzy_key("Tomb Raider (USA).cue"),
+            disc_filename_fuzzy_key("Tomb Raider (USA)")
+        );
+        // Different container shapes for the same game collapse to
+        // the same key — covers .cue / .chd / .gdi / .iso / .zip.
+        let canonical_key = disc_filename_fuzzy_key("Tomb Raider (USA)");
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb Raider (USA).cue"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb Raider (USA).chd"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb Raider (USA).gdi"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb Raider (USA).iso"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb Raider (USA).zip"));
+        // Underscores + dashes + dots get collapsed to whitespace.
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb_Raider_(USA).cue"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb-Raider-(USA).cue"));
+        assert_eq!(canonical_key, disc_filename_fuzzy_key("Tomb.Raider.(USA).cue"));
+        // Mixed separators + case variations collapse.
+        assert_eq!(
+            canonical_key,
+            disc_filename_fuzzy_key("TOMB-Raider_(usa).Cue")
+        );
+    }
+
+    #[test]
+    fn disc_filename_fuzzy_key_preserves_regional_brackets() {
+        // Critical: regional variants must NOT collide on the same
+        // key. "Tomb Raider (USA)" and "Tomb Raider (Japan)" stamp
+        // different canonical titles + serials.
+        let usa = disc_filename_fuzzy_key("Tomb Raider (USA).cue");
+        let japan = disc_filename_fuzzy_key("Tomb Raider (Japan).cue");
+        let europe = disc_filename_fuzzy_key("Tomb Raider (Europe).cue");
+        assert_ne!(usa, japan);
+        assert_ne!(usa, europe);
+        assert_ne!(japan, europe);
+        // Multi-disc variants also stay distinct.
+        let disc1 = disc_filename_fuzzy_key("Final Fantasy IX (USA) (Disc 1).cue");
+        let disc2 = disc_filename_fuzzy_key("Final Fantasy IX (USA) (Disc 2).cue");
+        assert_ne!(disc1, disc2);
+    }
+
+    #[test]
+    fn disc_filename_fuzzy_key_handles_no_extension_and_short_word_suffixes() {
+        // No extension at all — leave the whole string in.
+        assert_eq!(
+            disc_filename_fuzzy_key("Tomb Raider (USA)"),
+            "tomb raider (usa)"
+        );
+        // Suffix longer than 5 chars isn't treated as an extension —
+        // catches "Final Fantasy VII Bootleg" not stripping "Bootleg".
+        let key = disc_filename_fuzzy_key("Foo Bar Baz.SomeLongSuffix");
+        assert!(key.contains("somelongsuffix"), "got: {key}");
     }
 
     #[test]
