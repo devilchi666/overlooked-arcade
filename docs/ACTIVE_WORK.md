@@ -43,26 +43,36 @@ spanned every system but was filed under whichever core happened to be active.
       pass (665 baseline + 22 new); frontend typecheck silent.
     - **A1 Sub-phase 3 ✅ shipped 2026-06-03** (merge `d2bf7db`).
       Backend identify flow + game_disc_tracks cache + mtime/size
-      invalidation. `JobKind::DiscTrackHash` for disc-shape "Identify
-      ROMs" jobs; `DiscTrackStrictness` setting (Strict default) in
-      `LibraryPrefs`. `resolve_rom_hashes_for_system` gained a
-      per-track try block at the top of the CD branch: cache check
-      → spawn_blocking hash on miss → first-track-sha1 lookup →
-      `evaluate_match` per strictness → `apply_rom_hash` on pass.
-      Archived disc images defer to peek_disc_id for v1. 691 tests
-      pass (687 baseline + 4 new); frontend typecheck silent.
-    - **A1 Sub-phase 3.5 — frontend identify-flow UX** (next).
-      Post-completion toast surfacing "Identified N of M discs" +
-      "Show unidentified" deep-link that pre-filters the LIBRARY
-      view; Submit-to-redump.org link in `GameDetailPanel` for
-      unmatched disc-shape games; per-disc nested progress in the
-      BackgroundJobsBar. Held until the operator's first disc
-      folder import validates the Sub-phase 3 backend end-to-end
-      (gives us a concrete signal for what to surface and where).
-    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (after 3.5).
-      Stamp `games.disc_set_id` + `games.disc_number` on identified
-      multi-disc games; LIBRARY grid renders one tile per set;
-      disc-picker overlay on tile click.
+      invalidation. `JobKind::DiscTrackHash`, `DiscTrackStrictness`,
+      per-track try block in `resolve_rom_hashes_for_system`.
+    - **A1 Pivot ✅ shipped 2026-06-03** (merge `c4aec19`).
+      Per-track moved behind `LibraryPrefs.disc_track_experimental_enabled`
+      (default OFF) after operator playtest measured 0% match rate
+      on real library (Dreamcast CHD: chdman extract is 225 sectors
+      short of redump's DiscImageCreator source dump; archived PSX
+      ZIP: per-track skipped per Sub-phase 3 deferral). New primary
+      identification: filename-fuzzy match against canonical disc
+      titles in `rom_hashes_tracks` — cheap, works on any container
+      shape. 697 tests pass.
+    - **A1 follow-up — frontend experimental checkbox** (small).
+      Settings → Display → Experimental → Per-track SHA-1 disc
+      identification checkbox that toggles
+      `LibraryPrefs.disc_track_experimental_enabled`. Backend is
+      wired; just needs the frontend control.
+    - **A1 hit-rate measurement** (operator-facing next step).
+      Operator rebuilds + runs Identify ROMs on a disc system. The
+      fuzzy index builds at resolve start (logged with canonical
+      count). Per-game progress shows `matched (filename) →
+      <canonical>` for hits. Misses fall to `peek_disc_id` (existing
+      serial-lookup path). Hit rate measurement determines whether
+      Sub-phase 4 (multi-disc grouping) is built on top of fuzzy
+      or whether further architectural work is needed.
+    - **A1 Sub-phase 4 — multi-disc disc-set wiring** (deferred).
+      Was built on top of per-track stamping `games.disc_set_id`.
+      With fuzzy as primary, the canonical `game_name` carries the
+      "(Disc N)" suffix and grouping can move to display-time
+      rather than data-model-time. Re-evaluate after the operator
+      reports fuzzy hit rate from real libraries.
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
