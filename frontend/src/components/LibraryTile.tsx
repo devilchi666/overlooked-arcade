@@ -154,7 +154,19 @@ const LibraryTile: Component<Props> = (props) => {
       // selection — picking a game and then mousing toward the menu used to
       // re-focus whichever tiles the cursor crossed, which made "pick game,
       // open its settings" effectively impossible.
-      onClick={() => props.onFocus?.(props.entry)}
+      //
+      // Phase A1 Sub-phase 4 hotfix — disc-set tiles fire onLaunch on
+      // SINGLE click instead. The wrapped onLaunch handler in LibraryView
+      // opens the DiscPickerDialog rather than actually launching, so the
+      // operator's instinct of "click the set, see the discs" works. We
+      // still call onFocus first so the right pane / context menu pick
+      // up the focus state alongside the picker.
+      onClick={() => {
+        props.onFocus?.(props.entry);
+        if (props.entry.discSetId !== undefined) {
+          props.onLaunch(props.entry);
+        }
+      }}
       onDblClick={() => props.onLaunch(props.entry)}
       onContextMenu={(e) => {
         if (props.entry.seed || !props.onPickContext) return;
