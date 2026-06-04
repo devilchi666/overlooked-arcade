@@ -25,22 +25,22 @@ cores:
   blurb: Modern PC Engine core (gear* family). Active development.
 system_info:
   system_id: tg16
-  manufacturer: NEC / Hudson Soft
+  manufacturer: Hudson Soft (designed) / NEC Home Electronics (manufactured)
   type: Home Console
   generation: 4th Generation
-  release_date: October 30, 1987 (JP) / August 29, 1989 (NA)
-  discontinued: 1995
-  units_sold: ~10 Million (worldwide)
+  release_date: October 30, 1987 (JP — PC Engine) / August 29, 1989 (NA — TurboGrafx-16) / November 22, 1989 (FR) / December 21, 1989 (UK)
+  discontinued: December 25, 1993 (FR) / May 11, 1994 (NA) / December 16, 1994 (JP)
+  units_sold: 3.92 Million (HuCard); 5.84 Million including PC Engine CD-ROM² / Duo
   media: HuCard
-  cpu: HuC6280 @ 7.16 MHz
-  sound: HuC6280 PSG (6 channels)
-  resolution: 256 x 224 (typical)
-  color_palette: 482 colors (16 on-screen palettes × 16)
+  cpu: HuC6280 @ 7.16 MHz (8-bit)
+  sound: HuC6280 PSG + stereo PCM (5-10 bit)
+  resolution: 256 x 239 (standard) up to 565 x 242 (hi-res mode)
+  color_palette: 512 colors (482 simultaneous on-screen)
   display_ratio: 8:7 (4:3)
-  architecture: 8/16-Bit Hybrid
+  architecture: 8-Bit CPU / Dual 16-Bit Graphics
   max_players: 1-5 Players (with TurboTap)
   multiplayer: Yes — up to 5 via TurboTap multiplayer adapter
-  region: NTSC / NTSC-J
+  region: NTSC / NTSC-J / PAL (EU variants)
   storage: HuCard (2-20 Mbit)
   ram: 8 KB main / 64 KB VRAM
   video_output: RF / Composite / RGB (Japanese PC Engine)
@@ -52,10 +52,14 @@ system_info:
     glyph: 🔗
   - name: TurboStick
     glyph: 🕹️
+  - name: Avenue Pad 3
+    glyph: 🎮
   release_flag: 🇯🇵
   tagline: 8/16-BIT HOME CONSOLE
-  blurb: NEC's compact answer to Nintendo and Sega — an 8-bit CPU paired with a 16-bit graphics chip. Outsold the Famicom in Japan during its peak years, but never broke through in the West. Famous for vibrant shoot-'em-ups, Bonk, and a HuCard library packed onto credit-card-sized cartridges.
+  blurb: NEC's compact answer to Nintendo and Sega — an 8-bit CPU paired with dual 16-bit graphics chips. Outsold the Famicom in Japan during its peak years, but never broke through in the West. Famous for vibrant shoot-'em-ups, Bonk, and a HuCard library packed onto credit-card-sized cartridges.
   sidebar_subline: 8/16-BIT · 1987
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/TurboGrafx-16

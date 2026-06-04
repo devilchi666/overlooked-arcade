@@ -22,28 +22,32 @@ system_info:
   manufacturer: Bandai
   type: Handheld
   generation: 5th Generation
-  release_date: March 4, 1999 (JP, monochrome) / December 9, 2000 (JP, Color)
+  release_date: March 4, 1999 (JP, monochrome) / December 9, 2000 (JP, Color) / July 12, 2002 (JP, SwanCrystal)
   discontinued: 2003
-  units_sold: ~3.5 Million (all models, Japan)
+  units_sold: ~3.5 Million (all variants, Japan-exclusive; peaked at ~8% of JP handheld market)
   media: Cartridge
   cpu: NEC V30 MZ @ 3.072 MHz (16-bit, x86-compatible)
-  sound: Custom 4-channel PCM + noise (mono speaker)
+  sound: Custom 4-channel PCM (mono speaker, stereo via headphones)
   resolution: 224 x 144 (LCD)
-  color_palette: 8 shades (mono) / 4,096 colors with 241 on-screen (Color)
+  color_palette: 16 shades (mono — up to 8 on-screen) / 4,096 colors with 241 on-screen (Color)
   architecture: 16-Bit
   max_players: 1-2 Players
   multiplayer: Yes — 2 via link cable
-  region: NTSC-J (Japan only)
+  region: NTSC-J (Japan only — never released internationally)
   storage: Cartridge (1 MB - 16 MB) + EEPROM
-  ram: 16 KB (mono) / 64 KB (Color)
+  ram: 64 KB (mono) / 64 KB shared video+work (Color)
   aspect_ratio: 14:9 / 9:14 (rotatable LCD — portrait + landscape)
   peripherals:
-  - name: D-Pad + Buttons (4-direction × 2 sets)
-    glyph: 🎮
   - name: Link Cable
     glyph: 🔗
+  - name: WonderWave (IR transmitter)
+    glyph: 📡
+  - name: WonderBorg (robot)
+    glyph: 🤖
   - name: Headphone Adapter
     glyph: 🎧
+  - name: Mobile Adapter (cellular)
+    glyph: 📱
   release_flag: 🇯🇵
   tagline: 16-BIT HANDHELD
   blurb: Gunpei Yokoi's final handheld design, finished after his death by Bandai — Japan-only, two-axis controls (rotate the screen), and one of the longest battery lives ever on a portable. Famous for the only handheld Final Fantasy ports of the era, Klonoa Moonlight Museum, and a slim but cherished library.
@@ -51,3 +55,5 @@ system_info:
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/WonderSwan

@@ -18,34 +18,35 @@ cores:
   recommended: true
 system_info:
   system_id: atari7800
-  manufacturer: Atari
+  manufacturer: Atari Corporation
   type: Home Console
   generation: 3rd Generation
-  release_date: May 1986 (NA)
-  discontinued: 1992
-  units_sold: ~3.77 Million
+  release_date: May 1986 (NA — nationwide; after a limited 1984 test market) / 1987 (EU)
+  discontinued: January 1, 1992
   media: Cartridge
-  cpu: Atari SALLY (MOS 6502C) @ 1.79 MHz
+  cpu: Atari SALLY (MOS 6502C variant) @ 1.79 MHz (NTSC) / 1.77 MHz (PAL)
   sound: TIA (2 channels) + optional POKEY (4 channels, in cart)
-  resolution: 320 x 224
-  color_palette: 256 colors (25 on-screen typical)
+  resolution: 160 x 240 / 320 x 240 (288 vertical PAL)
+  color_palette: 256 colors (7 / 9 / 25 simultaneous on-screen depending on mode)
   architecture: 8-Bit
   max_players: 1-2 Players
   multiplayer: Yes — 2 local
   region: NTSC / PAL
   storage: Cartridge (16 KB - 144 KB)
-  ram: 4 KB
+  ram: 4 KB main + 48 KB general-purpose (no bank-switching needed)
   video_output: RF / Composite
   aspect_ratio: 4:3
   peripherals:
-  - name: ProLine Controller
+  - name: ProLine Joystick
     glyph: 🎮
-  - name: 2600 Joystick (backwards compatible)
+  - name: 2600 Joystick (backward-compatible)
     glyph: 🕹️
   release_flag: 🇺🇸
   tagline: 8-BIT ARCADE-AT-HOME
-  blurb: Atari's late answer to the NES — a system designed to bring arcade-quality graphics home, with bytes-on-the-screen sprite hardware that genuinely outclassed Nintendo's PPU. Doomed by Atari's post-crash distribution collapse rather than the hardware itself. Plays the 2600 catalog natively as a bonus.
+  blurb: Atari's late answer to the NES — a system designed to bring arcade-quality graphics home, with the MARIA custom graphics chip (running at 7.16 MHz — 4× the CPU clock) that genuinely outclassed Nintendo's PPU. Doomed by Atari's post-crash distribution collapse rather than the hardware itself. The first console with native backward compatibility — runs nearly the entire Atari 2600 catalog.
   sidebar_subline: 8-BIT · 1986
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Atari_7800

@@ -19,26 +19,30 @@ system_info:
   manufacturer: Nintendo
   type: Tabletop / Portable Console
   generation: 5th Generation
-  release_date: July 21, 1995 (JP) / August 14, 1995 (NA)
-  discontinued: 1996
-  units_sold: ~770,000
+  release_date: July 21, 1995 (JP) / August 14, 1995 (NA); never released in EU
+  discontinued: December 22, 1995 (JP) / August 1996 (NA)
+  units_sold: ~770,000 (Nintendo's lowest-selling standalone console)
   media: Cartridge
-  cpu: NEC V810 @ 20 MHz
-  sound: Custom VSU (6 PCM + 1 noise channels)
-  resolution: 384 x 224 (per eye, dual displays)
+  cpu: NEC V810 @ 20 MHz (32-bit RISC)
+  sound: Custom VSU (6 PCM + 1 noise channels, stereo)
+  resolution: 384 x 224 per eye (linear LED arrays with oscillating mirrors, ~50 Hz)
   color_palette: 4 shades of red
   architecture: 32-Bit
   max_players: 1 Player
   multiplayer: Link cable promised but never released
   region: NTSC / NTSC-J
   storage: Cartridge (1 MB - 2 MB) + SRAM in some carts
-  ram: 1 MB DRAM
-  video_output: Stereoscopic red LED arrays (224 LEDs × 2)
+  ram: 64 KB work PSRAM / 128 KB graphics DRAM / 128 KB Video RAM
+  video_output: Stereoscopic red LED arrays (one linear array per eye)
   peripherals:
-  - name: VB Controller
+  - name: VB Controller (M-shape, dual D-pads)
     glyph: 🎮
   - name: Adjustable Stand
     glyph: 🦵
+  - name: Battery Pack (6 AA)
+    glyph: 🔋
+  - name: AC Adapter
+    glyph: 🔌
   release_flag: 🇯🇵
   tagline: STEREOSCOPIC 32-BIT
   blurb: Nintendo's stereoscopic 3D experiment — a tabletop visor with twin red-LED displays that shipped before the technology was ready. Sold under a million units worldwide, killed within a year. Defended by enthusiasts for genuinely good games (Mario's Tennis, Virtual Boy Wario Land, Jack Bros.) hidden inside hardware that gave players headaches.
@@ -46,3 +50,5 @@ system_info:
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/Virtual_Boy

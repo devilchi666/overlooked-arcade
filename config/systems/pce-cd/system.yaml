@@ -27,23 +27,23 @@ cores:
   blurb: Modern PC Engine core (gear* family). Active development.
 system_info:
   system_id: pce-cd
-  manufacturer: NEC / Hudson Soft
+  manufacturer: Hudson Soft (designed) / NEC Home Electronics (manufactured)
   type: Home Console Add-on
   generation: 4th Generation
-  release_date: December 4, 1988 (JP) / November 1989 (NA)
-  discontinued: 1995
+  release_date: December 4, 1988 (JP — PC Engine CD-ROM²) / November 1989 (NA — TurboGrafx-CD)
+  discontinued: ~1995 (with host TurboGrafx / PC Engine line)
   media: CD-ROM
-  cpu: HuC6280 @ 7.16 MHz
+  cpu: HuC6280 @ 7.16 MHz (host system)
   sound: HuC6280 PSG + CD-DA + ADPCM
-  resolution: 256 x 224 (typical)
-  color_palette: 482 colors (16 on-screen palettes × 16)
+  resolution: 256 x 239 (standard) up to 565 x 242 (hi-res mode)
+  color_palette: 512 colors (482 simultaneous on-screen)
   display_ratio: 8:7 (4:3)
-  architecture: 8/16-Bit Hybrid
+  architecture: 8-Bit CPU / Dual 16-Bit Graphics
   max_players: 1-5 Players (with TurboTap)
   multiplayer: Yes — up to 5 via TurboTap multiplayer adapter
-  region: NTSC / NTSC-J
-  storage: CD-ROM (~540 MB) + 192 KB BRAM
-  ram: 64 KB main / 64 KB VRAM / 256 KB Arcade Card extension
+  region: NTSC / NTSC-J (no PAL release)
+  storage: CD-ROM (~600 MB) + 192 KB BRAM (save data)
+  ram: 64 KB host + System Card BIOS 64 KB / Super System Card 256 KB / Arcade Card 2 MB
   video_output: RF / Composite / RGB
   aspect_ratio: 4:3
   peripherals:
@@ -51,7 +51,9 @@ system_info:
     glyph: 🎮
   - name: TurboTap
     glyph: 🔗
-  - name: Arcade Card
+  - name: System Card / Super System Card (BIOS)
+    glyph: 💾
+  - name: Arcade Card (Duo / Pro)
     glyph: 💾
   release_flag: 🇯🇵
   tagline: 8/16-BIT CD ADD-ON
@@ -60,3 +62,5 @@ system_info:
   meta:
     schema_version: 1
     last_updated: 2026-06-04
+    contributors:
+    - https://en.wikipedia.org/wiki/TurboGrafx-CD
