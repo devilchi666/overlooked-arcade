@@ -1,9 +1,16 @@
-import { createMemo, Show, type Component } from "solid-js";
+import { createMemo, createSignal, Show, type Component } from "solid-js";
 import type { LibraryStore } from "../library/store";
 import type { RomEntry } from "../library/types";
 import type { LayoutStore } from "../layout/state";
 import type { SidebarView } from "../layout/LeftSidebar";
-import { collapseVariantGroups, filterEntries, groupEntries, sortEntries } from "../library/filter";
+import {
+  collapseDiscSets,
+  collapseVariantGroups,
+  filterEntries,
+  groupEntries,
+  sortEntries,
+} from "../library/filter";
+import DiscPickerDialog from "./DiscPickerDialog";
 import { useMedia } from "../library/media";
 import { systemThemes, type SystemId } from "../themes/registry";
 import type { ViewsStore } from "../views/store";
@@ -112,11 +119,23 @@ const LibraryView: Component<Props> = (props) => {
   // The store keeps `groupsByVariantId` empty for single-file games, so
   // unaffected libraries stay byte-identical to the pre-grouping
   // behaviour.
+  //
+  // Phase A1 Sub-phase 4 — disc-set collapse runs AFTER variant
+  // collapse. Result: a multi-disc game like "Final Fantasy IX" with
+  // four region variants × four discs renders as a single tile
+  // (variant collapse picks one region's disc set; disc-set collapse
+  // picks one disc of that set as the representative tile).
   const collapsed = createMemo(() => {
     const groups = props.library.groupsByVariantId();
-    if (groups.size === 0) return sorted();
-    const entryById = new Map(props.library.state.entries.map((e) => [e.id, e]));
-    return collapseVariantGroups(sorted(), groups, entryById);
+    const variantCollapsed =
+      groups.size === 0
+        ? sorted()
+        : collapseVariantGroups(
+            sorted(),
+            groups,
+            new Map(props.library.state.entries.map((e) => [e.id, e])),
+          );
+    return collapseDiscSets(variantCollapsed);
   });
   const grouped = createMemo(() =>
     groupEntries(collapsed(), props.layout.groupBy(), systemDisplayName),
@@ -146,6 +165,20 @@ const LibraryView: Component<Props> = (props) => {
   // not raw file count. A library with 3 Castlevania variants + 1 Bonk = 2 tiles.
   const count = () => collapsed().length;
   const hasAny = () => count() > 0;
+
+  // Phase A1 Sub-phase 4 — disc-set tile click intercept. The collapsed
+  // representative entry carries discSetId; tiles with it open the
+  // DiscPickerDialog instead of launching directly. The dialog fetches
+  // members via list_disc_set_members and forwards the operator's pick
+  // to the real `props.onLaunch`.
+  const [discPickerEntry, setDiscPickerEntry] = createSignal<RomEntry | null>(null);
+  const wrappedOnLaunch = (entry: RomEntry) => {
+    if (entry.discSetId !== undefined) {
+      setDiscPickerEntry(entry);
+    } else {
+      props.onLaunch(entry);
+    }
+  };
 
   return (
     <div class="flex h-full flex-col" data-system={selectedSystemId() ?? undefined}>
@@ -179,7 +212,7 @@ const LibraryView: Component<Props> = (props) => {
               <VirtualLibraryGrid
                 groups={grouped()}
                 tileWidth={props.layout.libraryTileSize()}
-                onLaunch={props.onLaunch}
+                onLaunch={wrappedOnLaunch}
                 onShowSaves={props.onShowSaves}
                 onPickContext={props.onPickContext}
                 onFocus={props.onFocus}
@@ -196,7 +229,7 @@ const LibraryView: Component<Props> = (props) => {
           >
             <DetailListView
               groups={grouped()}
-              onLaunch={props.onLaunch}
+              onLaunch={wrappedOnLaunch}
               onShowSaves={props.onShowSaves}
               onPickContext={props.onPickContext}
               onFocus={props.onFocus}
@@ -210,6 +243,15 @@ const LibraryView: Component<Props> = (props) => {
           </Show>
         </Show>
       </div>
+      <Show when={discPickerEntry()}>
+        {(entry) => (
+          <DiscPickerDialog
+            entry={entry()}
+            onLaunch={props.onLaunch}
+            onClose={() => setDiscPickerEntry(null)}
+          />
+        )}
+      </Show>
     </div>
   );
 };

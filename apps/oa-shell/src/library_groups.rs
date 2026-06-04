@@ -271,6 +271,8 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
+            disc_set_id: None,
+            disc_number: None,
         }
     }
 

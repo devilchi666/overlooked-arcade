@@ -445,6 +445,18 @@ pub struct GameRow {
     /// once a populated source exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
+    /// Phase A1 Sub-phase 4 — FK into `disc_sets.id` when this game
+    /// is one disc of a multi-disc set. NULL for single-disc games
+    /// and cart games. Stamped by `maybe_stamp_disc_set_membership`
+    /// at identify time. Drives library tile grouping (one tile per
+    /// set rather than one tile per disc).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_set_id: Option<i64>,
+    /// Phase A1 Sub-phase 4 — 1-based disc index within the parent
+    /// set ("Disc 1" / "Disc 2" / …). NULL for standalone games.
+    /// Drives the disc-picker overlay's ordering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_number: Option<u32>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -1717,7 +1729,7 @@ impl LibraryDb {
                         core_override, cover_path, seed, archive_inner_path,
                         sha1, serial, disc_id,
                         favorite, completed, last_played_at, play_time_secs,
-                        players, rating
+                        players, rating, disc_set_id, disc_number
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -1743,6 +1755,8 @@ impl LibraryDb {
                     play_time_secs: row.get(15)?,
                     players: row.get(16)?,
                     rating: row.get(17)?,
+                    disc_set_id: row.get(18)?,
+                    disc_number: row.get::<_, Option<i64>>(19)?.map(|n| n as u32),
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -1830,6 +1844,8 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
+                    disc_set_id: None,
+                    disc_number: None,
                 })
             })
             .map_err(|e| format!("query list_games_for_system: {e}"))?;
@@ -1995,6 +2011,8 @@ impl LibraryDb {
                 play_time_secs: 0,
                 players: None,
                 rating: None,
+                disc_set_id: None,
+                disc_number: None,
             }))
         } else {
             Ok(None)
@@ -2062,6 +2080,8 @@ impl LibraryDb {
                 play_time_secs: 0,
                 players: None,
                 rating: None,
+                disc_set_id: None,
+                disc_number: None,
             }))
         } else {
             Ok(None)
@@ -2173,6 +2193,8 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
+                    disc_set_id: None,
+                    disc_number: None,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -2654,6 +2676,8 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
+                    disc_set_id: None,
+                    disc_number: None,
                 })
             })
             .map_err(|e| format!("query list_disc_set_members: {e}"))?
@@ -3200,6 +3224,8 @@ impl LibraryDb {
                         play_time_secs: 0,
                         players: None,
                         rating: None,
+                        disc_set_id: None,
+                        disc_number: None,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -3246,6 +3272,8 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
+                    disc_set_id: None,
+                    disc_number: None,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -5130,6 +5158,8 @@ mod tests {
             play_time_secs: 0,
             players: None,
             rating: None,
+            disc_set_id: None,
+            disc_number: None,
         }
     }
 
