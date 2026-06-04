@@ -289,7 +289,7 @@ async fn get_system_metadat_cached(
     system_name: &str,
 ) -> Result<Vec<UpstreamMetadat>, String> {
     let cache_path = metadat_cache_path(app_data_dir, system_name);
-    if let Ok(bytes) = std::fs::read(&cache_path) {
+    if let Ok(bytes) = tokio::fs::read(&cache_path).await {
         if let Ok(cached) = serde_json::from_slice::<CachedMetadat>(&bytes) {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -373,12 +373,13 @@ async fn get_system_metadat_cached(
         entries: entries.clone(),
     };
     if let Some(parent) = cache_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let _ = tokio::fs::create_dir_all(parent).await;
     }
-    let _ = std::fs::write(
+    let _ = tokio::fs::write(
         &cache_path,
         serde_json::to_vec_pretty(&cached).unwrap_or_default(),
-    );
+    )
+    .await;
     if entries.is_empty() {
         log::warn!(
             "oa-shell: no metadat available for system {system_name} (all kinds 404 or empty); writing empty-marker (TTL {METADAT_EMPTY_CACHE_TTL_SECS}s)"

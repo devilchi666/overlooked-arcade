@@ -94,7 +94,7 @@ notify             = { version = "8", default-features = false, features = ["mac
 # Tokio runtime — we already pull it in transitively via reqwest, but call it
 # out explicitly so the background scan service's spawn_blocking has a clear
 # dependency on it. Same multi-thread runtime everything else shares.
-tokio              = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tokio              = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "fs"] }
 
 [profile.dev]
 opt-level = 1                  # Light optimization keeps debug builds usable at 60fps.
