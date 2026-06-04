@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 19;
+const SCHEMA_VERSION: i32 = 20;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -863,7 +863,72 @@ impl LibraryDb {
             );
         }
 
+        // v19 → v20: backfill games.disc_set_id + disc_number for
+        // multi-disc games identified BEFORE the Sub-phase 4 backend
+        // shipped (2026-06-04 `b6b4ae6`). Those games got their
+        // canonical title rewritten via fuzzy match in this session,
+        // but list_games_missing_hash excludes already-identified
+        // games so the next Identify ROMs run would NOT re-stamp
+        // them. This one-shot migration walks every disc game with
+        // a `(Disc N)` title and stamps the linkage so the library
+        // tile collapse + DiscPickerDialog work for pre-existing
+        // identifications too.
+        if current < 20 {
+            let n = Self::migrate_v19_to_v20(conn)?;
+            conn.pragma_update(None, "user_version", 20)
+                .map_err(|e| format!("set user_version=20: {e}"))?;
+            log::info!(
+                "library_db: schema migrated to v20 (backfilled disc_set_id on {n} pre-existing multi-disc games)"
+            );
+        }
+
         Ok(())
+    }
+
+    fn migrate_v19_to_v20(conn: &Connection) -> Result<usize, String> {
+        // SELECT every game whose title carries a `(Disc N)` suffix
+        // AND lacks a disc_set_id stamp. GLOB is faster than LIKE for
+        // this pattern and unambiguous about the literal parentheses.
+        let mut select_stmt = conn
+            .prepare(
+                "SELECT id, system_id, title FROM games \
+                 WHERE disc_set_id IS NULL AND title GLOB '* (Disc *)*'",
+            )
+            .map_err(|e| format!("prepare v20 backfill select: {e}"))?;
+        let rows: Vec<(String, String, String)> = select_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            })
+            .map_err(|e| format!("query v20 backfill: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect v20 backfill: {e}"))?;
+        drop(select_stmt);
+
+        let mut stamped = 0usize;
+        for (id, system_id, title) in rows {
+            let Some((base_title, disc_n)) =
+                crate::rom_hashes::extract_disc_set_candidate(&title)
+            else {
+                continue;
+            };
+            let set_id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM disc_sets WHERE system_id = ?1 AND canonical_title = ?2",
+                    params![&system_id, &base_title],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| format!("v20 disc_set lookup {id}: {e}"))?;
+            let Some(set_id) = set_id else { continue };
+            conn.execute(
+                "UPDATE games SET disc_set_id = ?1, disc_number = ?2 WHERE id = ?3",
+                params![set_id, disc_n as i64, &id],
+            )
+            .map_err(|e| format!("v20 backfill update {id}: {e}"))?;
+            stamped += 1;
+        }
+        log::debug!("v20 backfill: stamped {stamped} games");
+        Ok(stamped)
     }
 
     fn migrate_v18_to_v19(conn: &Connection) -> Result<(), String> {
@@ -6519,6 +6584,91 @@ mod tests {
             .lookup_rom_hashes_tracks_for_game("psx", "Nonexistent")
             .expect("lookup nonexistent");
         assert!(none.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn schema_v19_to_v20_backfills_disc_set_id_on_existing_identifications() {
+        // Phase A1 Sub-phase 4 hotfix — the v20 migration walks any
+        // game that already has its canonical title applied (sha1
+        // stamped via fuzzy match BEFORE the Sub-phase 4 backend
+        // shipped) and links it to the matching disc_sets row.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v20-backfill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db = LibraryDb::open(&tmp).expect("open");
+
+        // Seed a multi-disc canonical entry + 4 game rows with
+        // canonical titles already applied (sha1 NOT NULL) but
+        // disc_set_id IS NULL — simulates the pre-fix state.
+        db.upsert_disc_sets_for_system(
+            "psx",
+            &[("Final Fantasy IX (USA)".to_string(), 4)],
+        )
+        .expect("seed disc_sets");
+        // Also a non-multi-disc game to verify it's untouched.
+        let mut single = row("single", "Tomb Raider (USA)");
+        single.system_id = "psx".into();
+        single.sha1 = Some("aa".into());
+        // Multi-disc games with `(Disc N)` titles, sha1 stamped, no disc_set_id.
+        let mut g1 = row("ff9-d1", "Final Fantasy IX (USA) (Disc 1)");
+        g1.system_id = "psx".into();
+        g1.sha1 = Some("11".into());
+        let mut g2 = row("ff9-d2", "Final Fantasy IX (USA) (Disc 2)");
+        g2.system_id = "psx".into();
+        g2.sha1 = Some("22".into());
+        let mut g3 = row("ff9-d3", "Final Fantasy IX (USA) (Disc 3)");
+        g3.system_id = "psx".into();
+        g3.sha1 = Some("33".into());
+        let mut g4 = row("ff9-d4", "Final Fantasy IX (USA) (Disc 4)");
+        g4.system_id = "psx".into();
+        g4.sha1 = Some("44".into());
+        db.add_games(&[single, g1, g2, g3, g4]).expect("seed games");
+
+        // Acquire the inner connection to run the migration directly.
+        // (The bootstrap-on-open path already ran v20 on the fresh
+        // DB; this test exercises the actual migration function on a
+        // hand-built state.)
+        let conn = db.inner.lock().expect("lock");
+        let n = LibraryDb::migrate_v19_to_v20(&conn).expect("migrate v20");
+        assert_eq!(n, 4, "stamped all 4 multi-disc games");
+        drop(conn);
+
+        // Verify disc_set_id + disc_number are stamped on the 4 FF9
+        // discs and the standalone game is untouched.
+        let conn = db.inner.lock().expect("lock");
+        for (id, want_disc) in [("ff9-d1", 1), ("ff9-d2", 2), ("ff9-d3", 3), ("ff9-d4", 4)] {
+            let (set_id, disc_n): (Option<i64>, Option<i64>) = conn
+                .query_row(
+                    "SELECT disc_set_id, disc_number FROM games WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("query");
+            assert!(set_id.is_some(), "{id} got disc_set_id stamped");
+            assert_eq!(disc_n, Some(want_disc), "{id} disc_number");
+        }
+        let single_set: Option<i64> = conn
+            .query_row(
+                "SELECT disc_set_id FROM games WHERE id = 'single'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query single");
+        assert!(single_set.is_none(), "standalone game untouched");
+
+        // Idempotent: re-running stamps 0 (all already linked).
+        let n2 = LibraryDb::migrate_v19_to_v20(&conn).expect("re-run");
+        assert_eq!(n2, 0, "re-run is no-op");
+        drop(conn);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -235,7 +235,7 @@ pub struct DiscSetCandidate {
 /// `(Disc N)` suffix. Returns the (base_title, disc_number) pair on
 /// match; None otherwise. The base title is everything before the
 /// `(Disc ` token, with trailing whitespace trimmed.
-fn extract_disc_set_candidate(game_name: &str) -> Option<(String, u32)> {
+pub(crate) fn extract_disc_set_candidate(game_name: &str) -> Option<(String, u32)> {
     let start = game_name.find("(Disc ")?;
     let rest = &game_name[start + 6..];
     let end = rest.find(')')?;
