@@ -854,42 +854,27 @@ pub async fn sync_rom_hashes_for_system(
     let gate = state.gate_for(&systemId);
     let _gate_guard = gate.lock().await;
 
-    // Phase 4a dat_sync wiring — register the job before the work
-    // starts. Atomic single fetch + parse; bar shows
-    // running → 100% → done. Soft-fail when the registry isn't
-    // managed (matches the wiring shape every other kind uses).
+    // Phase 4a dat_sync — RAII guard owns the bar row. Drop
+    // auto-fails on `?` early-return (2026-06-04 refactor).
     let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
-    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        let label = format!("Updating ROM database — {}", systemId);
-        match reg.create_job(
-            crate::job_registry::JobKind::DatSync {
-                system_id: systemId.clone(),
-            },
-            label,
-            Some(systemId.clone()),
-            None,
-            false,
-            "entries",
-            None,
-        ) {
-            Ok(id) => {
-                let _ = reg.mark_running(id);
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(dat_sync) failed: {e}");
-                None
-            }
-        }
-    });
+    let scope = crate::job_registry::JobScope::start(
+        registry_state.as_deref(),
+        crate::job_registry::JobKind::DatSync {
+            system_id: systemId.clone(),
+        },
+        format!("Updating ROM database — {}", systemId),
+        Some(systemId.clone()),
+        None,
+        false,
+        "entries",
+        None,
+    );
 
     let app_data_dir = state.app_data_dir.clone();
     let refs = libretro_dat_refs_for_system_resolved(&systemId);
     if refs.is_empty() {
         log::info!("rom_hashes: no libretro-database mapping for {systemId}; skipping sync");
-        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-            let _ = reg.mark_completed(id);
-        }
+        scope.complete();
         return Ok(RomHashSyncSummary {
             system_id: systemId,
             upstream_entries: 0,
@@ -966,10 +951,8 @@ pub async fn sync_rom_hashes_for_system(
                     written,
                     from_cache: true,
                 });
-                if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-                    let _ = reg.progress(id, upstream_entries as i64, Some(upstream_entries as i64));
-                    let _ = reg.mark_completed(id);
-                }
+                scope.set_total(upstream_entries as i64);
+                scope.complete();
                 return Ok(RomHashSyncSummary {
                     system_id: systemId,
                     upstream_entries,
@@ -996,9 +979,7 @@ pub async fn sync_rom_hashes_for_system(
             log::warn!(
                 "rom_hashes: upstream has no dat for {systemId} (every ref 404'd)"
             );
-            if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-                let _ = reg.mark_completed(id);
-            }
+            scope.complete();
             return Ok(RomHashSyncSummary {
                 system_id: systemId,
                 upstream_entries: 0,
@@ -1065,13 +1046,11 @@ pub async fn sync_rom_hashes_for_system(
         from_cache: false,
     };
     let _ = app.emit("oa://rom-hashes-synced", &summary);
-    // Phase 4a dat_sync — finalize the registry row. Same shape as
-    // the early-return paths above (cache hit, empty refs, 404 dat) —
-    // each one finalizes its own outcome via finalize_dat_sync.
-    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-        let _ = reg.progress(id, upstream_entries as i64, Some(upstream_entries as i64));
-        let _ = reg.mark_completed(id);
-    }
+    // Phase 4a dat_sync — finalize via the RAII guard. Any earlier
+    // `?` propagation would auto-fail via Drop instead of leaving the
+    // row stuck in `running`.
+    scope.set_total(upstream_entries as i64);
+    scope.complete();
     Ok(summary)
 }
 
@@ -1258,38 +1237,27 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
         return Ok(());
     }
 
-    // Phase 4c — register the auto-sync as a visible DatSync prereq
-    // row in the bar. Bar will show "Updating ROM database — {system}
-    // (prereq)" while it runs; the parent_job_id link makes it clear
+    // Phase 4c — auto-sync as a visible DatSync prereq row in the
+    // bar via a RAII guard. The parent_job_id link makes it clear
     // it's part of the HashResolve flow.
     let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
-    let prereq_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        let label = if parent_job_id.is_some() {
-            format!("Updating ROM database — {} (prereq)", system_id)
-        } else {
-            format!("Updating ROM database — {}", system_id)
-        };
-        match reg.create_job(
-            crate::job_registry::JobKind::DatSync {
-                system_id: system_id.to_string(),
-            },
-            label,
-            Some(system_id.to_string()),
-            parent_job_id,
-            parent_job_id.is_some(),
-            "entries",
-            None,
-        ) {
-            Ok(id) => {
-                let _ = reg.mark_running(id);
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(dat_sync prereq) failed: {e}");
-                None
-            }
-        }
-    });
+    let label = if parent_job_id.is_some() {
+        format!("Updating ROM database — {} (prereq)", system_id)
+    } else {
+        format!("Updating ROM database — {}", system_id)
+    };
+    let scope = crate::job_registry::JobScope::start(
+        registry_state.as_deref(),
+        crate::job_registry::JobKind::DatSync {
+            system_id: system_id.to_string(),
+        },
+        label,
+        Some(system_id.to_string()),
+        parent_job_id,
+        parent_job_id.is_some(),
+        "entries",
+        None,
+    );
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
@@ -1298,9 +1266,7 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
         Ok(c) => c,
         Err(e) => {
             log::warn!("rom_hashes: reqwest client build failed: {e}");
-            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
-                let _ = reg.mark_failed(id, format!("reqwest client: {e}"));
-            }
+            scope.fail(format!("reqwest client: {e}"));
             return Ok(());
         }
     };
@@ -1362,10 +1328,8 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
                     from_cache: false,
                 },
             );
-            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
-                let _ = reg.progress(id, n as i64, Some(n as i64));
-                let _ = reg.mark_completed(id);
-            }
+            scope.set_total(n as i64);
+            scope.complete();
         }
         Ok(None) => {
             log::warn!(
@@ -1374,15 +1338,11 @@ pub(crate) async fn auto_sync_rom_hashes_if_empty(
             // No dat present upstream is a "success" from the prereq's
             // perspective — the parent (HashResolve) proceeds with an
             // empty hash table and lights up no canonical matches.
-            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
-                let _ = reg.mark_completed(id);
-            }
+            scope.complete();
         }
         Err(e) => {
             log::warn!("rom_hashes: auto-sync {system_id} fetch failed: {e}");
-            if let (Some(reg), Some(id)) = (registry_state.as_ref(), prereq_job_id) {
-                let _ = reg.mark_failed(id, e);
-            }
+            scope.fail(e);
         }
     }
     Ok(())
@@ -1432,43 +1392,34 @@ pub async fn resolve_rom_hashes_for_system(
     // wires the kind + label).
     let registry_state = app.try_state::<crate::job_registry::JobRegistry>();
     let disc_shape = is_disc_shape_system(&systemId);
-    let registry_job_id: Option<i64> = registry_state.as_ref().and_then(|reg| {
-        let (label, kind, unit) = if disc_shape {
-            (
-                format!("Identifying {} discs", systemId),
-                crate::job_registry::JobKind::DiscTrackHash {
-                    system_id: systemId.clone(),
-                },
-                "discs",
-            )
-        } else {
-            (
-                format!("Identifying {} ROMs", systemId),
-                crate::job_registry::JobKind::HashResolve {
-                    system_id: systemId.clone(),
-                },
-                "games",
-            )
-        };
-        match reg.create_job(
-            kind,
-            label,
-            Some(systemId.clone()),
-            None,
-            false,
-            unit,
-            None,
-        ) {
-            Ok(id) => {
-                let _ = reg.mark_running(id);
-                Some(id)
-            }
-            Err(e) => {
-                log::warn!("background_jobs: create_job(identify) failed: {e}");
-                None
-            }
-        }
-    });
+    let (label, kind, unit) = if disc_shape {
+        (
+            format!("Identifying {} discs", systemId),
+            crate::job_registry::JobKind::DiscTrackHash {
+                system_id: systemId.clone(),
+            },
+            "discs",
+        )
+    } else {
+        (
+            format!("Identifying {} ROMs", systemId),
+            crate::job_registry::JobKind::HashResolve {
+                system_id: systemId.clone(),
+            },
+            "games",
+        )
+    };
+    let scope = crate::job_registry::JobScope::start(
+        registry_state.as_deref(),
+        kind,
+        label,
+        Some(systemId.clone()),
+        None,
+        false,
+        unit,
+        None, // total set after list_games_missing_hash returns
+    );
+    let scope_id = scope.id();
 
     // Auto-sync if our local rom_hashes table is empty for this system.
     // Without this, "Identify ROMs" against an unsynced system returns
@@ -1483,7 +1434,7 @@ pub async fn resolve_rom_hashes_for_system(
         &app,
         &state.app_data_dir,
         &db,
-        registry_job_id,
+        scope_id,
     )
     .await?;
 
@@ -1532,11 +1483,10 @@ pub async fn resolve_rom_hashes_for_system(
             "rom_hashes: resolve {systemId} — no canonical entries available, returning early",
         );
         let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
-        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-            let _ = reg.mark_completed(id);
-        }
+        scope.complete();
         return Ok(summary);
     }
+    scope.set_total(total as i64);
 
     // Phase A1 pivot — build the filename-fuzzy index for disc-shape
     // systems once at the top. Keyed on `disc_filename_fuzzy_key` of
@@ -1663,13 +1613,10 @@ pub async fn resolve_rom_hashes_for_system(
     let mut done = 0usize;
     for g in games {
         done += 1;
-        // Phase 4a hash_resolve — registry tick. Total is fixed
-        // (`total` set above from list_games_missing_hash). 1 Hz
-        // SQLite debounce + 10 Hz Tauri event cap inside `progress`
-        // keeps the tight loop's overhead nil.
-        if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-            let _ = reg.progress(id, done as i64, Some(total as i64));
-        }
+        // Phase 4a hash_resolve — per-game tick. 1 Hz SQLite debounce
+        // + 10 Hz Tauri event cap inside `progress` keeps the tight
+        // loop's overhead nil.
+        scope.tick(done as i64);
         let ext = std::path::Path::new(g.archive_inner_path.as_deref().unwrap_or(&g.file_path))
             .extension()
             .and_then(|s| s.to_str())
@@ -2102,14 +2049,10 @@ pub async fn resolve_rom_hashes_for_system(
         summary.scanned, summary.matched, summary.unmatched, summary.skipped_cd, summary.errors,
     );
     let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
-    // Phase 4a hash_resolve — finalize the registry row at the end
-    // of the per-game iteration. Early-error paths above use `?` and
-    // would leave the row in `running` until the next launch's
-    // promote_running_rows_to_interrupted sweep; rare enough to defer
-    // a clean wrap to Phase 4b.
-    if let (Some(reg), Some(id)) = (registry_state.as_ref(), registry_job_id) {
-        let _ = reg.mark_completed(id);
-    }
+    // Phase 4a hash_resolve — finalize via the RAII guard. Earlier
+    // `?` propagations would auto-fail via Drop instead of leaving
+    // the row stuck in `running`.
+    scope.complete();
     Ok(summary)
 }
 

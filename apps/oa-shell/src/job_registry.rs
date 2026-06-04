@@ -638,6 +638,41 @@ impl JobRegistry {
         Ok(())
     }
 
+    /// Force the `total` column for a job row, bypassing the progress
+    /// debounce. Used by `JobScope::start` + `JobScope::set_total` so
+    /// the bar UI gets the total immediately rather than after the
+    /// first progress tick clears the SQL debounce window (~1s post-
+    /// create_job).
+    pub(crate) fn force_set_total(&self, job_id: i64, total: i64) -> Result<(), String> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE background_jobs SET total = ?1, last_event_at = ?2 WHERE id = ?3",
+            params![total, now_ms(), job_id],
+        )
+        .map_err(|e| format!("force_set_total: {e}"))?;
+        Ok(())
+    }
+
+    /// Force the `done` + `total` columns. Used by `JobScope::complete`
+    /// to bypass the SQL debounce on the final tick — the last
+    /// progress update before `mark_completed` would otherwise be
+    /// debounced out, leaving the row's `done` column stale and the
+    /// bar visibly stuck at the last persisted value.
+    pub(crate) fn force_set_done_total(
+        &self,
+        job_id: i64,
+        done: i64,
+        total: Option<i64>,
+    ) -> Result<(), String> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE background_jobs SET done = ?1, total = ?2, last_event_at = ?3 WHERE id = ?4",
+            params![done, total, now_ms(), job_id],
+        )
+        .map_err(|e| format!("force_set_done_total: {e}"))?;
+        Ok(())
+    }
+
     /// Persist the latest resume payload for `job_id`. Called by
     /// workers on cancel + on pause so the eventual resume path
     /// (Phase 3) has a checkpoint to restart from.
@@ -699,6 +734,202 @@ impl JobRegistry {
         self.tick_parent_if_any(job_id);
         r
     }
+}
+
+/// RAII guard for a background-jobs row. Replaces the verbose
+/// `create_job → mark_running → progress×N → mark_completed/mark_failed`
+/// boilerplate that every consumer had previously, AND closes the most
+/// common foot-gun in that pattern: a `?` early-return between
+/// `create_job` and `mark_completed` leaves the row in `running`
+/// state forever (until next launch's `promote_running_rows_to_interrupted`
+/// sweep promotes it to `interrupted`).
+///
+/// ## Lifecycle
+///
+/// 1. `JobScope::start` calls `create_job` + `mark_running` atomically
+///    and stashes the id.
+/// 2. Consumer calls `scope.tick(done)` per iteration. Total can be
+///    set up-front via the `total` arg or later via `set_total()`.
+/// 3. Consumer calls `scope.complete()` (success) or `scope.fail(err)`
+///    (explicit failure).
+/// 4. If the scope drops without complete()/fail() — typical for `?`
+///    early-returns — Drop calls `mark_failed` with a generic message
+///    so the row never hangs in `running`.
+///
+/// ## Why not `run_job_over_iter`?
+///
+/// A higher-order helper that wraps the entire "create + iterate +
+/// complete" pattern (option (c) in the 2026-06-04 audit) would force
+/// every consumer into one iterator-shape. Some of our jobs — media
+/// sync's repo-grouped concurrent work, scan_service's parallel
+/// classification — have legitimate reasons for hand-rolled iteration.
+/// JobScope keeps the structural fix (auto-finalize) without
+/// constraining the work shape.
+///
+/// **If progress-bar bugs keep surfacing after JobScope is in place**,
+/// the next iteration is the `run_job_over_iter` helper for the
+/// simple-loop consumers (hash_resolve, dat_sync, artwork_sync). See
+/// `docs/DECISIONS.md` 2026-06-04 entry for the trigger criteria.
+///
+/// ## No-registry mode
+///
+/// `JobScope::start` accepts `Option<&JobRegistry>` and silently
+/// degrades to a no-op scope when None. All methods are no-ops in
+/// that mode. Lets callers skip the `if let Some(reg) = ...` ceremony.
+pub struct JobScope<'a> {
+    inner: Option<JobScopeInner<'a>>,
+}
+
+struct JobScopeInner<'a> {
+    registry: &'a JobRegistry,
+    id: i64,
+    /// `i64::MIN` sentinel = total is None (unknown). Otherwise the
+    /// actual total. Using AtomicI64 keeps JobScope `Send`-friendly
+    /// for consumers that hold it across awaits.
+    total: AtomicI64,
+    /// `true` once complete()/fail() has run. Drop checks this to
+    /// avoid double-finalization.
+    finalized: AtomicBool,
+}
+
+const JOB_SCOPE_NO_TOTAL: i64 = i64::MIN;
+
+impl<'a> JobScope<'a> {
+    /// Create the row and mark it running. On registry=None or
+    /// create_job failure, returns a no-op scope (all methods become
+    /// no-ops). Failure is logged at warn level so the consumer's
+    /// code path stays simple.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start(
+        registry: Option<&'a JobRegistry>,
+        kind: JobKind,
+        label: String,
+        system_id: Option<String>,
+        parent_job_id: Option<i64>,
+        is_prereq: bool,
+        unit: &'static str,
+        total: Option<i64>,
+    ) -> Self {
+        let Some(reg) = registry else {
+            return Self { inner: None };
+        };
+        let id = match reg.create_job(
+            kind,
+            label,
+            system_id,
+            parent_job_id,
+            is_prereq,
+            unit,
+            None,
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                log::warn!("background_jobs: JobScope::start create_job failed: {e}");
+                return Self { inner: None };
+            }
+        };
+        if let Err(e) = reg.mark_running(id) {
+            log::warn!("background_jobs: JobScope::start mark_running failed: {e}");
+        }
+        // Flush the initial total to SQLite immediately so the bar's
+        // first snapshot read carries it. Without this, the row's
+        // total stays NULL until the first progress tick clears the
+        // 1s SQL debounce — fine for long-running jobs, broken for
+        // jobs that finish in under a second.
+        if let Some(t) = total {
+            if let Err(e) = reg.force_set_total(id, t) {
+                log::warn!("background_jobs: JobScope::start force_set_total failed: {e}");
+            }
+        }
+        Self {
+            inner: Some(JobScopeInner {
+                registry: reg,
+                id,
+                total: AtomicI64::new(total.unwrap_or(JOB_SCOPE_NO_TOTAL)),
+                finalized: AtomicBool::new(false),
+            }),
+        }
+    }
+
+    /// Update the registry's progress. `done` is the latest count;
+    /// total comes from the scope (set at start or via `set_total`).
+    /// No-op when this is a no-registry scope.
+    pub fn tick(&self, done: i64) {
+        if let Some(i) = &self.inner {
+            let total = i.total.load(Ordering::Relaxed);
+            let total_opt = if total == JOB_SCOPE_NO_TOTAL { None } else { Some(total) };
+            let _ = i.registry.progress(i.id, done, total_opt);
+        }
+    }
+
+    /// Set / update the total. Useful when the count is unknown at
+    /// `start` time (e.g. after a `list_games_missing_hash` query).
+    /// Forces the new total to SQLite immediately so the bar reflects
+    /// it without waiting for the next progress tick to clear the
+    /// debounce.
+    pub fn set_total(&self, total: i64) {
+        if let Some(i) = &self.inner {
+            i.total.store(total, Ordering::Relaxed);
+            if let Err(e) = i.registry.force_set_total(i.id, total) {
+                log::warn!("background_jobs: JobScope::set_total failed: {e}");
+            }
+        }
+    }
+
+    /// The underlying job_id, if this scope is real. Returns None
+    /// for no-registry scopes. Used by callers that need to pass
+    /// the parent_job_id to a child scope.
+    pub fn id(&self) -> Option<i64> {
+        self.inner.as_ref().map(|i| i.id)
+    }
+
+    /// Mark completed. Sets the final progress tick to (total, total)
+    /// when total is known so the bar shows 100% before the row
+    /// transitions to history. Idempotent — second call is a no-op.
+    /// Uses `force_set_done_total` to bypass the SQL debounce on this
+    /// final tick — the bar would otherwise show the last debounced
+    /// `done` value instead of 100%.
+    pub fn complete(&self) {
+        if let Some(i) = &self.inner {
+            if !i.finalized.swap(true, Ordering::AcqRel) {
+                let total = i.total.load(Ordering::Relaxed);
+                if total != JOB_SCOPE_NO_TOTAL {
+                    let _ = i
+                        .registry
+                        .force_set_done_total(i.id, total, Some(total));
+                }
+                let _ = i.registry.mark_completed(i.id);
+            }
+        }
+    }
+
+    /// Mark failed with an explicit error. Idempotent — second call
+    /// is a no-op. Once called, Drop will not re-finalize.
+    pub fn fail(&self, error: String) {
+        if let Some(i) = &self.inner {
+            if !i.finalized.swap(true, Ordering::AcqRel) {
+                let _ = i.registry.mark_failed(i.id, error);
+            }
+        }
+    }
+}
+
+impl Drop for JobScope<'_> {
+    fn drop(&mut self) {
+        if let Some(i) = &self.inner {
+            if !i.finalized.swap(true, Ordering::AcqRel) {
+                let _ = i.registry.mark_failed(
+                    i.id,
+                    "JobScope dropped without explicit complete() or fail() \
+                     — likely a `?` early-return in the consumer"
+                        .to_string(),
+                );
+            }
+        }
+    }
+}
+
+impl JobRegistry {
 
     /// Phase 4b parent aggregation — when a child finalizes, look up
     /// its parent_job_id (if any), recount finished siblings, and
@@ -1552,6 +1783,155 @@ mod tests {
         let snap = reg.snapshot(job_id).unwrap().unwrap();
         assert_eq!(snap.state, JobState::Cancelled);
         assert!(reg.handle(job_id).is_none());
+    }
+
+    // ---- JobScope RAII guard ----
+
+    #[test]
+    fn job_scope_start_with_none_registry_is_noop() {
+        // Pure type-level check that the no-op scope handles every
+        // method without panicking. id() returns None; tick / set_total
+        // / complete / fail just silently no-op.
+        let scope = JobScope::start(
+            None,
+            JobKind::TestJob { name: "x".into() },
+            "x".into(),
+            None,
+            None,
+            false,
+            "n",
+            Some(10),
+        );
+        assert!(scope.id().is_none());
+        scope.tick(5);
+        scope.set_total(20);
+        scope.complete();
+        scope.fail("won't fire".into());
+    }
+
+    #[test]
+    fn job_scope_round_trips_through_complete() {
+        let (reg, _tmp) = fresh_registry();
+        let scope = JobScope::start(
+            Some(&reg),
+            JobKind::TestJob { name: "round-trip".into() },
+            "Round trip".into(),
+            None,
+            None,
+            false,
+            "items",
+            Some(10),
+        );
+        let id = scope.id().expect("real scope has id");
+        // Row is running with the total set.
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.state, JobState::Running);
+        assert_eq!(snap.total, Some(10));
+        scope.tick(5);
+        scope.complete();
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.state, JobState::Completed);
+        assert_eq!(snap.done, 10, "complete() ticks done to total");
+    }
+
+    #[test]
+    fn job_scope_drop_without_complete_marks_failed() {
+        // The core foot-gun fix: forgetting to call complete()/fail()
+        // — typical for `?` early-returns — causes Drop to mark_failed
+        // so the row never hangs in `running`.
+        let (reg, _tmp) = fresh_registry();
+        let id;
+        {
+            let scope = JobScope::start(
+                Some(&reg),
+                JobKind::TestJob { name: "drop-fail".into() },
+                "Drop fail".into(),
+                None,
+                None,
+                false,
+                "items",
+                Some(5),
+            );
+            id = scope.id().expect("id");
+            // scope drops here without complete/fail
+        }
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.state, JobState::Failed);
+        assert!(snap.error_message.as_deref().unwrap_or("").contains("dropped"));
+    }
+
+    #[test]
+    fn job_scope_complete_is_idempotent() {
+        let (reg, _tmp) = fresh_registry();
+        let scope = JobScope::start(
+            Some(&reg),
+            JobKind::TestJob { name: "idem".into() },
+            "Idem".into(),
+            None,
+            None,
+            false,
+            "items",
+            Some(3),
+        );
+        let id = scope.id().unwrap();
+        scope.complete();
+        scope.complete(); // second call no-ops
+        scope.fail("won't fire".into()); // no-op after complete
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.state, JobState::Completed);
+    }
+
+    #[test]
+    fn job_scope_fail_overrides_drop_message() {
+        let (reg, _tmp) = fresh_registry();
+        let id;
+        {
+            let scope = JobScope::start(
+                Some(&reg),
+                JobKind::TestJob { name: "fail-msg".into() },
+                "Fail msg".into(),
+                None,
+                None,
+                false,
+                "items",
+                None,
+            );
+            id = scope.id().unwrap();
+            scope.fail("explicit consumer error".into());
+            // scope still drops here, but Drop sees finalized=true and no-ops.
+        }
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.state, JobState::Failed);
+        assert_eq!(snap.error_message.as_deref(), Some("explicit consumer error"));
+    }
+
+    #[test]
+    fn job_scope_set_total_late_lets_consumer_post_initial_count() {
+        // Many consumers don't know the total at create-time (e.g.
+        // rom_hashes resolve fetches list_games_missing_hash AFTER the
+        // job row is up). set_total covers that case.
+        let (reg, _tmp) = fresh_registry();
+        let scope = JobScope::start(
+            Some(&reg),
+            JobKind::TestJob { name: "late-total".into() },
+            "Late total".into(),
+            None,
+            None,
+            false,
+            "items",
+            None,
+        );
+        let id = scope.id().unwrap();
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.total, None);
+        scope.set_total(42);
+        scope.tick(1);
+        // Force a SQL flush by waiting past the debounce window.
+        std::thread::sleep(std::time::Duration::from_millis(1_100));
+        scope.tick(2);
+        let snap = reg.snapshot(id).expect("snap").expect("present");
+        assert_eq!(snap.total, Some(42));
+        scope.complete();
     }
 
     #[test]
