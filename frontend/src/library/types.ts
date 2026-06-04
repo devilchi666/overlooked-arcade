@@ -61,6 +61,12 @@ export type RomEntry = {
   /// 1-based disc index within the parent set ("Disc 1" / "Disc 2"
   /// / …). Undefined for standalone games. Orders the disc-picker.
   discNumber?: number;
+  /// Phase A1 Sub-phase 4 polish — frontend-only field stamped by
+  /// `collapseDiscSets` on the representative tile of a multi-disc
+  /// set. Drives the `💿 N` badge in LibraryTile and the operator's
+  /// at-a-glance disc count. Backend never sets this; it survives
+  /// only inside the collapsed list passed to the grid renderer.
+  discSetMemberCount?: number;
 };
 
 export type LibraryState = {
