@@ -2718,6 +2718,59 @@ impl LibraryDb {
         Ok(n)
     }
 
+    /// Return one [`RomTrackRow`] per distinct game_name in
+    /// `rom_hashes_tracks` for the system, picking the
+    /// lowest-track-number entry as the stamp marker. Used by the
+    /// filename-fuzzy identification path (Phase A1 pivot
+    /// 2026-06-03) to build an in-memory index of canonical titles
+    /// for the system.
+    pub fn list_canonical_disc_titles(
+        &self,
+        system_id: &str,
+    ) -> Result<Vec<RomTrackRow>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        // Subquery picks min track_number per (system_id, game_name)
+        // so we get one row per game, with a deterministic stamp sha1.
+        let mut stmt = conn
+            .prepare(
+                "SELECT t1.sha1, t1.system_id, t1.game_name, t1.serial,
+                        t1.track_number, t1.track_mode, t1.size_bytes
+                 FROM rom_hashes_tracks t1
+                 WHERE t1.system_id = ?1
+                   AND t1.track_number = (
+                       SELECT MIN(t2.track_number)
+                       FROM rom_hashes_tracks t2
+                       WHERE t2.system_id = t1.system_id
+                         AND t2.game_name = t1.game_name
+                   )",
+            )
+            .map_err(|e| format!("prepare list_canonical_disc_titles: {e}"))?;
+        let mut rows = stmt
+            .query(params![system_id])
+            .map_err(|e| format!("query list_canonical_disc_titles: {e}"))?;
+        let mut out = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("step list_canonical_disc_titles: {e}"))?
+        {
+            out.push(RomTrackRow {
+                sha1: row.get(0).map_err(|e| format!("col: {e}"))?,
+                system_id: row.get(1).map_err(|e| format!("col: {e}"))?,
+                game_name: row.get(2).map_err(|e| format!("col: {e}"))?,
+                serial: row.get(3).map_err(|e| format!("col: {e}"))?,
+                track_number: row
+                    .get::<_, i64>(4)
+                    .map_err(|e| format!("col: {e}"))? as u32,
+                track_mode: row.get(5).map_err(|e| format!("col: {e}"))?,
+                size_bytes: row.get(6).map_err(|e| format!("col: {e}"))?,
+            });
+        }
+        Ok(out)
+    }
+
     /// Look up the canonical-side per-track entries for a game name +
     /// system. Used by the strictness evaluator to verify the
     /// operator's full track set against the candidate's full set

@@ -1236,3 +1236,35 @@ shape as `config/systems/<id>/system.yaml` editability.
 **Cross-ref:** [2026-06-03 Launcher abstraction reversal entry](#2026-06-03--reversal-oa-supports-external-standalone-emulators-via-a-launcher-abstraction);
 [docs/PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
 
+
+
+---
+
+## 2026-06-03 — Pivot: filename-fuzzy primary, per-track SHA-1 experimental
+
+**Decision:** Per-track SHA-1 disc identification (Phase A1 Sub-phases 1–3 of the virtual library + launcher arc) is moved from primary to opt-in behind a `LibraryPrefs.disc_track_experimental_enabled` flag (default OFF). Filename-fuzzy matching against `rom_hashes_tracks.game_name` becomes the new primary disc-shape identification path.
+
+**Why:** Operator playtest 2026-06-03 measured **0% per-track match rate** on the real library. Two stacking architectural limitations made the per-track architecture fundamentally inert on the operator's actual data:
+
+1. **CHD round-trips lose bytes.** `chdman extractcd` on Dreamcast GD-ROM "4 Wheel Thunder (USA)" Track 18 produced 338,704,464 bytes vs redump's cataloged 339,233,664 — exactly **225 sectors short** (225 × 2352 = 529,200 byte delta). The diff is a fixed convention difference in how chdman handles the SD/HD area boundary that no amount of fixing our SHA-1 path catches; redump's per-track SHA-1 was computed over DiscImageCreator's source .bin, which CHD does not preserve byte-for-byte. Likely consistent across all GD-ROM CHDs; possibly different but similarly fatal offsets for other system CHDs (untested).
+2. **Archived disc images are skipped.** Sub-phase 3 deferred per-track-through-archive to v2 because multi-GB streaming through `oa-shell`'s archive reader OOMs. The operator's PSX library is 100% .zip-archived (common to save space), so per-track was inert there from day one.
+
+After 1 + 2: per-track works only for **raw, unarchived, DiscImageCreator-shape .cue+.bin** — a niche of operators. The plan's expected use case (broad identification across normal libraries) doesn't materialize.
+
+**What replaces it:** filename-fuzzy match. Build an in-memory `HashMap<normalized_filename_key, RomTrackRow>` per resolve call from `rom_hashes_tracks` distinct game_names; compare operator filenames via `disc_filename_fuzzy_key` (strip extension, lowercase, separator punctuation → space, preserve regional brackets). On hit: stamp canonical title + serial + canonical's first-track SHA-1 as marker. Works on any container shape, any storage shape — only the filename matters.
+
+**What we considered and rejected:**
+
+- **Fix the CHD/redump byte offset.** Requires hand-investigating chdman's GD-ROM SD/HD boundary handling for each system + reverse-engineering DiscImageCreator's source byte layout. Wouldn't fix archived-disc skip. Multi-week effort for diminishing returns.
+- **Implement archive-aware per-track.** Streaming a 700 MB .bin through `oa-shell`'s archive reader requires either loading the whole file into memory (OOMs at PS2 scale) or a streaming archive crate that supports seek-by-byte-range. Doable but multi-week, and doesn't address the CHD case.
+- **Match against chdman's own embedded per-track `data_sha1` field** (added MAME 2023). Would require a public database catalogging those values; redump doesn't publish them, and no community database exists. Would have to fork a hash-catalog effort, which is well outside our scope.
+- **Drop disc identification entirely.** Keep peek_disc_id at ~12% Dreamcast / 0% archived PSX hit rates as the only path. Rejected as worse than what fuzzy delivers.
+
+**What we keep from Sub-phases 1+2+3:**
+
+- ✅ Schema v18→v19 (`rom_hashes_tracks`, `game_disc_tracks`, `disc_sets`) — used by fuzzy to source canonical titles, and necessary for opt-in per-track.
+- ✅ `disc_track_hash` engine — correct implementation, just gated.
+- ✅ Sync flow + `JobKind::DiscTrackHash` + `LibraryPrefs.disc_track_strictness` — functional behind the flag.
+- ⚠️ Sub-phase 4 (multi-disc disc-set wiring on `games.disc_set_id`) — deferred. The fuzzy path's canonical names carry the "(Disc N)" suffix; grouping moves to display-time rather than data-model-time. Re-evaluate once fuzzy hit-rate is measured operator-side.
+
+**Cross-ref:** [docs/PLANS/disc-track-sha1-matching.md "Pivot 2026-06-03" section](PLANS/disc-track-sha1-matching.md); operator playtest in oa-current.log 2026-06-03 17:27–20:20.
