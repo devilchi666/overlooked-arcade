@@ -21,3 +21,6 @@ cores:
   display_name: PPSSPP
   blurb: PlayStation Portable. The standard pick, runs most games well.
   recommended: true
+analog_sticks:
+  kind: single
+  left_label: Analog Nub

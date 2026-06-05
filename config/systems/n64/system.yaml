@@ -19,3 +19,6 @@ cores:
 - base: parallel_n64_libretro
   display_name: ParaLLEl N64
   blurb: N64 with ParaLLEl-RDP/RSP. Accuracy-focused, demands a strong GPU.
+analog_sticks:
+  kind: single
+  left_label: Analog Stick

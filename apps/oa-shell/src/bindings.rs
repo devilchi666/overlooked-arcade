@@ -3831,64 +3831,42 @@ pub fn defaults_for(system_id: &str) -> Option<Bindings> {
 /// Friendly labels keep the UI period-correct: "Analog Stick" for N64,
 /// "Main Stick" + "C-Stick" for GameCube, "Left Stick" + "Right Stick"
 /// for DualShock-family systems, etc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnalogSticks {
     /// No analog input on this system. UI hides the Analog section.
     None,
     /// One analog stick. The label is what shows in the UI panel
     /// header (e.g. "Analog Stick" for N64 / Dreamcast).
-    Single { left_label: &'static str },
+    Single { left_label: String },
     /// Two analog sticks. Both labels show as panel headers.
-    Dual { left_label: &'static str, right_label: &'static str },
+    Dual { left_label: String, right_label: String },
 }
 
+/// Resolve the per-system analog-stick topology from the loaded
+/// `config/systems/<id>/system.yaml`. Returns `AnalogSticks::None`
+/// when:
+/// - the system is unknown to the registry,
+/// - the descriptor omits the `analog_sticks:` block (digital-only
+///   systems author nothing — `Option<AnalogSticksDescriptor> = None`
+///   deserializes from absence).
+///
+/// Migrated 2026-06-05 from a hardcoded 7-arm Rust match in this
+/// file. See [`crate::system_descriptor::AnalogSticksDescriptor`] for
+/// the YAML shape. The shipped topology values match the prior
+/// hardcoded list exactly — the migration is data-equivalent.
 pub fn analog_sticks_for(system_id: &str) -> AnalogSticks {
-    match system_id {
-        // Nintendo N64 — one analog stick, the iconic 3-prong controller.
-        "n64" => AnalogSticks::Single { left_label: "Analog Stick" },
-        // Nintendo GameCube — main stick + C-stick (genuinely analog,
-        // not a 4-button cluster). Wii Classic Controller / Wavebird
-        // share this shape.
-        "gamecube" => AnalogSticks::Dual {
-            left_label: "Main Stick",
-            right_label: "C-Stick",
-        },
-        // Sega Dreamcast — single analog stick on the standard pad.
-        // (The Twin-Stick controller for Virtual On has two but ships
-        // as a per-game alternate, not the default.)
-        "dreamcast" => AnalogSticks::Single { left_label: "Analog Stick" },
-        // Sony PSP — single analog nub. The PSP Go added a similar one;
-        // the right-side "analog" on the Vita is a separate slug.
-        "psp" => AnalogSticks::Single { left_label: "Analog Nub" },
-        // Sony PSX DualShock + PS2 DualShock 2 — left + right sticks.
-        // Pressure-sensitive face buttons + analog L2/R2 are a separate
-        // Phase 2.5 polish dimension (not surfaced here).
-        "psx" | "ps2" => AnalogSticks::Dual {
-            left_label: "Left Stick",
-            right_label: "Right Stick",
-        },
-        // Sega Saturn 3D Pad — single analog stick + analog L/R triggers.
-        // Default Saturn pad is digital-only; the 3D Pad is selected
-        // via core options per-game (NiGHTS, Sega Rally, Panzer Dragoon
-        // Saga). Surface the analog UI even on the digital default —
-        // operators using 3D Pad mode need it.
-        "saturn" => AnalogSticks::Single { left_label: "Analog Stick (3D Pad)" },
-        // Nintendo Virtual Boy — the VB controller has DUAL physical
-        // 4-way D-pads (LEFT + RIGHT), one for each hand, designed
-        // around the stereoscopic 3D + dual-anchor gameplay shape of
-        // titles like Mario Clash, VB Wario Land, Teleroboxer, Red
-        // Alarm, and Vertical Force. Beetle VB exposes the left D-pad
-        // via libretro D-pad bits + the right D-pad via the right
-        // analog stick. Surfacing both panels in the per-system
-        // Bindings UI lets keyboard-only operators bind the right
-        // D-pad via the `default_analog_routing("virtualboy")` Numpad
-        // fallback; gamepad users get it via right analog stick.
-        "virtualboy" => AnalogSticks::Dual {
-            left_label: "Left D-pad",
-            right_label: "Right D-pad",
-        },
-        // Everything else: no analog inputs.
-        _ => AnalogSticks::None,
+    let Some(loaded) = crate::system_registry::global_registry().get(system_id) else {
+        return AnalogSticks::None;
+    };
+    match loaded.descriptor.analog_sticks.clone() {
+        None => AnalogSticks::None,
+        Some(crate::system_descriptor::AnalogSticksDescriptor::Single { left_label }) => {
+            AnalogSticks::Single { left_label }
+        }
+        Some(crate::system_descriptor::AnalogSticksDescriptor::Dual {
+            left_label,
+            right_label,
+        }) => AnalogSticks::Dual { left_label, right_label },
     }
 }
 
@@ -4039,6 +4017,78 @@ mod tests {
         assert_eq!(lynx_to_libretro_bits(all), all);
         // Stray high bits get masked off (no spurious libretro buttons).
         assert_eq!(lynx_to_libretro_bits(all | (1 << 20)), all);
+    }
+
+    #[test]
+    fn analog_sticks_for_matches_pre_migration_topology() {
+        // Migration to per-system YAML descriptors must be data-
+        // equivalent to the pre-2026-06-05 hardcoded Rust match — the
+        // 8 systems that returned non-None still resolve to the same
+        // (kind, labels), every other system stays None. Reads through
+        // the global_registry OnceLock which lazily walks
+        // CARGO_MANIFEST_DIR/../../config/systems/ in test contexts.
+        assert_eq!(
+            analog_sticks_for("n64"),
+            AnalogSticks::Single { left_label: "Analog Stick".to_string() },
+        );
+        assert_eq!(
+            analog_sticks_for("gamecube"),
+            AnalogSticks::Dual {
+                left_label: "Main Stick".to_string(),
+                right_label: "C-Stick".to_string(),
+            },
+        );
+        assert_eq!(
+            analog_sticks_for("dreamcast"),
+            AnalogSticks::Single { left_label: "Analog Stick".to_string() },
+        );
+        assert_eq!(
+            analog_sticks_for("psp"),
+            AnalogSticks::Single { left_label: "Analog Nub".to_string() },
+        );
+        assert_eq!(
+            analog_sticks_for("psx"),
+            AnalogSticks::Dual {
+                left_label: "Left Stick".to_string(),
+                right_label: "Right Stick".to_string(),
+            },
+        );
+        assert_eq!(
+            analog_sticks_for("ps2"),
+            AnalogSticks::Dual {
+                left_label: "Left Stick".to_string(),
+                right_label: "Right Stick".to_string(),
+            },
+        );
+        assert_eq!(
+            analog_sticks_for("saturn"),
+            AnalogSticks::Single {
+                left_label: "Analog Stick (3D Pad)".to_string(),
+            },
+        );
+        assert_eq!(
+            analog_sticks_for("virtualboy"),
+            AnalogSticks::Dual {
+                left_label: "Left D-pad".to_string(),
+                right_label: "Right D-pad".to_string(),
+            },
+        );
+        // Spot-check digital-only systems that should stay None — the
+        // descriptor either omits analog_sticks: entirely OR isn't in
+        // the registry at all.
+        for digital_only in &["nes", "snes", "tg16", "gb", "gba", "lynx"] {
+            assert_eq!(
+                analog_sticks_for(digital_only),
+                AnalogSticks::None,
+                "{digital_only} should have no analog sticks",
+            );
+        }
+        // Unknown system id falls through to None (defensive — the
+        // registry returns None for unknown ids; we don't panic).
+        assert_eq!(
+            analog_sticks_for("not-a-real-system"),
+            AnalogSticks::None,
+        );
     }
 
     #[test]

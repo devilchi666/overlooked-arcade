@@ -19,3 +19,7 @@ cores:
 - base: play_libretro
   display_name: Play!
   blurb: Lighter PS2 core. Lower compatibility.
+analog_sticks:
+  kind: dual
+  left_label: Left Stick
+  right_label: Right Stick

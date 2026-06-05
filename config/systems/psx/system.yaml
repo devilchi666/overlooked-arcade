@@ -34,6 +34,10 @@ cores:
   display_name: PCSX-ReARMed
   blurb: Lightweight PSX, originally for ARM. Strong perf-per-watt.
   bios_required: scph5500.bin / scph5501.bin / scph5502.bin
+analog_sticks:
+  kind: dual
+  left_label: Left Stick
+  right_label: Right Stick
 system_info:
   system_id: psx
   manufacturer: Sony Computer Entertainment

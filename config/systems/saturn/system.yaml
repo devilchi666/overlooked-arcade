@@ -32,3 +32,10 @@ cores:
   display_name: Yabause
   blurb: Older Saturn core, original Yabause branch.
   bios_required: sega_101.bin (or equivalent)
+# Default Saturn pad is digital-only; the 3D Pad is selected via core
+# options per-game (NiGHTS, Sega Rally, Panzer Dragoon Saga). Surfacing
+# the analog UI regardless so operators using 3D Pad mode have the
+# panel — empty analog routing is harmless on the digital-only games.
+analog_sticks:
+  kind: single
+  left_label: Analog Stick (3D Pad)
