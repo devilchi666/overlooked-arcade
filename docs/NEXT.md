@@ -342,6 +342,25 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Dynamic controller info — consume `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` (IN FLIGHT)
+
+**Branch:** `feat/dynamic-controller-info`
+**Plan:** [docs/PLANS/dynamic-controller-info.md](PLANS/dynamic-controller-info.md)
+**Drives:** every light-gun + peripheral validation across the project (NES Zapper, SMS Light Phaser, SNES Super Scope, PSX GunCon, Saturn Virtua Gun, Dreamcast Light Gun, Atari 7800 XEGS, Arkanoid paddles, Power Pad, SNES Mouse, multitaps).
+
+**Why this and not per-system patches:** Every libretro core extends the device-id space via `RETRO_DEVICE_SUBCLASS(base, id) = ((id + 1) << 8) | base`. FCEUmm's Zapper is id=258, snes9x's Super Scope is 260, Genesis Plus GX's Light Phaser is 260, Beetle PSX's GunCon is 260 — none of which match the standard `RETRO_DEVICE_LIGHTGUN = 4` our hardcoded dropdown ships. Hardcoding per-core tables in the frontend means re-doing the work for every core + every upstream change. Cores already publish their full per-port supported-device list via `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`; we ack the env call (`state.rs:1216`) but discard the data. Consuming it makes the dropdown derive itself from whatever each core advertises, in the core's own language ("Zapper" / "Light Phaser" / "GunCon").
+
+**Prerequisite already on main:** Commit `ee0f813` (`feat(input): mirror mouse pointer state to ports 1-4`) — without this, even a correctly-dispatched LIGHTGUN to port 1 reads `(0, 0)` because the pointer state never flowed past port 0.
+
+**Slices:**
+- **Slice 1** — Rust: parse `SET_CONTROLLER_INFO` in `crates/oa-libretro/src/state.rs` (walk the null-terminated `retro_controller_info` array, clone strings to owned `String`, store as per-port `Vec<DeviceDescriptor>`). Add `LibretroCore::controller_devices(port)` accessor. ~50 LOC + ~100 LOC tests.
+- **Slice 2** — Tauri command `get_controller_devices(port)` in `apps/oa-shell/src/main.rs` + Solid resource hook + refactor `GameInputDialog` dropdown to consume it for the live-game case. ~80 LOC.
+- **Slice 3** — Schema bump v20 → v21: `core_controller_info` table keyed by `(core_filename, port)` with `core_mtime`-invalidated cache. Populated on every core load; read by the command when no core is loaded. ~80 LOC + ~60 LOC tests.
+- **Slice 4** — Delete `DEVICE_ID_OPTIONS_BASE` / `_GAMECUBE` / `_SNES`, `systemSpecificDeviceLabel`, `deviceOptionsForSystem` from `GameDialogs.tsx`. Replace `LIGHT_GUN_SYSTEM_IDS` hand-list in `LightGunHelp.tsx` with a derivation from cached controller-info (a system "has a light gun" iff any cached device for its default core has `id & 0xFF == RETRO_DEVICE_LIGHTGUN`). Legacy-id label for saved overrides that don't match advertised devices. ~60 LOC deletions + ~40 LOC adds.
+- **Slice 5** — Operator validation pass on Duck Hunt (the original trigger); then SMS Light Phaser on Genesis Plus GX as the easiest second target. Each green validation closes the matching ⬜ in the per-core ROADMAP per CLAUDE.md hygiene rule. Merge `--no-ff` after thumbs-up.
+
+**Operator memory:** [feedback_no_bandaid_fixes](C:\Users\Devilchi\.claude\projects\G--RustEmu\memory\feedback_no_bandaid_fixes.md) — this arc was chosen explicitly over a per-system hardcoded patch (`DEVICE_ID_OPTIONS_NES` etc.) which was sketched on 2026-06-05 then rolled back on operator direction. Future similar decisions default to the architectural path.
+
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 
 **Next major Guided Setup work-item per plan §13 Phase 2.** Awaiting
