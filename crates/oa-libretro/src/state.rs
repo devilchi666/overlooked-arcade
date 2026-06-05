@@ -241,6 +241,22 @@ pub(crate) struct State {
     /// the parser overwrites on each call so the latest publish wins.
     /// Cleared on core reload alongside `controller_devices`.
     pub input_descriptors: Vec<InputDescriptor>,
+    /// Minimum audio latency in milliseconds the core requested via
+    /// `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY` (env 63). Cores
+    /// set this when they expect CPU-heavy frames that briefly stall
+    /// audio production — Genesis Plus GX during heavy FM-synth scenes,
+    /// Beetle PSX during GPU-heavy moments, Flycast during 3D-heavy
+    /// areas. The shell uses this on every core load to size oa-audio's
+    /// ring buffer to at least this many ms of headroom, preventing
+    /// crackling under those conditions.
+    ///
+    /// Per spec (libretro.h:1369): 0 = "use default frontend latency"
+    /// (no override). Values larger than current frontend latency take
+    /// effect; smaller values have no effect. Spec asks frontends to
+    /// honor requests up to 512 ms. We cap parser output at the spec's
+    /// 512 ms ceiling to defend against a buggy core declaring an
+    /// absurd value that would balloon the ring buffer.
+    pub min_audio_latency_ms: u32,
     /// Parsed memory descriptors from the core's `SET_MEMORY_MAPS`
     /// call. Empty for cores that never publish one. Host pointers
     /// stay private to oa-libretro (stored in `memory_map_ptrs`); only
@@ -317,6 +333,7 @@ impl State {
             pending_messages: Vec::new(),
             controller_devices: Vec::new(),
             input_descriptors: Vec::new(),
+            min_audio_latency_ms: 0,
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
@@ -625,6 +642,21 @@ pub fn loaded_core_input_descriptors() -> Vec<InputDescriptor> {
     with_state(|s| s.input_descriptors.clone()).unwrap_or_default()
 }
 
+/// Minimum audio latency (ms) the loaded core requested via
+/// `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY` (env 63). Returns 0
+/// when no core is loaded OR the core didn't call the env (spec: 0
+/// means "use default frontend latency" — same effect either way).
+/// Capped at 512 ms in the parser per the spec ceiling.
+///
+/// Caller (oa-shell post-load) passes this to
+/// `oa_audio::AudioSink::ensure_min_latency_ms` so the ring buffer
+/// grows to cover the requested headroom. No-op when the request is
+/// smaller than the existing buffer (per spec: smaller-than-current
+/// has no effect).
+pub fn loaded_core_min_audio_latency_ms() -> u32 {
+    with_state(|s| s.min_audio_latency_ms).unwrap_or(0)
+}
+
 // ---------- extern "C" callback trampolines ----------
 
 pub(crate) unsafe extern "C" fn cb_video_refresh(
@@ -916,6 +948,38 @@ unsafe fn parse_input_descriptors(
         }
     }
     out
+}
+
+/// Parse + clamp the `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY`
+/// payload to a milliseconds value. Returns 0 when `data` is NULL
+/// (spec-permitted edge case — same effect as "use default" per the
+/// spec docstring). Clamps to the spec's 512 ms ceiling so a buggy
+/// core that publishes a pathological value can't balloon oa-audio's
+/// ring buffer.
+///
+/// # Safety
+///
+/// `data` must either be NULL or point to a valid `unsigned` (== u32)
+/// value owned by the core. The core retains ownership; we read and
+/// drop the reference.
+unsafe fn parse_min_audio_latency_ms(data: *const c_void) -> u32 {
+    if data.is_null() {
+        log::warn!(
+            "oa-libretro: SET_MINIMUM_AUDIO_LATENCY called with NULL data — ignored"
+        );
+        return 0;
+    }
+    let raw_ms = unsafe { *(data as *const u32) };
+    const SPEC_CEILING_MS: u32 = 512;
+    let capped = raw_ms.min(SPEC_CEILING_MS);
+    if raw_ms > SPEC_CEILING_MS {
+        log::warn!(
+            "oa-libretro: SET_MINIMUM_AUDIO_LATENCY requested {raw_ms} ms — capping at spec ceiling {SPEC_CEILING_MS} ms"
+        );
+    } else {
+        log::info!("oa-libretro: SET_MINIMUM_AUDIO_LATENCY = {capped} ms");
+    }
+    capped
 }
 
 /// Render the parsed descriptor list as a single log line for the
@@ -1495,8 +1559,24 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
         RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
         | RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO
         | RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
-        | RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
         | RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE => true,
+
+        // SET_MINIMUM_AUDIO_LATENCY (63) — core requests minimum audio
+        // buffer size in milliseconds (`const unsigned *` payload).
+        // Cores set this when they know they'll have CPU-heavy frames
+        // that briefly stall audio production. The shell consults the
+        // stored value on every core load via
+        // `loaded_core_min_audio_latency_ms()` and grows oa-audio's
+        // ring buffer to at least that many ms of headroom — prevents
+        // crackling on heavy frames in cores like Genesis Plus GX,
+        // Beetle PSX, and Flycast that declare 64-100 ms requests.
+        // Per spec (libretro.h:1369): 0 = "use default" (no override);
+        // capped at the spec's 512 ms ceiling against buggy cores.
+        RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY => {
+            let capped = unsafe { parse_min_audio_latency_ms(data) };
+            with_state(|s| s.min_audio_latency_ms = capped);
+            true
+        }
 
         // SET_SUPPORT_NO_GAME (env 18) — core declares it can boot
         // without content. DOSBox-Pure (built-in DOS-game browser),
@@ -2121,6 +2201,66 @@ mod tests {
     #[test]
     fn format_input_descriptors_for_log_empty_renders_brackets() {
         assert_eq!(format_input_descriptors_for_log(&[]), "[]");
+    }
+
+    // ---- parse_min_audio_latency_ms (env 63 payload parser) -----------
+    //
+    // The env handler is a thin wrapper around this parser + a
+    // singleton write — exercising the parser in isolation keeps the
+    // tests free of singleton-mutex parallelism races. Singleton
+    // integration is covered indirectly by the production load path
+    // (operator validation in Slice C).
+
+    #[test]
+    fn parse_min_audio_latency_typical_value_passes_through() {
+        // Genesis Plus GX / Beetle PSX / Flycast typically request
+        // 64-100 ms during heavy frames. Under the spec ceiling →
+        // passes through verbatim.
+        let payload: u32 = 64;
+        let data = &payload as *const u32 as *const c_void;
+        assert_eq!(unsafe { parse_min_audio_latency_ms(data) }, 64);
+    }
+
+    #[test]
+    fn parse_min_audio_latency_zero_is_explicit_default() {
+        // Per spec docstring (libretro.h:1378): 0 means "use default
+        // frontend audio latency." Parser preserves it; downstream
+        // ensure_min_latency_ms(0) is a no-op since any current
+        // capacity already covers 0 ms.
+        let payload: u32 = 0;
+        let data = &payload as *const u32 as *const c_void;
+        assert_eq!(unsafe { parse_min_audio_latency_ms(data) }, 0);
+    }
+
+    #[test]
+    fn parse_min_audio_latency_caps_at_spec_ceiling() {
+        // Spec asks frontends to honor up to 512 ms; cap defends
+        // against a buggy core declaring something pathological that
+        // would balloon oa-audio's ring buffer to GBs.
+        let payload: u32 = 99999;
+        let data = &payload as *const u32 as *const c_void;
+        assert_eq!(
+            unsafe { parse_min_audio_latency_ms(data) },
+            512,
+            "values above 512 ms must clamp to the spec ceiling",
+        );
+    }
+
+    #[test]
+    fn parse_min_audio_latency_at_exact_ceiling_passes() {
+        // Boundary: exactly 512 ms is the max per spec, not above it,
+        // so passes through.
+        let payload: u32 = 512;
+        let data = &payload as *const u32 as *const c_void;
+        assert_eq!(unsafe { parse_min_audio_latency_ms(data) }, 512);
+    }
+
+    #[test]
+    fn parse_min_audio_latency_null_payload_returns_zero() {
+        // Spec doesn't explicitly allow NULL data here, but defensively
+        // handle it the same as "use default" (0 ms) rather than
+        // dereferencing a null pointer.
+        assert_eq!(unsafe { parse_min_audio_latency_ms(std::ptr::null()) }, 0);
     }
 
     #[test]

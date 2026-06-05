@@ -60,4 +60,7 @@ mod state;
 pub use crate::core::{probe, CoreInfo, LibretroCore, LibretroError, RomSource};
 pub use crate::ffi::PixelFormat;
 pub use crate::keycode::{keycode_to_retro_key, modifiers_from_held};
-pub use crate::state::{loaded_core_controller_devices, loaded_core_input_descriptors};
+pub use crate::state::{
+    loaded_core_controller_devices, loaded_core_input_descriptors,
+    loaded_core_min_audio_latency_ms,
+};

@@ -86,6 +86,29 @@ pub fn list_devices() -> Vec<DeviceInfo> {
 
 type RbProd = ringbuf::CachingProd<std::sync::Arc<HeapRb<i16>>>;
 
+/// Default ring-buffer capacity in `i16` samples. ~170 ms at 48 kHz
+/// stereo (16384 / 96 samples/ms); ~85 ms at 96 kHz. Most cores'
+/// `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY` requests (Genesis
+/// Plus GX / Beetle PSX / Flycast cluster around 64-100 ms) fit
+/// comfortably under this; `AudioSink::ensure_min_latency_ms`
+/// handles the outliers by rebuilding with a larger ring.
+const DEFAULT_RING_CAPACITY: usize = 16384;
+
+/// Compute the ring-buffer capacity in `i16` samples needed to hold
+/// `ms` milliseconds of stereo audio at `output_rate`. Each ring slot
+/// is one i16 (one channel) so the formula multiplies by the channel
+/// count and rounds up:
+///
+///   capacity = ⌈ms × output_rate × CHANNELS / 1000⌉
+///
+/// e.g. 64 ms @ 48 kHz stereo = 6144 samples; 512 ms @ 48 kHz stereo
+/// = 49152 samples (the spec ceiling, well under any reasonable cap).
+fn capacity_for_ms(ms: u32, output_rate: u32) -> usize {
+    const CHANNELS: u32 = 2;
+    let needed = (u64::from(ms) * u64::from(output_rate) * u64::from(CHANNELS) + 999) / 1000;
+    needed as usize
+}
+
 /// Stereo linear resampler with carry-over state for click-free batches.
 struct Resampler {
     source_rate: u32,
@@ -160,6 +183,10 @@ pub struct AudioSink {
     /// Display name of the active device. `None` indicates the system default
     /// was selected at the time the stream was opened.
     current_device: Option<String>,
+    /// Ring buffer capacity in `i16` samples. Used by
+    /// `ensure_min_latency_ms` to decide whether a core's latency
+    /// request demands a bigger ring than the current allocation.
+    capacity: usize,
     // Keep the stream alive — its callback owns the consumer half.
     _stream: cpal::Stream,
 }
@@ -169,12 +196,25 @@ struct OpenedStream {
     output_rate: u32,
     stream: cpal::Stream,
     device_label: String,
+    /// Actual capacity allocated for the ring buffer. May be larger
+    /// than the requested `min_capacity_samples` since `open_stream`
+    /// uses `max(DEFAULT_RING_CAPACITY, min_capacity_samples)`.
+    capacity: usize,
 }
 
 /// Resolve + open a stream against either the default device (None) or a
 /// specifically-named one. Centralizes the device-pick / supported-config / build
-/// path so `new()` and `set_device()` share it.
-fn open_stream(source_rate: u32, device_name: Option<&str>) -> Result<OpenedStream, AudioError> {
+/// path so `new()` / `set_device()` / `ensure_min_latency_ms` share it.
+///
+/// `min_capacity_samples` is the minimum ring-buffer size required by
+/// the caller — pass 0 to take the default. `open_stream` picks
+/// `max(DEFAULT_RING_CAPACITY, min_capacity_samples)` so callers never
+/// silently SHRINK the ring across a re-open.
+fn open_stream(
+    source_rate: u32,
+    device_name: Option<&str>,
+    min_capacity_samples: usize,
+) -> Result<OpenedStream, AudioError> {
     let host = cpal::default_host();
     let device = match device_name {
         Some(name) => host
@@ -206,15 +246,18 @@ fn open_stream(source_rate: u32, device_name: Option<&str>) -> Result<OpenedStre
         );
     }
 
-    // Ring buffer sized for ~100 ms of stereo at 48 kHz = 9600 samples. We pick
-    // power-of-2 16384 for ringbuf's preferred capacity.
-    let rb: HeapRb<i16> = HeapRb::new(16384);
+    // Ring buffer sized to at least `min_capacity_samples` (caller
+    // demand) and never below `DEFAULT_RING_CAPACITY` (the original
+    // 16384-sample baseline that covers ~170 ms of 48 kHz stereo).
+    // Callers that don't have a specific minimum pass 0.
+    let capacity = min_capacity_samples.max(DEFAULT_RING_CAPACITY);
+    let rb: HeapRb<i16> = HeapRb::new(capacity);
     let (producer, consumer) = rb.split();
 
     let stream = build_stream(&device, &stream_config, format, consumer)?;
     stream.play()?;
 
-    Ok(OpenedStream { producer, output_rate, stream, device_label })
+    Ok(OpenedStream { producer, output_rate, stream, device_label, capacity })
 }
 
 impl AudioSink {
@@ -228,7 +271,7 @@ impl AudioSink {
     /// default if `device_name` is `None`. The shell uses this on startup to
     /// honor the persisted device preference.
     pub fn with_device(source_rate: u32, device_name: Option<&str>) -> Result<Self, AudioError> {
-        let opened = open_stream(source_rate, device_name)?;
+        let opened = open_stream(source_rate, device_name, 0)?;
         Ok(Self {
             producer: opened.producer,
             source_rate,
@@ -238,6 +281,7 @@ impl AudioSink {
             pushed_total: 0,
             dropped_total: 0,
             current_device: device_name.map(|s| s.to_string()).or(Some(opened.device_label)),
+            capacity: opened.capacity,
             _stream: opened.stream,
         })
     }
@@ -245,17 +289,67 @@ impl AudioSink {
     /// Swap the active output device at runtime. Builds the new stream first;
     /// only on success does the old stream get dropped (so a failed swap leaves
     /// audio playing on the previous device). `None` selects the system default.
+    /// Preserves any latency-driven capacity expansion that
+    /// `ensure_min_latency_ms` previously applied — the new device opens with
+    /// at least the current capacity.
     pub fn set_device(&mut self, device_name: Option<&str>) -> Result<(), AudioError> {
-        let opened = open_stream(self.source_rate, device_name)?;
+        let opened = open_stream(self.source_rate, device_name, self.capacity)?;
         self.producer = opened.producer;
         self.output_rate = opened.output_rate;
         self.resampler = Resampler::new(self.source_rate, self.output_rate);
         self.resample_buf.clear();
         self.current_device = device_name.map(|s| s.to_string()).or(Some(opened.device_label));
+        self.capacity = opened.capacity;
         // Drop the previous stream LAST so the callback can't fire on a
         // half-replaced ring during the swap.
         self._stream = opened.stream;
         Ok(())
+    }
+
+    /// Ensure the ring buffer holds at least `ms` milliseconds of stereo
+    /// audio at the current `output_rate`. No-op when the current
+    /// capacity already covers the request OR when `ms == 0` (the spec's
+    /// "use frontend default" sentinel).
+    ///
+    /// When growth IS needed, rebuilds the stream + ring via the same
+    /// path `set_device` uses; the previous stream is dropped LAST so
+    /// the cpal callback can't fire on a half-replaced ring during the
+    /// swap. A brief audio glitch is possible during the rebuild — the
+    /// alternative is crackling on every CPU-heavy frame, which is
+    /// what cores set this env to prevent.
+    ///
+    /// Called by the oa-shell LoadRom handler after every successful
+    /// core load with the value from
+    /// `oa_libretro::loaded_core_min_audio_latency_ms()` so cores like
+    /// Genesis Plus GX / Beetle PSX / Flycast that declare 64-100 ms
+    /// requests get the headroom they asked for.
+    pub fn ensure_min_latency_ms(&mut self, ms: u32) -> Result<(), AudioError> {
+        if ms == 0 {
+            return Ok(());
+        }
+        let needed = capacity_for_ms(ms, self.output_rate);
+        if needed <= self.capacity {
+            return Ok(());
+        }
+        log::info!(
+            "oa-audio: growing ring buffer for {ms} ms @ {} Hz — {} → {} samples",
+            self.output_rate, self.capacity, needed,
+        );
+        let opened = open_stream(self.source_rate, self.current_device.as_deref(), needed)?;
+        self.producer = opened.producer;
+        self.output_rate = opened.output_rate;
+        self.resampler = Resampler::new(self.source_rate, self.output_rate);
+        self.resample_buf.clear();
+        self.capacity = opened.capacity;
+        self._stream = opened.stream;
+        Ok(())
+    }
+
+    /// Current ring-buffer capacity in `i16` samples. Diagnostic /
+    /// test hook — production code doesn't need this since growth is
+    /// declarative via `ensure_min_latency_ms`.
+    pub fn capacity_samples(&self) -> usize {
+        self.capacity
     }
 
     /// Push interleaved stereo `i16` samples produced at `source_rate`.
@@ -404,5 +498,66 @@ fn build_stream(
             log::error!("oa-audio: unsupported sample format {other:?}");
             Err(cpal::BuildStreamError::StreamConfigNotSupported)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `capacity_for_ms` is pure math — testable without cpal. The
+    // `ensure_min_latency_ms` rebuild path requires a real audio
+    // device (cpal stream construction), so it's exercised by the
+    // production load path during operator validation (Slice C) and
+    // not in unit tests.
+
+    #[test]
+    fn capacity_for_ms_at_48khz_stereo() {
+        // 48 kHz × 2 channels × ms / 1000 (round up).
+        // Concrete: 1 ms = 96 samples; 64 ms = 6144; 100 ms = 9600;
+        // 170 ms ≈ 16320; 512 ms = 49152.
+        assert_eq!(capacity_for_ms(1, 48000), 96);
+        assert_eq!(capacity_for_ms(64, 48000), 6144);
+        assert_eq!(capacity_for_ms(100, 48000), 9600);
+        assert_eq!(capacity_for_ms(170, 48000), 16320);
+        assert_eq!(capacity_for_ms(512, 48000), 49152);
+    }
+
+    #[test]
+    fn capacity_for_ms_at_96khz_stereo() {
+        // 96 kHz doubles the sample rate → doubles the per-ms cost.
+        // 64 ms = 12288 samples (vs 6144 at 48 kHz).
+        assert_eq!(capacity_for_ms(64, 96000), 12288);
+        assert_eq!(capacity_for_ms(100, 96000), 19200);
+    }
+
+    #[test]
+    fn capacity_for_ms_at_44_1khz_stereo() {
+        // PCE / NES native rate. 1 ms = 88.2 samples — round-up
+        // arithmetic produces 89, then ms-scaled. 64 ms = 5645.
+        assert_eq!(capacity_for_ms(1, 44100), 89);
+        assert_eq!(capacity_for_ms(64, 44100), 5645);
+    }
+
+    #[test]
+    fn capacity_for_ms_zero_is_zero() {
+        // Caller (`ensure_min_latency_ms`) shortcircuits ms == 0 before
+        // calling the helper, but the helper itself is well-defined.
+        assert_eq!(capacity_for_ms(0, 48000), 0);
+    }
+
+    #[test]
+    fn default_ring_capacity_covers_typical_core_requests_at_48khz() {
+        // Sanity check: every core we've audited (Genesis Plus GX,
+        // Beetle PSX, Flycast) requests <= ~100 ms. At 48 kHz, that's
+        // 9600 samples — well under DEFAULT_RING_CAPACITY (16384).
+        // Means ensure_min_latency_ms is a no-op for those cores at
+        // 48 kHz, which is correct + cheap.
+        assert!(capacity_for_ms(100, 48000) <= DEFAULT_RING_CAPACITY);
+        assert!(capacity_for_ms(170, 48000) <= DEFAULT_RING_CAPACITY);
+        // At 200 ms the default is no longer enough — would trigger
+        // a rebuild. Spec ceiling 512 ms certainly does.
+        assert!(capacity_for_ms(200, 48000) > DEFAULT_RING_CAPACITY);
+        assert!(capacity_for_ms(512, 48000) > DEFAULT_RING_CAPACITY);
     }
 }
