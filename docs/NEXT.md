@@ -461,24 +461,21 @@ that currently set non-none. Replace `analog_sticks_for(system_id)`
 match with a `system_registry::global_registry().get(id).and_then(|d|
 d.descriptor.analog_sticks.as_ref())` lookup. ~50 LOC + 8 YAML edits.
 
-### Honor SET_MINIMUM_AUDIO_LATENCY (env 63) for crackle-free heavy frames
-
-**Surfaced by the same 2026-06-05 audit.** `crates/oa-libretro/src/state.rs`
-ack's `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY` (env 63) without
-storing the value. Cores call it to request a minimum audio buffer
-size (ms) — typically when they know they'll have CPU-heavy frames
-that briefly stall audio production. Honoring it means picking an
-audio ring buffer at least as large as the largest declared request
-across cores we load.
-
-**Why polish-tier:** Today audio still works; you just get occasional
-crackling on cores that asked for more headroom (per the spec, cores
-that DON'T set this expect ~16ms baseline). Genesis Plus GX, Beetle
-PSX, and Flycast all set values around 64ms during heavy scenes.
-
-**Scope:** Parse the `unsigned` (ms) payload in cb_environment; store
-in singleton State; oa-audio's `AudioSink` reads + sizes the ring
-buffer to max(default, declared). ~30 LOC + a roundtrip test.
+~~### Honor SET_MINIMUM_AUDIO_LATENCY (env 63) for crackle-free heavy frames~~ —
+**SHIPPED 2026-06-05** on `feat/honor-min-audio-latency`. Parser in
+`crates/oa-libretro/src/state.rs::parse_min_audio_latency_ms` reads
+the `unsigned` ms payload + caps at the spec's 512 ms ceiling against
+buggy cores; singleton State stores the value;
+`oa_libretro::loaded_core_min_audio_latency_ms()` exposes it; oa-shell
+LoadRom handler calls `oa_audio::AudioSink::ensure_min_latency_ms`
+post-load which grows the ring buffer when the request exceeds the
+default 16384-sample capacity (~170 ms at 48 kHz stereo, so most
+cores' 64-100 ms requests no-op at 48 kHz). 5 parser tests (typical /
+zero / cap / boundary / null) + 5 oa-audio math tests (per-sample-rate
+capacity math + default-covers-typical sanity check). Operator
+validation: launch Genesis / PSX / Dreamcast game, watch
+`oa-current.log` for `SET_MINIMUM_AUDIO_LATENCY = N ms` then optionally
+`growing ring buffer for N ms` if N exceeds default.
 
 
 ~~4. **Jaguar KP8–KP_HASH keyboard-passthrough dispatch**~~ —

@@ -594,6 +594,19 @@ impl LibretroCore {
         state::with_state(|s| s.input_descriptors.clone()).unwrap_or_default()
     }
 
+    /// Minimum audio latency (ms) this core requested via
+    /// `RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY` (env 63). Returns
+    /// 0 when the core didn't call the env (spec: 0 means "use default
+    /// frontend latency"). Capped at 512 ms in the parser per the spec
+    /// ceiling against buggy cores. Frontend (oa-shell) calls this
+    /// post-load and forwards to `oa_audio::AudioSink::ensure_min
+    /// _latency_ms` so the ring buffer grows to cover any declared
+    /// headroom — prevents crackling on CPU-heavy frames in cores like
+    /// Genesis Plus GX / Beetle PSX / Flycast that declare 64-100 ms.
+    pub fn min_audio_latency_ms(&self) -> u32 {
+        state::with_state(|s| s.min_audio_latency_ms).unwrap_or(0)
+    }
+
     /// Forward a keyboard transition to the core via the callback the core
     /// registered through `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. No-op
     /// when the core never registered (the typical console / handheld case).

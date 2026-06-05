@@ -4653,6 +4653,29 @@ fn run_emu_render(
                                     }
                                 }
                             }
+                            // Honor RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
+                            // (env 63). Cores that asked for more audio
+                            // headroom than the default 16384-sample ring
+                            // (Genesis Plus GX / Beetle PSX / Flycast cluster
+                            // around 64-100 ms) get the ring grown to fit
+                            // their request. No-op when the core didn't call
+                            // env 63 (singleton reads 0 → ensure_min_latency
+                            // _ms short-circuits) OR when the current ring
+                            // already covers the request (which is most
+                            // cases at 48 kHz — default ring covers up to
+                            // ~170 ms there). See
+                            // `crates/oa-libretro/src/state.rs::parse_min_audio_latency_ms`.
+                            let min_latency_ms =
+                                oa_libretro::loaded_core_min_audio_latency_ms();
+                            if min_latency_ms > 0 {
+                                if let Some(sink) = audio.as_mut() {
+                                    if let Err(e) = sink.ensure_min_latency_ms(min_latency_ms) {
+                                        log::warn!(
+                                            "oa-shell: ensure_min_latency_ms({min_latency_ms}) failed: {e:?}"
+                                        );
+                                    }
+                                }
+                            }
                             current_slot = restore_slot.unwrap_or(0);
                             // Snapshots from any previous game are unsafe to
                             // feed back into a different core — drop them on
