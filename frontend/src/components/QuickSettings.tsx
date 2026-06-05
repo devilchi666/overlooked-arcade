@@ -50,6 +50,16 @@ type Props = {
   /// snes9x sound interpolation, mednafen PSX skip-bios) is valuable
   /// because many cores apply option changes live without reload.
   onOpenCoreOptions: (entry: RomEntry) => void;
+  /// Open the per-game Input dialog. Live-tunable: changing a port's
+  /// device-type override pushes `SetPortDevice` to the running emu
+  /// immediately via the existing `set_libretro_device_for_game`
+  /// path, so the operator can swap Standard Pad ↔ Zapper /
+  /// Super Scope / Mouse mid-game and the core re-wires on the
+  /// next frame. Also the only place to see the loaded core's full
+  /// SET_CONTROLLER_INFO advertised-device list with the correct
+  /// subclass-encoded ids (FCEUmm Zapper = 258 etc.) without
+  /// exiting to the library and re-launching.
+  onOpenInput: (entry: RomEntry) => void;
   /// Open the per-game Screenshot gallery dialog (F12 captures viewer).
   /// Reachable from both the pre-launch tile menu Per-game settings ▸
   /// sub-view AND here so operators can browse what they just captured
@@ -646,6 +656,7 @@ const QuickSettings: Component<Props> = (props) => {
               onShowInfo={props.onShowInfo}
               onOpenShaders={props.onOpenShaders}
               onOpenCoreOptions={props.onOpenCoreOptions}
+              onOpenInput={props.onOpenInput}
               onOpenScreenshots={props.onOpenScreenshots}
               onExitToLibrary={props.onExitToLibrary}
               touchHintsEnabled={props.touchHintsEnabled}
@@ -1657,6 +1668,7 @@ const ActionsPanel: Component<{
   onShowInfo: (entry: RomEntry) => void;
   onOpenShaders: (entry: RomEntry) => void;
   onOpenCoreOptions: (entry: RomEntry) => void;
+  onOpenInput: (entry: RomEntry) => void;
   onOpenScreenshots: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   touchHintsEnabled: () => boolean;
@@ -1715,6 +1727,17 @@ const ActionsPanel: Component<{
           if (props.entry) {
             props.onClose();
             props.onOpenCoreOptions(props.entry);
+          }
+        },
+      },
+      {
+        key: "input",
+        icon: "🎮",
+        label: "Input",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onOpenInput(props.entry);
           }
         },
       },
