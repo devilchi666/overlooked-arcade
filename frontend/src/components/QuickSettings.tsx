@@ -60,6 +60,16 @@ type Props = {
   /// subclass-encoded ids (FCEUmm Zapper = 258 etc.) without
   /// exiting to the library and re-launching.
   onOpenInput: (entry: RomEntry) => void;
+  /// Open the per-system Bindings dialog. Mid-game access matters for
+  /// the dynamic-input-descriptors arc — the bindings table only
+  /// renders per-game semantic labels ("[B] Whip" for Castlevania)
+  /// while a core is loaded, so the operator needs to reach the page
+  /// WITHOUT exiting to the library + unloading. Pre-arc this dialog
+  /// was reachable only from the library-side SystemContextMenu (right-
+  /// click a system in the sidebar) and from the Retroverse Settings
+  /// → Per-system drill-in; both require the library to be visible
+  /// and so don't work in single-window mode while a game is running.
+  onOpenBindings: (systemId: string) => void;
   /// Open the per-game Screenshot gallery dialog (F12 captures viewer).
   /// Reachable from both the pre-launch tile menu Per-game settings ▸
   /// sub-view AND here so operators can browse what they just captured
@@ -657,6 +667,7 @@ const QuickSettings: Component<Props> = (props) => {
               onOpenShaders={props.onOpenShaders}
               onOpenCoreOptions={props.onOpenCoreOptions}
               onOpenInput={props.onOpenInput}
+              onOpenBindings={props.onOpenBindings}
               onOpenScreenshots={props.onOpenScreenshots}
               onExitToLibrary={props.onExitToLibrary}
               touchHintsEnabled={props.touchHintsEnabled}
@@ -1669,6 +1680,7 @@ const ActionsPanel: Component<{
   onOpenShaders: (entry: RomEntry) => void;
   onOpenCoreOptions: (entry: RomEntry) => void;
   onOpenInput: (entry: RomEntry) => void;
+  onOpenBindings: (systemId: string) => void;
   onOpenScreenshots: (entry: RomEntry) => void;
   onExitToLibrary: () => void;
   touchHintsEnabled: () => boolean;
@@ -1738,6 +1750,17 @@ const ActionsPanel: Component<{
           if (props.entry) {
             props.onClose();
             props.onOpenInput(props.entry);
+          }
+        },
+      },
+      {
+        key: "bindings",
+        icon: "⌨",
+        label: "Bindings",
+        onActivate: () => {
+          if (props.entry) {
+            props.onClose();
+            props.onOpenBindings(props.entry.systemId);
           }
         },
       },
