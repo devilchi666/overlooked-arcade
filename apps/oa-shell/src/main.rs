@@ -4623,6 +4623,35 @@ fn run_emu_render(
                                         current_core_dll, e
                                     );
                                 }
+                                // Dynamic-input-descriptors Slice 3 — also
+                                // persist the input descriptors the core
+                                // published. Keyed per-(core, game_sha1)
+                                // because cores publish different label
+                                // tables per game (FCEUmm's B = "Whip"
+                                // in Castlevania vs B = "Run" in Mario).
+                                // Skipped silently when sha1 isn't
+                                // available (game row missing sha1, e.g.
+                                // freshly-imported before the hash pass
+                                // — operator's worst case is "no
+                                // chips on next bindings open" which
+                                // matches the pre-arc behaviour).
+                                let descriptors =
+                                    oa_libretro::loaded_core_input_descriptors();
+                                if let Ok(Some(sha1)) =
+                                    db.find_sha1_by_file_path(&path)
+                                {
+                                    if let Err(e) = db.upsert_input_descriptors(
+                                        &current_core_dll,
+                                        &sha1,
+                                        &descriptors,
+                                        core_mtime,
+                                    ) {
+                                        log::warn!(
+                                            "oa-shell: upsert_input_descriptors({}, {}) failed: {}",
+                                            current_core_dll, sha1, e
+                                        );
+                                    }
+                                }
                             }
                             current_slot = restore_slot.unwrap_or(0);
                             // Snapshots from any previous game are unsafe to
@@ -8704,21 +8733,56 @@ fn get_controller_devices(
         .unwrap_or_default()
 }
 
-/// Return the per-game button-label list the currently-loaded core
-/// advertised via `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS`. Slice 3
-/// of the dynamic-input-descriptors arc will add a SQLite cache (keyed
-/// per-game by sha1) so the bindings UI can render labels for the
-/// per-system page even when no game is running; this Slice-2 command
-/// only reads the live singleton, which is correct for the "operator
-/// is currently playing the game" case (the typical bindings-edit
-/// path).
+/// Return the per-game button-label list for the given system,
+/// preferring the currently-loaded core's live publish and falling
+/// back to the SQLite cache (v22 `core_input_descriptors`) when no
+/// core is live. Cache lookup uses "most recent game on the system's
+/// effective core" semantics — operator's bindings page shows the
+/// LAST PLAYED game's labels rather than nothing.
 ///
-/// Returns an empty Vec when no core is loaded or the loaded core
-/// never published. Frontend treats empty as "no extra labels — just
-/// render the physical RetroPad bit names like before."
+/// Resolution:
+/// 1. Read `loaded_core_input_descriptors()` from the oa-libretro
+///    singleton. If non-empty, return it (live wins).
+/// 2. If live is empty and `systemId` was provided, resolve the
+///    system's effective core .dll (per-system Cores pref → system
+///    default — same path `get_controller_devices` uses), check the
+///    .dll's mtime, read the most-recent cached row for that core.
+/// 3. Stale rows (mtime mismatch) and missing rows both return empty.
 #[tauri::command]
-fn get_input_descriptors() -> Vec<oa_core::InputDescriptor> {
-    oa_libretro::loaded_core_input_descriptors()
+#[allow(non_snake_case)]
+fn get_input_descriptors(
+    systemId: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Vec<oa_core::InputDescriptor> {
+    let live = oa_libretro::loaded_core_input_descriptors();
+    if !live.is_empty() {
+        return live;
+    }
+    let Some(system_id) = systemId else {
+        return Vec::new();
+    };
+    let per_system_default =
+        default_core_dll_for_system_resolved(&system_id).to_string();
+    let core_filename = read_cores_pref(&state.app_data_dir)
+        .get(&system_id)
+        .cloned()
+        .unwrap_or(per_system_default);
+    let cores_dir = resolve_cores_dir();
+    let dll_path = cores_dir.join(&core_filename);
+    let current_mtime: i64 = std::fs::metadata(&dll_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if current_mtime == 0 {
+        return Vec::new();
+    }
+    db.most_recent_input_descriptors_for_core(&core_filename, current_mtime)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// Does the system's effective core advertise any light-gun-shape

@@ -96,9 +96,11 @@ const SystemBindingsEditor: Component<Props> = (props) => {
   // bindings while playing the game" — the typical edit path.
   const [inputDescriptors] = createResource(
     () => props.systemId,
-    async (): Promise<readonly InputDescriptor[]> => {
+    async (systemId): Promise<readonly InputDescriptor[]> => {
       try {
-        return await invoke<InputDescriptor[]>("get_input_descriptors");
+        return await invoke<InputDescriptor[]>("get_input_descriptors", {
+          systemId,
+        });
       } catch (e) {
         console.warn("get_input_descriptors failed:", e);
         return [];

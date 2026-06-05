@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 21;
+const SCHEMA_VERSION: i32 = 22;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -926,6 +926,36 @@ impl LibraryDb {
                 .map_err(|e| format!("set user_version=21: {e}"))?;
             log::info!(
                 "library_db: schema migrated to v21 (core_controller_info cache table)"
+            );
+        }
+
+        // v21 → v22: per-game input-descriptors cache. Sibling of v21's
+        // core_controller_info but keyed PER-GAME — cores publish
+        // RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS with different label
+        // tables for each loaded ROM (FCEUmm's B = "Whip" in Castlevania,
+        // B = "Run" in Mario). Populated on every successful core load
+        // with the live core's published descriptors keyed by
+        // (core_filename, game_sha1). Same mtime-invalidation as v21.
+        // Lets the bindings UI render per-game labels even when the
+        // game isn't currently running (operator opens bindings from
+        // the library after having launched the game once before). See
+        // docs/PLANS/dynamic-input-descriptors.md Slice 3.
+        if current < 22 {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS core_input_descriptors ( \
+                    core_filename    TEXT    NOT NULL, \
+                    game_sha1        TEXT    NOT NULL, \
+                    descriptors_json TEXT    NOT NULL, \
+                    captured_at      INTEGER NOT NULL, \
+                    core_mtime       INTEGER NOT NULL, \
+                    PRIMARY KEY (core_filename, game_sha1) \
+                 );",
+            )
+            .map_err(|e| format!("v22 create core_input_descriptors: {e}"))?;
+            conn.pragma_update(None, "user_version", 22)
+                .map_err(|e| format!("set user_version=22: {e}"))?;
+            log::info!(
+                "library_db: schema migrated to v22 (core_input_descriptors cache table)"
             );
         }
 
@@ -3522,6 +3552,66 @@ impl LibraryDb {
         Ok(id)
     }
 
+    /// Looks up `games.sha1` by `file_path`. Returns `Ok(None)` when
+    /// the path isn't in the library OR the row's `sha1` column is
+    /// NULL (e.g. unscanned-yet, or sha1 calc skipped per per-system
+    /// quirk). Cheap — uses the `idx_games_file_path` index.
+    ///
+    /// Used by the input-descriptors cache write path
+    /// (Slice 3 of dynamic-input-descriptors): the LoadRom handler
+    /// has the file path, the cache row needs the sha1 as the
+    /// per-game key.
+    pub fn find_sha1_by_file_path(&self, file_path: &str) -> Result<Option<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let sha1: Option<Option<String>> = conn
+            .query_row(
+                "SELECT sha1 FROM games WHERE file_path = ?1",
+                params![file_path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("find_sha1_by_file_path: {e}"))?;
+        Ok(sha1.flatten())
+    }
+
+    /// Returns the (game_sha1, descriptors_json) row in
+    /// `core_input_descriptors` for `core_filename` with the most
+    /// recent `captured_at`. Used by `get_input_descriptors` to
+    /// answer "what did this core most recently publish" when no game
+    /// is currently loaded — operator's bindings page renders the
+    /// LAST PLAYED game's labels rather than nothing.
+    ///
+    /// Honors `current_mtime` — stale rows (.dll changed since last
+    /// capture) return `Ok(None)`.
+    pub fn most_recent_input_descriptors_for_core(
+        &self,
+        core_filename: &str,
+        current_mtime: i64,
+    ) -> Result<Option<Vec<oa_core::InputDescriptor>>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT descriptors_json, core_mtime FROM core_input_descriptors \
+                 WHERE core_filename = ?1 ORDER BY captured_at DESC LIMIT 1",
+                params![core_filename],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("most_recent_input_descriptors_for_core query: {e}"))?;
+        let Some((json, cached_mtime)) = row else {
+            return Ok(None);
+        };
+        if cached_mtime != current_mtime {
+            return Ok(None);
+        }
+        let descriptors: Vec<oa_core::InputDescriptor> = serde_json::from_str(&json)
+            .map_err(|e| format!("most_recent_input_descriptors_for_core parse: {e}"))?;
+        Ok(Some(descriptors))
+    }
+
     /// Delete every game tagged with the given system id. Returns the
     /// number of rows removed. Used by the Settings → Library "Clear
     /// games for this system" action.
@@ -4455,6 +4545,94 @@ impl LibraryDb {
         let devices: Vec<oa_core::ControllerDeviceDescriptor> = serde_json::from_str(&json)
             .map_err(|e| format!("cached_controller_devices parse json: {e}"))?;
         Ok(Some(devices))
+    }
+
+    // --- Input descriptors cache (v22 — dynamic-input-descriptors Slice 3)
+    //
+    // Persists what each (core, game) pair's
+    // RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS publish carried. Per-GAME
+    // key because the labels are per-game (FCEUmm's B = "Whip" in
+    // Castlevania, B = "Run" in Mario). Written immediately after a
+    // successful core+ROM load when at least one descriptor was
+    // published; read by `get_input_descriptors` when no core is
+    // currently loaded so the bindings UI can still render per-game
+    // labels from a previous launch. Same mtime-invalidation pattern
+    // as v21 controller-info.
+
+    /// Write or replace the cached descriptor list for one (core, game)
+    /// pair. Pass the parsed descriptors verbatim — empty Vec round-
+    /// trips faithfully as `[]` (means "core was loaded but didn't
+    /// publish any descriptors for this game"). `core_mtime` is the
+    /// unix-seconds modification time of the .dll at capture time.
+    pub fn upsert_input_descriptors(
+        &self,
+        core_filename: &str,
+        game_sha1: &str,
+        descriptors: &[oa_core::InputDescriptor],
+        core_mtime: i64,
+    ) -> Result<(), String> {
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let json = serde_json::to_string(descriptors)
+            .map_err(|e| format!("serialize input_descriptors: {e}"))?;
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            r#"
+            INSERT INTO core_input_descriptors
+                (core_filename, game_sha1, descriptors_json, captured_at, core_mtime)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(core_filename, game_sha1) DO UPDATE SET
+                descriptors_json = excluded.descriptors_json,
+                captured_at      = excluded.captured_at,
+                core_mtime       = excluded.core_mtime
+            "#,
+            params![core_filename, game_sha1, json, now, core_mtime],
+        )
+        .map_err(|e| format!("upsert input_descriptors: {e}"))?;
+        Ok(())
+    }
+
+    /// Read the cached descriptor list for one (core, game) pair.
+    /// Returns `Ok(None)` when no row exists OR the cached `core_mtime`
+    /// doesn't match the caller-supplied `current_mtime` (stale cache —
+    /// caller falls back to empty + the bindings UI just renders the
+    /// physical-button chips with no descriptor suffix). Caller looks
+    /// up the .dll's current mtime itself (same boundary as the
+    /// controller-info accessor — DB layer doesn't touch arbitrary
+    /// filesystem paths).
+    pub fn cached_input_descriptors(
+        &self,
+        core_filename: &str,
+        game_sha1: &str,
+        current_mtime: i64,
+    ) -> Result<Option<Vec<oa_core::InputDescriptor>>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT descriptors_json, core_mtime FROM core_input_descriptors \
+                 WHERE core_filename = ?1 AND game_sha1 = ?2",
+                params![core_filename, game_sha1],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("cached_input_descriptors query: {e}"))?;
+        let Some((json, cached_mtime)) = row else {
+            return Ok(None);
+        };
+        if cached_mtime != current_mtime {
+            return Ok(None);
+        }
+        let descriptors: Vec<oa_core::InputDescriptor> = serde_json::from_str(&json)
+            .map_err(|e| format!("cached_input_descriptors parse json: {e}"))?;
+        Ok(Some(descriptors))
     }
 
     // --- MAME games (v17 — listxml-based ROM-set name resolution) -------
@@ -5557,6 +5735,196 @@ mod tests {
             .expect("Some(devices) after re-upsert");
         assert_eq!(after.len(), 1, "re-upsert should replace, not append");
         assert_eq!(after[0].id, 1);
+    }
+
+    #[test]
+    fn input_descriptors_cache_round_trip() {
+        // Fresh DB starts with no cached descriptors → reads return None.
+        let db = fresh_db();
+        assert_eq!(
+            db.cached_input_descriptors(
+                "fceumm_libretro.dll",
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                1700000000,
+            )
+            .expect("query"),
+            None,
+        );
+
+        // Persist a Castlevania-shaped publish: 4 face-button labels at
+        // port 0 / JOYPAD / index 0 / id 0-3.
+        let castlevania = vec![
+            oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 0,
+                description: "Jump".into(),
+            },
+            oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Whip".into(),
+            },
+        ];
+        let sha1 = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+        db.upsert_input_descriptors("fceumm_libretro.dll", sha1, &castlevania, 1700000000)
+            .expect("upsert");
+
+        // Matching mtime → returns the cached vec.
+        let got = db
+            .cached_input_descriptors("fceumm_libretro.dll", sha1, 1700000000)
+            .expect("query")
+            .expect("Some(descriptors) for matching mtime");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[1].id, 8);
+        assert_eq!(got[1].description, "Whip");
+
+        // Mismatched mtime → treated as stale, returns None.
+        assert_eq!(
+            db.cached_input_descriptors("fceumm_libretro.dll", sha1, 1700099999)
+                .expect("query stale"),
+            None,
+            "mtime mismatch must invalidate cache",
+        );
+
+        // Re-upsert with new mtime overwrites the row.
+        let mario = vec![
+            oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 0,
+                description: "Jump".into(),
+            },
+            oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Run".into(),
+            },
+        ];
+        db.upsert_input_descriptors("fceumm_libretro.dll", sha1, &mario, 1700099999)
+            .expect("re-upsert");
+        let after = db
+            .cached_input_descriptors("fceumm_libretro.dll", sha1, 1700099999)
+            .expect("query after re-upsert")
+            .expect("Some(descriptors) after re-upsert");
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[1].description, "Run", "re-upsert should replace");
+    }
+
+    #[test]
+    fn input_descriptors_cache_per_game_isolation() {
+        // Two games on the same core get independent rows — Castlevania's
+        // "Whip" doesn't leak into Mario's lookup.
+        let db = fresh_db();
+        let core = "fceumm_libretro.dll";
+        let castlevania_sha = "1111111111111111111111111111111111111111";
+        let mario_sha = "2222222222222222222222222222222222222222";
+
+        db.upsert_input_descriptors(
+            core, castlevania_sha,
+            &[oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Whip".into(),
+            }],
+            100,
+        )
+        .expect("upsert castlevania");
+        db.upsert_input_descriptors(
+            core, mario_sha,
+            &[oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Run".into(),
+            }],
+            100,
+        )
+        .expect("upsert mario");
+
+        assert_eq!(
+            db.cached_input_descriptors(core, castlevania_sha, 100)
+                .expect("query castlevania")
+                .expect("Some")
+                [0].description,
+            "Whip",
+        );
+        assert_eq!(
+            db.cached_input_descriptors(core, mario_sha, 100)
+                .expect("query mario")
+                .expect("Some")
+                [0].description,
+            "Run",
+        );
+    }
+
+    #[test]
+    fn input_descriptors_most_recent_for_core_returns_latest() {
+        // most_recent_input_descriptors_for_core picks the row with the
+        // highest captured_at — the "last played game on this core"
+        // lookup the bindings UI uses when no game is currently loaded.
+        let db = fresh_db();
+        let core = "fceumm_libretro.dll";
+
+        // Castlevania first (lower captured_at).
+        db.upsert_input_descriptors(
+            core, "1111111111111111111111111111111111111111",
+            &[oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Whip".into(),
+            }],
+            100,
+        )
+        .expect("upsert castlevania");
+        // Tiny sleep to ensure distinct captured_at unix-second timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        // Mario second (higher captured_at).
+        db.upsert_input_descriptors(
+            core, "2222222222222222222222222222222222222222",
+            &[oa_core::InputDescriptor {
+                port: 0, device: 1, index: 0, id: 8,
+                description: "Run".into(),
+            }],
+            100,
+        )
+        .expect("upsert mario");
+
+        let latest = db
+            .most_recent_input_descriptors_for_core(core, 100)
+            .expect("query")
+            .expect("Some(latest)");
+        assert_eq!(latest[0].description, "Run", "most-recent should be Mario");
+
+        // Mtime mismatch → None (.dll moved underneath the cache).
+        assert_eq!(
+            db.most_recent_input_descriptors_for_core(core, 999)
+                .expect("query stale"),
+            None,
+            "mtime mismatch must invalidate the most-recent lookup too",
+        );
+    }
+
+    #[test]
+    fn find_sha1_by_file_path_returns_sha1_or_none() {
+        // add_games doesn't write the sha1 column directly — sha1
+        // arrives later via the rom_hashes identify pass (see
+        // `apply_rom_hash`). Reproduce that flow in the test so the
+        // row's sha1 actually persists.
+        let db = fresh_db();
+        db.add_games(&[row("dh", "Duck Hunt (World)")]).expect("seed dh");
+        db.add_games(&[row("smb", "Super Mario Bros")]).expect("seed smb");
+        db.apply_rom_hash(
+            "dh",
+            "aabbccddeeff00112233445566778899aabbccdd",
+            None,
+            None,
+        )
+        .expect("apply sha1");
+
+        assert_eq!(
+            db.find_sha1_by_file_path("/roms/dh.pce").expect("hit"),
+            Some("aabbccddeeff00112233445566778899aabbccdd".into()),
+        );
+        assert_eq!(
+            db.find_sha1_by_file_path("/roms/smb.pce").expect("no sha1"),
+            None,
+            "row exists but sha1 is NULL — should flatten to None",
+        );
+        assert_eq!(
+            db.find_sha1_by_file_path("/roms/missing.pce").expect("miss"),
+            None,
+        );
     }
 
     #[test]
