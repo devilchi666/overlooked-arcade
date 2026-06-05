@@ -60,3 +60,4 @@ mod state;
 pub use crate::core::{probe, CoreInfo, LibretroCore, LibretroError, RomSource};
 pub use crate::ffi::PixelFormat;
 pub use crate::keycode::{keycode_to_retro_key, modifiers_from_held};
+pub use crate::state::loaded_core_controller_devices;

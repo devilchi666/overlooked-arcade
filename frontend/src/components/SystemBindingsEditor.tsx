@@ -19,7 +19,7 @@ import {
 import type { SystemId } from "../themes/registry";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
-import { LightGunMappingHelp, isLightGunSystem } from "./LightGunHelp";
+import { LightGunMappingHelp } from "./LightGunHelp";
 
 // Per-system input bindings editor.
 //
@@ -48,6 +48,23 @@ type Props = {
 
 const SystemBindingsEditor: Component<Props> = (props) => {
   const [refreshKey, setRefreshKey] = createSignal(0);
+  // Light-gun detection derived from the cached SET_CONTROLLER_INFO
+  // advertisement of the system's effective core (see
+  // `system_has_light_gun` in apps/oa-shell/src/main.rs). Replaces the
+  // hand-maintained LIGHT_GUN_SYSTEM_IDS list that LightGunHelp used to
+  // export. Cold-cache returns false until the operator launches the
+  // system once; banner appears thereafter.
+  const [hasLightGun] = createResource(
+    () => props.systemId,
+    async (systemId): Promise<boolean> => {
+      try {
+        return await invoke<boolean>("system_has_light_gun", { systemId });
+      } catch (e) {
+        console.warn("system_has_light_gun failed:", e);
+        return false;
+      }
+    },
+  );
   const [bindings] = createResource(
     () => ({ id: props.systemId, _: refreshKey() }),
     async (input): Promise<ButtonBinding[] | null> => {
@@ -185,7 +202,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
           Reset to defaults
         </button>
       </div>
-      <Show when={isLightGunSystem(props.systemId)}>
+      <Show when={hasLightGun()}>
         <div class="mt-3">
           <LightGunMappingHelp compact />
         </div>

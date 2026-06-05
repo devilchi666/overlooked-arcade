@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 20;
+const SCHEMA_VERSION: i32 = 21;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -899,6 +899,33 @@ impl LibraryDb {
                 .map_err(|e| format!("set user_version=20: {e}"))?;
             log::info!(
                 "library_db: schema migrated to v20 (backfilled disc_set_id on {n} pre-existing multi-disc games)"
+            );
+        }
+
+        // v20 → v21: per-core controller-info cache. Populated on every
+        // successful core load with the per-port supported-device list
+        // the core advertised via RETRO_ENVIRONMENT_SET_CONTROLLER_INFO.
+        // Lets the per-game Input dialog render the correct dropdown
+        // (FCEUmm Zapper = 258, snes9x Super Scope = 260, etc.) even
+        // when no core is currently loaded. Invalidated by .dll mtime
+        // change so a core update (or operator-swapped .dll) re-captures
+        // on next load. See docs/PLANS/dynamic-controller-info.md Slice 3.
+        if current < 21 {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS core_controller_info ( \
+                    core_filename TEXT    NOT NULL, \
+                    port          INTEGER NOT NULL, \
+                    devices_json  TEXT    NOT NULL, \
+                    captured_at   INTEGER NOT NULL, \
+                    core_mtime    INTEGER NOT NULL, \
+                    PRIMARY KEY (core_filename, port) \
+                 );",
+            )
+            .map_err(|e| format!("v21 create core_controller_info: {e}"))?;
+            conn.pragma_update(None, "user_version", 21)
+                .map_err(|e| format!("set user_version=21: {e}"))?;
+            log::info!(
+                "library_db: schema migrated to v21 (core_controller_info cache table)"
             );
         }
 
@@ -4332,6 +4359,104 @@ impl LibraryDb {
         Ok(())
     }
 
+    // --- Controller info cache (v21 — dynamic-controller-info Slice 3) --
+    //
+    // Persists what each core's `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`
+    // call advertised on its most recent load. Keyed by
+    // (core_filename, port). Written immediately after a successful
+    // core load; read by `get_controller_devices` when no core is
+    // currently loaded so the per-game Input dialog can still render
+    // the right dropdown pre-launch.
+    //
+    // Invalidation is mtime-based: cached `core_mtime` is compared
+    // against the live .dll's current mtime; mismatch → reader returns
+    // empty (caller falls back) and the next core load overwrites.
+
+    /// Write or replace the cached per-port device lists for one core.
+    /// Pass an array of 5 Vecs (one per libretro port). Empty inner
+    /// Vecs are still persisted — `[]` is a valid declaration meaning
+    /// "core advertised this port supports nothing." `core_mtime` is
+    /// the unix-seconds modification time of the .dll at capture time.
+    pub fn upsert_controller_info(
+        &self,
+        core_filename: &str,
+        devices_per_port: &[Vec<oa_core::ControllerDeviceDescriptor>; 5],
+        core_mtime: i64,
+    ) -> Result<(), String> {
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let mut conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("upsert_controller_info tx: {e}"))?;
+        for (port, devices) in devices_per_port.iter().enumerate() {
+            let json = serde_json::to_string(devices)
+                .map_err(|e| format!("serialize controller_info port {port}: {e}"))?;
+            tx.execute(
+                r#"
+                INSERT INTO core_controller_info
+                    (core_filename, port, devices_json, captured_at, core_mtime)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                ON CONFLICT(core_filename, port) DO UPDATE SET
+                    devices_json = excluded.devices_json,
+                    captured_at  = excluded.captured_at,
+                    core_mtime   = excluded.core_mtime
+                "#,
+                params![core_filename, port as i64, json, now, core_mtime],
+            )
+            .map_err(|e| format!("upsert controller_info port {port}: {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("upsert_controller_info commit: {e}"))?;
+        Ok(())
+    }
+
+    /// Read the cached per-port device list. Returns `Ok(None)` when
+    /// no row exists OR the cached `core_mtime` doesn't match the
+    /// caller-supplied `current_mtime` (stale cache — caller should
+    /// fall back to the no-cache path until the core reloads).
+    ///
+    /// Caller is expected to look up the .dll mtime themselves (it's a
+    /// filesystem call; we don't want the DB layer touching disk for
+    /// arbitrary paths).
+    pub fn cached_controller_devices(
+        &self,
+        core_filename: &str,
+        port: u32,
+        current_mtime: i64,
+    ) -> Result<Option<Vec<oa_core::ControllerDeviceDescriptor>>, String> {
+        let conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT devices_json, core_mtime FROM core_controller_info \
+                 WHERE core_filename = ?1 AND port = ?2",
+                params![core_filename, port as i64],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("cached_controller_devices query: {e}"))?;
+        let Some((json, cached_mtime)) = row else {
+            return Ok(None);
+        };
+        if cached_mtime != current_mtime {
+            // Stale — caller should fall back to empty + the dialog
+            // shows the "launch the game once" hint. Next core load
+            // refreshes the row.
+            return Ok(None);
+        }
+        let devices: Vec<oa_core::ControllerDeviceDescriptor> = serde_json::from_str(&json)
+            .map_err(|e| format!("cached_controller_devices parse json: {e}"))?;
+        Ok(Some(devices))
+    }
+
     // --- MAME games (v17 — listxml-based ROM-set name resolution) -------
 
     /// Wholesale replace every row in `mame_games`. Single transaction
@@ -5357,6 +5482,123 @@ mod tests {
         let games = db.list_games().expect("list");
         assert_eq!(games.len(), 0);
         assert_eq!(db.count().expect("count"), 0);
+    }
+
+    #[test]
+    fn controller_info_cache_round_trip() {
+        // Fresh DB starts with no cached info → cached_controller_devices
+        // returns Ok(None) regardless of mtime.
+        let db = fresh_db();
+        assert_eq!(
+            db.cached_controller_devices("fceumm_libretro.dll", 1, 1700000000)
+                .expect("query"),
+            None,
+        );
+
+        // Persist a FCEUmm-shaped advertisement: port 0 + port 1 carry
+        // the gamepad + zapper + arkanoid + power pad options; ports 2-4
+        // empty (matches FCEUmm's update_nes_controllers port-bucketing).
+        let zapper = oa_core::ControllerDeviceDescriptor {
+            label: "Zapper".into(),
+            id: 258,
+        };
+        let pad = oa_core::ControllerDeviceDescriptor {
+            label: "RetroPad".into(),
+            id: 1,
+        };
+        let per_port: [Vec<oa_core::ControllerDeviceDescriptor>; 5] = [
+            vec![pad.clone(), zapper.clone()],
+            vec![pad.clone(), zapper.clone()],
+            vec![],
+            vec![],
+            vec![],
+        ];
+        db.upsert_controller_info("fceumm_libretro.dll", &per_port, 1700000000)
+            .expect("upsert");
+
+        // Matching mtime → returns the cached vec.
+        let got = db
+            .cached_controller_devices("fceumm_libretro.dll", 1, 1700000000)
+            .expect("query")
+            .expect("Some(devices) for matching mtime");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[1].id, 258);
+        assert_eq!(got[1].label, "Zapper");
+
+        // Empty per-port persists faithfully — port 3 round-trips as [].
+        let port3 = db
+            .cached_controller_devices("fceumm_libretro.dll", 3, 1700000000)
+            .expect("query")
+            .expect("Some([]) for empty port");
+        assert!(port3.is_empty(), "empty per-port list should round-trip as Some(vec![])");
+
+        // Mismatched mtime → treats cache as stale and returns None
+        // (caller falls back to "Launch the game once" hint).
+        assert_eq!(
+            db.cached_controller_devices("fceumm_libretro.dll", 1, 1700099999)
+                .expect("query stale"),
+            None,
+            "mtime mismatch must invalidate cache",
+        );
+
+        // Re-upsert with new mtime overwrites the row + restores reads.
+        let per_port2 = [
+            vec![pad.clone()],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ];
+        db.upsert_controller_info("fceumm_libretro.dll", &per_port2, 1700099999)
+            .expect("re-upsert");
+        let after = db
+            .cached_controller_devices("fceumm_libretro.dll", 0, 1700099999)
+            .expect("query after re-upsert")
+            .expect("Some(devices) after re-upsert");
+        assert_eq!(after.len(), 1, "re-upsert should replace, not append");
+        assert_eq!(after[0].id, 1);
+    }
+
+    #[test]
+    fn controller_info_cache_keyed_by_core_filename() {
+        // Two different cores' caches should not collide.
+        let db = fresh_db();
+        let fceumm = [
+            vec![oa_core::ControllerDeviceDescriptor {
+                label: "Zapper".into(),
+                id: 258,
+            }],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ];
+        let snes9x = [
+            vec![oa_core::ControllerDeviceDescriptor {
+                label: "Super Scope".into(),
+                id: 260,
+            }],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ];
+        db.upsert_controller_info("fceumm_libretro.dll", &fceumm, 100)
+            .expect("upsert fceumm");
+        db.upsert_controller_info("snes9x_libretro.dll", &snes9x, 200)
+            .expect("upsert snes9x");
+
+        let got_nes = db
+            .cached_controller_devices("fceumm_libretro.dll", 0, 100)
+            .expect("query nes")
+            .expect("nes Some");
+        assert_eq!(got_nes[0].label, "Zapper");
+
+        let got_snes = db
+            .cached_controller_devices("snes9x_libretro.dll", 0, 200)
+            .expect("query snes")
+            .expect("snes Some");
+        assert_eq!(got_snes[0].label, "Super Scope");
     }
 
     #[test]

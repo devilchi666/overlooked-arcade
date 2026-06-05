@@ -8,7 +8,7 @@
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
 
 use std::ffi::c_void;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_uint};
 
 // ---------- pixel format ----------
 
@@ -279,6 +279,33 @@ pub struct retro_system_av_info {
 pub struct retro_variable {
     pub key: *const c_char,
     pub value: *const c_char,
+}
+
+// ---------- controller-info declaration structs ----------
+//
+// Cores call `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` (35) with a pointer to
+// a null-terminated array of `retro_controller_info` — one entry per port.
+// Each port entry carries `types: *const retro_controller_description` plus
+// `num_types: u32`. The outer array sentinel is `{ types == NULL, num_types
+// == 0 }` (no explicit count — walk until sentinel).
+//
+// `desc` strings are typically `const char*` into the core's .dll text
+// segment, valid for the core's lifetime per spec. We clone to owned
+// `String` in `state.rs` so the frontend hop is decoupled from core
+// lifetime.
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_controller_description {
+    pub desc: *const c_char,
+    pub id: c_uint,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_controller_info {
+    pub types: *const retro_controller_description,
+    pub num_types: c_uint,
 }
 
 // ---------- core option declaration structs ----------
