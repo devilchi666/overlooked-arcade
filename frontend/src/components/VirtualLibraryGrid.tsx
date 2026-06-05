@@ -14,8 +14,9 @@ import LibraryTile from "./LibraryTile";
 import type { EntryGroup } from "../library/filter";
 import type { RomEntry } from "../library/types";
 import { useFocusGroup } from "../nav/focus";
-import { playSystemUiSound } from "../themes/systemUiSound";
-import type { SystemId } from "../themes/registry";
+import { isPerSystemUiEnabled, playSystemUiSound } from "../themes/systemUiSound";
+import { DEFAULT_TILE_ASPECT, systemThemes, type SystemId } from "../themes/registry";
+import { uiConfigFor, type UITileShape } from "../themes/systemUIConfigs";
 
 type Props = {
   /** Pre-filtered + sorted + grouped list. Empty group label = render no
@@ -70,8 +71,49 @@ type GridRow =
   | { kind: "tiles"; groupId: string; entries: RomEntry[] };
 
 const HEADER_HEIGHT = 48;
-const TITLE_BLOCK_HEIGHT = 56; // tile bottom title/system label slot
+// Tile chrome below the cover area: title block (`flex flex-col gap-1 px-3 py-3`,
+// h3 text-sm + p text-[0.65rem]) ~= 61px + 2px button border = ~63px. Round to
+// 64 so estimates land at-or-above measured height; an *over*-estimate makes
+// totalSize shrink on first measurement (thumb appears to jump forward — barely
+// perceptible), an *under*-estimate makes it grow (thumb lags behind the mouse
+// during a drag — the bug we're fixing).
+const TILE_CHROME_HEIGHT = 64;
 const ROW_VERTICAL_PADDING = 12;
+const DEFAULT_ASPECT = 3 / 4;
+
+// Parse "W/H" tile-aspect strings (matches the format in `systemThemes`).
+function parseAspectString(s: string | undefined): number {
+  if (!s) return DEFAULT_ASPECT;
+  const m = s.match(/^\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/);
+  if (!m) return DEFAULT_ASPECT;
+  const w = parseFloat(m[1]);
+  const h = parseFloat(m[2]);
+  return w > 0 && h > 0 ? w / h : DEFAULT_ASPECT;
+}
+
+function aspectForTileShape(shape: UITileShape): number | null {
+  switch (shape) {
+    case "square":
+    case "circle": return 1;
+    case "portrait-3:4": return 0.75;
+    case "landscape-4:3": return 4 / 3;
+    case "wide-16:9": return 16 / 9;
+    case "auto":
+    default: return null;
+  }
+}
+
+// Mirror LibraryTile's tileAspectStyle resolution so estimate matches the
+// shape the tile actually renders.
+function aspectForSystem(sysId: string): number {
+  if (isPerSystemUiEnabled()) {
+    const override = aspectForTileShape(uiConfigFor(sysId as SystemId).tileShape);
+    if (override !== null) return override;
+  }
+  return parseAspectString(
+    systemThemes[sysId as SystemId]?.tileAspect ?? DEFAULT_TILE_ASPECT,
+  );
+}
 
 /// Hybrid column-fitting helper. The caller-provided `target` width is
 /// the operator's slider preference (e.g. 220px). We try every viable
@@ -168,19 +210,31 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
     return result;
   });
 
-  // Estimated row height — varies between header (small) and tile (large).
-  // tile row height = actualTileWidth / aspect + title block + vertical padding.
-  const tileRowHeight = createMemo(
-    () => Math.round(actualTileWidth() / aspect()) + TITLE_BLOCK_HEIGHT + ROW_VERTICAL_PADDING,
-  );
+  // Tile row height for a given aspect ratio. CSS grid sizes a row to
+  // its tallest cell, so for mixed-system rows we use the SMALLEST
+  // aspect (= tallest tile). Keeping this aligned with the rendered
+  // height matters: the virtualizer calls `measureElement` post-mount
+  // and a discrepancy between estimate and measured size shifts
+  // `totalSize` underneath an in-progress scrollbar drag — the native
+  // scrollbar thumb then lags behind the mouse cursor because its
+  // position is recomputed against the new scrollHeight each frame.
+  const rowHeightForAspect = (a: number): number =>
+    Math.round(actualTileWidth() / a) + TILE_CHROME_HEIGHT + ROW_VERTICAL_PADDING;
 
   const virtualizer = createVirtualizer({
     get count() { return rows().length; },
     getScrollElement: () => scrollRef ?? null,
     estimateSize: (index) => {
       const row = rows()[index];
-      if (!row) return tileRowHeight();
-      return row.kind === "header" ? HEADER_HEIGHT : tileRowHeight();
+      if (!row) return rowHeightForAspect(aspect());
+      if (row.kind === "header") return HEADER_HEIGHT;
+      let minAspect = Infinity;
+      for (const e of row.entries) {
+        const a = aspectForSystem(e.systemId);
+        if (a < minAspect) minAspect = a;
+      }
+      if (!isFinite(minAspect)) minAspect = aspect();
+      return rowHeightForAspect(minAspect);
     },
     overscan: 4,
   });
@@ -198,11 +252,13 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
 
   // When column count or actual tile width changes (due to resize or
   // slider change), tell the virtualizer to re-measure so row offsets
-  // stay correct.
+  // stay correct. Also re-fire when the per-system UI master toggle
+  // flips, since that swaps the tile-shape override path and therefore
+  // every row's estimate.
   createEffect(() => {
     void columnCount();
     void actualTileWidth();
-    void tileRowHeight();
+    void isPerSystemUiEnabled();
     virtualizer.measure();
   });
 
@@ -303,7 +359,6 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
             return (
               <div
                 data-index={vItem.index}
-                ref={(el) => queueMicrotask(() => virtualizer.measureElement(el))}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -360,7 +415,6 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                             }}
                             data-oa-focus={isFocused() ? "true" : undefined}
                             data-oa-focus-active={focusGroup.isActive() ? "true" : "false"}
-                            style={{ "content-visibility": "auto", "contain-intrinsic-size": "auto 320px 360px" }}
                           >
                             <LibraryTile
                               entry={entry}
