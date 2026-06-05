@@ -2431,6 +2431,7 @@ fn main() {
             set_libretro_device_for_game,
             arm_libretro_device,
             get_controller_devices,
+            get_input_descriptors,
             system_has_light_gun,
             list_games,
             add_games,
@@ -8211,6 +8212,15 @@ struct ButtonBinding {
     button: String,
     keyboard: Option<String>,
     gamepad: Option<String>,
+    /// libretro `RETRO_DEVICE_ID_JOYPAD_*` bit index this button maps
+    /// to after the per-system shell-bits→libretro-bits remap. Frontend
+    /// uses this to look up the corresponding entry in the input-
+    /// descriptors list (cores key descriptors on
+    /// `(port, device, index, id)` and SystemBindingsEditor always
+    /// queries port=0/device=JOYPAD/index=0). `u32::MAX` is the
+    /// sentinel for "no remap available" — keeps the JSON shape stable
+    /// for systems whose bindings table hasn't grown a remap arm yet.
+    libretro_id: u32,
 }
 
 /// Apply a full Bindings map to the InputPoller on Port0. Slots not present
@@ -8242,12 +8252,26 @@ fn bindings_to_response(system_id: &str, b: &Bindings) -> Vec<ButtonBinding> {
     // alphabetical. Unknown system → empty slice → empty response.
     bindings::buttons_for(system_id)
         .iter()
-        .map(|(name, _)| {
+        .map(|(name, shell_mask)| {
             let pair = b.get(*name).cloned().unwrap_or_default();
+            // Convert the shell-internal bit mask to its libretro
+            // equivalent (single bit in → single bit out per the
+            // per-system remap), then take the bit index so the
+            // frontend can match the descriptor at
+            // `(port=0, device=JOYPAD, index=0, id=libretro_id)`.
+            // shell_mask is 0 for separator entries in some tables;
+            // those resolve to MAX as the "no descriptor" sentinel.
+            let libretro_mask = bindings::to_libretro_bits(system_id, *shell_mask);
+            let libretro_id = if libretro_mask == 0 {
+                u32::MAX
+            } else {
+                libretro_mask.trailing_zeros()
+            };
             ButtonBinding {
                 button: (*name).to_string(),
                 keyboard: pair.keyboard,
                 gamepad: pair.gamepad,
+                libretro_id,
             }
         })
         .collect()
@@ -8678,6 +8702,23 @@ fn get_controller_devices(
         .ok()
         .flatten()
         .unwrap_or_default()
+}
+
+/// Return the per-game button-label list the currently-loaded core
+/// advertised via `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS`. Slice 3
+/// of the dynamic-input-descriptors arc will add a SQLite cache (keyed
+/// per-game by sha1) so the bindings UI can render labels for the
+/// per-system page even when no game is running; this Slice-2 command
+/// only reads the live singleton, which is correct for the "operator
+/// is currently playing the game" case (the typical bindings-edit
+/// path).
+///
+/// Returns an empty Vec when no core is loaded or the loaded core
+/// never published. Frontend treats empty as "no extra labels — just
+/// render the physical RetroPad bit names like before."
+#[tauri::command]
+fn get_input_descriptors() -> Vec<oa_core::InputDescriptor> {
+    oa_libretro::loaded_core_input_descriptors()
 }
 
 /// Does the system's effective core advertise any light-gun-shape
