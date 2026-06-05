@@ -151,33 +151,32 @@ function useGameOverrides(
     const e = entry();
     if (!e) return;
     const next: GameOverrides = { ...overrides(), ...p };
-    const cleaned: GameOverrides = {};
-    if (next.scalingOverride != null) cleaned.scalingOverride = next.scalingOverride;
-    if (next.windowModeOverride != null) cleaned.windowModeOverride = next.windowModeOverride;
-    if (next.monitorIndexOverride != null) cleaned.monitorIndexOverride = next.monitorIndexOverride;
-    if (next.regionOverride != null) cleaned.regionOverride = next.regionOverride;
-    if (next.shaderPreset != null) cleaned.shaderPreset = next.shaderPreset;
-    if (next.bloomAmount != null) cleaned.bloomAmount = next.bloomAmount;
-    if (next.patchPath != null && next.patchPath !== "") cleaned.patchPath = next.patchPath;
-    if (next.rewindEnabled != null) cleaned.rewindEnabled = next.rewindEnabled;
-    if (next.rewindCaptureIntervalFrames != null) cleaned.rewindCaptureIntervalFrames = next.rewindCaptureIntervalFrames;
-    if (next.rewindBufferMegabytes != null) cleaned.rewindBufferMegabytes = next.rewindBufferMegabytes;
-    if (next.displayAspectOverride != null) cleaned.displayAspectOverride = next.displayAspectOverride;
-    if (next.overscanCropOverride != null && !overscanIsZero(next.overscanCropOverride)) {
-      cleaned.overscanCropOverride = next.overscanCropOverride;
+    // Carry every existing field through generically; only strip
+    // null/undefined + sentinel "empty" values that should round-trip
+    // to "no override." Previously each field was hand-listed; the
+    // type only enumerates ~19 fields but the Rust GameOverrides
+    // struct grew core_options / analog_routing / platform_music_path /
+    // dosbox_entry_point on top of that. Those came back from
+    // get_game_overrides at runtime but were silently dropped here,
+    // so any save through this dialog wiped them. (Same shape as
+    // the 2026-06-04 library_db.rs::set_game_overrides hand-list
+    // regression that erased per-port libretro device overrides.)
+    const cleaned: Record<string, unknown> = { ...next };
+    for (const k of Object.keys(cleaned)) {
+      const v = cleaned[k];
+      if (v == null) {
+        delete cleaned[k];
+      } else if (typeof v === "string" && v.trim() === "") {
+        delete cleaned[k];
+      }
     }
-    if (next.bezelImagePath != null && next.bezelImagePath !== "") {
-      cleaned.bezelImagePath = next.bezelImagePath;
+    if (
+      cleaned.overscanCropOverride
+      && overscanIsZero(cleaned.overscanCropOverride as OverscanCropPrefs)
+    ) {
+      delete cleaned.overscanCropOverride;
     }
-    if (next.keypadLayoutNote != null && next.keypadLayoutNote.trim() !== "") {
-      cleaned.keypadLayoutNote = next.keypadLayoutNote;
-    }
-    if (next.libretroDevice != null) cleaned.libretroDevice = next.libretroDevice;
-    if (next.libretroDevicePort1 != null) cleaned.libretroDevicePort1 = next.libretroDevicePort1;
-    if (next.libretroDevicePort2 != null) cleaned.libretroDevicePort2 = next.libretroDevicePort2;
-    if (next.libretroDevicePort3 != null) cleaned.libretroDevicePort3 = next.libretroDevicePort3;
-    if (next.libretroDevicePort4 != null) cleaned.libretroDevicePort4 = next.libretroDevicePort4;
-    setOverrides(cleaned);
+    setOverrides(cleaned as GameOverrides);
     try {
       await invoke("set_game_overrides", { id: e.id, overrides: cleaned });
     } catch (err) {

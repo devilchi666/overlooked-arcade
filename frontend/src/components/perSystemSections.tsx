@@ -115,24 +115,31 @@ export function usePerSystemOverrides(args: {
     const sysId = args.systemId();
     if (!sysId) return;
     const next: PerSystemOverrides = { ...overrides(), ...p };
-    // Drop null / undefined / zero-overscan entries — the launch path
-    // treats missing keys as "inherit OA default" so we keep the on-
-    // disk JSON minimal.
-    const cleaned: PerSystemOverrides = {};
-    if (next.scalingOverride != null) cleaned.scalingOverride = next.scalingOverride;
-    if (next.windowModeOverride != null) cleaned.windowModeOverride = next.windowModeOverride;
-    if (next.monitorIndexOverride != null) cleaned.monitorIndexOverride = next.monitorIndexOverride;
-    if (next.shaderPreset != null) cleaned.shaderPreset = next.shaderPreset;
-    if (next.bloomAmount != null) cleaned.bloomAmount = next.bloomAmount;
-    if (next.rewindEnabled != null) cleaned.rewindEnabled = next.rewindEnabled;
-    if (next.rewindCaptureIntervalFrames != null) cleaned.rewindCaptureIntervalFrames = next.rewindCaptureIntervalFrames;
-    if (next.rewindBufferMegabytes != null) cleaned.rewindBufferMegabytes = next.rewindBufferMegabytes;
-    if (next.displayAspectOverride != null) cleaned.displayAspectOverride = next.displayAspectOverride;
-    if (next.overscanCropOverride != null && !overscanIsZero(next.overscanCropOverride)) {
-      cleaned.overscanCropOverride = next.overscanCropOverride;
+    // Carry every existing field through generically; only strip
+    // null/undefined + zero-overscan + empty strings. The PerSystemOverrides
+    // TS type only enumerates ~11 fields but the Rust SystemSettings
+    // struct has more (keyboard_passthrough / region_priority_override /
+    // revision_priority_override / platform_music_path /
+    // ui_sound_{click,navigate,back,launch,error,scroll_tick}). Hand-
+    // listing dropped any field the type didn't know about — dormant
+    // bug today (no frontend surface writes those fields) but the
+    // moment one lands, every save through this surface would wipe
+    // them. Same shape as the 2026-06-04 light-gun regression in
+    // library_db.rs::set_game_overrides.
+    const cleaned: Record<string, unknown> = { ...next };
+    for (const k of Object.keys(cleaned)) {
+      const v = cleaned[k];
+      if (v == null) {
+        delete cleaned[k];
+      } else if (typeof v === "string" && v.trim() === "") {
+        delete cleaned[k];
+      }
     }
-    if (next.bezelImagePath != null && next.bezelImagePath !== "") {
-      cleaned.bezelImagePath = next.bezelImagePath;
+    if (
+      cleaned.overscanCropOverride
+      && overscanIsZero(cleaned.overscanCropOverride as OverscanCropPrefs)
+    ) {
+      delete cleaned.overscanCropOverride;
     }
     try {
       await invoke("set_system_settings", { systemId: sysId, settings: cleaned });
