@@ -419,33 +419,16 @@ impl SystemInfoOverride {
     /// whether to DELETE the override row vs UPSERT it. Keeps the
     /// table sparse: a default-constructed override doesn't pollute
     /// the DB.
+    ///
+    /// Compares against `Self::default()` so adding a new field cannot
+    /// silently regress this check. The previous hand-list AND-chain
+    /// stayed in sync by code review only — the 2026-06-04
+    /// `library_db.rs::set_game_overrides` regression (silent NULL of
+    /// any override consisting of only a late-added field) was the
+    /// exact same shape, so this struct gets the safer pattern by
+    /// default.
     pub fn is_empty(&self) -> bool {
-        self.manufacturer.is_none()
-            && self.system_type.is_none()
-            && self.generation.is_none()
-            && self.release_date.is_none()
-            && self.discontinued.is_none()
-            && self.units_sold.is_none()
-            && self.media.is_none()
-            && self.cpu.is_none()
-            && self.sound.is_none()
-            && self.resolution.is_none()
-            && self.color_palette.is_none()
-            && self.display_ratio.is_none()
-            && self.architecture.is_none()
-            && self.max_players.is_none()
-            && self.multiplayer.is_none()
-            && self.region.is_none()
-            && self.storage.is_none()
-            && self.ram.is_none()
-            && self.video_output.is_none()
-            && self.aspect_ratio.is_none()
-            && self.refresh_rate.is_none()
-            && self.peripherals.is_none()
-            && self.release_flag.is_none()
-            && self.tagline.is_none()
-            && self.blurb.is_none()
-            && self.sidebar_subline.is_none()
+        *self == Self::default()
     }
 }
 
@@ -1121,6 +1104,28 @@ pub fn hash_l1_l2_inputs_with_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- is_empty future-proofing -----------------------------------
+
+    #[test]
+    fn system_info_override_default_is_empty_and_any_edit_isnt() {
+        // Default-constructed override is empty (DELETE the row).
+        let empty = SystemInfoOverride::default();
+        assert!(empty.is_empty());
+        // Editing ANY single field flips is_empty to false. The
+        // default-comparison `is_empty` covers every present + future
+        // field automatically; this test guards against accidentally
+        // re-introducing a hand-list that misses one.
+        let mut ov = SystemInfoOverride::default();
+        ov.manufacturer = Some("Nintendo".into());
+        assert!(!ov.is_empty());
+        let mut ov = SystemInfoOverride::default();
+        ov.tagline = Some("OVERLOOKED".into());
+        assert!(!ov.is_empty());
+        let mut ov = SystemInfoOverride::default();
+        ov.peripherals = Some(vec![]);
+        assert!(!ov.is_empty());
+    }
 
     // ---- L1 parser ---------------------------------------------------
 

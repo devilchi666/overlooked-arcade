@@ -3565,17 +3565,16 @@ impl LibraryDb {
         id: &str,
         overrides: &GameOverrides,
     ) -> Result<(), String> {
-        let is_empty = overrides.scaling_override.is_none()
-            && overrides.window_mode_override.is_none()
-            && overrides.monitor_index_override.is_none()
-            && overrides.region_override.is_none()
-            && overrides.shader_preset.is_none()
-            && overrides.bloom_amount.is_none()
-            && overrides.core_options.is_empty()
-            && overrides.patch_path.is_none()
-            && overrides.rewind_enabled.is_none()
-            && overrides.rewind_capture_interval_frames.is_none()
-            && overrides.rewind_buffer_megabytes.is_none();
+        // Compare against the all-default struct so adding a new field
+        // to GameOverrides can't silently regress this check. The old
+        // hand-listed AND-chain went stale every time a field landed
+        // (display_aspect_override / overscan_crop_override / bezel /
+        // keypad_layout_note / libretro_device + per-port siblings /
+        // analog_routing / platform_music_path / dosbox_entry_point
+        // were all missing) — saving an override consisting ONLY of a
+        // missing field evaluated "empty" and NULL'd the row, wiping
+        // the value the operator just set.
+        let is_empty = overrides == &GameOverrides::default();
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         if is_empty {
             conn.execute(
@@ -5904,6 +5903,28 @@ mod tests {
         // Unknown id reads as default (no row → flatten None → default).
         let unknown = db.get_game_overrides("nope").expect("unknown");
         assert_eq!(unknown, GameOverrides::default());
+    }
+
+    #[test]
+    fn game_overrides_persists_when_only_late_added_field_set() {
+        // Regression: the is_empty NULL-out check used to hand-list the
+        // first ~11 fields and missed every later addition (libretro_device
+        // + per-port siblings, platform_music_path, dosbox_entry_point,
+        // analog_routing, keypad_layout_note, display_aspect_override,
+        // overscan_crop_override, bezel_image_path). An override consisting
+        // ONLY of a missing field evaluated "empty" → row NULL'd → next
+        // get returned default → operator's Zapper / SNES Mouse / Light
+        // Gun pick disappeared on dialog re-open and never reached the
+        // emu at launch.
+        let db = fresh_db();
+        db.add_games(&[row("duck", "Duck Hunt")]).expect("seed");
+        let only_zapper = GameOverrides {
+            libretro_device_port1: Some(4), // RETRO_DEVICE_LIGHTGUN on NES port 2
+            ..GameOverrides::default()
+        };
+        db.set_game_overrides("duck", &only_zapper).expect("set");
+        let after = db.get_game_overrides("duck").expect("get");
+        assert_eq!(after, only_zapper, "single-field override must survive round-trip");
     }
 
     #[test]

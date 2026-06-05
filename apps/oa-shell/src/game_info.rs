@@ -389,14 +389,12 @@ impl GameInfoOverride {
     /// whether to DELETE the override row vs UPSERT it. Keeps the
     /// table sparse: a default-constructed override doesn't pollute
     /// the DB.
+    ///
+    /// Compares against `Self::default()` so adding a new field cannot
+    /// silently regress this check (see [`SystemInfoOverride::is_empty`]
+    /// for the same rationale and the 2026-06-04 regression it mirrors).
     pub fn is_empty(&self) -> bool {
-        self.short_summary.is_none()
-            && self.controls_supported.is_none()
-            && self.best_emulator.is_none()
-            && self.best_emulator_reason.is_none()
-            && self.bugs.is_none()
-            && !self.applied_best_emulator
-            && !self.applied_controls
+        *self == Self::default()
     }
 }
 
@@ -947,6 +945,30 @@ pub fn global_index() -> &'static GameInfoIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- is_empty future-proofing -----------------------------------
+
+    #[test]
+    fn game_info_override_default_is_empty_and_any_edit_isnt() {
+        let empty = GameInfoOverride::default();
+        assert!(empty.is_empty());
+        // Editing any single field flips is_empty to false. The
+        // default-comparison `is_empty` covers every present + future
+        // field automatically — this test guards against a hand-list
+        // sneaking back in and missing one.
+        let mut ov = GameInfoOverride::default();
+        ov.short_summary = Some("A side-scroller.".into());
+        assert!(!ov.is_empty());
+        let mut ov = GameInfoOverride::default();
+        ov.applied_best_emulator = true;
+        assert!(!ov.is_empty());
+        let mut ov = GameInfoOverride::default();
+        ov.applied_controls = true;
+        assert!(!ov.is_empty());
+        let mut ov = GameInfoOverride::default();
+        ov.bugs = Some(vec![]);
+        assert!(!ov.is_empty());
+    }
 
     /// Sample matching the Tomb Raider example in
     /// `docs/PLANS/game-info-panel.md` §5. Used as the golden record

@@ -123,11 +123,14 @@ pub struct MameGameOverride {
 impl MameGameOverride {
     /// True when every override field is None — used by the upsert
     /// path to decide between INSERT/UPDATE and DELETE.
+    ///
+    /// Compares against a default-constructed override with the same
+    /// `name` (the key field, intentionally not part of "emptiness")
+    /// so adding a new optional field cannot silently regress this
+    /// check (see [`crate::system_info::SystemInfoOverride::is_empty`]
+    /// for the same rationale and the 2026-06-04 regression it mirrors).
     pub fn is_empty(&self) -> bool {
-        self.description.is_none()
-            && self.year.is_none()
-            && self.manufacturer.is_none()
-            && self.cloneof.is_none()
+        *self == Self { name: self.name.clone(), ..Self::default() }
     }
 }
 
@@ -247,6 +250,40 @@ pub fn hash_l1_input(slim_path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- is_empty future-proofing -----------------------------------
+
+    #[test]
+    fn mame_game_override_name_only_is_empty_and_any_edit_isnt() {
+        // `name` is the key field, intentionally not part of "emptiness":
+        // a row with only the key set means "no edits, just an identifier."
+        let key_only = MameGameOverride {
+            name: "dkong".into(),
+            ..MameGameOverride::default()
+        };
+        assert!(key_only.is_empty());
+        // Editing any single optional field flips is_empty to false.
+        // The default-with-name comparison covers every present + future
+        // field automatically.
+        let edited = MameGameOverride {
+            name: "dkong".into(),
+            description: Some("Donkey Kong".into()),
+            ..MameGameOverride::default()
+        };
+        assert!(!edited.is_empty());
+        let edited = MameGameOverride {
+            name: "dkong".into(),
+            year: Some("1981".into()),
+            ..MameGameOverride::default()
+        };
+        assert!(!edited.is_empty());
+        let edited = MameGameOverride {
+            name: "dkong".into(),
+            cloneof: Some("dkongjr".into()),
+            ..MameGameOverride::default()
+        };
+        assert!(!edited.is_empty());
+    }
 
     const SAMPLE_SLIM_JSON: &str = r#"{
         "mame_version": "0.288",
