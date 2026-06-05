@@ -4,6 +4,14 @@ Format: date + three lines — **Shipped / Almost / Next**. Cross-cutting milest
 
 ---
 
+## 2026-06-05 — Per-game button labels render in Bindings page
+
+- **Shipped:** Dynamic-input-descriptors arc (`docs/PLANS/dynamic-input-descriptors.md`) — the per-system Bindings dialog now renders the loaded core's `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` publish inline next to each physical button chip. FCEUmm publishes per-game labels for Mario Bros / Castlevania / etc.: `[B] Whip` for Castlevania, `[B] Run` for Mario, `[B] Shoot` for Mega Man. Both live-while-running and post-game-cached paths validated. The SQLite cache (`core_input_descriptors` table, v22 schema) keys per-(core, game_sha1) so re-opening Bindings after exiting to the library still shows the last-played game's labels until a different NES game gets launched. Bindings dialog also reachable mid-game now via QuickSettings → Bindings (was library-only before).
+- **Almost:** —
+- **Next:** Mesen swap polish (Phase 2) — Mesen may or may not publish the same descriptor labels as FCEUmm; the dynamic pipeline will surface whatever Mesen actually authored.
+
+---
+
 ## 2026-06-05 — Zapper validated on Duck Hunt
 
 - **Shipped:** Duck Hunt operator validation green-light on FCEUmm. Aim via OS mouse cursor, left-click fires `RETRO_DEVICE_ID_LIGHTGUN_TRIGGER`. Path: per-game Input dialog (in QuickSettings now, surfaced mid-game) → port 1 = "Zapper" (id 258 = FCEUmm's `RETRO_DEVICE_SUBCLASS(MOUSE, 0)`) → `arm_libretro_device` dispatches → `set_controller_port_device(1, 258)` → FCEUmm's `update_nes_controllers` matches `RETRO_DEVICE_ZAPPER` case + wires `SI_ZAPPER` → `cb_input_state(port=1, device=LIGHTGUN)` reads `input_pointer[1]` populated by the mirror-pointer-to-ports-1-4 fix on `ee0f813`. ROADMAP Phase 2 Light gun bullet flipped ✅.

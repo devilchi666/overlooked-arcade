@@ -2431,6 +2431,7 @@ fn main() {
             set_libretro_device_for_game,
             arm_libretro_device,
             get_controller_devices,
+            get_input_descriptors,
             system_has_light_gun,
             list_games,
             add_games,
@@ -4621,6 +4622,35 @@ fn run_emu_render(
                                         "oa-shell: upsert_controller_info({}) failed: {}",
                                         current_core_dll, e
                                     );
+                                }
+                                // Dynamic-input-descriptors Slice 3 — also
+                                // persist the input descriptors the core
+                                // published. Keyed per-(core, game_sha1)
+                                // because cores publish different label
+                                // tables per game (FCEUmm's B = "Whip"
+                                // in Castlevania vs B = "Run" in Mario).
+                                // Skipped silently when sha1 isn't
+                                // available (game row missing sha1, e.g.
+                                // freshly-imported before the hash pass
+                                // — operator's worst case is "no
+                                // chips on next bindings open" which
+                                // matches the pre-arc behaviour).
+                                let descriptors =
+                                    oa_libretro::loaded_core_input_descriptors();
+                                if let Ok(Some(sha1)) =
+                                    db.find_sha1_by_file_path(&path)
+                                {
+                                    if let Err(e) = db.upsert_input_descriptors(
+                                        &current_core_dll,
+                                        &sha1,
+                                        &descriptors,
+                                        core_mtime,
+                                    ) {
+                                        log::warn!(
+                                            "oa-shell: upsert_input_descriptors({}, {}) failed: {}",
+                                            current_core_dll, sha1, e
+                                        );
+                                    }
                                 }
                             }
                             current_slot = restore_slot.unwrap_or(0);
@@ -8211,6 +8241,15 @@ struct ButtonBinding {
     button: String,
     keyboard: Option<String>,
     gamepad: Option<String>,
+    /// libretro `RETRO_DEVICE_ID_JOYPAD_*` bit index this button maps
+    /// to after the per-system shell-bits→libretro-bits remap. Frontend
+    /// uses this to look up the corresponding entry in the input-
+    /// descriptors list (cores key descriptors on
+    /// `(port, device, index, id)` and SystemBindingsEditor always
+    /// queries port=0/device=JOYPAD/index=0). `u32::MAX` is the
+    /// sentinel for "no remap available" — keeps the JSON shape stable
+    /// for systems whose bindings table hasn't grown a remap arm yet.
+    libretro_id: u32,
 }
 
 /// Apply a full Bindings map to the InputPoller on Port0. Slots not present
@@ -8242,12 +8281,26 @@ fn bindings_to_response(system_id: &str, b: &Bindings) -> Vec<ButtonBinding> {
     // alphabetical. Unknown system → empty slice → empty response.
     bindings::buttons_for(system_id)
         .iter()
-        .map(|(name, _)| {
+        .map(|(name, shell_mask)| {
             let pair = b.get(*name).cloned().unwrap_or_default();
+            // Convert the shell-internal bit mask to its libretro
+            // equivalent (single bit in → single bit out per the
+            // per-system remap), then take the bit index so the
+            // frontend can match the descriptor at
+            // `(port=0, device=JOYPAD, index=0, id=libretro_id)`.
+            // shell_mask is 0 for separator entries in some tables;
+            // those resolve to MAX as the "no descriptor" sentinel.
+            let libretro_mask = bindings::to_libretro_bits(system_id, *shell_mask);
+            let libretro_id = if libretro_mask == 0 {
+                u32::MAX
+            } else {
+                libretro_mask.trailing_zeros()
+            };
             ButtonBinding {
                 button: (*name).to_string(),
                 keyboard: pair.keyboard,
                 gamepad: pair.gamepad,
+                libretro_id,
             }
         })
         .collect()
@@ -8675,6 +8728,58 @@ fn get_controller_devices(
         return Vec::new();
     }
     db.cached_controller_devices(&core_filename, port, current_mtime)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// Return the per-game button-label list for the given system,
+/// preferring the currently-loaded core's live publish and falling
+/// back to the SQLite cache (v22 `core_input_descriptors`) when no
+/// core is live. Cache lookup uses "most recent game on the system's
+/// effective core" semantics — operator's bindings page shows the
+/// LAST PLAYED game's labels rather than nothing.
+///
+/// Resolution:
+/// 1. Read `loaded_core_input_descriptors()` from the oa-libretro
+///    singleton. If non-empty, return it (live wins).
+/// 2. If live is empty and `systemId` was provided, resolve the
+///    system's effective core .dll (per-system Cores pref → system
+///    default — same path `get_controller_devices` uses), check the
+///    .dll's mtime, read the most-recent cached row for that core.
+/// 3. Stale rows (mtime mismatch) and missing rows both return empty.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn get_input_descriptors(
+    systemId: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Vec<oa_core::InputDescriptor> {
+    let live = oa_libretro::loaded_core_input_descriptors();
+    if !live.is_empty() {
+        return live;
+    }
+    let Some(system_id) = systemId else {
+        return Vec::new();
+    };
+    let per_system_default =
+        default_core_dll_for_system_resolved(&system_id).to_string();
+    let core_filename = read_cores_pref(&state.app_data_dir)
+        .get(&system_id)
+        .cloned()
+        .unwrap_or(per_system_default);
+    let cores_dir = resolve_cores_dir();
+    let dll_path = cores_dir.join(&core_filename);
+    let current_mtime: i64 = std::fs::metadata(&dll_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if current_mtime == 0 {
+        return Vec::new();
+    }
+    db.most_recent_input_descriptors_for_core(&core_filename, current_mtime)
         .ok()
         .flatten()
         .unwrap_or_default()

@@ -8,8 +8,8 @@ use std::os::raw::c_char;
 use std::path::Path;
 
 use oa_core::{
-    ControllerDeviceDescriptor, Core, CoreError, Framebuffer, InputState, MemoryRegionId,
-    PortIndex, SystemId, Timing,
+    ControllerDeviceDescriptor, Core, CoreError, Framebuffer, InputDescriptor, InputState,
+    MemoryRegionId, PortIndex, SystemId, Timing,
 };
 
 use crate::ffi::*;
@@ -581,6 +581,17 @@ impl LibretroCore {
                 .unwrap_or_default()
         })
         .unwrap_or_default()
+    }
+
+    /// Per-game button-label list this core advertised via
+    /// `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS`. Empty when the core
+    /// never published or no game is loaded. Frontend uses this to
+    /// render the in-game semantic label ("Whip", "Jump") next to
+    /// the operator-chosen physical mapping in the bindings UI.
+    /// Updated on every env-11 call; the latest publish wins (cores
+    /// may re-publish across a game's lifetime when modes change).
+    pub fn input_descriptors(&self) -> Vec<InputDescriptor> {
+        state::with_state(|s| s.input_descriptors.clone()).unwrap_or_default()
     }
 
     /// Forward a keyboard transition to the core via the callback the core

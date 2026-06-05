@@ -308,6 +308,30 @@ pub struct retro_controller_info {
     pub num_types: c_uint,
 }
 
+// ---------- input-descriptor declaration struct ----------
+//
+// Cores call `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` (11) with a pointer
+// to a null-terminated array of `retro_input_descriptor`. The array
+// terminator is the first entry whose `description == NULL` (no explicit
+// count — walk until sentinel). The strings live "until retro_unload_game()
+// is called" per spec, so we clone to owned `String` at parse time.
+//
+// Lookup key for the frontend hop: `(port, device, index, id)`. Cores
+// publish these PER-GAME (FCEUmm's Super Mario Bros declares B = "Run",
+// Castlevania's B = "Whip") so the cache layer (Slice 3) keys on
+// `(core_filename, game_sha1)` rather than per-core like
+// `core_controller_info`.
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_input_descriptor {
+    pub port: c_uint,
+    pub device: c_uint,
+    pub index: c_uint,
+    pub id: c_uint,
+    pub description: *const c_char,
+}
+
 // ---------- core option declaration structs ----------
 //
 // libretro evolved three formats for cores to declare their configurable

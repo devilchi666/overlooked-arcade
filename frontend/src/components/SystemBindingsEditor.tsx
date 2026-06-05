@@ -37,6 +37,23 @@ type ButtonBinding = {
   button: string;
   keyboard: string | null;
   gamepad: string | null;
+  /// libretro RETRO_DEVICE_ID_JOYPAD_* bit index this button maps to
+  /// after the per-system shell-bits→libretro-bits remap. Used to
+  /// look up the matching InputDescriptor (cores key descriptors on
+  /// (port, device, index, id) tuples). `4294967295` = u32::MAX =
+  /// "no remap available" sentinel — render no descriptor for that row.
+  libretroId: number;
+};
+
+/// One per-game button-label tuple a core advertises via libretro's
+/// RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS — mirror of the Rust
+/// `oa_core::InputDescriptor` struct (camelCase via serde).
+type InputDescriptor = {
+  port: number;
+  device: number;
+  index: number;
+  id: number;
+  description: string;
 };
 
 type CaptureKind = "keyboard" | "gamepad";
@@ -65,6 +82,43 @@ const SystemBindingsEditor: Component<Props> = (props) => {
       }
     },
   );
+  // Per-game button-label list the live core published via
+  // RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS. Indexed by libretro
+  // bit id (descriptor.id) for JOYPAD entries at (port=0, index=0).
+  // Empty Vec when no core loaded or core never published — the
+  // table then renders without semantic-label chips, which is what
+  // the UI looked like before this arc.
+  //
+  // Slice 3 of the dynamic-input-descriptors arc adds a per-game
+  // SQLite cache so this can render correct labels for the per-
+  // system bindings page even when no game is currently running;
+  // Slice 2's live-only resource is correct for "operator opens
+  // bindings while playing the game" — the typical edit path.
+  const [inputDescriptors] = createResource(
+    () => props.systemId,
+    async (systemId): Promise<readonly InputDescriptor[]> => {
+      try {
+        return await invoke<InputDescriptor[]>("get_input_descriptors", {
+          systemId,
+        });
+      } catch (e) {
+        console.warn("get_input_descriptors failed:", e);
+        return [];
+      }
+    },
+  );
+  /// Look up the semantic label for a button's libretro bit id.
+  /// Matches against the JOYPAD entries (device=1, port=0, index=0)
+  /// in the descriptor list. Returns null when no match — caller
+  /// renders the row without an extra chip.
+  function descriptionForBit(libretroId: number): string | null {
+    if (libretroId === 4294967295) return null;
+    const list = inputDescriptors() ?? [];
+    const match = list.find(
+      (d) => d.port === 0 && d.device === 1 && d.index === 0 && d.id === libretroId,
+    );
+    return match ? match.description : null;
+  }
   const [bindings] = createResource(
     () => ({ id: props.systemId, _: refreshKey() }),
     async (input): Promise<ButtonBinding[] | null> => {
@@ -246,9 +300,31 @@ const SystemBindingsEditor: Component<Props> = (props) => {
                             shape across PCE I/II, NES A/B, SNES A/B/X/Y,
                             Lynx Opt1/Opt2/Pause, etc. — the chip's accent
                             cascades from the per-system data-system on the
-                            settings page wrapper. */}
-                        <span class="inline-block rounded border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-system-accent-soft) min-w-[3rem] text-center">
-                          {r.button}
+                            settings page wrapper.
+
+                            Dynamic-input-descriptors Slice 2: when the
+                            loaded core has published a semantic label for
+                            this bit (FCEUmm's "Whip" for Castlevania's B
+                            button, "Run" for Mario's B button, etc.),
+                            render it inline as a muted suffix chip. The
+                            physical-bit chip on the left is the operator's
+                            mapping name (constant per system); the
+                            description on the right is the in-game
+                            semantic the core authored.  */}
+                        <span class="inline-flex items-center gap-1.5">
+                          <span class="inline-block rounded border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-0.5 font-mono text-xs uppercase tracking-wide text-(--color-system-accent-soft) min-w-[3rem] text-center">
+                            {r.button}
+                          </span>
+                          <Show when={descriptionForBit(r.libretroId)}>
+                            {(desc) => (
+                              <span
+                                class="text-[0.7rem] italic text-(--color-oa-ink-dim)"
+                                title="Label from the loaded core's SET_INPUT_DESCRIPTORS publish"
+                              >
+                                {desc()}
+                              </span>
+                            )}
+                          </Show>
                         </span>
                       </td>
                       <td class="py-1.5">

@@ -1554,6 +1554,7 @@ const App: Component = () => {
         onOpenShaders={(entry) => setGameDialog({ kind: "shaders", target: entry })}
         onOpenCoreOptions={(entry) => setGameDialog({ kind: "core-options", target: entry })}
         onOpenInput={(entry) => setGameDialog({ kind: "input", target: entry })}
+        onOpenBindings={(systemId) => openSystemDialog("bindings", systemId as SystemId)}
         onOpenScreenshots={(entry) => setScreenshotGalleryFor(entry)}
         onExitToLibrary={() => void handleUnload()}
         exitMode={isDirectLaunch() ? "quit" : "library"}
