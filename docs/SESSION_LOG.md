@@ -6,6 +6,27 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-05 — Dynamic input-descriptors arc — per-game button labels in Bindings page
+
+Branch `feat/dynamic-input-descriptors` — 4 commits closing the second
+spec-publishes-data-we-discard band-aid from the same-day audit.
+Cores call `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` (env 11) to
+publish `(port, device, index, id) → human label` tuples per game
+("B = Whip" in Castlevania, "B = Run" in Mario, "Y = Light Punch"
+in Street Fighter II). Pre-arc we ack'd and discarded; the bindings
+page showed only the physical RetroPad bit names. Now each row reads
+`[B] Whip` with the muted-italic label sourced from the core. Plan
+in `docs/PLANS/dynamic-input-descriptors.md`. Sibling of the morning's
+dynamic-controller-info arc; same shape, same machinery, queued
+within hours of the controller-info arc closing per the operator's
+no-band-aid feedback memory.
+
+- **Shipped:** Slice 1 — `crates/oa-libretro/src/state.rs::parse_input_descriptors` walks the null-terminated `retro_input_descriptor[]` array, clones strings to owned `String` (decouples from the spec's "until retro_unload_game()" lifetime), stores `Vec<InputDescriptor>` in singleton State (latest publish wins — cores may re-publish across a game's lifetime when modes change); 7 parser tests covering null pointer / sentinel walking / per-game semantic preservation (Whip vs Run for the same physical bit) / string ownership / multi-port + multi-device + multi-axis publish / log-formatter truncation + empty case. Slice 2 — `get_input_descriptors` Tauri command; `ButtonBinding` response struct grows a `libretro_id: u32` field so the frontend can match each row to a descriptor at `(port=0, device=JOYPAD, index=0, id=libretro_id)` without re-implementing the per-system shell-bits→libretro-bits remap in TS; `SystemBindingsEditor` consumes via `createResource` + `descriptionForBit(libretroId)` helper + renders the description chip inline next to each physical-button chip. Slice 2.5 — Bindings dialog added to QuickSettings (Esc overlay) so it's reachable mid-game without exiting + unloading. Slice 3 — schema v21→v22 `core_input_descriptors(core_filename, game_sha1, descriptors_json, captured_at, core_mtime)` keyed per-GAME (distinct from v21's per-core controller_info); populated on every successful core+ROM load; mtime-invalidated; `most_recent_input_descriptors_for_core` fallback so post-game Bindings open shows the last-played game's labels rather than nothing; new `find_sha1_by_file_path` helper; 4 cache tests covering round-trip + per-game isolation + most-recent-for-core picks the latest captured_at + sha1-by-path returns None for un-hashed rows. Slice 4 — Castlevania + Mario operator validation green; NES SESSION_LOG entry; project-wide SESSION_LOG entry (this one).
+- **Almost:** Per-system polish on systems where the operator regularly switches between games with distinct semantics (fighting games on SNES/Saturn/Neo Geo, RPGs vs platformers on SNES, light-gun games where the descriptors complement the just-shipped controller-info arc).
+- **Next:** Per-core audit pass — which cores publish good descriptors? FCEUmm clearly does; Mesen/Nestopia uncertain (operator-validation when they ship); arcade cores (MAME / FBNeo) usually have rich per-romset descriptors. Each validation just confirms the chips show + match upstream; no per-system code changes required.
+
+---
+
 ## 2026-06-05 — Dynamic controller-info arc — light guns + peripherals across every core
 
 Branch `feat/dynamic-controller-info` — 5 commits closing the

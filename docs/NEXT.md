@@ -342,22 +342,6 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Dynamic input descriptors — consume `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` (IN FLIGHT)
-
-**Branch:** `feat/dynamic-input-descriptors`
-**Plan:** [docs/PLANS/dynamic-input-descriptors.md](PLANS/dynamic-input-descriptors.md)
-**Sibling of:** the just-shipped dynamic-controller-info arc — same shape, same machinery, surfaced by the 2026-06-05 band-aid audit immediately after.
-
-**Why:** Cores call `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` (env 11) to publish per-game `(port, device, index, id) → "human label"` tuples — "in Mario, B is **Run**"; "in Castlevania, B is **Whip**"; "in Street Fighter II, Y is **Light Punch**". Our `cb_environment` arm (`state.rs:1120`) currently does `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => true,` and discards the data. The bindings UI shows OA's per-system RetroPad bit names ("A", "B", "Y") which are correct as *physical* mappings but don't carry the *game semantic* the operator actually wants when remapping. Consuming this surfaces the core's authored answer inline.
-
-**Slices** (full breakdown in plan doc):
-- **Slice 1** — Rust: `retro_input_descriptor` FFI + parser in `state.rs` + `oa_core::InputDescriptor` shape + `LibretroCore::input_descriptors()` accessor + ~5 parser tests. ~80 LOC + ~120 LOC tests.
-- **Slice 2** — Tauri command `get_input_descriptors(systemId?)` + frontend `SystemBindingsEditor` consumes via createResource and renders semantic labels inline next to the physical bit names. Same treatment in `GameInputDialog`. ~100 LOC.
-- **Slice 3** — Schema v21 → v22: `core_input_descriptors(core_filename, game_sha1, descriptors_json, captured_at, core_mtime)` — keyed per-GAME (not per-core like controller-info, because descriptors are per-game). Cached on every successful load; mtime-invalidated. ~80 LOC + ~60 LOC tests.
-- **Slice 4** — Operator validation on NES SMB + Castlevania (or any two FCEUmm games with distinct B semantics). Merge --no-ff after thumbs-up.
-
-**Operator memory:** [feedback_no_bandaid_fixes](C:\Users\Devilchi\.claude\projects\G--RustEmu\memory\feedback_no_bandaid_fixes.md) — this arc was queued explicitly per the operator's preference for fixing the architectural gap rather than band-aiding around it.
-
 ### Guided Setup Phase 2 — curated CPU-tier core selection
 
 **Next major Guided Setup work-item per plan §13 Phase 2.** Awaiting
