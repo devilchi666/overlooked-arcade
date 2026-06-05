@@ -810,15 +810,17 @@ export const GameInputDialog: Component<{
   const { overrides, patch } = useGameOverrides(() => props.entry, () => props.open);
   const [showExtraPorts, setShowExtraPorts] = createSignal(false);
 
-  // Pull the live core's per-port supported-device list. Resource
-  // refetches when the dialog (re-)opens for a new game; tied to the
-  // entry id + open flag so it stays cold while the dialog is closed.
-  // Returns 5 parallel arrays (port 0..=4); each element is the core's
-  // advertised devices for that port — empty Vec when no core is
-  // loaded OR when the core didn't publish anything for that port.
+  // Pull per-port supported-device lists. Backend prefers the live
+  // core's advertisement; falls back to the SQLite cache of the
+  // system's effective core's last load (Slice 3) so the dialog
+  // still renders the correct dropdown when the game isn't currently
+  // running. Resource refetches when the dialog (re-)opens for a
+  // different game; tied to open + entry id + systemId so it stays
+  // cold while the dialog is closed.
   const devicesSource = () => ({
     open: props.open,
     entryId: props.entry?.id ?? null,
+    systemId: props.entry?.systemId ?? null,
   });
   const [coreDevices] = createResource(
     devicesSource,
@@ -827,7 +829,10 @@ export const GameInputDialog: Component<{
       try {
         return await Promise.all(
           [0, 1, 2, 3, 4].map((port) =>
-            invoke<ControllerDeviceDescriptor[]>("get_controller_devices", { port }),
+            invoke<ControllerDeviceDescriptor[]>("get_controller_devices", {
+              port,
+              systemId: src.systemId,
+            }),
           ),
         );
       } catch (e) {

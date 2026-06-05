@@ -4583,6 +4583,45 @@ fn run_emu_render(
                                     hidden_keys.len(),
                                 );
                             }
+                            // Dynamic-controller-info Slice 3 — persist
+                            // what the core advertised via
+                            // RETRO_ENVIRONMENT_SET_CONTROLLER_INFO so the
+                            // per-game Input dialog can render the correct
+                            // dropdown even when no core is currently
+                            // loaded. Both retro_init and retro_load_game
+                            // have run by this point, so any SET_CONTROLLER
+                            // _INFO call (either timing is spec-permitted)
+                            // has already populated the singleton State.
+                            // Empty per-port lists are persisted as-is —
+                            // cores that never call SET_CONTROLLER_INFO
+                            // round-trip as 5 empty Vecs, and the dialog
+                            // falls back to its base list either way.
+                            if let Some(db) = app_handle.try_state::<library_db::LibraryDb>() {
+                                let dll_path = cores_dir.join(&current_core_dll);
+                                let core_mtime: i64 = std::fs::metadata(&dll_path)
+                                    .and_then(|m| m.modified())
+                                    .ok()
+                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|d| d.as_secs() as i64)
+                                    .unwrap_or(0);
+                                let devices_per_port: [Vec<oa_core::ControllerDeviceDescriptor>; 5] = [
+                                    oa_libretro::loaded_core_controller_devices(0),
+                                    oa_libretro::loaded_core_controller_devices(1),
+                                    oa_libretro::loaded_core_controller_devices(2),
+                                    oa_libretro::loaded_core_controller_devices(3),
+                                    oa_libretro::loaded_core_controller_devices(4),
+                                ];
+                                if let Err(e) = db.upsert_controller_info(
+                                    &current_core_dll,
+                                    &devices_per_port,
+                                    core_mtime,
+                                ) {
+                                    log::warn!(
+                                        "oa-shell: upsert_controller_info({}) failed: {}",
+                                        current_core_dll, e
+                                    );
+                                }
+                            }
                             current_slot = restore_slot.unwrap_or(0);
                             // Snapshots from any previous game are unsafe to
                             // feed back into a different core — drop them on
@@ -8576,25 +8615,68 @@ fn arm_libretro_device(
     Ok(())
 }
 
-/// Return the per-port supported-device list the currently-loaded core
-/// advertised via `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`. Empty Vec
-/// when no core is loaded, the core never published, or the port index
-/// exceeds what was advertised — frontend treats empty as "fall back to
-/// the default Standard Pad / Disconnected list with a hint that the
-/// operator should launch the game to populate the dropdown."
+/// Return the per-port supported-device list for a port, preferring
+/// the currently-loaded core's live advertisement and falling back to
+/// the SQLite cache of the last load of the system's effective core.
 ///
-/// Reads the oa-libretro singleton State directly via the
-/// `loaded_core_controller_devices` free function. Cheap (one mutex
-/// acquire + a clone of a short vector); safe to call from any thread
-/// because the singleton is process-global.
+/// Resolution:
+/// 1. Read `loaded_core_controller_devices(port)` from the oa-libretro
+///    singleton. If non-empty, return it (live core wins — handles the
+///    "operator is currently playing this game" case and any case
+///    where a different core got loaded after this game's cache was
+///    captured).
+/// 2. If live is empty and `systemId` was provided, resolve the
+///    system's effective core .dll (per-game override → per-system
+///    pref → system default), check the .dll's mtime, and read the
+///    cached row keyed by `(core_filename, port)`. Stale rows (mtime
+///    mismatch) and missing rows both return empty — caller's dialog
+///    shows the "Launch the game once" fallback.
 ///
-/// Slice 3 of the dynamic-controller-info arc adds a SQLite cache so
-/// the dialog can render without a live core; until then, empty Vec
-/// is the truthful response when nothing is loaded.
+/// Frontend treats empty as "use generic fallback list + show hint."
+/// Slice 4 of the arc deletes the generic-fallback list entirely once
+/// every shipped core has been validated to publish SET_CONTROLLER
+/// _INFO at load time.
 #[tauri::command]
 #[allow(non_snake_case)]
-fn get_controller_devices(port: u32) -> Vec<oa_core::ControllerDeviceDescriptor> {
-    oa_libretro::loaded_core_controller_devices(port)
+fn get_controller_devices(
+    port: u32,
+    systemId: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Vec<oa_core::ControllerDeviceDescriptor> {
+    let live = oa_libretro::loaded_core_controller_devices(port);
+    if !live.is_empty() {
+        return live;
+    }
+    let Some(system_id) = systemId else {
+        return Vec::new();
+    };
+    // Resolve the effective core for this system. Mirrors the LoadRom
+    // handler's resolution (per-system Cores pref overlay on top of
+    // the L2 default), minus the per-game override layer — the dialog
+    // hasn't applied that pick yet.
+    let per_system_default =
+        default_core_dll_for_system_resolved(&system_id).to_string();
+    let core_filename = read_cores_pref(&state.app_data_dir)
+        .get(&system_id)
+        .cloned()
+        .unwrap_or(per_system_default);
+    let cores_dir = resolve_cores_dir();
+    let dll_path = cores_dir.join(&core_filename);
+    let current_mtime: i64 = std::fs::metadata(&dll_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if current_mtime == 0 {
+        // .dll missing or unreadable — nothing useful to cache against.
+        return Vec::new();
+    }
+    db.cached_controller_devices(&core_filename, port, current_mtime)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// Persist a per-game libretro device-type override and push to the
