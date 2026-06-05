@@ -536,6 +536,45 @@ pub struct ControllerDeviceDescriptor {
     pub id: u32,
 }
 
+/// One per-game button (or stick / mouse / pointer / etc.) description
+/// that a core advertises via libretro's
+/// `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` env call.
+///
+/// Where [`ControllerDeviceDescriptor`] declares "this port supports
+/// THESE device types," `InputDescriptor` declares "for this specific
+/// game, the button at `(port, device, index, id)` does THIS thing
+/// semantically." FCEUmm publishes Super Mario Bros' B as "Run" and
+/// Castlevania's B as "Whip" — same RetroPad bit, different in-game
+/// meaning, both authored upstream by the core maintainer.
+///
+/// Per-game key: cores can re-publish across a game's lifetime when
+/// internal modes change (fighting-game character-select vs in-match),
+/// so the latest publish wins. Cache layer keys on
+/// `(core_filename, game_sha1)`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputDescriptor {
+    /// Controller port (0-indexed). Standard RetroPad layout uses
+    /// port 0 for the primary controller; light-gun games typically
+    /// use port 1 for the gun.
+    pub port: u32,
+    /// libretro device type the descriptor applies to. Matches the
+    /// device id passed to `retro_set_controller_port_device`.
+    /// Common values: `RETRO_DEVICE_JOYPAD` (1), `RETRO_DEVICE_ANALOG`
+    /// (5), `RETRO_DEVICE_MOUSE` (2), `RETRO_DEVICE_LIGHTGUN` (4).
+    pub device: u32,
+    /// Sub-index within the device. For JOYPAD this is 0; for ANALOG
+    /// it distinguishes the left stick (0) from the right stick (1).
+    pub index: u32,
+    /// Per-device button / axis id (e.g. `RETRO_DEVICE_ID_JOYPAD_A`
+    /// for JOYPAD; `RETRO_DEVICE_ID_ANALOG_X` for ANALOG).
+    pub id: u32,
+    /// Human-readable description the core authored (e.g. "Run",
+    /// "Whip", "Jump", "Light Punch"). Empty string when the core
+    /// passed a NULL `description` pointer (spec-permitted but rare).
+    pub description: String,
+}
+
 /// A category grouping for [`CoreOption`]s — libretro V2 only.
 ///
 /// When the core registers categories via `SET_CORE_OPTIONS_V2`, options

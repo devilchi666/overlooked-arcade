@@ -17,6 +17,7 @@ use std::sync::{LazyLock, Mutex};
 
 use oa_core::{
     ControllerDeviceDescriptor, CoreOption, CoreOptionCategory, CoreOptionValue,
+    InputDescriptor,
 };
 
 use crate::ffi::*;
@@ -232,6 +233,14 @@ pub(crate) struct State {
     /// Cleared when the core .dll is reloaded (State is freshly
     /// constructed per `reference_libretro_mednafen_unload_then_load_no_gap`).
     pub controller_devices: Vec<Vec<ControllerDeviceDescriptor>>,
+    /// Per-(port, device, index, id) → "human label" tuples captured
+    /// from the core's `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` env
+    /// call. Cores publish these PER-GAME (different label table for
+    /// each loaded ROM), and may re-publish across a game's lifetime
+    /// when modes change (fighting-game character-select vs in-match);
+    /// the parser overwrites on each call so the latest publish wins.
+    /// Cleared on core reload alongside `controller_devices`.
+    pub input_descriptors: Vec<InputDescriptor>,
     /// Parsed memory descriptors from the core's `SET_MEMORY_MAPS`
     /// call. Empty for cores that never publish one. Host pointers
     /// stay private to oa-libretro (stored in `memory_map_ptrs`); only
@@ -307,6 +316,7 @@ impl State {
             supports_no_game: false,
             pending_messages: Vec::new(),
             controller_devices: Vec::new(),
+            input_descriptors: Vec::new(),
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
@@ -600,6 +610,21 @@ pub fn loaded_core_controller_devices(port: u32) -> Vec<ControllerDeviceDescript
     .unwrap_or_default()
 }
 
+/// Per-(port, device, index, id) → description list the loaded core
+/// advertised via `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS`. Same
+/// singleton-direct read as `loaded_core_controller_devices`; same
+/// caller — Tauri commands answering the bindings UI's "what does
+/// THIS button DO in THIS game" lookup.
+///
+/// Returns an empty Vec when no core is loaded or the loaded core
+/// never published descriptors. Updated on every successful
+/// `cb_environment` call to env 11 (which may fire during init,
+/// during retro_load_game, or any time during a game's lifetime per
+/// spec; latest publish wins).
+pub fn loaded_core_input_descriptors() -> Vec<InputDescriptor> {
+    with_state(|s| s.input_descriptors.clone()).unwrap_or_default()
+}
+
 // ---------- extern "C" callback trampolines ----------
 
 pub(crate) unsafe extern "C" fn cb_video_refresh(
@@ -835,6 +860,89 @@ unsafe fn parse_controller_info(
         }
     }
     out
+}
+
+/// Walk the null-terminated `retro_input_descriptor` array a core
+/// passes via `RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS` and clone
+/// every `(port, device, index, id, description)` tuple into owned
+/// Rust values.
+///
+/// Sentinel: the first entry whose `description == NULL` (no count
+/// field). Per-spec, the string lifetime is "until retro_unload_game()
+/// is called" — we clone to owned `String` so the frontend hop is
+/// decoupled from the core's load lifetime.
+///
+/// Defensive cap at 256 descriptors — libretro doesn't define a max,
+/// but Street Fighter (one of the heaviest in-tree examples) declares
+/// ~30. 256 is comfortable headroom against a buggy core that forgets
+/// the sentinel.
+///
+/// # Safety
+///
+/// `data` must either be NULL or point to a null-terminated array of
+/// `retro_input_descriptor` as documented in libretro.h. The core
+/// owns the memory; we read it during the env call only.
+unsafe fn parse_input_descriptors(
+    data: *const retro_input_descriptor,
+) -> Vec<InputDescriptor> {
+    let mut out: Vec<InputDescriptor> = Vec::new();
+    if data.is_null() {
+        return out;
+    }
+    const MAX_DESCRIPTORS: usize = 256;
+    let mut i = 0usize;
+    loop {
+        let entry = unsafe { &*data.add(i) };
+        if entry.description.is_null() {
+            break;
+        }
+        let description = unsafe { CStr::from_ptr(entry.description) }
+            .to_string_lossy()
+            .into_owned();
+        out.push(InputDescriptor {
+            port: entry.port as u32,
+            device: entry.device as u32,
+            index: entry.index as u32,
+            id: entry.id as u32,
+            description,
+        });
+        i += 1;
+        if i > MAX_DESCRIPTORS {
+            log::warn!(
+                "oa-libretro: SET_INPUT_DESCRIPTORS exceeded {} entries without sentinel — truncating (likely a malformed core array)",
+                MAX_DESCRIPTORS,
+            );
+            break;
+        }
+    }
+    out
+}
+
+/// Render the parsed descriptor list as a single log line for the
+/// operator-visible startup trace. Shows the first ~6 entries with a
+/// "+N more" tail so a Street-Fighter-sized advertisement stays
+/// readable; full set is in the State for the bindings UI to consume.
+fn format_input_descriptors_for_log(descriptors: &[InputDescriptor]) -> String {
+    if descriptors.is_empty() {
+        return String::from("[]");
+    }
+    let preview = descriptors
+        .iter()
+        .take(6)
+        .map(|d| {
+            format!(
+                "p{}/d{}/i{}/id{}={}",
+                d.port, d.device, d.index, d.id, d.description
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = if descriptors.len() > 6 {
+        format!(", +{} more", descriptors.len() - 6)
+    } else {
+        String::new()
+    };
+    format!("[{preview}{suffix}]")
 }
 
 /// Render the parsed per-port device list as a single log line for
@@ -1117,7 +1225,26 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             })
             .unwrap_or(false)
         }
-        RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => true,
+        // SET_INPUT_DESCRIPTORS (11) — per-(port, device, index, id)
+        // "human label" tuples. Cores publish these per-game with the
+        // in-game semantics ("B = Run" in Mario; "B = Whip" in
+        // Castlevania) so the bindings UI can show what each physical
+        // button DOES in the current game alongside its operator-
+        // chosen physical mapping. Sibling of SET_CONTROLLER_INFO
+        // (see parse_controller_info above for the same shape).
+        // Plan: docs/PLANS/dynamic-input-descriptors.md.
+        RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => {
+            let parsed = unsafe {
+                parse_input_descriptors(data as *const retro_input_descriptor)
+            };
+            log::info!(
+                "oa-libretro: SET_INPUT_DESCRIPTORS — {} descriptor(s) received: {}",
+                parsed.len(),
+                format_input_descriptors_for_log(&parsed),
+            );
+            with_state(|s| s.input_descriptors = parsed);
+            true
+        }
         RETRO_ENVIRONMENT_SET_ROTATION => {
             // Core reports its preferred display rotation. Units of 90°
             // clockwise; valid values 0..=3. Vertical arcade boards
@@ -1825,6 +1952,175 @@ mod tests {
         let parsed = unsafe { parse_controller_info(info.as_ptr()) };
         let ids: Vec<u32> = parsed[0].iter().map(|d| d.id).collect();
         assert_eq!(ids, vec![1, 257, 258, 259, 260, 514, 769]);
+    }
+
+    // ---- parse_input_descriptors -------------------------------------
+
+    /// Helper: build a leak-resilient table of `retro_input_descriptor`
+    /// from `(port, device, index, id, description)` tuples. Holds the
+    /// CStrings alongside the array so the C strings outlive the test's
+    /// parser call.
+    fn build_input_descs(
+        entries: &[(u32, u32, u32, u32, &str)],
+    ) -> (Vec<CString>, Vec<retro_input_descriptor>) {
+        let cstrings: Vec<CString> = entries
+            .iter()
+            .map(|(_, _, _, _, desc)| CString::new(*desc).unwrap())
+            .collect();
+        let descs: Vec<retro_input_descriptor> = entries
+            .iter()
+            .zip(cstrings.iter())
+            .map(|((port, device, index, id, _), cs)| retro_input_descriptor {
+                port: *port as std::os::raw::c_uint,
+                device: *device as std::os::raw::c_uint,
+                index: *index as std::os::raw::c_uint,
+                id: *id as std::os::raw::c_uint,
+                description: cs.as_ptr(),
+            })
+            .collect();
+        (cstrings, descs)
+    }
+
+    /// Sentinel entry — `description = NULL`, everything else 0.
+    fn input_desc_sentinel() -> retro_input_descriptor {
+        retro_input_descriptor {
+            port: 0,
+            device: 0,
+            index: 0,
+            id: 0,
+            description: std::ptr::null(),
+        }
+    }
+
+    #[test]
+    fn parse_input_descriptors_handles_null_top_pointer() {
+        let parsed = unsafe { parse_input_descriptors(std::ptr::null()) };
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn parse_input_descriptors_stops_at_sentinel() {
+        // Reproduces a realistic FCEUmm-shaped publish: 4 face-button
+        // descriptors at port 0 / JOYPAD / index 0, with the sentinel
+        // immediately after. Asserts walk stops at sentinel, not over-
+        // reads the buffer.
+        let (_cs, mut descs) = build_input_descs(&[
+            (0, 1, 0,  0, "Up"),
+            (0, 1, 0,  8, "A"),
+            (0, 1, 0,  9, "B"),
+            (0, 1, 0,  3, "Start"),
+        ]);
+        descs.push(input_desc_sentinel());
+
+        let parsed = unsafe { parse_input_descriptors(descs.as_ptr()) };
+        assert_eq!(parsed.len(), 4, "should stop at sentinel, not over-read");
+        assert_eq!(parsed[0].description, "Up");
+        assert_eq!(parsed[1].id, 8);
+        assert_eq!(parsed[1].description, "A");
+        assert_eq!(parsed[2].description, "B");
+        assert_eq!(parsed[3].description, "Start");
+    }
+
+    #[test]
+    fn parse_input_descriptors_preserves_per_game_semantics() {
+        // The whole point: different games get different labels for
+        // the same physical button. Simulates loading Castlevania
+        // followed by Super Mario Bros — second publish overwrites
+        // first via with_state, but the parser itself must faithfully
+        // reproduce whatever the core hands it.
+        //
+        // FCEUmm RetroPad button id mapping: A = 8, B = 0 (per
+        // libretro.h RETRO_DEVICE_ID_JOYPAD_A / _B), so this test
+        // uses those.
+        let (_cs1, mut castlevania) =
+            build_input_descs(&[(0, 1, 0, 8, "Whip"), (0, 1, 0, 0, "Jump")]);
+        castlevania.push(input_desc_sentinel());
+
+        let (_cs2, mut mario) =
+            build_input_descs(&[(0, 1, 0, 8, "Run"), (0, 1, 0, 0, "Jump")]);
+        mario.push(input_desc_sentinel());
+
+        let p1 = unsafe { parse_input_descriptors(castlevania.as_ptr()) };
+        assert_eq!(p1[0].description, "Whip");
+        let p2 = unsafe { parse_input_descriptors(mario.as_ptr()) };
+        assert_eq!(p2[0].description, "Run");
+        // Same physical button (port 0 / JOYPAD / id 8) → different
+        // semantic label per game. This is the whole reason the data
+        // is per-game in the spec.
+        assert_eq!(p1[0].id, p2[0].id);
+        assert_ne!(p1[0].description, p2[0].description);
+    }
+
+    #[test]
+    fn parse_input_descriptors_clones_strings_owned_not_aliased() {
+        // After parse, the source CStrings get dropped — the parsed
+        // strings must still be valid. Mirrors the controller-info
+        // ownership test; would catch a future refactor that stored
+        // borrowed `&str` instead of owned `String`.
+        let parsed_then_dropped = {
+            let (cs, mut descs) = build_input_descs(&[(0, 1, 0, 8, "Whip")]);
+            descs.push(input_desc_sentinel());
+            let parsed = unsafe { parse_input_descriptors(descs.as_ptr()) };
+            drop(cs);
+            drop(descs);
+            parsed
+        };
+        assert_eq!(parsed_then_dropped[0].description, "Whip");
+    }
+
+    #[test]
+    fn parse_input_descriptors_handles_multiple_ports_devices_axes() {
+        // Multi-port + multi-device + multi-index publish: port 0
+        // JOYPAD + port 0 ANALOG (both sticks) + port 1 LIGHTGUN.
+        // Asserts the (port, device, index, id) tuple is preserved
+        // verbatim — frontend's lookup keys depend on all four.
+        let (_cs, mut descs) = build_input_descs(&[
+            (0, 1, 0,  0, "D-Pad Up"),            // port 0, JOYPAD, id Up
+            (0, 5, 0,  0, "Left stick X"),        // port 0, ANALOG, index 0=LEFT, id 0=X
+            (0, 5, 0,  1, "Left stick Y"),        // port 0, ANALOG, index 0=LEFT, id 1=Y
+            (0, 5, 1,  0, "Right stick X"),       // port 0, ANALOG, index 1=RIGHT, id 0=X
+            (0, 5, 1,  1, "Right stick Y"),       // port 0, ANALOG, index 1=RIGHT, id 1=Y
+            (1, 4, 0, 13, "Lightgun trigger"),    // port 1, LIGHTGUN, id 13
+        ]);
+        descs.push(input_desc_sentinel());
+
+        let parsed = unsafe { parse_input_descriptors(descs.as_ptr()) };
+        assert_eq!(parsed.len(), 6);
+        assert_eq!((parsed[1].port, parsed[1].device, parsed[1].index, parsed[1].id),
+                   (0, 5, 0, 0));
+        assert_eq!(parsed[1].description, "Left stick X");
+        assert_eq!((parsed[3].port, parsed[3].device, parsed[3].index, parsed[3].id),
+                   (0, 5, 1, 0));
+        assert_eq!(parsed[3].description, "Right stick X");
+        assert_eq!((parsed[5].port, parsed[5].device),
+                   (1, 4));
+        assert_eq!(parsed[5].description, "Lightgun trigger");
+    }
+
+    #[test]
+    fn format_input_descriptors_for_log_truncates_long_lists() {
+        // Street Fighter II–shaped advertisement (~30 descriptors).
+        // Formatter caps at 6 with a "+N more" tail so the operator
+        // log line stays a one-liner.
+        let many: Vec<InputDescriptor> = (0..30u32)
+            .map(|i| InputDescriptor {
+                port: 0,
+                device: 1,
+                index: 0,
+                id: i,
+                description: format!("Btn{i}"),
+            })
+            .collect();
+        let formatted = format_input_descriptors_for_log(&many);
+        assert!(formatted.starts_with("[p0/d1/i0/id0=Btn0"));
+        assert!(formatted.contains("Btn5"));
+        assert!(!formatted.contains("Btn6"));
+        assert!(formatted.contains("+24 more"));
+    }
+
+    #[test]
+    fn format_input_descriptors_for_log_empty_renders_brackets() {
+        assert_eq!(format_input_descriptors_for_log(&[]), "[]");
     }
 
     #[test]
