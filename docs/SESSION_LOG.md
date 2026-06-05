@@ -6,6 +6,25 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-05 — Dynamic controller-info arc — light guns + peripherals across every core
+
+Branch `feat/dynamic-controller-info` — 5 commits closing the
+hardcoded-device-id-table era. Cores publish their per-port supported
+devices via `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`; the frontend
+dropdown now reads each core's authored advertisement directly instead
+of shipping a `Light Gun = 4` row that doesn't match FCEUmm's Zapper
+(258), snes9x's Super Scope (260), Genesis Plus GX's Light Phaser
+(260), Beetle PSX's GunCon (260), or any other core that subclasses.
+Plan in `docs/PLANS/dynamic-controller-info.md`. Triggered by a Duck
+Hunt validation attempt that exposed the wrong-device-id bug; chosen
+over a per-system band-aid per `feedback_no_bandaid_fixes`.
+
+- **Shipped:** Slice 1 — `crates/oa-libretro/src/state.rs::parse_controller_info` walks the null-terminated `retro_controller_info` array, clones strings to owned `String` (decouples from .dll text-segment lifetime), stores per-port `Vec<DeviceDescriptor>` in singleton state; `LibretroCore::controller_devices(port)` + free `loaded_core_controller_devices(port)` accessors; 7 parser tests covering null top pointer / sentinel walking / empty-port / NULL desc / string ownership / subclass-id preservation / log-formatter truncation. Slice 2 — `get_controller_devices` Tauri command; `GameInputDialog`'s `createResource` fetches all 5 ports' lists on open and refactors both port-0 and per-port-1-4 dropdowns to render the live advertisement. Slice 2.5 — Input dialog added to QuickSettings (Esc overlay) so the operator doesn't have to exit-configure-relaunch. Slice 3 — schema v20→v21 `core_controller_info(core_filename, port, devices_json, captured_at, core_mtime)`; populated on every core load; mtime-invalidated; Tauri command falls through to cache when no core is live; cache round-trip + mtime-invalidation + per-core-isolation tests. Slice 4 — `DEVICE_ID_OPTIONS_BASE` + `_GAMECUBE` + `_SNES` + `systemSpecificDeviceLabel` + `deviceOptionsForSystem` + `deviceOptionLabel` deleted; `LIGHT_GUN_SYSTEM_IDS` hand-list + `isLightGunSystem(systemId)` deleted; replaced by `system_has_light_gun` Tauri command that derives from the cache via two patterns (`id & 0xFF == LIGHTGUN` OR label keyword); legacy-id label for stale saves; `LightGunMappingHelp` gate switched from system-list to per-selected-device heuristic. Slice 5 — Duck Hunt validated by operator on FCEUmm; NES ROADMAP Zapper bullet flipped ⬜→✅; SMS / PSX / Saturn / Dreamcast bullets updated to reflect arc-shipped wiring (operator validation still pending per system).
+- **Almost:** Hogan's Alley + Wild Gunman as smoke tests; SMS Light Phaser via Genesis Plus GX as the easiest second-system validation (same code path, no per-system work needed).
+- **Next:** Per-core operator validation of remaining light-gun systems (SMS / SNES / PSX / Saturn / Dreamcast). The hard work is done — each one is a `launch → Esc → Input → pick the gun → fire` test loop.
+
+---
+
 ## 2026-06-03 — Settings declutter arc — merged to main
 
 Branch `feat/settings-declutter-system-health` merged via `--no-ff`

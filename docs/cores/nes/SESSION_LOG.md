@@ -4,6 +4,14 @@ Format: date + three lines — **Shipped / Almost / Next**. Cross-cutting milest
 
 ---
 
+## 2026-06-05 — Zapper validated on Duck Hunt
+
+- **Shipped:** Duck Hunt operator validation green-light on FCEUmm. Aim via OS mouse cursor, left-click fires `RETRO_DEVICE_ID_LIGHTGUN_TRIGGER`. Path: per-game Input dialog (in QuickSettings now, surfaced mid-game) → port 1 = "Zapper" (id 258 = FCEUmm's `RETRO_DEVICE_SUBCLASS(MOUSE, 0)`) → `arm_libretro_device` dispatches → `set_controller_port_device(1, 258)` → FCEUmm's `update_nes_controllers` matches `RETRO_DEVICE_ZAPPER` case + wires `SI_ZAPPER` → `cb_input_state(port=1, device=LIGHTGUN)` reads `input_pointer[1]` populated by the mirror-pointer-to-ports-1-4 fix on `ee0f813`. ROADMAP Phase 2 Light gun bullet flipped ✅.
+- **Almost:** Hogan's Alley + Wild Gunman as smoke tests for the same arc — same code path, should "just work" since FCEUmm's Zapper auto-attaches via `GameInfo->input[1]` for the rest of the canonical Zapper catalog.
+- **Next:** Mesen swap validation (Phase 2 polish) — Mesen may or may not advertise Zapper the same way FCEUmm does; the new dynamic-controller-info path will surface whatever Mesen publishes. Operator-driven; not blocking.
+
+---
+
 ## 2026-05-18 — NES onboarding (Phase 0)
 
 System #3. Onboarded in the same session as SNES — the modern libretro-pivot recipe (registry + CSS + bindings + system_id arms + per-core docs) lets two systems land together in a single session.
