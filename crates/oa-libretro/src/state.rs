@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{LazyLock, Mutex};
 
 use oa_core::{CoreOption, CoreOptionCategory, CoreOptionValue};
@@ -862,6 +863,23 @@ pub(crate) unsafe extern "C" fn cb_input_state(
     // Scope) poll instead of POINTER. See lightgun_field_value for
     // the id → coord/state mapping.
     if device == RETRO_DEVICE_LIGHTGUN {
+        // One-shot diagnostic: log the FIRST LIGHTGUN poll per process
+        // so we can confirm the core actually queries this device. If
+        // this never fires, the core isn't asking for LIGHTGUN — usually
+        // a core-option mismatch (FCEUmm's `fceumm_zapper_mode` set to
+        // mouse / touchscreen instead of clightgun).
+        static LIGHTGUN_FIRST_POLL: AtomicBool = AtomicBool::new(false);
+        if !LIGHTGUN_FIRST_POLL.swap(true, AtomicOrdering::Relaxed) {
+            let snapshot = with_state(|s| (
+                s.input_pointer[port as usize],
+                s.input_lightgun_buttons[port as usize],
+            ));
+            log::info!(
+                "oa-libretro: first LIGHTGUN poll port={port} id={id} pointer={:?} buttons={:08x}",
+                snapshot.as_ref().map(|t| t.0),
+                snapshot.as_ref().map(|t| t.1).unwrap_or(0),
+            );
+        }
         return with_state(|s| lightgun_field_value(
             s.input_pointer[port as usize],
             s.input_lightgun_buttons[port as usize],

@@ -5900,22 +5900,52 @@ fn run_emu_render(
                     prev_jaguar_high_bits = 0;
                 }
 
+                // Derive from `libretro_bits` (post-remap) rather
+                // than `polled.lightgun_buttons` (which was
+                // computed pre-remap, before the per-system
+                // bit-shuffle that converts raw OA layout to the
+                // RetroPad layout cores actually poll). For systems
+                // with identity remaps the two are equivalent; for
+                // systems with non-trivial remaps the libretro-
+                // shape bits are what the LIGHTGUN core expects.
+                let derived_lightgun = oa_input::lightgun_buttons_from_joypad_bits(libretro_bits);
                 core_ref.set_input(PortIndex::Port0, oa_core::InputState {
                     buttons: libretro_bits,
                     axes: polled.axes,
                     pointer: polled.pointer,
                     pointer_secondary: polled.pointer_secondary,
                     analog_buttons: polled.analog_buttons,
-                    // Derive from `libretro_bits` (post-remap) rather
-                    // than `polled.lightgun_buttons` (which was
-                    // computed pre-remap, before the per-system
-                    // bit-shuffle that converts raw OA layout to the
-                    // RetroPad layout cores actually poll). For systems
-                    // with identity remaps the two are equivalent; for
-                    // systems with non-trivial remaps the libretro-
-                    // shape bits are what the LIGHTGUN core expects.
-                    lightgun_buttons: oa_input::lightgun_buttons_from_joypad_bits(libretro_bits),
+                    lightgun_buttons: derived_lightgun,
                 });
+                // Mirror the global pointer + derived LIGHTGUN bitmask
+                // to ports 1-4 so a LIGHTGUN / POINTER / MOUSE device
+                // wired to a non-zero port sees the operator's aim +
+                // gun-side buttons. The canonical case is NES Zapper
+                // on port 1 (Duck Hunt / Hogan's Alley / Wild Gunman);
+                // also covers SNES Super Scope on port 1, SMS Phaser
+                // on port 0 OR port 1, and any future arcade-coop
+                // gun setup (Saturn Virtua Gun on ports 0+1, Beetle
+                // PSX GunCon on port 0 OR port 1). JOYPAD bits + axes
+                // stay zero at these ports — multi-controller live
+                // polling isn't wired (input.poll only fires for
+                // Port0), so duplicating the bits here would falsely
+                // inject port 0's controller into a hypothetical port
+                // 1 second-player pad.
+                for port in [
+                    PortIndex::Port1,
+                    PortIndex::Port2,
+                    PortIndex::Port3,
+                    PortIndex::Port4,
+                ] {
+                    core_ref.set_input(port, oa_core::InputState {
+                        buttons: 0,
+                        axes: [0; 4],
+                        pointer: polled.pointer,
+                        pointer_secondary: polled.pointer_secondary,
+                        analog_buttons: [0; 16],
+                        lightgun_buttons: derived_lightgun,
+                    });
+                }
                 // Phase G — pump sensor values for cores that enabled
                 // accelerometer / gyroscope / illuminance via the
                 // sensor interface. Today the values come from the
