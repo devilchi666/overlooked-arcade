@@ -15,7 +15,9 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{LazyLock, Mutex};
 
-use oa_core::{CoreOption, CoreOptionCategory, CoreOptionValue};
+use oa_core::{
+    ControllerDeviceDescriptor, CoreOption, CoreOptionCategory, CoreOptionValue,
+};
 
 use crate::ffi::*;
 use crate::pixel;
@@ -222,6 +224,14 @@ pub(crate) struct State {
     /// state changes; we cap implicitly at whatever a frame's worth
     /// of bursts could produce.
     pub pending_messages: Vec<oa_core::CoreMessage>,
+    /// Per-port supported-device list, captured from the core's
+    /// `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` env call. Index by port
+    /// (typically 0..=4 — cores can advertise more or fewer). An empty
+    /// outer Vec means the core never published; an empty inner Vec at
+    /// a given port means the core declared that port supports nothing.
+    /// Cleared when the core .dll is reloaded (State is freshly
+    /// constructed per `reference_libretro_mednafen_unload_then_load_no_gap`).
+    pub controller_devices: Vec<Vec<ControllerDeviceDescriptor>>,
     /// Parsed memory descriptors from the core's `SET_MEMORY_MAPS`
     /// call. Empty for cores that never publish one. Host pointers
     /// stay private to oa-libretro (stored in `memory_map_ptrs`); only
@@ -296,6 +306,7 @@ impl State {
             keyboard_cb: None,
             supports_no_game: false,
             pending_messages: Vec::new(),
+            controller_devices: Vec::new(),
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
@@ -734,6 +745,107 @@ pub(crate) fn pointer_field_value(
         RETRO_DEVICE_ID_POINTER_PRESSED => if pressed { 1 } else { 0 },
         _ => 0,
     }
+}
+
+/// Walk the null-terminated `retro_controller_info` array a core
+/// passes via `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` and clone every
+/// `(label, id)` pair into owned Rust strings.
+///
+/// The outer array sentinel is the first entry whose `types == NULL`
+/// AND `num_types == 0` — there's no explicit count in the spec. An
+/// inner per-port `num_types == 0` with a non-null `types` pointer
+/// means "port has no advertised devices" (rare but spec-permitted) —
+/// distinct from the sentinel.
+///
+/// `desc` strings live in the core's `.dll` text segment per spec;
+/// cloning to owned `String` here decouples the frontend hop from the
+/// core's lifetime. Empty `String` substituted when `desc` is NULL.
+///
+/// Defensive cap at 32 ports — libretro doesn't define a max, but a
+/// buggy core that forgets the sentinel could walk forever into
+/// unmapped memory. 32 is well above any real per-system port count
+/// (PCE multitap is 5; nothing ships more).
+///
+/// # Safety
+///
+/// `data` must either be NULL or point to a null-terminated array of
+/// `retro_controller_info` as documented in libretro.h. The core owns
+/// the memory; we read it during the env call only.
+unsafe fn parse_controller_info(
+    data: *const retro_controller_info,
+) -> Vec<Vec<ControllerDeviceDescriptor>> {
+    let mut out: Vec<Vec<ControllerDeviceDescriptor>> = Vec::new();
+    if data.is_null() {
+        return out;
+    }
+    let mut port = 0usize;
+    const MAX_PORTS: usize = 32;
+    loop {
+        let entry = unsafe { &*data.add(port) };
+        if entry.types.is_null() && entry.num_types == 0 {
+            break;
+        }
+        let mut devices: Vec<ControllerDeviceDescriptor> =
+            Vec::with_capacity(entry.num_types as usize);
+        if !entry.types.is_null() {
+            for i in 0..entry.num_types as usize {
+                let desc_entry = unsafe { &*entry.types.add(i) };
+                let label = if desc_entry.desc.is_null() {
+                    String::new()
+                } else {
+                    unsafe { CStr::from_ptr(desc_entry.desc) }
+                        .to_string_lossy()
+                        .into_owned()
+                };
+                devices.push(ControllerDeviceDescriptor {
+                    label,
+                    id: desc_entry.id as u32,
+                });
+            }
+        }
+        out.push(devices);
+        port += 1;
+        if port > MAX_PORTS {
+            log::warn!(
+                "oa-libretro: SET_CONTROLLER_INFO exceeded {} ports without sentinel — truncating (likely a malformed core array)",
+                MAX_PORTS,
+            );
+            break;
+        }
+    }
+    out
+}
+
+/// Render the parsed per-port device list as a single log line for
+/// the operator-visible startup trace. Truncates long lists so the
+/// log stays readable when a core advertises dozens of devices
+/// per port (FCEUmm's Famicom expansion port advertises ~12).
+fn format_controller_devices_for_log(
+    devices: &[Vec<ControllerDeviceDescriptor>],
+) -> String {
+    devices
+        .iter()
+        .enumerate()
+        .map(|(port, devs)| {
+            if devs.is_empty() {
+                format!("port {port} = []")
+            } else {
+                let preview = devs
+                    .iter()
+                    .take(8)
+                    .map(|d| format!("{}={}", d.label, d.id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let suffix = if devs.len() > 8 {
+                    format!(", +{} more", devs.len() - 8)
+                } else {
+                    String::new()
+                };
+                format!("port {port} = [{preview}{suffix}]")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Pure helper: resolve a RETRO_DEVICE_ID_LIGHTGUN_* query against a
@@ -1208,12 +1320,32 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             true
         }
 
+        // SET_CONTROLLER_INFO (35) — per-port supported-device list.
+        // Parsed + stored so the frontend can render a dropdown of the
+        // exact (label, id) entries the core declared, instead of a
+        // hardcoded "Light Gun = 4 / Mouse = 2" list that's wrong for
+        // every core using `RETRO_DEVICE_SUBCLASS`-extended peripherals
+        // (FCEUmm Zapper = 258, snes9x Super Scope = 260, Genesis Plus
+        // GX Light Phaser = 260, Beetle PSX GunCon = 260, …). See
+        // docs/PLANS/dynamic-controller-info.md.
+        RETRO_ENVIRONMENT_SET_CONTROLLER_INFO => {
+            let parsed = unsafe {
+                parse_controller_info(data as *const retro_controller_info)
+            };
+            log::info!(
+                "oa-libretro: SET_CONTROLLER_INFO — {} port(s) advertised: {}",
+                parsed.len(),
+                format_controller_devices_for_log(&parsed),
+            );
+            with_state(|s| s.controller_devices = parsed);
+            true
+        }
+
         // Setters where accepting is harmless — we don't store the declared
         // data, but acknowledging it keeps cores from bailing on init when
         // their setup path checks for frontend acks.
         RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
         | RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO
-        | RETRO_ENVIRONMENT_SET_CONTROLLER_INFO
         | RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
         | RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY
         | RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE => true,
@@ -1489,6 +1621,210 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- parse_controller_info ----------------------------------------
+
+    /// Helper: build a leak-resilient table of `retro_controller_description`
+    /// from a list of (label, id) pairs. Holds the `CString`s alongside
+    /// the descriptor array so the C strings outlive the test's call to
+    /// the parser. Returns (cstrings, descriptors) — keep both bound to
+    /// stack locals until after the parse call.
+    fn build_descs(
+        entries: &[(&str, u32)],
+    ) -> (Vec<CString>, Vec<retro_controller_description>) {
+        let cstrings: Vec<CString> = entries
+            .iter()
+            .map(|(label, _)| CString::new(*label).unwrap())
+            .collect();
+        let descs: Vec<retro_controller_description> = entries
+            .iter()
+            .zip(cstrings.iter())
+            .map(|((_, id), cs)| retro_controller_description {
+                desc: cs.as_ptr(),
+                id: *id as std::os::raw::c_uint,
+            })
+            .collect();
+        (cstrings, descs)
+    }
+
+    #[test]
+    fn parse_controller_info_handles_null_top_pointer() {
+        let parsed = unsafe { parse_controller_info(std::ptr::null()) };
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn parse_controller_info_two_ports_with_sentinel() {
+        // Reproduces a realistic FCEUmm-shaped advertisement: port 0
+        // and port 1 each advertise [Joypad, Zapper], sentinel at
+        // port 2. Asserts both the (label, id) preservation AND that
+        // walking stops at the sentinel rather than reading past it.
+        let (cs0, d0) = build_descs(&[("Joypad", 1), ("Zapper", 258)]);
+        let (cs1, d1) = build_descs(&[("Joypad", 1), ("Zapper", 258)]);
+        let _keep = (cs0, cs1); // keep CStrings alive past the parse
+
+        let info = [
+            retro_controller_info {
+                types: d0.as_ptr(),
+                num_types: d0.len() as std::os::raw::c_uint,
+            },
+            retro_controller_info {
+                types: d1.as_ptr(),
+                num_types: d1.len() as std::os::raw::c_uint,
+            },
+            retro_controller_info {
+                types: std::ptr::null(),
+                num_types: 0,
+            },
+        ];
+
+        let parsed = unsafe { parse_controller_info(info.as_ptr()) };
+        assert_eq!(parsed.len(), 2, "should stop at sentinel, not over-read");
+        assert_eq!(parsed[0].len(), 2);
+        assert_eq!(parsed[0][0].label, "Joypad");
+        assert_eq!(parsed[0][0].id, 1);
+        assert_eq!(parsed[0][1].label, "Zapper");
+        assert_eq!(parsed[0][1].id, 258);
+        assert_eq!(parsed[1][1].label, "Zapper");
+        assert_eq!(parsed[1][1].id, 258);
+    }
+
+    #[test]
+    fn parse_controller_info_clones_strings_owned_not_aliased() {
+        // After parse, the source CStrings get dropped — the parsed
+        // strings must still be valid. (Catches a future regression
+        // where someone refactors the parser to store borrowed `&str`
+        // or `&CStr` into the State.)
+        let parsed_then_dropped = {
+            let (cs, descs) = build_descs(&[("Zapper", 258)]);
+            let info = [
+                retro_controller_info {
+                    types: descs.as_ptr(),
+                    num_types: 1,
+                },
+                retro_controller_info {
+                    types: std::ptr::null(),
+                    num_types: 0,
+                },
+            ];
+            let parsed = unsafe { parse_controller_info(info.as_ptr()) };
+            drop(cs);
+            drop(descs);
+            parsed
+        };
+        assert_eq!(parsed_then_dropped[0][0].label, "Zapper");
+        assert_eq!(parsed_then_dropped[0][0].id, 258);
+    }
+
+    #[test]
+    fn parse_controller_info_null_desc_becomes_empty_label() {
+        // Spec allows NULL desc; substitute empty label rather than
+        // panicking. Operator-visible: the dropdown row would render
+        // its id as the label fallback (handled at the frontend).
+        let bogus = retro_controller_description {
+            desc: std::ptr::null(),
+            id: 99,
+        };
+        let descs = [bogus];
+        let info = [
+            retro_controller_info {
+                types: descs.as_ptr(),
+                num_types: 1,
+            },
+            retro_controller_info {
+                types: std::ptr::null(),
+                num_types: 0,
+            },
+        ];
+        let parsed = unsafe { parse_controller_info(info.as_ptr()) };
+        assert_eq!(parsed[0][0].label, "");
+        assert_eq!(parsed[0][0].id, 99);
+    }
+
+    #[test]
+    fn parse_controller_info_empty_per_port_is_kept_not_sentinel() {
+        // A port with num_types == 0 but a non-NULL types pointer is
+        // NOT the sentinel — it's a port that declares zero devices.
+        // (Rare but spec-permitted. Sentinel requires BOTH null + zero.)
+        // Use a zero-length array's as_ptr() — guaranteed non-null in
+        // Rust for empty slices.
+        let empty: [retro_controller_description; 0] = [];
+        let (_cs1, d1) = build_descs(&[("Joypad", 1)]);
+        let info = [
+            retro_controller_info {
+                types: empty.as_ptr(),
+                num_types: 0,
+            },
+            retro_controller_info {
+                types: d1.as_ptr(),
+                num_types: 1,
+            },
+            retro_controller_info {
+                types: std::ptr::null(),
+                num_types: 0,
+            },
+        ];
+        let parsed = unsafe { parse_controller_info(info.as_ptr()) };
+        assert_eq!(parsed.len(), 2, "empty-but-present port should not terminate the walk");
+        assert!(parsed[0].is_empty());
+        assert_eq!(parsed[1].len(), 1);
+        assert_eq!(parsed[1][0].label, "Joypad");
+    }
+
+    #[test]
+    fn parse_controller_info_subclass_ids_preserved_verbatim() {
+        // The whole point of this parser: subclass-encoded ids
+        // round-trip without rewriting. Exercises every base device id
+        // that appears in any of the cores we ship today.
+        // - FCEUmm Zapper       = SUBCLASS(MOUSE,    0) = 258
+        // - FCEUmm Arkanoid     = SUBCLASS(MOUSE,    1) = 514
+        // - FCEUmm Power Pad A  = SUBCLASS(KEYBOARD, 0) = 259
+        // - snes9x Super Scope  = (1 << 8) | LIGHTGUN   = 260
+        // - snes9x Super Multi  = (1 << 8) | JOYPAD     = 257
+        // - Dolphin Wii+Nunchuk = (2 << 8) | JOYPAD     = 769
+        let (_cs, descs) = build_descs(&[
+            ("Joypad",          1),
+            ("Super Multitap",  257),
+            ("Zapper",          258),
+            ("Power Pad A",     259),
+            ("Super Scope",     260),
+            ("Arkanoid",        514),
+            ("Wii + Nunchuk",   769),
+        ]);
+        let info = [
+            retro_controller_info {
+                types: descs.as_ptr(),
+                num_types: descs.len() as std::os::raw::c_uint,
+            },
+            retro_controller_info {
+                types: std::ptr::null(),
+                num_types: 0,
+            },
+        ];
+        let parsed = unsafe { parse_controller_info(info.as_ptr()) };
+        let ids: Vec<u32> = parsed[0].iter().map(|d| d.id).collect();
+        assert_eq!(ids, vec![1, 257, 258, 259, 260, 514, 769]);
+    }
+
+    #[test]
+    fn format_controller_devices_for_log_truncates_long_lists() {
+        // Sanity-check the log helper. FCEUmm's Famicom expansion port
+        // (port 4) advertises ~12 entries; the formatter caps at 8 with
+        // a "+N more" suffix so the operator-visible startup line stays
+        // a one-liner.
+        let port_devs: Vec<ControllerDeviceDescriptor> = (0..12u32)
+            .map(|i| ControllerDeviceDescriptor {
+                label: format!("Dev{i}"),
+                id: 100 + i,
+            })
+            .collect();
+        let formatted = format_controller_devices_for_log(&[port_devs]);
+        assert!(formatted.contains("port 0 = ["));
+        assert!(formatted.contains("Dev0=100"));
+        assert!(formatted.contains("Dev7=107"));
+        assert!(!formatted.contains("Dev8=108"));
+        assert!(formatted.contains("+4 more"));
+    }
 
     // ---- pointer_field_value ------------------------------------------
 

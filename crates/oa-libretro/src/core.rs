@@ -7,7 +7,10 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::Path;
 
-use oa_core::{Core, CoreError, Framebuffer, InputState, MemoryRegionId, PortIndex, SystemId, Timing};
+use oa_core::{
+    ControllerDeviceDescriptor, Core, CoreError, Framebuffer, InputState, MemoryRegionId,
+    PortIndex, SystemId, Timing,
+};
 
 use crate::ffi::*;
 use crate::loader::LibretroLibrary;
@@ -553,6 +556,31 @@ impl LibretroCore {
             return;
         }
         unsafe { (self.lib.fns.set_controller_port_device)(port, device) };
+    }
+
+    /// Supported-device list this core advertised for `port` via the
+    /// libretro `SET_CONTROLLER_INFO` env call (parsed in
+    /// `state.rs::parse_controller_info`). Empty Vec means either:
+    ///
+    /// - the core never called `SET_CONTROLLER_INFO` (rare in modern
+    ///   cores; falls back to "Standard Pad + Disconnected" in the
+    ///   frontend);
+    /// - the core advertised fewer ports than `port + 1`;
+    /// - the core explicitly declared the port supports nothing.
+    ///
+    /// Frontend uses this to render the per-game Input dialog's device
+    /// dropdown — each entry's `id` is dispatched verbatim via
+    /// `set_port_device` so cores that use subclass-encoded peripheral
+    /// ids (FCEUmm Zapper = 258, snes9x Super Scope = 260, …) work
+    /// without per-system hardcoded tables in the frontend.
+    pub fn controller_devices(&self, port: u32) -> Vec<ControllerDeviceDescriptor> {
+        state::with_state(|s| {
+            s.controller_devices
+                .get(port as usize)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
     }
 
     /// Forward a keyboard transition to the core via the callback the core

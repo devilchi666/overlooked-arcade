@@ -506,6 +506,36 @@ pub struct CoreOption {
     pub values: Vec<CoreOptionValue>,
 }
 
+/// One supported controller / peripheral device that a core advertises
+/// for a given port via libretro's
+/// `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` env call.
+///
+/// Cores extend libretro's base device space (`RETRO_DEVICE_JOYPAD = 1`,
+/// `RETRO_DEVICE_MOUSE = 2`, `RETRO_DEVICE_LIGHTGUN = 4`, …) via
+/// `RETRO_DEVICE_SUBCLASS(base, id) = ((id + 1) << 8) | base` to declare
+/// system-specific peripherals (FCEUmm's Zapper = 258, snes9x's Super
+/// Scope = 260, Genesis Plus GX's Light Phaser = 260, Beetle PSX's
+/// GunCon = 260, etc.). Each core publishes its own `(label, id)` list
+/// per port — the frontend reads this directly instead of maintaining
+/// hardcoded per-system option tables that go stale on every core
+/// update.
+///
+/// Labels are authored by core maintainers in the core's canonical
+/// language ("Zapper" vs "Light Phaser" vs "GunCon") and should be
+/// displayed verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControllerDeviceDescriptor {
+    /// Human-readable label sourced from the core's
+    /// `retro_controller_description::desc`. Empty when the core passed
+    /// a NULL `desc` pointer (spec-permitted but rare).
+    pub label: String,
+    /// Wire id passed to `retro_set_controller_port_device`. May be a
+    /// base id (1 / 2 / 4 / …) or a subclass-encoded id (258 / 260 /
+    /// 257 / …). The frontend dispatches this value verbatim.
+    pub id: u32,
+}
+
 /// A category grouping for [`CoreOption`]s — libretro V2 only.
 ///
 /// When the core registers categories via `SET_CORE_OPTIONS_V2`, options
