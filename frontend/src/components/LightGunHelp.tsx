@@ -1,26 +1,20 @@
 import type { Component } from "solid-js";
 import { For } from "solid-js";
 
-/// Systems that use the libretro RETRO_DEVICE_LIGHTGUN device type
-/// (NES Zapper, SNES Super Scope, SMS Phaser, Saturn Virtua Gun, PSX
-/// GunCon/Justifier, Dreamcast Light Gun, Atari 7800 XEGS Light Gun).
-/// NDS uses RETRO_DEVICE_POINTER for its stylus — different dispatch
-/// path, so it's NOT in this list even though
-/// `light_gun_systems.rs::LIGHT_GUN_SYSTEMS` includes it for the
-/// shared-pointer-path reason.
-///
-/// Mirror of the Rust `apps/oa-shell/src/light_gun_systems.rs::LIGHT_GUN_SYSTEMS`
-/// table minus the NDS entry. When adding a new light-gun system,
-/// update both.
-export const LIGHT_GUN_SYSTEM_IDS = [
-  "nes",
-  "snes",
-  "sms",
-  "saturn",
-  "psx",
-  "dreamcast",
-  "atari7800",
-] as const;
+// `LIGHT_GUN_SYSTEM_IDS` + `isLightGunSystem(systemId)` were deleted
+// on 2026-06-05 as part of the dynamic-controller-info arc (Slice 4).
+// The hand-maintained list went stale every time a new light-gun core
+// shipped or upstream renamed a device, AND it shipped the wrong
+// libretro device id (4 instead of each core's actual subclass) so
+// picking "Light Gun" from the dropdown silently wired GAMEPAD.
+//
+// Light-gun detection now derives from the SQLite controller-info
+// cache via the `system_has_light_gun` Tauri command — true iff the
+// system's effective core has cached any device whose base id ==
+// RETRO_DEVICE_LIGHTGUN OR whose label matches a known light-gun
+// keyword (zapper / gun / scope / phaser / menacer / justifier /
+// rifle). Cold cache returns false — the banner stays hidden until
+// the operator launches the system once.
 
 /// The fixed JOYPAD-bit → LIGHTGUN-id mapping the Rust
 /// `oa_input::lightgun_buttons_from_joypad_bits` performs at every
@@ -102,10 +96,7 @@ export const LightGunMappingHelp: Component<{ compact?: boolean }> = (props) => 
   );
 };
 
-/// Type-narrowing helper for use sites that key off a SystemId-like
-/// string. Returns true when the given slug supports light-gun games
-/// via RETRO_DEVICE_LIGHTGUN.
-export function isLightGunSystem(systemId: string | null | undefined): boolean {
-  if (!systemId) return false;
-  return (LIGHT_GUN_SYSTEM_IDS as readonly string[]).includes(systemId);
-}
+// `isLightGunSystem(systemId)` deleted — see top-of-file note.
+// Replacement: call sites use a `createResource` against the
+// `system_has_light_gun` Tauri command. The async-vs-sync shape change
+// is the cost of dropping the stale hand-list.

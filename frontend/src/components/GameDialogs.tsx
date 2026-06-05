@@ -36,7 +36,7 @@ import CoreOptionsPanel from "./CoreOptionsPanel";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import KeypadReference from "./KeypadReference";
 import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
-import { LightGunMappingHelp, isLightGunSystem } from "./LightGunHelp";
+import { LightGunMappingHelp } from "./LightGunHelp";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -628,140 +628,6 @@ export const GameCoreOptionsDialog: Component<{
 
 // --- GameInputDialog ---------------------------------------------------
 
-/// Per-system label override for the libretro device-type select. Most
-/// cores accept the same device numbers but the system-canonical name
-/// differs — Beetle Saturn calls device 5 the "3D Pad" rather than
-/// the generic "Analog Pad", FCEUmm calls device 4 the "Zapper", etc.
-/// Operators reading the dropdown for a Saturn game shouldn't have to
-/// translate "Analog Pad / Paddle" to "3D Pad" in their head. Returns
-/// null when the system has no system-specific label for the device id,
-/// letting the caller fall back to the generic.
-function systemSpecificDeviceLabel(systemId: string, deviceId: number): string | null {
-  switch (systemId) {
-    case "saturn":
-    case "stv":
-      if (deviceId === 5) return "3D Pad / Analog";
-      if (deviceId === 4) return "Virtua Gun";
-      return null;
-    case "nes":
-      if (deviceId === 4) return "Zapper";
-      return null;
-    case "snes":
-      if (deviceId === 2) return "SNES Mouse";
-      if (deviceId === 4) return "Super Scope";
-      // snes9x hand-encodes the multitap as `((1 << 8) | RETRO_DEVICE_JOYPAD)`
-      // (= 257) at the top of `libretro/libretro.cpp`, not the canonical
-      // RETRO_DEVICE_SUBCLASS macro. The u32 wire value here is what
-      // retro_set_controller_port_device actually receives → CTL_MP5.
-      if (deviceId === 257) return "Super Multitap (4-port)";
-      return null;
-    case "psx":
-      if (deviceId === 5) return "DualShock / Analog";
-      if (deviceId === 4) return "GunCon / Justifier";
-      return null;
-    case "dreamcast":
-      if (deviceId === 4) return "Light Gun (House of the Dead)";
-      return null;
-    case "atari7800":
-      if (deviceId === 4) return "XEGS Light Gun";
-      if (deviceId === 5) return "Analog (Trak-Ball / Paddle)";
-      return null;
-    case "sms":
-      if (deviceId === 4) return "Light Phaser";
-      return null;
-    case "n64":
-      if (deviceId === 5) return "Analog (N64 stick)";
-      return null;
-    case "gamecube":
-      // For GC dumps the base RetroPad id maps to "GameCube
-      // Controller"; for Wii dumps it maps to a bare "Wii Remote".
-      // We can't easily tell GC vs Wii apart from the systemId
-      // alone (single Dolphin core covers both via runtime
-      // auto-detect) so the label calls out both modes.
-      if (deviceId === 1) return "GameCube Controller / Wii Remote";
-      // The Wii subclasses below are Dolphin's hand-encoded
-      // `((N << 8) | base)` values from
-      // Source/Core/DolphinLibretro/Input.cpp:48-54. Picking one
-      // forces the Dolphin core into that peripheral mode at
-      // retro_set_controller_port_device time.
-      if (deviceId === 513)  return "Wii Remote (sideways)";
-      if (deviceId === 769)  return "Wii Remote + Nunchuk";
-      if (deviceId === 1025) return "Wii Remote + Classic Controller";
-      if (deviceId === 1281) return "Wii Remote + Classic Controller Pro";
-      if (deviceId === 1537) return "GameCube Controller (Wii mode)";
-      return null;
-    default:
-      return null;
-  }
-}
-
-const DEVICE_ID_OPTIONS_BASE: readonly { id: number; generic: string }[] = [
-  { id: 1, generic: "Standard Pad (RetroPad)" },
-  { id: 5, generic: "Analog Pad / Paddle" },
-  { id: 2, generic: "Mouse" },
-  { id: 4, generic: "Light Gun" },
-  { id: 6, generic: "Pointer / Stylus" },
-  { id: 3, generic: "Keyboard" },
-  { id: 0, generic: "Disconnected (no controller)" },
-];
-
-/// GameCube / Wii peripheral subclasses registered by the Dolphin
-/// libretro core (Source/Core/DolphinLibretro/Input.cpp lines 48-54 +
-/// 922-967). Dolphin hand-encodes the values as `((N << 8) | base)`
-/// without the canonical libretro `RETRO_DEVICE_SUBCLASS` macro's
-/// `+1` convention — the u32 wire values here are what
-/// `retro_set_controller_port_device` actually receives. Operators
-/// pick these in the per-game Input dialog when a Wii title needs a
-/// specific peripheral (Skyward Sword → Wii Remote + Nunchuk,
-/// SSBB → Classic Controller, Mario Kart Wii multiplayer → GC
-/// Controller (Wii mode) for Wii U adapter slots, etc.). Real
-/// WiiMote / Bluetooth passthrough (1536) intentionally skipped —
-/// needs host-side Bluetooth pairing OA doesn't wire today.
-const DEVICE_ID_OPTIONS_GAMECUBE: readonly { id: number; generic: string }[] = [
-  { id: 513,  generic: "Wii Remote (sideways)" },
-  { id: 769,  generic: "Wii Remote + Nunchuk" },
-  { id: 1025, generic: "Wii Remote + Classic Controller" },
-  { id: 1281, generic: "Wii Remote + Classic Controller Pro" },
-  { id: 1537, generic: "GameCube Controller (Wii mode)" },
-];
-
-/// SNES peripheral subclasses registered by snes9x. The Super Multitap
-/// id is hand-encoded as `((1 << 8) | RETRO_DEVICE_JOYPAD)` at the top
-/// of snes9x's `libretro/libretro.cpp` — same pattern Dolphin uses,
-/// not the canonical RETRO_DEVICE_SUBCLASS macro. The u32 wire value
-/// here is what retro_set_controller_port_device receives → CTL_MP5
-/// inside snes9x. Operators pick this in the per-game Input dialog
-/// for 8-player Bomberman games (Super Bomberman 3/4/5 + Panic Bomber W)
-/// — typically on BOTH ports for the full 8-player setup.
-const DEVICE_ID_OPTIONS_SNES: readonly { id: number; generic: string }[] = [
-  { id: 257, generic: "Super Multitap (4-port adapter)" },
-];
-
-/// Per-system option-list resolution. Most systems just use the base
-/// seven libretro device types; GameCube/Wii layers Dolphin's
-/// Wii-peripheral subclasses on top so they appear in the dropdown
-/// only for GC system games. SNES layers snes9x's Super Multitap.
-/// Future systems with custom subclasses (Saturn 3D Pad sits on the
-/// generic ANALOG id 5 today, so no extras needed; if Beetle Saturn
-/// ever adds Twin-Stick Pro as a subclass, this is the table to extend).
-function deviceOptionsForSystem(
-  systemId: string,
-): readonly { id: number; generic: string }[] {
-  if (systemId === "gamecube") {
-    return [...DEVICE_ID_OPTIONS_BASE, ...DEVICE_ID_OPTIONS_GAMECUBE];
-  }
-  if (systemId === "snes") {
-    return [...DEVICE_ID_OPTIONS_BASE, ...DEVICE_ID_OPTIONS_SNES];
-  }
-  return DEVICE_ID_OPTIONS_BASE;
-}
-
-/// Render the device-type option label for a (systemId, deviceId) pair,
-/// preferring the system-specific name when one exists.
-function deviceOptionLabel(systemId: string, deviceId: number, generic: string): string {
-  return systemSpecificDeviceLabel(systemId, deviceId) ?? generic;
-}
-
 /// One device the loaded core has advertised it supports on a port,
 /// captured from libretro's RETRO_ENVIRONMENT_SET_CONTROLLER_INFO via
 /// the `get_controller_devices` Tauri command. Mirror of the Rust
@@ -771,21 +637,25 @@ type ControllerDeviceDescriptor = {
   id: number;
 };
 
-/// Per-port option-list resolution that prefers the loaded core's
-/// advertised (label, id) pairs over the hardcoded
-/// `DEVICE_ID_OPTIONS_*` tables. The hardcoded list survives as a
-/// fallback for the case where no core is currently loaded (the
-/// frontend can't query `SET_CONTROLLER_INFO` data through a process
-/// boundary). Slice 3 of the dynamic-controller-info arc adds a SQLite
-/// cache so the fallback case shrinks; Slice 4 deletes the hardcoded
-/// tables entirely.
-///
-/// Empty live response → fall back, AND surface a "Launch the game to
-/// see this core's full device list" hint to the operator so the
-/// shortened dropdown doesn't look like a bug.
+/// Minimal fallback list used when neither the live core nor the
+/// SQLite cache (`apps/oa-shell/src/library_db.rs` v21
+/// `core_controller_info`) has data for this system's effective core —
+/// the operator hasn't launched the game yet, or the .dll was just
+/// swapped and the cached mtime is stale. Two entries only: the
+/// universal Standard Pad + an explicit Disconnected. We don't try to
+/// invent system-specific options here; once the operator launches
+/// once, the cache fills with what the core actually advertises, and
+/// the dropdown becomes correct on every subsequent open.
+const FALLBACK_DEVICE_OPTIONS: readonly { id: number; label: string }[] = [
+  { id: 1, label: "Standard Pad" },
+  { id: 0, label: "Disconnected (no controller)" },
+];
+
+/// Resolves the dropdown's option list given the live + cached data
+/// the backend returned for one port. Empty input → fallback + signal
+/// to the caller so the UI can render the "launch the game once" hint.
 function effectiveDeviceOptions(
   live: readonly ControllerDeviceDescriptor[],
-  systemId: string,
 ): { options: readonly { id: number; label: string }[]; source: "core" | "fallback" } {
   if (live.length > 0) {
     return {
@@ -794,12 +664,44 @@ function effectiveDeviceOptions(
     };
   }
   return {
-    options: deviceOptionsForSystem(systemId).map((opt) => ({
-      id: opt.id,
-      label: deviceOptionLabel(systemId, opt.id, opt.generic),
-    })),
+    options: FALLBACK_DEVICE_OPTIONS,
     source: "fallback",
   };
+}
+
+/// Heuristic: does this advertised device look like a light gun? Used
+/// to decide whether to surface the LightGunMappingHelp under the
+/// dropdown. Two signals:
+///
+/// - Base device id == RETRO_DEVICE_LIGHTGUN (4). Catches snes9x's
+///   Super Scope (260), Genesis Plus GX's Light Phaser (260), Beetle
+///   PSX's GunCon (260), Saturn Virtua Gun, Dreamcast light gun,
+///   Atari 7800 XEGS — every core that subclasses the canonical
+///   LIGHTGUN base.
+/// - Label keyword match for the FCEUmm-shaped case where Zapper is
+///   declared as SUBCLASS(MOUSE, 0) = 258 rather than as a LIGHTGUN
+///   subclass. The base-id check would miss it; the label always
+///   reads "Zapper" so a keyword search catches it. Pattern is the
+///   same for any future cores that file their light gun under MOUSE
+///   instead of LIGHTGUN.
+function looksLikeLightGun(d: ControllerDeviceDescriptor): boolean {
+  if ((d.id & 0xFF) === 4) return true;
+  const lower = d.label.toLowerCase();
+  return /\b(zapper|gun|scope|phaser|menacer|justifier|rifle)\b/.test(lower);
+}
+
+/// Resolve a saved device-id override to a human label. Used by the
+/// legacy-id label path — when a saved override id ISN'T in the
+/// current advertised list (operator picked it pre-arc, or the core
+/// changed its subclass numbering), render the id so the operator can
+/// recognize and re-pick. Returns null when the id IS in the list
+/// (caller uses the live label).
+function legacyDeviceLabel(
+  savedId: number,
+  advertised: readonly ControllerDeviceDescriptor[],
+): string | null {
+  if (advertised.some((d) => d.id === savedId)) return null;
+  return `Unknown device (id ${savedId}) — please re-pick`;
 }
 
 export const GameInputDialog: Component<{
@@ -895,7 +797,12 @@ export const GameInputDialog: Component<{
                 }}
               >
                 <option value="">— Inherit (Standard Pad) —</option>
-                <For each={effectiveDeviceOptions(liveForPort(0), e().systemId).options}>
+                <Show when={legacyDeviceLabel(overrides().libretroDevice ?? -1, liveForPort(0))}>
+                  {(legacy) => (
+                    <option value={String(overrides().libretroDevice)}>{legacy()}</option>
+                  )}
+                </Show>
+                <For each={effectiveDeviceOptions(liveForPort(0)).options}>
                   {(opt) => <option value={String(opt.id)}>{opt.label}</option>}
                 </For>
               </select>
@@ -907,7 +814,14 @@ export const GameInputDialog: Component<{
                   to populate.
                 </p>
               </Show>
-              <Show when={overrides().libretroDevice === 4 && isLightGunSystem(e().systemId)}>
+              <Show
+                when={
+                  overrides().libretroDevice != null
+                  && liveForPort(0).some(
+                    (d) => d.id === overrides().libretroDevice && looksLikeLightGun(d),
+                  )
+                }
+              >
                 <div class="mt-2">
                   <LightGunMappingHelp />
                 </div>
@@ -997,7 +911,12 @@ export const GameInputDialog: Component<{
                             }}
                           >
                             <option value="">— Inherit (Standard Pad) —</option>
-                            <For each={effectiveDeviceOptions(liveForPort(portIdx), e().systemId).options}>
+                            <Show when={legacyDeviceLabel(overrides()[key] ?? -1, liveForPort(portIdx))}>
+                              {(legacy) => (
+                                <option value={String(overrides()[key])}>{legacy()}</option>
+                              )}
+                            </Show>
+                            <For each={effectiveDeviceOptions(liveForPort(portIdx)).options}>
                               {(opt) => <option value={String(opt.id)}>{opt.label}</option>}
                             </For>
                           </select>

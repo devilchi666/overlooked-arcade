@@ -2431,6 +2431,7 @@ fn main() {
             set_libretro_device_for_game,
             arm_libretro_device,
             get_controller_devices,
+            system_has_light_gun,
             list_games,
             add_games,
             drop_seed_games,
@@ -8677,6 +8678,70 @@ fn get_controller_devices(
         .ok()
         .flatten()
         .unwrap_or_default()
+}
+
+/// Does the system's effective core advertise any light-gun-shape
+/// device? Derived from the SQLite controller-info cache (Slice 3) by
+/// walking all 5 ports' cached lists and checking each device's
+/// (label, id). Match conditions match the frontend's
+/// `looksLikeLightGun` heuristic:
+///
+/// - Base device id == `RETRO_DEVICE_LIGHTGUN` (4) — catches canonical
+///   subclasses: snes9x Super Scope (260), Genesis Plus GX Light
+///   Phaser (260), Beetle PSX GunCon (260), Saturn Virtua Gun,
+///   Dreamcast light gun, Atari 7800 XEGS.
+/// - Label keyword match — catches FCEUmm-shape Zapper-as-MOUSE-
+///   subclass (258), where the base-id check would miss.
+///
+/// Replaces the hand-maintained `LIGHT_GUN_SYSTEM_IDS` constant the
+/// frontend used to ship in `LightGunHelp.tsx`. Returns false when
+/// the cache is cold (operator hasn't launched this system yet) —
+/// SystemBindingsEditor's help-banner stays hidden until first launch,
+/// then appears once the cache fills.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn system_has_light_gun(
+    systemId: String,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> bool {
+    let per_system_default =
+        default_core_dll_for_system_resolved(&systemId).to_string();
+    let core_filename = read_cores_pref(&state.app_data_dir)
+        .get(&systemId)
+        .cloned()
+        .unwrap_or(per_system_default);
+    let cores_dir = resolve_cores_dir();
+    let dll_path = cores_dir.join(&core_filename);
+    let current_mtime: i64 = std::fs::metadata(&dll_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if current_mtime == 0 {
+        return false;
+    }
+    const KEYWORDS: &[&str] = &[
+        "zapper", "gun", "scope", "phaser", "menacer", "justifier", "rifle",
+    ];
+    for port in 0..5 {
+        let Ok(Some(devices)) =
+            db.cached_controller_devices(&core_filename, port, current_mtime)
+        else {
+            continue;
+        };
+        for d in devices {
+            if (d.id & 0xFF) == 4 {
+                return true;
+            }
+            let label_lower = d.label.to_lowercase();
+            if KEYWORDS.iter().any(|k| label_lower.contains(k)) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Persist a per-game libretro device-type override and push to the
