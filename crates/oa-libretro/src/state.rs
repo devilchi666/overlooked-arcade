@@ -579,6 +579,27 @@ pub(crate) fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     g.as_mut().map(f)
 }
 
+/// Supported-device list the loaded core advertised for `port` via
+/// `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`. Reads the singleton State
+/// directly so Tauri commands (which don't hold a `LibretroCore` ref —
+/// the core lives inside the emu thread) can answer
+/// `get_controller_devices` without dispatching through `EmuCommand`.
+///
+/// Returns an empty Vec when:
+/// - no core is currently loaded (singleton never installed)
+/// - the loaded core never called `SET_CONTROLLER_INFO`
+/// - the core advertised fewer ports than `port + 1`
+/// - the core declared this port supports nothing
+pub fn loaded_core_controller_devices(port: u32) -> Vec<ControllerDeviceDescriptor> {
+    with_state(|s| {
+        s.controller_devices
+            .get(port as usize)
+            .cloned()
+            .unwrap_or_default()
+    })
+    .unwrap_or_default()
+}
+
 // ---------- extern "C" callback trampolines ----------
 
 pub(crate) unsafe extern "C" fn cb_video_refresh(

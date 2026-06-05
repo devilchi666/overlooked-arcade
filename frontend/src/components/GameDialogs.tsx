@@ -11,6 +11,8 @@
 
 import {
   createEffect,
+  createMemo,
+  createResource,
   createSignal,
   For,
   Show,
@@ -760,6 +762,46 @@ function deviceOptionLabel(systemId: string, deviceId: number, generic: string):
   return systemSpecificDeviceLabel(systemId, deviceId) ?? generic;
 }
 
+/// One device the loaded core has advertised it supports on a port,
+/// captured from libretro's RETRO_ENVIRONMENT_SET_CONTROLLER_INFO via
+/// the `get_controller_devices` Tauri command. Mirror of the Rust
+/// `oa_core::ControllerDeviceDescriptor` struct (camelCase via serde).
+type ControllerDeviceDescriptor = {
+  label: string;
+  id: number;
+};
+
+/// Per-port option-list resolution that prefers the loaded core's
+/// advertised (label, id) pairs over the hardcoded
+/// `DEVICE_ID_OPTIONS_*` tables. The hardcoded list survives as a
+/// fallback for the case where no core is currently loaded (the
+/// frontend can't query `SET_CONTROLLER_INFO` data through a process
+/// boundary). Slice 3 of the dynamic-controller-info arc adds a SQLite
+/// cache so the fallback case shrinks; Slice 4 deletes the hardcoded
+/// tables entirely.
+///
+/// Empty live response → fall back, AND surface a "Launch the game to
+/// see this core's full device list" hint to the operator so the
+/// shortened dropdown doesn't look like a bug.
+function effectiveDeviceOptions(
+  live: readonly ControllerDeviceDescriptor[],
+  systemId: string,
+): { options: readonly { id: number; label: string }[]; source: "core" | "fallback" } {
+  if (live.length > 0) {
+    return {
+      options: live.map((d) => ({ id: d.id, label: d.label })),
+      source: "core",
+    };
+  }
+  return {
+    options: deviceOptionsForSystem(systemId).map((opt) => ({
+      id: opt.id,
+      label: deviceOptionLabel(systemId, opt.id, opt.generic),
+    })),
+    source: "fallback",
+  };
+}
+
 export const GameInputDialog: Component<{
   open: boolean;
   entry: RomEntry | null;
@@ -767,6 +809,42 @@ export const GameInputDialog: Component<{
 }> = (props) => {
   const { overrides, patch } = useGameOverrides(() => props.entry, () => props.open);
   const [showExtraPorts, setShowExtraPorts] = createSignal(false);
+
+  // Pull the live core's per-port supported-device list. Resource
+  // refetches when the dialog (re-)opens for a new game; tied to the
+  // entry id + open flag so it stays cold while the dialog is closed.
+  // Returns 5 parallel arrays (port 0..=4); each element is the core's
+  // advertised devices for that port — empty Vec when no core is
+  // loaded OR when the core didn't publish anything for that port.
+  const devicesSource = () => ({
+    open: props.open,
+    entryId: props.entry?.id ?? null,
+  });
+  const [coreDevices] = createResource(
+    devicesSource,
+    async (src): Promise<ControllerDeviceDescriptor[][]> => {
+      if (!src.open || !src.entryId) return [[], [], [], [], []];
+      try {
+        return await Promise.all(
+          [0, 1, 2, 3, 4].map((port) =>
+            invoke<ControllerDeviceDescriptor[]>("get_controller_devices", { port }),
+          ),
+        );
+      } catch (e) {
+        console.warn("[oa-game-dialog] get_controller_devices failed:", e);
+        return [[], [], [], [], []];
+      }
+    },
+  );
+  const liveForPort = (port: number): readonly ControllerDeviceDescriptor[] =>
+    coreDevices()?.[port] ?? [];
+  // Source for any one port (live vs fallback) — used to render the
+  // banner that tells the operator where the dropdown's contents came
+  // from. We sample port 0 since every meaningful core advertises at
+  // least port 0 if it advertises anything.
+  const dropdownSource = createMemo<"core" | "fallback">(() =>
+    liveForPort(0).length > 0 ? "core" : "fallback",
+  );
 
   createEffect(() => {
     const o = overrides();
@@ -812,14 +890,18 @@ export const GameInputDialog: Component<{
                 }}
               >
                 <option value="">— Inherit (Standard Pad) —</option>
-                <For each={deviceOptionsForSystem(e().systemId)}>
-                  {(opt) => (
-                    <option value={String(opt.id)}>
-                      {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
-                    </option>
-                  )}
+                <For each={effectiveDeviceOptions(liveForPort(0), e().systemId).options}>
+                  {(opt) => <option value={String(opt.id)}>{opt.label}</option>}
                 </For>
               </select>
+              <Show when={dropdownSource() === "fallback"}>
+                <p class="mt-1 text-[0.65rem] leading-snug text-(--color-oa-ink-dim)">
+                  Launch the game once so OA can read this core's full
+                  device list. Until then the dropdown shows a generic
+                  fallback — pick "Standard Pad" or save and relaunch
+                  to populate.
+                </p>
+              </Show>
               <Show when={overrides().libretroDevice === 4 && isLightGunSystem(e().systemId)}>
                 <div class="mt-2">
                   <LightGunMappingHelp />
@@ -910,12 +992,8 @@ export const GameInputDialog: Component<{
                             }}
                           >
                             <option value="">— Inherit (Standard Pad) —</option>
-                            <For each={deviceOptionsForSystem(e().systemId)}>
-                              {(opt) => (
-                                <option value={String(opt.id)}>
-                                  {deviceOptionLabel(e().systemId, opt.id, opt.generic)}
-                                </option>
-                              )}
+                            <For each={effectiveDeviceOptions(liveForPort(portIdx), e().systemId).options}>
+                              {(opt) => <option value={String(opt.id)}>{opt.label}</option>}
                             </For>
                           </select>
                         </div>

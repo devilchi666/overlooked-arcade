@@ -2430,6 +2430,7 @@ fn main() {
             arm_analog_routing,
             set_libretro_device_for_game,
             arm_libretro_device,
+            get_controller_devices,
             list_games,
             add_games,
             drop_seed_games,
@@ -8573,6 +8574,27 @@ fn arm_libretro_device(
         });
     }
     Ok(())
+}
+
+/// Return the per-port supported-device list the currently-loaded core
+/// advertised via `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`. Empty Vec
+/// when no core is loaded, the core never published, or the port index
+/// exceeds what was advertised — frontend treats empty as "fall back to
+/// the default Standard Pad / Disconnected list with a hint that the
+/// operator should launch the game to populate the dropdown."
+///
+/// Reads the oa-libretro singleton State directly via the
+/// `loaded_core_controller_devices` free function. Cheap (one mutex
+/// acquire + a clone of a short vector); safe to call from any thread
+/// because the singleton is process-global.
+///
+/// Slice 3 of the dynamic-controller-info arc adds a SQLite cache so
+/// the dialog can render without a live core; until then, empty Vec
+/// is the truthful response when nothing is loaded.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn get_controller_devices(port: u32) -> Vec<oa_core::ControllerDeviceDescriptor> {
+    oa_libretro::loaded_core_controller_devices(port)
 }
 
 /// Persist a per-game libretro device-type override and push to the
