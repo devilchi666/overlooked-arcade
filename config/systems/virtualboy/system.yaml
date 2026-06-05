@@ -14,6 +14,18 @@ cores:
   display_name: Beetle VB
   blurb: Mednafen Virtual Boy. Anaglyph or split-screen 3D.
   recommended: true
+# The VB controller has DUAL physical 4-way D-pads (LEFT + RIGHT), one
+# for each hand, designed around the stereoscopic 3D + dual-anchor
+# gameplay (Mario Clash, VB Wario Land, Teleroboxer, Red Alarm,
+# Vertical Force). Beetle VB exposes left D-pad via libretro D-pad bits
+# + right D-pad via the right analog stick — so surfacing the "Right
+# D-pad" panel in the per-system Bindings UI lets keyboard-only
+# operators bind it via the `default_analog_routing("virtualboy")`
+# Numpad fallback; gamepad users get it via right analog stick.
+analog_sticks:
+  kind: dual
+  left_label: Left D-pad
+  right_label: Right D-pad
 system_info:
   system_id: virtualboy
   manufacturer: Nintendo

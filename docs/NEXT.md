@@ -435,31 +435,20 @@ setup before kicking off the next arc.
    flipped ✅ for each. Operator validation against real handheld captures
    remains a stretch polish item but doesn't gate the default.
 
-### Migrate analog-stick topology to per-system YAML descriptor
-
-**Surfaced by the 2026-06-05 band-aid audit** following the
-dynamic-controller-info arc. `apps/oa-shell/src/bindings.rs::analog_sticks_for`
-hardcodes per-system stick topology in a Rust `match` (n64 = 1 stick
-"Analog Stick", gamecube = 2 sticks "Analog Stick" + "C-Stick",
-dreamcast = 1, psp = 1, psx = 2, ps2 = 2, saturn = 1, virtualboy = 1).
-
-**Why this is polish-tier not architectural-tier:** libretro cores
-don't publish stick topology via any env — there's no
-`SET_ANALOG_INFO` analog of `SET_CONTROLLER_INFO`. So this isn't
-a "core publishes data we discard" band-aid. It's a "Rust const should
-move to YAML" cleanup. The per-system YAML descriptor schema
-(`apps/oa-shell/src/system_descriptor.rs` — `config/systems/<id>/system.yaml`)
-is the natural home; adding a new system today already requires a YAML
-edit, but stick topology is the one Rust const that didn't migrate
-with Slice 2 of the per-system-descriptors arc.
-
-**Scope:** Extend `SystemDescriptor` schema with
-`analog_sticks: AnalogSticksInfo` field (matches the existing
-`bindings::AnalogSticks` enum shape: `none` / `single { label }` /
-`dual { left_label, right_label }`). Add to all 8 system.yaml files
-that currently set non-none. Replace `analog_sticks_for(system_id)`
-match with a `system_registry::global_registry().get(id).and_then(|d|
-d.descriptor.analog_sticks.as_ref())` lookup. ~50 LOC + 8 YAML edits.
+~~### Migrate analog-stick topology to per-system YAML descriptor~~ —
+**SHIPPED 2026-06-05** on `feat/analog-sticks-yaml`. New
+`AnalogSticksDescriptor` tagged enum (`kind: single|dual` with owned
+`String` labels) added to `system_descriptor.rs` schema. All 8
+systems with non-None topology (n64 / gamecube / dreamcast / psp /
+psx / ps2 / saturn / virtualboy) carry the `analog_sticks:` block
+in their `system.yaml`; digital-only systems omit the block. The
+runtime `bindings::AnalogSticks` enum changed `&'static str` → owned
+`String` to allow YAML-sourced data. `analog_sticks_for(system_id)`
+now reads through `system_registry::global_registry()`. Data-
+equivalence test asserts every previously-hardcoded mapping still
+resolves identically. Closes the per-system-descriptors migration's
+last Rust holdout — bindings.rs's match arm deleted. 732/732
+oa-shell tests pass.
 
 ~~### Honor SET_MINIMUM_AUDIO_LATENCY (env 63) for crackle-free heavy frames~~ —
 **SHIPPED 2026-06-05** on `feat/honor-min-audio-latency`. Parser in

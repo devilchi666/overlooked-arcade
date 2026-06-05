@@ -17,3 +17,6 @@ cores:
   blurb: Dreamcast / Naomi / Atomiswave. The standard DC pick.
   recommended: true
   bios_required: dc_boot.bin + dc_flash.bin
+analog_sticks:
+  kind: single
+  left_label: Analog Stick

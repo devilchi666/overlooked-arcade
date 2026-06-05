@@ -150,6 +150,58 @@ pub struct SystemDescriptor {
     /// `system_info` module.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_info: Option<SystemInfoCurated>,
+
+    /// Per-system analog-stick topology — drives the per-system
+    /// Bindings page's analog-input panel(s). `None` means "no analog
+    /// input on this system" (the UI hides the Analog section); the
+    /// `single` and `dual` variants surface one or two panel headers
+    /// with the labels the operator sees ("Analog Stick" for N64,
+    /// "Main Stick" + "C-Stick" for GameCube, etc.).
+    ///
+    /// Migrated 2026-06-05 from a hardcoded `bindings::analog_sticks_for`
+    /// Rust match — the last per-system const that didn't ride along
+    /// with the 2026-06-02 per-system-descriptors Slice 2 migration.
+    /// Cores don't publish stick topology via any libretro env, so this
+    /// is YAML-authored data, not a `core publishes/we discard`
+    /// band-aid. Surfaced by the 2026-06-05 band-aid audit's
+    /// architectural-polish bucket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analog_sticks: Option<AnalogSticksDescriptor>,
+}
+
+/// Per-system analog-stick topology declared in `system.yaml`. Tagged-
+/// enum variants mirror the runtime `bindings::AnalogSticks` shape
+/// (none / single / dual) with owned `String` labels so the data can
+/// live in YAML. The consumer (`bindings::analog_sticks_for`)
+/// translates this into the runtime enum on demand.
+///
+/// YAML shapes:
+///
+/// ```yaml
+/// analog_sticks:
+///   kind: single
+///   left_label: Analog Stick
+///
+/// analog_sticks:
+///   kind: dual
+///   left_label: Left Stick
+///   right_label: Right Stick
+/// ```
+///
+/// (The `none` case is conveyed by OMITTING the `analog_sticks:` block
+/// entirely — `Option<AnalogSticksDescriptor> = None` deserializes
+/// from absence, so digital-only systems author nothing.)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+pub enum AnalogSticksDescriptor {
+    /// One analog stick. The label is what shows in the UI panel
+    /// header (e.g. "Analog Stick" for N64 / Dreamcast).
+    Single { left_label: String },
+    /// Two analog sticks. Both labels show as panel headers.
+    Dual {
+        left_label: String,
+        right_label: String,
+    },
 }
 
 /// One libretro-database `.dat` reference — pair of subdir +

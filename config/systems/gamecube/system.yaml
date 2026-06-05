@@ -18,3 +18,7 @@ cores:
   display_name: Dolphin
   blurb: GameCube + Wii. Very demanding — requires a strong host.
   recommended: true
+analog_sticks:
+  kind: dual
+  left_label: Main Stick
+  right_label: C-Stick

@@ -8569,8 +8569,8 @@ fn set_system_settings(
 #[serde(rename_all = "camelCase")]
 struct AnalogSticksInfo {
     kind: &'static str,
-    left_label: Option<&'static str>,
-    right_label: Option<&'static str>,
+    left_label: Option<String>,
+    right_label: Option<String>,
 }
 
 #[tauri::command]
