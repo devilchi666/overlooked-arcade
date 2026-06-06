@@ -619,12 +619,18 @@ validation: launch Genesis / PSX / Dreamcast game, watch
     `frontend/src/components/LibraryTile.tsx`. `ngp/ROADMAP.md`
     line 40 ✅.
 12. **PCFX FMV streaming validation** (operator). PC-FX is FMV-heavy.
+13. **Right D-pad bindings for Virtual Boy** (~150 LOC). Unlocks Mario Clash / VB Wario Land / Teleroboxer / Red Alarm / Vertical Force right-hand-pad usage. Was originally listed under DEFERRED as "blocked on shared analog input infra"; that infra shipped end-to-end via Phases A–G back in May, so this is just pickup-able work that's been sitting in the wrong band. Honest re-categorization 2026-06-06.
+14. **Real OS-level accelerometer access** (~250 LOC). Windows Sensor API / Linux iio / macOS Core Motion. Phase G's keyboard-arrows-as-tilt fallback already handles GBA Boktai / Kirby Tilt 'n' Tumble / WarioWare Twisted!. Real-sensor access unlocks GBA tilt-native + NDS gyro-native motion + future Wii motion games (once Wii Remote dispatch reaches that gate). Moved out of DEFERRED 2026-06-06 — there's no shared-infra dependency, the platform-specific sensor bindings just haven't been written.
+15. **Trackball / mouse delta semantics validation** (~30 LOC + operator testing on real hardware). Libretro `RETRO_DEVICE_MOUSE` is spec'd as delta-based; the current pointer-as-mouse dispatch sends absolute coords. Arcade trackball games (Marble Madness, Centipede on MAME) need delta. The fix derives delta from previous-frame absolute in `cb_input_state`. The "validation" half needs an operator with a real trackball cabinet — that's the actual gate, not infra. Moved out of DEFERRED 2026-06-06.
+16. **GameCube Wii Remote / Nunchuk / Classic Controller dispatch** — code-side is ALREADY shipped via the dynamic-controller-info arc. Dolphin publishes the Wii peripherals via SET_CONTROLLER_INFO at ids 513 / 769 / 1025 / 1281 / 1537; they appear in the per-game Input dropdown automatically. Non-motion Wii games (Brawl + Classic Controller, NSMB Wii sideways grip, Trauma Center stylus, Skyward Sword IR-via-mouse) work today. **Motion-required games** (Wii Sports, Mario Galaxy spin, MotionPlus titles) wait on item #14 (real-OS accelerometer access). Moved out of DEFERRED 2026-06-06 as a pointer to that dependency — no work item under this bullet itself.
 
 ---
 
 ## DEFERRED — blocked on shared infra not yet triggered
 
 These wait for a single, larger infrastructure pass that benefits many systems at once. Each line item below names what unlocks the deferred work.
+
+**2026-06-06 band audit:** Several entries that had been sitting here turned out to be either (a) not actually blocked anymore (shared analog infra shipped, so VB right D-pad unblocked) or (b) effectively superseded by a different solution (vector-phosphor shader makes the Vectrex native vector renderer largely unnecessary). The surviving entries below are genuinely waiting on infra that doesn't exist yet.
 
 - ~~System-agnostic cheat code path~~ — **SHIPPED** across two passes.
   The end-to-end machinery (DB schema + CRUD + frame-loop dispatch +
@@ -640,13 +646,9 @@ These wait for a single, larger infrastructure pass that benefits many systems a
   gbc / gba / 2600 / n64. Per-core ROADMAP "Game Genie / cheat
   support — operator-driven validation" bullets remain ⬜ pending
   actual operator playtest against running cores.
-- **GameCube Wii Remote / Nunchuk / Classic Controller dispatch** (~500 lines, new libretro device type, Phase 2.5).
-- **Dreamcast VMU peripheral** (~400 lines, secondary screen + device dispatch).
-- **Real OS-level accelerometer access** (~250 lines, Windows Sensor API / Linux iio / macOS Core Motion). Phase G's keyboard-arrows-as-tilt fallback handles GBA Boktai / Kirby Tilt 'n' Tumble / WarioWare Twisted! today; a real accelerometer would let operators with tablet hardware or USB IMU devices play with native motion.
-- **Trackball / mouse delta semantics validation** (~80 lines + operator testing). Libretro `RETRO_DEVICE_MOUSE` is spec'd as delta-based; the existing pointer-as-mouse dispatch may need a small adjustment to feed delta-X/Y rather than absolute coords for MAME arcade trackball games (Marble Madness, Centipede). Verify-as-needed when an operator tests an actual trackball cabinet.
-- **Custom-built Vectrex vector renderer** (~500 lines, Phase 3+). Replace vecx raster with native wgpu vector-stroke rendering.
-- **Modern VR for Virtual Boy via OpenXR** (~800 lines, Phase 2+). Side-by-side dual-perspective to a headset.
-- **Right D-pad bindings for Virtual Boy** (~150 lines). Unlocks Mario Clash, VB Wario Land, Teleroboxer, Red Alarm, Vertical Force. (Was gated on "shared analog infra"; that infra is shipped, so this is now ready — moved up to MEDIUM if operator wants to pick it up.)
+- **Dreamcast VMU peripheral** (~400 LOC + ~1 week render infra). The VMU is the memory card with a 48×32 LCD that appears in-game (HotD 2 ammo counter, Sonic Adventure Chao pet, Skies of Arcadia compass). `oa-render` has no generic "secondary screen surface" concept — NDS dual-screen is a special case, not a reusable pattern. To ship VMU you'd genericalize the secondary-screen render path (~1 week of `oa-render` work) and then VMU dispatch is the easy half. Genuinely blocked on infra.
+- **Modern VR for Virtual Boy via OpenXR** (~800 LOC + OpenXR integration + dual-eye render pipeline + real VR headset to test). Side-by-side dual-perspective to a headset. Phase 2+ stretch. Genuinely blocked on infra AND hardware.
+- ~~**Custom-built Vectrex vector renderer**~~ — **EFFECTIVELY OBSOLETE.** Was listed as Phase 3+ stretch (~500 LOC replacing vecx raster with native wgpu vector strokes). The `vector-phosphor` shader preset shipped 2026-05-29 makes vecx output look like vector strokes with bloom + persistence — ~95% of the visual win for ~0% of the work. The native vector renderer would be a purity project not a functionality fix. Moved to PARKING_LOT 2026-06-06.
 - ~~**Jaguar CD support**~~ — **SHIPPED 2026-05-27** on
   `feat/new-systems-jagcd-32xcd-stv`. New `jagcd` slug + Rust
   `SystemId::JaguarCd` variant + `check_jagcd_bios` + CD-shape
