@@ -24,6 +24,7 @@ import {
   GameplaySettings,
   LibrarySettings,
   MediaSettings,
+  PerformanceSettings,
   PerSystemUiSettings,
   ProfileSettings,
   ShadersSettings,
@@ -42,6 +43,7 @@ type CategoryId =
   | "audio"
   | "shaders"
   | "gameplay"
+  | "performance"
   | "controller-nav"
   | "per-system-ui"
   | "experimental"
@@ -102,6 +104,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Rewind capture cadence + buffer cap.",
     helpText:
       "Rewind captures a save-state every N frames; the buffer cap limits how many seconds of history are kept in memory. Larger caps = more rewind range, more RAM.",
+  },
+  {
+    id: "performance",
+    group: "oa-wide",
+    label: "Performance",
+    glyph: "⚡",
+    description: "CPU tier detection that drives core recommendations.",
+    helpText:
+      "Auto-detects your CPU brand + cores + base clock and buckets into High / Mid / Low. The Import Wizard uses this to pick the right core per system (Beetle PSX HW on High, PCSX-ReARMed on Low, etc.). Override below if the heuristic misclassifies — Steam Deck under-rates, old workstations over-rate, throttled laptops over-rate.",
   },
   {
     id: "controller-nav",
@@ -448,6 +459,9 @@ const SettingsPage: Component = () => {
           </Match>
           <Match when={activeCategoryId() === "gameplay"}>
             <GameplaySettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "performance"}>
+            <PerformanceSettings settings={ctx.settings} />
           </Match>
           <Match when={activeCategoryId() === "controller-nav"}>
             <ControllerNavSettings settings={ctx.settings} />

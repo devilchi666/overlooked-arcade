@@ -342,62 +342,43 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Guided Setup Phase 2 — curated CPU-tier core selection
+~~### Guided Setup Phase 2 — curated CPU-tier core selection~~ —
+**SHIPPED 2026-06-06** on `feat/guided-setup-cpu-tier`. Decision-locked
+2026-06-06 per plan §7: heuristic is source of truth, benchmarks
+explicitly deferred (possible Phase 2B if operator feedback names
+the heuristic as the bottleneck). 4 code slices + the decision-lock
+docs commit:
 
-**Next major Guided Setup work-item per plan §13 Phase 2.** Awaiting
-fresh operator green-light — Phase 1B closure is a natural pause
-point and the operator may want to play with the shipped guided
-setup before kicking off the next arc.
+- Slice 1 — `apps/oa-shell/src/cpu_tier.rs`: `sysinfo` detection +
+  `CpuTier { High | Mid | Low }` + `bucket_into_tier` (thresholds:
+  ≥6 cores & ≥3.0 GHz → High; ≥4 cores & ≥2.5 GHz → Mid; else Low) +
+  `detect_or_load` with cache to `<appDataDir>/cpu-tier.json` +
+  `LibraryPrefs.cpu_tier_override: Option<CpuTier>` escape hatch +
+  `detect_cpu_tier` Tauri command. 7 tests cover bucketing edges +
+  brand-string clock parsing variants. Documented Steam Deck
+  under-rate / old Xeon over-rate / thermal-throttled-laptop /
+  GPU-bound-core limitations as the operator-override use cases.
+- Slice 2 — `core_installer.rs::TIER_PREFERENCES` + `recommended
+  _core_for_tier(system_id, tier)`. Per-system rows for psx / snes /
+  n64 / genesis / saturn / ps2 / nds (7 systems). Two patterns: PSX +
+  Saturn + Genesis have distinct cores per tier; SNES + N64 + PS2 +
+  NDS reuse the accuracy core for High AND Mid (only Low picks the
+  lighter alternative — avoids over-recommending lightweight cores
+  to mid-tier hardware). 5 tests including a `tier_preference_bases
+  _all_exist_in_catalog` referential-integrity check.
+- Slice 3 — Settings → Performance card in `SettingsSections.tsx` +
+  `SettingsPage.tsx` category wiring. Read-only detected hardware
+  display (brand / cores / base clock) + tier chip with provenance
+  hint + Auto / High / Mid / Low override drop-down that round-trips
+  through `set_library_prefs`.
+- Slice 4 — `recommended_core_for_system(systemId)` Tauri command +
+  `SystemReadinessChecklist.tsx` consumes it via parallel resource +
+  Core pill detail surfaces `Using {core} (high-tier pick)` on ✓
+  rows and `Install {core} ({tier}-tier pick)` on ⚠ rows. Three
+  suffix shapes: `(high-tier pick)` / `(override-set high-tier
+  pick)` / `(system default)` for the single-core systems.
 
-**Scope:**
-- `sysinfo` crate integration: CPU brand + base clock + physical
-  cores → bucket into High / Mid / Low tier. Compute once at first
-  launch + cache; operator override in Settings → Performance →
-  CPU tier (drop-down: Auto / High / Mid / Low).
-- Per-system tier preference table in `core_installer.rs` (next to
-  `CATALOG`) — declarative `{ system_id, high: &str, mid: &str, low:
-  &str }` rows for systems with multiple core options. Example
-  shape from plan §7:
-  ```
-  psx:    high → beetle_psx_hw   mid → duckstation   low → pcsx_rearmed
-  snes:   high → bsnes           mid → snes9x        low → snes9x
-  n64:    high → mupen64plus_next mid → mupen64plus  low → parallel_n64
-  ```
-  Systems with no tier-based variation (tg16, gba, etc.) use their
-  existing `defaultCoreDll` registry entry directly.
-- Surfaced on the readiness checklist row: "Using {core} for {system}
-  ({tier}-tier pick)" — visible automation, not silent. Operator
-  override path: per-system Settings → Cores + per-game Settings
-  drawer (both already exist; wizard just feeds reasonable defaults
-  into them).
-- New Tauri command `detect_cpu_tier() -> { tier: "high" | "mid" |
-  "low", brand: String, cores: u32, base_clock_ghz: f32 }` reading
-  via `sysinfo`. Cached in `<appDataDir>/cpu-tier.json` so the
-  detection doesn't re-run every wizard open.
-- New Settings → Performance category (or sub-card under Display)
-  with the CPU-tier override drop-down + a read-only display of the
-  detected hardware info.
-
-**Where the work lives:**
-- `apps/oa-shell/Cargo.toml` — add `sysinfo = "0.30"` (or current).
-- `apps/oa-shell/src/cpu_tier.rs` (new) — detection + caching + the
-  `detect_cpu_tier` Tauri command.
-- `apps/oa-shell/src/core_installer.rs` — extend with the per-system
-  tier table; expose via a new `recommended_core_for_tier(system_id,
-  tier)` helper consumed by both the readiness checklist (showing
-  the tier pick) and any future "apply curated defaults" affordance.
-- `frontend/src/components/import-wizard/SystemReadinessChecklist.tsx`
-  — Core pill shows the tier-picked core when ✓; "Using {core}
-  ({tier}-tier pick)" detail.
-- `frontend/src/components/SettingsSections.tsx` — new Performance
-  category card (or section under Display) with the CPU-tier
-  override + hardware-info display.
-
-**Scope:** ~1 week per plan §13. Mostly new Rust (cpu_tier detection
-+ the tier table) with a small frontend surface.
-
-**Plan:** [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 +
-§13 Phase 2.
+Plan: [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 + §13.
 
 
 ## MEDIUM — Phase 3+ polish

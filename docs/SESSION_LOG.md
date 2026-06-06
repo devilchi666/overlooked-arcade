@@ -6,6 +6,27 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-06 — Guided Setup Phase 2 — CPU-tier curated core selection
+
+Branch `feat/guided-setup-cpu-tier` — 4 code slices closing the last
+HIGH-band entry. Auto-detect the host CPU at first launch, bucket
+into High / Mid / Low, recommend the right core per system (Beetle
+PSX HW on High, PCSX-ReARMed on Low, etc.). Decision-locked
+2026-06-06 per `docs/PLANS/guided-setup.md` §7: the heuristic ships
+as the SOURCE OF TRUTH, not a placeholder until benchmarks land.
+Most operators will never run a benchmark, so the heuristic has to
+stand on its own — treating it as placeholder would breed sloppy
+thresholds. Documented known-limitation cases (Steam Deck under-rates,
+old Xeons over-rate, thermal-throttled laptops over-rate, GPU-bound
+cores don't fit the CPU-centric heuristic) are accepted as the
+operator-override escape hatch.
+
+- **Shipped:** Slice 1 — `apps/oa-shell/src/cpu_tier.rs` with `sysinfo` integration + `CpuTier { High | Mid | Low }` enum + `bucket_into_tier` (≥6 cores & ≥3.0 GHz → High; ≥4 cores & ≥2.5 GHz → Mid; else Low) + `detect_or_load` with `<appDataDir>/cpu-tier.json` cache (brand-string-invalidated on hardware swap) + clock parsing from brand-string "@ N.N GHz" suffix with current-frequency fallback + `LibraryPrefs.cpu_tier_override` escape hatch + `detect_cpu_tier` Tauri command returning `CpuTierSnapshot { tier, source, info }`; 7 tests across bucketing thresholds + brand-string clock parsing variants + the documented Steam Deck base-vs-boost case. Slice 2 — `core_installer.rs::TIER_PREFERENCES` declarative table covering psx / snes / n64 / genesis / saturn / ps2 / nds with `recommended_core_for_tier(system_id, tier) -> Option<&'static str>` helper; two curation patterns documented inline (distinct cores per tier for psx/saturn/genesis vs. same-for-high-and-mid for snes/n64/ps2/nds — avoids over-recommending lightweight cores to mid-tier hardware); 5 tests including a referential-integrity check that every (system, tier) base in TIER_PREFERENCES exists as a CATALOG row. Slice 3 — `SettingsSections.tsx::PerformanceSettings` card + `SettingsPage.tsx` category wiring (new "performance" CategoryId in oa-wide group, ⚡ glyph, sits between Gameplay and Controller nav); read-only detected-hardware display (brand / cores / base clock) + tier chip with provenance hint ("Auto-detected" / "Cached" / "Manually set...") + Auto / High / Mid / Low override drop-down round-tripping through `set_library_prefs`. Slice 4 — `recommended_core_for_system(systemId)` Tauri command resolving through `recommended_core_for_tier` with fallthrough to `default_core_dll_for_system_resolved` + `SystemReadinessChecklist` consumes it via parallel resource and surfaces the recommendation in the Core pill's detail copy with three suffix shapes: `(high-tier pick)` / `(override-set high-tier pick)` / `(system default)`. Operator validation green on all four slices.
+- **Almost:** Wizard's "apply curated defaults" affordance — the recommendation is now visible in the readiness checklist; an explicit "Apply" button that writes the recommended core into the per-system Cores pref + per-game `GameOverrides.libretro_core` is a small follow-up. Plan §7 calls this out but it's not in Phase 2 scope.
+- **Next:** Phase 2B (synthetic-stress benchmark mode) is parked per the §7 decision-lock; revisit only if operator feedback names the heuristic as the bottleneck. Otherwise the natural next pick is whichever Phase 2 follow-up the operator chooses — per the plan, that's Phase 2C (folder management) or Phase 2D (first-system bindings + KNOWN_GAME_BUGS).
+
+---
+
 ## 2026-06-05 — Dynamic input-descriptors arc — per-game button labels in Bindings page
 
 Branch `feat/dynamic-input-descriptors` — 4 commits closing the second

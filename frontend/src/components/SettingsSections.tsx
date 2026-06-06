@@ -493,6 +493,152 @@ export const GameplaySettings: Component<{ settings: SettingsStore }> = (props) 
   );
 };
 
+// --- Performance — Guided Setup Phase 2 ------------------------------
+
+/// Mirror of Rust `cpu_tier::CpuTier` (camelCase via serde).
+type CpuTierVariant = "high" | "mid" | "low";
+
+/// Mirror of Rust `cpu_tier::TierSource`.
+type TierSource = "detected" | "cached" | "override";
+
+/// Mirror of Rust `cpu_tier::CpuTierSnapshot`. Returned by the
+/// `detect_cpu_tier` Tauri command.
+type CpuTierSnapshot = {
+  tier: CpuTierVariant;
+  source: TierSource;
+  info: {
+    brand: string;
+    coresPhysical: number;
+    baseClockGhz: number;
+  };
+};
+
+/// Mirror of the relevant LibraryPrefs slice for the override path.
+/// Other fields round-trip via spread.
+type PerfPrefsLike = Record<string, unknown> & {
+  cpuTierOverride?: CpuTierVariant | null;
+};
+
+const TIER_LABELS: Record<CpuTierVariant, string> = {
+  high: "High",
+  mid: "Mid",
+  low: "Low",
+};
+
+const SOURCE_HINTS: Record<TierSource, string> = {
+  detected: "Auto-detected from your CPU this session.",
+  cached: "Cached from first launch. Will re-detect if you swap hardware.",
+  override: "Manually set in this dialog. Auto-detection is bypassed.",
+};
+
+export const PerformanceSettings: Component<{ settings: SettingsStore }> = (_props) => {
+  // Detected snapshot — refetched after each override change so the
+  // tier chip reflects what `detect_or_load` would return on next launch.
+  const [snapshot, setSnapshot] = createSignal<CpuTierSnapshot | null>(null);
+  const [prefs, setPrefs] = createSignal<PerfPrefsLike | null>(null);
+
+  async function refresh() {
+    try {
+      const [s, p] = await Promise.all([
+        invoke<CpuTierSnapshot>("detect_cpu_tier"),
+        invoke<PerfPrefsLike>("get_library_prefs"),
+      ]);
+      setSnapshot(s);
+      setPrefs(p);
+    } catch (e) {
+      console.warn("PerformanceSettings refresh failed:", e);
+    }
+  }
+
+  onMount(() => void refresh());
+
+  async function setOverride(value: "auto" | CpuTierVariant) {
+    const current = prefs();
+    if (!current) return;
+    const next: PerfPrefsLike = {
+      ...current,
+      cpuTierOverride: value === "auto" ? null : value,
+    };
+    setPrefs(next);
+    try {
+      await invoke("set_library_prefs", { prefs: next });
+      await refresh();
+    } catch (e) {
+      console.warn("set_library_prefs failed:", e);
+    }
+  }
+
+  const currentOverride = (): "auto" | CpuTierVariant => {
+    const o = prefs()?.cpuTierOverride;
+    if (o === "high" || o === "mid" || o === "low") return o;
+    return "auto";
+  };
+
+  return (
+    <div class="flex flex-col gap-4">
+      <SettingsCard
+        title="CPU tier"
+        description="Drives core picks in the Import Wizard. Detected from your CPU brand + physical core count + base clock. Override below if the auto-detection misclassifies your hardware (Steam Deck under-rates, old workstations over-rate, throttled laptops over-rate)."
+      >
+        {/* Read-only detected-hardware summary. Always visible so the
+            operator can see what OA thinks the host is, even when an
+            override is in play. */}
+        <Show
+          when={snapshot()}
+          fallback={
+            <p class="px-1 text-[0.75rem] text-(--color-oa-ink-dim)">
+              Detecting CPU…
+            </p>
+          }
+        >
+          {(snap) => (
+            <div class="flex flex-col gap-2 rounded-md border border-white/5 bg-white/[0.02] p-3">
+              <div class="flex items-baseline justify-between gap-3">
+                <span class="text-[0.7rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Detected
+                </span>
+                <span class="inline-flex items-center gap-2 rounded border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-0.5 text-[0.7rem] font-mono uppercase tracking-wide text-(--color-system-accent-soft)">
+                  {TIER_LABELS[snap().tier]}-tier
+                </span>
+              </div>
+              <p class="font-mono text-xs text-(--color-oa-ink)">
+                {snap().info.brand}
+              </p>
+              <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+                {snap().info.coresPhysical} physical core{snap().info.coresPhysical === 1 ? "" : "s"}
+                {" · "}
+                {snap().info.baseClockGhz.toFixed(2)} GHz base
+              </p>
+              <p class="text-[0.65rem] italic text-(--color-oa-ink-dim)">
+                {SOURCE_HINTS[snap().source]}
+              </p>
+            </div>
+          )}
+        </Show>
+
+        <SettingRow
+          label="Override tier"
+          inherited={null}
+          overridden={currentOverride() !== "auto"}
+          select={{
+            value: currentOverride(),
+            options: [
+              { value: "auto", label: "Auto (detected)" },
+              { value: "high", label: "High" },
+              { value: "mid", label: "Mid" },
+              { value: "low", label: "Low" },
+            ],
+            onChange: (v) => {
+              void setOverride(v as "auto" | CpuTierVariant);
+            },
+          }}
+          description="Auto uses the detected tier. Pick a specific tier to override — the Import Wizard will recommend cores for that tier instead. Useful for Steam Deck (set High; iGPU is stronger than CPU rating suggests), or for thermal-throttled laptops (set Mid or Low if sustained performance falls short of boost-clock readings)."
+        />
+      </SettingsCard>
+    </div>
+  );
+};
+
 // --- Shaders -----------------------------------------------------------
 
 export const ShadersSettings: Component<{ settings: SettingsStore }> = (props) => {
