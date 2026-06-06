@@ -100,6 +100,17 @@ pub struct LibraryPrefs {
     /// sha1-matching.md` for the pivot decision.
     #[serde(default)]
     pub disc_track_experimental_enabled: bool,
+    /// Guided Setup Phase 2 — operator override for the auto-
+    /// detected CPU tier (Settings → Performance → CPU tier).
+    /// `None` = "Auto" (the heuristic in
+    /// [`crate::cpu_tier::detect_or_load`] picks); `Some(...)` wins
+    /// regardless of detected hardware. Documented escape hatch for
+    /// the heuristic's known-limitation cases (Steam Deck under-rated,
+    /// old Xeons over-rated, thermal-throttled laptops, GPU-bound
+    /// cores) — see `docs/PLANS/guided-setup.md` §7 "Known
+    /// limitations" subsection.
+    #[serde(default)]
+    pub cpu_tier_override: Option<crate::cpu_tier::CpuTier>,
 }
 
 impl Default for LibraryPrefs {
@@ -109,6 +120,7 @@ impl Default for LibraryPrefs {
             revision_priority: RevisionPriority::Newest,
             disc_track_strictness: DiscTrackStrictness::default(),
             disc_track_experimental_enabled: false,
+            cpu_tier_override: None,
         }
     }
 }
@@ -195,6 +207,7 @@ mod tests {
             revision_priority: RevisionPriority::Oldest,
             disc_track_strictness: DiscTrackStrictness::Threshold80,
             disc_track_experimental_enabled: true,
+            cpu_tier_override: Some(crate::cpu_tier::CpuTier::High),
         };
         write_library_prefs(&tmp, &prefs).expect("write");
         assert_eq!(read_library_prefs(&tmp), prefs);

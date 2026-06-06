@@ -28,6 +28,7 @@ mod job_prefs;
 mod job_registry;
 mod core_installer;
 mod core_options;
+mod cpu_tier;
 mod layout;
 mod library_db;
 mod art_pack_importer;
@@ -2586,6 +2587,7 @@ fn main() {
             clear_game_group_default,
             get_library_prefs,
             set_library_prefs,
+            detect_cpu_tier,
         ])
         .setup({
             let running = running.clone();
@@ -9096,6 +9098,25 @@ fn set_library_prefs(
 ) -> Result<(), String> {
     library_prefs::write_library_prefs(&state.app_data_dir, &prefs)
         .map_err(|e| format!("write library prefs: {e}"))
+}
+
+/// Guided Setup Phase 2 — return the detected CPU tier + the hardware
+/// info that drove the detection. Honors `LibraryPrefs.cpu_tier_override`
+/// when set: the override wins regardless of detected hardware, with
+/// `source = Override` so the frontend can render a "manually set"
+/// chip.
+///
+/// First call per install hits the cache cold + writes
+/// `<appDataDir>/cpu-tier.json`; subsequent calls short-circuit via
+/// the cache (matched by CPU brand string — a hardware swap
+/// invalidates the cache automatically). See
+/// `crate::cpu_tier::detect_or_load` for the resolution chain.
+#[tauri::command]
+fn detect_cpu_tier(
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> cpu_tier::CpuTierSnapshot {
+    let prefs = library_prefs::read_library_prefs(&state.app_data_dir);
+    cpu_tier::detect_or_load(&state.app_data_dir, prefs.cpu_tier_override)
 }
 
 /// Bulk-insert. Returns the number of newly-added rows. Existing rows
