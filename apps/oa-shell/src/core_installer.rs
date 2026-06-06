@@ -941,6 +941,149 @@ pub const CATALOG: &[CatalogEntry] = &[
     },
 ];
 
+// =====================================================================
+// Tier preference table — Guided Setup Phase 2
+// =====================================================================
+//
+// Drives the curated core recommendation per detected CPU tier
+// (High / Mid / Low) on top of the CATALOG above. Decision-locked
+// 2026-06-06 per `docs/PLANS/guided-setup.md` §7: the heuristic is
+// SOURCE OF TRUTH, not a placeholder until benchmarks land.
+//
+// Only systems with multiple viable cores need entries here — systems
+// with one obvious pick (TG-16's Beetle PCE Fast, NES's FCEUmm,
+// GameBoy's Gambatte, Lynx's Handy, Vectrex's vecx, etc.) use their
+// existing `default_core_dll_for_system` registry value and skip this
+// table. `recommended_core_for_tier(system_id, tier)` returns `None`
+// for those systems so the caller can fall through.
+
+/// One per-system tier-preference row. `high`/`mid`/`low` are buildbot
+/// basenames matching entries in the [`CATALOG`] above. The host-
+/// specific filename is derived at runtime via
+/// [`core_filename_for_host`] just like CATALOG entries.
+pub struct TierPreference {
+    pub system_id: &'static str,
+    pub high: &'static str,
+    pub mid: &'static str,
+    pub low: &'static str,
+}
+
+/// Per-system tier preferences. Order doesn't matter — lookup is by
+/// linear scan over `system_id`. Each `high`/`mid`/`low` value
+/// references a `CATALOG` row's `base`. Two patterns:
+///
+/// - **Distinct cores per tier** (psx / saturn / genesis): each tier
+///   picks a meaningfully different core. High picks the most
+///   demanding-but-accurate; Low picks the lightest. Mid sits between.
+///
+/// - **Same core for High + Mid, lighter for Low** (snes / n64 / ps2 /
+///   nds): the accuracy-focused core handles High AND Mid fine; only
+///   Low hardware needs a lighter alternative. Avoids over-recommending
+///   the lightweight core to operators whose hardware would handle the
+///   accurate one with headroom.
+pub const TIER_PREFERENCES: &[TierPreference] = &[
+    // PSX — three meaningfully different tiers:
+    // - High: Beetle PSX HW (Vulkan HW renderer, PGXP geometry
+    //   correction) — needs a real GPU + ~3 GHz CPU.
+    // - Mid: SwanStation (DuckStation fork) — strong balance, runs
+    //   most games great on modest hardware.
+    // - Low: PCSX-ReARMed — lightest, originally for ARM. Loses HW
+    //   renderer + PGXP.
+    TierPreference {
+        system_id: "psx",
+        high: "mednafen_psx_hw_libretro",
+        mid: "swanstation_libretro",
+        low: "pcsx_rearmed_libretro",
+    },
+    // SNES — accuracy ladder:
+    // - High: bsnes (cycle-accurate, demands CPU). 6+ cores at 3 GHz
+    //   handle it without breaking sweat.
+    // - Mid + Low: snes9x. Long-running compatibility core, runs the
+    //   full SNES library at full speed on essentially any host.
+    TierPreference {
+        system_id: "snes",
+        high: "bsnes_libretro",
+        mid: "snes9x_libretro",
+        low: "snes9x_libretro",
+    },
+    // N64 — renderer-path split. Mupen64Plus-Next is the standard;
+    // ParaLLEl is the lightweight fallback for hardware that can't
+    // sustain HLE GPU plugin throughput.
+    // - High + Mid: mupen64plus_next (GLideN64-based renderer).
+    // - Low: parallel_n64 (lighter).
+    TierPreference {
+        system_id: "n64",
+        high: "mupen64plus_next_libretro",
+        mid: "mupen64plus_next_libretro",
+        low: "parallel_n64_libretro",
+    },
+    // Genesis / Mega Drive — Genesis Plus GX is the accuracy default;
+    // PicoDrive is the lightweight alternative. Most modern hardware
+    // runs GPGX at full speed; Low picks PicoDrive specifically because
+    // GPGX's accuracy enhancements can briefly stall on very weak chips.
+    // - High + Mid: genesis_plus_gx.
+    // - Low: picodrive.
+    TierPreference {
+        system_id: "genesis",
+        high: "genesis_plus_gx_libretro",
+        mid: "genesis_plus_gx_libretro",
+        low: "picodrive_libretro",
+    },
+    // Saturn — three viable cores with real tier differentiation:
+    // - High: Beetle Saturn (Mednafen-derived, high accuracy + GPU
+    //   demand).
+    // - Mid: Kronos (faster, broader hardware reach, some accuracy
+    //   compromises).
+    // - Low: YabaSanshiro (lightest of the three).
+    TierPreference {
+        system_id: "saturn",
+        high: "mednafen_saturn_libretro",
+        mid: "kronos_libretro",
+        low: "yabasanshiro_libretro",
+    },
+    // PS2 — PCSX2 is the only practical option for compatibility; Play!
+    // is much lighter but runs few games. Low tier hardware can't run
+    // PS2 well regardless, so Play! gives operators on weak machines
+    // something rather than nothing.
+    // - High + Mid: pcsx2.
+    // - Low: play.
+    TierPreference {
+        system_id: "ps2",
+        high: "pcsx2_libretro",
+        mid: "pcsx2_libretro",
+        low: "play_libretro",
+    },
+    // NDS — melonDS is the accuracy + features standard; DeSmuME is
+    // the older, lighter alternative.
+    // - High + Mid: melonds.
+    // - Low: desmume.
+    TierPreference {
+        system_id: "nds",
+        high: "melonds_libretro",
+        mid: "melonds_libretro",
+        low: "desmume_libretro",
+    },
+];
+
+/// Look up the recommended core base name for `(system_id, tier)`.
+/// Returns `None` when the system isn't in [`TIER_PREFERENCES`] — the
+/// caller should fall through to whatever per-system default the
+/// registry carries (`default_core_dll_for_system_resolved` in
+/// `main.rs`). Most systems take this fallthrough path because they
+/// have a single obvious core pick that's right at every tier.
+pub fn recommended_core_for_tier(
+    system_id: &str,
+    tier: crate::cpu_tier::CpuTier,
+) -> Option<&'static str> {
+    let entry = TIER_PREFERENCES.iter().find(|p| p.system_id == system_id)?;
+    let base = match tier {
+        crate::cpu_tier::CpuTier::High => entry.high,
+        crate::cpu_tier::CpuTier::Mid => entry.mid,
+        crate::cpu_tier::CpuTier::Low => entry.low,
+    };
+    Some(base)
+}
+
 /// The platform-specific dynamic-library extension for the running host.
 /// Mirrors `core_extension_for_host` in main.rs — kept duplicated here so
 /// the installer module doesn't import shell-private helpers.
@@ -1758,6 +1901,116 @@ impl crate::job_registry::JobResumer for CoreDownloadResumer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::cpu_tier::CpuTier;
+
+    #[test]
+    fn recommended_core_for_tier_distinct_psx_tiers() {
+        // PSX is the canonical three-meaningfully-different-cores
+        // case. Each tier picks a real winner.
+        assert_eq!(
+            recommended_core_for_tier("psx", CpuTier::High),
+            Some("mednafen_psx_hw_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("psx", CpuTier::Mid),
+            Some("swanstation_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("psx", CpuTier::Low),
+            Some("pcsx_rearmed_libretro"),
+        );
+    }
+
+    #[test]
+    fn recommended_core_for_tier_same_core_for_high_and_mid() {
+        // The accuracy-focused core handles High AND Mid; only Low
+        // picks the lighter alternative. Don't over-recommend the
+        // weak core to operators whose hardware would handle the
+        // accurate one with headroom. SNES + N64 + PS2 + NDS follow
+        // this pattern.
+        assert_eq!(
+            recommended_core_for_tier("snes", CpuTier::High),
+            Some("bsnes_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("snes", CpuTier::Mid),
+            Some("snes9x_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("snes", CpuTier::Low),
+            Some("snes9x_libretro"),
+        );
+
+        for tier in [CpuTier::High, CpuTier::Mid] {
+            assert_eq!(
+                recommended_core_for_tier("n64", tier),
+                Some("mupen64plus_next_libretro"),
+            );
+            assert_eq!(
+                recommended_core_for_tier("ps2", tier),
+                Some("pcsx2_libretro"),
+            );
+            assert_eq!(
+                recommended_core_for_tier("nds", tier),
+                Some("melonds_libretro"),
+            );
+        }
+        assert_eq!(
+            recommended_core_for_tier("n64", CpuTier::Low),
+            Some("parallel_n64_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("ps2", CpuTier::Low),
+            Some("play_libretro"),
+        );
+        assert_eq!(
+            recommended_core_for_tier("nds", CpuTier::Low),
+            Some("desmume_libretro"),
+        );
+    }
+
+    #[test]
+    fn recommended_core_for_tier_single_core_systems_return_none() {
+        // Systems with one obvious pick (TG-16, NES, GB, Lynx, etc.)
+        // skip the tier table entirely. Caller falls through to the
+        // registry's `default_core_dll_for_system_resolved`.
+        for sys in &["tg16", "nes", "gb", "gba", "lynx", "atari7800", "vectrex", "virtualboy"] {
+            assert_eq!(
+                recommended_core_for_tier(sys, CpuTier::High),
+                None,
+                "{sys} should fall through to the registry default",
+            );
+            assert_eq!(recommended_core_for_tier(sys, CpuTier::Low), None);
+        }
+    }
+
+    #[test]
+    fn recommended_core_for_tier_unknown_system_returns_none() {
+        assert_eq!(recommended_core_for_tier("not-a-real-system", CpuTier::High), None);
+    }
+
+    #[test]
+    fn tier_preference_bases_all_exist_in_catalog() {
+        // Every base in TIER_PREFERENCES must be a real CATALOG entry —
+        // otherwise the runtime would dispatch an install request for a
+        // core that doesn't exist on the buildbot. Sanity check the
+        // referential integrity at compile time (well, test time).
+        let catalog_bases: std::collections::HashSet<&str> =
+            CATALOG.iter().map(|e| e.base).collect();
+        for pref in TIER_PREFERENCES {
+            for (tier_name, base) in
+                [("high", pref.high), ("mid", pref.mid), ("low", pref.low)]
+            {
+                assert!(
+                    catalog_bases.contains(base),
+                    "{}/{} = {base} not in CATALOG",
+                    pref.system_id,
+                    tier_name,
+                );
+            }
+        }
+    }
 
     #[test]
     fn buildbot_path_segment_for_current_host() {
