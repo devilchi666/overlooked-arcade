@@ -206,6 +206,24 @@ Wizard closes. Operator lands in the library view with games visible.
 
 ## 7. Core selection — curated decision tree
 
+### Decision locked 2026-06-06: heuristic is source of truth
+
+The Phase 2 tier picks are driven by a static `sysinfo`-based heuristic — CPU brand + base clock + physical cores → High / Mid / Low bucket → per-system tier table → core recommendation. Real-time benchmarks were considered and explicitly deferred per the 2026-06-05 evening planning conversation.
+
+**Rationale:** Most operators will never run a benchmark. The heuristic has to stand on its own for the common case (mid-range modern desktop, mid-range modern laptop, Steam Deck). Treating Phase 2A as a placeholder until benchmarks land would breed sloppy thresholds; treating the heuristic as the source of truth forces the tier thresholds to actually be defensible.
+
+**Known limitations (accept, don't fix in Phase 2):**
+- Steam Deck (Zen 2 mobile, weak CPU rating but strong iGPU) underrates against its actual emulation capability.
+- Old high-end Xeon workstations rate Mid/High by core count but lose to modern Ryzen 5600G at every real emulation workload.
+- Thin-and-light laptops with thermal throttling rate by boost clock, not sustained performance.
+- GPU-bound cores (Beetle PSX HW, Flycast, PCSX2) aren't well-classified by CPU heuristic at all.
+
+The operator override path (Settings → Performance → CPU Tier: Auto / High / Mid / Low) is the documented escape hatch for misclassified hardware.
+
+**Possible Phase 2B (not committed):** Synthetic-stress benchmark mode triggered from a "Refine recommendations" button in Settings → Performance. Would run each multi-tier-eligible core for 10–30 s with a no-ROM boot OR a CC0 homebrew stress ROM per system, measure frame-time stability, override the heuristic per-host. Shader-pass benchmarking rides along. Architecturally additive — `recommended_core_for_system(system_id, benchmark_results)` falls back to the tier-from-heuristic when `benchmark_results = None`. Skipped for now; revisit only if operator feedback names the heuristic as the bottleneck.
+
+### Tier detection
+
 **CPU detection:** `sysinfo` crate. Read CPU brand, base clock, physical cores. Bucket into three power tiers:
 
 - **High:** modern (Intel 10th gen+ / AMD Ryzen 3000+) with ≥6 cores ≥3.0 GHz base, dedicated GPU

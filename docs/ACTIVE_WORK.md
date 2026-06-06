@@ -54,11 +54,12 @@ spanned every system but was filed under whichever core happened to be active.
       identification: filename-fuzzy match against canonical disc
       titles in `rom_hashes_tracks` — cheap, works on any container
       shape. 697 tests pass.
-    - **A1 follow-up — frontend experimental checkbox** (small).
-      Settings → Display → Experimental → Per-track SHA-1 disc
-      identification checkbox that toggles
-      `LibraryPrefs.disc_track_experimental_enabled`. Backend is
-      wired; just needs the frontend control.
+    - **A1 follow-up — frontend experimental checkbox ✅ shipped.**
+      `frontend/src/components/SettingsSections.tsx:322` renders the
+      "Per-track SHA-1 disc identification" toggle in Settings →
+      Display → Experimental, wired to
+      `LibraryPrefs.discTrackExperimentalEnabled` via
+      `set_library_prefs`. Bullet retained for the historical pointer.
     - **A1 hit-rate measurement** (operator-facing next step).
       Operator rebuilds + runs Identify ROMs on a disc system. The
       fuzzy index builds at resolve start (logged with canonical
