@@ -2588,6 +2588,7 @@ fn main() {
             get_library_prefs,
             set_library_prefs,
             detect_cpu_tier,
+            recommended_core_for_system,
         ])
         .setup({
             let running = running.clone();
@@ -9117,6 +9118,89 @@ fn detect_cpu_tier(
 ) -> cpu_tier::CpuTierSnapshot {
     let prefs = library_prefs::read_library_prefs(&state.app_data_dir);
     cpu_tier::detect_or_load(&state.app_data_dir, prefs.cpu_tier_override)
+}
+
+/// Where the recommended core ended up coming from. Drives the
+/// readiness-checklist Core-pill detail copy.
+#[derive(serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum CoreRecommendationSource {
+    /// Core was picked from the per-tier preference table in
+    /// `core_installer::TIER_PREFERENCES` (`recommended_core_for_tier`).
+    /// Frontend renders "({tier}-tier pick)".
+    TierTable,
+    /// System wasn't in the tier table — used the registry's
+    /// `default_core_dll_for_system`. Frontend renders
+    /// "(system default)". Most single-core systems (TG-16 / NES /
+    /// GameBoy / Lynx / Vectrex etc.) take this path.
+    SystemDefault,
+}
+
+/// Recommendation snapshot returned by `recommended_core_for_system`.
+/// Carries the resolved core filename plus enough context for the
+/// readiness-checklist to render an honest "(high-tier pick)" /
+/// "(system default)" suffix next to the install affordance.
+#[derive(serde::Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CoreRecommendation {
+    /// Host-specific filename (e.g. `mednafen_psx_hw_libretro.dll`).
+    /// Comparable directly against `cores_dir` listings.
+    core: String,
+    /// The CPU tier the recommendation was made against.
+    tier: cpu_tier::CpuTier,
+    /// Where the tier itself came from (heuristic-detected / cached /
+    /// operator-override).
+    tier_source: cpu_tier::TierSource,
+    /// Whether the core came from the tier table or fell through to
+    /// the registry default.
+    came_from: CoreRecommendationSource,
+}
+
+/// Guided Setup Phase 2 — return the recommended core for a system,
+/// resolved through the tier table when available and falling through
+/// to the registry default otherwise.
+///
+/// Resolution chain:
+/// 1. Get the operator's effective tier via `detect_cpu_tier` (which
+///    honors the override).
+/// 2. Try `core_installer::recommended_core_for_tier(systemId, tier)` —
+///    PSX / SNES / N64 / Genesis / Saturn / PS2 / NDS have tier-aware
+///    picks per `core_installer::TIER_PREFERENCES`. The base name is
+///    extended to a host-specific filename via the same dylib-extension
+///    convention as `core_installer`'s install path.
+/// 3. Fall through to `default_core_dll_for_system_resolved` — TG-16 /
+///    NES / GameBoy / GBA / Lynx / Vectrex / Virtual Boy etc. take
+///    this path since they have one obvious core pick at every tier.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn recommended_core_for_system(
+    systemId: String,
+    state: tauri::State<'_, crate::media::MediaState>,
+) -> CoreRecommendation {
+    let prefs = library_prefs::read_library_prefs(&state.app_data_dir);
+    let snapshot = cpu_tier::detect_or_load(&state.app_data_dir, prefs.cpu_tier_override);
+    let ext = if cfg!(windows) {
+        "dll"
+    } else if cfg!(target_os = "macos") {
+        "dylib"
+    } else {
+        "so"
+    };
+
+    if let Some(base) = core_installer::recommended_core_for_tier(&systemId, snapshot.tier) {
+        return CoreRecommendation {
+            core: format!("{base}.{ext}"),
+            tier: snapshot.tier,
+            tier_source: snapshot.source,
+            came_from: CoreRecommendationSource::TierTable,
+        };
+    }
+    CoreRecommendation {
+        core: default_core_dll_for_system_resolved(&systemId).to_string(),
+        tier: snapshot.tier,
+        tier_source: snapshot.source,
+        came_from: CoreRecommendationSource::SystemDefault,
+    }
 }
 
 /// Bulk-insert. Returns the number of newly-added rows. Existing rows

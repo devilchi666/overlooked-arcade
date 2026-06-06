@@ -45,6 +45,25 @@ type CoreEntry = {
   validExtensions: string;
 };
 
+/// Guided Setup Phase 2 — recommendation returned by the
+/// `recommended_core_for_system` Tauri command. Mirror of the Rust
+/// `CoreRecommendation` struct (camelCase via serde).
+type CoreRecommendation = {
+  /// Host-specific filename (e.g. `mednafen_psx_hw_libretro.dll` on
+  /// Windows). Directly comparable against `cores` resource entries.
+  core: string;
+  /// The effective CPU tier the recommendation was made against.
+  tier: "high" | "mid" | "low";
+  /// Where the tier came from — heuristic-detected / cached / operator
+  /// override. Detail copy uses this to render "(override-set tier)"
+  /// when the operator manually picked one.
+  tierSource: "detected" | "cached" | "override";
+  /// Whether the core came from the per-system tier table or the
+  /// registry default. Drives the "(high-tier pick)" vs
+  /// "(system default)" suffix.
+  cameFrom: "tierTable" | "systemDefault";
+};
+
 /// Subset of the shape `core_installer::available_cores` returns. Same
 /// shape `MissingCoreBulkPrompt.tsx` consumes — using identical types
 /// here keeps the readiness checklist and the modal aligned on the
@@ -270,6 +289,39 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     })();
   });
 
+  // Guided Setup Phase 2 — per-system core recommendation from the
+  // CPU-tier heuristic. Map of SystemId → CoreRecommendation. Drives
+  // the Core pill detail copy: when the recommended core is what the
+  // operator has installed, the detail confirms "Using {core} (high-
+  // tier pick)"; when it's missing, "Install {core} ({tier}-tier
+  // pick)" replaces the generic "drop a .dll in /cores/" hint.
+  //
+  // Fetched on systems change. Doesn't refetch on download completion
+  // since the recommendation only depends on (system, tier) — not on
+  // what's installed.
+  const [coreRecsBySystem, setCoreRecsBySystem] = createSignal<
+    Map<SystemId, CoreRecommendation>
+  >(new Map());
+  createEffect(() => {
+    const systems = props.systems();
+    if (systems.length === 0) {
+      setCoreRecsBySystem(new Map());
+      return;
+    }
+    void (async () => {
+      const next = new Map<SystemId, CoreRecommendation>();
+      const results = await Promise.allSettled(
+        systems.map((sid) =>
+          invoke<CoreRecommendation>("recommended_core_for_system", { systemId: sid }),
+        ),
+      );
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") next.set(systems[i], r.value);
+      });
+      setCoreRecsBySystem(next);
+    })();
+  });
+
   // Phase 1B Slice 4: refetch installed cores when a download
   // completes so the matching row's Core pill flips ⚠ → ✓ without
   // the operator closing + reopening the wizard / Settings card.
@@ -379,6 +431,17 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
     //                     have curated catalog rows)
     const hasCore = () => coreInstalledFor(systemId, available(), cores());
     const hasCatalogRow = () => catalogHasEntry(systemId, available());
+    const recommendation = (): CoreRecommendation | undefined =>
+      coreRecsBySystem().get(systemId);
+    /// Format the tier-pick suffix for the Core pill detail string.
+    /// `(high-tier pick)` when the core came from the tier table,
+    /// `(system default)` when no tier-aware option exists. When the
+    /// operator's override is in play, prepend "override-set ".
+    const tierSuffix = (rec: CoreRecommendation): string => {
+      if (rec.cameFrom === "systemDefault") return "(system default)";
+      const prefix = rec.tierSource === "override" ? "override-set " : "";
+      return `(${prefix}${rec.tier}-tier pick)`;
+    };
     const corePillState = (): PillState => {
       if (hasCore()) return "ready";
       if (hasCatalogRow()) return "warning";
@@ -390,8 +453,19 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
       return "↪ No catalog core";
     };
     const corePillDetail = (): string | undefined => {
-      if (hasCore()) return undefined;
-      if (hasCatalogRow()) return "Drop a .dll into /cores/ when you've got one";
+      const rec = recommendation();
+      if (hasCore()) {
+        // Confirm the curated pick. Render even on ✓ rows so the
+        // operator sees the heuristic's reasoning. Skip when no
+        // recommendation has resolved (transient resource-loading
+        // state).
+        if (rec) return `Using ${rec.core} ${tierSuffix(rec)}`;
+        return undefined;
+      }
+      if (hasCatalogRow()) {
+        if (rec) return `Install ${rec.core} ${tierSuffix(rec)}`;
+        return "Drop a .dll into /cores/ when you've got one";
+      }
       return "Drop a .dll in manually via Settings → Cores";
     };
     const corePill = <Pill state={corePillState()} label={corePillLabel()} detail={corePillDetail()} />;
