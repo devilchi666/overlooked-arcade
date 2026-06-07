@@ -83,11 +83,14 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: Phase E — schema promotion** (next up as of
-  2026-06-07: Phase A wrapped via A2 merge + A3 deferral, and the
-  theming arc's Phase-2 pause hands the floor to VL Phase E + C
-  per theming plan §7). Still pending operator-side from Phase A:
-  the A1 hit-rate measurement (run Identify ROMs on a disc system).
+  **Current slice: picking next — Phase B vs Phase C** (as of
+  2026-06-07: Phase E complete in one day, Sub-phases 1-3 merged).
+  Phase B (two-mode UX + Variants tab) is the arc's own next step
+  and consumes Phase E's fresh surfaces; Phase C (Launcher trait)
+  is what the theming arc's Phase-2 pause gates on (theming plan
+  §7 wants VL E + C before theming Phase 3 resumes). Operator
+  decides. Still pending operator-side from Phase A: the A1
+  hit-rate measurement (run Identify ROMs on a disc system).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
@@ -223,9 +226,11 @@ spanned every system but was filed under whichever core happened to be active.
       `game_group_defaults` is dead — dropped in a later cleanup
       migration. Canonical-title search moved to Sub-phase 3.
       801 oa-shell tests pass (796 baseline + 5 net new).
-    - **E Sub-phase 3 ✅ shipped 2026-06-07** (branch
-      `feat/virtual-library-phase-e3`, awaiting operator playtest
-      before merge). Identity media keyspace = same media.json map
+    - **E Sub-phase 3 ✅ shipped + merged 2026-06-07** (merge
+      `2bcdcf5`; operator playtest passed — canonical tile titles
+      + metadata backfill + canonical search all confirmed).
+      **PHASE E COMPLETE** (identity editor UI rides Phase B).
+      Identity media keyspace = same media.json map
       keyed by `idn-…` ids (existing MediaDb machinery free; cover
       resolution tries identity key → per-file; no writer yet —
       canonical-art UI lands Phase B/F). Enrichment pass merges
