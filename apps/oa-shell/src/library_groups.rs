@@ -26,7 +26,7 @@ use serde::Serialize;
 
 use crate::library_db::GameRow;
 use crate::library_prefs::RevisionPriority;
-use crate::title_parse::{parse_canonical_title, ParsedTitle};
+use crate::title_parse::{parse_canonical_title, DumpStatus, ParsedTitle};
 
 /// One library tile after grouping. The default variant's metadata
 /// (title / cover / etc.) is what the tile renders; `variants` carries
@@ -67,6 +67,98 @@ pub struct GameVariant {
     /// True for the group's chosen default variant. The frontend uses
     /// this to render the ✓ marker in the right-click submenus.
     pub is_default: bool,
+    // --- Phase A2 typed flag fields (Virtual Library arc) ----------
+    // Mirror the new fields on ParsedTitle so the Preservation Vault
+    // filter ribbon can read them without re-parsing the title.
+    pub dump_status: DumpStatus,
+    pub is_hack: bool,
+    pub is_translation: bool,
+    pub is_pirate: bool,
+    pub is_bios: bool,
+    pub is_homebrew: bool,
+    pub translation_languages: Vec<String>,
+}
+
+/// Per-variant filter predicates for the Preservation Vault. Each
+/// exclude_* flag drops matching variants from the filtered list. All
+/// defaults are `false` — an unset filter passes every variant
+/// through. Phase A2 ships the fields; Phase F wires the ribbon UI to
+/// drive them.
+///
+/// Filters are AND-combined: a variant is included only when EVERY
+/// active filter passes. Want OR semantics? Compose multiple filter
+/// passes at the call site.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VariantFilters {
+    /// Drop variants flagged as bad dumps (`[b]` / `[b1]` / …).
+    pub exclude_bad_dumps: bool,
+    /// Drop variants flagged as over-dumps (`[o]` / `[o1]` / …).
+    pub exclude_overdumps: bool,
+    /// Drop ROM hacks (`[h]` / `(Hack)`).
+    pub exclude_hacks: bool,
+    /// Drop fan translations (`[T+Xxx]` / `[T-Xxx]`).
+    pub exclude_translations: bool,
+    /// Drop pirate / cracked dumps.
+    pub exclude_pirate: bool,
+    /// Drop BIOS / boot-ROM files. The Casual view turns this ON by
+    /// default; Preservation view turns it OFF.
+    pub exclude_bios: bool,
+    /// Drop homebrew / aftermarket releases.
+    pub exclude_homebrew: bool,
+    /// Drop beta / proto / demo / sample / alpha dumps.
+    pub exclude_prerelease: bool,
+}
+
+impl VariantFilters {
+    /// Default Casual-view filter set: exclude bad dumps + over-dumps
+    /// + BIOS + prerelease. Hacks / translations / pirate / homebrew
+    /// stay opt-in because operators with niche libraries (translation
+    /// archives, homebrew collections) need them visible by default.
+    pub fn casual_view_defaults() -> Self {
+        Self {
+            exclude_bad_dumps: true,
+            exclude_overdumps: true,
+            exclude_bios: true,
+            exclude_prerelease: true,
+            ..Self::default()
+        }
+    }
+
+    /// Preservation-view defaults: show everything. The operator opts
+    /// into hiding categories via the filter ribbon.
+    pub fn preservation_view_defaults() -> Self {
+        Self::default()
+    }
+}
+
+/// True when `variant` passes every active filter in `filters`.
+/// Variants with no filter exclusions always pass.
+pub fn variant_passes_filters(variant: &GameVariant, filters: &VariantFilters) -> bool {
+    if filters.exclude_bad_dumps && variant.dump_status == DumpStatus::BadDump {
+        return false;
+    }
+    if filters.exclude_overdumps && variant.dump_status == DumpStatus::OverDump {
+        return false;
+    }
+    if filters.exclude_hacks && variant.is_hack {
+        return false;
+    }
+    if filters.exclude_translations && variant.is_translation {
+        return false;
+    }
+    if filters.exclude_pirate && variant.is_pirate {
+        return false;
+    }
+    if filters.exclude_bios && variant.is_bios {
+        return false;
+    }
+    if filters.exclude_homebrew && variant.is_homebrew {
+        return false;
+    }
+    if filters.exclude_prerelease && variant.is_prerelease {
+        return false;
+    }
+    true
 }
 
 /// Build groups out of a flat list. `defaults_by_base_title` maps a
@@ -157,6 +249,13 @@ pub fn build_groups(
                 flags: parsed.flags.clone(),
                 is_prerelease: parsed.is_prerelease(),
                 is_default: idx == 0,
+                dump_status: parsed.dump_status,
+                is_hack: parsed.is_hack,
+                is_translation: parsed.is_translation,
+                is_pirate: parsed.is_pirate,
+                is_bios: parsed.is_bios,
+                is_homebrew: parsed.is_homebrew,
+                translation_languages: parsed.translation_languages.clone(),
             })
             .collect();
 
@@ -553,5 +652,315 @@ mod tests {
         assert_eq!(groups[0].display_base_title, "Astro Boy");
         assert_eq!(groups[1].display_base_title, "Mario Bros");
         assert_eq!(groups[2].display_base_title, "Zelda");
+    }
+
+    // --- Phase A2: typed flag propagation + VariantFilters --------------
+
+    #[test]
+    fn typed_flags_propagate_from_parsed_title_to_variant() {
+        // Building a group from titles with Phase A2 flags should
+        // produce variants that mirror the parsed fields. Pins the
+        // wiring between title_parse and library_groups.
+        let groups = build_groups(
+            vec![
+                row("g_verified", "Test Title (USA) [!]"),
+                row("g_bad", "Test Title (USA) [b1]"),
+                row("g_hack", "Test Title (USA) [h]"),
+                row("g_tx", "Test Title (Japan) [T+Eng]"),
+            ],
+            &default_regions(),
+            RevisionPriority::Newest,
+            &HashMap::new(),
+        );
+        assert_eq!(groups.len(), 1, "all four parse to the same base title");
+        let by_id: HashMap<&str, &GameVariant> = groups[0]
+            .variants
+            .iter()
+            .map(|v| (v.id.as_str(), v))
+            .collect();
+        assert_eq!(by_id["g_verified"].dump_status, DumpStatus::Verified);
+        assert_eq!(by_id["g_bad"].dump_status, DumpStatus::BadDump);
+        assert!(by_id["g_hack"].is_hack);
+        assert!(by_id["g_tx"].is_translation);
+        assert_eq!(
+            by_id["g_tx"].translation_languages,
+            vec!["Eng".to_string()]
+        );
+    }
+
+    /// Helper — build a single-variant group from a title and pull out
+    /// the variant. Phase A2 filter tests use this to keep arrangement
+    /// terse.
+    fn variant_from(id: &str, title: &str) -> GameVariant {
+        let g = build_groups(
+            vec![row(id, title)],
+            &default_regions(),
+            RevisionPriority::Newest,
+            &HashMap::new(),
+        );
+        g.into_iter().next().unwrap().variants.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn default_filters_pass_every_variant() {
+        // No filter active → every variant passes, including clearly
+        // "bad" ones. Defaults are deliberately permissive so the
+        // Preservation view shows everything by default.
+        let filters = VariantFilters::default();
+        assert!(variant_passes_filters(
+            &variant_from("a", "X (USA)"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("b", "X (USA) [b1]"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("c", "X (USA) (Hack)"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("d", "X (USA) (BIOS)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_bad_dumps_drops_bad_keeps_clean() {
+        let filters = VariantFilters {
+            exclude_bad_dumps: true,
+            ..VariantFilters::default()
+        };
+        assert!(variant_passes_filters(
+            &variant_from("clean", "X (USA)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("bad", "X (USA) [b]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("bad1", "X (USA) [b1]"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_overdumps_drops_only_overdumps() {
+        let filters = VariantFilters {
+            exclude_overdumps: true,
+            ..VariantFilters::default()
+        };
+        // OverDumps drop.
+        assert!(!variant_passes_filters(
+            &variant_from("o", "X (USA) [o]"),
+            &filters
+        ));
+        // Bad dumps pass (this filter only excludes overdumps).
+        assert!(variant_passes_filters(
+            &variant_from("b", "X (USA) [b]"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_hacks_drops_bracket_and_paren_forms() {
+        let filters = VariantFilters {
+            exclude_hacks: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("h_bracket", "X (USA) [h]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("h_paren", "X (USA) (Hack)"),
+            &filters
+        ));
+        // Non-hacks pass.
+        assert!(variant_passes_filters(
+            &variant_from("clean", "X (USA)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_translations_drops_t_plus_and_t_minus() {
+        let filters = VariantFilters {
+            exclude_translations: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("t_plus", "X (Japan) [T+Eng]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("t_minus", "X (Japan) [T-Eng]"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("clean", "X (USA)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_pirate_drops_all_pirate_forms() {
+        let filters = VariantFilters {
+            exclude_pirate: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("p", "X (USA) [p]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("pirate", "X (USA) (Pirate)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("cracked", "X (USA) (Cracked)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_bios_drops_bios_files() {
+        let filters = VariantFilters {
+            exclude_bios: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("bios", "PSX BIOS (USA) (BIOS)"),
+            &filters
+        ));
+        // Real games pass.
+        assert!(variant_passes_filters(
+            &variant_from("game", "Some Game (USA)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_homebrew_drops_homebrew_and_aftermarket() {
+        let filters = VariantFilters {
+            exclude_homebrew: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("hb", "Indie Game (USA) (Homebrew)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("am", "New NES Game (Unknown) (Aftermarket)"),
+            &filters
+        ));
+        // Unl is NOT homebrew (pinned at the title_parse layer too).
+        assert!(variant_passes_filters(
+            &variant_from("unl", "Bible Adventures (USA) (Unl)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn exclude_prerelease_drops_beta_proto_demo() {
+        let filters = VariantFilters {
+            exclude_prerelease: true,
+            ..VariantFilters::default()
+        };
+        assert!(!variant_passes_filters(
+            &variant_from("beta", "X (Japan) (Beta)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("proto", "X (USA) (Proto)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("demo", "X (USA) (Demo)"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("release", "X (USA)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn filters_are_and_combined() {
+        // A variant excluded by ANY active filter is dropped. A clean
+        // release passes all filters even when many are active.
+        let filters = VariantFilters {
+            exclude_bad_dumps: true,
+            exclude_hacks: true,
+            exclude_pirate: true,
+            ..VariantFilters::default()
+        };
+        // Hits two filters → dropped.
+        assert!(!variant_passes_filters(
+            &variant_from("multi", "X (USA) [b1] [h]"),
+            &filters
+        ));
+        // Hits zero filters → passes.
+        assert!(variant_passes_filters(
+            &variant_from("clean", "X (USA)"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn casual_view_defaults_drop_noise_keep_real_games() {
+        let filters = VariantFilters::casual_view_defaults();
+        // Real released game passes.
+        assert!(variant_passes_filters(
+            &variant_from("game", "Castlevania (USA)"),
+            &filters
+        ));
+        // Noise categories drop.
+        assert!(!variant_passes_filters(
+            &variant_from("bad", "X (USA) [b]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("over", "X (USA) [o]"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("bios", "PSX BIOS (USA) (BIOS)"),
+            &filters
+        ));
+        assert!(!variant_passes_filters(
+            &variant_from("beta", "X (USA) (Beta)"),
+            &filters
+        ));
+        // Hacks / translations / pirate / homebrew stay opt-in →
+        // pass the Casual defaults.
+        assert!(variant_passes_filters(
+            &variant_from("hack", "X (USA) (Hack)"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("tx", "X (Japan) [T+Eng]"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn preservation_view_defaults_pass_everything() {
+        // Preservation view starts permissive — operator opts in to
+        // exclusions via the filter ribbon.
+        let filters = VariantFilters::preservation_view_defaults();
+        assert!(variant_passes_filters(
+            &variant_from("game", "X (USA)"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("bad", "X (USA) [b]"),
+            &filters
+        ));
+        assert!(variant_passes_filters(
+            &variant_from("bios", "PSX BIOS (USA) (BIOS)"),
+            &filters
+        ));
     }
 }

@@ -129,6 +129,28 @@ spanned every system but was filed under whichever core happened to be active.
       multi-disc games on PSX / Saturn / Sega CD / PCE-CD where
       redump catalogs the parent group. Single-disc games and cart
       libraries unchanged.
+    - **A2 — filename tag decode ✅ shipped 2026-06-06** (branch
+      `feat/virtual-library-phase-a2`, awaiting operator playtest
+      before merge). 7 new fields on `ParsedTitle` (and mirrored
+      onto `GameVariant` + frontend `VariantInfo`): `dump_status`
+      enum (Verified / BadDump / OverDump / Fixed / Unknown),
+      `is_hack`, `is_translation`, `is_pirate`, `is_bios`,
+      `is_homebrew`, `translation_languages` Vec. Decoder covers
+      GoodTools brackets (`[!]`, `[b]`/`[b1]`/`[b2]`, `[o]`/`[o1]`,
+      `[f]`/`[f1]`, `[h]`/`[h1]`/`[hI]`/`[hIR]`, `[p]`/`[p1]`,
+      `[T+Eng]`/`[T-Eng]`/`[T+Eng,Fra]`/`[T+Eng1.0_Aeon]`) +
+      No-Intro/TOSEC paren forms (`(Hack)`, `(Pirate)`, `(Cracked)`,
+      `(BIOS)`, `(Homebrew)`, `(Aftermarket)`). `Unl` /
+      `Unlicensed` intentionally NOT folded into `is_homebrew`
+      (unlicensed commercial vs amateur homebrew is a real
+      preservation distinction). `library_groups.rs` ships
+      `VariantFilters` + `variant_passes_filters` pure-function
+      predicate, plus `casual_view_defaults()` (excludes bad dumps /
+      over-dumps / BIOS / prerelease; keeps hacks / translations /
+      pirate / homebrew opt-in) and `preservation_view_defaults()`
+      (everything passes). Foundation for VL Phase F's Preservation
+      Vault filter ribbon. 790 oa-shell tests pass (744 baseline + 46
+      new); frontend typecheck silent.
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
