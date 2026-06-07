@@ -36,8 +36,8 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
-import { useRetroverse } from "../routes/retroverse/context";
-import SettingRow from "./SettingRow";
+import { useTheme } from "../routes/retroverse/context";
+import SettingRow from "@oa/platform/components/SettingRow";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -803,7 +803,7 @@ export const LibrarySettings: Component = () => {
   // The System Readiness card lived here until 2026-06-03; it
   // moved to Settings → System Health → Overview as part of the
   // declutter arc (see docs/PLANS/settings-declutter-system-health.md).
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -1073,7 +1073,7 @@ export const BiosSettings: Component = () => {
 // --- About -------------------------------------------------------------
 
 export const AboutSettings: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="Overlooked Arcade">

@@ -21,9 +21,9 @@ import {
   type LeafFocusBinding,
   type SidebarTreeContext,
 } from "./SidebarTreeNode";
-import { useFocusGroup } from "../nav/focus";
+import { useFocusGroup } from "../../nav/focus";
 import { createSignal } from "solid-js";
-import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
+import SidebarMigrationBanner from "./SidebarMigrationBanner";
 
 // SidebarView extracted to `@oa/platform/layout/types` in Theming
 // Substrate Phase 2 Slice B (2026-06-07) — the type itself is

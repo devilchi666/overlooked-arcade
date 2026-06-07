@@ -21,8 +21,8 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listenScoped } from "@oa/platform/lib/eventListener";
-import { Dialog, DialogSection } from "../layout/Dialog";
-import SettingRow, { selectClass } from "./SettingRow";
+import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
+import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import {
   BezelPicker,
   OverscanEditor,

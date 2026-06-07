@@ -216,3 +216,52 @@ Each session that touches this feature appends a 3-line entry:
     Phase 5 wires the loader.
   - ESLint boundary rule deferred to Phase 4 alongside Tauri-bridge
     hardening per plan §6 Phase 4.
+
+## 2026-06-07 — Phase 2 Slice C: component moves + ThemeContext rename + ThemeManifest
+
+- **Shipped:** ARC 1 Phase 2 Slice C on
+  `feat/theming-substrate-phase-2-slice-c`. Phase 2 is now complete
+  (modulo the ESLint boundary rule, operator-deferred to Phase 4).
+  - **13 component moves into `platform/components/`** — the 6
+    declared (`LibraryTile`, `LibraryView`, `perSystemSections`,
+    `Dialog`, `LeftSidebar`, `SidebarTreeNode`) plus the 7-file
+    private sub-component cluster (`DiscPickerDialog`,
+    `DetailListView`, `GridControls`, `VirtualLibraryGrid`,
+    `SystemHeader`, `SidebarMigrationBanner`, `SettingRow`) per
+    operator decision this session: the cluster was already
+    platform-clean (imports only `@oa/platform/*`), and moving it
+    avoids ~7 wrong-direction `../../components/*` reach-backs from
+    platform code. All external importers rewritten to
+    `@oa/platform/components/<Name>` (sed sweep, ~23 import sites).
+  - **Residual wrong-direction edges (known, deliberate):**
+    `platform/components/*` → `../../nav/{focus,back,HintBar}` (nav
+    becomes platform-owned when Phase 3 builds the nav primitives)
+    and `SystemHeader` → `../../components/SystemCoresStrip`
+    (drags the core-installer surface — engine territory, stays
+    out). Grep `../../` under `platform/components/` to find them
+    all at Phase 3/4 cleanup time.
+  - **`RetroverseContext` → `ThemeContext` rename** —
+    `ThemeContextValue` / `ThemeProvider` / `useTheme()` across
+    11 files (context.tsx + App.tsx + 9 consumers). Pure identifier
+    rename; file stays at `routes/retroverse/context.tsx` until
+    Phase 5/6 extracts the theme entry point (header comment
+    documents the lineage).
+  - **`ThemeManifest` type** at `platform/theme/manifest.ts` —
+    snake_case fields mirroring the `theme.toml` schema from plan
+    §Phase 2 verbatim (id / name / version / schema_version /
+    oa_version / entry / entry_export / default_route / routes /
+    context_slots / required_engine_capabilities / reserves_corner),
+    plus `ThemeContextSlot` + `ReservedCorner` unions. Type-only —
+    no loader until Phase 5. Re-exported from the `@oa/platform`
+    barrel; barrel header comment refreshed.
+  - Acceptance gate green: `cargo test -p oa-shell` 790 pass / 0
+    fail (frontend-only slice); `npm run typecheck` silent.
+- **Almost:** Operator playtest — same blast radius as Slice B
+  (LIBRARY tab + every Dialog-based modal + per-system settings
+  sections). Then merge closes Phase 2.
+- **Next:** Per plan §7 sequencing, ARC 1 **pauses** at end of
+  Phase 2: VL Phase E (game_identities schema) + VL Phase C
+  (Launcher trait) land before theming Phase 3 resumes. Next
+  theming work when resumed: Phase 3 — palette JSON extraction +
+  asset resolver generalization + 5 nav primitives + toy second
+  theme.

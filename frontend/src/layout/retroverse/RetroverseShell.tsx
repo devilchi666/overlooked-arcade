@@ -25,7 +25,7 @@ import {
   type RetroverseRoute,
 } from "../../routing/currentRoute";
 import { onNavEvent } from "../../nav/gamepad";
-import { useRetroverse } from "../../routes/retroverse/context";
+import { useTheme } from "../../routes/retroverse/context";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import DiscoverPage from "../../routes/retroverse/DiscoverPage";
 import HomePage from "../../routes/retroverse/HomePage";
@@ -48,7 +48,7 @@ const ROUTE_LABELS: Record<RetroverseRoute, string> = {
 // `docs/PLANS/*-tab-retroverse.md`.
 
 const RetroverseShell: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const isActive = (r: RetroverseRoute) => currentRoute() === r;
 
   // Phase B Slice 7 — shell-level L1/R1 = cycle between tabs. Only
@@ -83,7 +83,7 @@ const RetroverseShell: Component = () => {
   const dateStr = () =>
     now().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-  // Search input — wire to RetroverseContext's searchQuery + jump to
+  // Search input — wire to ThemeContext's searchQuery + jump to
   // LIBRARY on Enter so the operator can search from any tab.
   const onSearchKey = (e: KeyboardEvent) => {
     if (e.key === "Enter") {

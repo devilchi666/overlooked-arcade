@@ -7,7 +7,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 
 /// One row in the detection report returned by the
 /// `detect_scummvm_directories` Tauri command. Mirrors the Rust

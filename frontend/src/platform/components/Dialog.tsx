@@ -18,9 +18,9 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { useBackHandler } from "../nav/back";
-import { captureFocusReturn, useFocusGroup } from "../nav/focus";
-import { HintRegion } from "../nav/HintBar";
+import { useBackHandler } from "../../nav/back";
+import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
+import { HintRegion } from "../../nav/HintBar";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 

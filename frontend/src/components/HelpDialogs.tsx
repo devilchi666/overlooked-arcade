@@ -5,7 +5,7 @@
 // have an obvious home under Help ▾.
 
 import { For, type Component } from "solid-js";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 
 type Shortcut = {
   keys: string;

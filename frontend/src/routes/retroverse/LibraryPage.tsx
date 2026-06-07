@@ -22,8 +22,8 @@
 // 2D nav.
 
 import { createEffect, createMemo, Show, type Component } from "solid-js";
-import LeftSidebar from "../../layout/LeftSidebar";
-import LibraryView from "../../components/LibraryView";
+import LeftSidebar from "@oa/platform/components/LeftSidebar";
+import LibraryView from "@oa/platform/components/LibraryView";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import {
@@ -34,11 +34,11 @@ import {
 } from "../../nav/focus";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 import { setSystemContextFor, setContainerContextFor } from "../../platform/dialogs";
 
 const LibraryPage: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
 
   // Header card title + count. When the operator filters by a system
   // via the sidebar (view-node selection), title becomes the system's

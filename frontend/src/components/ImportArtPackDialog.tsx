@@ -14,7 +14,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 type Props = {

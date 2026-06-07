@@ -20,7 +20,7 @@
 // polish pass.
 
 import { createEffect, createSignal, Show, type Component } from "solid-js";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
 import type { RomId } from "@oa/platform/library/types";
 

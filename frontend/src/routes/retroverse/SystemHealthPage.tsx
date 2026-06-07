@@ -32,7 +32,7 @@ import {
 } from "../../components/SettingsSections";
 import SystemReadinessChecklist from "../../components/import-wizard/SystemReadinessChecklist";
 import { activeJobs } from "@oa/platform/lib/backgroundJobs";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 
 export type HealthTabId = "overview" | "bios" | "cores" | "storage" | "jobs";
 
@@ -146,7 +146,7 @@ type OverviewProps = {
 };
 
 const OverviewBody: Component<OverviewProps> = (props) => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
 
   const librarySystems = createMemo<SystemId[]>(() =>
     Array.from(new Set(ctx.library.state.entries.map((e) => e.systemId))),
