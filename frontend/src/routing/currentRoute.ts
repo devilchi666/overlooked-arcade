@@ -1,7 +1,7 @@
 // Retroverse-UI Phase A Slice 4 — top-level route signal.
 //
-// The Retroverse design uses 6 top-toolbar tabs as peers (HOME / LIBRARY
-// / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS). `SidebarView`
+// The Retroverse design uses 5 top-toolbar tabs as peers (HOME / LIBRARY
+// / COLLECTIONS / PLAY NOW / DISCOVER). `SidebarView`
 // (kind: "all" | "view-node") models LIBRARY's *internal* filter
 // state, not the top-level tab. currentRoute is layered above
 // SidebarView so the two stay decoupled. Phase B's RetroverseShell + top-tab
@@ -17,6 +17,11 @@
 // session. Phase B will add localStorage persistence once a real tab
 // strip exists (early-return otherwise would persist a route the
 // operator can't visually verify).
+//
+// Theming Substrate ARC 1 Phase 1 (2026-06-06): dropped the "settings"
+// route. SETTINGS moved out of Retroverse's tab list into the engine-
+// owned EngineManagerSurface, summoned via F12 / Select+Start / corner
+// icon. See docs/features/theming-substrate/SURFACES.md.
 
 import { createSignal, type Accessor } from "solid-js";
 
@@ -25,8 +30,7 @@ export type RetroverseRoute =
   | "library"
   | "collections"
   | "play-now"
-  | "discover"
-  | "settings";
+  | "discover";
 
 /// Declaration order = visual order in the top-tab strip. Phase B's
 /// cycleRouteForward / cycleRouteBackward use this for L1/R1 navigation
@@ -37,7 +41,6 @@ export const RETROVERSE_ROUTES: readonly RetroverseRoute[] = [
   "collections",
   "play-now",
   "discover",
-  "settings",
 ];
 
 const [routeSig, setRouteSig] = createSignal<RetroverseRoute>("library");

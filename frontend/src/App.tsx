@@ -81,6 +81,13 @@ import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
 import { RetroverseProvider } from "./routes/retroverse/context";
+import EngineManagerSurface from "./engine/EngineManagerSurface";
+import {
+  engineSurfaceOpen,
+  toggleEngineSurface,
+  wireEngineSummonChord,
+} from "./platform/engineSurface";
+import * as platformDialogs from "./platform/dialogs";
 import {
   currentRoute as currentRetroverseRoute,
   setCurrentRoute as setRetroverseRoute,
@@ -212,12 +219,17 @@ const App: Component = () => {
   // Current navigation target — replaces the old systemPage signal. The
   // sidebar drives this, App routes content from it.
   const [currentView, setCurrentView] = createSignal<SidebarView>({ kind: "all" });
-  const [savesEntry, setSavesEntry] = createSignal<RomEntry | null>(null);
-  // Right-click target for the unified tile context menu.
-  const [contextMenuFor, setContextMenuFor] = createSignal<{ entry: RomEntry; position: { x: number; y: number } } | null>(null);
+  // The 5 dialog signals listed in docs/features/theming-substrate/SURFACES.md
+  // migrated to platform/dialogs.ts in ARC 1 Phase 1 (savesEntry,
+  // contextMenuFor, gameInfoFor, helpDialog, wizardOpen). Aliased here
+  // so the rest of App.tsx reads + writes through the same names as
+  // before — call sites unchanged. The other ~12 dialog-shaped signals
+  // in this file stay local until Phase 2's broader platform extraction.
+  const { savesEntry, setSavesEntry } = platformDialogs;
+  const { contextMenuFor, setContextMenuFor } = platformDialogs;
   const [coreMenuFor, setCoreMenuFor] = createSignal<{ entry: RomEntry; position: { x: number; y: number } } | null>(null);
   const [regionPickerFor, setRegionPickerFor] = createSignal<RomEntry | null>(null);
-  const [gameInfoFor, setGameInfoFor] = createSignal<RomEntry | null>(null);
+  const { gameInfoFor, setGameInfoFor } = platformDialogs;
   // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
   // context menu's Game properties… item; null when closed.
   const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
@@ -250,8 +262,8 @@ const App: Component = () => {
   // process restart by design — per-session ergonomic, not a
   // sticky preference.
   const [touchHintsEnabled, setTouchHintsEnabled] = createSignal(false);
-  // Help menu dialogs.
-  const [helpDialog, setHelpDialog] = createSignal<"shortcuts" | "about" | "debug-log" | null>(null);
+  // Help menu dialogs — open/close lives in platform/dialogs.ts.
+  const { helpDialog, setHelpDialog } = platformDialogs;
   // Tools → Screenshot gallery. Targets the active game (running or
   // focused) at the time of opening; entry stays bound until the dialog
   // closes.
@@ -477,7 +489,7 @@ const App: Component = () => {
   // path stays as a single-shot fallback (kept on the Rescan menu item +
   // the drag-drop commit) so users with simple needs aren't forced through
   // the 4-step flow.
-  const [wizardOpen, setWizardOpen] = createSignal(false);
+  const { wizardOpen, setWizardOpen } = platformDialogs;
   // Search-as-you-type. Filters the active library view by title (in-memory
   // includes match). FTS5 in Rust is wired and ready for >100K libraries;
   // 2.6 ships with the simpler path.
@@ -682,9 +694,41 @@ const App: Component = () => {
         layout.setLeftSidebarCollapsed(!layout.leftSidebarCollapsed());
       }
     }
+    // F12 toggles the engine surface (Theming Substrate ARC 1 Phase 1).
+    // Two coexisting consumers:
+    //   - When engine surface is OPEN, F12 closes it. (EngineManagerSurface's
+    //     own Esc listener also closes; F12-to-close gives keyboard parity
+    //     with F12-to-open so the operator's mental model is "F12 is the
+    //     engine surface toggle.")
+    //   - When engine surface is CLOSED and NO game is running, F12 opens it.
+    //   - When engine surface is CLOSED and a game IS running, F12 falls
+    //     through to its existing emu-thread screenshot binding (the emu
+    //     thread polls F12 directly; we just stop suppressing it here).
+    // The "no game running" gate avoids the conflict of summoning settings
+    // mid-game where the operator was reaching for a screenshot. They can
+    // always close the game first (or use the corner icon).
+    if (e.key === "F12") {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        if (engineSurfaceOpen() || !gameRunning()) {
+          e.preventDefault();
+          toggleEngineSurface();
+        }
+      }
+    }
   };
   onMount(() => window.addEventListener("keydown", keydownHandler, { capture: true }));
   onCleanup(() => window.removeEventListener("keydown", keydownHandler, { capture: true }));
+
+  // Engine surface — Select+Start controller chord. Coexists with the
+  // F12 hotkey above and the EngineSummonIcon in RetroverseShell's
+  // top-right corner; all three reach the same toggleEngineSurface().
+  // The chord respects setNavEnabled(false) since it listens on the
+  // shared onNavEvent bus.
+  onMount(() => {
+    const dispose = wireEngineSummonChord();
+    onCleanup(dispose);
+  });
 
   // Rust-emitted Esc → Quick Settings open. The emu thread polls keys
   // globally via device_query and emits this event on Esc rising edge so
@@ -1475,6 +1519,19 @@ const App: Component = () => {
         <Show when={!(isDirectLaunch() || gameMode())}>
           <RetroverseShell />
         </Show>
+        {/* Engine surface — fullscreen takeover hosting Settings + the
+            surfaces enumerated in docs/features/theming-substrate/SURFACES.md.
+            Mounted inside RetroverseProvider for Phase 1 so SettingsPanel's
+            useRetroverse() resolves; Phase 2's platform extraction moves
+            the store reads to a dedicated PlatformProvider that survives
+            independently of any theme. Summoned by F12 (above), Select+Start
+            chord, or the EngineSummonIcon RetroverseShell mounts in its
+            top-right corner; visible across gameplay (engineSurfaceOpen()
+            isn't tied to the Show gate above).
+            Rendered AFTER the Show so its z-[60] sits above any per-game
+            chrome — though the surface itself uses fixed positioning so
+            DOM order is largely irrelevant. */}
+        <EngineManagerSurface />
       </RetroverseProvider>
       {/* StylusOverlay — cursor reticle for stylus-using systems
           (NDS today). `fixed` positioning + z-30 + 28x28 footprint, so
