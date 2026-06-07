@@ -207,9 +207,9 @@ spanned every system but was filed under whichever core happened to be active.
       dual-writes both stores until Sub-phase 2 swaps the read
       path. Backend-only — zero behavior change visible in the
       UI. 796 oa-shell tests pass (790 baseline + 6 new).
-    - **E Sub-phase 2 ✅ shipped 2026-06-07** (branch
-      `feat/virtual-library-phase-e2`, awaiting operator playtest
-      before merge). Read-path swap: `build_groups` is
+    - **E Sub-phase 2 ✅ shipped + merged 2026-06-07** (merge
+      `8d59b7e`; operator playtest passed). Read-path swap:
+      `build_groups` is
       identity-backed (group key = `games.identity_id`; identity
       supplies canonical title / metadata / cover fallback / pin;
       ranking preserved verbatim; unstamped rows fall back to
