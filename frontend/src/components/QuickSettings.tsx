@@ -12,7 +12,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { reportInvokeError } from "../lib/toast";
 import type { RomEntry } from "../library/types";
-import { systemThemes } from "../themes/registry";
+import { systemThemes, type SystemId } from "../themes/registry";
+import { systemUIConfigs } from "../themes/systemUIConfigs";
 import type { SettingsStore } from "../settings/store";
 import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
@@ -1666,10 +1667,16 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
 // its own component so the focus group + back handler scope cleanly to
 // "actions" view only — the rewind / TAS / memory sub-views have their
 // own UI and would need separate focus groups (deferred).
-/// Systems that get the "Show touch hints" action row. Mirrors the
-/// HOTSPOT_SYSTEMS set in TouchHotspotOverlay so the toggle is only
-/// surfaced when the overlay would have something to show.
-const HOTSPOT_SYSTEMS: ReadonlySet<string> = new Set(["nds"]);
+/// Per-system gate. Reads `touchInputSupported` from the per-system
+/// UI registry — collapses the historical HOTSPOT_SYSTEMS triplicate
+/// across this file, TouchHotspotOverlay, and StylusOverlay into a
+/// single source of truth (Theming Substrate ARC 1 Phase 2 cleanup).
+function isTouchSystem(systemId: string): boolean {
+  // QuickSettings deals in raw systemId strings (RomEntry.systemId).
+  // The registry is keyed by SystemId; the cast is safe because
+  // unknown systems just hit `undefined` and return false.
+  return systemUIConfigs[systemId as SystemId]?.touchInputSupported === true;
+}
 
 const ActionsPanel: Component<{
   entry: RomEntry | null;
@@ -1789,7 +1796,7 @@ const ActionsPanel: Component<{
     // current state is glanceable; activating flips the per-session
     // signal and stays on the actions panel (overlay updates live —
     // operator doesn't need to leave QuickSettings to see effect).
-    if (props.entry && HOTSPOT_SYSTEMS.has(props.entry.systemId)) {
+    if (props.entry && isTouchSystem(props.entry.systemId)) {
       const on = props.touchHintsEnabled();
       list.push({
         key: "touch-hints",

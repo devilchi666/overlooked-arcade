@@ -16,14 +16,13 @@ import {
   GameRewindDialog,
   GameShadersDialog,
   MilestonesDialog,
-  type GameDialogState,
 } from "./components/GameDialogs";
 import QuickSettings from "./components/QuickSettings";
 import SaveSlotsModal from "./components/SaveSlotsModal";
 import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
 import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
-import NewCollectionDialog, { type CollectionDialogMode } from "./components/NewCollectionDialog";
+import NewCollectionDialog from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
 import { type SidebarView } from "./layout/LeftSidebar";
 import { createViewsStore } from "./views/store";
@@ -31,18 +30,11 @@ import { platformNodeIdFor, parsePlatformNodeId } from "./views/defaults";
 import { findNode, nodeContainsId } from "./views/resolver";
 import type { ContainerNode } from "./views/types";
 import ContainerContextMenu from "./components/ContainerContextMenu";
-import {
-  AudioDialog,
-  DisplayDialog,
-  GameplayDialog,
-  ShadersDialog,
-  type ShellMode,
-} from "./components/SettingsDialogs";
+import type { ShellMode } from "./settings/store";
 import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
   SystemSettingsDialog,
-  type SystemDialogSection,
 } from "./components/SystemDialogs";
 import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
 import { DebugLogDialog } from "./components/DebugLogDialog";
@@ -200,49 +192,24 @@ const App: Component = () => {
   const [, setStatus] = createSignal<string>("");
   const [shellMode, setShellMode] = createSignal<ShellMode>("two-window");
   const [libraryVisible, setLibraryVisible] = createSignal(true);
-  // OA-wide Settings dialogs (Step 4). Single open-dialog signal — opening
-  // one closes the others. `null` means no dialog open.
-  const [settingsDialog, setSettingsDialog] = createSignal<
-    "display" | "audio" | "gameplay" | "shaders" | null
-  >(null);
-  // Per-system dialogs (Step 5). The target system + which section is
-  // open. Opening from the System ▾ menu uses the actively-viewed system;
-  // opening from the SystemContextMenu (right-click in sidebar) uses the
-  // right-clicked system, which may differ from what's on screen.
-  const [systemDialog, setSystemDialog] = createSignal<{
-    section: SystemDialogSection;
-    target: SystemId;
-  } | null>(null);
-  function openSystemDialog(section: SystemDialogSection, target: SystemId) {
-    setSystemDialog({ section, target });
-  }
   // Current navigation target — replaces the old systemPage signal. The
   // sidebar drives this, App routes content from it.
   const [currentView, setCurrentView] = createSignal<SidebarView>({ kind: "all" });
-  // The 5 dialog signals listed in docs/features/theming-substrate/SURFACES.md
-  // migrated to platform/dialogs.ts in ARC 1 Phase 1 (savesEntry,
-  // contextMenuFor, gameInfoFor, helpDialog, wizardOpen). Aliased here
-  // so the rest of App.tsx reads + writes through the same names as
-  // before — call sites unchanged. The other ~12 dialog-shaped signals
-  // in this file stay local until Phase 2's broader platform extraction.
+  // 15 dialog signals migrated to platform/dialogs.ts across Theming
+  // Substrate Phase 1 (5) + Phase 2 Slice A (10). All call sites read +
+  // write through identical names via these destructures. Per operator
+  // decision 2026-06-06: Platform owns open/close; themes pick anchors.
+  // settingsDialog was dead-letter (zero open call sites) and dropped
+  // alongside SettingsDialogs.tsx in Phase 2 Slice A.
   const { savesEntry, setSavesEntry } = platformDialogs;
   const { contextMenuFor, setContextMenuFor } = platformDialogs;
-  const [coreMenuFor, setCoreMenuFor] = createSignal<{ entry: RomEntry; position: { x: number; y: number } } | null>(null);
-  const [regionPickerFor, setRegionPickerFor] = createSignal<RomEntry | null>(null);
+  const { coreMenuFor, setCoreMenuFor } = platformDialogs;
+  const { regionPickerFor, setRegionPickerFor } = platformDialogs;
   const { gameInfoFor, setGameInfoFor } = platformDialogs;
-  // Phase 2.8 slice D — per-game settings drawer. Triggered from the tile
-  // context menu's Game properties… item; null when closed.
-  const [propertiesFor, setPropertiesFor] = createSignal<RomEntry | null>(null);
-  /// Phase C3 Slice 12 — NewCollectionDialog mode. `null` = closed.
-  /// Two open modes: `create` (optional seedRomId — non-null when the
-  /// dialog was launched from a tile context menu so the rom is
-  /// dropped in on create) and `rename` (relabel an existing list).
-  const [collectionDialogMode, setCollectionDialogMode] =
-    createSignal<CollectionDialogMode | null>(null);
-  // Game ▾ menu items that previously deep-linked into the drawer's tabs
-  // now launch focused dialogs from GameDialogs.tsx. Single discriminated
-  // signal covers all seven; clears on close.
-  const [gameDialog, setGameDialog] = createSignal<GameDialogState>(null);
+  const { propertiesFor, setPropertiesFor } = platformDialogs;
+  const { collectionDialogMode, setCollectionDialogMode } = platformDialogs;
+  const { gameDialog, setGameDialog } = platformDialogs;
+  const { systemDialog, setSystemDialog, openSystemDialog } = platformDialogs;
   function closeGameDialog() {
     setGameDialog(null);
   }
@@ -254,8 +221,9 @@ const App: Component = () => {
   // entry. Cleared on unload.
   const [runningEntry, setRunningEntry] = createSignal<RomEntry | null>(null);
   // Quick Settings overlay (slice 2.8.B). Replaces the slice-A Esc → library
-  // toggle behavior during single-window gameplay.
-  const [quickSettingsOpen, setQuickSettingsOpen] = createSignal(false);
+  // toggle behavior during single-window gameplay. Migrated to
+  // platform/dialogs.ts in Phase 2 Slice A.
+  const { quickSettingsOpen, setQuickSettingsOpen } = platformDialogs;
   // Per-session "Show touch hints" toggle (NDS touch hotspots
   // overlay). Defaults off; operator flips it via QuickSettings →
   // "Show touch hints" while a stylus-using game runs. Resets on
@@ -266,8 +234,8 @@ const App: Component = () => {
   const { helpDialog, setHelpDialog } = platformDialogs;
   // Tools → Screenshot gallery. Targets the active game (running or
   // focused) at the time of opening; entry stays bound until the dialog
-  // closes.
-  const [screenshotGalleryFor, setScreenshotGalleryFor] = createSignal<RomEntry | null>(null);
+  // closes. Migrated to platform/dialogs.ts in Phase 2 Slice A.
+  const { screenshotGalleryFor, setScreenshotGalleryFor } = platformDialogs;
   // Performance HUD toggle. UI-side render-loop FPS only (v1);
   // emulator-side telemetry will plug into the same overlay when wired.
   // Toggle lives in QuickSettings (in-game) — flip on when something
@@ -427,19 +395,12 @@ const App: Component = () => {
   // hover-source signal was only consumed by SystemBackground; once
   // the visual overlays moved out of Retroverse, the tracker is dead.
 
-  // Right-click context menu over a system entry in the left sidebar.
-  // Open when the user right-clicks a SystemItem; null when closed.
-  const [systemContextFor, setSystemContextFor] = createSignal<{
-    id: SystemId;
-    position: { x: number; y: number };
-  } | null>(null);
-  // Container right-click context menu (sister to systemContextFor —
-  // operator can right-click a container header in the sidebar tree to
-  // hide the whole bucket).
-  const [containerContextFor, setContainerContextFor] = createSignal<{
-    container: ContainerNode;
-    position: { x: number; y: number };
-  } | null>(null);
+  // Right-click context menus for sidebar system + container rows —
+  // open/close lives in platform/dialogs.ts since Phase 2 Slice A
+  // (per-row right-click is theme-side but the signal is platform-
+  // owned so future themes summon the same menus the same way).
+  const { systemContextFor, setSystemContextFor } = platformDialogs;
+  const { containerContextFor, setContainerContextFor } = platformDialogs;
 
   /// Hide a system from the sidebar. Writes both the per-node `hidden`
   /// flag in the active view (PR-γ source of truth — survives view
@@ -1768,26 +1729,6 @@ const App: Component = () => {
       <RegionPicker
         entry={regionPickerFor()}
         onClose={() => setRegionPickerFor(null)}
-      />
-      <DisplayDialog
-        open={settingsDialog() === "display"}
-        onClose={() => setSettingsDialog(null)}
-        settings={settings}
-      />
-      <AudioDialog
-        open={settingsDialog() === "audio"}
-        onClose={() => setSettingsDialog(null)}
-        settings={settings}
-      />
-      <GameplayDialog
-        open={settingsDialog() === "gameplay"}
-        onClose={() => setSettingsDialog(null)}
-        settings={settings}
-      />
-      <ShadersDialog
-        open={settingsDialog() === "shaders"}
-        onClose={() => setSettingsDialog(null)}
-        settings={settings}
       />
       <Show when={systemDialog()} keyed>
         {(sd) => (
