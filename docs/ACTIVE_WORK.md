@@ -17,15 +17,13 @@ spanned every system but was filed under whichever core happened to be active.
   (Rhai behaviors + WGSL shaders + Theme Studio) follow. Plan at
   [PLANS/theming-substrate.md](PLANS/theming-substrate.md); feature
   folder [features/theming-substrate/](features/theming-substrate/).
-  - **Phase 1 ✅ shipped 2026-06-06** (branch
-    `feat/theming-substrate-phase-1`, awaiting operator playtest
-    before merge). Engine/theme surface separation: SETTINGS +
-    Library Manager + Import Wizard + BIOS + Core installer +
-    System Health + Background Jobs moved out of Retroverse's
-    tab list (6 → 5 tabs) into an engine-owned fullscreen
-    takeover summoned via F12 / Select+Start / top-right corner
-    icon. New `engine/` + `platform/` directories (start of the
-    formal split); `EngineManagerSurface` + `SettingsPanel` +
+  - **Phase 1 ✅ shipped + merged 2026-06-06** (merge `870edb2`).
+    Engine/theme surface separation: SETTINGS + Library Manager +
+    Import Wizard + BIOS + Core installer + System Health +
+    Background Jobs moved out of Retroverse's tab list (6 → 5 tabs)
+    into an engine-owned fullscreen takeover summoned via F12 /
+    Select+Start / top-right corner icon. New `engine/` + `platform/`
+    directories; `EngineManagerSurface` + `SettingsPanel` +
     `EngineSummonIcon` + `platform/engineSurface.ts` +
     `platform/dialogs.ts`. 5 dialog signals migrated from App.tsx
     createSignals to Platform-owned store per operator decision
@@ -33,12 +31,28 @@ spanned every system but was filed under whichever core happened to be active.
     restore: tag `v0.x-pre-theming-substrate` + branch
     `pre-theming-substrate` both at `5695adb`. SURFACES.md is the
     boundary-doc deliverable.
-  - **Phase 2 queued** — Platform/Theme SDK foundation:
-    `frontend/src/platform/` formalized with `@oa/platform` Vite
-    alias, store + lib + theme registry migrations,
-    `ThemeContext` rename, residual ~12 dialog signals migrated,
-    `HOTSPOT_SYSTEMS` triplicate + `customComponent` orphan
-    cleanup. Operator decisions locked 2026-06-06: one unified
+  - **Phase 2 Slice A ✅ shipped 2026-06-06** (branch
+    `feat/theming-substrate-phase-2-slice-a`, awaiting operator
+    playtest before merge). Platform foundation + cleanup half of
+    Phase 2: `@oa/platform` Vite alias + tsconfig paths +
+    `platform/index.ts` barrel; HOTSPOT_SYSTEMS / STYLUS_SYSTEMS
+    triplicate collapsed via new `touchInputSupported?: boolean`
+    on `SystemUIConfig`; `customComponent` orphan field deleted;
+    dead-letter `settingsDialog` signal + `SettingsDialogs.tsx`
+    (376 lines) removed; 10 residual dialog signals migrated to
+    `platform/dialogs.ts` (all 15 SURFACES.md-listed dialog
+    signals now Platform-owned). 744 oa-shell tests pass;
+    frontend typecheck silent. Snapshot restore: same
+    `pre-theming-substrate` branch + tag still apply.
+  - **Phase 2 Slice B queued** — store + component moves:
+    settings/store.ts, library/store.ts, layout/state.ts,
+    views/store.ts, customCollections.ts, lib/* helpers,
+    themes/registry.ts, themes/systemUIConfigs.ts, LibraryTile,
+    LibraryView, LeftSidebar, perSystemSections all move into
+    `platform/`. Mass import-path rewrites. Then Slice C:
+    `ThemeContext` rename + Theme manifest TOML schema + ESLint
+    boundary rule (lands in Phase 4 alongside Tauri-bridge work).
+    Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
     theme swap = restart (ARC 1); build-time bundling only
     (ARC 1); Kiosk plan's 4-layer substrate absorbed. Sequencing:

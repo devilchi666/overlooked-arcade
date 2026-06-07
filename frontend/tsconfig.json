@@ -18,7 +18,12 @@
     "isolatedModules": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@oa/platform": ["./src/platform"],
+      "@oa/platform/*": ["./src/platform/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

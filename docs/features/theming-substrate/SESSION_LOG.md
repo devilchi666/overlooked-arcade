@@ -93,3 +93,67 @@ Each session that touches this feature appends a 3-line entry:
   migrate residual ~12 dialog signals listed in SURFACES.md "Open
   boundary questions" section. Phase 1-2 run parallel with VL Phase A
   per plan §7; pause at end of Phase 2 for VL Phase E + C.
+
+---
+
+## 2026-06-06 — ARC 1 Phase 2 Slice A shipped
+
+- **Shipped:** Platform foundation + cleanup half of Phase 2 per plan
+  §6 Phase 2. Branch `feat/theming-substrate-phase-2-slice-a` cut from
+  main post-Phase-1 merge. Five tightly-scoped changes:
+  - **Dead-letter purge:** `settingsDialog` signal in App.tsx had zero
+    open call sites (verified via grep) — only the 4 close handlers +
+    4 dialog mounts fired. Pre-Retroverse leftover. Removed the
+    signal, the 4 mount blocks, and deleted
+    `frontend/src/components/SettingsDialogs.tsx` (376 lines). App.tsx's
+    `ShellMode` import re-routed from the deleted file straight to
+    `settings/store.ts` where the type actually lives.
+  - **HOTSPOT_SYSTEMS triplicate collapse:** added
+    `touchInputSupported?: boolean` to `SystemUIConfig`; set `true`
+    on `nds`. Three inline `Set<SystemId>(["nds"])` sites
+    (TouchHotspotOverlay:50, QuickSettings:1672, StylusOverlay:39 —
+    last under name `STYLUS_SYSTEMS`) replaced with a shared
+    `isTouchSystem(id)` helper reading from
+    `systemUIConfigs[id]?.touchInputSupported`. Single source of
+    truth; future stylus-vs-aim splits add a finer field then.
+  - **customComponent orphan delete:** `SystemUIConfig.customComponent`
+    field at systemUIConfigs.ts:119 had zero consumers (verified
+    via grep). Plan §6 Phase 2 said delete in favor of Phase 3's
+    `custom` nav primitive — done. Field + the Vectrex assignment
+    removed.
+  - **`@oa/platform` alias:** added `resolve.alias` in vite.config.ts
+    + `baseUrl` / `paths` in tsconfig.json. New
+    `frontend/src/platform/index.ts` barrel re-exports
+    `engineSurface` + `dialogs` as namespaces. ESLint boundary
+    enforcement deferred to Phase 4 per plan §6 Phase 4.
+  - **Residual 10 dialog signals migrated:** extended
+    `platform/dialogs.ts` with `coreMenuFor`, `regionPickerFor`,
+    `propertiesFor`, `collectionDialogMode`, `gameDialog`,
+    `quickSettingsOpen`, `screenshotGalleryFor`, `systemContextFor`,
+    `containerContextFor`, `systemDialog` (+ `openSystemDialog`
+    convenience preserving the existing call shape). All 15 dialog
+    signals from SURFACES.md now Platform-owned; dialog COMPONENTS
+    still mount from App.tsx (Phase 6 splits mount per theme). Type
+    imports from components/ into platform/ are pragmatic — Phase 4
+    ESLint catches any runtime escape; Slice B / later phases that
+    move dialog components into platform/ eliminate the type-only
+    crossing.
+- **Almost:** Operator playtest — sanity-check that Settings,
+  Library Manager, Import Wizard, BIOS, Cores, System Health,
+  Background Jobs editor, per-game dialogs (saves / info / context-
+  menu / properties / region picker / core picker / screenshot
+  gallery), sidebar context menus (system + container), per-system
+  bindings/core-options, quick settings overlay, and the new-
+  collection / rename-collection dialogs all still open + close
+  unchanged. Migration is mechanical (signal-creation site moved,
+  type unchanged) but the surface area is wide.
+- **Next:** Phase 2 Slice B — store + component moves into
+  `platform/` (settings/store.ts, library/store.ts, layout/state.ts,
+  views/store.ts, library/customCollections.ts, lib/* helpers,
+  themes/registry.ts, themes/systemUIConfigs.ts, LibraryTile,
+  LibraryView, LeftSidebar, perSystemSections). Mass import-path
+  rewrites — coordinated as one commit to keep the diff reviewable.
+  Then Slice C: ThemeContext rename (RetroverseContext →
+  ThemeContext), Theme manifest TOML schema, ESLint boundary rule
+  (lands in Phase 4 alongside Tauri-bridge work). Phases 1-2 still
+  on track to run parallel with VL Phase A.

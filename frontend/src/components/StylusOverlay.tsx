@@ -23,6 +23,7 @@ import {
   type Component,
 } from "solid-js";
 import type { SystemId } from "../themes/registry";
+import { systemUIConfigs } from "../themes/systemUIConfigs";
 
 type Props = {
   /// SystemId of the currently-running game, or null when no game is
@@ -30,13 +31,15 @@ type Props = {
   runningSystemId: () => SystemId | null;
 };
 
-/// Systems where a stylus reticle is meaningful. NDS is the obvious
-/// case (stylus is one of the two primary inputs). Other systems with
-/// pointer devices (light-gun shapes) use the cursor for AIM rather
-/// than TAP, and the operator's reflexes for aiming with a gun differ
-/// from those for tapping — they get their own indicators later if
-/// playtest surfaces a need.
-const STYLUS_SYSTEMS: ReadonlySet<SystemId> = new Set<SystemId>(["nds"]);
+/// Per-system gate. Reads `touchInputSupported` from the per-system
+/// UI registry — collapses the historical HOTSPOT_SYSTEMS /
+/// STYLUS_SYSTEMS / QuickSettings triplicate into one source of
+/// truth (Theming Substrate ARC 1 Phase 2 cleanup). Light-gun
+/// systems use the cursor for AIM rather than TAP and stay opt-out;
+/// future stylus-vs-aim splits add a finer field then.
+function isTouchSystem(systemId: SystemId): boolean {
+  return systemUIConfigs[systemId]?.touchInputSupported === true;
+}
 
 const StylusOverlay: Component<Props> = (props) => {
   const [mouseX, setMouseX] = createSignal(0);
@@ -49,7 +52,7 @@ const StylusOverlay: Component<Props> = (props) => {
 
   const enabled = createMemo(() => {
     const s = props.runningSystemId();
-    return s !== null && STYLUS_SYSTEMS.has(s);
+    return s !== null && isTouchSystem(s);
   });
 
   onMount(() => {

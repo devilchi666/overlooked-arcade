@@ -110,13 +110,12 @@ export interface SystemUIConfig {
   /// enum's baseline sounds apply.
   soundEffects?: UISoundEffects;
 
-  /// Stage 3 escape hatch. When set, the named custom component
-  /// renders the system's library view instead of the shared
-  /// renderer. Shipped values land per-pilot as Stage 1+ rolls out;
-  /// Vectrex is the canonical first user. The string-or-literal
-  /// union keeps TypeScript narrowing for known components while
-  /// staying open to future per-system overrides.
-  customComponent?: "vectrex" | string;
+  /// `true` when the system uses a primary pointer/touch input mode
+  /// — drives the StylusOverlay reticle, the TouchHotspotOverlay
+  /// per-game labels, and the QuickSettings "Show touch hints"
+  /// toggle. NDS is the only Stage 1 consumer; light-gun systems use
+  /// the cursor differently (AIM not TAP) and stay opt-out for now.
+  touchInputSupported?: boolean;
 }
 
 /// Baseline config — every system in OA shares this shape; pilots
@@ -169,7 +168,6 @@ export const systemUIConfigs: Record<SystemId, SystemUIConfig> = {
     tileShape: "square",
     transitionTiming: "slow", // cinematic feel
     buttonLabels: "vectrex-custom",
-    customComponent: "vectrex", // escape-hatch render path
   },
 
   // --- Baseline systems ------------------------------------------------
@@ -198,7 +196,7 @@ export const systemUIConfigs: Record<SystemId, SystemUIConfig> = {
   dreamcast: { ...BASELINE_UI },
   psp: { ...BASELINE_UI },
   ps2: { ...BASELINE_UI },
-  nds: { ...BASELINE_UI },
+  nds: { ...BASELINE_UI, touchInputSupported: true },
   sms: { ...BASELINE_UI },
   gamegear: { ...BASELINE_UI },
   gbc: { ...BASELINE_UI },

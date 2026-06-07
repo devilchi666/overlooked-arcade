@@ -35,6 +35,7 @@ import {
 import { systemThemes, type SystemId } from "../../themes/registry";
 import { findNode } from "../../views/resolver";
 import { useRetroverse } from "./context";
+import { setSystemContextFor, setContainerContextFor } from "../../platform/dialogs";
 
 const LibraryPage: Component = () => {
   const ctx = useRetroverse();
@@ -215,6 +216,17 @@ const LibraryPage: Component = () => {
           views={ctx.views}
           currentView={ctx.currentView()}
           onNavigate={ctx.setCurrentView}
+          // Right-click handlers — wire sidebar leaf + container
+          // rows through to the platform-owned context menu signals
+          // (Phase 2 Slice A migrated these from App.tsx createSignals).
+          // Pre-existing oversight from the legacy → Retroverse port:
+          // LibraryPage was built without these props, so right-click
+          // on sidebar rows fell silently. Surfaced by the Phase 2
+          // Slice A playtest 2026-06-06.
+          onSystemContext={(id, position) => setSystemContextFor({ id, position })}
+          onContainerContext={(container, position) =>
+            setContainerContextFor({ container, position })
+          }
         />
       </aside>
 

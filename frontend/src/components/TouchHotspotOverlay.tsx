@@ -30,6 +30,7 @@ import {
   type Component,
 } from "solid-js";
 import type { SystemId } from "../themes/registry";
+import { systemUIConfigs } from "../themes/systemUIConfigs";
 import { getGameInfo, type TouchHotspot } from "../library/gameInfo";
 
 type Props = {
@@ -43,11 +44,13 @@ type Props = {
   enabled: () => boolean;
 };
 
-/// Systems that route through the touch-hotspot overlay. Mirrors the
-/// `STYLUS_SYSTEMS` set in StylusOverlay — kept independent so a
-/// future stylus system can opt into the reticle but not into
-/// hotspots (or vice versa).
-const HOTSPOT_SYSTEMS: ReadonlySet<SystemId> = new Set<SystemId>(["nds"]);
+/// Per-system gate. Reads `touchInputSupported` from the per-system
+/// UI registry — collapses the historical HOTSPOT_SYSTEMS /
+/// STYLUS_SYSTEMS / QuickSettings triplicate into one source of truth
+/// (Theming Substrate ARC 1 Phase 2 cleanup).
+function isTouchSystem(systemId: SystemId): boolean {
+  return systemUIConfigs[systemId]?.touchInputSupported === true;
+}
 
 /// NDS combined framebuffer dimensions (top + bottom stacked vertically).
 /// melonDS's default layout puts the top screen at y[0..192] and the
@@ -81,7 +84,7 @@ const TouchHotspotOverlay: Component<Props> = (props) => {
     () => {
       const r = props.running();
       if (!r) return null as never;
-      if (!HOTSPOT_SYSTEMS.has(r.systemId)) return null as never;
+      if (!isTouchSystem(r.systemId)) return null as never;
       if (!props.enabled()) return null as never;
       return props.running;
     },
