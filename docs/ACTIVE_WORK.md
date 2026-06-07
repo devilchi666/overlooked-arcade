@@ -253,10 +253,31 @@ spanned every system but was filed under whichever core happened to be active.
     Casual / Preservation toggle; Variants tab on GameDetailPanel;
     System Health Overview gains % verified / % covers / % metadata
     rollups.
-  - **Phase C — launcher abstraction (~2–3 weeks):** `oa-core::Core`
-    → `Launcher` trait refactor; `LibretroLauncher` +
-    `ExternalProcessLauncher` impls; `config/emulators/<id>.yaml`
-    profile registry.
+  - **Phase C — launcher abstraction (~2–3 weeks):** `Launcher`
+    lifecycle trait ABOVE the untouched `oa_core::Core`;
+    `LibretroLauncher` + `ExternalProcessLauncher` impls;
+    `config/emulators/<id>.yaml` profile registry. Sub-phase plan:
+    [PLANS/launcher-abstraction.md](PLANS/launcher-abstraction.md).
+    - **C1 — Launcher trait + LibretroLauncher refactor ✅ shipped
+      2026-06-07** (branch `feat/virtual-library-phase-c1`, awaiting
+      operator playtest before merge — acceptance: "everything
+      launches exactly like yesterday"). `oa-core` gains `Launcher`
+      (`prepare → launch → is_alive → terminate` + capabilities) +
+      `LaunchRequest` / `LaunchPrepared` / `LaunchedSession` /
+      `LauncherCapabilities` / `LaunchError` (transparent Display so
+      pre-C1 error strings survive byte-identically). New
+      `apps/oa-shell/src/launcher.rs`: `LibretroLauncher` maps
+      launch → `EmuCommand::LoadRom`, terminate →
+      `EmuCommand::UnloadRom`, same fields + error strings.
+      `launch_rom` / `unload_rom` route through
+      `AppState.launcher: Arc<dyn Launcher>` + new `active_launch`
+      session slot; content resolution / session bookkeeping /
+      focus_game / archive cleanup stay in the commands unchanged.
+      No external launching yet. 807 oa-shell tests pass (803
+      baseline + 4 new); typecheck silent.
+    - **C2 — profile registry + `ExternalProcessLauncher` + first
+      Dolphin launch** (next).
+    - **C3 — capability gating + session polish.**
   - **Phase D — external emulator install pipeline (~2–3 weeks):**
     download + setup for v1 pilot trio (Cemu / RPCS3 / Lime3DS) from
     official release endpoints; plugin-style updater; legal posture
