@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 22;
+const SCHEMA_VERSION: i32 = 23;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -457,6 +457,81 @@ pub struct GameRow {
     /// Drives the disc-picker overlay's ordering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc_number: Option<u32>,
+    /// VL Phase E — FK into `game_identities.id`: which *game* this
+    /// file is a variant of. Stamped by `rebuild_identities_for_system`
+    /// (runs at v23 migration, after scans/ingests, and after Identify
+    /// ROMs). NULL only transiently between an insert and the next
+    /// rebuild. See docs/PLANS/game-identities-schema.md.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<String>,
+}
+
+/// VL Phase E — one *game* (identity), as opposed to one *file*
+/// (`GameRow`). "Castlevania (USA)", "Castlevania (Japan)", and
+/// "Castlevania (USA) (Rev 1)" are three GameRows pointing at one
+/// GameIdentityRow. Play time / favorites / canonical metadata /
+/// canonical artwork attach here so they survive across variants.
+///
+/// Keyed `(system_id, normalized_title)`. NOTE: `normalized_title`
+/// here is the *grouping* key — the lowercased parsed base title
+/// (`library_groups`' `base_title_key`, e.g. `castlevania`) — NOT the
+/// punctuation-stripped search normalization stored in
+/// `games.normalized_title`. Same column name, different normalization;
+/// the FTS search path never reads this table's column.
+///
+/// `default_variant_id` stores ONLY an explicit operator pin (mirror
+/// of `game_group_defaults` until Sub-phase 2 retires it). NULL means
+/// "automatic" — the read path applies live region/revision ranking.
+/// Metadata columns start NULL; Sub-phase 3's enrichment pass fills
+/// them from the default variant's MediaDb metadata.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameIdentityRow {
+    /// Deterministic: `idn-` + first 16 hex chars of
+    /// sha1(system_id ++ 0x1f ++ normalized_title). Re-running the
+    /// migration or a rebuild on the same library reproduces the same
+    /// ids — idempotency falls out of the id scheme.
+    pub id: String,
+    pub system_id: String,
+    /// Pretty display title (e.g. `Castlevania`) — the most common
+    /// parsed base among the variants, ties broken lexicographically.
+    pub canonical_title: String,
+    /// Grouping key — lowercased parsed base title. See struct docs.
+    pub normalized_title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+    /// Explicit canonical (parent) cover. NULL = read path falls back
+    /// to the default variant's per-file cover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_cover_path: Option<String>,
+    /// Operator pin. NULL = automatic ranking picks the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_variant_id: Option<String>,
+}
+
+/// Partial-update payload for `update_identity_metadata`. Any `None`
+/// field is left untouched — same contract as `FolderUpdate`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // consumed by Sub-phase 2/3's editor surface
+pub struct IdentityMetadataUpdate {
+    pub year: Option<i64>,
+    pub genre: Option<String>,
+    pub developer: Option<String>,
+    pub publisher: Option<String>,
+    pub players: Option<i64>,
+    pub rating: Option<f64>,
+    pub canonical_cover_path: Option<String>,
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -959,7 +1034,241 @@ impl LibraryDb {
             );
         }
 
+        // v22 → v23: game_identities — VL Phase E schema promotion.
+        // The library stops being "files with runtime grouping" and
+        // becomes "games (identities) that files point at". One row
+        // per (system_id, lowercased parsed base title); every game
+        // gets an identity_id FK. Existing game_group_defaults pins
+        // are copied into game_identities.default_variant_id (dual-
+        // write keeps them converged until Sub-phase 2 swaps the read
+        // path). See docs/PLANS/game-identities-schema.md.
+        if current < 23 {
+            let n = Self::migrate_v22_to_v23(conn)?;
+            conn.pragma_update(None, "user_version", 23)
+                .map_err(|e| format!("set user_version=23: {e}"))?;
+            log::info!(
+                "library_db: schema migrated to v23 (game_identities populated with {n} identities)"
+            );
+        }
+
         Ok(())
+    }
+
+    fn migrate_v22_to_v23(conn: &Connection) -> Result<usize, String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS game_identities (
+                id                   TEXT PRIMARY KEY,
+                system_id            TEXT NOT NULL,
+                -- Pretty display base title ("Castlevania").
+                canonical_title      TEXT NOT NULL,
+                -- Grouping key: lowercased parsed base title. NOT the
+                -- punctuation-stripped search normalization used by
+                -- games.normalized_title.
+                normalized_title     TEXT NOT NULL,
+                -- Canonical metadata. NULL until the Sub-phase 3
+                -- enrichment pass (or the operator) fills it; the
+                -- games-table columns of the default variant act as
+                -- the read-time fallback meanwhile.
+                year                 INTEGER,
+                genre                TEXT,
+                developer            TEXT,
+                publisher            TEXT,
+                players              INTEGER,
+                rating               REAL,
+                -- Explicit parent artwork; NULL falls back to the
+                -- default variant's per-file cover at read time.
+                canonical_cover_path TEXT,
+                -- Operator pin (mirror of game_group_defaults until
+                -- Sub-phase 2). NULL = automatic ranking.
+                default_variant_id   TEXT,
+                UNIQUE (system_id, normalized_title)
+            );
+            CREATE INDEX IF NOT EXISTS idx_identities_system
+                ON game_identities(system_id);
+            "#,
+        )
+        .map_err(|e| format!("v23 create game_identities: {e}"))?;
+
+        // games.identity_id — ALTER is idempotent-guarded by the
+        // surrounding `current < 23` check, but a crash between the
+        // ALTER and the user_version bump would re-run it; tolerate
+        // the duplicate-column error explicitly.
+        match conn.execute("ALTER TABLE games ADD COLUMN identity_id TEXT", []) {
+            Ok(_) => {}
+            Err(e) if e.to_string().contains("duplicate column") => {}
+            Err(e) => return Err(format!("v23 add games.identity_id: {e}")),
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_games_identity ON games(identity_id);",
+        )
+        .map_err(|e| format!("v23 create idx_games_identity: {e}"))?;
+
+        // Populate: one rebuild per system stamps identity_id on every
+        // game and upserts the identity rows.
+        let n = Self::rebuild_identities_all_conn(conn)?;
+
+        // Copy existing per-group pins. game_group_defaults.base_title
+        // is stored lowercased — same normalization as
+        // game_identities.normalized_title. Guard with EXISTS so a pin
+        // pointing at a deleted game (or a game that parsed into a
+        // different group) doesn't produce a dangling default.
+        //
+        // Table-existence check: hand-rolled partial-schema fixtures
+        // (older migration tests) bootstrap from a user_version where
+        // game_group_defaults was never created; a real DB always has
+        // it (v9 → v10).
+        let has_group_defaults: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                  WHERE type = 'table' AND name = 'game_group_defaults')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("v23 probe game_group_defaults: {e}"))?;
+        if !has_group_defaults {
+            return Ok(n);
+        }
+        conn.execute(
+            "UPDATE game_identities
+                SET default_variant_id = (
+                    SELECT gd.preferred_game_id
+                      FROM game_group_defaults gd
+                     WHERE gd.system_id = game_identities.system_id
+                       AND gd.base_title = game_identities.normalized_title
+                       AND EXISTS (SELECT 1 FROM games g
+                                    WHERE g.id = gd.preferred_game_id
+                                      AND g.identity_id = game_identities.id))",
+            [],
+        )
+        .map_err(|e| format!("v23 copy group-default pins: {e}"))?;
+
+        Ok(n)
+    }
+
+    /// Deterministic identity id: `idn-` + first 16 hex chars of
+    /// sha1(system_id ++ 0x1f ++ normalized_title). Unit separator
+    /// keeps ("ab","c") and ("a","bc") from colliding.
+    fn identity_id_for(system_id: &str, normalized_title: &str) -> String {
+        use sha1::{Digest, Sha1};
+        let mut h = Sha1::new();
+        h.update(system_id.as_bytes());
+        h.update([0x1f]);
+        h.update(normalized_title.as_bytes());
+        let hex = format!("{:x}", h.finalize());
+        format!("idn-{}", &hex[..16])
+    }
+
+    /// Rebuild the `game_identities` rows for one system from the
+    /// current games table: bucket every game by lowercased parsed
+    /// base title, upsert one identity per bucket (preserving any
+    /// operator-set metadata / pins / canonical cover on existing
+    /// rows), stamp `games.identity_id`, and delete identities no
+    /// game points at anymore. Idempotent — same library in, same
+    /// rows out (see `identity_id_for`). Returns the number of live
+    /// identities for the system.
+    fn rebuild_identities_for_system_conn(
+        conn: &Connection,
+        system_id: &str,
+    ) -> Result<usize, String> {
+        use std::collections::HashMap;
+
+        let mut stmt = conn
+            .prepare("SELECT id, title FROM games WHERE system_id = ?1")
+            .map_err(|e| format!("prepare identity-rebuild select: {e}"))?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map(params![system_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("query identity-rebuild select: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect identity-rebuild select: {e}"))?;
+        drop(stmt);
+
+        // Bucket by grouping key; remember each display-base spelling's
+        // frequency so the canonical title is stable + representative.
+        struct Bucket {
+            game_ids: Vec<String>,
+            display_counts: HashMap<String, usize>,
+        }
+        let mut buckets: HashMap<String, Bucket> = HashMap::new();
+        for (game_id, title) in rows {
+            let parsed = crate::title_parse::parse_canonical_title(&title);
+            let base_key = parsed.base.to_lowercase();
+            let bucket = buckets.entry(base_key).or_insert_with(|| Bucket {
+                game_ids: Vec::new(),
+                display_counts: HashMap::new(),
+            });
+            bucket.game_ids.push(game_id);
+            *bucket.display_counts.entry(parsed.base).or_insert(0) += 1;
+        }
+
+        let live = buckets.len();
+        for (base_key, bucket) in buckets {
+            // Most common display spelling wins; ties break
+            // lexicographically so the pick is deterministic.
+            let canonical_title = bucket
+                .display_counts
+                .iter()
+                .max_by(|(a_title, a_n), (b_title, b_n)| {
+                    a_n.cmp(b_n).then_with(|| b_title.cmp(a_title))
+                })
+                .map(|(title, _)| title.clone())
+                .unwrap_or_else(|| base_key.clone());
+
+            let identity_id = Self::identity_id_for(system_id, &base_key);
+            conn.execute(
+                "INSERT INTO game_identities
+                    (id, system_id, canonical_title, normalized_title)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (system_id, normalized_title)
+                 DO UPDATE SET canonical_title = excluded.canonical_title",
+                params![identity_id, system_id, canonical_title, base_key],
+            )
+            .map_err(|e| format!("upsert identity {identity_id}: {e}"))?;
+
+            for game_id in &bucket.game_ids {
+                conn.execute(
+                    "UPDATE games SET identity_id = ?1
+                      WHERE id = ?2 AND (identity_id IS NULL OR identity_id <> ?1)",
+                    params![identity_id, game_id],
+                )
+                .map_err(|e| format!("stamp identity on {game_id}: {e}"))?;
+            }
+        }
+
+        // Orphan cleanup: a retitled / deleted game can leave an
+        // identity with no members. Operator-set metadata on an orphan
+        // dies with it — same lifecycle per-game metadata always had.
+        conn.execute(
+            "DELETE FROM game_identities
+              WHERE system_id = ?1
+                AND NOT EXISTS (SELECT 1 FROM games g
+                                 WHERE g.identity_id = game_identities.id)",
+            params![system_id],
+        )
+        .map_err(|e| format!("identity orphan cleanup: {e}"))?;
+
+        Ok(live)
+    }
+
+    /// Run `rebuild_identities_for_system_conn` for every distinct
+    /// system in the games table. Returns total live identities.
+    fn rebuild_identities_all_conn(conn: &Connection) -> Result<usize, String> {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT system_id FROM games")
+            .map_err(|e| format!("prepare distinct systems: {e}"))?;
+        let systems: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query distinct systems: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect distinct systems: {e}"))?;
+        drop(stmt);
+        let mut total = 0usize;
+        for system_id in systems {
+            total += Self::rebuild_identities_for_system_conn(conn, &system_id)?;
+        }
+        Ok(total)
     }
 
     fn migrate_v19_to_v20(conn: &Connection) -> Result<usize, String> {
@@ -1871,7 +2180,7 @@ impl LibraryDb {
                         core_override, cover_path, seed, archive_inner_path,
                         sha1, serial, disc_id,
                         favorite, completed, last_played_at, play_time_secs,
-                        players, rating, disc_set_id, disc_number
+                        players, rating, disc_set_id, disc_number, identity_id
                  FROM games
                  ORDER BY title COLLATE NOCASE",
             )
@@ -1899,6 +2208,7 @@ impl LibraryDb {
                     rating: row.get(17)?,
                     disc_set_id: row.get(18)?,
                     disc_number: row.get::<_, Option<i64>>(19)?.map(|n| n as u32),
+                    identity_id: row.get(20)?,
                 })
             })
             .map_err(|e| format!("query list_games: {e}"))?
@@ -1942,6 +2252,16 @@ impl LibraryDb {
             }
         }
         tx.commit().map_err(|e| format!("commit add_games: {e}"))?;
+        // VL Phase E — new files need identity_id stamps (and possibly
+        // new identity rows). One rebuild per distinct system touched.
+        if added > 0 {
+            let mut systems: Vec<&str> = entries.iter().map(|g| g.system_id.as_str()).collect();
+            systems.sort_unstable();
+            systems.dedup();
+            for system_id in systems {
+                Self::rebuild_identities_for_system_conn(&conn, system_id)?;
+            }
+        }
         Ok(added)
     }
 
@@ -1988,6 +2308,7 @@ impl LibraryDb {
                     rating: None,
                     disc_set_id: None,
                     disc_number: None,
+                    identity_id: None,
                 })
             })
             .map_err(|e| format!("query list_games_for_system: {e}"))?;
@@ -2005,6 +2326,17 @@ impl LibraryDb {
         let affected = conn
             .execute("DELETE FROM games WHERE seed = 1", [])
             .map_err(|e| format!("delete seeds: {e}"))?;
+        // VL Phase E — sweep identities orphaned by the seed removal
+        // (seed titles get identities like any other row).
+        if affected > 0 {
+            conn.execute(
+                "DELETE FROM game_identities
+                  WHERE NOT EXISTS (SELECT 1 FROM games g
+                                     WHERE g.identity_id = game_identities.id)",
+                [],
+            )
+            .map_err(|e| format!("drop_seed_rows identity sweep: {e}"))?;
+        }
         Ok(affected)
     }
 
@@ -2212,6 +2544,7 @@ impl LibraryDb {
                 rating: None,
                 disc_set_id: None,
                 disc_number: None,
+                identity_id: None,
             }))
         } else {
             Ok(None)
@@ -2281,6 +2614,7 @@ impl LibraryDb {
                 rating: None,
                 disc_set_id: None,
                 disc_number: None,
+                identity_id: None,
             }))
         } else {
             Ok(None)
@@ -2394,6 +2728,7 @@ impl LibraryDb {
                     rating: None,
                     disc_set_id: None,
                     disc_number: None,
+                    identity_id: None,
                 })
             })
             .map_err(|e| format!("query list_games_missing_hash: {e}"))?
@@ -2924,6 +3259,7 @@ impl LibraryDb {
                     play_time_secs: 0,
                     players: None,
                     rating: None,
+                    identity_id: None,
                 })
             })
             .map_err(|e| format!("query list_disc_set_members: {e}"))?
@@ -3300,6 +3636,11 @@ impl LibraryDb {
     /// next time the library is rendered, this group's default tile
     /// represents `preferred_game_id`. The base_title is stored
     /// lowercased so case-quirky upstream titles still match.
+    ///
+    /// VL Phase E dual-write: the pin also lands on the matching
+    /// `game_identities.default_variant_id` so the two stores stay
+    /// converged until Sub-phase 2 swaps the read path to identities
+    /// and retires this table.
     pub fn set_game_group_default(
         &self,
         system_id: &str,
@@ -3307,31 +3648,152 @@ impl LibraryDb {
         preferred_game_id: &str,
     ) -> Result<(), String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let base_key = base_title.to_lowercase();
         conn.execute(
             "INSERT OR REPLACE INTO game_group_defaults
                (system_id, base_title, preferred_game_id)
              VALUES (?1, ?2, ?3)",
-            params![system_id, base_title.to_lowercase(), preferred_game_id],
+            params![system_id, &base_key, preferred_game_id],
         )
         .map_err(|e| format!("set_game_group_default: {e}"))?;
+        conn.execute(
+            "UPDATE game_identities SET default_variant_id = ?3
+              WHERE system_id = ?1 AND normalized_title = ?2",
+            params![system_id, &base_key, preferred_game_id],
+        )
+        .map_err(|e| format!("set_game_group_default identity mirror: {e}"))?;
         Ok(())
     }
 
     /// Remove a group's variant pin so the priority resolver falls back
     /// to its region/revision rules. Idempotent: clearing a non-existent
-    /// row is a no-op.
+    /// row is a no-op. Dual-write per `set_game_group_default`.
     pub fn clear_game_group_default(
         &self,
         system_id: &str,
         base_title: &str,
     ) -> Result<(), String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let base_key = base_title.to_lowercase();
         conn.execute(
             "DELETE FROM game_group_defaults WHERE system_id = ?1 AND base_title = ?2",
-            params![system_id, base_title.to_lowercase()],
+            params![system_id, &base_key],
         )
         .map_err(|e| format!("clear_game_group_default: {e}"))?;
+        conn.execute(
+            "UPDATE game_identities SET default_variant_id = NULL
+              WHERE system_id = ?1 AND normalized_title = ?2",
+            params![system_id, &base_key],
+        )
+        .map_err(|e| format!("clear_game_group_default identity mirror: {e}"))?;
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // VL Phase E — game_identities surface.
+    // See docs/PLANS/game-identities-schema.md.
+
+    /// Re-derive identities for one system after a mutation that can
+    /// change grouping (scan/ingest, Identify ROMs retitling, deletes).
+    /// Cheap: one title parse per game of the system.
+    pub fn rebuild_identities_for_system(&self, system_id: &str) -> Result<usize, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        Self::rebuild_identities_for_system_conn(&conn, system_id)
+    }
+
+    /// Every identity for a system, canonical-title order. Sub-phase 2
+    /// wires the command layer + identity-backed `list_game_groups`.
+    #[allow(dead_code)] // consumed by Sub-phase 2's read-path swap
+    pub fn list_identities_for_system(
+        &self,
+        system_id: &str,
+    ) -> Result<Vec<GameIdentityRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, system_id, canonical_title, normalized_title,
+                        year, genre, developer, publisher, players, rating,
+                        canonical_cover_path, default_variant_id
+                 FROM game_identities
+                 WHERE system_id = ?1
+                 ORDER BY canonical_title COLLATE NOCASE",
+            )
+            .map_err(|e| format!("prepare list_identities_for_system: {e}"))?;
+        let rows = stmt
+            .query_map(params![system_id], Self::identity_from_row)
+            .map_err(|e| format!("query list_identities_for_system: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect list_identities_for_system: {e}"))?;
+        Ok(rows)
+    }
+
+    /// Single identity by id. Ok(None) when absent.
+    #[allow(dead_code)] // consumed by Sub-phase 2's read-path swap
+    pub fn get_identity(&self, id: &str) -> Result<Option<GameIdentityRow>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.query_row(
+            "SELECT id, system_id, canonical_title, normalized_title,
+                    year, genre, developer, publisher, players, rating,
+                    canonical_cover_path, default_variant_id
+             FROM game_identities WHERE id = ?1",
+            params![id],
+            Self::identity_from_row,
+        )
+        .optional()
+        .map_err(|e| format!("get_identity: {e}"))
+    }
+
+    /// Partial metadata update — `None` fields stay untouched (same
+    /// contract as `FolderUpdate`). Rebuilds never touch these columns,
+    /// so operator edits survive rescans for as long as the identity
+    /// has at least one member game.
+    #[allow(dead_code)] // consumed by Sub-phase 2/3's editor surface
+    pub fn update_identity_metadata(
+        &self,
+        id: &str,
+        update: &IdentityMetadataUpdate,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        conn.execute(
+            "UPDATE game_identities SET
+                year                 = COALESCE(?2, year),
+                genre                = COALESCE(?3, genre),
+                developer            = COALESCE(?4, developer),
+                publisher            = COALESCE(?5, publisher),
+                players              = COALESCE(?6, players),
+                rating               = COALESCE(?7, rating),
+                canonical_cover_path = COALESCE(?8, canonical_cover_path)
+             WHERE id = ?1",
+            params![
+                id,
+                update.year,
+                update.genre,
+                update.developer,
+                update.publisher,
+                update.players,
+                update.rating,
+                update.canonical_cover_path,
+            ],
+        )
+        .map_err(|e| format!("update_identity_metadata: {e}"))?;
+        Ok(())
+    }
+
+    fn identity_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameIdentityRow> {
+        Ok(GameIdentityRow {
+            id: row.get(0)?,
+            system_id: row.get(1)?,
+            canonical_title: row.get(2)?,
+            normalized_title: row.get(3)?,
+            year: row.get(4)?,
+            genre: row.get(5)?,
+            developer: row.get(6)?,
+            publisher: row.get(7)?,
+            players: row.get(8)?,
+            rating: row.get(9)?,
+            canonical_cover_path: row.get(10)?,
+            default_variant_id: row.get(11)?,
+        })
     }
 
     /// Return every group→preferred-game-id pin for a system. The
@@ -3423,8 +3885,21 @@ impl LibraryDb {
             params![id],
         )
         .map_err(|e| format!("delete game memberships: {e}"))?;
+        // VL Phase E — capture the system before the row goes so the
+        // identity rebuild can sweep a now-orphaned identity.
+        let system_id: Option<String> = conn
+            .query_row(
+                "SELECT system_id FROM games WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("delete game system lookup: {e}"))?;
         conn.execute("DELETE FROM games WHERE id = ?1", params![id])
             .map_err(|e| format!("delete game: {e}"))?;
+        if let Some(system_id) = system_id {
+            Self::rebuild_identities_for_system_conn(&conn, &system_id)?;
+        }
         Ok(())
     }
 
@@ -3472,6 +3947,7 @@ impl LibraryDb {
                         rating: None,
                         disc_set_id: None,
                         disc_number: None,
+                        identity_id: None,
                     })
                 })
                 .map_err(|e| format!("query search empty: {e}"))?
@@ -3520,6 +3996,7 @@ impl LibraryDb {
                     rating: None,
                     disc_set_id: None,
                     disc_number: None,
+                    identity_id: None,
                 })
             })
             .map_err(|e| format!("query search: {e}"))?
@@ -3639,6 +4116,12 @@ impl LibraryDb {
         let n = conn
             .execute("DELETE FROM games WHERE system_id = ?1", params![system_id])
             .map_err(|e| format!("delete_games_for_system: {e}"))?;
+        // VL Phase E — no games left, so no identities either.
+        conn.execute(
+            "DELETE FROM game_identities WHERE system_id = ?1",
+            params![system_id],
+        )
+        .map_err(|e| format!("delete_games_for_system identities: {e}"))?;
         Ok(n)
     }
 
@@ -3650,6 +4133,9 @@ impl LibraryDb {
         let n = conn
             .execute("DELETE FROM games", [])
             .map_err(|e| format!("delete_all_games: {e}"))?;
+        // VL Phase E — empty library, empty identity table.
+        conn.execute("DELETE FROM game_identities", [])
+            .map_err(|e| format!("delete_all_games identities: {e}"))?;
         Ok(n)
     }
 
@@ -5651,7 +6137,238 @@ mod tests {
             rating: None,
             disc_set_id: None,
             disc_number: None,
+            identity_id: None,
         }
+    }
+
+    // --- VL Phase E — game_identities (Sub-phase 1) -------------------
+    // See docs/PLANS/game-identities-schema.md.
+
+    #[test]
+    fn schema_v22_to_v23_migration() {
+        // Build a v20 DB by hand with games + a group-default pin,
+        // then open through LibraryDb so the bootstrap chain runs
+        // v21 → v22 → v23. Verifies the v23 population pass: identity
+        // rows, games.identity_id stamps, and the pin copy.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-library-v23-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("library")).expect("mkdir");
+        let db_path = tmp.join("library").join("games.sqlite");
+        {
+            let conn = Connection::open(&db_path).expect("open v20");
+            LibraryDb::create_v1(&conn).expect("create v1");
+            LibraryDb::migrate_v1_to_v2(&conn).expect("v2");
+            LibraryDb::migrate_v2_to_v3(&conn).expect("v3");
+            LibraryDb::migrate_v3_to_v4(&conn).expect("v4");
+            LibraryDb::migrate_v4_to_v5(&conn).expect("v5");
+            LibraryDb::migrate_v5_to_v6(&conn).expect("v6");
+            LibraryDb::migrate_v6_to_v7(&conn).expect("v7");
+            LibraryDb::migrate_v7_to_v8(&conn).expect("v8");
+            LibraryDb::migrate_v8_to_v9(&conn).expect("v9");
+            LibraryDb::migrate_v9_to_v10(&conn).expect("v10");
+            LibraryDb::migrate_v10_to_v11(&conn).expect("v11");
+            LibraryDb::migrate_v11_to_v12(&conn).expect("v12");
+            LibraryDb::migrate_v12_to_v13(&conn).expect("v13");
+            LibraryDb::migrate_v13_to_v14(&conn).expect("v14");
+            LibraryDb::migrate_v14_to_v15(&conn).expect("v15");
+            LibraryDb::migrate_v15_to_v16(&conn).expect("v16");
+            LibraryDb::migrate_v16_to_v17(&conn).expect("v17");
+            LibraryDb::migrate_v17_to_v18(&conn).expect("v18");
+            LibraryDb::migrate_v18_to_v19(&conn).expect("v19");
+            LibraryDb::migrate_v19_to_v20(&conn).expect("v20");
+            for (id, title) in [
+                ("g-cv-us", "Castlevania (USA)"),
+                ("g-cv-jp", "Castlevania (Japan)"),
+                ("g-bonk", "Bonk's Adventure (USA)"),
+            ] {
+                conn.execute(
+                    "INSERT INTO games
+                        (id, system_id, file_path, title, normalized_title, added_at)
+                     VALUES (?1, 'tg16', ?2, ?3, ?4, 0)",
+                    params![id, format!("/roms/{id}.pce"), title, title.to_lowercase()],
+                )
+                .expect("insert fixture game");
+            }
+            conn.execute(
+                "INSERT INTO game_group_defaults
+                    (system_id, base_title, preferred_game_id)
+                 VALUES ('tg16', 'castlevania', 'g-cv-jp')",
+                [],
+            )
+            .expect("insert fixture pin");
+            conn.pragma_update(None, "user_version", 20).expect("set v20");
+        }
+        let db = LibraryDb::open(&tmp).expect("open and migrate");
+
+        // Two identities: Castlevania (2 variants) + Bonk's Adventure.
+        let identities = db
+            .list_identities_for_system("tg16")
+            .expect("list identities");
+        assert_eq!(identities.len(), 2, "castlevania + bonk identities");
+        let cv = identities
+            .iter()
+            .find(|i| i.normalized_title == "castlevania")
+            .expect("castlevania identity");
+        assert_eq!(cv.canonical_title, "Castlevania");
+        assert_eq!(cv.id, LibraryDb::identity_id_for("tg16", "castlevania"));
+        // Pin copied into default_variant_id.
+        assert_eq!(cv.default_variant_id.as_deref(), Some("g-cv-jp"));
+        let bonk = identities
+            .iter()
+            .find(|i| i.normalized_title != "castlevania")
+            .expect("bonk identity");
+        assert_eq!(
+            bonk.default_variant_id, None,
+            "unpinned identity stays automatic"
+        );
+
+        // Every game row carries its identity stamp.
+        for g in db.list_games().expect("list games") {
+            let expected = if g.id == "g-bonk" { &bonk.id } else { &cv.id };
+            assert_eq!(
+                g.identity_id.as_deref(),
+                Some(expected.as_str()),
+                "game {} stamped with its identity",
+                g.id
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn add_games_stamps_identities_and_rebuild_is_idempotent() {
+        let db = fresh_db();
+        db.add_games(&[
+            row("a", "Castlevania (USA)"),
+            row("b", "Castlevania (Japan)"),
+            row("c", "Bonk's Adventure (USA)"),
+        ])
+        .expect("add");
+
+        let before = db
+            .list_identities_for_system("tg16")
+            .expect("list identities");
+        assert_eq!(before.len(), 2);
+        assert!(before.iter().all(|i| i.id.starts_with("idn-")));
+
+        // Re-running the rebuild reproduces the exact same id set —
+        // deterministic ids make the operation idempotent.
+        db.rebuild_identities_for_system("tg16").expect("rebuild");
+        let after = db
+            .list_identities_for_system("tg16")
+            .expect("list identities again");
+        let ids = |v: &[GameIdentityRow]| {
+            let mut out: Vec<String> = v.iter().map(|i| i.id.clone()).collect();
+            out.sort();
+            out
+        };
+        assert_eq!(ids(&before), ids(&after));
+    }
+
+    #[test]
+    fn identity_rebuild_regroups_on_retitle_and_sweeps_orphans() {
+        let db = fresh_db();
+        db.add_games(&[
+            row("a", "Castlevania (USA)"),
+            row("b", "Akumajou Dracula (Japan)"),
+        ])
+        .expect("add");
+        assert_eq!(
+            db.list_identities_for_system("tg16").expect("list").len(),
+            2,
+            "different titles start as separate identities"
+        );
+
+        // Identify retitles the Japanese dump to the canonical name
+        // (what apply_rom_hash does); the post-resolve rebuild must
+        // merge the groups and sweep the orphaned identity.
+        {
+            let conn = Connection::open(db.path()).expect("reopen");
+            conn.execute(
+                "UPDATE games SET title = 'Castlevania (Japan)' WHERE id = 'b'",
+                [],
+            )
+            .expect("retitle");
+        }
+        db.rebuild_identities_for_system("tg16").expect("rebuild");
+
+        let identities = db.list_identities_for_system("tg16").expect("list");
+        assert_eq!(identities.len(), 1, "merged into one identity");
+        assert_eq!(identities[0].canonical_title, "Castlevania");
+        let games = db.list_games().expect("games");
+        assert!(
+            games
+                .iter()
+                .all(|g| g.identity_id.as_deref() == Some(identities[0].id.as_str())),
+            "both variants re-stamped onto the surviving identity"
+        );
+    }
+
+    #[test]
+    fn delete_game_sweeps_orphan_identity() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Castlevania (USA)")]).expect("add");
+        assert_eq!(db.list_identities_for_system("tg16").expect("list").len(), 1);
+        db.delete_game("a").expect("delete");
+        assert!(
+            db.list_identities_for_system("tg16")
+                .expect("list")
+                .is_empty(),
+            "identity dies with its last variant"
+        );
+    }
+
+    #[test]
+    fn group_default_pin_dual_writes_identity() {
+        let db = fresh_db();
+        db.add_games(&[
+            row("a", "Castlevania (USA)"),
+            row("b", "Castlevania (Japan)"),
+        ])
+        .expect("add");
+
+        db.set_game_group_default("tg16", "Castlevania", "b")
+            .expect("pin");
+        let cv = &db.list_identities_for_system("tg16").expect("list")[0];
+        assert_eq!(cv.default_variant_id.as_deref(), Some("b"));
+
+        db.clear_game_group_default("tg16", "Castlevania")
+            .expect("unpin");
+        let cv = &db.list_identities_for_system("tg16").expect("list")[0];
+        assert_eq!(cv.default_variant_id, None, "clear resets to automatic");
+    }
+
+    #[test]
+    fn identity_metadata_survives_rebuild() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Castlevania (USA)")]).expect("add");
+        let id = db.list_identities_for_system("tg16").expect("list")[0]
+            .id
+            .clone();
+        db.update_identity_metadata(
+            &id,
+            &IdentityMetadataUpdate {
+                genre: Some("Platformer".to_string()),
+                year: Some(1989),
+                ..Default::default()
+            },
+        )
+        .expect("update metadata");
+
+        // A rescan-triggered rebuild upserts the identity row; the
+        // operator's metadata must come through untouched.
+        db.add_games(&[row("b", "Castlevania (Japan)")]).expect("add more");
+        let cv = db.get_identity(&id).expect("get").expect("still present");
+        assert_eq!(cv.genre.as_deref(), Some("Platformer"));
+        assert_eq!(cv.year, Some(1989));
     }
 
     #[test]

@@ -2060,6 +2060,18 @@ pub async fn resolve_rom_hashes_for_system(
         "rom_hashes: resolve_rom_hashes_for_system({systemId}) — scanned={} matched={} unmatched={} skipped_cd={} errors={}",
         summary.scanned, summary.matched, summary.unmatched, summary.skipped_cd, summary.errors,
     );
+
+    // VL Phase E — identify retitles games to canonical names, which
+    // can merge/split identity groups ("Castlevania" + "Akumajou
+    // Dracula" become one group once both resolve to the canonical
+    // title). One rebuild at the end of the flow covers every per-game
+    // stamp above; per-stamp rebuilds would be O(n²) title parses.
+    if summary.matched > 0 {
+        if let Err(e) = db.rebuild_identities_for_system(&systemId) {
+            log::warn!("rom_hashes: identity rebuild after resolve failed: {e}");
+        }
+    }
+
     let _ = app.emit("oa://rom-hash-resolve-complete", &summary);
     // Phase 4a hash_resolve — finalize via the RAII guard. Earlier
     // `?` propagations would auto-fail via Drop instead of leaving
