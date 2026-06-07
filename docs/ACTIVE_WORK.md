@@ -151,6 +151,21 @@ spanned every system but was filed under whichever core happened to be active.
       (everything passes). Foundation for VL Phase F's Preservation
       Vault filter ribbon. 790 oa-shell tests pass (744 baseline + 46
       new); frontend typecheck silent.
+    - **A3 — Tier-5 deep-dive — DEFERRED 2026-06-07.** Structural
+      matching (internal header title extraction, archive intro-
+      spection, trimmed-CRC32 fallback) was the natural ~1-week
+      next slice after A2; operator chose to park it. Reason for
+      deferral: the current 4-tier chain (Hash / Header / Extension
+      / Hint) plus A1's fuzzy-filename fallback plus A2's typed
+      tags already covers the bulk of real-world library hit-rate;
+      Tier-5 yield isn't quantified yet, so it'd be ~1 week of
+      build for unclear payoff. Reconsider when: (a) operator's
+      hit-rate measurement on a real library surfaces a meaningful
+      un-matched chunk that structural matching could close, or
+      (b) a specific system class (e.g. archived MAME variants,
+      trimmed GBA dumps) starts hitting the unidentified queue
+      visibly. Plan source: [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md)
+      §6 Phase A (A3 sub-bullet).
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites.
