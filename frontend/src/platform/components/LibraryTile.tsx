@@ -125,7 +125,16 @@ const LibraryTile: Component<Props> = (props) => {
   };
   // `coverUrl` is reactive via the MediaContext store — changing variants
   // (region pick, manual override, sync) causes this to re-render the <img>.
-  const coverSrc = () => media.coverUrl(props.entry.systemId, props.entry.id);
+  // VL Phase E Sub-phase 3 — the identity's media key (canonical
+  // "parent" artwork, keyed by `idn-…` in the same MediaDb) wins when
+  // present; the per-file key is the everyday fallback. Nothing writes
+  // identity-key art yet — the resolution order ships ahead of the
+  // canonical-art management UI (Phase B/F) so it lights up when that
+  // lands.
+  const coverSrc = () =>
+    (props.entry.identityId
+      ? media.coverUrl(props.entry.systemId, props.entry.identityId)
+      : null) ?? media.coverUrl(props.entry.systemId, props.entry.id);
 
   // Per-tile load/error state so we can show shimmer while the image
   // streams in and gracefully fall back to the gradient on error.

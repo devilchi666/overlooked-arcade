@@ -28,6 +28,7 @@ import {
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { useTheme } from "./context";
 
 type Props = {
   entry: RomEntry;
@@ -205,10 +206,36 @@ const GameDetailPanel: Component<Props> = (props) => {
     }
   }
 
-  const metadata = () => media.media(props.entry.id)?.metadata;
+  // VL Phase E Sub-phase 3 — the header reads canonical (identity)
+  // metadata first: the game's year/genre/developer/publisher live on
+  // its game_identities row (filled by the enrichment pass or operator
+  // edits) and apply to every variant. Per-file MediaDb metadata is
+  // the fallback; description stays per-file (identities don't carry
+  // one yet).
+  const ctx = useTheme();
+  const identityGroup = () =>
+    ctx.library.groupsByVariantId().get(props.entry.id);
+  const metadata = () => {
+    const m = media.media(props.entry.id)?.metadata;
+    const g = identityGroup();
+    if (!g?.identityId) return m;
+    return {
+      year: g.year ?? m?.year,
+      genre: g.genre ?? m?.genre,
+      developer: g.developer ?? m?.developer,
+      publisher: g.publisher ?? m?.publisher,
+      players: g.players ?? m?.players,
+      description: m?.description,
+    };
+  };
   const themeName = () =>
     systemThemes[props.entry.systemId]?.displayName ?? props.entry.systemId;
-  const coverSrc = () => media.coverUrl(props.entry.systemId, props.entry.id);
+  // Identity-key (canonical parent) art wins; per-file art falls back —
+  // same resolution order as LibraryTile.
+  const coverSrc = () =>
+    (props.entry.identityId
+      ? media.coverUrl(props.entry.systemId, props.entry.identityId)
+      : null) ?? media.coverUrl(props.entry.systemId, props.entry.id);
 
   // Screenshots — gameplay variants, capped at 3. Falls back to empty
   // when not synced.

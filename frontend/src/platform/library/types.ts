@@ -67,6 +67,12 @@ export type RomEntry = {
   /// at-a-glance disc count. Backend never sets this; it survives
   /// only inside the collapsed list passed to the grid renderer.
   discSetMemberCount?: number;
+  /// VL Phase E — id of the `game_identities` row this file is a
+  /// variant of (`idn-…`). Stamped by the backend's identity rebuild;
+  /// undefined only transiently between an insert and the next
+  /// rebuild. Cover resolution tries the identity's media key (the
+  /// canonical "parent" artwork slot) before the per-file key.
+  identityId?: string;
 };
 
 export type LibraryState = {
@@ -112,15 +118,47 @@ export type VariantInfo = {
   isBios: boolean;
   isHomebrew: boolean;
   translationLanguages: string[];
+  // --- VL Phase E Sub-phase 2 — per-variant stats. The group-level
+  // fields aggregate these; Phase B's Variants tab renders them
+  // per-dump.
+  favorite: boolean;
+  completed: boolean;
+  playTimeSecs: number;
+  lastPlayedAt?: number;
 };
 
-/// A multi-variant group (e.g. all dumps of "Castlevania" on TG-16).
-/// `displayBaseTitle` is what the tile shows; `variants` carries every
-/// dump in priority order.
+/// An identity-backed variant group (e.g. all dumps of "Castlevania"
+/// on TG-16). `displayBaseTitle` is the identity's canonical title —
+/// what the tile shows; `variants` carries every dump in priority
+/// order. VL Phase E Sub-phase 2 added the identity linkage, canonical
+/// metadata pass-through, and per-identity stat aggregates.
 export type GameGroupInfo = {
   systemId: SystemId;
   baseTitleKey: string;
   displayBaseTitle: string;
+  /// Backing `game_identities` row. Absent only for transient
+  /// unstamped rows (the backend heals them on the next rebuild).
+  identityId?: string;
   defaultVariantId: RomId;
+  // --- Canonical metadata (identity row; filled by the enrichment
+  // --- pass or operator edits — undefined until then).
+  year?: number;
+  genre?: string;
+  developer?: string;
+  publisher?: string;
+  players?: number;
+  rating?: number;
+  /// Identity's explicit parent cover when set, else the default
+  /// variant's per-file cover path (games-table copy; the MediaDb
+  /// remains the canonical art source for tiles).
+  canonicalCoverPath?: string;
+  // --- Per-identity stats, aggregated across ALL the identity's
+  // --- files (one total shared by a multi-disc game's disc tiles).
+  totalPlayTimeSecs: number;
+  /// True when any variant is favorited.
+  favorite: boolean;
+  /// True when any variant is marked completed.
+  completed: boolean;
+  lastPlayedAt?: number;
   variants: VariantInfo[];
 };

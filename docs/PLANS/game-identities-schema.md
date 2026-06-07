@@ -127,15 +127,36 @@ per-file columns intact, so nothing migrates *off* the games table.
   canonical-title search lands naturally with the tile/search
   rendering swap.
 
-### Sub-phase 3 — MediaDb identity keyspace + frontend + enrichment
+### Sub-phase 3 — MediaDb identity keyspace + frontend + enrichment — ✅ shipped 2026-06-07
 
-- `identity_media` keyspace in media.json (canonical/parent artwork;
-  per-file media untouched per arc decision S4).
-- Enrichment pass per D4: canonical metadata from default variant's
-  MediaDb metadata; runs post-identify + on demand.
-- Frontend: tiles render identity canonical title/cover;
-  GameDetailPanel header shows canonical metadata; search hits
-  identities once, not per-file.
+- **Identity media keyspace = the same `media.json` map, keyed by
+  identity id.** Identity ids are `idn-`-prefixed and can't collide
+  with rom ids, so canonical (parent) artwork rides the existing
+  MediaDb machinery — variants, pins, slot URLs — for free. Frontend
+  cover resolution (LibraryTile / DetailListView / GameDetailPanel)
+  tries the identity key first, per-file second. Nothing *writes*
+  identity-key art yet; the resolution order ships ahead of the
+  canonical-art management UI (Phase B/F).
+- **Enrichment pass** (`metadata::enrich_identities_from_media`):
+  merges member variants' `GameMedia.metadata` (first non-null per
+  field, members in id order) and fills the identity row's NULL
+  columns via `enrich_identity_metadata` (COALESCE(existing, new) —
+  the mirror of operator-edit semantics; never overwrites). Runs at
+  every startup (idempotent backfill, covers pre-existing synced
+  libraries) and at the end of each `sync_metadata_for_system`.
+  Deviation from the original sketch: the merge spans ALL members,
+  not just the ranked default — better fill rate, same values in
+  the overwhelmingly common case.
+- **Frontend:** tiles show the identity's canonical title
+  (`collapseVariantGroups` rewrites the representative's title;
+  singleton groups now included in `groupsByVariantId` so EVERY tile
+  is identity-backed); sort runs after collapse so tiles order by
+  what they display; search matches canonical title in addition to
+  per-file titles; GameDetailPanel header prefers identity metadata
+  (description stays per-file — identities don't carry one).
+- **Editable**: identity metadata is editable at the library_db
+  layer (`update_identity_metadata`); the operator-facing editor
+  surface lands with Phase B's GamePropertiesDialog identity tab.
 
 ### Exit criteria (from the arc plan)
 

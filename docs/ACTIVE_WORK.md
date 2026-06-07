@@ -223,9 +223,21 @@ spanned every system but was filed under whichever core happened to be active.
       `game_group_defaults` is dead — dropped in a later cleanup
       migration. Canonical-title search moved to Sub-phase 3.
       801 oa-shell tests pass (796 baseline + 5 net new).
-    - **E Sub-phase 3 queued** — MediaDb `identity_media`
-      keyspace + canonical-metadata enrichment pass + frontend
-      (tiles/detail/search render from identities).
+    - **E Sub-phase 3 ✅ shipped 2026-06-07** (branch
+      `feat/virtual-library-phase-e3`, awaiting operator playtest
+      before merge). Identity media keyspace = same media.json map
+      keyed by `idn-…` ids (existing MediaDb machinery free; cover
+      resolution tries identity key → per-file; no writer yet —
+      canonical-art UI lands Phase B/F). Enrichment pass merges
+      member variants' MediaDb metadata onto identity rows
+      (fill-NULL-only; startup backfill + post-metadata-sync
+      hook). Frontend: tiles show canonical titles (singleton
+      groups now in `groupsByVariantId` — every tile
+      identity-backed), sort runs post-collapse, search matches
+      canonical titles, GameDetailPanel header prefers identity
+      metadata. 803 oa-shell tests pass; typecheck silent.
+      **Merging this completes Phase E** (identity editor UI
+      rides Phase B).
   - **Phase B — two-mode UX + Collection Health (~2 weeks):** global
     Casual / Preservation toggle; Variants tab on GameDetailPanel;
     System Health Overview gains % verified / % covers / % metadata

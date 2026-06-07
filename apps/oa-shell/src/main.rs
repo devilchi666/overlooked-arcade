@@ -2980,6 +2980,27 @@ fn main() {
                             log::warn!("mame_games: bake-on-launch failed: {e}");
                         }
 
+                        // VL Phase E Sub-phase 3 — canonical-metadata
+                        // backfill. Pushes per-file MediaDb metadata up
+                        // onto game_identities (fill-NULL-only, so
+                        // operator edits and prior enrichments stick).
+                        // Idempotent and cheap (one pass over the games
+                        // list + a handful of UPDATEs); running every
+                        // launch covers libraries whose metadata was
+                        // synced before this code existed.
+                        {
+                            let media_r = media_db.read().expect("media db read lock");
+                            match metadata::enrich_identities_from_media(&db, &media_r, None) {
+                                Ok(n) if n > 0 => log::info!(
+                                    "oa-shell: identity metadata backfill filled {n} identity row(s)"
+                                ),
+                                Ok(_) => {}
+                                Err(e) => log::warn!(
+                                    "oa-shell: identity metadata backfill failed: {e}"
+                                ),
+                            }
+                        }
+
                         // Background-jobs registry — opens its own
                         // connection to the same games.sqlite (WAL
                         // mode keeps the two connections safe). Must
