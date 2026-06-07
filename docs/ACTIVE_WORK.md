@@ -55,9 +55,8 @@ spanned every system but was filed under whichever core happened to be active.
     (component file) to new `platform/layout/types.ts` so platform
     code (`platform/library/filter.ts`) doesn't depend on a
     component module. 790 oa-shell tests pass; typecheck silent.
-  - **Phase 2 Slice C ✅ shipped 2026-06-07** (branch
-    `feat/theming-substrate-phase-2-slice-c`, awaiting operator
-    playtest before merge). 13 component moves into
+  - **Phase 2 Slice C ✅ shipped + merged 2026-06-07** (merge
+    `e6b6568`; operator playtest passed). 13 component moves into
     `platform/components/` — the 6 declared (`LibraryTile`,
     `LibraryView`, `perSystemSections`, `Dialog`, `LeftSidebar`,
     `SidebarTreeNode`) + the 7-file private sub-component cluster
@@ -67,8 +66,9 @@ spanned every system but was filed under whichever core happened to be active.
     `ThemeContext` / `useTheme()` rename across 11 files;
     `ThemeManifest` type in `platform/theme/manifest.ts`. 790
     oa-shell tests pass; typecheck silent. **Phase 2 complete**
-    modulo the ESLint boundary rule (deferred to Phase 4). Merge →
-    ARC 1 pauses per plan §7: VL Phase E + C land before Phase 3.
+    modulo the ESLint boundary rule (deferred to Phase 4).
+    **ARC 1 now PAUSED per plan §7** — VL Phase E + C land before
+    theming Phase 3 resumes.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
@@ -83,7 +83,11 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: Phase A1 — disc-track SHA-1 matching.**
+  **Current slice: Phase E — schema promotion** (next up as of
+  2026-06-07: Phase A wrapped via A2 merge + A3 deferral, and the
+  theming arc's Phase-2 pause hands the floor to VL Phase E + C
+  per theming plan §7). Still pending operator-side from Phase A:
+  the A1 hit-rate measurement (run Identify ROMs on a disc system).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
