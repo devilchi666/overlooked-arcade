@@ -1249,6 +1249,22 @@ impl LibraryDb {
         )
         .map_err(|e| format!("identity orphan cleanup: {e}"))?;
 
+        // Dangling-pin sweep: deleting (or regrouping away) the pinned
+        // variant must drop the pin back to automatic ranking — the
+        // legacy game_group_defaults table got this for free via FK
+        // cascade; identities reproduce it here.
+        conn.execute(
+            "UPDATE game_identities
+                SET default_variant_id = NULL
+              WHERE system_id = ?1
+                AND default_variant_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM games g
+                                 WHERE g.id = game_identities.default_variant_id
+                                   AND g.identity_id = game_identities.id)",
+            params![system_id],
+        )
+        .map_err(|e| format!("identity dangling-pin sweep: {e}"))?;
+
         Ok(live)
     }
 
@@ -3634,13 +3650,15 @@ impl LibraryDb {
 
     /// Pin a (system_id, base_title) group to a specific variant. The
     /// next time the library is rendered, this group's default tile
-    /// represents `preferred_game_id`. The base_title is stored
-    /// lowercased so case-quirky upstream titles still match.
+    /// represents `preferred_game_id`. The base_title is lowercased to
+    /// match `game_identities.normalized_title`.
     ///
-    /// VL Phase E dual-write: the pin also lands on the matching
-    /// `game_identities.default_variant_id` so the two stores stay
-    /// converged until Sub-phase 2 swaps the read path to identities
-    /// and retires this table.
+    /// VL Phase E Sub-phase 2 — the pin lives ONLY on
+    /// `game_identities.default_variant_id` now. The legacy
+    /// `game_group_defaults` table is no longer written or read (it
+    /// stays on disk for the downgrade path until a later cleanup
+    /// migration drops it; the v23 migration's pin copy is its last
+    /// reader).
     pub fn set_game_group_default(
         &self,
         system_id: &str,
@@ -3649,25 +3667,27 @@ impl LibraryDb {
     ) -> Result<(), String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let base_key = base_title.to_lowercase();
-        conn.execute(
-            "INSERT OR REPLACE INTO game_group_defaults
-               (system_id, base_title, preferred_game_id)
-             VALUES (?1, ?2, ?3)",
-            params![system_id, &base_key, preferred_game_id],
-        )
-        .map_err(|e| format!("set_game_group_default: {e}"))?;
-        conn.execute(
-            "UPDATE game_identities SET default_variant_id = ?3
-              WHERE system_id = ?1 AND normalized_title = ?2",
-            params![system_id, &base_key, preferred_game_id],
-        )
-        .map_err(|e| format!("set_game_group_default identity mirror: {e}"))?;
+        let n = conn
+            .execute(
+                "UPDATE game_identities SET default_variant_id = ?3
+                  WHERE system_id = ?1 AND normalized_title = ?2",
+                params![system_id, &base_key, preferred_game_id],
+            )
+            .map_err(|e| format!("set_game_group_default: {e}"))?;
+        if n == 0 {
+            // Identity should always exist (rebuilds maintain them);
+            // log loudly rather than silently dropping the pin.
+            log::warn!(
+                "library_db: set_game_group_default found no identity for \
+                 ({system_id}, {base_key}) — pin not stored"
+            );
+        }
         Ok(())
     }
 
     /// Remove a group's variant pin so the priority resolver falls back
     /// to its region/revision rules. Idempotent: clearing a non-existent
-    /// row is a no-op. Dual-write per `set_game_group_default`.
+    /// pin is a no-op.
     pub fn clear_game_group_default(
         &self,
         system_id: &str,
@@ -3676,16 +3696,11 @@ impl LibraryDb {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let base_key = base_title.to_lowercase();
         conn.execute(
-            "DELETE FROM game_group_defaults WHERE system_id = ?1 AND base_title = ?2",
-            params![system_id, &base_key],
-        )
-        .map_err(|e| format!("clear_game_group_default: {e}"))?;
-        conn.execute(
             "UPDATE game_identities SET default_variant_id = NULL
               WHERE system_id = ?1 AND normalized_title = ?2",
             params![system_id, &base_key],
         )
-        .map_err(|e| format!("clear_game_group_default identity mirror: {e}"))?;
+        .map_err(|e| format!("clear_game_group_default: {e}"))?;
         Ok(())
     }
 
@@ -3796,31 +3811,24 @@ impl LibraryDb {
         })
     }
 
-    /// Return every group→preferred-game-id pin for a system. The
-    /// aggregator consults this map when picking the default variant of
-    /// each group; an unpinned group falls back to the priority rules.
-    pub fn list_game_group_defaults_for_system(
-        &self,
-        system_id: &str,
-    ) -> Result<std::collections::HashMap<String, String>, String> {
+    /// Every identity across every system, one query. `list_game_groups`
+    /// builds its id→identity lookup from this.
+    pub fn list_identities(&self) -> Result<Vec<GameIdentityRow>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT base_title, preferred_game_id
-                 FROM game_group_defaults WHERE system_id = ?1",
+                "SELECT id, system_id, canonical_title, normalized_title,
+                        year, genre, developer, publisher, players, rating,
+                        canonical_cover_path, default_variant_id
+                 FROM game_identities",
             )
-            .map_err(|e| format!("prepare list_group_defaults: {e}"))?;
+            .map_err(|e| format!("prepare list_identities: {e}"))?;
         let rows = stmt
-            .query_map(params![system_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|e| format!("query list_group_defaults: {e}"))?;
-        let mut out = std::collections::HashMap::new();
-        for r in rows {
-            let (base, game_id) = r.map_err(|e| format!("row list_group_defaults: {e}"))?;
-            out.insert(base, game_id);
-        }
-        Ok(out)
+            .query_map([], Self::identity_from_row)
+            .map_err(|e| format!("query list_identities: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect list_identities: {e}"))?;
+        Ok(rows)
     }
 
     /// Diagnostic — how many game_serials rows we hold for a given
@@ -7734,34 +7742,46 @@ mod tests {
 
     #[test]
     fn game_group_defaults_crud() {
+        // VL Phase E Sub-phase 2 — pins live on
+        // game_identities.default_variant_id; the legacy
+        // game_group_defaults table is no longer written or read.
         let db = fresh_db();
-        db.add_games(&[row("g1", "Castlevania (USA).nes"), row("g2", "Castlevania (Japan).nes")])
+        db.add_games(&[row("g1", "Castlevania (USA)"), row("g2", "Castlevania (Japan)")])
             .expect("seed games");
 
-        // Initially no defaults.
-        let m = db
-            .list_game_group_defaults_for_system("tg16")
-            .expect("list empty");
-        assert!(m.is_empty());
+        let pin = |db: &LibraryDb| -> Option<String> {
+            db.list_identities_for_system("tg16")
+                .expect("list identities")
+                .into_iter()
+                .find(|i| i.normalized_title == "castlevania")
+                .and_then(|i| i.default_variant_id)
+        };
 
-        // Set, list, clear.
+        // Initially no pin.
+        assert_eq!(pin(&db), None);
+
+        // Set, read, re-set.
         db.set_game_group_default("tg16", "Castlevania", "g1").expect("set");
-        let m = db.list_game_group_defaults_for_system("tg16").expect("list");
-        assert_eq!(m.get("castlevania").map(String::as_str), Some("g1"));
-
-        // Idempotent re-set switches to a different variant.
+        assert_eq!(pin(&db).as_deref(), Some("g1"));
         db.set_game_group_default("tg16", "Castlevania", "g2").expect("re-set");
-        let m = db.list_game_group_defaults_for_system("tg16").expect("re-list");
-        assert_eq!(m.get("castlevania").map(String::as_str), Some("g2"));
-        assert_eq!(m.len(), 1, "re-set replaces, doesn't dupe");
+        assert_eq!(pin(&db).as_deref(), Some("g2"));
 
-        // Cascade: deleting the pinned game removes the default row.
+        // Cascade: deleting the pinned game clears the pin (the
+        // post-delete rebuild's dangling-pin sweep — replaces the old
+        // table's FK cascade).
         db.delete_game("g2").expect("delete g2");
-        let m = db.list_game_group_defaults_for_system("tg16").expect("post-cascade");
-        assert!(m.is_empty(), "default cascades on game delete");
+        assert_eq!(pin(&db), None, "pin cleared when its variant is deleted");
 
-        // Clear is idempotent on missing rows.
+        // Clear is idempotent on missing pins.
         db.clear_game_group_default("tg16", "Nothing Set").expect("clear noop");
+
+        // The legacy table stays untouched (still exists for the
+        // downgrade path; nothing writes it post-Sub-phase-2).
+        let conn = Connection::open(db.path()).expect("reopen");
+        let legacy_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM game_group_defaults", [], |r| r.get(0))
+            .expect("count legacy");
+        assert_eq!(legacy_rows, 0, "legacy pin table no longer written");
     }
 
     #[test]

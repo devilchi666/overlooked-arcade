@@ -102,17 +102,30 @@ per-file columns intact, so nothing migrates *off* the games table.
   copied, rebuild reassigns on insert/retitle, orphans deleted.
 - **No frontend or read-path changes.** App behaves identically.
 
-### Sub-phase 2 — read path swap (backend)
+### Sub-phase 2 — read path swap (backend) — ✅ shipped 2026-06-07
 
-- `list_game_groups` reads identity rows (JOIN games) instead of
-  recomputing; variant ranking inside a group preserved verbatim.
-  `GameGroup` gains `identity_id` + canonical metadata fields.
-- Per-identity stats: aggregate play_time / favorite / completed
-  exposed on the group payload.
-- `set_game_group_default` → writes `default_variant_id` only;
-  legacy `game_group_defaults` writes retired.
-- Cross-file search keys on canonical title (FTS over identities or
-  JOIN).
+- `build_groups` rewritten identity-backed: group key =
+  `games.identity_id`; identity supplies canonical title (display
+  authority), metadata pass-through, explicit-cover-else-default-
+  variant cover, and the pin. Variant ranking preserved verbatim
+  (`compare_variants` untouched). Unstamped rows fall back to the
+  old in-memory parse grouping; `list_game_groups` lazily heals
+  them with a rebuild + warn log.
+- Per-identity stats on the group payload: `total_play_time_secs`
+  (sum), `favorite` / `completed` (any-variant), `last_played_at`
+  (max) — aggregated across ALL the identity's files, so FF7's
+  per-disc groups each show the same identity totals. `GameVariant`
+  gains the per-file stats for Phase B's Variants tab.
+- `set_game_group_default` / `clear_game_group_default` write ONLY
+  `game_identities.default_variant_id`. Legacy `game_group_defaults`
+  is no longer written or read (v23's pin copy was its last reader);
+  the table is dropped in a later cleanup migration. The old FK
+  cascade (pin dies with its game) is reproduced by a dangling-pin
+  sweep inside the rebuild.
+- Cross-file search on canonical title: **moved to Sub-phase 3**
+  alongside the frontend work — the search UI consumes groups, so
+  canonical-title search lands naturally with the tile/search
+  rendering swap.
 
 ### Sub-phase 3 — MediaDb identity keyspace + frontend + enrichment
 

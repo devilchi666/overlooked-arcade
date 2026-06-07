@@ -207,11 +207,22 @@ spanned every system but was filed under whichever core happened to be active.
       dual-writes both stores until Sub-phase 2 swaps the read
       path. Backend-only — zero behavior change visible in the
       UI. 796 oa-shell tests pass (790 baseline + 6 new).
-    - **E Sub-phase 2 queued** — read-path swap:
-      `list_game_groups` reads identity rows (JOIN) instead of
-      recomputing; `GameGroup` gains identity_id + canonical
-      metadata; per-identity play_time/favorite/completed
-      aggregates; legacy `game_group_defaults` writes retired.
+    - **E Sub-phase 2 ✅ shipped 2026-06-07** (branch
+      `feat/virtual-library-phase-e2`, awaiting operator playtest
+      before merge). Read-path swap: `build_groups` is
+      identity-backed (group key = `games.identity_id`; identity
+      supplies canonical title / metadata / cover fallback / pin;
+      ranking preserved verbatim; unstamped rows fall back to
+      parse grouping + lazy heal in `list_game_groups`).
+      `GameGroup` gains identity_id + canonical metadata +
+      per-identity stats (play_time sum, any-favorite,
+      any-completed, max last_played) aggregated across discs;
+      `GameVariant` gains per-file stats for Phase B's Variants
+      tab. Pins write ONLY `game_identities.default_variant_id`
+      now (dangling-pin sweep replaces the legacy FK cascade);
+      `game_group_defaults` is dead — dropped in a later cleanup
+      migration. Canonical-title search moved to Sub-phase 3.
+      801 oa-shell tests pass (796 baseline + 5 net new).
     - **E Sub-phase 3 queued** — MediaDb `identity_media`
       keyspace + canonical-metadata enrichment pass + frontend
       (tiles/detail/search render from identities).

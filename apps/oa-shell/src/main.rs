@@ -8988,15 +8988,18 @@ fn list_games(db: tauri::State<'_, library_db::LibraryDb>) -> Result<Vec<library
     db.list_games()
 }
 
-/// List every game in the library, grouped by `(system_id, base_title)`
-/// — so different regions / revisions of the same game render as one
-/// library tile with variants behind it. Frontend uses this for the
-/// library view and the right-click "Run version" submenu.
+/// List every game in the library, grouped into identity-backed
+/// variant groups — different regions / revisions of the same game
+/// render as one library tile with variants behind it. Frontend uses
+/// this for the library view and the right-click "Run version" submenu.
 ///
-/// Priority resolution: OA-wide region+revision prefs from
+/// VL Phase E Sub-phase 2 — the group key is `games.identity_id`
+/// (stamped by `rebuild_identities_for_system`); the identity row
+/// supplies the canonical title / metadata / pin, and the group
+/// carries per-identity stat aggregates. Priority resolution within a
+/// group is unchanged: OA-wide region+revision prefs from
 /// `library_prefs`, with each game's `system_id` consulting its
-/// `system_settings.json` for an override. Per-group user pins live in
-/// `game_group_defaults` and override the priority rules.
+/// `system_settings.json` for an override.
 #[tauri::command]
 #[allow(non_snake_case)]
 fn list_game_groups(
@@ -9005,14 +9008,46 @@ fn list_game_groups(
 ) -> Result<Vec<library_groups::GameGroup>, String> {
     let app_data_dir = &state.app_data_dir;
     let prefs = library_prefs::read_library_prefs(app_data_dir);
-    let games = db.list_games()?;
+    let mut games = db.list_games()?;
+
+    // Lazy heal — every mutation path rebuilds identities inline, so
+    // unstamped rows should be rare (a crash between insert and
+    // rebuild, or a row written by an external tool). One rebuild per
+    // affected system fixes them for good; the in-memory fallback in
+    // build_groups would render them fine either way, but healing here
+    // keeps the DB converged.
+    let mut unstamped: Vec<String> = games
+        .iter()
+        .filter(|g| g.identity_id.is_none())
+        .map(|g| g.system_id.clone())
+        .collect();
+    if !unstamped.is_empty() {
+        unstamped.sort();
+        unstamped.dedup();
+        log::info!(
+            "library: {} system(s) carry games with no identity stamp; rebuilding: {:?}",
+            unstamped.len(),
+            unstamped
+        );
+        for system_id in &unstamped {
+            db.rebuild_identities_for_system(system_id)?;
+        }
+        games = db.list_games()?;
+    }
+
+    // One query for every identity; build_groups wants an id→row map.
+    use std::collections::HashMap;
+    let identities: HashMap<String, library_db::GameIdentityRow> = db
+        .list_identities()?
+        .into_iter()
+        .map(|i| (i.id.clone(), i))
+        .collect();
 
     // Group the games by system_id first so we read per-system settings
     // once per system, not per-game. The aggregator runs once per
     // system with that system's effective priority prefs, and we
-    // concatenate the resulting groups (they never overlap because the
-    // group key includes system_id).
-    use std::collections::HashMap;
+    // concatenate the resulting groups (they never overlap because
+    // identity ids are per-system by construction).
     let mut by_system: HashMap<String, Vec<library_db::GameRow>> = HashMap::new();
     for g in games {
         by_system.entry(g.system_id.clone()).or_default().push(g);
@@ -9028,18 +9063,11 @@ fn list_game_groups(
         let revision_priority = sys
             .revision_priority_override
             .unwrap_or(prefs.revision_priority);
-        let defaults_for_system = db.list_game_group_defaults_for_system(&system_id)?;
-        // The aggregator wants (system_id, base_key) tuples; the DB
-        // already returns just base_key (lowercased) so wrap.
-        let defaults: HashMap<(String, String), String> = defaults_for_system
-            .into_iter()
-            .map(|(base, gid)| ((system_id.clone(), base), gid))
-            .collect();
         let mut groups = library_groups::build_groups(
             games,
             &region_priority,
             revision_priority,
-            &defaults,
+            &identities,
         );
         out.append(&mut groups);
     }
