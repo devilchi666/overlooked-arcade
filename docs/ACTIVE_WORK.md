@@ -55,12 +55,22 @@ spanned every system but was filed under whichever core happened to be active.
     (component file) to new `platform/layout/types.ts` so platform
     code (`platform/library/filter.ts`) doesn't depend on a
     component module. 790 oa-shell tests pass; typecheck silent.
-  - **Phase 2 Slice C queued** — shared component moves
-    (`components/{LibraryTile,LibraryView,perSystemSections}` +
-    `layout/{LeftSidebar,SidebarTreeNode,Dialog}` → `platform/components/`)
-    + `ThemeContext` rename + Theme manifest TOML schema. ESLint
-    boundary rule defers to Phase 4 alongside Tauri-bridge work.
-    Operator decisions locked 2026-06-06: one unified
+  - **Phase 2 Slice C ✅ shipped 2026-06-07** (branch
+    `feat/theming-substrate-phase-2-slice-c`, awaiting operator
+    playtest before merge). 13 component moves into
+    `platform/components/` — the 6 declared (`LibraryTile`,
+    `LibraryView`, `perSystemSections`, `Dialog`, `LeftSidebar`,
+    `SidebarTreeNode`) + the 7-file private sub-component cluster
+    (`DiscPickerDialog`, `DetailListView`, `GridControls`,
+    `VirtualLibraryGrid`, `SystemHeader`, `SidebarMigrationBanner`,
+    `SettingRow`) per operator decision; `RetroverseContext` →
+    `ThemeContext` / `useTheme()` rename across 11 files;
+    `ThemeManifest` type in `platform/theme/manifest.ts`. 790
+    oa-shell tests pass; typecheck silent. **Phase 2 complete**
+    modulo the ESLint boundary rule (deferred to Phase 4). Merge →
+    ARC 1 pauses per plan §7: VL Phase E + C land before Phase 3.
+  - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
+    work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
     theme swap = restart (ARC 1); build-time bundling only
     (ARC 1); Kiosk plan's 4-layer substrate absorbed. Sequencing:

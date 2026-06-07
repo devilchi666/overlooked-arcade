@@ -13,7 +13,7 @@ import {
   SortableContainerNode,
   SortableLeafNode,
   type SidebarTreeContext,
-} from "../layout/SidebarTreeNode";
+} from "@oa/platform/components/SidebarTreeNode";
 import { findNode } from "@oa/platform/views/resolver";
 import type { ViewsStore } from "@oa/platform/views/store";
 import type {

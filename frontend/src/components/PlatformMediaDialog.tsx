@@ -22,7 +22,7 @@ import {
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 

@@ -45,7 +45,7 @@ import { useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
 import { getSystemInfo, type MergedSystemInfo } from "@oa/platform/library/systemInfo";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 
 function formatHours(secs: number): string {
   if (secs <= 0) return "—";
@@ -196,7 +196,7 @@ const Carousel: Component<{
 };
 
 const HomePage: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const media = useMedia();
   const platformMedia = usePlatformMedia();
 

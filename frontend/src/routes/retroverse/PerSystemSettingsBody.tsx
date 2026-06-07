@@ -17,7 +17,7 @@ import {
   PerSystemRewindSection,
   PerSystemShadersSection,
   usePerSystemOverrides,
-} from "../../components/perSystemSections";
+} from "@oa/platform/components/perSystemSections";
 import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,

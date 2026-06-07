@@ -25,7 +25,7 @@ import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { useDomQueryFocusGroup } from "../../nav/focus";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 
 // Per-system classification for the Quick / Marathon / Challenge moods.
 // We don't track session length per launch, so we use the system as a
@@ -341,7 +341,7 @@ function pickRandom<T>(pool: readonly T[]): T | null {
 }
 
 const PlayNowPage: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const media = useMedia();
   const [activeMoodId, setActiveMoodId] = createSignal<MoodId>("for-you");
 

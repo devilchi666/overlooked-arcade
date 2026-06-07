@@ -72,7 +72,7 @@ import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
-import { RetroverseProvider } from "./routes/retroverse/context";
+import { ThemeProvider } from "./routes/retroverse/context";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
 import {
   engineSurfaceOpen,
@@ -869,7 +869,7 @@ const App: Component = () => {
   /// Post-launch UI bridge. Status toast, gameRunning flip, runningEntry
   /// capture, single-window library auto-hide. Shared between
   /// GameInfoModal's onLaunched callback (modal launch path) and
-  /// RetroverseContext's onPostLaunch (Retroverse GameDetailPanel
+  /// ThemeContext's onPostLaunch (Retroverse GameDetailPanel
   /// launch path). Tile-click launches go through handleLaunch
   /// directly — handleLaunch does these updates inline so the
   /// modal/panel callback isn't on the hot path.
@@ -1443,7 +1443,7 @@ const App: Component = () => {
           unmounted so wgpu emulator pixels paint into the WebView's
           transparent background; Esc / Ctrl+W toggle libraryVisible
           back, gameMode goes false, the shell re-renders. */}
-      <RetroverseProvider
+      <ThemeProvider
         value={{
           library,
           customCollections,
@@ -1482,8 +1482,8 @@ const App: Component = () => {
         </Show>
         {/* Engine surface — fullscreen takeover hosting Settings + the
             surfaces enumerated in docs/features/theming-substrate/SURFACES.md.
-            Mounted inside RetroverseProvider for Phase 1 so SettingsPanel's
-            useRetroverse() resolves; Phase 2's platform extraction moves
+            Mounted inside ThemeProvider for Phase 1 so SettingsPanel's
+            useTheme() resolves; Phase 2's platform extraction moves
             the store reads to a dedicated PlatformProvider that survives
             independently of any theme. Summoned by F12 (above), Select+Start
             chord, or the EngineSummonIcon RetroverseShell mounts in its
@@ -1493,7 +1493,7 @@ const App: Component = () => {
             chrome — though the surface itself uses fixed positioning so
             DOM order is largely irrelevant. */}
         <EngineManagerSurface />
-      </RetroverseProvider>
+      </ThemeProvider>
       {/* StylusOverlay — cursor reticle for stylus-using systems
           (NDS today). `fixed` positioning + z-30 + 28x28 footprint, so
           no z-order conflict with the Retroverse chrome. Renders

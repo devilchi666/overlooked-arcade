@@ -9,15 +9,15 @@
 // this same panel through the EngineManagerSurface takeover.
 //
 // Phase 1 keeps the consumed shape identical:
-//   - Still pulls `settings` from useRetroverse() — the engine surface
-//     is mounted inside RetroverseProvider in App.tsx in ARC 1 (only
+//   - Still pulls `settings` from useTheme() — the engine surface
+//     is mounted inside ThemeProvider in App.tsx in ARC 1 (only
 //     one theme), so the context is always available. Phase 2 splits
 //     `settings` (and library / customCollections / layout / views) into
 //     a Platform context the engine surface consumes directly; no
 //     ctx.settings change needed inside child components when that
 //     happens.
 //   - Still imports PerSystemSettingsBody + SystemHealthPage from
-//     routes/retroverse/. Those also consume useRetroverse() today;
+//     routes/retroverse/. Those also consume useTheme() today;
 //     they migrate to platform/ in Phase 2 alongside everything else.
 //
 // The "lift" is the file path + the engine-vs-theme territory
@@ -44,7 +44,7 @@ import PerSystemSettingsBody from "../routes/retroverse/PerSystemSettingsBody";
 import SystemHealthPage from "../routes/retroverse/SystemHealthPage";
 import { useDomQueryFocusGroup } from "../nav/focus";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { useRetroverse } from "../routes/retroverse/context";
+import { useTheme } from "../routes/retroverse/context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
 
@@ -229,7 +229,7 @@ type Props = {
 };
 
 const SettingsPanel: Component<Props> = (props) => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
     props.initialCategory ?? "display",
   );

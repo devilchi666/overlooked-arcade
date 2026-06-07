@@ -1,4 +1,10 @@
-// Retroverse-UI Phase B Slice 6 — shared context for Retroverse pages.
+// Theme context — the engine-provided contract a theme's pages consume.
+//
+// Born as the Retroverse-UI Phase B Slice 6 shared context; renamed
+// RetroverseContext → ThemeContext in Theming Substrate ARC 1 Phase 2
+// Slice C because the shape was already theme-generic. Retroverse is
+// the first (and in ARC 1, only) consumer; the file stays under
+// routes/retroverse/ until Phase 5/6 extracts the theme entry point.
 //
 // Centralizes the state + handlers each Retroverse tab needs to read
 // or invoke (library / layout / views / settings stores; searchQuery
@@ -6,8 +12,8 @@
 // pick-folder callbacks; the legacy currentView signal so the LIBRARY
 // tab can filter by system the same way today's LibraryView does).
 //
-// App.tsx provides the value via <RetroverseProvider value={...}>;
-// individual tabs consume it via `useRetroverse()`. Avoids prop-
+// App.tsx provides the value via <ThemeProvider value={...}>;
+// individual tabs consume it via `useTheme()`. Avoids prop-
 // drilling through RetroverseShell into every tab + future-proofs
 // Phase C tabs (HOME / COLLECTIONS / etc.) — each just reaches into
 // the context for whichever slice it needs.
@@ -22,7 +28,7 @@ import type { SettingsStore } from "@oa/platform/settings/store";
 import type { SidebarView } from "@oa/platform/layout/types";
 import type { RomEntry } from "@oa/platform/library/types";
 
-export type RetroverseContextValue = {
+export type ThemeContextValue = {
   library: LibraryStore;
   /// Retroverse-UI Phase C3 Slice 12 — operator-built collections.
   /// Companion to `library`; lives alongside so the TileContextMenu
@@ -110,23 +116,23 @@ export type RetroverseContextValue = {
   onOpenImportWizard: () => void;
 };
 
-const RetroverseContext = createContext<RetroverseContextValue>();
+const ThemeContext = createContext<ThemeContextValue>();
 
-export const RetroverseProvider: ParentComponent<{ value: RetroverseContextValue }> = (props) => {
+export const ThemeProvider: ParentComponent<{ value: ThemeContextValue }> = (props) => {
   return (
-    <RetroverseContext.Provider value={props.value}>
+    <ThemeContext.Provider value={props.value}>
       {props.children}
-    </RetroverseContext.Provider>
+    </ThemeContext.Provider>
   );
 };
 
 /// Read the Retroverse context. Throws if called outside the provider —
 /// the throw is intentional: rendering a Retroverse page outside the
 /// provider is a wiring bug, not a runtime concern.
-export function useRetroverse(): RetroverseContextValue {
-  const ctx = useContext(RetroverseContext);
+export function useTheme(): ThemeContextValue {
+  const ctx = useContext(ThemeContext);
   if (!ctx) {
-    throw new Error("useRetroverse: must be used inside <RetroverseProvider>");
+    throw new Error("useTheme: must be used inside <ThemeProvider>");
   }
   return ctx;
 }

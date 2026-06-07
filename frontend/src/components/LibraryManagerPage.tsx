@@ -27,7 +27,7 @@ import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { ViewsStore } from "@oa/platform/views/store";
 import { collectHiddenContainers, findNode } from "@oa/platform/views/resolver";
 import { platformNodeIdFor } from "@oa/platform/views/defaults";
-import SettingRow, { selectClass } from "./SettingRow";
+import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";

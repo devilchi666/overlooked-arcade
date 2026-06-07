@@ -10,7 +10,7 @@
 
 import { createResource, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 import type {
   CoreEntry,
   MonitorInfo,
@@ -25,7 +25,7 @@ import {
   PerSystemRewindSection,
   PerSystemShadersSection,
   usePerSystemOverrides,
-} from "./perSystemSections";
+} from "@oa/platform/components/perSystemSections";
 
 export type SystemDialogSection =
   | "bindings"
@@ -46,7 +46,7 @@ export {
   overscanLabel,
   pathBasename,
   type OverscanCropPrefs,
-} from "./perSystemSections";
+} from "@oa/platform/components/perSystemSections";
 
 // --- Combined dialog for display / rewind / shaders / default-core ----
 

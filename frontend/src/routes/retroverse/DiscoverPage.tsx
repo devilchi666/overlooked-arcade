@@ -13,7 +13,7 @@
 // picks that feed the remaining axes.
 
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
-import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
+import VirtualLibraryGrid from "@oa/platform/components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import {
@@ -25,7 +25,7 @@ import {
 import type { EntryGroup } from "@oa/platform/library/filter";
 import { useMedia, type GameMetadata } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 
 type AxisId =
   | "featured"
@@ -142,7 +142,7 @@ const ERA_BUCKETS: readonly EraBucket[] = [
 ];
 
 const DiscoverPage: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const media = useMedia();
   const [activeAxisId, setActiveAxisId] = createSignal<AxisId>("by-genre");
   /// Picked facet within the active axis — collects "current genre"

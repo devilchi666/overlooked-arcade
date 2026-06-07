@@ -20,7 +20,7 @@
 // history — Recently played is its 30-day subset).
 
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
-import VirtualLibraryGrid from "../../components/VirtualLibraryGrid";
+import VirtualLibraryGrid from "@oa/platform/components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import {
@@ -31,7 +31,7 @@ import {
 } from "../../nav/focus";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
-import { useRetroverse } from "./context";
+import { useTheme } from "./context";
 
 type SmartListId =
   | "favorites"
@@ -134,7 +134,7 @@ const SMART_LISTS: readonly SmartListDef[] = [
 ];
 
 const CollectionsPage: Component = () => {
-  const ctx = useRetroverse();
+  const ctx = useTheme();
   const [activeList, setActiveList] = createSignal<ActiveList>({
     kind: "smart",
     id: "favorites",
@@ -284,7 +284,7 @@ const CollectionsPage: Component = () => {
   });
 
   /// Operator clicks "+ New collection" — defers to the App-level
-  /// NewCollectionDialog (registered on the RetroverseContext) so
+  /// NewCollectionDialog (registered on the ThemeContext) so
   /// every entry point uses the same Dialog primitive surface.
   function handleNewCollection() {
     ctx.onOpenNewCollection(null);

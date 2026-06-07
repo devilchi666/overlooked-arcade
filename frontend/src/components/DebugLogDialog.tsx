@@ -11,7 +11,7 @@
 
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { Dialog } from "../layout/Dialog";
+import { Dialog } from "@oa/platform/components/Dialog";
 
 type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
 

@@ -17,8 +17,8 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { Dialog, DialogSection } from "../layout/Dialog";
-import SettingRow, { selectClass } from "./SettingRow";
+import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
+import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import { type CoreEntry, type SettingsStore } from "@oa/platform/settings/store";
 import { systemThemes } from "@oa/platform/themes/registry";
 import type { LibraryStore } from "@oa/platform/library/store";
