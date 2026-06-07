@@ -1,20 +1,30 @@
-// Retroverse-UI Phase C1 Slice 8 — SETTINGS tab.
+// Engine territory — Settings panel.
 //
-// Three-pane internal layout matching docs/PLANS/settings-tab-retroverse.md:
-//   - Left:   category sidebar (OA-WIDE / CONTENT / SYSTEM groups +
-//             collapsed PER-SYSTEM group)
-//   - Center: active category's content as a stack of glass-morphism cards
-//   - Right:  live-preview pane (Phase C1 ships static help text per
-//             category; rich previews are a later polish slice)
+// Lifted from frontend/src/routes/retroverse/SettingsPage.tsx as part
+// of ARC 1 Phase 1 of the Theming Substrate arc (docs/PLANS/theming-substrate.md
+// §6 Phase 1). Same content, same UX, same internal three-pane layout
+// (sidebar / center / per-system picker). The move from
+// routes/retroverse/ to engine/ encodes the architectural shift:
+// Settings is engine-rendered, not theme-rendered. Every theme summons
+// this same panel through the EngineManagerSurface takeover.
 //
-// Slice 8 ships the layout + category nav with every category as a
-// stub. Slice 9 fills in real bodies for Display / Audio / Gameplay /
-// Shaders by lifting them out of the existing SettingsDialogs.tsx
-// modals. The other categories stay as "Coming in a follow-up" stubs
-// until each gets its own polish slice.
+// Phase 1 keeps the consumed shape identical:
+//   - Still pulls `settings` from useRetroverse() — the engine surface
+//     is mounted inside RetroverseProvider in App.tsx in ARC 1 (only
+//     one theme), so the context is always available. Phase 2 splits
+//     `settings` (and library / customCollections / layout / views) into
+//     a Platform context the engine surface consumes directly; no
+//     ctx.settings change needed inside child components when that
+//     happens.
+//   - Still imports PerSystemSettingsBody + SystemHealthPage from
+//     routes/retroverse/. Those also consume useRetroverse() today;
+//     they migrate to platform/ in Phase 2 alongside everything else.
+//
+// The "lift" is the file path + the engine-vs-theme territory
+// declaration, not a behavior or import-graph change.
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
-import { HintRegion } from "../../nav/HintBar";
+import { HintRegion } from "../nav/HintBar";
 import {
   AboutSettings,
   AudioSettings,
@@ -29,12 +39,12 @@ import {
   ProfileSettings,
   ShadersSettings,
   ThemesSettings,
-} from "../../components/SettingsSections";
-import PerSystemSettingsBody from "./PerSystemSettingsBody";
-import SystemHealthPage from "./SystemHealthPage";
-import { useDomQueryFocusGroup } from "../../nav/focus";
-import { systemThemes, type SystemId } from "../../themes/registry";
-import { useRetroverse } from "./context";
+} from "../components/SettingsSections";
+import PerSystemSettingsBody from "../routes/retroverse/PerSystemSettingsBody";
+import SystemHealthPage from "../routes/retroverse/SystemHealthPage";
+import { useDomQueryFocusGroup } from "../nav/focus";
+import { systemThemes, type SystemId } from "../themes/registry";
+import { useRetroverse } from "../routes/retroverse/context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
 
@@ -60,15 +70,11 @@ type CategoryDef = {
   group: CategoryGroup;
   label: string;
   glyph: string;
-  /// One-line description shown as the center pane header subtitle.
   description: string;
-  /// Right-pane help text. Phase C1 keeps this static; rich live previews
-  /// (sample tile, audio meter, shader preview) come later.
   helpText: string;
 };
 
 const CATEGORIES: readonly CategoryDef[] = [
-  // OA-WIDE — the four current modal dialogs + the three newer surfaces.
   {
     id: "display",
     group: "oa-wide",
@@ -150,7 +156,6 @@ const CATEGORIES: readonly CategoryDef[] = [
     helpText:
       "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — visual variants land here as they're built.",
   },
-  // CONTENT & LIBRARY.
   {
     id: "library",
     group: "content",
@@ -169,7 +174,6 @@ const CATEGORIES: readonly CategoryDef[] = [
     helpText:
       "Banner / clear-logo / console / controller / fanart / marquee / photo / wheel / background per system. Operator-supplied art always wins over synced art.",
   },
-  // SYSTEM.
   {
     id: "system-health",
     group: "system",
@@ -199,10 +203,6 @@ const CATEGORIES: readonly CategoryDef[] = [
   },
 ];
 
-/// Per-system category — special-cased because its sidebar entry is an
-/// expandable group with a system picker rather than a flat button,
-/// and the center pane content depends on which system the operator
-/// picked. Not part of the GROUP_ORDER iteration.
 const PER_SYSTEM_CATEGORY: CategoryDef = {
   id: "per-system",
   group: "system",
@@ -221,9 +221,18 @@ const GROUP_LABELS: Record<CategoryGroup, string> = {
 
 const GROUP_ORDER: readonly CategoryGroup[] = ["oa-wide", "content", "system"];
 
-const SettingsPage: Component = () => {
+type Props = {
+  /// Initial category to land on when the engine surface opens. Useful
+  /// for deep-link summons (e.g. profile chip → "profile"). Defaults
+  /// to "display" matching pre-Phase-1 behavior.
+  initialCategory?: CategoryId;
+};
+
+const SettingsPanel: Component<Props> = (props) => {
   const ctx = useRetroverse();
-  const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>("display");
+  const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
+    props.initialCategory ?? "display",
+  );
   const [perSystemExpanded, setPerSystemExpanded] = createSignal(false);
   const [perSystemActiveId, setPerSystemActiveId] = createSignal<SystemId | null>(null);
   const activeCategory = () => {
@@ -234,10 +243,6 @@ const SettingsPage: Component = () => {
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
 
-  /// All registered systems sorted by display name for the Per-system
-  /// picker. Memo so the sort runs once per registry change (the
-  /// registry itself is static today but a future content-pack might
-  /// extend it).
   const allSystems = createMemo<{ id: SystemId; displayName: string }[]>(() => {
     const ids = Object.keys(systemThemes) as SystemId[];
     const rows = ids.map((id) => ({
@@ -253,13 +258,10 @@ const SettingsPage: Component = () => {
     setActiveCategoryId("per-system");
   }
 
-  // SETTINGS is 2-region only after the live-preview right pane was
-  // dropped (operator spec). Unified-focus model: `neighbours` drives
-  // DPad edge-spillover; RetroverseShell handles L1/R1 tab cycling.
   let leftRef: HTMLElement | undefined;
   let centerRef: HTMLElement | undefined;
-  const LEFT_ID = "retroverse-settings-left";
-  const CENTER_ID = "retroverse-settings-center";
+  const LEFT_ID = "engine-settings-left";
+  const CENTER_ID = "engine-settings-center";
   useDomQueryFocusGroup({
     id: LEFT_ID,
     containerRef: () => leftRef,
@@ -273,8 +275,6 @@ const SettingsPage: Component = () => {
     orientation: "vertical",
     autoActivate: false,
     onActivate: (_i, el) => el.click(),
-    // No right neighbour — SETTINGS has no right pane. DPad RIGHT
-    // at the rightmost element is a no-op (intentional).
     neighbours: { left: LEFT_ID },
   });
 
@@ -285,7 +285,6 @@ const SettingsPage: Component = () => {
         "grid-template-columns": "260px minmax(0,1fr)",
       }}
     >
-      {/* Phase C1 hints — keep stub-compatible nav + add Y reset. */}
       <HintRegion
         hints={{
           dpad: "Switch region",
@@ -299,7 +298,6 @@ const SettingsPage: Component = () => {
         }}
       />
 
-      {/* Left pane — category sidebar with grouped sections. */}
       <aside
         ref={(el) => (leftRef = el)}
         class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
@@ -413,8 +411,6 @@ const SettingsPage: Component = () => {
         </section>
       </aside>
 
-      {/* Center pane — active category content. Phase C1 ships stubs;
-          Slice 9 lifts the four existing dialog bodies in. */}
       <section
         ref={(el) => (centerRef = el)}
         class="min-h-0 min-w-0 overflow-y-auto px-8 py-6"
@@ -502,4 +498,5 @@ const SettingsPage: Component = () => {
   );
 };
 
-export default SettingsPage;
+export default SettingsPanel;
+export type { CategoryId };

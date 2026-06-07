@@ -31,7 +31,8 @@ import DiscoverPage from "../../routes/retroverse/DiscoverPage";
 import HomePage from "../../routes/retroverse/HomePage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import PlayNowPage from "../../routes/retroverse/PlayNowPage";
-import SettingsPage from "../../routes/retroverse/SettingsPage";
+import EngineSummonIcon from "../../engine/EngineSummonIcon";
+import { engineSurfaceOpen, openEngineSurface } from "../../platform/engineSurface";
 
 const ROUTE_LABELS: Record<RetroverseRoute, string> = {
   home: "HOME",
@@ -39,7 +40,6 @@ const ROUTE_LABELS: Record<RetroverseRoute, string> = {
   collections: "COLLECTIONS",
   "play-now": "PLAY NOW",
   discover: "DISCOVER",
-  settings: "SETTINGS",
 };
 
 // Per-tab design doc references used to live here for the StubPage
@@ -55,9 +55,16 @@ const RetroverseShell: Component = () => {
   // mounted when the Retroverse flag is ON (App.tsx Show gate), so no
   // explicit flag check needed here — flag flip OFF unmounts this
   // component and cleans the listener up.
+  //
+  // Theming Substrate ARC 1 Phase 1: gate on engineSurfaceOpen() —
+  // when the engine surface is open, the engine owns gamepad input;
+  // RetroverseShell's tab-cycler should be inert so the operator's
+  // L1/R1 inside Settings doesn't accidentally walk Retroverse tabs
+  // underneath the takeover.
   onMount(() => {
     const dispose = onNavEvent((event) => {
       if (event.kind !== "button" || event.phase !== "down") return;
+      if (engineSurfaceOpen()) return;
       if (event.button === "l1") cycleRouteBackward();
       else if (event.button === "r1") cycleRouteForward();
     });
@@ -177,9 +184,18 @@ const RetroverseShell: Component = () => {
           >
             ✕
           </button>
+          {/* Engine summon icon — opens the engine surface (fullscreen
+              takeover hosting Settings + Library Manager + Import
+              Wizard + BIOS + Core installer + System Health + Background
+              Jobs). Theming Substrate D3 requires themes to reserve a
+              top-right slot for this affordance; see
+              docs/features/theming-substrate/SURFACES.md. F12 and the
+              Select+Start chord (wired in App.tsx) also summon. */}
+          <EngineSummonIcon />
           {/* Profile chip — avatar from Settings → Profile. Click
-              routes to SETTINGS so the operator can edit display name
-              + avatar there. */}
+              opens the engine surface so the operator reaches the
+              Profile category there (it used to route to the in-
+              Retroverse SETTINGS tab, retired in Phase 1). */}
           <button
             type="button"
             class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 text-base text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
@@ -187,7 +203,7 @@ const RetroverseShell: Component = () => {
             aria-label="Profile"
             onClick={(e) => {
               e.currentTarget.blur();
-              setCurrentRoute("settings");
+              openEngineSurface();
             }}
           >
             {ctx.settings.profileAvatar() || "👤"}
@@ -212,9 +228,6 @@ const RetroverseShell: Component = () => {
           </Match>
           <Match when={currentRoute() === "discover"}>
             <DiscoverPage />
-          </Match>
-          <Match when={currentRoute() === "settings"}>
-            <SettingsPage />
           </Match>
         </Switch>
       </main>

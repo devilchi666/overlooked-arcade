@@ -13,23 +13,39 @@ spanned every system but was filed under whichever core happened to be active.
 
 - **Theming Substrate (BigBox-style themes + engine/theme territory
   split)** — major multi-arc planned 2026-06-06. 3 arcs; ARC 1
-  (Minimum Viable Substrate, ~22-26 weeks) is queued; ARCs 2-3
+  (Minimum Viable Substrate, ~22-26 weeks) in flight; ARCs 2-3
   (Rhai behaviors + WGSL shaders + Theme Studio) follow. Plan at
   [PLANS/theming-substrate.md](PLANS/theming-substrate.md); feature
   folder [features/theming-substrate/](features/theming-substrate/).
-  **Current slice: ARC 1 Phase 1 — engine/theme surface
-  separation** (extract Settings + Library Manager + Import Wizard
-  + BIOS + Core installer + System Health + Background Jobs out
-  of Retroverse's tabs into engine-owned fullscreen takeover
-  summoned via `F12` / `Select+Start` / top-right corner icon).
-  **Status: queued; starts next session post-`/clear`.** Operator
-  decisions locked 2026-06-06: one unified premium frontend (no
-  LaunchBox/BigBox split); manifest = TOML; theme swap = restart
-  (ARC 1); build-time bundling only (ARC 1); Kiosk plan's
-  4-layer substrate absorbed. Sequencing: Phases 1-2 parallel with
-  VL Phase A; pause at end of Phase 2 for VL Phase E + C; resume
-  Phases 3-6 after both VL phases ship. Retroverse becomes the
-  first theme on the substrate (Phase 6 dogfood test).
+  - **Phase 1 ✅ shipped 2026-06-06** (branch
+    `feat/theming-substrate-phase-1`, awaiting operator playtest
+    before merge). Engine/theme surface separation: SETTINGS +
+    Library Manager + Import Wizard + BIOS + Core installer +
+    System Health + Background Jobs moved out of Retroverse's
+    tab list (6 → 5 tabs) into an engine-owned fullscreen
+    takeover summoned via F12 / Select+Start / top-right corner
+    icon. New `engine/` + `platform/` directories (start of the
+    formal split); `EngineManagerSurface` + `SettingsPanel` +
+    `EngineSummonIcon` + `platform/engineSurface.ts` +
+    `platform/dialogs.ts`. 5 dialog signals migrated from App.tsx
+    createSignals to Platform-owned store per operator decision
+    (Platform owns open/close; themes pick anchors). Snapshot
+    restore: tag `v0.x-pre-theming-substrate` + branch
+    `pre-theming-substrate` both at `5695adb`. SURFACES.md is the
+    boundary-doc deliverable.
+  - **Phase 2 queued** — Platform/Theme SDK foundation:
+    `frontend/src/platform/` formalized with `@oa/platform` Vite
+    alias, store + lib + theme registry migrations,
+    `ThemeContext` rename, residual ~12 dialog signals migrated,
+    `HOTSPOT_SYSTEMS` triplicate + `customComponent` orphan
+    cleanup. Operator decisions locked 2026-06-06: one unified
+    premium frontend (no LaunchBox/BigBox split); manifest = TOML;
+    theme swap = restart (ARC 1); build-time bundling only
+    (ARC 1); Kiosk plan's 4-layer substrate absorbed. Sequencing:
+    Phases 1-2 parallel with VL Phase A; pause at end of Phase 2
+    for VL Phase E + C; resume Phases 3-6 after both VL phases
+    ship. Retroverse becomes the first theme on the substrate
+    (Phase 6 dogfood test).
 
 - **Virtual library + preservation architecture + launcher-agnostic frontend**
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
