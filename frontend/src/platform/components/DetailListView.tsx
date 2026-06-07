@@ -269,7 +269,12 @@ const DetailRow: Component<{
   const media = useMedia();
   const theme = () => systemThemes[props.entry.systemId];
   const meta = () => media.media(props.entry.id)?.metadata;
+  // VL Phase E Sub-phase 3 — identity-key (canonical parent) art wins
+  // over per-file art; same resolution order as LibraryTile.
   const coverSrc = () =>
+    (props.entry.identityId
+      ? media.coverUrl(props.entry.systemId, props.entry.identityId, "box-front", "thumb")
+      : null) ??
     media.coverUrl(props.entry.systemId, props.entry.id, "box-front", "thumb");
   const selected = () => props.selectedId?.() === props.entry.id;
 

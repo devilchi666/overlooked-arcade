@@ -3794,6 +3794,48 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// Enrichment write — fills ONLY NULL fields (`COALESCE(existing,
+    /// new)`), the mirror image of `update_identity_metadata`'s
+    /// operator-edit semantics. The Sub-phase 3 enrichment pass calls
+    /// this with metadata merged from the identity's variants' MediaDb
+    /// entries; anything the operator (or a previous enrichment) set
+    /// is never overwritten. Returns true when the row changed.
+    pub fn enrich_identity_metadata(
+        &self,
+        id: &str,
+        update: &IdentityMetadataUpdate,
+    ) -> Result<bool, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE game_identities SET
+                    year      = COALESCE(year, ?2),
+                    genre     = COALESCE(genre, ?3),
+                    developer = COALESCE(developer, ?4),
+                    publisher = COALESCE(publisher, ?5),
+                    players   = COALESCE(players, ?6),
+                    rating    = COALESCE(rating, ?7)
+                 WHERE id = ?1
+                   AND (   (year      IS NULL AND ?2 IS NOT NULL)
+                        OR (genre     IS NULL AND ?3 IS NOT NULL)
+                        OR (developer IS NULL AND ?4 IS NOT NULL)
+                        OR (publisher IS NULL AND ?5 IS NOT NULL)
+                        OR (players   IS NULL AND ?6 IS NOT NULL)
+                        OR (rating    IS NULL AND ?7 IS NOT NULL))",
+                params![
+                    id,
+                    update.year,
+                    update.genre,
+                    update.developer,
+                    update.publisher,
+                    update.players,
+                    update.rating,
+                ],
+            )
+            .map_err(|e| format!("enrich_identity_metadata: {e}"))?;
+        Ok(n > 0)
+    }
+
     fn identity_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameIdentityRow> {
         Ok(GameIdentityRow {
             id: row.get(0)?,
@@ -6352,6 +6394,53 @@ mod tests {
             .expect("unpin");
         let cv = &db.list_identities_for_system("tg16").expect("list")[0];
         assert_eq!(cv.default_variant_id, None, "clear resets to automatic");
+    }
+
+    #[test]
+    fn enrich_fills_only_null_metadata() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Castlevania (USA)")]).expect("add");
+        let id = db.list_identities_for_system("tg16").expect("list")[0]
+            .id
+            .clone();
+
+        // Operator sets genre; enrichment later arrives with a
+        // different genre + a year. Genre must survive, year fills.
+        db.update_identity_metadata(
+            &id,
+            &IdentityMetadataUpdate {
+                genre: Some("Action".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("operator edit");
+        let changed = db
+            .enrich_identity_metadata(
+                &id,
+                &IdentityMetadataUpdate {
+                    genre: Some("Platformer".to_string()),
+                    year: Some(1989),
+                    ..Default::default()
+                },
+            )
+            .expect("enrich");
+        assert!(changed, "year was fillable");
+        let idn = db.get_identity(&id).expect("get").expect("present");
+        assert_eq!(idn.genre.as_deref(), Some("Action"), "operator genre survives");
+        assert_eq!(idn.year, Some(1989), "NULL year filled");
+
+        // Re-running the same enrichment is a no-op.
+        let changed = db
+            .enrich_identity_metadata(
+                &id,
+                &IdentityMetadataUpdate {
+                    genre: Some("Platformer".to_string()),
+                    year: Some(1989),
+                    ..Default::default()
+                },
+            )
+            .expect("re-enrich");
+        assert!(!changed, "nothing left to fill");
     }
 
     #[test]

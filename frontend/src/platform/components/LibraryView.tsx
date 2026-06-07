@@ -109,16 +109,24 @@ const LibraryView: Component<Props> = (props) => {
   });
 
   const filtered = createMemo(() =>
-    filterEntries(props.library.state.entries, props.currentView, props.searchQuery, viewSystemIds()),
-  );
-  const sorted = createMemo(() =>
-    sortEntries(filtered(), props.layout.sortKey(), getYear),
+    filterEntries(
+      props.library.state.entries,
+      props.currentView,
+      props.searchQuery,
+      viewSystemIds(),
+      // VL Phase E Sub-phase 3 — search also matches the identity's
+      // canonical title (e.g. "castlevania" hits a lone "Akumajou
+      // Dracula (Japan)" dump once identified).
+      props.library.groupsByVariantId(),
+    ),
   );
   // Collapse same-variant-group entries down to their default variant
-  // BEFORE bucketing so each multi-region game renders as one tile.
-  // The store keeps `groupsByVariantId` empty for single-file games, so
-  // unaffected libraries stay byte-identical to the pre-grouping
-  // behaviour.
+  // BEFORE sorting and bucketing so each multi-region game renders as
+  // one tile. VL Phase E Sub-phase 3 — the collapse rewrites the tile
+  // title to the identity's canonical title, and the sort runs AFTER
+  // the collapse so tiles order by what they actually display (a
+  // "Akumajou Dracula" dump whose canonical name is "Castlevania"
+  // sorts under C, where its tile sits).
   //
   // Phase A1 Sub-phase 4 — disc-set collapse runs AFTER variant
   // collapse. Result: a multi-disc game like "Final Fantasy IX" with
@@ -129,16 +137,19 @@ const LibraryView: Component<Props> = (props) => {
     const groups = props.library.groupsByVariantId();
     const variantCollapsed =
       groups.size === 0
-        ? sorted()
+        ? filtered()
         : collapseVariantGroups(
-            sorted(),
+            filtered(),
             groups,
             new Map(props.library.state.entries.map((e) => [e.id, e])),
           );
     return collapseDiscSets(variantCollapsed);
   });
+  const sorted = createMemo(() =>
+    sortEntries(collapsed(), props.layout.sortKey(), getYear),
+  );
   const grouped = createMemo(() =>
-    groupEntries(collapsed(), props.layout.groupBy(), systemDisplayName),
+    groupEntries(sorted(), props.layout.groupBy(), systemDisplayName),
   );
 
   const title = (): string => {

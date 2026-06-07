@@ -35,6 +35,7 @@ export function filterEntries(
   view: SidebarView,
   query: string,
   viewSystemIds: ReadonlyArray<SystemId> | null,
+  groupsByVariantId?: Map<string, GameGroupInfo>,
 ): RomEntry[] {
   // `view` is referenced via the parameter type so the discriminant
   // stays exhaustive in TypeScript — body-level branching on `view.kind`
@@ -50,7 +51,16 @@ export function filterEntries(
   }
 
   if (q.length > 0) {
-    result = result.filter((e) => e.title.toLowerCase().includes(q));
+    // VL Phase E Sub-phase 3 — match the identity's canonical title in
+    // addition to the per-file title, so searching "castlevania" hits a
+    // group whose only dump is named "Akumajou Dracula (Japan)" once
+    // the identity carries the canonical name. Per-file titles keep
+    // matching too (searching a region tag like "(japan)" still works).
+    result = result.filter((e) => {
+      if (e.title.toLowerCase().includes(q)) return true;
+      const canonical = groupsByVariantId?.get(e.id)?.displayBaseTitle;
+      return canonical !== undefined && canonical.toLowerCase().includes(q);
+    });
   }
 
   return result;
@@ -260,7 +270,19 @@ export function collapseVariantGroups(
       if (seen.has(group.defaultVariantId)) continue;
       seen.add(group.defaultVariantId);
       const defaultEntry = entryById.get(group.defaultVariantId);
-      out.push(defaultEntry ?? entry);
+      // VL Phase E Sub-phase 3 — the tile shows the identity's
+      // canonical title ("Castlevania"), not the default variant's
+      // file title ("Castlevania (USA)"). The full per-file title
+      // stays visible in the Run-version submenu, the disc picker,
+      // and (come Phase B) the Variants tab. Multi-disc titles keep
+      // their disc suffix here so collapseDiscSets can strip it after
+      // picking the representative disc — for those, the canonical
+      // title already has no "(Disc N)" so the rewrite is a no-op
+      // there too.
+      out.push({
+        ...(defaultEntry ?? entry),
+        title: group.displayBaseTitle,
+      });
     } else {
       if (seen.has(entry.id)) continue;
       seen.add(entry.id);

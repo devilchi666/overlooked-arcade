@@ -677,6 +677,21 @@ pub async fn sync_metadata_for_system(
         }
     }
 
+    // VL Phase E Sub-phase 3 — push the freshly-synced per-file
+    // metadata up onto the system's game_identities rows so canonical
+    // metadata (group tiles, GameDetailPanel header) reflects the sync
+    // without waiting for the next app launch's backfill.
+    if summary.updated > 0 {
+        let snapshot = state.db.read().map(|d| d.clone()).unwrap_or_default();
+        match enrich_identities_from_media(&library, &snapshot, Some(&systemId)) {
+            Ok(n) if n > 0 => log::info!(
+                "oa-shell: identity enrichment after metadata sync filled {n} identity row(s) for {systemId}"
+            ),
+            Ok(_) => {}
+            Err(e) => log::warn!("oa-shell: identity enrichment after metadata sync failed: {e}"),
+        }
+    }
+
     let _ = app.emit("oa://library-metadata-sync-complete", &summary);
     log::info!(
         "oa-shell: sync_metadata_for_system({systemId}) done — matched {}, updated {}, unchanged {}, unmatched {}, errors {}",
@@ -685,9 +700,149 @@ pub async fn sync_metadata_for_system(
     Ok(summary)
 }
 
+/// VL Phase E Sub-phase 3 — canonical-metadata enrichment pass.
+///
+/// For every identity (optionally scoped to one system), merge the
+/// per-file `GameMedia.metadata` of its member variants — first
+/// non-null value per field, members visited in id order so the merge
+/// is deterministic — and fill the identity row's NULL metadata
+/// columns with the result. Fill-only on both layers: a field a
+/// variant lacks falls through to the next variant, and a field the
+/// identity already has (operator edit or earlier enrichment) is
+/// never overwritten (`LibraryDb::enrich_identity_metadata`).
+///
+/// Cheap and idempotent — safe to run at every startup (the main.rs
+/// backfill task) and after every metadata sync.
+pub fn enrich_identities_from_media(
+    db: &crate::library_db::LibraryDb,
+    media_db: &crate::media::MediaDb,
+    system_id: Option<&str>,
+) -> Result<usize, String> {
+    use crate::library_db::IdentityMetadataUpdate;
+    use std::collections::HashMap;
+
+    let games = db.list_games()?;
+    let mut members: HashMap<String, Vec<&crate::library_db::GameRow>> = HashMap::new();
+    for g in &games {
+        if let Some(sys) = system_id {
+            if g.system_id != sys {
+                continue;
+            }
+        }
+        let Some(iid) = &g.identity_id else { continue };
+        members.entry(iid.clone()).or_default().push(g);
+    }
+
+    let mut enriched = 0usize;
+    for (identity_id, mut mems) in members {
+        mems.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut up = IdentityMetadataUpdate::default();
+        for m in &mems {
+            let Some(md) = media_db.get(&m.id).and_then(|gm| gm.metadata.as_ref()) else {
+                continue;
+            };
+            up.year = up.year.or(md.year.map(i64::from));
+            up.genre = up.genre.clone().or_else(|| md.genre.clone());
+            up.developer = up.developer.clone().or_else(|| md.developer.clone());
+            up.publisher = up.publisher.clone().or_else(|| md.publisher.clone());
+            up.players = up.players.or(md.players.map(i64::from));
+            // GameMetadata has no rating / cover; those stay None.
+        }
+        let has_anything = up.year.is_some()
+            || up.genre.is_some()
+            || up.developer.is_some()
+            || up.publisher.is_some()
+            || up.players.is_some();
+        if !has_anything {
+            continue;
+        }
+        if db.enrich_identity_metadata(&identity_id, &up)? {
+            enriched += 1;
+        }
+    }
+    Ok(enriched)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enrich_identities_merges_member_metadata() {
+        // Two variants of one game, each holding a different slice of
+        // MediaDb metadata. The identity must end up with the union —
+        // first non-null per field in member-id order.
+        let tmp = std::env::temp_dir().join(format!(
+            "oa-enrich-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let db = crate::library_db::LibraryDb::open(&tmp).expect("open db");
+        let row = |id: &str, title: &str| crate::library_db::GameRow {
+            id: id.to_string(),
+            title: title.to_string(),
+            system_id: "tg16".to_string(),
+            file_path: format!("/roms/{id}.pce"),
+            added_at: 0,
+            cover_path: None,
+            core_override: None,
+            seed: false,
+            archive_inner_path: None,
+            sha1: None,
+            serial: None,
+            disc_id: None,
+            favorite: false,
+            completed: false,
+            last_played_at: None,
+            play_time_secs: 0,
+            players: None,
+            rating: None,
+            disc_set_id: None,
+            disc_number: None,
+            identity_id: None,
+        };
+        db.add_games(&[row("a", "Castlevania (USA)"), row("b", "Castlevania (Japan)")])
+            .expect("add");
+
+        let mut media_db = crate::media::MediaDb::default();
+        let mut gm_a = GameMedia::default();
+        gm_a.metadata = Some(GameMetadata {
+            year: Some(1989),
+            genre: None,
+            developer: Some("Konami".to_string()),
+            publisher: None,
+            players: None,
+            description: None,
+        });
+        media_db.insert("a".to_string(), gm_a);
+        let mut gm_b = GameMedia::default();
+        gm_b.metadata = Some(GameMetadata {
+            year: Some(1990), // loses to variant "a" (id order)
+            genre: Some("Platformer".to_string()),
+            developer: None,
+            publisher: Some("Konami".to_string()),
+            players: Some(1),
+            description: None,
+        });
+        media_db.insert("b".to_string(), gm_b);
+
+        let n = enrich_identities_from_media(&db, &media_db, Some("tg16"))
+            .expect("enrich");
+        assert_eq!(n, 1, "one identity enriched");
+
+        let idn = &db.list_identities_for_system("tg16").expect("list")[0];
+        assert_eq!(idn.year, Some(1989), "first member's year wins");
+        assert_eq!(idn.genre.as_deref(), Some("Platformer"), "filled from second member");
+        assert_eq!(idn.developer.as_deref(), Some("Konami"));
+        assert_eq!(idn.publisher.as_deref(), Some("Konami"));
+        assert_eq!(idn.players, Some(1));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn parse_metadat_pulls_comment_and_value() {

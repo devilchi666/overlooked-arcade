@@ -84,8 +84,13 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
   const [hydrated, setHydrated] = createSignal(false);
   // Variant grouping — keyed by EVERY variant's id (not just the
   // default) so any tile / context-menu callsite can look up "which
-  // group am I in?" with one Map.get. Multi-variant groups have
-  // variants.length > 1; single-file games are absent from this map.
+  // group am I in?" with one Map.get.
+  //
+  // VL Phase E Sub-phase 3 — singleton groups are included too: every
+  // game belongs to an identity now, and tiles read the identity's
+  // canonical title / metadata / artwork through this map. Variant-
+  // specific affordances (the ▼ badge, the "Run version ▸" submenu)
+  // still gate on `variants.length > 1` at their call sites.
   const [groupsByVariantId, setGroupsByVariantId] =
     createSignal<Map<RomId, GameGroupInfo>>(new Map());
 
@@ -94,7 +99,6 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
       const groups = await invoke<GameGroupInfo[]>("list_game_groups");
       const map = new Map<RomId, GameGroupInfo>();
       for (const g of groups) {
-        if (g.variants.length <= 1) continue; // singletons stay absent
         for (const v of g.variants) {
           map.set(v.id, g);
         }
