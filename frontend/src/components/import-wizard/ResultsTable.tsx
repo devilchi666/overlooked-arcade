@@ -11,8 +11,8 @@ import {
   type JSX,
 } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import type { ScanConfidence } from "../../library/ingest";
-import { systemThemes, type SystemId } from "../../themes/registry";
+import type { ScanConfidence } from "@oa/platform/library/ingest";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useDomQueryFocusGroup } from "../../nav/focus";
 
 // Phase 1B Slice 2 — Per-ROM results table for the Import Wizard.

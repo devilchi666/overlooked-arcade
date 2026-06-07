@@ -22,9 +22,9 @@ import {
   groupsVersion,
   useDomQueryFocusGroup,
 } from "../../nav/focus";
-import type { EntryGroup } from "../../library/filter";
-import { useMedia, type GameMetadata } from "../../library/media";
-import type { RomEntry } from "../../library/types";
+import type { EntryGroup } from "@oa/platform/library/filter";
+import { useMedia, type GameMetadata } from "@oa/platform/library/media";
+import type { RomEntry } from "@oa/platform/library/types";
 import { useRetroverse } from "./context";
 
 type AxisId =

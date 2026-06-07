@@ -21,8 +21,8 @@
 
 import { createEffect, createSignal, Show, type Component } from "solid-js";
 import { Dialog } from "../layout/Dialog";
-import type { CustomCollectionsStore } from "../library/customCollections";
-import type { RomId } from "../library/types";
+import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
+import type { RomId } from "@oa/platform/library/types";
 
 export type CollectionDialogMode =
   | { kind: "create"; seedRomId: RomId | null }

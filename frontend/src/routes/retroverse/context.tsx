@@ -14,13 +14,13 @@
 
 import { createContext, useContext, type ParentComponent } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { LibraryStore } from "../../library/store";
-import type { CustomCollectionsStore } from "../../library/customCollections";
-import type { LayoutStore } from "../../layout/state";
-import type { ViewsStore } from "../../views/store";
-import type { SettingsStore } from "../../settings/store";
-import type { SidebarView } from "../../layout/LeftSidebar";
-import type { RomEntry } from "../../library/types";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
+import type { LayoutStore } from "@oa/platform/layout/state";
+import type { ViewsStore } from "@oa/platform/views/store";
+import type { SettingsStore } from "@oa/platform/settings/store";
+import type { SidebarView } from "@oa/platform/layout/types";
+import type { RomEntry } from "@oa/platform/library/types";
 
 export type RetroverseContextValue = {
   library: LibraryStore;

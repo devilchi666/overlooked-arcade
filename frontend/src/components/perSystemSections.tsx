@@ -20,9 +20,9 @@ import {
   type ScalingMode,
   type SettingsStore,
   type WindowMode,
-} from "../settings/store";
-import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
-import type { SystemId } from "../themes/registry";
+} from "@oa/platform/settings/store";
+import { shaderPresets, shaderPresetLabel } from "@oa/platform/settings/shader_presets";
+import type { SystemId } from "@oa/platform/themes/registry";
 import SettingRow, { selectClass } from "./SettingRow";
 
 export type OverscanCropPrefs = {

@@ -44,7 +44,7 @@ import {
   resumeJob,
   type JobSnapshot,
   type JobState,
-} from "../../lib/backgroundJobs";
+} from "@oa/platform/lib/backgroundJobs";
 import RecentActivityPanel from "./RecentActivityPanel";
 
 const MAX_VISIBLE_ROWS = 3;

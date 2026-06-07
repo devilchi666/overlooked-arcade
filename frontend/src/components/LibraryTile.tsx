@@ -1,10 +1,10 @@
 import { createEffect, createSignal, Show, type Component } from "solid-js";
-import type { RomEntry } from "../library/types";
-import { useMedia } from "../library/media";
-import { useGameInfoBadges } from "../library/gameInfoBadges";
-import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
-import { uiConfigFor, type UITileShape } from "../themes/systemUIConfigs";
-import { isPerSystemUiEnabled } from "../themes/systemUiSound";
+import type { RomEntry } from "@oa/platform/library/types";
+import { useMedia } from "@oa/platform/library/media";
+import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
+import { DEFAULT_TILE_ASPECT, systemThemes } from "@oa/platform/themes/registry";
+import { uiConfigFor, type UITileShape } from "@oa/platform/themes/systemUIConfigs";
+import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 
 /// Per-System UI Stage 1 Slice 5 — map the `tileShape` enum to a CSS
 /// `aspect-ratio` value. `"auto"` returns null so the caller falls back

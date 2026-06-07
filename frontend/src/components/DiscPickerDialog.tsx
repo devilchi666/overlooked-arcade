@@ -18,7 +18,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { RomEntry } from "../library/types";
+import type { RomEntry } from "@oa/platform/library/types";
 
 type Props = {
   /// Representative entry of the disc-set tile that was clicked. Has

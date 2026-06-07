@@ -15,8 +15,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Acce
 import type { NavButton } from "./types";
 import { hasSeenGamepad } from "./gamepad";
 import { isSwapAB } from "./focus";
-import { nowPlaying } from "../lib/audio";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { nowPlaying } from "@oa/platform/lib/audio";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 /// Pseudo-glyphs surfaced in the hint bar that don't correspond to
 /// a single NavButton — the DPad and the left stick each get a slot

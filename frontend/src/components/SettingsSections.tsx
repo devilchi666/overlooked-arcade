@@ -31,10 +31,10 @@ import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   refreshMameSystemInfo,
   type MameRefreshReport,
-} from "../library/systemInfo";
+} from "@oa/platform/library/systemInfo";
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
-import { refreshJobPrefs } from "../lib/backgroundJobs";
+import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import { useRetroverse } from "../routes/retroverse/context";
 import SettingRow from "./SettingRow";
@@ -48,8 +48,8 @@ import {
   type ScalingMode,
   type SettingsStore,
   type WindowMode,
-} from "../settings/store";
-import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
+} from "@oa/platform/settings/store";
+import { shaderPresets, shaderPresetLabel } from "@oa/platform/settings/shader_presets";
 
 const REWIND_INTERVAL_OPTIONS: readonly number[] = [1, 2, 3, 6, 10, 15, 30];
 const REWIND_BUFFER_OPTIONS: readonly number[] = [8, 16, 32, 64, 128, 256, 512];
@@ -1183,7 +1183,7 @@ function formatStorageBytes(bytes: number): string {
 export const StorageSettings: Component = () => {
   const [dataDir] = createResource(async () => {
     try {
-      const mod = await import("../lib/dataDir");
+      const mod = await import("@oa/platform/lib/dataDir");
       return await mod.getDataDir();
     } catch {
       return "";

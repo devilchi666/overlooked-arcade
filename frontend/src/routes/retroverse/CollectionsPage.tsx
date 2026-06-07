@@ -29,8 +29,8 @@ import {
   groupsVersion,
   useDomQueryFocusGroup,
 } from "../../nav/focus";
-import type { EntryGroup } from "../../library/filter";
-import type { RomEntry } from "../../library/types";
+import type { EntryGroup } from "@oa/platform/library/filter";
+import type { RomEntry } from "@oa/platform/library/types";
 import { useRetroverse } from "./context";
 
 type SmartListId =

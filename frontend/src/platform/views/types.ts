@@ -11,7 +11,7 @@
 // `{ "kind": "container", "id": ..., "label": ..., ... }`, not
 // `{ "kind": "container", "value": { "id": ..., ... } }`.
 
-import type { FormFactorTag, ManufacturerTag, SystemId } from "../themes/registry";
+import type { FormFactorTag, ManufacturerTag, SystemId } from "@oa/platform/themes/registry";
 
 export const CURRENT_SCHEMA_VERSION = 2;
 

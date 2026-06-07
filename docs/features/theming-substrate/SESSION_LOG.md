@@ -157,3 +157,62 @@ Each session that touches this feature appends a 3-line entry:
   ThemeContext), Theme manifest TOML schema, ESLint boundary rule
   (lands in Phase 4 alongside Tauri-bridge work). Phases 1-2 still
   on track to run parallel with VL Phase A.
+
+---
+
+## 2026-06-07 — ARC 1 Phase 2 Slice B shipped
+
+- **Shipped:** Store + lib + themes batch moves into `platform/` per
+  plan §6 Phase 2's mid-section. Branch `feat/theming-substrate-phase-2-slice-b`
+  cut from main post-Slice-A merge. Component moves + ThemeContext
+  rename + Theme manifest deferred to Slice C to keep this PR's diff
+  reviewable.
+  - **Batch 1: `lib/` → `platform/lib/`** — 8 files (audio,
+    backgroundJobs, dataDir, eventListener, logbridge, reducedMotion,
+    retroverseFlag, toast); ~22 importers rewritten via `sed`
+    pattern, 4 missed sites (the `./lib/...` same-dir form in App.tsx
+    + index.tsx + a dynamic `import()` in SettingsSections) fixed
+    by hand.
+  - **Batch 2: `themes/` → `platform/themes/`** — 4 files (registry,
+    systemUIConfigs, systemUiSound, systemBootAnimation; `systems.css`
+    stays in `src/themes/` because it's a CSS bundle imported by
+    `index.css`, not a module). 60 importers rewritten — biggest
+    single-move blast radius in the slice.
+  - **Batch 3: stores** — `settings/` (2 files), `library/` (11
+    files), `layout/state.ts`, `views/` (5 files). 45 importer files
+    rewritten via a combined `sed` pass covering both `(\.\./)+`
+    and `./` relative-import forms. Empty source dirs removed via
+    `rmdir`.
+  - **`SidebarView` type extracted** — was defined in
+    `layout/LeftSidebar.tsx` (component file) and consumed by 6
+    files including platform code (`platform/library/filter.ts`).
+    Extracted to new `platform/layout/types.ts` per the "platform
+    types live in platform" principle; 4 importer files updated to
+    the new path; LeftSidebar.tsx now re-imports the type from
+    platform (component itself moves in Slice C).
+  - All imports rewritten to `@oa/platform/*` alias (no relative
+    paths like `../../../platform/foo`). Consistent destination
+    regardless of importer depth — easier to bulk-rewrite, easier
+    to read.
+  - Acceptance gate green: `cargo test -p oa-shell` 790 pass / 0
+    fail (no Rust changes; Slice B is frontend-only); frontend
+    `npm run typecheck` silent.
+- **Almost:** Operator playtest — sanity-check that everything in
+  the LIBRARY tab still works (the LeftSidebar's path to the
+  platform-located LayoutStore + SidebarView type touches the
+  hottest UI surface in the app). Touches every store consumer so
+  there's no "isolated change" — every dialog, every page, every
+  setting flow exercises the move.
+- **Next:** Phase 2 Slice C — shared component moves + ThemeContext
+  rename + Theme manifest TOML schema:
+  - Move `components/LibraryTile`, `components/LibraryView`,
+    `layout/LeftSidebar`, `layout/SidebarTreeNode`, `layout/Dialog`,
+    `components/perSystemSections` into `platform/components/`.
+  - Rename `RetroverseContext` → `ThemeContext`, `RetroverseProvider`
+    → `ThemeProvider`, `useRetroverse()` → `useTheme()`. Pure rename
+    + import-path update.
+  - Define `ThemeManifest` TypeScript type in `platform/theme/`
+    (the SDK layer). No actual `.oatheme` files ship in ARC 1 —
+    Phase 5 wires the loader.
+  - ESLint boundary rule deferred to Phase 4 alongside Tauri-bridge
+    hardening per plan §6 Phase 4.

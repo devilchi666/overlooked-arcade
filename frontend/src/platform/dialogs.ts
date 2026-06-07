@@ -27,12 +27,12 @@
 // Slice A keeps the diff focused on the signal migration.
 
 import { createSignal, type Accessor } from "solid-js";
-import type { ContainerNode } from "../views/types";
+import type { ContainerNode } from "@oa/platform/views/types";
 import type { GameDialogState } from "../components/GameDialogs";
 import type { CollectionDialogMode } from "../components/NewCollectionDialog";
 import type { SystemDialogSection } from "../components/SystemDialogs";
-import type { RomEntry } from "../library/types";
-import type { SystemId } from "../themes/registry";
+import type { RomEntry } from "@oa/platform/library/types";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 /// Tile/grid context-menu payload. `entry` is the game the menu was
 /// summoned for; `position` is the click coordinate where the menu

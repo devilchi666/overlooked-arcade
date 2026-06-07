@@ -1,9 +1,9 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getDataDir } from "../lib/dataDir";
-import type { RomEntry } from "../library/types";
-import { useMedia } from "../library/media";
-import { DEFAULT_TILE_ASPECT, systemThemes } from "../themes/registry";
+import { getDataDir } from "@oa/platform/lib/dataDir";
+import type { RomEntry } from "@oa/platform/library/types";
+import { useMedia } from "@oa/platform/library/media";
+import { DEFAULT_TILE_ASPECT, systemThemes } from "@oa/platform/themes/registry";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";

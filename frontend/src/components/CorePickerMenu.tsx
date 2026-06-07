@@ -1,7 +1,7 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { LibraryStore } from "../library/store";
-import type { RomEntry } from "../library/types";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { RomEntry } from "@oa/platform/library/types";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";

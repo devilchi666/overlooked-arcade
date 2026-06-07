@@ -8,16 +8,16 @@ import {
   romIdFromPath,
   titleFromFileName,
   type ScanProgress,
-} from "../library/ingest";
-import type { LibraryStore } from "../library/store";
-import type { RomEntry } from "../library/types";
-import type { SettingsStore } from "../settings/store";
+} from "@oa/platform/library/ingest";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { RomEntry } from "@oa/platform/library/types";
+import type { SettingsStore } from "@oa/platform/settings/store";
 import {
   allSupportedExtensions,
   systemForExtension,
   systemThemes,
   type SystemId,
-} from "../themes/registry";
+} from "@oa/platform/themes/registry";
 import { ScummvmDetectDialog } from "./ScummvmDetectDialog";
 import ResultsTable, { type TableRow } from "./import-wizard/ResultsTable";
 import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";

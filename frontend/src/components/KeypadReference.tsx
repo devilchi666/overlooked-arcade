@@ -26,7 +26,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import type { SystemId } from "../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 type ButtonBinding = {
   button: string;

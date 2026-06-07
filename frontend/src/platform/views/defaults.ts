@@ -11,7 +11,7 @@ import {
   type FormFactorTag,
   type ManufacturerTag,
   type SystemId,
-} from "../themes/registry";
+} from "@oa/platform/themes/registry";
 import type { ContainerNode, View, ViewNode } from "./types";
 
 export const DEFAULT_VIEW_ID = "default-formfactor";

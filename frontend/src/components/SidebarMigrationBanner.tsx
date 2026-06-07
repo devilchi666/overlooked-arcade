@@ -1,9 +1,9 @@
 import { Show, type Component } from "solid-js";
 
-import type { LayoutStore } from "../layout/state";
-import { DEFAULT_VIEW_ID, LEGACY_VIEW_ID } from "../views/defaults";
-import { reorderForFormFactor } from "../views/migration";
-import type { ViewsStore } from "../views/store";
+import type { LayoutStore } from "@oa/platform/layout/state";
+import { DEFAULT_VIEW_ID, LEGACY_VIEW_ID } from "@oa/platform/views/defaults";
+import { reorderForFormFactor } from "@oa/platform/views/migration";
+import type { ViewsStore } from "@oa/platform/views/store";
 
 type Props = {
   views: ViewsStore;

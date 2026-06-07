@@ -24,7 +24,7 @@ import {
   cancelJob,
   dismissResumePrompt,
   resumePromptQueue,
-} from "../../lib/backgroundJobs";
+} from "@oa/platform/lib/backgroundJobs";
 
 const KIND_GLYPH: Record<string, string> = {
   core_download: "↓",

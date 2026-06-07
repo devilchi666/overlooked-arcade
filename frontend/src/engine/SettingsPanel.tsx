@@ -43,7 +43,7 @@ import {
 import PerSystemSettingsBody from "../routes/retroverse/PerSystemSettingsBody";
 import SystemHealthPage from "../routes/retroverse/SystemHealthPage";
 import { useDomQueryFocusGroup } from "../nav/focus";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useRetroverse } from "../routes/retroverse/context";
 
 type CategoryGroup = "oa-wide" | "content" | "system";

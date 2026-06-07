@@ -25,7 +25,7 @@ import {
   type ViewNode,
   type ViewsConfig,
 } from "./types";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 export type NewViewTemplate =
   | "blank"

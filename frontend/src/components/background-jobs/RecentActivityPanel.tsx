@@ -19,7 +19,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { activeJobs, type JobSnapshot, type JobState } from "../../lib/backgroundJobs";
+import { activeJobs, type JobSnapshot, type JobState } from "@oa/platform/lib/backgroundJobs";
 
 type Tab = "active" | "completed" | "failed" | "cancelled";
 

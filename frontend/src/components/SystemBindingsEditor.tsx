@@ -16,7 +16,7 @@ import {
   formatKey,
   gamepadIndexToRustButton,
 } from "../systems/keymap";
-import type { SystemId } from "../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import GenesisPadReference, { GENESIS_SYSTEMS } from "./GenesisPadReference";
 import { LightGunMappingHelp } from "./LightGunHelp";

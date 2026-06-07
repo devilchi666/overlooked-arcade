@@ -15,8 +15,8 @@ import type {
   CoreEntry,
   MonitorInfo,
   SettingsStore,
-} from "../settings/store";
-import { systemThemes, type SystemId } from "../themes/registry";
+} from "@oa/platform/settings/store";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import SystemBindingsEditor from "./SystemBindingsEditor";
 import CoreOptionsPanel from "./CoreOptionsPanel";
 import {

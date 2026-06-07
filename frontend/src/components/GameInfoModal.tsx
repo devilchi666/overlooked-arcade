@@ -24,11 +24,11 @@ import {
   type JSX,
 } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { getDataDir } from "../lib/dataDir";
-import { launchRom } from "../library/launch";
-import { useMedia, type MediaVariant } from "../library/media";
-import type { RomEntry } from "../library/types";
-import { systemThemes } from "../themes/registry";
+import { getDataDir } from "@oa/platform/lib/dataDir";
+import { launchRom } from "@oa/platform/library/launch";
+import { useMedia, type MediaVariant } from "@oa/platform/library/media";
+import type { RomEntry } from "@oa/platform/library/types";
+import { systemThemes } from "@oa/platform/themes/registry";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";
@@ -39,8 +39,8 @@ import {
   type BugSeverity,
   type GameBug,
   type GameInfoOverride,
-} from "../library/gameInfo";
-import { useGameInfoBadges } from "../library/gameInfoBadges";
+} from "@oa/platform/library/gameInfo";
+import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 
 type Props = {
   entry: RomEntry | null;

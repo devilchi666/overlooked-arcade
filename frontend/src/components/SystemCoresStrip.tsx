@@ -17,8 +17,8 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listenScoped } from "../lib/eventListener";
-import type { SystemId } from "../themes/registry";
+import { listenScoped } from "@oa/platform/lib/eventListener";
+import type { SystemId } from "@oa/platform/themes/registry";
 import {
   CatalogCoreCard,
   type AvailableCore,

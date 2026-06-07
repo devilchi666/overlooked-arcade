@@ -11,7 +11,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { systemThemes, type SystemId } from "../../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 // Phase 1B Slice 4 — Bulk-install missing cores modal.
 //

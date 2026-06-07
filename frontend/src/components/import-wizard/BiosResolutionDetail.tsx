@@ -1,7 +1,7 @@
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
-import type { SystemId } from "../../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 import { biosHintFor } from "./biosHints";
 
 // Phase 1B Slice 5 — inline per-file BIOS detail.

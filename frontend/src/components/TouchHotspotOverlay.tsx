@@ -29,9 +29,9 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import type { SystemId } from "../themes/registry";
-import { systemUIConfigs } from "../themes/systemUIConfigs";
-import { getGameInfo, type TouchHotspot } from "../library/gameInfo";
+import type { SystemId } from "@oa/platform/themes/registry";
+import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
+import { getGameInfo, type TouchHotspot } from "@oa/platform/library/gameInfo";
 
 type Props = {
   /// Reactive accessor for the SystemId + romId of the currently-

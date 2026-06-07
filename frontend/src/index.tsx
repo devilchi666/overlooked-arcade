@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import App from "./App";
 import "./index.css";
-import { installConsoleLogBridge } from "./lib/logbridge";
+import { installConsoleLogBridge } from "@oa/platform/lib/logbridge";
 
 // Install the console.* → Rust log bridge before any other module
 // runs. Existing `console.log("[oa-…] …")` call sites automatically

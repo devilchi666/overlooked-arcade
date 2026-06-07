@@ -1,8 +1,8 @@
 import { onCleanup, onMount, Show, type Component } from "solid-js";
 
-import type { RomEntry } from "../library/types";
-import type { ContainerNode } from "../views/types";
-import { countGamesUnder } from "../views/resolver";
+import type { RomEntry } from "@oa/platform/library/types";
+import type { ContainerNode } from "@oa/platform/views/types";
+import { countGamesUnder } from "@oa/platform/views/resolver";
 
 type Props = {
   container: ContainerNode | null;

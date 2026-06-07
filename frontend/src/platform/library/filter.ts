@@ -5,9 +5,9 @@
 // these functions allocate when there's nothing to do — empty queries,
 // "none" group, and identity sorts short-circuit.
 
-import type { GroupBy, SortKey } from "../layout/state";
-import type { SidebarView } from "../layout/LeftSidebar";
-import type { SystemId } from "../themes/registry";
+import type { GroupBy, SortKey } from "@oa/platform/layout/state";
+import type { SidebarView } from "../layout/types";
+import type { SystemId } from "@oa/platform/themes/registry";
 import type { GameMetadata } from "./media";
 import type { GameGroupInfo, RomEntry } from "./types";
 

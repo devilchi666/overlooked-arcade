@@ -26,12 +26,12 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import type { SystemId } from "../themes/registry";
-import { isPerSystemUiEnabled } from "../themes/systemUiSound";
-import { isBootAnimationsEnabled } from "../themes/systemBootAnimation";
-import { prefersReducedMotion } from "../lib/reducedMotion";
+import type { SystemId } from "@oa/platform/themes/registry";
+import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
+import { isBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
+import { prefersReducedMotion } from "@oa/platform/lib/reducedMotion";
 import { onNavEvent } from "../nav/gamepad";
-import { dispatchUiSound } from "../lib/audio";
+import { dispatchUiSound } from "@oa/platform/lib/audio";
 
 type Props = {
   /// Reactive accessor for the currently-active system (typically

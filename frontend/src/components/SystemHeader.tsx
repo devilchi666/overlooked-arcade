@@ -1,6 +1,6 @@
 import { Show, type Component } from "solid-js";
-import { systemThemes, type SystemId } from "../themes/registry";
-import { usePlatformMedia } from "../library/platformMedia";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { usePlatformMedia } from "@oa/platform/library/platformMedia";
 import SystemCoresStrip from "./SystemCoresStrip";
 
 type Props = {

@@ -7,13 +7,14 @@ import {
   type DragEventHandler,
 } from "@thisbeyond/solid-dnd";
 
-import type { LibraryStore } from "../library/store";
-import { systemThemes, type SystemId } from "../themes/registry";
-import type { LayoutStore } from "./state";
-import type { ContainerNode, PlatformNode, ViewNode } from "../views/types";
-import { parsePlatformNodeId, platformNodeIdFor } from "../views/defaults";
-import { flattenLeaves } from "../views/resolver";
-import type { ViewsStore } from "../views/store";
+import type { LibraryStore } from "@oa/platform/library/store";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import type { LayoutStore } from "@oa/platform/layout/state";
+import { type SidebarView } from "@oa/platform/layout/types";
+import type { ContainerNode, PlatformNode, ViewNode } from "@oa/platform/views/types";
+import { parsePlatformNodeId, platformNodeIdFor } from "@oa/platform/views/defaults";
+import { flattenLeaves } from "@oa/platform/views/resolver";
+import type { ViewsStore } from "@oa/platform/views/store";
 import {
   SortableContainerNode,
   SortableLeafNode,
@@ -24,20 +25,10 @@ import { useFocusGroup } from "../nav/focus";
 import { createSignal } from "solid-js";
 import SidebarMigrationBanner from "../components/SidebarMigrationBanner";
 
-/// Which surface the LIBRARY tab's grid is filtered to. `all` shows
-/// every game across every system; `view-node` restricts to whatever
-/// the operator picked in the sidebar (a system leaf, a container
-/// node, etc.). The legacy `library-manager` and `cores` page-routing
-/// variants dropped 2026-05-31 with the legacy Shell — those surfaces
-/// now live in Retroverse SETTINGS → Library / SETTINGS → Cores.
-///
-/// `view-node` is the PR-β fold of the old `system` variant — navigation
-/// is a pointer into the active view's tree (`viewId` + `nodeId`), not
-/// a bare SystemId. The runtime resolves filterable SystemIds via
-/// `resolveNodeSystemIds` (views/resolver.ts).
-export type SidebarView =
-  | { kind: "all" }
-  | { kind: "view-node"; viewId: string; nodeId: string };
+// SidebarView extracted to `@oa/platform/layout/types` in Theming
+// Substrate Phase 2 Slice B (2026-06-07) — the type itself is
+// platform-territory even while the LeftSidebar component stays
+// here pending Slice C's component move.
 
 type Props = {
   layout: LayoutStore;

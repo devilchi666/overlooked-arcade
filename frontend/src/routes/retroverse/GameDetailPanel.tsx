@@ -14,18 +14,18 @@
 
 import { For, Show, createSignal, type Component } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getDataDir } from "../../lib/dataDir";
+import { getDataDir } from "@oa/platform/lib/dataDir";
 import { createResource } from "solid-js";
-import { useMedia } from "../../library/media";
-import type { RomEntry } from "../../library/types";
-import { systemThemes } from "../../themes/registry";
+import { useMedia } from "@oa/platform/library/media";
+import type { RomEntry } from "@oa/platform/library/types";
+import { systemThemes } from "@oa/platform/themes/registry";
 import {
   getGameInfo,
   getGameInfoOverride,
   setGameInfoOverride,
   type BugSeverity,
-} from "../../library/gameInfo";
-import { useGameInfoBadges } from "../../library/gameInfoBadges";
+} from "@oa/platform/library/gameInfo";
+import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 

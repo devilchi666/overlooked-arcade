@@ -1,10 +1,10 @@
 import { For, Show, createMemo, type Component } from "solid-js";
 import { createSortable, SortableProvider, transformStyle } from "@thisbeyond/solid-dnd";
 
-import { systemThemes, type SystemId } from "../themes/registry";
-import type { RomEntry } from "../library/types";
-import type { ContainerNode, PlatformNode } from "../views/types";
-import { countGamesUnder } from "../views/resolver";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import type { RomEntry } from "@oa/platform/library/types";
+import type { ContainerNode, PlatformNode } from "@oa/platform/views/types";
+import { countGamesUnder } from "@oa/platform/views/resolver";
 
 /// Recursive node renderer for the PR-γ sidebar tree, with solid-dnd
 /// drag-reorder wiring. Per SIDEBAR_TIER_PLAN.md §3.1 + §3.5.

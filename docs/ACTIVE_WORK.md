@@ -44,14 +44,21 @@ spanned every system but was filed under whichever core happened to be active.
     signals now Platform-owned). 744 oa-shell tests pass;
     frontend typecheck silent. Snapshot restore: same
     `pre-theming-substrate` branch + tag still apply.
-  - **Phase 2 Slice B queued** — store + component moves:
-    settings/store.ts, library/store.ts, layout/state.ts,
-    views/store.ts, customCollections.ts, lib/* helpers,
-    themes/registry.ts, themes/systemUIConfigs.ts, LibraryTile,
-    LibraryView, LeftSidebar, perSystemSections all move into
-    `platform/`. Mass import-path rewrites. Then Slice C:
-    `ThemeContext` rename + Theme manifest TOML schema + ESLint
-    boundary rule (lands in Phase 4 alongside Tauri-bridge work).
+  - **Phase 2 Slice B ✅ shipped 2026-06-07** (branch
+    `feat/theming-substrate-phase-2-slice-b`, awaiting operator
+    playtest before merge). Foundational moves into `platform/`:
+    `lib/` (8 files), `themes/` (4 of 5 — `systems.css` stays as a
+    CSS bundle), settings/library/layout/state/views stores (19
+    files). ~130 import sites rewritten to the `@oa/platform/*`
+    alias. `SidebarView` type extracted from `layout/LeftSidebar.tsx`
+    (component file) to new `platform/layout/types.ts` so platform
+    code (`platform/library/filter.ts`) doesn't depend on a
+    component module. 790 oa-shell tests pass; typecheck silent.
+  - **Phase 2 Slice C queued** — shared component moves
+    (`components/{LibraryTile,LibraryView,perSystemSections}` +
+    `layout/{LeftSidebar,SidebarTreeNode,Dialog}` → `platform/components/`)
+    + `ThemeContext` rename + Theme manifest TOML schema. ESLint
+    boundary rule defers to Phase 4 alongside Tauri-bridge work.
     Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
     theme swap = restart (ARC 1); build-time bundling only

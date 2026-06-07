@@ -7,23 +7,23 @@ import {
   type DragEventHandler,
 } from "@thisbeyond/solid-dnd";
 
-import type { LibraryStore } from "../library/store";
-import { systemThemes, type SystemId, type FormFactorTag, type ManufacturerTag } from "../themes/registry";
+import type { LibraryStore } from "@oa/platform/library/store";
+import { systemThemes, type SystemId, type FormFactorTag, type ManufacturerTag } from "@oa/platform/themes/registry";
 import {
   SortableContainerNode,
   SortableLeafNode,
   type SidebarTreeContext,
 } from "../layout/SidebarTreeNode";
-import { findNode } from "../views/resolver";
-import type { ViewsStore } from "../views/store";
+import { findNode } from "@oa/platform/views/resolver";
+import type { ViewsStore } from "@oa/platform/views/store";
 import type {
   ContainerNode,
   ContainerRule,
   PlatformNode,
   View,
   ViewNode,
-} from "../views/types";
-import { DEFAULT_VIEW_ID, LEGACY_VIEW_ID, MANUFACTURER_VIEW_ID, ROOT_NODE_ID } from "../views/defaults";
+} from "@oa/platform/views/types";
+import { DEFAULT_VIEW_ID, LEGACY_VIEW_ID, MANUFACTURER_VIEW_ID, ROOT_NODE_ID } from "@oa/platform/views/defaults";
 
 type Props = {
   views: ViewsStore;
