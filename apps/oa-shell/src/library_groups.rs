@@ -382,6 +382,7 @@ mod tests {
             rating: None,
             disc_set_id: None,
             disc_number: None,
+            identity_id: None,
         }
     }
 

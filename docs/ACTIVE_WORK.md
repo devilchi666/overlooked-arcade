@@ -190,7 +190,31 @@ spanned every system but was filed under whichever core happened to be active.
       §6 Phase A (A3 sub-bullet).
   - **Phase E — schema promotion (~3–4 weeks):** new
     `game_identities` SQLite table; per-group MediaDb keys; per-group
-    metadata + play_time + favorites.
+    metadata + play_time + favorites. Sub-phase plan + design
+    decisions: [PLANS/game-identities-schema.md](PLANS/game-identities-schema.md).
+    - **E Sub-phase 1 ✅ shipped 2026-06-07** (branch
+      `feat/virtual-library-phase-e`, awaiting operator playtest
+      before merge). Schema v22→v23: `game_identities` table
+      (deterministic `idn-<sha1[..16]>` ids over
+      `(system_id, lowercased parsed base title)`) +
+      `games.identity_id` FK + population at migration + existing
+      `game_group_defaults` pins copied into
+      `default_variant_id`. One `rebuild_identities_for_system`
+      path serves migration, `add_games`, `delete_game`, seed
+      drops, and the end of Identify ROMs (regroups canonical
+      retitles, sweeps orphans; operator metadata survives
+      rebuilds via upsert-preserving SQL). Pin set/clear
+      dual-writes both stores until Sub-phase 2 swaps the read
+      path. Backend-only — zero behavior change visible in the
+      UI. 796 oa-shell tests pass (790 baseline + 6 new).
+    - **E Sub-phase 2 queued** — read-path swap:
+      `list_game_groups` reads identity rows (JOIN) instead of
+      recomputing; `GameGroup` gains identity_id + canonical
+      metadata; per-identity play_time/favorite/completed
+      aggregates; legacy `game_group_defaults` writes retired.
+    - **E Sub-phase 3 queued** — MediaDb `identity_media`
+      keyspace + canonical-metadata enrichment pass + frontend
+      (tiles/detail/search render from identities).
   - **Phase B — two-mode UX + Collection Health (~2 weeks):** global
     Casual / Preservation toggle; Variants tab on GameDetailPanel;
     System Health Overview gains % verified / % covers / % metadata
