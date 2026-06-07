@@ -192,9 +192,9 @@ spanned every system but was filed under whichever core happened to be active.
     `game_identities` SQLite table; per-group MediaDb keys; per-group
     metadata + play_time + favorites. Sub-phase plan + design
     decisions: [PLANS/game-identities-schema.md](PLANS/game-identities-schema.md).
-    - **E Sub-phase 1 ✅ shipped 2026-06-07** (branch
-      `feat/virtual-library-phase-e`, awaiting operator playtest
-      before merge). Schema v22→v23: `game_identities` table
+    - **E Sub-phase 1 ✅ shipped + merged 2026-06-07** (merge
+      `e13b7e7`; operator playtest passed — live library migrated
+      to v23 cleanly). Schema v22→v23: `game_identities` table
       (deterministic `idn-<sha1[..16]>` ids over
       `(system_id, lowercased parsed base title)`) +
       `games.identity_id` FK + population at migration + existing
