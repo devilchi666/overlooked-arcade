@@ -10,11 +10,11 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { reportInvokeError } from "../lib/toast";
-import type { RomEntry } from "../library/types";
-import { systemThemes, type SystemId } from "../themes/registry";
-import { systemUIConfigs } from "../themes/systemUIConfigs";
-import type { SettingsStore } from "../settings/store";
+import { reportInvokeError } from "@oa/platform/lib/toast";
+import type { RomEntry } from "@oa/platform/library/types";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
+import type { SettingsStore } from "@oa/platform/settings/store";
 import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "./../nav/HintBar";

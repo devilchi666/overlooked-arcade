@@ -10,7 +10,7 @@
 
 import { createResource, createSignal, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { systemThemes, type SystemId } from "../../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   PerSystemDefaultCoreSection,
   PerSystemDisplaySection,
@@ -23,7 +23,7 @@ import {
   SystemCoreOptionsDialog,
 } from "../../components/SystemDialogs";
 import PerSystemInfoSection from "./PerSystemInfoSection";
-import type { CoreEntry, MonitorInfo, SettingsStore } from "../../settings/store";
+import type { CoreEntry, MonitorInfo, SettingsStore } from "@oa/platform/settings/store";
 
 type Props = {
   /// Currently active system id; null until the operator picks one.

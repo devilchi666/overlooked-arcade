@@ -1,10 +1,10 @@
 import { createMemo, createResource, createSignal, For, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listenScoped } from "../lib/eventListener";
+import { listenScoped } from "@oa/platform/lib/eventListener";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
-import { downloadCoreWithDuplicateCheck } from "../lib/backgroundJobs";
-import type { CoreEntry } from "../settings/store";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { downloadCoreWithDuplicateCheck } from "@oa/platform/lib/backgroundJobs";
+import type { CoreEntry } from "@oa/platform/settings/store";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   CatalogCoreCard,
   humanBytes,

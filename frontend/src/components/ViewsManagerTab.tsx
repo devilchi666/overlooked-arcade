@@ -1,12 +1,12 @@
 import { createMemo, createSignal, For, Show, type Component } from "solid-js";
 
-import type { LibraryStore } from "../library/store";
-import type { ViewsStore, NewViewTemplate } from "../views/store";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { ViewsStore, NewViewTemplate } from "@oa/platform/views/store";
 import {
   DEFAULT_VIEW_ID,
   LEGACY_VIEW_ID,
   MANUFACTURER_VIEW_ID,
-} from "../views/defaults";
+} from "@oa/platform/views/defaults";
 import ViewEditorPane from "./ViewEditorPane";
 
 type Props = {

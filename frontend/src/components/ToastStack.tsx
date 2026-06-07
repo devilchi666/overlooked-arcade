@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, type Component } from "solid-js";
-import { listenScoped } from "../lib/eventListener";
+import { listenScoped } from "@oa/platform/lib/eventListener";
 
 // Mirror of the Rust ToastPayload struct in oa-shell/src/main.rs. `system`
 // is optional — when present it picks up that system's CSS cascade colors

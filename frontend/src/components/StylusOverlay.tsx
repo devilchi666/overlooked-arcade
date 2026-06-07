@@ -22,8 +22,8 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import type { SystemId } from "../themes/registry";
-import { systemUIConfigs } from "../themes/systemUIConfigs";
+import type { SystemId } from "@oa/platform/themes/registry";
+import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
 
 type Props = {
   /// SystemId of the currently-running game, or null when no game is

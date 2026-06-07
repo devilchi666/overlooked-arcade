@@ -20,7 +20,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listenScoped } from "../lib/eventListener";
+import { listenScoped } from "@oa/platform/lib/eventListener";
 import { Dialog, DialogSection } from "../layout/Dialog";
 import SettingRow, { selectClass } from "./SettingRow";
 import {
@@ -46,10 +46,10 @@ import {
   type ScalingMode,
   type SettingsStore,
   type WindowMode,
-} from "../settings/store";
-import { shaderPresets, shaderPresetLabel } from "../settings/shader_presets";
-import { systemThemes } from "../themes/registry";
-import type { RomEntry } from "../library/types";
+} from "@oa/platform/settings/store";
+import { shaderPresets, shaderPresetLabel } from "@oa/platform/settings/shader_presets";
+import { systemThemes } from "@oa/platform/themes/registry";
+import type { RomEntry } from "@oa/platform/library/types";
 
 // --- Per-game overrides shape -------------------------------------------
 

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "../themes/registry";
+import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { LibraryStore } from "./store";
 import type { RomEntry } from "./types";
 

@@ -13,7 +13,7 @@
 // above SNES if that's how they arranged the legacy list). Per
 // SIDEBAR_TIER_PLAN.md §0 + §2.3.
 
-import { systemThemes, type SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   DEFAULT_VIEW_ID,
   LEGACY_VIEW_ID,

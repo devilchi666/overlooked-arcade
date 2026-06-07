@@ -8,10 +8,10 @@ import {
   type Component,
 } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import type { EntryGroup } from "../library/filter";
-import { useMedia } from "../library/media";
-import type { RomEntry } from "../library/types";
-import { systemThemes } from "../themes/registry";
+import type { EntryGroup } from "@oa/platform/library/filter";
+import { useMedia } from "@oa/platform/library/media";
+import type { RomEntry } from "@oa/platform/library/types";
+import { systemThemes } from "@oa/platform/themes/registry";
 import { useFocusGroup } from "../nav/focus";
 
 type Props = {

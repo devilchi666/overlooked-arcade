@@ -25,9 +25,9 @@
 // (now sourced from MAME's <display refresh=…> attribute).
 
 import { createResource, For, Show, type Component } from "solid-js";
-import type { SystemId } from "../../themes/registry";
-import { systemThemes } from "../../themes/registry";
-import { getSystemInfo, type MergedSystemInfo } from "../../library/systemInfo";
+import type { SystemId } from "@oa/platform/themes/registry";
+import { systemThemes } from "@oa/platform/themes/registry";
+import { getSystemInfo, type MergedSystemInfo } from "@oa/platform/library/systemInfo";
 
 type Props = {
   systemId: SystemId;

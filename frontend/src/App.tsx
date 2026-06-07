@@ -24,13 +24,13 @@ import RegionPicker from "./components/RegionPicker";
 import TileContextMenu from "./components/TileContextMenu";
 import NewCollectionDialog from "./components/NewCollectionDialog";
 import ToastStack from "./components/ToastStack";
-import { type SidebarView } from "./layout/LeftSidebar";
-import { createViewsStore } from "./views/store";
-import { platformNodeIdFor, parsePlatformNodeId } from "./views/defaults";
-import { findNode, nodeContainsId } from "./views/resolver";
-import type { ContainerNode } from "./views/types";
+import { type SidebarView } from "@oa/platform/layout/types";
+import { createViewsStore } from "@oa/platform/views/store";
+import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
+import { findNode, nodeContainsId } from "@oa/platform/views/resolver";
+import type { ContainerNode } from "@oa/platform/views/types";
 import ContainerContextMenu from "./components/ContainerContextMenu";
-import type { ShellMode } from "./settings/store";
+import type { ShellMode } from "@oa/platform/settings/store";
 import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
@@ -40,7 +40,7 @@ import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
 import { DebugLogDialog } from "./components/DebugLogDialog";
 import { ScreenshotGalleryDialog } from "./components/ScreenshotGalleryDialog";
 import { PerformanceHud } from "./components/PerformanceHud";
-import { createLayoutStore } from "./layout/state";
+import { createLayoutStore } from "@oa/platform/layout/state";
 import {
   ingestFolderPath,
   pickFolderAndIngest,
@@ -49,28 +49,28 @@ import {
   titleFromFileName,
   type IngestResult,
   type ScanProgress,
-} from "./library/ingest";
+} from "@oa/platform/library/ingest";
 import { listen } from "@tauri-apps/api/event";
-import { listenScoped } from "./lib/eventListener";
-import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from "./themes/registry";
-import { launchRom, type LaunchResult } from "./library/launch";
-import { MediaProvider } from "./library/media";
-import { PlatformMediaProvider } from "./library/platformMedia";
-import { GameInfoBadgesProvider } from "./library/gameInfoBadges";
-import { createLibraryStore } from "./library/store";
-import { createCustomCollectionsStore } from "./library/customCollections";
-import type { RomEntry } from "./library/types";
-import { createSettingsStore } from "./settings/store";
-import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "./settings/shader_presets";
-import type { SystemId } from "./themes/registry";
+import { listenScoped } from "@oa/platform/lib/eventListener";
+import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from "@oa/platform/themes/registry";
+import { launchRom, type LaunchResult } from "@oa/platform/library/launch";
+import { MediaProvider } from "@oa/platform/library/media";
+import { PlatformMediaProvider } from "@oa/platform/library/platformMedia";
+import { GameInfoBadgesProvider } from "@oa/platform/library/gameInfoBadges";
+import { createLibraryStore } from "@oa/platform/library/store";
+import { createCustomCollectionsStore } from "@oa/platform/library/customCollections";
+import type { RomEntry } from "@oa/platform/library/types";
+import { createSettingsStore } from "@oa/platform/settings/store";
+import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "@oa/platform/settings/shader_presets";
+import type { SystemId } from "@oa/platform/themes/registry";
 import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar } from "./nav/HintBar";
 import BackgroundJobsBar from "./components/background-jobs/BackgroundJobsBar";
 import ResumePromptDialog from "./components/background-jobs/ResumePromptDialog";
 import { setSwapAB } from "./nav/focus";
-import { setPerSystemUiEnabled } from "./themes/systemUiSound";
-import { setBootAnimationsEnabled } from "./themes/systemBootAnimation";
-import { setRetroverseUiEnabled } from "./lib/retroverseFlag";
+import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
+import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
+import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
 import { RetroverseProvider } from "./routes/retroverse/context";
 import EngineManagerSurface from "./engine/EngineManagerSurface";

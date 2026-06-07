@@ -3,7 +3,7 @@ import {
   LIBRARY_TILE_SIZE_MAX,
   LIBRARY_TILE_SIZE_MIN,
   LIBRARY_TILE_SIZE_STEP,
-} from "../layout/state";
+} from "@oa/platform/layout/state";
 
 type Props = {
   /** Title for the current view (e.g. "All games", "TurboGrafx-16"). */

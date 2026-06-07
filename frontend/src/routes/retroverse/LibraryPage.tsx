@@ -32,8 +32,8 @@ import {
   groupsVersion,
   useDomQueryFocusGroup,
 } from "../../nav/focus";
-import { systemThemes, type SystemId } from "../../themes/registry";
-import { findNode } from "../../views/resolver";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { findNode } from "@oa/platform/views/resolver";
 import { useRetroverse } from "./context";
 import { setSystemContextFor, setContainerContextFor } from "../../platform/dialogs";
 

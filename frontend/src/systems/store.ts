@@ -1,6 +1,6 @@
 import { createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
-import type { SystemId } from "../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 // Per-system settings live at localStorage[oa.core.<id>.v1], one bucket per
 // core. This file is the OA-wide skeleton; each core's actual schema lives

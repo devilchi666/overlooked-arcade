@@ -9,7 +9,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { listenScoped } from "../lib/eventListener";
+import { listenScoped } from "@oa/platform/lib/eventListener";
 import {
   closestCenter,
   createSortable,
@@ -19,14 +19,14 @@ import {
   transformStyle,
   type DragEventHandler,
 } from "@thisbeyond/solid-dnd";
-import type { LibraryStore } from "../library/store";
-import { useMedia } from "../library/media";
-import type { LayoutStore } from "../layout/state";
-import type { SettingsStore } from "../settings/store";
-import { systemThemes, type SystemId } from "../themes/registry";
-import type { ViewsStore } from "../views/store";
-import { collectHiddenContainers, findNode } from "../views/resolver";
-import { platformNodeIdFor } from "../views/defaults";
+import type { LibraryStore } from "@oa/platform/library/store";
+import { useMedia } from "@oa/platform/library/media";
+import type { LayoutStore } from "@oa/platform/layout/state";
+import type { SettingsStore } from "@oa/platform/settings/store";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import type { ViewsStore } from "@oa/platform/views/store";
+import { collectHiddenContainers, findNode } from "@oa/platform/views/resolver";
+import { platformNodeIdFor } from "@oa/platform/views/defaults";
 import SettingRow, { selectClass } from "./SettingRow";
 import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";

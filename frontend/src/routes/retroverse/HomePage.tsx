@@ -36,15 +36,15 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { useMedia } from "../../library/media";
-import { usePlatformMedia } from "../../library/platformMedia";
-import { systemThemes, type SystemId } from "../../themes/registry";
-import type { RomEntry } from "../../library/types";
+import { useMedia } from "@oa/platform/library/media";
+import { usePlatformMedia } from "@oa/platform/library/platformMedia";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import type { RomEntry } from "@oa/platform/library/types";
 import { HintRegion } from "../../nav/HintBar";
 import { useDomQueryFocusGroup } from "../../nav/focus";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
-import { getSystemInfo, type MergedSystemInfo } from "../../library/systemInfo";
+import { getSystemInfo, type MergedSystemInfo } from "@oa/platform/library/systemInfo";
 import { useRetroverse } from "./context";
 
 function formatHours(secs: number): string {

@@ -9,7 +9,7 @@
 // `docs/cores/<systemId>/README.md`; this map gives the operator a
 // pointer when the readiness checklist surfaces a missing BIOS.
 
-import type { SystemId } from "../../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 /// Default hint shown for any system that doesn't have an explicit
 /// per-system entry below. Keeps the affordance discoverable while

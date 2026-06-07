@@ -20,7 +20,7 @@
 // later slices add call sites for the sidebar, context menus, etc.
 
 import { createSignal, type Accessor } from "solid-js";
-import { dispatchUiSound, type UiSoundEvent } from "../lib/audio";
+import { dispatchUiSound, type UiSoundEvent } from "@oa/platform/lib/audio";
 import type { SystemId } from "./registry";
 import { uiConfigFor } from "./systemUIConfigs";
 

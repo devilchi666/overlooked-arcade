@@ -30,7 +30,7 @@ import {
   type Accessor,
   type Component,
 } from "solid-js";
-import type { SystemId } from "../../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 import {
   EMPTY_SYSTEM_INFO_OVERRIDE,
   getSystemInfo,
@@ -42,7 +42,7 @@ import {
   type Peripheral,
   type SystemInfoCurated,
   type SystemInfoOverride,
-} from "../../library/systemInfo";
+} from "@oa/platform/library/systemInfo";
 
 type Props = {
   /// Currently focused system slug. The section refetches all three

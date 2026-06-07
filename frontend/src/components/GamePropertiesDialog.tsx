@@ -19,10 +19,10 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { Dialog, DialogSection } from "../layout/Dialog";
 import SettingRow, { selectClass } from "./SettingRow";
-import { type CoreEntry, type SettingsStore } from "../settings/store";
-import { systemThemes } from "../themes/registry";
-import type { LibraryStore } from "../library/store";
-import type { RomEntry } from "../library/types";
+import { type CoreEntry, type SettingsStore } from "@oa/platform/settings/store";
+import { systemThemes } from "@oa/platform/themes/registry";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { RomEntry } from "@oa/platform/library/types";
 import type { GameOverrides } from "./GameDialogs";
 
 type Props = {

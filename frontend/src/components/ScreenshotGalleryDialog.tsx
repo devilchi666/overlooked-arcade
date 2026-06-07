@@ -6,7 +6,7 @@
 import { createResource, For, Show, type Component } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Dialog } from "../layout/Dialog";
-import type { RomEntry } from "../library/types";
+import type { RomEntry } from "@oa/platform/library/types";
 
 type ScreenshotEntry = {
   path: string;

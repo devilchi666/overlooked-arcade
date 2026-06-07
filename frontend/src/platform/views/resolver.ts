@@ -6,7 +6,7 @@
 //
 // Per SIDEBAR_TIER_PLAN.md §2.3 + §3.3.
 
-import { systemThemes, type SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { ContainerNode, ContainerRule, PlatformNode, View, ViewNode } from "./types";
 import { parsePlatformNodeId, platformNodeIdFor } from "./defaults";
 

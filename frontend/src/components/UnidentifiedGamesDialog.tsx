@@ -15,8 +15,8 @@
 import { createMemo, createResource, For, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { Dialog } from "../layout/Dialog";
-import { reportInvokeError } from "../lib/toast";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { reportInvokeError } from "@oa/platform/lib/toast";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 export type UnidentifiedGameRow = {
   id: string;

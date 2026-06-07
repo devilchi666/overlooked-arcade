@@ -22,7 +22,7 @@ import {
   type Accessor,
   type Component,
 } from "solid-js";
-import { systemThemes, type SystemId } from "../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 export type GameMediaManageStats = {
   total: number;

@@ -1,21 +1,21 @@
 import { createMemo, createSignal, Show, type Component } from "solid-js";
-import type { LibraryStore } from "../library/store";
-import type { RomEntry } from "../library/types";
-import type { LayoutStore } from "../layout/state";
-import type { SidebarView } from "../layout/LeftSidebar";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { RomEntry } from "@oa/platform/library/types";
+import type { LayoutStore } from "@oa/platform/layout/state";
+import type { SidebarView } from "@oa/platform/layout/types";
 import {
   collapseDiscSets,
   collapseVariantGroups,
   filterEntries,
   groupEntries,
   sortEntries,
-} from "../library/filter";
+} from "@oa/platform/library/filter";
 import DiscPickerDialog from "./DiscPickerDialog";
-import { useMedia } from "../library/media";
-import { systemThemes, type SystemId } from "../themes/registry";
-import type { ViewsStore } from "../views/store";
-import { findNode, resolveNodeSystemIds } from "../views/resolver";
-import { parsePlatformNodeId } from "../views/defaults";
+import { useMedia } from "@oa/platform/library/media";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import type { ViewsStore } from "@oa/platform/views/store";
+import { findNode, resolveNodeSystemIds } from "@oa/platform/views/resolver";
+import { parsePlatformNodeId } from "@oa/platform/views/defaults";
 import DetailListView from "./DetailListView";
 import GridControls from "./GridControls";
 import SystemHeader from "./SystemHeader";

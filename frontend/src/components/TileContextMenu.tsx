@@ -1,9 +1,9 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
-import type { LibraryStore } from "../library/store";
-import type { CustomCollectionsStore } from "../library/customCollections";
-import type { RomEntry, VariantInfo } from "../library/types";
-import { useMedia } from "../library/media";
+import type { LibraryStore } from "@oa/platform/library/store";
+import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
+import type { RomEntry, VariantInfo } from "@oa/platform/library/types";
+import { useMedia } from "@oa/platform/library/media";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { HintRegion } from "../nav/HintBar";

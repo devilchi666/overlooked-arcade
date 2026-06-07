@@ -25,9 +25,9 @@ import {
   type Component,
 } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { SystemId } from "../themes/registry";
-import { uiConfigFor } from "../themes/systemUIConfigs";
-import { isPerSystemUiEnabled } from "../themes/systemUiSound";
+import type { SystemId } from "@oa/platform/themes/registry";
+import { uiConfigFor } from "@oa/platform/themes/systemUIConfigs";
+import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 
 type Props = {
   /// Reactive accessor for the system whose background should render.

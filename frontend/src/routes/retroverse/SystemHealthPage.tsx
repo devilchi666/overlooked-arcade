@@ -23,7 +23,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { systemThemes, type SystemId } from "../../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   BackgroundJobsSettings,
   BiosSettings,
@@ -31,7 +31,7 @@ import {
   StorageSettings,
 } from "../../components/SettingsSections";
 import SystemReadinessChecklist from "../../components/import-wizard/SystemReadinessChecklist";
-import { activeJobs } from "../../lib/backgroundJobs";
+import { activeJobs } from "@oa/platform/lib/backgroundJobs";
 import { useRetroverse } from "./context";
 
 export type HealthTabId = "overview" | "bios" | "cores" | "storage" | "jobs";

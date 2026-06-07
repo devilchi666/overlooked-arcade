@@ -19,12 +19,12 @@
 // placeholder until session-length / difficulty data exists.
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
-import { useMedia } from "../../library/media";
-import type { RomEntry } from "../../library/types";
+import { useMedia } from "@oa/platform/library/media";
+import type { RomEntry } from "@oa/platform/library/types";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import { useDomQueryFocusGroup } from "../../nav/focus";
-import { systemThemes, type SystemId } from "../../themes/registry";
+import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useRetroverse } from "./context";
 
 // Per-system classification for the Quick / Marathon / Challenge moods.

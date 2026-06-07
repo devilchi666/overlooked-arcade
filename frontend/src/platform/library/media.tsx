@@ -27,8 +27,8 @@ import {
 } from "solid-js";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getDataDir } from "../lib/dataDir";
-import type { SystemId } from "../themes/registry";
+import { getDataDir } from "@oa/platform/lib/dataDir";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 export type MediaSourceKind = "manual" | "libretroThumbnails";
 export type MediaSource = { kind: MediaSourceKind };

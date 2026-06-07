@@ -16,7 +16,7 @@ import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import type { GameGroupInfo, LibraryState, RomEntry, RomId } from "./types";
-import type { SystemId } from "../themes/registry";
+import type { SystemId } from "@oa/platform/themes/registry";
 
 const LEGACY_STORAGE_KEY = "oa.library.v1";
 
