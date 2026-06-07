@@ -44,9 +44,10 @@ spanned every system but was filed under whichever core happened to be active.
     signals now Platform-owned). 744 oa-shell tests pass;
     frontend typecheck silent. Snapshot restore: same
     `pre-theming-substrate` branch + tag still apply.
-  - **Phase 2 Slice B ✅ shipped 2026-06-07** (branch
-    `feat/theming-substrate-phase-2-slice-b`, awaiting operator
-    playtest before merge). Foundational moves into `platform/`:
+  - **Phase 2 Slice B ✅ shipped + merged 2026-06-07** (merge
+    `0eb2f56`; operator playtest passed — boot / LIBRARY /
+    theming / settings persistence / launch all clean).
+    Foundational moves into `platform/`:
     `lib/` (8 files), `themes/` (4 of 5 — `systems.css` stays as a
     CSS bundle), settings/library/layout/state/views stores (19
     files). ~130 import sites rewritten to the `@oa/platform/*`
