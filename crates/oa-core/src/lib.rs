@@ -12,6 +12,7 @@
 #![warn(missing_docs)]
 
 use std::io::{Read, Write};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -894,4 +895,205 @@ pub trait Core: Send {
     /// removing; `code` is the raw user-entered string. Default no-op so
     /// cores without a cheat machinery silently ignore.
     fn cheat_set(&mut self, _index: u32, _enabled: bool, _code: &str) {}
+}
+
+// ---------------------------------------------------------------------------
+// Launcher — game-session lifecycle contract ABOVE [`Core`]
+// (virtual-library Phase C, docs/PLANS/launcher-abstraction.md)
+// ---------------------------------------------------------------------------
+
+/// Everything the shell knows about a game it wants launched, after
+/// content resolution (archive extraction, soft patching, per-game
+/// path overrides) has already run. Launcher-agnostic: the same
+/// request describes an in-process libretro launch and an external
+/// standalone-emulator launch.
+///
+/// Content arrives in one of two shapes, mirroring the libretro
+/// `RomSource` split: `content_bytes` non-empty = cart-shape ROM
+/// loaded into memory; `content_bytes` empty = `content_path` points
+/// at a file/directory the emulator opens itself (CD images, engine
+/// descriptors, directory-path systems).
+#[derive(Debug, Clone)]
+pub struct LaunchRequest {
+    /// Resolved content path. For byte-shape launches this is the
+    /// logical filename (save-state stem derivation reads it); for
+    /// path-shape launches it's the real filesystem path the emulator
+    /// opens.
+    pub content_path: String,
+    /// In-memory ROM bytes for cart-shape content. Empty for
+    /// path-shape launches.
+    pub content_bytes: Vec<u8>,
+    /// The frontend's system id string (e.g. "tg16", "gamecube").
+    /// Strings rather than [`SystemId`] because launch plumbing in the
+    /// shell is keyed on the frontend ids end-to-end.
+    pub system_id: String,
+    /// Save-state slot to restore after the content loads. Mutually
+    /// exclusive with `restore_state_path`.
+    pub restore_slot: Option<u32>,
+    /// Direct-launch `--state-file PATH`: arbitrary state file to
+    /// restore after load, bypassing the per-game slot directory.
+    pub restore_state_path: Option<PathBuf>,
+    /// Per-game core override (filename of a .dll/.so/.dylib in
+    /// `<exe_dir>/cores/`). Only meaningful to in-process launchers;
+    /// external launchers ignore it.
+    pub core_override: Option<String>,
+}
+
+/// A launch request after [`Launcher::prepare`] — validated and ready
+/// for [`Launcher::launch`].
+///
+/// Phase C1 carries the request through unchanged for the in-process
+/// path. Phase C2's external launcher extends preparation to resolve
+/// the emulator binary + expand its argument template, so failures
+/// surface at prepare time rather than mid-spawn.
+#[derive(Debug, Clone)]
+pub struct LaunchPrepared {
+    /// The validated request, unchanged.
+    pub request: LaunchRequest,
+}
+
+/// Handle to a running game session, returned by [`Launcher::launch`]
+/// and consumed by [`Launcher::is_alive`] / [`Launcher::terminate`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchedSession {
+    /// In-process libretro session — the emulator thread owns the
+    /// running core; the session lives until the shell unloads the ROM
+    /// or exits.
+    InProcess,
+    /// External standalone-emulator session tracked by child PID
+    /// (Phase C2+).
+    External {
+        /// OS process id of the spawned emulator.
+        pid: u32,
+    },
+}
+
+/// What a launcher can do, used to gate QuickSettings affordances
+/// (decision D5 in docs/PLANS/launcher-abstraction.md). The in-process
+/// libretro launcher supports everything (today's behavior); external
+/// launchers support none of it in v1 — the standalone emulator manages
+/// its own saves, input, and rendering, so the corresponding toggles
+/// gray out with a "managed by <emulator>" hint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherCapabilities {
+    /// Save / load states (slots, quick save, autosave).
+    pub supports_savestate: bool,
+    /// Rewind ring + scrubber.
+    pub supports_rewind: bool,
+    /// Run-ahead latency reduction.
+    pub supports_run_ahead: bool,
+    /// OA-side input binding / remap.
+    pub supports_input_remap: bool,
+    /// OA's WGSL shader pipeline.
+    pub supports_shaders: bool,
+    /// Core options (libretro variables) surface.
+    pub supports_core_options: bool,
+    /// Disc eject / swap control.
+    pub supports_disc_control: bool,
+    /// Framebuffer-derived captures (screenshots, video, TAS,
+    /// memory inspector).
+    pub supports_frame_capture: bool,
+}
+
+impl LauncherCapabilities {
+    /// Every capability on — the in-process libretro launcher.
+    pub fn all() -> Self {
+        Self {
+            supports_savestate: true,
+            supports_rewind: true,
+            supports_run_ahead: true,
+            supports_input_remap: true,
+            supports_shaders: true,
+            supports_core_options: true,
+            supports_disc_control: true,
+            supports_frame_capture: true,
+        }
+    }
+
+    /// Every capability off — external launchers in v1.
+    pub fn none() -> Self {
+        Self {
+            supports_savestate: false,
+            supports_rewind: false,
+            supports_run_ahead: false,
+            supports_input_remap: false,
+            supports_shaders: false,
+            supports_core_options: false,
+            supports_disc_control: false,
+            supports_frame_capture: false,
+        }
+    }
+}
+
+/// Why a launcher operation failed. `Display` renders the inner
+/// message verbatim (no variant prefix) so shell error strings that
+/// predate the Launcher seam survive the refactor byte-identically.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchError {
+    /// [`Launcher::prepare`] failed — content missing/unreadable,
+    /// profile misconfigured, binary not found.
+    Prepare(String),
+    /// [`Launcher::launch`] failed — dispatch channel closed, process
+    /// spawn error.
+    Launch(String),
+    /// [`Launcher::terminate`] failed.
+    Terminate(String),
+}
+
+impl std::fmt::Display for LaunchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LaunchError::Prepare(msg)
+            | LaunchError::Launch(msg)
+            | LaunchError::Terminate(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for LaunchError {}
+
+/// The game-session lifecycle contract: `prepare → launch → is_alive →
+/// terminate` plus capability flags.
+///
+/// Sits ABOVE [`Core`], which stays frame-level (run_frame /
+/// framebuffer / drain_audio) and untouched — decision D1 in
+/// docs/PLANS/launcher-abstraction.md. A launcher decides *how* a game
+/// runs: `LibretroLauncher` (in the shell) dispatches to the in-process
+/// emulator thread; `ExternalProcessLauncher` (Phase C2) spawns a
+/// standalone emulator and tracks the child PID. The shell owns
+/// everything launcher-agnostic — content resolution, play-session
+/// bookkeeping, window choreography — and routes the lifecycle through
+/// whichever launcher the per-system pref selects.
+pub trait Launcher: Send + Sync {
+    /// Stable identifier — `"libretro"` for the in-process launcher,
+    /// the emulator profile id (e.g. `"dolphin"`) for external ones.
+    fn id(&self) -> &str;
+
+    /// What this launcher can do; gates QuickSettings affordances.
+    fn capabilities(&self) -> LauncherCapabilities;
+
+    /// Validate and stage a launch. Cheap and side-effect-free on the
+    /// emulator: no process spawned, no core touched. Failures here
+    /// mean the request can never launch (missing binary, bad profile).
+    fn prepare(&self, request: LaunchRequest) -> Result<LaunchPrepared, LaunchError>;
+
+    /// Start the game. In-process: dispatch to the emulator thread.
+    /// External: spawn the child process.
+    fn launch(&self, prepared: LaunchPrepared) -> Result<LaunchedSession, LaunchError>;
+
+    /// Whether the session is still running. In-process sessions
+    /// report `true` until terminated (the emulator thread lives as
+    /// long as the shell); external sessions report child-process
+    /// liveness.
+    fn is_alive(&self, session: &LaunchedSession) -> bool;
+
+    /// Tear the session down. `title` is the operator-visible game
+    /// title for the teardown notification (the in-process launcher's
+    /// "Unloaded <title>" toast); `None` => generic wording.
+    fn terminate(
+        &self,
+        session: &LaunchedSession,
+        title: Option<String>,
+    ) -> Result<(), LaunchError>;
 }
