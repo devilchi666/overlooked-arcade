@@ -83,14 +83,20 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: picking next — Phase B vs Phase C** (as of
-  2026-06-07: Phase E complete in one day, Sub-phases 1-3 merged).
-  Phase B (two-mode UX + Variants tab) is the arc's own next step
-  and consumes Phase E's fresh surfaces; Phase C (Launcher trait)
-  is what the theming arc's Phase-2 pause gates on (theming plan
-  §7 wants VL E + C before theming Phase 3 resumes). Operator
-  decides. Still pending operator-side from Phase A: the A1
-  hit-rate measurement (run Identify ROMs on a disc system).
+  **Current slice: Phase C — launcher abstraction** (operator
+  picked C over B 2026-06-07 to unblock the theming arc's Phase-2
+  pause; theming plan §7 wants VL E + C before theming Phase 3
+  resumes). Sub-phase plan + operator-locked decisions:
+  [PLANS/launcher-abstraction.md](PLANS/launcher-abstraction.md).
+  Key decisions: Launcher = lifecycle trait ABOVE the untouched
+  `oa_core::Core`; pilot = **Dolphin standalone against the
+  existing `gamecube` system** (no new systems in C — wiiu/ps3/3ds
+  ride Phase D with the installer); minimize-OA-while-running;
+  C1 (trait + LibretroLauncher refactor, invisible) → C2 (profile
+  registry + ExternalProcessLauncher + first Dolphin launch) →
+  C3 (capability gating + session polish). Still pending
+  operator-side from Phase A: the A1 hit-rate measurement (run
+  Identify ROMs on a disc system).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
