@@ -6,6 +6,43 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-06 — VB right D-pad verification — already shipped, NEXT.md was double-stale
+
+Followup to yesterday's DEFERRED-band honesty pass. The
+"Right D-pad bindings for Virtual Boy (~150 LOC)" bullet I moved
+from DEFERRED → LOWER turned out to be triple-stale: not blocked on
+infra, not pickup-able work, but actually-already-shipped per
+`virtualboy/ROADMAP.md` line 32 (✅ 2026-05-24) via the shared
+analog routing infra. Operator asked to verify against the actual
+core before writing any code — good instinct.
+
+- **Shipped:** Verification against Beetle VB `libretro.cpp` on
+  `libretro/beetle-vb-libretro@master`: the core polls the right
+  D-pad via `input_state_cb(j, RETRO_DEVICE_ANALOG,
+  RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_{X,Y})`
+  and applies its own deadzone. OA's shared analog routing already
+  feeds that exact channel — `default_analog_routing("virtualboy")`
+  at `apps/oa-shell/src/system_settings.rs:441` sets
+  `gamepad_source: "right"` for port 0 + Numpad 8/2/4/6 keyboard
+  fallback, and the per-system YAML
+  `config/systems/virtualboy/system.yaml` declares
+  `analog_sticks: Dual { left_label: "Left D-pad", right_label:
+  "Right D-pad" }` so the per-system Bindings UI renders the
+  right-stick panel labeled "Right D-pad" out of the box. Struck
+  the stale NEXT.md LOWER-band bullet #13 with the verification
+  note inline.
+- **Almost:** N/A — nothing to ship, this was a documentation
+  honesty pass + memory capture.
+- **Next:** Save the verified pattern as a reference memory — any
+  Mednafen-derived core that maps a secondary D-pad through the
+  right analog stick (Beetle PCE 6-button arcade pad rotation,
+  Beetle Saturn 3D-pad analog mode, future Beetle PSX dual-shock
+  R-stick D-pad games) is handled automatically by the same
+  `gamepad_source: "right"` routing pattern. Worth recording so
+  the next core onboarding doesn't re-derive it.
+
+---
+
 ## 2026-06-06 — Guided Setup Phase 2 — CPU-tier curated core selection
 
 Branch `feat/guided-setup-cpu-tier` — 4 code slices closing the last
