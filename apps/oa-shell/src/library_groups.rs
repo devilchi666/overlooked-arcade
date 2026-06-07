@@ -24,7 +24,7 @@
 
 use serde::Serialize;
 
-use crate::library_db::GameRow;
+use crate::library_db::{GameIdentityRow, GameRow};
 use crate::library_prefs::RevisionPriority;
 use crate::title_parse::{parse_canonical_title, DumpStatus, ParsedTitle};
 
@@ -32,17 +32,59 @@ use crate::title_parse::{parse_canonical_title, DumpStatus, ParsedTitle};
 /// (title / cover / etc.) is what the tile renders; `variants` carries
 /// every dump the user has installed, in the same ranking order the
 /// priority resolver produced.
+///
+/// VL Phase E Sub-phase 2 — groups are now *backed by identity rows*:
+/// the group key is `games.identity_id`, the display title is the
+/// identity's `canonical_title`, the pin comes from the identity's
+/// `default_variant_id`, and the group carries the identity's canonical
+/// metadata + per-identity stat aggregates. Games whose `identity_id`
+/// is unstamped (transient state between an insert and the next
+/// rebuild) fall back to the pre-Phase-E in-memory parse grouping.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameGroup {
     pub system_id: String,
     /// Lowercased base title — the group key. Stable across renames /
-    /// case differences.
+    /// case differences. Identity-backed groups carry the identity's
+    /// `normalized_title` here (same normalization).
     pub base_title_key: String,
-    /// Pretty base title taken from the default variant's parsed name
-    /// (i.e. `Castlevania`, not `castlevania`). For display only.
+    /// Pretty base title. Identity-backed groups read the identity's
+    /// `canonical_title`; fallback groups derive it from the default
+    /// variant's parsed name. For display only.
     pub display_base_title: String,
+    /// The `game_identities` row backing this group. `None` only for
+    /// transient unstamped rows (heals on the next rebuild).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<String>,
     pub default_variant_id: String,
+    // --- Canonical metadata pass-through (identity row). NULL until
+    // --- the Sub-phase 3 enrichment pass or an operator edit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub year: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub players: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+    /// Identity's explicit parent cover when set; otherwise the default
+    /// variant's per-file cover. What the tile should render.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canonical_cover_path: Option<String>,
+    // --- Per-identity stats, aggregated across ALL the identity's
+    // --- files (not just this group's disc bucket — FF7 Disc 1/2/3
+    // --- are three groups sharing one identity and one total).
+    pub total_play_time_secs: i64,
+    /// True when ANY variant is favorited.
+    pub favorite: bool,
+    /// True when ANY variant is marked completed.
+    pub completed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_played_at: Option<i64>,
     /// Every dump in priority order. First entry === default variant
     /// (so frontends that just want "the one to launch" can use index 0).
     pub variants: Vec<GameVariant>,
@@ -77,6 +119,15 @@ pub struct GameVariant {
     pub is_bios: bool,
     pub is_homebrew: bool,
     pub translation_languages: Vec<String>,
+    // --- VL Phase E Sub-phase 2 — per-variant stats ----------------
+    // The group-level fields aggregate these; the Variants tab
+    // (Phase B) renders them per-dump, and the Preservation view's
+    // per-variant favorite toggle reads/writes the per-file truth.
+    pub favorite: bool,
+    pub completed: bool,
+    pub play_time_secs: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_played_at: Option<i64>,
 }
 
 /// Per-variant filter predicates for the Preservation Vault. Each
@@ -161,55 +212,98 @@ pub fn variant_passes_filters(variant: &GameVariant, filters: &VariantFilters) -
     true
 }
 
-/// Build groups out of a flat list. `defaults_by_base_title` maps a
-/// group's `base_title_key` to a pinned `game_id` (from the
-/// `game_group_defaults` table for the same system).
+/// Build groups out of a flat list, backed by `game_identities` rows.
+/// `identities` is keyed by identity id (`LibraryDb::list_identities`
+/// → map at the call site); each game's `identity_id` stamp picks its
+/// group, the identity's `default_variant_id` is the pin, and the
+/// identity's canonical metadata rides along on the group.
 ///
-/// `games` may span multiple systems — they group per `(system_id,
-/// base_title_key)` so different systems never bleed into one tile.
+/// Games with no (or an unknown) `identity_id` stamp fall back to the
+/// pre-Phase-E in-memory parse grouping — a transient state that heals
+/// on the next rebuild (`list_game_groups` triggers one lazily).
+///
+/// `games` may span multiple systems — identity ids are per-system by
+/// construction, and the fallback key includes `system_id`, so
+/// different systems never bleed into one tile.
 pub fn build_groups(
     games: Vec<GameRow>,
     region_priority: &[String],
     revision_priority: RevisionPriority,
-    defaults_by_base_title: &std::collections::HashMap<(String, String), String>,
+    identities: &std::collections::HashMap<String, GameIdentityRow>,
 ) -> Vec<GameGroup> {
     use std::collections::HashMap;
 
-    // Bucket games by (system_id, base_title_key, disc_number). The
-    // disc_number is part of the key so multi-disc games stay in
+    // Bucket games by (group_key, disc_number). The group_key is the
+    // identity id when stamped + known, else a parse-derived fallback.
+    // The disc_number is part of the key so multi-disc games stay in
     // separate per-disc buckets — operator clicking the "Run version"
     // submenu on FF7 Disc 1 sees regional variants of Disc 1 only,
     // not Disc 1 + Disc 2 + Disc 3 as if they were regional dumps of
     // the same disc (Phase A1 Sub-phase 4 hotfix 2026-06-04).
     // Single-disc games (disc_number = None) keep the original
     // bucketing behaviour.
-    //
-    // Note: this requires v20 migration to have stamped disc_number
-    // on pre-existing multi-disc identifications; pre-v20 games stay
-    // grouped via the title-parser's flags path, which is the
-    // pre-Sub-phase-4 behaviour.
     struct Bucket {
         system_id: String,
         base_key: String,
         display_base: String,
+        identity_id: Option<String>,
         entries: Vec<(GameRow, ParsedTitle)>,
     }
-    let mut buckets: HashMap<(String, String, Option<u32>), Bucket> = HashMap::new();
+    // Per-identity stat totals, accumulated across ALL the identity's
+    // files BEFORE disc bucketing splits them into per-disc groups.
+    // Copy so multi-bucket identities (one per disc) each read the
+    // same totals without ownership gymnastics.
+    #[derive(Default, Clone, Copy)]
+    struct Stats {
+        play_time_secs: i64,
+        favorite: bool,
+        completed: bool,
+        last_played_at: Option<i64>,
+    }
+    let mut stats: HashMap<String, Stats> = HashMap::new();
+    let mut buckets: HashMap<(String, Option<u32>), Bucket> = HashMap::new();
     for g in games {
         let parsed = parse_canonical_title(&g.title);
-        let base_key = parsed.base.to_lowercase();
-        let key = (g.system_id.clone(), base_key.clone(), g.disc_number);
-        let bucket = buckets.entry(key).or_insert_with(|| Bucket {
-            system_id: g.system_id.clone(),
-            base_key: base_key.clone(),
-            display_base: parsed.base.clone(),
-            entries: Vec::new(),
-        });
+        let identity = g
+            .identity_id
+            .as_ref()
+            .and_then(|iid| identities.get(iid));
+        // \x1f separators keep a pathological title from colliding
+        // with a real identity id or another system's fallback key.
+        let group_key = match identity {
+            Some(i) => i.id.clone(),
+            None => format!("fb\x1f{}\x1f{}", g.system_id, parsed.base.to_lowercase()),
+        };
+
+        let s = stats.entry(group_key.clone()).or_default();
+        s.play_time_secs += g.play_time_secs;
+        s.favorite |= g.favorite;
+        s.completed |= g.completed;
+        s.last_played_at = s.last_played_at.max(g.last_played_at);
+
+        let bucket = buckets
+            .entry((group_key, g.disc_number))
+            .or_insert_with(|| match identity {
+                Some(i) => Bucket {
+                    system_id: g.system_id.clone(),
+                    base_key: i.normalized_title.clone(),
+                    display_base: i.canonical_title.clone(),
+                    identity_id: Some(i.id.clone()),
+                    entries: Vec::new(),
+                },
+                None => Bucket {
+                    system_id: g.system_id.clone(),
+                    base_key: parsed.base.to_lowercase(),
+                    display_base: parsed.base.clone(),
+                    identity_id: None,
+                    entries: Vec::new(),
+                },
+            });
         bucket.entries.push((g, parsed));
     }
 
     let mut out = Vec::with_capacity(buckets.len());
-    for (_, mut bucket) in buckets {
+    for ((group_key, _disc), mut bucket) in buckets {
         // Rank inside the bucket. We keep the parsed metadata around so
         // we can both decide the default AND surface the parsed shape
         // back to the frontend without re-parsing.
@@ -219,12 +313,16 @@ pub fn build_groups(
                 compare_variants(a, b, a_row, b_row, region_priority, revision_priority)
             });
 
-        // Per-group pin overrides the ranking: if the pinned game is
-        // present in this bucket, lift it to position 0; otherwise
-        // ignore the pin (it points at a deleted/removed game).
-        if let Some(pinned_id) = defaults_by_base_title
-            .get(&(bucket.system_id.clone(), bucket.base_key.clone()))
-        {
+        let identity = bucket
+            .identity_id
+            .as_ref()
+            .and_then(|iid| identities.get(iid));
+
+        // Per-group pin (identity.default_variant_id) overrides the
+        // ranking: if the pinned game is present in this bucket, lift
+        // it to position 0; otherwise ignore the pin (it points at a
+        // deleted/removed game — or another disc's bucket).
+        if let Some(pinned_id) = identity.and_then(|i| i.default_variant_id.as_ref()) {
             if let Some(pos) = bucket.entries.iter().position(|(g, _)| &g.id == pinned_id) {
                 if pos != 0 {
                     let entry = bucket.entries.remove(pos);
@@ -256,27 +354,54 @@ pub fn build_groups(
                 is_bios: parsed.is_bios,
                 is_homebrew: parsed.is_homebrew,
                 translation_languages: parsed.translation_languages.clone(),
+                favorite: row.favorite,
+                completed: row.completed,
+                play_time_secs: row.play_time_secs,
+                last_played_at: row.last_played_at,
             })
             .collect();
 
         let default_variant_id = variants[0].id.clone();
-        // Re-derive the display title from the default variant so the
-        // tile reads naturally (matters when the alphabetical first
-        // bucket entry parses to "castlevania" but the default
-        // variant has the better-cased "Castlevania").
-        let display_base_title = bucket
-            .entries
-            .first()
-            .map(|(_, p)| p.base.clone())
-            .unwrap_or(bucket.display_base);
-
-        out.push(GameGroup {
+        // Display title: the identity's canonical_title is the
+        // authority for identity-backed groups. Fallback groups
+        // re-derive from the default variant so the tile reads
+        // naturally (matters when the alphabetical first bucket entry
+        // parses to "castlevania" but the default variant has the
+        // better-cased "Castlevania").
+        let display_base_title = match identity {
+            Some(i) => i.canonical_title.clone(),
+            None => bucket
+                .entries
+                .first()
+                .map(|(_, p)| p.base.clone())
+                .unwrap_or(bucket.display_base),
+        };
+        // Tile artwork: explicit identity (parent) cover wins; the
+        // default variant's per-file cover is the fallback.
+        let canonical_cover_path = identity
+            .and_then(|i| i.canonical_cover_path.clone())
+            .or_else(|| bucket.entries.first().and_then(|(r, _)| r.cover_path.clone()));
+        let group_stats = stats.get(&group_key).copied().unwrap_or_default();
+        let group = GameGroup {
             system_id: bucket.system_id,
             base_title_key: bucket.base_key,
             display_base_title,
+            identity_id: bucket.identity_id.clone(),
             default_variant_id,
+            year: identity.and_then(|i| i.year),
+            genre: identity.and_then(|i| i.genre.clone()),
+            developer: identity.and_then(|i| i.developer.clone()),
+            publisher: identity.and_then(|i| i.publisher.clone()),
+            players: identity.and_then(|i| i.players),
+            rating: identity.and_then(|i| i.rating),
+            canonical_cover_path,
+            total_play_time_secs: group_stats.play_time_secs,
+            favorite: group_stats.favorite,
+            completed: group_stats.completed,
+            last_played_at: group_stats.last_played_at,
             variants,
-        });
+        };
+        out.push(group);
     }
 
     // Stable output order: by display_base_title (case-insensitive).
@@ -395,6 +520,38 @@ mod tests {
             "Asia".to_string(),
             "Other".to_string(),
         ]
+    }
+
+    /// VL Phase E Sub-phase 2 — identity fixture. Mirrors what
+    /// `rebuild_identities_for_system` writes; `pin` becomes
+    /// `default_variant_id`.
+    fn identity(base_key: &str, canonical: &str, pin: Option<&str>) -> GameIdentityRow {
+        GameIdentityRow {
+            id: format!("idn-test-{base_key}"),
+            system_id: "tg16".to_string(),
+            canonical_title: canonical.to_string(),
+            normalized_title: base_key.to_string(),
+            year: None,
+            genre: None,
+            developer: None,
+            publisher: None,
+            players: None,
+            rating: None,
+            canonical_cover_path: None,
+            default_variant_id: pin.map(|s| s.to_string()),
+        }
+    }
+
+    /// Stamp rows with an identity and produce the lookup map the new
+    /// `build_groups` signature wants.
+    fn stamp(
+        rows: &mut [GameRow],
+        idn: GameIdentityRow,
+    ) -> HashMap<String, GameIdentityRow> {
+        for r in rows.iter_mut() {
+            r.identity_id = Some(idn.id.clone());
+        }
+        HashMap::from([(idn.id.clone(), idn)])
     }
 
     #[test]
@@ -554,32 +711,160 @@ mod tests {
 
     #[test]
     fn per_group_pin_overrides_priority_rules() {
-        let mut defaults = HashMap::new();
-        defaults.insert(
-            ("tg16".to_string(), "castlevania".to_string()),
-            "g_jp".to_string(),
+        let mut rows = vec![
+            row("g_us", "Castlevania (USA)"),
+            row("g_jp", "Castlevania (Japan)"),
+        ];
+        let identities = stamp(
+            &mut rows,
+            identity("castlevania", "Castlevania", Some("g_jp")),
         );
         let groups = build_groups(
-            vec![
-                row("g_us", "Castlevania (USA)"),
-                row("g_jp", "Castlevania (Japan)"),
-            ],
+            rows,
             &default_regions(),
             RevisionPriority::Newest,
-            &defaults,
+            &identities,
         );
-        // Without the pin USA would win. The pin lifts JP to position 0.
+        // Without the pin USA would win. The identity's
+        // default_variant_id lifts JP to position 0.
         assert_eq!(groups[0].variants[0].id, "g_jp");
         assert!(groups[0].variants[0].is_default);
     }
 
     #[test]
     fn pin_pointing_at_deleted_game_is_silently_ignored() {
-        let mut defaults = HashMap::new();
-        defaults.insert(
-            ("tg16".to_string(), "castlevania".to_string()),
-            "g_DOES_NOT_EXIST".to_string(),
+        let mut rows = vec![
+            row("g_us", "Castlevania (USA)"),
+            row("g_jp", "Castlevania (Japan)"),
+        ];
+        let identities = stamp(
+            &mut rows,
+            identity("castlevania", "Castlevania", Some("g_DOES_NOT_EXIST")),
         );
+        let groups = build_groups(
+            rows,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &identities,
+        );
+        // Falls back to priority rules → USA wins.
+        assert_eq!(groups[0].variants[0].id, "g_us");
+    }
+
+    // --- VL Phase E Sub-phase 2 — identity-backed groups ---------------
+
+    #[test]
+    fn identity_canonical_title_is_display_authority() {
+        // The identity's canonical_title wins over whatever the default
+        // variant's filename parses to — an operator-curated or
+        // enrichment-set canonical survives badly-cased dumps.
+        let mut rows = vec![row("g1", "CASTLEVANIA (USA) [b1]")];
+        let identities = stamp(&mut rows, identity("castlevania", "Castlevania", None));
+        let groups = build_groups(
+            rows,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &identities,
+        );
+        assert_eq!(groups[0].display_base_title, "Castlevania");
+        assert_eq!(groups[0].identity_id.as_deref(), Some("idn-test-castlevania"));
+        assert_eq!(groups[0].base_title_key, "castlevania");
+    }
+
+    #[test]
+    fn identity_metadata_and_cover_ride_on_the_group() {
+        let mut rows = vec![row("g1", "Castlevania (USA)")];
+        let mut idn = identity("castlevania", "Castlevania", None);
+        idn.year = Some(1989);
+        idn.genre = Some("Platformer".to_string());
+        idn.canonical_cover_path = Some("/media/identity/castlevania.png".to_string());
+        let identities = stamp(&mut rows, idn);
+        let groups = build_groups(
+            rows,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &identities,
+        );
+        assert_eq!(groups[0].year, Some(1989));
+        assert_eq!(groups[0].genre.as_deref(), Some("Platformer"));
+        assert_eq!(
+            groups[0].canonical_cover_path.as_deref(),
+            Some("/media/identity/castlevania.png"),
+            "explicit identity cover wins"
+        );
+    }
+
+    #[test]
+    fn group_cover_falls_back_to_default_variant() {
+        let mut us = row("g_us", "Castlevania (USA)");
+        us.cover_path = Some("/covers/us.png".to_string());
+        let jp = row("g_jp", "Castlevania (Japan)");
+        let mut rows = vec![us, jp];
+        let identities = stamp(&mut rows, identity("castlevania", "Castlevania", None));
+        let groups = build_groups(
+            rows,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &identities,
+        );
+        assert_eq!(
+            groups[0].canonical_cover_path.as_deref(),
+            Some("/covers/us.png"),
+            "no explicit identity cover → default variant's (USA wins ranking)"
+        );
+    }
+
+    #[test]
+    fn identity_stats_aggregate_across_all_variants_and_discs() {
+        // 2 discs + a regional variant of disc 1, all one identity.
+        // Stats must aggregate across ALL THREE files and appear
+        // identically on BOTH per-disc groups.
+        let mut d1us = row("d1us", "Final Fantasy VII (USA) (Disc 1)");
+        d1us.disc_number = Some(1);
+        d1us.play_time_secs = 100;
+        d1us.favorite = true;
+        d1us.last_played_at = Some(1000);
+        let mut d1jp = row("d1jp", "Final Fantasy VII (Japan) (Disc 1)");
+        d1jp.disc_number = Some(1);
+        d1jp.play_time_secs = 30;
+        let mut d2 = row("d2", "Final Fantasy VII (USA) (Disc 2)");
+        d2.disc_number = Some(2);
+        d2.play_time_secs = 70;
+        d2.completed = true;
+        d2.last_played_at = Some(2000);
+
+        let mut rows = vec![d1us, d1jp, d2];
+        let identities = stamp(
+            &mut rows,
+            identity("final fantasy vii", "Final Fantasy VII", None),
+        );
+        let groups = build_groups(
+            rows,
+            &default_regions(),
+            RevisionPriority::Newest,
+            &identities,
+        );
+        assert_eq!(groups.len(), 2, "one group per disc, same identity");
+        for g in &groups {
+            assert_eq!(g.total_play_time_secs, 200, "summed across discs + regions");
+            assert!(g.favorite, "any-variant favorite");
+            assert!(g.completed, "any-variant completed");
+            assert_eq!(g.last_played_at, Some(2000), "max across variants");
+        }
+        // Per-variant stats pass through untouched.
+        let d1 = groups
+            .iter()
+            .find(|g| g.variants.iter().any(|v| v.id == "d1us"))
+            .unwrap();
+        let v = d1.variants.iter().find(|v| v.id == "d1us").unwrap();
+        assert_eq!(v.play_time_secs, 100);
+        assert!(v.favorite);
+    }
+
+    #[test]
+    fn unstamped_games_fall_back_to_parse_grouping() {
+        // identity_id = None (transient pre-rebuild state) — grouping
+        // still works via the in-memory parse path, no identity fields.
         let groups = build_groups(
             vec![
                 row("g_us", "Castlevania (USA)"),
@@ -587,9 +872,11 @@ mod tests {
             ],
             &default_regions(),
             RevisionPriority::Newest,
-            &defaults,
+            &HashMap::new(),
         );
-        // Falls back to priority rules → USA wins.
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].identity_id, None);
+        assert_eq!(groups[0].display_base_title, "Castlevania");
         assert_eq!(groups[0].variants[0].id, "g_us");
     }
 
