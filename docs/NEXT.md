@@ -342,6 +342,42 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Theming Substrate ARC 1 — Phase 1 (engine/theme surface separation)
+
+**Planning locked 2026-06-06.** Full plan at
+[docs/PLANS/theming-substrate.md](PLANS/theming-substrate.md);
+feature folder
+[docs/features/theming-substrate/](features/theming-substrate/).
+**Phase 1 is the next slice when arc starts** — extract Settings +
+Library Manager + Import Wizard + BIOS pre-checks + Core installer
++ System Health + Background Jobs out of Retroverse's 6-tab layout
+into an engine-owned fullscreen-takeover surface summoned via
+`F12` (hotkey) / `Select+Start` (controller chord) / top-right
+corner icon themes reserve. Retroverse drops from 6 → 5 tabs;
+functionally indistinguishable for operators.
+
+The 3-arc structure: ARC 1 (~22-26 weeks) = Minimum Viable
+Substrate (layout + assets + palette overrides; no scripting or
+shaders); ARC 2 (~7 weeks) = Behaviors + Shaders (Rhai + WGSL per
+KIOSK_PLAN §2.2); ARC 3 (~5-7 weeks) = Theme Studio (in-engine
+visual + code editor per KIOSK_PLAN §2.3). Absorbs the Kiosk
+plan's theme substrate spec — Kiosk-as-such (attract mode,
+multi-monitor, 5-bus mixer) becomes substrate capabilities themes
+opt into.
+
+Sequencing per plan §7: Phases 1-2 run parallel with VL Phase A
+(currently in flight); ARC 1 pauses at end of Phase 2 for VL
+Phase E (game_identities schema, ~3-4 weeks) + VL Phase C
+(Launcher trait, ~2-3 weeks) to land first; resume Phases 3-6
+after both VL phases ship.
+
+Operator decisions locked: one unified premium frontend (no
+LaunchBox/BigBox split); engine vs theme territory inside one
+window; engine summon = fullscreen takeover, top-right corner,
+`F12` / `Select+Start`; manifest = TOML; theme swap requires
+restart (ARC 1); build-time bundling only (ARC 1). See
+[features/theming-substrate/DECISIONS.md](features/theming-substrate/DECISIONS.md).
+
 ~~### Guided Setup Phase 2 — curated CPU-tier core selection~~ —
 **SHIPPED 2026-06-06** on `feat/guided-setup-cpu-tier`. Decision-locked
 2026-06-06 per plan §7: heuristic is source of truth, benchmarks

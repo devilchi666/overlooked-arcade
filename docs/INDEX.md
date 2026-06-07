@@ -34,6 +34,7 @@ Routing table. Read this first; it points to everything else.
 - [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
 - [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI. Stage 1 code arc complete; Stages 2+3 + content pilots pending.
 - [features/retroverse-ui/](features/retroverse-ui/) — Top-toolbar tab IA. 6/6 tabs operator-facing as of 2026-05-28. Design at [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md).
+- [features/theming-substrate/](features/theming-substrate/) — Theming substrate (BigBox-style themes, engine vs theme territory inside one binary). 3-arc structure planned 2026-06-06; ARC 1 queued. Design at [PLANS/theming-substrate.md](PLANS/theming-substrate.md).
 
 **Shipped (archived):** sidebar, ui-polish, library-import, portable-install, media-taxonomy, controller-nav, background-jobs. See [_archive/INDEX.md](_archive/INDEX.md) for the manifest.
 
@@ -59,6 +60,7 @@ cores are currently being worked on.
 - [PLANS/guided-setup.md](PLANS/guided-setup.md) — Phase 2 (curated CPU-tier core selection) queued.
 - [PLANS/per-system-ui.md](PLANS/per-system-ui.md) — Stages 2+3 of the per-system UI arc.
 - [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md) — Retroverse §10 open work tracker.
+- [PLANS/theming-substrate.md](PLANS/theming-substrate.md) — 3-arc theming substrate plan (engine/theme territory split + `.oatheme` distribution; absorbs Kiosk plan's 4-layer substrate). ARC 1 (~22-26 weeks) queued; first slice = engine/theme surface separation.
 
 **Shipped plans (archived):** background-jobs-and-progress-bar, collections-tab-retroverse, discover-tab-retroverse, game-info-panel, main-window, play-now-tab-retroverse, retroverse-flag-deprecation, settings-declutter-system-health, settings-tab-retroverse, system-info-panel-v1, system-wiring-plan. See [_archive/INDEX.md](_archive/INDEX.md).
 
