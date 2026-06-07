@@ -73,6 +73,18 @@ export type LibraryState = {
   entries: RomEntry[];
 };
 
+/// Dump-quality classification from GoodTools brackets. Mirrors the
+/// Rust `DumpStatus` enum (serde `rename_all = "kebab-case"`). Default
+/// `unknown` covers everything without an explicit dump-quality
+/// marker — including all No-Intro / Redump entries, which are
+/// implicitly verified by their DAT maintainers upstream.
+export type DumpStatus =
+  | "verified"   // [!]
+  | "bad-dump"   // [b] / [b1] / [b2]
+  | "over-dump"  // [o] / [o1]
+  | "fixed"      // [f] / [f1]
+  | "unknown";
+
 /// Variant metadata returned by Rust's `list_game_groups`. One per file —
 /// the right-click "Run version" submenu enumerates this list.
 export type VariantInfo = {
@@ -89,6 +101,17 @@ export type VariantInfo = {
   /// True for the group's chosen default variant (frontend renders ✓
   /// next to this entry in the context-menu submenus).
   isDefault: boolean;
+  // --- Phase A2 typed flag fields (Virtual Library arc) -----------
+  // Mirror the new fields on Rust's GameVariant. The Preservation
+  // Vault (VL Phase F) filter ribbon reads these; pre-Phase-F
+  // consumers can ignore the new fields.
+  dumpStatus: DumpStatus;
+  isHack: boolean;
+  isTranslation: boolean;
+  isPirate: boolean;
+  isBios: boolean;
+  isHomebrew: boolean;
+  translationLanguages: string[];
 };
 
 /// A multi-variant group (e.g. all dumps of "Castlevania" on TG-16).
