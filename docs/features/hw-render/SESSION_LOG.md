@@ -6,6 +6,34 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 12) — ✅ M2 Stage 3 VALIDATED (adoption + lifecycle on hardware)
+
+- **Operator confirmed:** paraLLEl-N64 loads on the adopted device AND swaps
+  cleanly between it and software cores. So the M2 foundation is proven on
+  real hardware: wgpu adopts the core's `VkDevice` (`from_raw` end-to-end),
+  the HW core renders (via Stage-3 readback), and the renderer
+  rebuild-on-core-switch lifecycle is crash-free (R1 holds). No queue-race
+  glitches reported in this pass.
+- **Next — Stage 4 (the zero-copy speed win), 3 parts:**
+  1. **Skip readback when adopted** — add an oa-libretro flag so
+     `hw_after_run` stops the CPU copy (the slow part) when the renderer
+     adopted the device; just keep the frame marked for import.
+  2. **Import + composite** — expose the core's current `set_image` VkImage
+     (handle/format/extent/layout) from oa-libretro; oa-render imports it via
+     `texture_from_raw` + `create_texture_from_hal` and runs the existing
+     scaling/bezel/shader chain on it directly (no fb_rgba upload). New
+     `Renderer::present_hw_image(...)`; oa-shell calls it (instead of
+     `present(framebuffer)`) when adopted.
+  3. **Settings preservation** — re-apply shader preset / scaling / bloom /
+     overscan / rotation after a renderer rebuild (they reset today). Track
+     the latest values in run_emu_render locals; bezel RGBA source isn't
+     retained (minor; re-applied if the frontend re-sends).
+- **Stage 4 risk (D7 sync):** the adopted wgpu + the core's Granite threads
+  share one VkQueue; wgpu's present doesn't take the core's `lock_queue`.
+  paraLLEl-N64 host-syncs (num_semaphores=0, "1 sync frame") so it may be
+  fine, but if zero-copy glitches/tears, the fix is coordinating wgpu's
+  submits with `lock_queue` (or waiting the core's semaphores).
+
 ## 2026-06-08 (cont. 11) — M2 Stage 3 smoke test: adoption WORKS; fixed surface-in-use
 
 - **Smoke test (oa-current.log 13:30): the device adoption SUCCEEDED at
