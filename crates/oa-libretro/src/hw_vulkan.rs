@@ -412,14 +412,18 @@ impl VulkanInstance {
         // GET_GAME_INFO_EXT strings (see reference memory); RetroArch also
         // passes a real (zeroed) features struct here. Must outlive the call.
         let required_features = vk::PhysicalDeviceFeatures::default();
+        // M2: require VK_KHR_swapchain on the device the core builds, so the
+        // renderer (wgpu, adopting this device) can present to our window.
+        // M1 passed none (readback didn't present on this device). The core
+        // enables this PLUS whatever it needs (e.g. VK_EXT_external_memory_host).
+        let mut req_ext_ptrs: [*const c_char; 1] = [ash::khr::swapchain::NAME.as_ptr()];
         log::info!(
-            "oa-libretro HW: calling core create_device (gpu set, surface=null, features=zeroed)…"
+            "oa-libretro HW: calling core create_device (gpu set, surface=null, features=zeroed, require=[VK_KHR_swapchain])…"
         );
         // SAFETY: core-provided fn. We pass our live instance + GPU, a null
-        // surface (headless — paraLLEl-RDP is compute-only, no presentation),
-        // no required extensions/layers (the core adds what it needs, e.g.
-        // VK_EXT_external_memory_host), and a zeroed required-features struct.
-        // The core fills `ctx`.
+        // surface (headless — the core renders into images for us, never to a
+        // window), our required device extensions ([swapchain]), no layers,
+        // and a zeroed required-features struct. The core fills `ctx`.
         let ok = unsafe {
             create_device(
                 &mut ctx,
@@ -427,8 +431,8 @@ impl VulkanInstance {
                 self.phys,
                 vk::SurfaceKHR::null(),
                 gipa,
-                std::ptr::null_mut(),
-                0,
+                req_ext_ptrs.as_mut_ptr(),
+                req_ext_ptrs.len() as u32,
                 std::ptr::null_mut(),
                 0,
                 &required_features,
@@ -562,11 +566,14 @@ impl VulkanInstance {
             }),
             interface,
             flip_y: self.flip_y,
-            // Stage 2: M1 requires no device extensions and creates the
-            // instance at Vulkan 1.1. Stage 3 threads the real required-
-            // extensions list (VK_KHR_swapchain + wgpu's set) + api_version
-            // through here for the wgpu adoption.
-            device_extensions: Vec::new(),
+            // VK_KHR_swapchain is enabled on both device paths (required of
+            // the create_device path; included in the self-build path's
+            // all-extensions set). The renderer hands this to wgpu's
+            // device_from_raw as the extension it will use beyond Vulkan-1.1
+            // core. Instance is created at Vulkan 1.1.
+            device_extensions: vec![
+                ash::khr::swapchain::NAME.to_string_lossy().into_owned(),
+            ],
             api_version: vk::API_VERSION_1_1,
         })
     }

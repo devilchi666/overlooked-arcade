@@ -30,6 +30,25 @@ pub enum RenderError {
     /// Failed to request a wgpu device from the chosen adapter.
     #[error("request_device failed: {0}")]
     RequestDevice(#[from] wgpu::RequestDeviceError),
+    /// M2: failed to adopt the HW core's Vulkan device into wgpu.
+    #[error("vulkan device adoption failed: {0}")]
+    VulkanAdopt(String),
+}
+
+/// Raw Vulkan handles for [`Renderer::new_adopting_vulkan`] (M2 zero-copy).
+/// Mirrors `oa_libretro::LoadedHwVulkan` (oa-shell forwards the fields).
+/// Raw `u64` handles keep this dependency-free at the call boundary; the
+/// renderer reconstructs the `ash::vk::*` types. None are owned here — the
+/// libretro layer owns + destroys the instance/device.
+#[derive(Clone, Debug)]
+pub struct AdoptedVulkanDevice {
+    pub instance: u64,
+    pub physical_device: u64,
+    pub device: u64,
+    pub queue: u64,
+    pub queue_family_index: u32,
+    pub queue_index: u32,
+    pub api_version: u32,
 }
 
 /// How the core's framebuffer is mapped to the surface.
@@ -423,6 +442,141 @@ impl Renderer {
         pollster::block_on(Self::new_async(window_handle, display_handle, size))
     }
 
+    /// M2: build the renderer **adopting a HW core's Vulkan device** so the
+    /// core's rendered images can be imported zero-copy (no readback). The
+    /// core's `create_device` already built the `VkDevice` on `adopt.instance`
+    /// (the same instance this window's surface is created on), enabling
+    /// `VK_KHR_swapchain` for us. We wrap those raw handles as wgpu-hal
+    /// objects and lift them to wgpu, then run the same `finish_build` as the
+    /// normal path so the pipeline/bezel/shader stack is identical.
+    ///
+    /// # Safety
+    /// All handles in `adopt` must be live Vulkan objects created on a single
+    /// instance that outlives this renderer (the libretro layer owns +
+    /// destroys them — this renderer must be dropped BEFORE that teardown).
+    /// `window_handle`/`display_handle` must be valid per [`Renderer::new`].
+    pub unsafe fn new_adopting_vulkan(
+        window_handle: RawWindowHandle,
+        display_handle: RawDisplayHandle,
+        size: (u32, u32),
+        adopt: &AdoptedVulkanDevice,
+    ) -> Result<Self, RenderError> {
+        use ash::vk::Handle as _;
+        use wgpu::hal::api::Vulkan;
+
+        let (width, height) = size;
+
+        // Our own Vulkan loader entry (the loader is process-global; loading
+        // a second time alongside oa-libretro's is fine).
+        let entry = unsafe { ash::Entry::load() }
+            .map_err(|e| RenderError::VulkanAdopt(format!("Entry::load: {e}")))?;
+
+        // Wrap the raw handles in ash. The device functions load via the
+        // instance's vkGetDeviceProcAddr — we build ash_device BEFORE moving
+        // ash_instance into wgpu-hal's from_raw.
+        let vk_instance = ash::vk::Instance::from_raw(adopt.instance);
+        let ash_instance = unsafe { ash::Instance::load(entry.static_fn(), vk_instance) };
+        let vk_phys = ash::vk::PhysicalDevice::from_raw(adopt.physical_device);
+        let vk_device = ash::vk::Device::from_raw(adopt.device);
+        let ash_device = unsafe { ash::Device::load(ash_instance.fp_v1_0(), vk_device) };
+
+        // Instance extensions oa-libretro enabled on this VkInstance + the
+        // one device extension wgpu uses beyond Vulkan-1.1 core.
+        let instance_extensions: Vec<&'static std::ffi::CStr> = vec![
+            ash::khr::surface::NAME,
+            ash::khr::win32_surface::NAME,
+            ash::khr::get_physical_device_properties2::NAME,
+            ash::khr::get_surface_capabilities2::NAME,
+        ];
+        let device_extensions: [&'static std::ffi::CStr; 1] = [ash::khr::swapchain::NAME];
+
+        // Wrap the VkInstance as a wgpu-hal instance. drop_callback = no-op:
+        // oa-libretro owns + destroys the instance/device; wgpu must NOT.
+        let hal_instance = unsafe {
+            wgpu::hal::vulkan::Instance::from_raw(
+                entry,
+                ash_instance,
+                adopt.api_version,
+                0,
+                None,
+                instance_extensions,
+                wgpu::InstanceFlags::empty(),
+                false,
+                Some(Box::new(|| {})),
+            )
+        }
+        .map_err(|e| RenderError::VulkanAdopt(format!("hal Instance::from_raw: {e}")))?;
+
+        let exposed = hal_instance
+            .expose_adapter(vk_phys)
+            .ok_or_else(|| RenderError::VulkanAdopt("expose_adapter returned None".into()))?;
+
+        // Adopt the core's VkDevice (non-consuming on the hal adapter, so we
+        // can still move `exposed` into wgpu below). drop_callback = no-op.
+        let open_device = unsafe {
+            exposed.adapter.device_from_raw(
+                ash_device,
+                Some(Box::new(|| {})),
+                &device_extensions,
+                wgpu::Features::empty(),
+                &wgpu::MemoryHints::Performance,
+                adopt.queue_family_index,
+                adopt.queue_index,
+            )
+        }
+        .map_err(|e| RenderError::VulkanAdopt(format!("device_from_raw: {e}")))?;
+
+        // Lift hal → wgpu.
+        let wgpu_instance = unsafe { wgpu::Instance::from_hal::<Vulkan>(hal_instance) };
+        let surface = unsafe {
+            wgpu_instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_window_handle: window_handle,
+                raw_display_handle: display_handle,
+            })?
+        };
+        let adapter = unsafe { wgpu_instance.create_adapter_from_hal::<Vulkan>(exposed) };
+        let adapter_limits = adapter.limits();
+        let (device, queue) = unsafe {
+            adapter.create_device_from_hal(
+                open_device,
+                &wgpu::DeviceDescriptor {
+                    label: Some("oa-render adopted device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: adapter_limits.clone(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
+        }?;
+        log::info!(
+            "oa-render: adopted HW core Vulkan device ({}) — zero-copy path active",
+            adapter.get_info().name
+        );
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(caps.formats[0]);
+        let alpha_mode = caps.alpha_modes[0];
+        let max_dim = adapter_limits.max_texture_dimension_2d;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: width.max(1).min(max_dim),
+            height: height.max(1).min(max_dim),
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        Self::finish_build(surface, device, queue, config, max_dim)
+    }
+
     async fn new_async(
         window_handle: RawWindowHandle,
         display_handle: RawDisplayHandle,
@@ -508,6 +662,28 @@ impl Renderer {
         surface.configure(&device, &config);
         log::info!("oa-render: surface configured ({}x{}, {:?})", config.width, config.height, format);
 
+        Self::finish_build(
+            surface,
+            device,
+            queue,
+            config,
+            adapter_limits.max_texture_dimension_2d,
+        )
+    }
+
+    /// Shared pipeline / bind-group / state construction for both the normal
+    /// [`new_async`] path and the M2 device-adopting
+    /// [`new_adopting_vulkan`](Self::new_adopting_vulkan) path. Everything
+    /// here depends only on the already-acquired device + queue + surface +
+    /// config + the device's max 2D texture dimension, so both constructors
+    /// produce an identical renderer regardless of how the device was made.
+    fn finish_build(
+        surface: wgpu::Surface<'static>,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        config: wgpu::SurfaceConfiguration,
+        max_texture_dim: u32,
+    ) -> Result<Self, RenderError> {
         // Chain-pass bind group layout: 0 = framebuffer texture, 1 = sampler,
         // 2 = preset uniform. Used by every effect-chain pass (currently
         // just the H/V blur in blur.wgsl).
@@ -757,7 +933,7 @@ impl Renderer {
             shader_preset: ShaderPreset::default(),
             display_aspect_override: None,
             overscan_crop: OverscanCrop::NONE,
-            max_texture_dim: adapter_limits.max_texture_dimension_2d,
+            max_texture_dim,
         })
     }
 

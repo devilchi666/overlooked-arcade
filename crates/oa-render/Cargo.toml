@@ -8,6 +8,10 @@ publish = false
 [dependencies]
 oa-core           = { workspace = true }
 wgpu              = { workspace = true }
+# Same workspace `ash` (single 0.38 in the lock) as wgpu-hal → vk handle
+# types unify, so the M2 device-adoption (Renderer::new_adopting_vulkan)
+# passes the core's raw Vulkan handles into wgpu-hal with no transmute.
+ash               = { workspace = true }
 raw-window-handle = { workspace = true }
 pollster          = { workspace = true }
 bytemuck          = { workspace = true }
