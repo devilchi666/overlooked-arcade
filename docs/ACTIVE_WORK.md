@@ -426,13 +426,28 @@ spanned every system but was filed under whichever core happened to be active.
     problem. **Known M1 limitation:** ~half speed (synchronous readback
     full-drains the GPU each frame; audio sounds off purely because emu
     runs at ~half rate) — speed is M2's mandate by design.
-  - **M2 (zero-copy) — NEXT, active milestone.** Replace the CPU readback
-    with direct import of the core's `VkImage` into wgpu
-    (`wgpu_hal::vulkan` `texture_from_raw`) so OA composites the core
-    output on-GPU with no readback + no host wait. Requires sharing ONE
-    Vulkan device between the core and wgpu (commit wgpu to its Vulkan
-    backend per D3) — the M1 standalone device is replaced. See the M2
-    section of the plan + the next-session resume prompt.
+  - **M2 (zero-copy) — IN PROGRESS** (branch `feat/hw-render-m2`, off M1;
+    M1 stays bankable at tag `hw-render-m1-proven`). Architecture confirmed
+    (DECISIONS **D9** reinit-per-core, **D10** HwContext-trait-for-later).
+    **Foundation DONE + working on hardware:** wgpu adopts the core's
+    Vulkan device (`from_raw`/`device_from_raw`, verified runtime), the
+    renderer rebuild-on-core-switch lifecycle is crash-free (swap/restore/
+    re-adopt; R1 holds), and display settings (shader/scaling/etc.) are
+    preserved across the rebuild. **Measured (cont. 14):** the M1 readback
+    is ~31ms/frame of pure serialization (NOT upscale — confirmed 1×), so
+    zero-copy is justified. **Remaining = the intricate D7 sync work:**
+    (1) zero-copy import replacing the readback — hits the wgpu
+    `texture_from_raw` layout-discard wall (no layout param → UNDEFINED →
+    discards), fix = raw-Vulkan image→image copy into a wgpu texture with
+    hand-managed barriers OR research wgpu-core from-hal state; (2) real
+    multi-buffer `get_sync_index` (M1 stubs single-buffer → forces the core
+    synchronous); (3) drop the host fence wait for CPU/GPU overlap.
+    Scaffolding ready (oa-libretro): `set_hw_import_mode(bool)` (skips
+    readback), `loaded_core_hw_frame() -> HwVulkanFrame` (the core's current
+    VkImage). NOT yet written: oa-render `present_hw_image` (the import path)
+    + the oa-shell wiring to call it when adopted. See the M2 plan section +
+    the cont.14 SESSION_LOG entry. Next session is a focused zero-copy + sync
+    push.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
