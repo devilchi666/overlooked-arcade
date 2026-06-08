@@ -6,6 +6,38 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 7) — M1: past the option wall; create_device null-features fix
+
+- **The cont. 6 core-option fix WORKED.** paraLLEl-N64 now requests
+  `SET_HW_RENDER context_type=6` (Vulkan), we accept, and it sends the
+  negotiation interface (`version=1`, `create_device(v1)`, app="paraLLEl-RDP"
+  engine="Granite", apiVersion 1.1). We're past every prior wall and into the
+  real device negotiation. **The crash is now precisely at our call into the
+  core's `create_device`** (log ends right after `get_application_info`).
+- **Researched the create_device contract** (libretro_vulkan.h + a libretro
+  forum/repo search). Findings:
+  - We passed `required_features = NULL`. Spec permits NULL, but **Granite
+    (paraLLEl-RDP's engine) dereferences it** to merge features into the
+    device — NULL faults. Same null-deref class as the GET_GAME_INFO_EXT
+    strings. RetroArch passes a real (zeroed) `VkPhysicalDeviceFeatures`.
+  - Null surface IS valid headless (paraLLEl-RDP is compute-only) — fine.
+  - Version dispatch confirmed: v1 → `create_device` (correct); the
+    `create_instance/create_device2 = true` we logged is an out-of-bounds
+    garbage read of a v1-sized struct (harmless — we don't call them).
+  - paraLLEl-RDP needs `VK_EXT_external_memory_host` (device ext) but the
+    CORE adds that in create_device; NVIDIA-on-Windows supports it.
+- **Shipped (branch `feat/hw-render-m1`, not merged):** `try_create_device`
+  now passes `&VkPhysicalDeviceFeatures::default()` (zeroed) instead of NULL,
+  plus pinpoint logs immediately before/after the create_device call
+  (`calling core create_device…` / `create_device returned ok=… device_null=…`)
+  so the next run is decisive regardless. oa-libretro checks clean.
+- **Next (operator):** rebuild + relaunch the N64 game. If the null-features
+  theory is right: `create_device returned ok=true` → `device built … ready`
+  → `GET_HW_RENDER_INTERFACE` → `context_reset` → `first set_image` →
+  `first readback OK`. If `calling core create_device…` logs but `returned`
+  does NOT, create_device still faults on something else (then it's the next
+  lead). Sources: libretro_vulkan.h; libretro forums parallel-n64 Vulkan.
+
 ## 2026-06-08 (cont. 6) — M1: fixed core-option timing (renderer option applied too late)
 
 - **Playtest of paraLLEl-N64:** crashed — but NOT in our code. Log: core

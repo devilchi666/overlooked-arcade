@@ -375,9 +375,22 @@ impl VulkanInstance {
             presentation_queue_family_index: 0,
         };
         let gipa = self.entry.static_fn().get_instance_proc_addr;
+        // Pass a ZEROED VkPhysicalDeviceFeatures, not NULL. The libretro
+        // spec permits NULL ("no required features"), but Granite (the
+        // engine behind paraLLEl-RDP) dereferences this pointer inside
+        // create_device to merge the frontend's required features into the
+        // device it builds — NULL faults. Same null-deref class as the
+        // GET_GAME_INFO_EXT strings (see reference memory); RetroArch also
+        // passes a real (zeroed) features struct here. Must outlive the call.
+        let required_features = vk::PhysicalDeviceFeatures::default();
+        log::info!(
+            "oa-libretro HW: calling core create_device (gpu set, surface=null, features=zeroed)…"
+        );
         // SAFETY: core-provided fn. We pass our live instance + GPU, a null
-        // surface (headless — no swapchain), and no extra required
-        // extensions/layers/features. The core fills `ctx`.
+        // surface (headless — paraLLEl-RDP is compute-only, no presentation),
+        // no required extensions/layers (the core adds what it needs, e.g.
+        // VK_EXT_external_memory_host), and a zeroed required-features struct.
+        // The core fills `ctx`.
         let ok = unsafe {
             create_device(
                 &mut ctx,
@@ -389,9 +402,13 @@ impl VulkanInstance {
                 0,
                 std::ptr::null_mut(),
                 0,
-                std::ptr::null(),
+                &required_features,
             )
         };
+        log::info!(
+            "oa-libretro HW: core create_device returned ok={ok} device_null={}",
+            ctx.device == vk::Device::null(),
+        );
         if !ok || ctx.device == vk::Device::null() {
             log::warn!("oa-libretro HW: core create_device returned false / null device");
             return None;
