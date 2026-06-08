@@ -6,6 +6,35 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 5) — M1: WSI ext didn't fix it; pivot to a simpler Vulkan core
+
+- **Playtest of cont. 4 (oa-current.log 11:23):** instance extensions now
+  enabled (log confirms all 4), but **same death point** — Dolphin reaches
+  `Using GFX backend: Vulkan` then silent-crashes. New detail: after our
+  `create_device` succeeds, Dolphin runs `VulkanContext.cpp:317/:334/:214` —
+  it **creates its OWN VkInstance** ("Using Vulkan 1.2") and crashes there,
+  **before ever calling GET_HW_RENDER_INTERFACE (env 41)**. So this Dolphin
+  build sets up its own complete Vulkan context (not rendering into the
+  device we provide) and dies in a raw access violation with zero error text.
+- **Operator decision:** stop blind-iterating on Dolphin (hardest possible
+  core — full standalone Dolphin, windowless in-process). **Prove the M1
+  pipeline on a simpler Vulkan core first** (paraLLEl-N64 / Beetle PSX HW),
+  then treat Dolphin as a separate, harder integration. Our code is fully
+  core-agnostic so no changes were needed for this.
+- **Shipped (branch `feat/hw-render-m1`, not merged):** added one-shot
+  diagnostic logs — `first set_image` (format/layout/semaphores) and
+  `first readback OK` (WxH/format/flip) — so the next run with a working
+  core confirms the device → create_device → set_image → readback path
+  end-to-end. Workspace checks clean; 49 tests pass.
+- **Next (operator):** grab a clean Vulkan HW core from buildbot.libretro.com
+  + a ROM, set its renderer to Vulkan, launch. Recommended: **paraLLEl-N64**
+  (`parallel_n64_libretro.dll`, no BIOS, written by the libretro-Vulkan
+  author — the cleanest possible contract test; set core option
+  `parallel-n64-gfxplugin = parallel` for the Vulkan RDP) with any `.z64`.
+  Alt: Beetle PSX HW (`mednafen_psx_hw_libretro.dll`, needs PSX BIOS, set
+  `beetle_psx_hw_renderer = vulkan`). Watch the log for the new
+  `first set_image` / `first readback OK` lines = pipeline proven.
+
 ## 2026-06-08 (cont. 4) — M1: researched the protocol; instance needs WSI extensions
 
 - **Playtest of cont. 3 (oa-current.log 10:55):** create_device **worked**

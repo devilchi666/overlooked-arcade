@@ -702,6 +702,16 @@ impl VulkanHw {
             dev.unmap_memory(rb.memory);
         }
 
+        // One-shot: confirms the full readback path works end-to-end.
+        static FIRST_READBACK: AtomicBool = AtomicBool::new(false);
+        if !FIRST_READBACK.swap(true, Ordering::Relaxed) {
+            log::info!(
+                "oa-libretro HW: first readback OK — {w}x{h} format={:?} flip_y={} (frame on screen)",
+                frame.format,
+                self.flip_y,
+            );
+        }
+
         *fb_w = w;
         *fb_h = h;
         frame.ready = false;
@@ -934,6 +944,18 @@ unsafe extern "C" fn vk_set_image(
         return;
     }
     let img = unsafe { &*image };
+    // One-shot: confirms the core actually handed us a rendered image
+    // (the pipeline is alive past context_reset) + reports its format so
+    // we can verify the readback swizzle.
+    static FIRST_SET_IMAGE: AtomicBool = AtomicBool::new(false);
+    if !FIRST_SET_IMAGE.swap(true, Ordering::Relaxed) {
+        log::info!(
+            "oa-libretro HW: first set_image — format={:?} layout={:?} num_semaphores={}",
+            img.create_info.format,
+            img.image_layout,
+            num_semaphores,
+        );
+    }
     let mut wait = Vec::new();
     if !semaphores.is_null() && num_semaphores > 0 {
         wait.extend_from_slice(unsafe {
