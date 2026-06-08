@@ -342,6 +342,28 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Libretro plumbing audit — HIGH-severity gaps (from 2026-06-08 audit)
+
+Surfaced by the read-only libretro plumbing sweep —
+[docs/cores/AUDIT_2026-06-08.md](cores/AUDIT_2026-06-08.md). Verified against
+core source + our `file:line`. Top items below; the audit doc has the Med/Low
+band + recommended ordering.
+
+- ⬜ **Polled keyboard + mouse input state** (H1+H2 — one input-state slice).
+  `cb_input_state` returns 0 for `RETRO_DEVICE_KEYBOARD` and `RETRO_DEVICE_MOUSE`
+  (the `device != JOYPAD { return 0 }` fall-through at
+  `crates/oa-libretro/src/state.rs:1477`); no key/mouse state arrays in `State`.
+  Add a held-key bitset + per-port mouse delta/button state, feed from the shell
+  pump, add two `cb_input_state` arms. Confirmed by reading MAME2003-plus / FBNeo
+  / blueMSX / DOSBox-Pure source. Unblocks the entire computer-core tier (MSX,
+  DOSBox, Atari 5200, O2) + arcade trackball/spinner/paddle games. ~1 session.
+- ⬜ **Quick wins** (ride along on the same branch): downgrade per-frame env
+  `log::info!` spam to `debug!` (`state.rs:1493`, M2, ~1 line); cap the core-option
+  parser sentinel walks (`state.rs:478/512/544/610`, M1, crash-class hardening);
+  F8 slot-restore framebuffer nudge while paused (`apps/oa-shell/src/main.rs:6028`,
+  M4); wire controller ports 1-4 post-load (`crates/oa-libretro/src/core.rs:387`,
+  M3, multitap). ~0.5 session combined.
+
 ### HW-Render Pipeline — Milestone 1 (Vulkan handshake, core on screen)
 
 **Planning locked 2026-06-07.** Full plan at
