@@ -450,9 +450,22 @@ spanned every system but was filed under whichever core happened to be active.
     lock-narrowing) are NOT needed for paraLLEl-N64 — deferred indefinitely.
     The playtest's "small centered image" was the per-game `scaling: original`
     override (native 640×240 centered), not a render bug; one follow-up fix
-    refreshes fb dims in import mode (was a stale stat). **Mergeable** once the
-    operator confirms a non-Original scaling looks right + re-checks a software
-    core + swap-back. See the cont.15 / 15b SESSION_LOG entries.
+    refreshes fb dims in import mode (was a stale stat). Also fixed en route: a
+    general libretro audio gap — `SET_SYSTEM_AV_INFO` (env 32) timing revisions
+    were dropped, so cores that revise their rate post-load (paraLLEl-N64)
+    underfed the sink → buzz; now honored (sink rebuild + limiter retime).
+  - **M2 ✅ SHIPPED + MERGED to main 2026-06-08** (tag `hw-render-m2-proven`).
+    Operator validated on hardware: paraLLEl-N64 zero-copy at steady 60 fps,
+    aspect/flip correct, CrtLite intact, audio good, AND software-core render +
+    HW⇄software swap-back confirmed. Tasks 2 & 3 (multi-buffer `get_sync_index`
+    / lock-narrowing) deferred indefinitely — not needed for paraLLEl-N64.
+    **HW-render arc now at a checkpoint** (M1+M2 done). Remaining M3 (validate
+    the rest of the Vulkan lineup — Beetle PSX HW, Flycast, PPSSPP, Saturn HW —
+    + capability tiering / software-peer fallback) and M4 (DX12/GL backends,
+    cross-platform) are **future stretch**, not currently in flight. Known
+    separate to-do: NES (+ maybe others) audio clipping/clicking — filed in
+    `NEXT.md` MEDIUM, independent of the HW path. See the hw-render
+    SESSION_LOG cont.15/15b/15c entries.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2

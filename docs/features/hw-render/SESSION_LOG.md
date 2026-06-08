@@ -6,6 +6,23 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 15d) — ✅ M2 MERGED to main
+
+- **Shipped:** operator confirmed core-switching works (last validation item)
+  → merged `feat/hw-render-m2` → `main` (--no-ff), tagged `hw-render-m2-proven`.
+  Bookkeeping: plan M2 milestone marked ✅; n64 ROADMAP Phase 1 → 🟨 with a
+  HW-render note; ACTIVE_WORK M2 → shipped+merged, M3/M4 flagged future stretch;
+  NES audio clipping/clicking filed in NEXT.md MEDIUM.
+- **Almost:** nothing half-done for M2. M3 (rest of the Vulkan lineup — Beetle
+  PSX HW / Flycast / PPSSPP / Saturn HW — + capability tiering + software-peer
+  fallback) and M4 (DX12/GL backends, MoltenVK) are untouched future stretch.
+- **Next (when the arc resumes):** M3 — validate a second HW core (Beetle PSX
+  HW Vulkan is the natural next, needs PSX BIOS + `beetle_psx_hw_renderer =
+  vulkan`); the device-adoption + zero-copy path is core-agnostic so it should
+  largely "just work," but each core's set_image semaphore use + sync-index
+  behavior may differ (paraLLEl-N64 was `num_semaphores=0`). Separately: the
+  NES/cross-system audio clipping pass (NEXT.md).
+
 ## 2026-06-08 (cont. 15c) — audio: honor SET_SYSTEM_AV_INFO (env 32) — fixes paraLLEl-N64 buzz
 
 - **Symptom (playtest):** speed + aspect/flip good, but sound "horrible".

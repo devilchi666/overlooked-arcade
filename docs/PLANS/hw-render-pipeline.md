@@ -209,7 +209,27 @@ device for M1, not the wgpu-shared device.** See D6 below.
 - **Exit:** the operator's GameCube game renders through the internal
   `dolphin_libretro` core instead of crashing.
 
-### M2 — Zero-copy import + on-GPU compositing
+### M2 — Zero-copy import + on-GPU compositing — ✅ SHIPPED + MERGED 2026-06-08
+
+**Shipped on `feat/hw-render-m2`, merged to `main` 2026-06-08 (tag
+`hw-render-m2-proven`).** Operator-validated on hardware: paraLLEl-N64 imports
+its `set_image` `VkImage` zero-copy (raw `vkCmdBlitImage` into a wgpu-native
+fb_texture via `as_hal_mut`, hand-managed barriers that sidestep wgpu's
+`texture_from_raw` UNDEFINED-discard wall — confirmed in wgpu 23.0.1
+`wgpu-core/device/resource.rs:729` + `wgpu-hal/vulkan/conv.rs:227`), composited
+through the existing scale/shader/bezel chain. Steady **60 fps**, readback
+eliminated, aspect/flip correct, CrtLite intact, software-core render +
+HW⇄software swap-back confirmed. Queue sync via the core's `lock_queue`
+(`hw_queue_lock/unlock`). Tasks the M1 stub deferred — real multi-buffer
+`get_sync_index` + dropping the host fence wait — turned out **unnecessary for
+paraLLEl-N64** (the readback removal alone hit 60 fps) and are deferred
+indefinitely. Two adjacent fixes landed en route: import-mode fb-dim refresh
+(stale stat) and honoring `SET_SYSTEM_AV_INFO` (env 32) timing revisions (fixed
+paraLLEl-N64 audio buzz; general libretro gap). See
+[features/hw-render/SESSION_LOG.md](../features/hw-render/SESSION_LOG.md)
+cont.15/15b/15c. The original M2 design notes below are retained for reference.
+
+
 
 - Replace the M1 bridge with direct `texture_from_raw` import of the
   core's `VkImage`; wire `set_image` / `get_sync_index` synchronization
