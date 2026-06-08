@@ -179,6 +179,49 @@ type DiscInfo = {
 
 const MEMORY_WINDOW_BYTES = 256;
 
+// VL Phase C3 — mirror of Rust `LauncherCapabilities` (oa_core). Which
+// in-game features the ACTIVE launcher supports. The in-process libretro
+// launcher reports all-true (today's behavior); an external standalone
+// emulator reports all-false in v1 (it manages its own saves / input /
+// rendering), so the matching QuickSettings rows gray out.
+type LauncherCapabilities = {
+  supportsSavestate: boolean;
+  supportsRewind: boolean;
+  supportsRunAhead: boolean;
+  supportsInputRemap: boolean;
+  supportsShaders: boolean;
+  supportsCoreOptions: boolean;
+  supportsDiscControl: boolean;
+  supportsFrameCapture: boolean;
+};
+
+// Mirror of Rust `ActiveLauncherInfo` (get_active_launcher_capabilities).
+type ActiveLauncherInfo = {
+  launcherId: string;
+  launcherName: string;
+  isExternal: boolean;
+  capabilities: LauncherCapabilities;
+};
+
+// Full-capability fallback used until the fetch resolves and whenever the
+// active session is the in-process libretro path. Keeps today's behavior
+// the default — gating only ever SUBTRACTS for external launchers.
+const LIBRETRO_LAUNCHER_INFO: ActiveLauncherInfo = {
+  launcherId: "libretro",
+  launcherName: "Libretro core",
+  isExternal: false,
+  capabilities: {
+    supportsSavestate: true,
+    supportsRewind: true,
+    supportsRunAhead: true,
+    supportsInputRemap: true,
+    supportsShaders: true,
+    supportsCoreOptions: true,
+    supportsDiscControl: true,
+    supportsFrameCapture: true,
+  },
+};
+
 const QuickSettings: Component<Props> = (props) => {
   let cardRef: HTMLDivElement | undefined;
   const [view, setView] = createSignal<QuickView>("actions");
@@ -210,6 +253,12 @@ const QuickSettings: Component<Props> = (props) => {
   // RetroArch parity slice — disc control.
   const [discInfo, setDiscInfo] = createSignal<DiscInfo | null>(null);
   const [discSwapping, setDiscSwapping] = createSignal(false);
+
+  // VL Phase C3 — capabilities of the launcher that owns the running
+  // session. Defaults to the full libretro set; refreshed on open. An
+  // external emulator session reports all-false, graying the rows it
+  // manages itself with a "Managed by <name>" hint.
+  const [launcherInfo, setLauncherInfo] = createSignal<ActiveLauncherInfo>(LIBRETRO_LAUNCHER_INFO);
   async function refreshDiscState() {
     try {
       const s = await invoke<DiscInfo | null>("get_disc_state");
@@ -279,6 +328,13 @@ const QuickSettings: Component<Props> = (props) => {
       void invoke<VideoState>("get_video_state")
         .then((s) => setVideoState(s ?? null))
         .catch(() => setVideoState(null));
+      // VL Phase C3 — refresh the active launcher's capabilities so the
+      // action rows gate correctly. Falls back to the full libretro set
+      // on error (fail-open: never hide a capability the in-process path
+      // actually has).
+      void invoke<ActiveLauncherInfo>("get_active_launcher_capabilities")
+        .then((info) => setLauncherInfo(info ?? LIBRETRO_LAUNCHER_INFO))
+        .catch(() => setLauncherInfo(LIBRETRO_LAUNCHER_INFO));
       void refreshDiscState();
       // No deep-link landing today — the legacy Tools menu drove
       // requestedView and was removed in the Retroverse migration.
@@ -662,6 +718,7 @@ const QuickSettings: Component<Props> = (props) => {
             <ActionsPanel
               entry={props.entry}
               exitMode={props.exitMode}
+              launcherInfo={launcherInfo()}
               onClose={props.onClose}
               onShowSaves={props.onShowSaves}
               onShowInfo={props.onShowInfo}
@@ -1681,6 +1738,11 @@ function isTouchSystem(systemId: string): boolean {
 const ActionsPanel: Component<{
   entry: RomEntry | null;
   exitMode?: "library" | "quit";
+  /// VL Phase C3 — capabilities of the launcher that owns the running
+  /// session. Rows whose governing capability is false gray out with a
+  /// "Managed by <name>" hint (external emulators manage their own
+  /// saves / input / rendering).
+  launcherInfo: ActiveLauncherInfo;
   onClose: () => void;
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
@@ -1701,7 +1763,26 @@ const ActionsPanel: Component<{
   /// server roundtrips.
   onEnterView: (view: QuickView) => void;
 }> = (props) => {
-  type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; onActivate: () => void };
+  type Action = { key: string; icon: string; label: string; hint?: string; destructive?: boolean; disabled?: boolean; onActivate: () => void };
+  // VL Phase C3 — which LauncherCapabilities flag governs each gateable
+  // action row. Keys NOT listed here are always available (Resume, Game
+  // info, the touch-hints / perf-HUD / Exit toggles) — they're OA-shell
+  // UI, not core features the launcher provides. When the governing flag
+  // is false on the active launcher, the row disables with a "Managed by
+  // <name>" hint and its activation no-ops.
+  const ACTION_CAPABILITY: Record<string, keyof LauncherCapabilities> = {
+    saves: "supportsSavestate",
+    shaders: "supportsShaders",
+    "core-options": "supportsCoreOptions",
+    input: "supportsInputRemap",
+    bindings: "supportsInputRemap",
+    screenshots: "supportsFrameCapture",
+    rewind: "supportsRewind",
+    tas: "supportsFrameCapture",
+    video: "supportsFrameCapture",
+    memory: "supportsFrameCapture",
+    disc: "supportsDiscControl",
+  };
   const actions = createMemo<Action[]>(() => {
     const list: Action[] = [
       { key: "resume", icon: "▶", label: "Resume", hint: "Esc", onActivate: props.onClose },
@@ -1827,7 +1908,23 @@ const ActionsPanel: Component<{
         props.onExitToLibrary();
       },
     });
-    return list;
+    // VL Phase C3 — capability gating. For an external-emulator session,
+    // disable the rows whose governing capability the launcher lacks and
+    // swap the hint to "Managed by <name>". No-op for the in-process
+    // libretro path (all capabilities true). Exit is never gated — the
+    // operator must always be able to leave / force-quit (the terminate
+    // affordance for a hung external emulator lives behind it).
+    const caps = props.launcherInfo.capabilities;
+    return list.map((a) => {
+      const flag = ACTION_CAPABILITY[a.key];
+      if (!flag || caps[flag]) return a;
+      return {
+        ...a,
+        disabled: true,
+        hint: `Managed by ${props.launcherInfo.launcherName}`,
+        onActivate: () => {},
+      };
+    });
   });
   const [focusedIndex, setFocusedIndex] = createSignal(0);
   const focusGroup = useFocusGroup({
@@ -1856,6 +1953,7 @@ const ActionsPanel: Component<{
             label={action.label}
             hint={action.hint}
             destructive={action.destructive}
+            disabled={action.disabled}
             onClick={action.onActivate}
             bind={(el) => focusGroup.bind(index(), el)}
             focused={focusedIndex() === index()}

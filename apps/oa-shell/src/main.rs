@@ -2613,6 +2613,7 @@ fn main() {
             set_emulator_binary_path,
             get_launcher_pref,
             set_launcher_pref,
+            get_active_launcher_capabilities,
             media::get_media_index,
             media::get_region_priority,
             media::set_region_priority,
@@ -10599,6 +10600,63 @@ fn set_launcher_pref(
         prefs.get(&system_id)
     );
     Ok(())
+}
+
+/// VL Phase C3 — what the *currently running* session's launcher can do,
+/// for QuickSettings capability gating. When no session is active OR the
+/// active session is the in-process libretro path, this reports the full
+/// capability set (today's behavior); when an external emulator owns the
+/// session, it reports that launcher's (v1: all-false) capabilities plus
+/// the emulator's display name so the UI can say "Managed by <name>".
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveLauncherInfo {
+    /// Launcher id — `"libretro"` for in-process, else the profile id.
+    launcher_id: String,
+    /// Operator-facing name ("Dolphin"); "Libretro core" for in-process.
+    launcher_name: String,
+    /// True when an external standalone emulator owns the session.
+    is_external: bool,
+    /// What the active launcher supports. Drives which QuickSettings
+    /// entries enable vs gray out.
+    capabilities: oa_core::LauncherCapabilities,
+}
+
+#[tauri::command]
+fn get_active_launcher_capabilities(state: tauri::State<'_, AppState>) -> ActiveLauncherInfo {
+    // Default = the in-process libretro launcher (full capabilities).
+    // Matches the slot's own fallback in unload_rom: no active_launch
+    // entry means today's in-process behavior.
+    let default = || ActiveLauncherInfo {
+        launcher_id: "libretro".to_string(),
+        launcher_name: "Libretro core".to_string(),
+        is_external: false,
+        capabilities: oa_core::LauncherCapabilities::all(),
+    };
+    let Ok(guard) = state.active_launch.lock() else {
+        return default();
+    };
+    let Some(active) = guard.as_ref() else {
+        return default();
+    };
+    let is_external = matches!(active.session, oa_core::LaunchedSession::External { .. });
+    if !is_external {
+        return default();
+    }
+    let id = active.launcher.id().to_string();
+    // Resolve the friendly name from the loaded profile; fall back to the
+    // id if the profile somehow isn't present.
+    let launcher_name = state
+        .emulator_profiles
+        .get(&id)
+        .map(|p| p.display_name.clone())
+        .unwrap_or_else(|| id.clone());
+    ActiveLauncherInfo {
+        launcher_id: id,
+        launcher_name,
+        is_external: true,
+        capabilities: active.launcher.capabilities(),
+    }
 }
 
 #[derive(serde::Serialize)]
