@@ -441,23 +441,32 @@ Plan: [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 + §13.
 
 ## MEDIUM — Phase 3+ polish
 
-**🆕 2026-06-08 — Audio quality pass: clipping + clicking on some cores (NES confirmed).**
-Operator playtest (after the env-32 audio-rate fix, commit `ed1e463`): N64
-audio is good, but **NES has clipping + clicking**, and possibly other systems
-too. NOT yet investigated (operator: track, don't dig in now). Suspected
-causes to check when picked up:
-- *Clipping* — samples exceeding i16 range somewhere in the path, or a
-  per-system gain/mix issue (the 4-bus mixer in `apps/oa-shell/src/audio_player.rs`?).
-- *Clicking* — buffer underruns (ring runs near-empty → cpal callback
-  zero-fills), resampler discontinuities at batch boundaries, or a rate
-  mismatch on those cores (does the NES core declare a rate the device under/
-  over-feeds, like the paraLLEl-N64 env-32 case?).
-- **First triage step:** confirm whether it's PRE-EXISTING or introduced by
-  the recent audio work (`git log` the audio path; the env-32 sink-rebuild in
-  `main.rs` only fires when a core revises its rate — check if NES cores call
-  env 32). Test 2-3 systems to scope breadth (operator suspects it's not
-  NES-only). Lives in `crates/oa-audio/` (resampler/sink) + `oa-shell` audio
-  pump + `oa-libretro` audio callbacks. Est. unknown until triaged.
+~~**2026-06-08 — Audio quality pass: clipping + clicking on some cores (NES confirmed).**~~
+**ROOT CAUSE FIXED 2026-06-08** on `feat/audio-quality` (commit `0bb4e89`).
+Not amplitude clipping — a **sample-rate-feed bug**. The shell never adopted
+the core's real timing after `retro_load_game`: `LibretroCore::new` seeds a
+placeholder `Timing` (44100 Hz / 60.000 fps) because most cores can't report
+real `av_info` until a ROM is loaded; `finish_load` snapshots the true values
+into the core, but the shell's local `timing` + the oa-audio sink were built
+from the placeholder and never refreshed. The linear resampler was fed
+`source_rate = 44100` for every core → wrong sample count + wrong pitch
+(fceumm 48000 overproduced → ring overflow/glitch + high pitch; snes9x 32040
+underproduced → underrun crackle + low pitch). PCE worked by coincidence
+(real rate == placeholder); N64 worked only because it calls env 32, the one
+path that already rebuilt the sink. Confirmed by debug-log feed-rate math
+(48 kHz stereo device drains 96000 i16/s; measured Δpushed/s matched the
+rate-ratio off-by exactly). **Fix:** after `load_rom` in BOTH the runtime
+LoadRom handler and the cold-start direct-launch path, refresh
+`timing = core.timing()` + rebuild the sink + retime the limiter when the real
+rate/fps differs; env 32 stays the secondary later-revision path. Operator
+playtest: "sounds much better."
+- **Deferred:** (1) "damn accurate" verification pass — operator wants to
+  confirm pitch/timing is exact across the lineup later. (2) IF any core still
+  sounds genuinely hot after the rate fix, add a master soft-limiter in
+  `oa-audio` (NOT added preemptively — the data said rate, not amplitude).
+  Re-open this entry only if a true amplitude clip is observed.
+- Files: `apps/oa-shell/src/main.rs` (both load paths). See
+  `docs/features/audio-quality/SESSION_LOG.md`.
 
 
 ~~1. Dedicated `vector-phosphor` shader preset for Vectrex~~ —

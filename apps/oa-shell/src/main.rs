@@ -3822,22 +3822,6 @@ fn run_emu_render(
         timing.width, timing.height, timing.fps, timing.sample_rate
     );
 
-    let initial_audio_device = read_audio_pref(&app_data_dir);
-    let mut audio = match oa_audio::AudioSink::with_device(timing.sample_rate, initial_audio_device.as_deref()) {
-        Ok(a) => {
-            log::info!(
-                "oa-shell: audio sink up at {} Hz (device = {:?})",
-                a.sample_rate(),
-                a.current_device()
-            );
-            Some(a)
-        }
-        Err(e) => {
-            log::warn!("oa-shell: audio disabled ({e:?}); game will run silent");
-            None
-        }
-    };
-
     // Active ROM stem (sanitized filename without extension) gates which
     // per-game save-state directory we hit. Updated on every successful
     // load_rom — both the startup OA_ROM path and the runtime LoadRom command.
@@ -3871,6 +3855,18 @@ fn run_emu_render(
             Ok(()) => {
                 log::info!("oa-shell: ROM accepted by core; emulation will start");
                 current_rom_stem = Some(sanitize_stem(path));
+                // Adopt the core's REAL timing now that a ROM is loaded —
+                // `initial_core.timing()` above was the constructor placeholder
+                // (44100 Hz / 60.000 fps; see core.rs::new) because no ROM was
+                // loaded yet. The audio sink (built below) reads
+                // `timing.sample_rate`, and `frame_period` (declared later) is
+                // derived from `timing.fps`, so refreshing here fixes BOTH the
+                // resampler's source rate and the frame limiter for cold
+                // direct-launches. Same gap the runtime LoadRom path closes
+                // post-`load_rom`; without it every non-44100 core (snes9x
+                // 32040, fceumm 48000, …) gets fed the wrong rate → crackle +
+                // wrong pitch.
+                timing = core_ref.timing();
             }
             Err(e) => {
                 log::error!("oa-shell: ROM rejected: {e:?}");
@@ -3878,6 +3874,30 @@ fn run_emu_render(
             }
         }
     }
+
+    // Bring up the audio sink AFTER the startup ROM load so it opens at the
+    // core's real sample rate (the load above refreshed `timing`). Building it
+    // before the load would lock in the 44100 Hz placeholder. The runtime
+    // LoadRom handler rebuilds the sink on later launches; this is the cold-
+    // start equivalent.
+    let initial_audio_device = read_audio_pref(&app_data_dir);
+    let mut audio = match oa_audio::AudioSink::with_device(timing.sample_rate, initial_audio_device.as_deref()) {
+        Ok(mut a) => {
+            // Honor a SET_MINIMUM_AUDIO_LATENCY (env 63) request the startup
+            // core may have made — mirrors the runtime LoadRom path.
+            let _ = a.ensure_min_latency_ms(oa_libretro::loaded_core_min_audio_latency_ms());
+            log::info!(
+                "oa-shell: audio sink up at {} Hz (device = {:?})",
+                a.sample_rate(),
+                a.current_device()
+            );
+            Some(a)
+        }
+        Err(e) => {
+            log::warn!("oa-shell: audio disabled ({e:?}); game will run silent");
+            None
+        }
+    };
 
     // F5 = save state to active slot on disk, F8 = restore from active slot.
     // Slots are per-game (keyed by the ROM filename stem) and persist under
@@ -4687,6 +4707,48 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // Adopt the core's REAL timing now that a ROM is
+                            // loaded. `LibretroCore::load` (the core-swap path
+                            // above) only saw the constructor placeholder
+                            // (256x240 @ 60.000 Hz, 44100 Hz audio — see
+                            // core.rs::new) because no ROM was loaded yet; the
+                            // true `retro_get_system_av_info` values only exist
+                            // after `retro_load_game` (snapshotted by
+                            // `finish_load`). Without this, the audio sink keeps
+                            // the placeholder 44100 Hz and the resampler is fed
+                            // the WRONG source rate for every core whose native
+                            // rate isn't 44100 (snes9x 32040, fceumm 48000, …):
+                            // it produces the wrong sample count → ring
+                            // overflow/underrun (crackling) AND wrong pitch.
+                            // This mirrors the env-32 mid-run revision block
+                            // (search `take_pending_av_info`) but fires
+                            // unconditionally at load — env 32 then stays the
+                            // secondary path for cores (paraLLEl-N64) that
+                            // revise their rate even later.
+                            let real_timing = core_ref.timing();
+                            if real_timing.sample_rate != timing.sample_rate {
+                                log::info!(
+                                    "oa-shell: adopting core's real audio rate {} -> {} Hz post-load; rebuilding sink",
+                                    timing.sample_rate, real_timing.sample_rate
+                                );
+                                let device_pref = read_audio_pref(&app_data_dir);
+                                audio = match oa_audio::AudioSink::with_device(real_timing.sample_rate, device_pref.as_deref()) {
+                                    Ok(a) => Some(a),
+                                    Err(e) => {
+                                        log::warn!("oa-shell: audio sink rebuild at real rate failed ({e:?}); silent");
+                                        None
+                                    }
+                                };
+                            }
+                            if real_timing.fps > 0.0 && (real_timing.fps - timing.fps).abs() > 0.001 {
+                                log::info!(
+                                    "oa-shell: adopting core's real fps {:.3} -> {:.3} post-load; retiming limiter",
+                                    timing.fps, real_timing.fps
+                                );
+                                frame_period = Duration::from_secs_f64(1.0 / real_timing.fps);
+                            }
+                            timing = real_timing;
 
                             // M2 HW-render: if this is a Vulkan HW core, rebuild
                             // the renderer ADOPTING the core's Vulkan device so
