@@ -258,10 +258,9 @@ spanned every system but was filed under whichever core happened to be active.
     `LibretroLauncher` + `ExternalProcessLauncher` impls;
     `config/emulators/<id>.yaml` profile registry. Sub-phase plan:
     [PLANS/launcher-abstraction.md](PLANS/launcher-abstraction.md).
-    - **C1 — Launcher trait + LibretroLauncher refactor ✅ shipped
-      2026-06-07** (branch `feat/virtual-library-phase-c1`, awaiting
-      operator playtest before merge — acceptance: "everything
-      launches exactly like yesterday"). `oa-core` gains `Launcher`
+    - **C1 — Launcher trait + LibretroLauncher refactor ✅ shipped +
+      merged 2026-06-07** (operator playtest passed — launches
+      identical to pre-C1). `oa-core` gains `Launcher`
       (`prepare → launch → is_alive → terminate` + capabilities) +
       `LaunchRequest` / `LaunchPrepared` / `LaunchedSession` /
       `LauncherCapabilities` / `LaunchError` (transparent Display so
