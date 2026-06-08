@@ -52,6 +52,7 @@
 
 mod core;
 pub mod ffi;
+mod hw_vulkan;
 mod keycode;
 mod loader;
 mod pixel;

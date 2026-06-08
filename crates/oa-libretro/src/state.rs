@@ -281,6 +281,21 @@ pub(crate) struct State {
     /// reads `LibretroCore::rotation()` after `retro_load_game` returns
     /// and pushes the value to the renderer for viewport math.
     pub rotation: u32,
+    /// HW-render callback the core registered via `SET_HW_RENDER` (env 14)
+    /// — carries the requested context type (Vulkan/GL/D3D), API version,
+    /// and the core's `context_reset` / `context_destroy` pointers. `None`
+    /// for the software cores (the common case). Captured in the M1 probe
+    /// phase; the device-build commit fills its frontend-provided fields
+    /// (`get_proc_address` / `get_current_framebuffer`) and drives
+    /// `context_reset`. See docs/PLANS/hw-render-pipeline.md.
+    #[allow(dead_code)] // read by the M1 device-build commit (next).
+    pub hw_render_callback: Option<retro_hw_render_callback>,
+    /// Vulkan context-negotiation interface the core handed us via env 43.
+    /// The M1 standalone-device build calls its `create_device` to stand up
+    /// a `VkDevice` with exactly the extensions/features the core needs.
+    /// `None` until a Vulkan HW core registers one.
+    #[allow(dead_code)] // read by the M1 device-build commit (next).
+    pub hw_negotiation_vulkan: Option<retro_hw_render_context_negotiation_interface_vulkan>,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -337,6 +352,8 @@ impl State {
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
+            hw_render_callback: None,
+            hw_negotiation_vulkan: None,
         }
     }
 
@@ -606,6 +623,18 @@ pub(crate) fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     g.as_mut().map(f)
 }
 
+/// Enumerate + log the host's Vulkan physical devices exactly once per
+/// process. Called from the HW-render env handlers (SET_HW_RENDER /
+/// negotiation interface) — both can fire and we only want one device
+/// dump. Process-global (not per-load) is fine: it's a diagnostic, and the
+/// device set doesn't change across core reloads. See `hw_vulkan`.
+fn hw_probe_once() {
+    static HW_PROBED: AtomicBool = AtomicBool::new(false);
+    if !HW_PROBED.swap(true, AtomicOrdering::Relaxed) {
+        crate::hw_vulkan::probe_physical_devices();
+    }
+}
+
 /// Supported-device list the loaded core advertised for `port` via
 /// `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`. Reads the singleton State
 /// directly so Tauri commands (which don't hold a `LibretroCore` ref —
@@ -665,6 +694,18 @@ pub(crate) unsafe extern "C" fn cb_video_refresh(
     height: u32,
     pitch: usize,
 ) {
+    // HW-rendered-frame sentinel. A Vulkan/GL core signals "the frame is
+    // already on the GPU, not in this pointer" by passing
+    // `data == RETRO_HW_FRAME_BUFFER_VALID` (the `(void*)-1` value). It is
+    // NOT a CPU buffer — running `pixel::convert` on it would dereference
+    // `0xFFFF…` and crash (a latent bug even before HW support: the
+    // null-check below lets `-1` through). The M1 device-build commit reads
+    // the core's `VkImage` back into `fb_rgba` here; in this probe phase we
+    // have no GPU readback yet, so we simply drop the HW frame. Either way:
+    // never treat the sentinel as a pixel pointer.
+    if data as usize == RETRO_HW_FRAME_BUFFER_VALID {
+        return;
+    }
     if data.is_null() || width == 0 || height == 0 {
         return;
     }
@@ -1800,12 +1841,94 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             unsafe { *(data as *mut retro_sensor_interface) = iface; }
             true
         }
-        // Decline these — we don't have camera / location / HW render
-        // interfaces, and lying about them risks the core calling a
-        // null function pointer.
+        // Decline these — we don't have camera / location interfaces, and
+        // lying about them risks the core calling a null function pointer.
         RETRO_ENVIRONMENT_GET_CAMERA_INTERFACE
-        | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE
-        | RETRO_ENVIRONMENT_SET_HW_RENDER => false,
+        | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE => false,
+
+        // ---- HW render (M1 probe phase) ----
+        //
+        // docs/PLANS/hw-render-pipeline.md + DECISIONS D6. These three
+        // env commands form the libretro HW-render handshake. In this
+        // PROBE commit we capture + log what the core requests but do NOT
+        // yet stand up the standalone Vulkan device — so `SET_HW_RENDER`
+        // still returns false (today's behavior; the core falls back / the
+        // crash is unchanged). The point is to read the log afterward and
+        // see exactly which negotiation version + apiVersion + GPU the
+        // operator's Dolphin .dll wants, then write the device code to
+        // match. The device-build commit flips `SET_HW_RENDER` to accept.
+        RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER => {
+            // Answer Vulkan so the core selects its Vulkan path and hands
+            // us the Vulkan negotiation interface (env 43). Without this,
+            // Dolphin defaults to OpenGL (observed in the 2026-06-07 log)
+            // and we never see the Vulkan negotiation struct we need to
+            // probe. Harmless as a hint even while we still decline
+            // SET_HW_RENDER below.
+            if data.is_null() {
+                return false;
+            }
+            unsafe {
+                *(data as *mut u32) = RETRO_HW_CONTEXT_VULKAN;
+            }
+            log::info!("oa-libretro HW: GET_PREFERRED_HW_RENDER -> Vulkan");
+            true
+        }
+        RETRO_ENVIRONMENT_SET_HW_RENDER => {
+            if data.is_null() {
+                return false;
+            }
+            // SAFETY: core hands us a *retro_hw_render_callback it filled in.
+            let cb = unsafe { *(data as *const retro_hw_render_callback) };
+            log::info!(
+                "oa-libretro HW: SET_HW_RENDER — context_type={} version={}.{} depth={} \
+                 stencil={} bottom_left_origin={} cache_context={} debug_context={}",
+                cb.context_type,
+                cb.version_major,
+                cb.version_minor,
+                cb.depth,
+                cb.stencil,
+                cb.bottom_left_origin,
+                cb.cache_context,
+                cb.debug_context,
+            );
+            with_state(|s| s.hw_render_callback = Some(cb));
+            if cb.context_type == RETRO_HW_CONTEXT_VULKAN {
+                hw_probe_once();
+            } else {
+                log::warn!(
+                    "oa-libretro HW: core requested non-Vulkan context_type {} — M1 targets Vulkan only",
+                    cb.context_type,
+                );
+            }
+            // PROBE phase: decline. The device-build commit returns true
+            // here after standing up the standalone device + filling
+            // cb.get_proc_address / cb.get_current_framebuffer.
+            false
+        }
+        RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE => {
+            if data.is_null() {
+                return false;
+            }
+            // The interface starts with `{ interface_type, interface_version }`;
+            // confirm it's the Vulkan variant (type 0) before reinterpreting
+            // the rest of the struct.
+            let base_type = unsafe { *(data as *const u32) };
+            if base_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN {
+                log::warn!(
+                    "oa-libretro HW: negotiation interface type {base_type} is not Vulkan (0) — ignoring"
+                );
+                return false;
+            }
+            // SAFETY: type-checked above; the core owns the struct for the
+            // duration of the call. We copy it out (it's Copy — fn pointers
+            // + scalars only).
+            let iface =
+                unsafe { *(data as *const retro_hw_render_context_negotiation_interface_vulkan) };
+            crate::hw_vulkan::log_negotiation_interface(&iface);
+            with_state(|s| s.hw_negotiation_vulkan = Some(iface));
+            hw_probe_once();
+            true
+        }
 
         // Keyboard callback registration. Cores that want raw key events
         // (MAME for operator-test / TAB menu, MSX for BASIC, every future
