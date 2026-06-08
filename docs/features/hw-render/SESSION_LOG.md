@@ -6,6 +6,40 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 14) — measurement: readback ~31ms is serialization, NOT upscale → zero-copy justified
+
+- **Measured (paraLLEl-N64, oa-current.log 14:12):** readback steady ~31ms/
+  frame; shader CrtLite **preserved** on the adopted renderer (4a works);
+  adopt/restore/re-adopt all clean.
+- **Operator confirmed upscaling is already 1× (native).** So the ~31ms is
+  NOT GPU render cost (native 640×240 on a 4090 is ~1-2ms) — it's
+  **serialization in the synchronous readback path**: ~31ms ≈ two 16.6ms
+  vsync intervals; the `wait_for_fences` blocks the CPU each frame behind the
+  core's pacing + wgpu's Fifo/vsync present on the shared queue, with no
+  CPU/GPU overlap. Compounded by our M1 `get_sync_index_mask = 0x1` telling
+  paraLLEl-RDP it has ONE in-flight buffer ("Using 1 sync frames" = minimal
+  pipelining).
+- **Verdict: zero-copy is the right fix** (measurement ruled out upscale/core
+  GPU cost). The remaining M2 work:
+  1. **Zero-copy import** — replace readback with sampling the core's VkImage.
+     Hits the wgpu `texture_from_raw` layout-discard wall (no layout param →
+     wgpu treats imported image as UNDEFINED → discards). Fix: raw-Vulkan
+     image→image copy into a wgpu-native texture with hand-managed barriers
+     (src SHADER_READ_ONLY→TRANSFER_SRC, dst restored to wgpu's expected
+     layout), OR research wgpu-core's from-hal initial-state handling for a
+     direct-sample path. The `present_hw_image` + `set_hw_import_mode(true)`
+     wiring is scaffolded (4b) and ready.
+  2. **Real `get_sync_index` multi-buffering** — return a multi-bit mask +
+     cycle the index so the core pipelines (vs the M1 single-buffer stub).
+  3. Drop the host fence wait (GPU-side sync via the core's semaphores / queue
+     ordering) so the CPU runs ahead.
+- **Banked + working on `feat/hw-render-m2`:** device adoption, renderer
+  lifecycle (swap/restore/re-adopt), settings preservation, readback timing.
+  M1 stays at tag `hw-render-m1-proven`.
+- **Next session (focused):** the zero-copy import + multi-buffer sync (D7).
+  Best done fresh + carefully — sync bugs are intermittent + miserable to
+  debug rushed.
+
 ## 2026-06-08 (cont. 13) — M2 Stage 4: settings preservation + readback timing; zero-copy wall
 
 - **Shipped:** 4a (settings preservation — shader/scaling/etc. carried across
