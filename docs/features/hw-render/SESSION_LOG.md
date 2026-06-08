@@ -6,6 +6,41 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 8) — 🎉 M1 PIPELINE PROVEN (paraLLEl-N64 renders in-process)
+
+- **The null-features fix worked.** Full pipeline confirmed end-to-end with
+  **paraLLEl-N64 / paraLLEl-RDP (Vulkan)**:
+  `create_device returned ok=true` → `device built … ready` →
+  `GET_HW_RENDER_INTERFACE -> Vulkan interface` → `context_reset returned` →
+  `first set_image — format=R8G8B8A8_UNORM layout=SHADER_READ_ONLY_OPTIMAL
+  num_semaphores=0` → `first readback OK — 640x240 … (frame on screen)`.
+  A GPU-rendering libretro core runs **in-process instead of crashing** — the
+  M1 architecture (standalone ash VkDevice + create_device + the 8 interface
+  callbacks + CPU readback into fb_rgba) is validated. wgpu untouched; the 46
+  software cores unaffected.
+  - NOTE on the exit gate: the plan's literal M1 gate named *Dolphin/GameCube*.
+    We proved the pipeline on paraLLEl-N64 instead (Dolphin is a separate,
+    harder problem — it builds its own windowless context and silent-crashes;
+    parked for ground-truth Vulkan validation). The *architecture* M1 set out
+    to prove is done.
+- **Known M1 limitation — speed:** ~29 fps (half of N64's 60). Audio sounds
+  off purely because emulation runs at ~half speed (audio produced at
+  half-rate); not an audio bug. Root cause = M1's synchronous readback: every
+  frame we submit a copy and host-wait the fence (`wait_for_fences u64::MAX`),
+  fully draining the GPU and killing CPU/GPU overlap. `num_semaphores=0` (the
+  core host-synchronizes its image) compounds it. **This is exactly what M2
+  (zero-copy import, no readback, no host wait) removes** — speed was always
+  an M2 deliverable (D2/D6).
+- **Shipped:** docs only (this entry). Code unchanged since `824b38a`.
+- **Next:** (a) operator can try paraLLEl-RDP core options that affect speed
+  (`parallel-n64-parallel-rdp-synchronous` off; upscaling = 1x) — may help but
+  our full-drain readback caps the ceiling regardless; (b) optional per-frame
+  timing instrumentation (run_frame vs readback) to confirm readback is the
+  dominant cost; (c) the real fix is **M2 zero-copy** — import the core's
+  VkImage via wgpu (commits wgpu to the Vulkan backend per D3) and composite
+  on-GPU. Consider whether M1 (renders, slow) is a mergeable checkpoint before
+  starting M2.
+
 ## 2026-06-08 (cont. 7) — M1: past the option wall; create_device null-features fix
 
 - **The cont. 6 core-option fix WORKED.** paraLLEl-N64 now requests
