@@ -31,9 +31,9 @@ spanned every system but was filed under whichever core happened to be active.
     restore: tag `v0.x-pre-theming-substrate` + branch
     `pre-theming-substrate` both at `5695adb`. SURFACES.md is the
     boundary-doc deliverable.
-  - **Phase 2 Slice A ✅ shipped 2026-06-06** (branch
-    `feat/theming-substrate-phase-2-slice-a`, awaiting operator
-    playtest before merge). Platform foundation + cleanup half of
+  - **Phase 2 Slice A ✅ shipped + merged 2026-06-06** (branch
+    `feat/theming-substrate-phase-2-slice-a`, merge `e400274`).
+    Platform foundation + cleanup half of
     Phase 2: `@oa/platform` Vite alias + tsconfig paths +
     `platform/index.ts` barrel; HOTSPOT_SYSTEMS / STYLUS_SYSTEMS
     triplicate collapsed via new `touchInputSupported?: boolean`
@@ -83,10 +83,11 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: Phase C — launcher abstraction** (operator
-  picked C over B 2026-06-07 to unblock the theming arc's Phase-2
-  pause; theming plan §7 wants VL E + C before theming Phase 3
-  resumes). Sub-phase plan + operator-locked decisions:
+  **Current slice: Phase C3 — capability gating + session polish**
+  (C1 + C2 shipped + merged; operator picked C over B 2026-06-07 to
+  unblock the theming arc's Phase-2 pause; theming plan §7 wants VL
+  E + C before theming Phase 3 resumes). Sub-phase plan +
+  operator-locked decisions:
   [PLANS/launcher-abstraction.md](PLANS/launcher-abstraction.md).
   Key decisions: Launcher = lifecycle trait ABOVE the untouched
   `oa_core::Core`; pilot = **Dolphin standalone against the
@@ -94,9 +95,7 @@ spanned every system but was filed under whichever core happened to be active.
   ride Phase D with the installer); minimize-OA-while-running;
   C1 (trait + LibretroLauncher refactor, invisible) → C2 (profile
   registry + ExternalProcessLauncher + first Dolphin launch) →
-  C3 (capability gating + session polish). Still pending
-  operator-side from Phase A: the A1 hit-rate measurement (run
-  Identify ROMs on a disc system).
+  C3 (capability gating + session polish, in flight).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
@@ -141,14 +140,14 @@ spanned every system but was filed under whichever core happened to be active.
       Display → Experimental, wired to
       `LibraryPrefs.discTrackExperimentalEnabled` via
       `set_library_prefs`. Bullet retained for the historical pointer.
-    - **A1 hit-rate measurement** (operator-facing next step).
-      Operator rebuilds + runs Identify ROMs on a disc system. The
-      fuzzy index builds at resolve start (logged with canonical
-      count). Per-game progress shows `matched (filename) →
-      <canonical>` for hits. Misses fall to `peek_disc_id` (existing
-      serial-lookup path). Hit rate measurement determines whether
-      Sub-phase 4 (multi-disc grouping) is built on top of fuzzy
-      or whether further architectural work is needed.
+    - **A1 hit-rate measurement ✅ good enough — closed 2026-06-08.**
+      Operator ran Identify ROMs on a disc system and judged the
+      filename-fuzzy primary (matched against canonical disc titles
+      in `rom_hashes_tracks`, misses falling to `peek_disc_id`)
+      sufficient for now. Sub-phase 4 (multi-disc grouping) already
+      shipped on top of the fuzzy primary (2026-06-04). No further
+      identification architecture work needed at this time; revisit
+      only if a real library surfaces a systematic miss pattern.
     - **A1 Sub-phase 4 ✅ shipped 2026-06-04** (backend `b6b4ae6` +
       frontend `f42c567`). Multi-disc disc-set wiring on top of the
       fuzzy primary. Backend: `maybe_stamp_disc_set_membership` at
@@ -160,9 +159,9 @@ spanned every system but was filed under whichever core happened to be active.
       multi-disc games on PSX / Saturn / Sega CD / PCE-CD where
       redump catalogs the parent group. Single-disc games and cart
       libraries unchanged.
-    - **A2 — filename tag decode ✅ shipped 2026-06-06** (branch
-      `feat/virtual-library-phase-a2`, awaiting operator playtest
-      before merge). 7 new fields on `ParsedTitle` (and mirrored
+    - **A2 — filename tag decode ✅ shipped + merged 2026-06-06**
+      (branch `feat/virtual-library-phase-a2`, merge `91e8e04`).
+      7 new fields on `ParsedTitle` (and mirrored
       onto `GameVariant` + frontend `VariantInfo`): `dump_status`
       enum (Verified / BadDump / OverDump / Fixed / Unknown),
       `is_hack`, `is_translation`, `is_pirate`, `is_bios`,
@@ -275,9 +274,11 @@ spanned every system but was filed under whichever core happened to be active.
       No external launching yet. 807 oa-shell tests pass (803
       baseline + 4 new); typecheck silent.
     - **C2 — profile registry + `ExternalProcessLauncher` + first
-      Dolphin launch ✅ shipped 2026-06-07** (branch
-      `feat/virtual-library-phase-c2`, awaiting operator playtest
-      before merge). New `apps/oa-shell/src/emulator_profiles.rs`:
+      Dolphin launch ✅ shipped + merged 2026-06-08** (branch
+      `feat/virtual-library-phase-c2`; operator playtest passed —
+      external Dolphin launches + exits cleanly back to the library,
+      launcher picker hints correct). New
+      `apps/oa-shell/src/emulator_profiles.rs`:
       `config/emulators/<id>.yaml` registry (D4 fields; shipped
       pilot `dolphin.yaml`, supported_systems `[gamecube]`,
       `--batch --exec={content}`) + two appData pref files
