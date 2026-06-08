@@ -1897,10 +1897,20 @@ const ActionsPanel: Component<{
         onActivate: () => props.setPerfHudVisible(!on),
       });
     }
+    // Exit row. For an external session this is the force-quit
+    // affordance (D3 / C3 hang handling) — name the emulator so it's
+    // clear the row closes Dolphin (etc.) and returns to the library,
+    // not just navigates away. The underlying onExitToLibrary →
+    // unload_rom path already terminates the child (graceful → kill).
+    const exitLabel = props.launcherInfo.isExternal
+      ? `Close ${props.launcherInfo.launcherName}`
+      : props.exitMode === "quit"
+        ? "Quit"
+        : "Exit to library";
     list.push({
       key: "exit",
       icon: "🚪",
-      label: props.exitMode === "quit" ? "Quit" : "Exit to library",
+      label: exitLabel,
       hint: "Ctrl+W",
       destructive: true,
       onActivate: () => {
