@@ -1,0 +1,35 @@
+# Emulator profile — Dolphin (standalone), the VL Phase C2 pilot.
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# Decision D4 (docs/PLANS/launcher-abstraction.md): profiles are
+# operator-editable YAML, reloaded on restart.
+#
+# binary_path is intentionally absent here: the operator points OA at
+# their install via Settings → Cores → External emulators (persisted
+# per-machine in appData/emulators.json). Phase D's installer will
+# write binary_path directly when it manages the install itself.
+id: dolphin
+display_name: Dolphin
+vendor: Dolphin Team
+official_download_url: https://dolphin-emu.org/download/
+binary_name: Dolphin.exe
+schema_version: 1
+supported_systems:
+- gamecube
+# {content} expands to the resolved game path. --batch makes Dolphin
+# exit when emulation stops (instead of dropping back to its own game
+# list), which is what ties play time to process lifetime (D3).
+launch_args_template:
+- --batch
+- --exec={content}
+# External launchers support no OA capabilities in v1 (D5) — Dolphin
+# manages its own saves, input, and rendering. Omitted flags default
+# to false; listed explicitly here as the reference profile.
+capabilities:
+  supportsSavestate: false
+  supportsRewind: false
+  supportsRunAhead: false
+  supportsInputRemap: false
+  supportsShaders: false
+  supportsCoreOptions: false
+  supportsDiscControl: false
+  supportsFrameCapture: false

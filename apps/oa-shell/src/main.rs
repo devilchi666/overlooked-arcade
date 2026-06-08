@@ -29,6 +29,7 @@ mod job_registry;
 mod core_installer;
 mod core_options;
 mod cpu_tier;
+mod emulator_profiles;
 mod launcher;
 mod layout;
 mod library_db;
@@ -1967,6 +1968,35 @@ impl WindowModeRequest {
 }
 
 impl ShellWindow {
+    /// VL Phase C2, decision D3 — minimize every OA window when an
+    /// external emulator session spawns. The standalone emulator owns
+    /// the screen; OA waits in the taskbar.
+    fn minimize_for_external(&self, app: &tauri::AppHandle) {
+        // Webview windows: "library"/"main" depending on shell mode.
+        for (_label, w) in app.webview_windows() {
+            w.minimize().ok();
+        }
+        // Two-window mode's game window is a plain Window, not a
+        // webview — it isn't in the iterator above.
+        if let ShellWindow::TwoWindow { game } = self {
+            game.minimize().ok();
+        }
+    }
+
+    /// D3's other half — bring the shell back when the external
+    /// session ends. Restores the webview shell only: in two-window
+    /// mode the game window would just show the previous libretro
+    /// session's stale framebuffer, so it stays minimized until the
+    /// next in-process launch (focus_game un-minimizes it then).
+    fn restore_after_external(&self, app: &tauri::AppHandle) {
+        for (label, w) in app.webview_windows() {
+            w.unminimize().ok();
+            if label == "library" || label == "main" {
+                w.set_focus().ok();
+            }
+        }
+    }
+
     fn focus_game(&self) {
         match self {
             ShellWindow::TwoWindow { game } => {
@@ -2066,23 +2096,36 @@ struct ActiveSession {
     started_at: std::time::Instant,
 }
 
+/// VL Phase C2 — a launched game session paired with the launcher that
+/// owns it, so teardown always routes to the right implementation:
+/// in-process sessions terminate through [`launcher::LibretroLauncher`]
+/// (→ `EmuCommand::UnloadRom`), external sessions through their
+/// [`launcher::ExternalProcessLauncher`] (→ graceful close + kill
+/// fallback on the child PID).
+struct ActiveLaunch {
+    launcher: Arc<dyn oa_core::Launcher>,
+    session: oa_core::LaunchedSession,
+}
+
 struct AppState {
     emu_tx: Mutex<mpsc::Sender<EmuCommand>>,
-    /// VL Phase C1 — the launcher that owns the game-session lifecycle
-    /// (`prepare → launch → is_alive → terminate`). Today always the
-    /// in-process `LibretroLauncher`; Phase C2 selects between it and
-    /// `ExternalProcessLauncher` per the per-system default-launcher
-    /// pref. `launch_rom` / `unload_rom` route through this — the
-    /// shell keeps everything launcher-agnostic (content resolution,
-    /// play-session bookkeeping, window choreography) and delegates
-    /// only the dispatch.
+    /// VL Phase C1 — the default in-process libretro launcher.
+    /// `launch_rom` routes through this unless the per-system
+    /// default-launcher pref (`launchers.json`) names an external
+    /// emulator profile, in which case a per-launch
+    /// `ExternalProcessLauncher` takes over (Phase C2). The shell keeps
+    /// everything launcher-agnostic (content resolution, play-session
+    /// bookkeeping, window choreography) and delegates only the
+    /// dispatch.
     launcher: Arc<dyn oa_core::Launcher>,
-    /// VL Phase C1 — handle to the running game session, set by
-    /// `launch_rom`, taken by `unload_rom` for `Launcher::terminate`.
-    /// Always `LaunchedSession::InProcess` until Phase C2 introduces
-    /// external child-process sessions (which carry a PID worth
-    /// tracking here).
-    active_launch: Arc<Mutex<Option<oa_core::LaunchedSession>>>,
+    /// VL Phase C1/C2 — the running game session + the launcher that
+    /// owns it. Set by `launch_rom`; taken by `unload_rom` (terminate
+    /// affordance) or by the external session's exit watcher (natural
+    /// exit). Whoever takes the slot does the teardown choreography.
+    active_launch: Arc<Mutex<Option<ActiveLaunch>>>,
+    /// VL Phase C2 — emulator profiles loaded from `config/emulators/`
+    /// at startup (decision D4: reload on restart).
+    emulator_profiles: emulator_profiles::EmulatorProfiles,
     shell_window: ShellWindow,
     shell_mode: ShellMode,
     app_data_dir: PathBuf,
@@ -2566,6 +2609,10 @@ fn main() {
             get_system_status,
             get_bios_status,
             unload_rom,
+            list_emulator_profiles,
+            set_emulator_binary_path,
+            get_launcher_pref,
+            set_launcher_pref,
             media::get_media_index,
             media::get_region_priority,
             media::set_region_priority,
@@ -3193,6 +3240,7 @@ fn main() {
                 app.manage(AppState {
                     launcher: Arc::new(launcher::LibretroLauncher::new(cmd_tx.clone())),
                     active_launch: Arc::new(Mutex::new(None)),
+                    emulator_profiles: emulator_profiles::EmulatorProfiles::load_default(),
                     emu_tx: Mutex::new(cmd_tx),
                     shell_window,
                     shell_mode,
@@ -10419,6 +10467,140 @@ fn set_core_pref(
     Ok(())
 }
 
+/// VL Phase C2 — one emulator profile flattened for the Settings UI
+/// (Settings → Cores → External emulators).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EmulatorProfileInfo {
+    id: String,
+    display_name: String,
+    vendor: String,
+    official_download_url: String,
+    binary_name: String,
+    supported_systems: Vec<String>,
+    /// Effective binary path (appData `emulators.json` pref → the
+    /// profile's own optional field). `None` = operator hasn't pointed
+    /// OA at an install yet.
+    binary_path: Option<String>,
+}
+
+/// List the emulator profiles loaded from `config/emulators/` at
+/// startup, with each profile's effective binary path resolved.
+#[tauri::command]
+fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProfileInfo> {
+    state
+        .emulator_profiles
+        .iter()
+        .map(|p| EmulatorProfileInfo {
+            id: p.id.clone(),
+            display_name: p.display_name.clone(),
+            vendor: p.vendor.clone(),
+            official_download_url: p.official_download_url.clone(),
+            binary_name: p.binary_name.clone(),
+            supported_systems: p.supported_systems.clone(),
+            binary_path: emulator_profiles::effective_binary_path(p, &state.app_data_dir)
+                .map(|p| p.to_string_lossy().into_owned()),
+        })
+        .collect()
+}
+
+/// Persist the operator-set binary path for an emulator profile
+/// (appData `emulators.json`). `path = None` clears the override.
+/// Validates the file exists; a filename that doesn't match the
+/// profile's `binary_name` is accepted with a WARN (renamed builds and
+/// forks are legitimate).
+#[tauri::command]
+fn set_emulator_binary_path(
+    profile_id: String,
+    path: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = state
+        .emulator_profiles
+        .get(&profile_id)
+        .ok_or_else(|| format!("unknown emulator profile '{profile_id}'"))?;
+    if let Some(p) = path.as_deref() {
+        let pb = std::path::Path::new(p);
+        if !pb.is_file() {
+            return Err(format!("not a file: {p}"));
+        }
+        let picked_name = pb.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !picked_name.eq_ignore_ascii_case(&profile.binary_name) {
+            log::warn!(
+                "oa-shell: {} binary path set to '{picked_name}' (profile expects '{}') — accepting",
+                profile.display_name,
+                profile.binary_name
+            );
+        }
+    }
+    let mut prefs = emulator_profiles::read_binary_path_prefs(&state.app_data_dir);
+    match path {
+        Some(p) => {
+            prefs.insert(profile_id.clone(), p);
+        }
+        None => {
+            prefs.remove(&profile_id);
+        }
+    }
+    emulator_profiles::write_binary_path_prefs(&state.app_data_dir, &prefs)
+        .map_err(|e| format!("write emulators.json: {e}"))?;
+    log::info!(
+        "oa-shell: set_emulator_binary_path({profile_id}) -> {:?}",
+        prefs.get(&profile_id)
+    );
+    Ok(())
+}
+
+/// Read the per-system default-launcher pref. `None` = in-process
+/// libretro (today's behavior); `Some(profile_id)` = launches for this
+/// system route through that external emulator profile.
+#[tauri::command]
+fn get_launcher_pref(system_id: String, state: tauri::State<'_, AppState>) -> Option<String> {
+    emulator_profiles::read_launcher_prefs(&state.app_data_dir)
+        .get(&system_id)
+        .cloned()
+}
+
+/// Persist the per-system default-launcher pref (appData
+/// `launchers.json`). Takes effect on the next launch — no restart
+/// needed. `profile_id = None` clears the pref (back to libretro).
+#[tauri::command]
+fn set_launcher_pref(
+    system_id: String,
+    profile_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    if let Some(id) = profile_id.as_deref() {
+        let profile = state
+            .emulator_profiles
+            .get(id)
+            .ok_or_else(|| format!("unknown emulator profile '{id}'"))?;
+        if !profile.supported_systems.iter().any(|s| s == &system_id) {
+            return Err(format!(
+                "{} doesn't support system '{system_id}' (supports: {})",
+                profile.display_name,
+                profile.supported_systems.join(", ")
+            ));
+        }
+    }
+    let mut prefs = emulator_profiles::read_launcher_prefs(&state.app_data_dir);
+    match profile_id {
+        Some(id) => {
+            prefs.insert(system_id.clone(), id);
+        }
+        None => {
+            prefs.remove(&system_id);
+        }
+    }
+    emulator_profiles::write_launcher_prefs(&state.app_data_dir, &prefs)
+        .map_err(|e| format!("write launchers.json: {e}"))?;
+    log::info!(
+        "oa-shell: set_launcher_pref({system_id}) -> {:?}",
+        prefs.get(&system_id)
+    );
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AudioDeviceInfo {
@@ -10618,25 +10800,38 @@ fn unload_rom(
     title: Option<String>,
     state: tauri::State<'_, AppState>,
     db: tauri::State<'_, library_db::LibraryDb>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     // Retroverse-UI Phase A Slice 2 — record the elapsed session before
     // tearing down the ROM so the operator's play-time stats persist.
     close_active_session(&state.active_session, &db);
-    // VL Phase C1 — tear down through the Launcher seam. The libretro
-    // launcher maps terminate onto the exact EmuCommand::UnloadRom
-    // this command sent inline before C1. Unload-with-no-session stays
-    // legal (the emu thread no-ops on an empty core), so a missing
-    // active_launch entry falls back to the in-process session shape.
-    let session = state
+    // VL Phase C1/C2 — tear down through the Launcher seam, routed to
+    // whichever launcher owns the running session: libretro maps
+    // terminate onto the exact EmuCommand::UnloadRom this command sent
+    // inline before C1; an external session gets a graceful close +
+    // kill fallback on its child PID. Unload-with-no-session stays
+    // legal (the emu thread no-ops on an empty core), so an empty
+    // active_launch slot falls back to the in-process pair.
+    let active = state
         .active_launch
         .lock()
         .ok()
         .and_then(|mut guard| guard.take())
-        .unwrap_or(oa_core::LaunchedSession::InProcess);
-    state
+        .unwrap_or_else(|| ActiveLaunch {
+            launcher: state.launcher.clone(),
+            session: oa_core::LaunchedSession::InProcess,
+        });
+    let was_external = matches!(active.session, oa_core::LaunchedSession::External { .. });
+    active
         .launcher
-        .terminate(&session, title)
+        .terminate(&active.session, title)
         .map_err(|e| e.to_string())?;
+    // D3 — terminating an external session brings the shell back. (The
+    // exit watcher won't: it only acts when the slot still holds the
+    // session, and we just took it.)
+    if was_external {
+        state.shell_window.restore_after_external(&app);
+    }
     // If the unloading game was an archived CD set, clean its temp dir now.
     // Archived cart games never created a temp dir (they ran from in-memory
     // bytes) so the cleanup_temp call is a no-op for those.
@@ -10667,12 +10862,74 @@ fn launch_rom(
     systemId: Option<String>,
     state: tauri::State<'_, AppState>,
     db: tauri::State<'_, library_db::LibraryDb>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     let system_id = systemId.unwrap_or_else(|| "tg16".to_string());
     // Retroverse-UI Phase A Slice 2 — game-to-game switches don't go
     // through an explicit unload_rom, so persist any in-flight session
     // before starting a new one. Idempotent when no session is active.
     close_active_session(&state.active_session, &db);
+
+    // VL Phase C2 — per-system default-launcher pref (launchers.json).
+    // An entry routes this system's launches to an external emulator
+    // profile; no entry = the in-process libretro path, byte-for-byte
+    // today's behavior.
+    let external_profile_id =
+        emulator_profiles::read_launcher_prefs(&state.app_data_dir)
+            .get(&system_id)
+            .cloned();
+
+    // Supersede whatever session this launch replaces. libretro →
+    // libretro keeps today's behavior (the emu thread swaps the ROM on
+    // LoadRom, no explicit unload). Everything else tears down through
+    // the owning launcher first:
+    //   external → anything — close the child process;
+    //   in-process → external — UnloadRom, because spawning an
+    //   external emulator doesn't displace the running core by itself.
+    if let Ok(mut guard) = state.active_launch.lock() {
+        let must_terminate = match guard.as_ref() {
+            Some(active) => {
+                matches!(active.session, oa_core::LaunchedSession::External { .. })
+                    || external_profile_id.is_some()
+            }
+            None => false,
+        };
+        if must_terminate {
+            if let Some(active) = guard.take() {
+                if let Err(e) = active.launcher.terminate(&active.session, None) {
+                    log::warn!("oa-shell: terminating superseded session: {e}");
+                }
+            }
+        }
+    }
+
+    if let Some(profile_id) = external_profile_id.as_deref() {
+        // The superseded in-process game may have been an archived CD
+        // set — clean its temp dir now, exactly as unload_rom would
+        // have (the external session won't pass through unload_rom).
+        if let Ok(mut active) = state.active_archive_entry_id.lock() {
+            if let Some(prev_entry_id) = active.take() {
+                let temp_root = state.app_data_dir.join("temp");
+                archive::cleanup_temp(&temp_root, &prev_entry_id);
+            }
+        }
+        if slot.is_some() || stateFile.is_some() {
+            // External emulators manage their own save states (D5) —
+            // a slot-restore request can't ride along.
+            log::warn!(
+                "oa-shell: slot/stateFile ignored — {system_id} launches through external profile '{profile_id}'"
+            );
+        }
+        return launch_rom_external(
+            profile_id,
+            path,
+            archiveInnerPath,
+            entryId,
+            system_id,
+            &state,
+            &app,
+        );
+    }
     // Three launch shapes:
     //   1. Raw cart ROM     — read bytes off disk → RomSource::Bytes.
     //   2. Raw CD container — pass path, core opens it → RomSource::Path.
@@ -10837,9 +11094,9 @@ fn launch_rom(
     // VL Phase C1 — dispatch through the Launcher seam. For the
     // in-process libretro launcher, prepare is a passthrough and
     // launch sends the exact EmuCommand::LoadRom this command built
-    // inline before C1 (same fields, same error strings). Phase C2
-    // selects the launcher per-system, so external emulators ride the
-    // same prepare → launch path.
+    // inline before C1 (same fields, same error strings). The external
+    // path branched off above (Phase C2), so this is always the
+    // in-process pipeline.
     let request = oa_core::LaunchRequest {
         content_path: resolved_path,
         content_bytes: resolved_bytes,
@@ -10851,7 +11108,10 @@ fn launch_rom(
     let prepared = state.launcher.prepare(request).map_err(|e| e.to_string())?;
     let session = state.launcher.launch(prepared).map_err(|e| e.to_string())?;
     if let Ok(mut guard) = state.active_launch.lock() {
-        *guard = Some(session);
+        *guard = Some(ActiveLaunch {
+            launcher: state.launcher.clone(),
+            session,
+        });
     }
 
     // Retroverse-UI Phase A Slice 2 — start tracking the new session.
@@ -10870,6 +11130,150 @@ fn launch_rom(
 
     state.shell_window.focus_game();
     Ok(())
+}
+
+/// VL Phase C2 — the external-emulator launch path
+/// (docs/PLANS/launcher-abstraction.md). Reached only when the
+/// per-system default-launcher pref names an emulator profile; the
+/// in-process pipeline above is untouched otherwise.
+///
+/// External emulators open the content file themselves, so this path
+/// never reads ROM bytes (a GameCube image is 1.4 GB), never soft-
+/// patches, and never consults the cores.json precedence chain —
+/// the profile + its operator-set binary path decide everything.
+fn launch_rom_external(
+    profile_id: &str,
+    path: String,
+    archive_inner_path: Option<String>,
+    entry_id: Option<String>,
+    system_id: String,
+    state: &tauri::State<'_, AppState>,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
+    let profile = state.emulator_profiles.get(profile_id).ok_or_else(|| {
+        format!(
+            "default launcher for {system_id} is '{profile_id}' but no such emulator profile \
+             loaded — check config/emulators/ or clear the per-system default launcher"
+        )
+    })?;
+    if archive_inner_path.is_some() {
+        // The libretro path extracts archives because OA controls the
+        // load; teaching the external path the same trick (plus temp
+        // cleanup tied to process exit) is Phase C3+ territory.
+        return Err(format!(
+            "archived games can't launch through {} yet — extract the archive or clear the \
+             per-system default launcher",
+            profile.display_name
+        ));
+    }
+    let binary = emulator_profiles::effective_binary_path(profile, &state.app_data_dir)
+        .ok_or_else(|| {
+            format!(
+                "{} has no binary path set — point OA at your install in Settings → Cores → \
+                 External emulators",
+                profile.display_name
+            )
+        })?;
+    let display_name = profile.display_name.clone();
+    let launcher_dyn: Arc<dyn oa_core::Launcher> =
+        Arc::new(launcher::ExternalProcessLauncher::new(profile, binary));
+    let request = oa_core::LaunchRequest {
+        content_path: path,
+        content_bytes: Vec::new(),
+        system_id: system_id.clone(),
+        restore_slot: None,
+        restore_state_path: None,
+        core_override: None,
+    };
+    log::info!(
+        "oa-shell: launch_rom dispatch → external profile '{profile_id}' ({}, system={system_id})",
+        request.content_path
+    );
+    let prepared = launcher_dyn.prepare(request).map_err(|e| e.to_string())?;
+    let session = launcher_dyn.launch(prepared).map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = state.active_launch.lock() {
+        *guard = Some(ActiveLaunch {
+            launcher: launcher_dyn.clone(),
+            session: session.clone(),
+        });
+    }
+    // Play time = process lifetime (decision D3), through the same
+    // ActiveSession bookkeeping the libretro path uses — the watcher
+    // below closes it via close_active_session on process exit.
+    if let Some(id) = entry_id.as_deref() {
+        if let Ok(mut guard) = state.active_session.lock() {
+            *guard = Some(ActiveSession {
+                entry_id: id.to_string(),
+                started_at: std::time::Instant::now(),
+            });
+        }
+    }
+    emit_toast(
+        app,
+        ToastLevel::Info,
+        Some(&system_id),
+        format!("Launching through {display_name}…"),
+    );
+    // D3 — the standalone emulator owns the screen while it runs.
+    state.shell_window.minimize_for_external(app);
+    spawn_external_exit_watcher(app.clone(), launcher_dyn, session, display_name, system_id);
+    Ok(())
+}
+
+/// VL Phase C2 — watch an external session until its child process
+/// exits, then do the teardown choreography: persist play time,
+/// restore the OA windows (D3), and tell the frontend.
+///
+/// Ownership rule: only the watcher whose session still occupies the
+/// `active_launch` slot acts. `unload_rom` (terminate affordance) and
+/// a superseding `launch_rom` both TAKE the slot before tearing down,
+/// so a watcher that finds the slot changed simply exits — no double
+/// bookkeeping, no restoring windows over a newer session.
+fn spawn_external_exit_watcher(
+    app: tauri::AppHandle,
+    launcher: Arc<dyn oa_core::Launcher>,
+    session: oa_core::LaunchedSession,
+    display_name: String,
+    system_id: String,
+) {
+    std::thread::Builder::new()
+        .name("oa-external-watch".into())
+        .spawn(move || {
+            while launcher.is_alive(&session) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            let state = app.state::<AppState>();
+            let ours = match state.active_launch.lock() {
+                Ok(mut guard) => match guard.as_ref() {
+                    Some(active) if active.session == session => {
+                        guard.take();
+                        true
+                    }
+                    _ => false,
+                },
+                Err(_) => false,
+            };
+            if !ours {
+                log::info!(
+                    "oa-shell: external session ({display_name}) ended after being superseded — no teardown"
+                );
+                return;
+            }
+            let db = app.state::<library_db::LibraryDb>();
+            close_active_session(&state.active_session, &db);
+            state.shell_window.restore_after_external(&app);
+            log::info!("oa-shell: external session ended ({display_name})");
+            emit_toast(
+                &app,
+                ToastLevel::Info,
+                Some(&system_id),
+                format!("{display_name} session ended"),
+            );
+            if let Err(e) = app.emit("oa://external-session-ended", ()) {
+                log::warn!("oa-shell: external-session-ended emit failed: {e:?}");
+            }
+        })
+        .ok();
 }
 
 #[cfg(test)]

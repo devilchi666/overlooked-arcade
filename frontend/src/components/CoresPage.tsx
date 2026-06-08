@@ -69,6 +69,19 @@ type CatalogGroup = {
   entries: AvailableCore[];
 };
 
+/// Mirror of Rust's `EmulatorProfileInfo` (VL Phase C2) — one external
+/// standalone-emulator profile from config/emulators/*.yaml, with the
+/// effective binary path resolved (appData pref → profile field).
+type EmulatorProfileInfo = {
+  id: string;
+  displayName: string;
+  vendor: string;
+  officialDownloadUrl: string;
+  binaryName: string;
+  supportedSystems: string[];
+  binaryPath: string | null;
+};
+
 type Props = {
   /// Back button target — same shape as LibraryManagerPage.
   onBack: () => void;
@@ -369,6 +382,92 @@ const CoresPage: Component<Props> = (props) => {
     }
   }
 
+  // --- External emulators (VL Phase C2) --------------------------------
+  // Standalone-emulator profiles from config/emulators/*.yaml. Each gets
+  // a binary-path field (where the operator's install lives) and, per
+  // supported system, a "Default launcher" pref: unset = libretro core
+  // (today's behavior), set = launches spawn the external emulator.
+  const [profilesTick, setProfilesTick] = createSignal(0);
+  const [profiles] = createResource(profilesTick, async (): Promise<EmulatorProfileInfo[]> => {
+    try {
+      return await invoke<EmulatorProfileInfo[]>("list_emulator_profiles");
+    } catch (e) {
+      console.warn("list_emulator_profiles failed:", e);
+      return [];
+    }
+  });
+  const [launcherTick, setLauncherTick] = createSignal(0);
+  const [launcherPrefs] = createResource(
+    () => [launcherTick(), profiles()] as const,
+    async ([, profs]): Promise<Record<string, string | null>> => {
+      const result: Record<string, string | null> = {};
+      const systems = new Set<string>();
+      for (const p of profs ?? []) for (const s of p.supportedSystems) systems.add(s);
+      for (const id of systems) {
+        try {
+          result[id] = (await invoke<string | null>("get_launcher_pref", { systemId: id })) ?? null;
+        } catch (e) {
+          console.warn(`get_launcher_pref(${id}) failed:`, e);
+          result[id] = null;
+        }
+      }
+      return result;
+    },
+  );
+
+  /// Display label for a system slug — wired registry name first, the
+  /// queued-label map second, raw slug last.
+  const externalSystemLabel = (id: string): string =>
+    (systemThemes as Record<string, { displayName: string } | undefined>)[id]?.displayName ??
+    QUEUED_SYSTEM_LABELS[id] ??
+    id;
+
+  async function handlePickEmulatorBinary(p: EmulatorProfileInfo) {
+    const picked = await pickFile({
+      multiple: false,
+      filters: [{ name: p.binaryName, extensions: ["exe"] }],
+    }).catch((e) => {
+      console.warn("pickFile failed:", e);
+      return null;
+    });
+    if (!picked || Array.isArray(picked)) return;
+    setBusy(`emu-${p.id}`);
+    try {
+      await invoke("set_emulator_binary_path", { profileId: p.id, path: picked });
+      setStatus(`${p.displayName} binary path set.`);
+      setProfilesTick((n) => n + 1);
+    } catch (e) {
+      setStatus(`Set binary path failed: ${String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleClearEmulatorBinary(p: EmulatorProfileInfo) {
+    setBusy(`emu-${p.id}`);
+    try {
+      await invoke("set_emulator_binary_path", { profileId: p.id, path: null });
+      setStatus(`${p.displayName} binary path cleared.`);
+      setProfilesTick((n) => n + 1);
+    } catch (e) {
+      setStatus(`Clear binary path failed: ${String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleSetLauncherPref(systemId: string, profileId: string | null) {
+    setBusy(`launcher-${systemId}`);
+    try {
+      await invoke("set_launcher_pref", { systemId, profileId });
+      setLauncherTick((n) => n + 1);
+    } catch (e) {
+      setStatus(`Set default launcher failed: ${String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const empty = createMemo(() => (cores() ?? []).length === 0);
 
   return (
@@ -565,6 +664,122 @@ const CoresPage: Component<Props> = (props) => {
                       </Show>
                     </div>
                   </Show>
+                </article>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        {/* --- External emulators (VL Phase C2) ------------------------- */}
+        <Show when={(profiles() ?? []).length > 0}>
+          <div class="flex flex-col gap-3" data-external-emulators>
+            <div class="flex items-baseline justify-between">
+              <h3 class="text-[0.7rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+                External emulators
+              </h3>
+              <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                standalone · config/emulators/
+              </span>
+            </div>
+            <For each={profiles() ?? []}>
+              {(p) => (
+                <article class="rounded-lg border border-white/10 bg-black/20 p-4">
+                  <header class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <h3 class="truncate text-sm font-semibold text-(--color-oa-ink)">
+                        {p.displayName}
+                      </h3>
+                      <p class="mt-0.5 truncate text-[0.7rem] text-(--color-oa-ink-dim)">
+                        <Show when={p.vendor}>
+                          <span>{p.vendor} · </span>
+                        </Show>
+                        <span>
+                          runs {p.supportedSystems.map(externalSystemLabel).join(", ")} as its
+                          own process
+                        </span>
+                      </p>
+                    </div>
+                    <Show when={p.officialDownloadUrl}>
+                      <a
+                        href={p.officialDownloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+                        title={p.officialDownloadUrl}
+                      >
+                        Download ↗
+                      </a>
+                    </Show>
+                  </header>
+
+                  {/* Binary path — where the operator's install lives. */}
+                  <div class="mt-3 flex items-center gap-3">
+                    <label class="shrink-0 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                      Binary path
+                    </label>
+                    <Show
+                      when={p.binaryPath}
+                      fallback={
+                        <span class="flex-1 truncate text-xs text-amber-300/90">
+                          Not set — pick your {p.binaryName} to enable launching
+                        </span>
+                      }
+                    >
+                      <span
+                        class="flex-1 truncate font-mono text-xs text-(--color-oa-ink)"
+                        title={p.binaryPath!}
+                      >
+                        {p.binaryPath}
+                      </span>
+                    </Show>
+                    <button
+                      type="button"
+                      onClick={() => void handlePickEmulatorBinary(p)}
+                      disabled={busy() === `emu-${p.id}`}
+                      class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:opacity-50"
+                    >
+                      Pick…
+                    </button>
+                    <Show when={p.binaryPath}>
+                      <button
+                        type="button"
+                        onClick={() => void handleClearEmulatorBinary(p)}
+                        disabled={busy() === `emu-${p.id}`}
+                        class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300 disabled:opacity-50"
+                      >
+                        Clear
+                      </button>
+                    </Show>
+                  </div>
+
+                  {/* Per-system default launcher — unset = libretro core,
+                      today's behavior. Takes effect on the next launch. */}
+                  <For each={p.supportedSystems}>
+                    {(sysId) => (
+                      <div class="mt-3 flex items-center gap-3">
+                        <label class="shrink-0 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          Default launcher · {externalSystemLabel(sysId)}
+                        </label>
+                        <select
+                          class="rounded border border-white/10 bg-black/40 px-2 py-1 text-xs text-(--color-oa-ink)"
+                          disabled={busy() === `launcher-${sysId}`}
+                          value={launcherPrefs()?.[sysId] === p.id ? p.id : ""}
+                          onChange={(e) => {
+                            const v = e.currentTarget.value;
+                            void handleSetLauncherPref(sysId, v === "" ? null : v);
+                          }}
+                        >
+                          <option value="">Libretro core (default)</option>
+                          <option value={p.id}>{p.displayName} (standalone)</option>
+                        </select>
+                        <Show when={launcherPrefs()?.[sysId] === p.id && !p.binaryPath}>
+                          <span class="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-amber-300">
+                            set the binary path first
+                          </span>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
                 </article>
               )}
             </For>
