@@ -517,6 +517,39 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   });
 
+  // VL Phase C2 — the Rust exit-watcher emits this after a standalone
+  // external emulator's process ends (natural exit; terminate goes
+  // through handleUnload, which resets this state itself). The backend
+  // has already done its half (play session closed, OA windows
+  // restored) — this is the frontend half: leave the in-game view and
+  // return to the library. Without it the shell un-minimizes onto the
+  // bare wgpu surface (no core is rendering → black screen) with the
+  // library hidden and no affordance to get back.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listen("oa://external-session-ended", () => {
+      if (isDirectLaunch()) {
+        // Same posture as rom-unloaded: nothing to return to.
+        console.log("[oa-direct-launch] external session ended → quitting process");
+        void invoke("quit_app");
+        return;
+      }
+      console.log("[oa-launch] external session ended → returning to library");
+      setGameRunning(false);
+      setCurrentRomTitle(null);
+      setRunningEntry(null);
+      setQuickSettingsOpen(false);
+      if (shellMode() === "single-window") {
+        setLibraryVisible(true);
+      }
+      // No unload_rom invoke — the session is already gone (the watcher
+      // tore it down); but the pre-launch override push DID retarget the
+      // renderer, so revert to OA-wide defaults exactly like handleUnload.
+      revertRendererToDefaults();
+    }).then((un) => { unlisten = un; });
+    onCleanup(() => unlisten?.());
+  });
+
   // Auto-launch the supplied ROM once the direct-launch payload arrives.
   // Guard prevents re-launch on subsequent resource invalidations.
   let autoLaunched = false;
@@ -1090,6 +1123,38 @@ const App: Component = () => {
     }
   }
 
+  // Phase 3 slice B — revert renderer + window state to OA-wide defaults
+  // so the NEXT launch (which may have no per-game override) doesn't
+  // inherit stale state from the game that just unloaded. The settings
+  // store's createEffect would catch some of these on subsequent signal
+  // changes, but pushing them explicitly here is the safer guarantee.
+  // Shared between handleUnload and the external-session-ended listener
+  // (VL Phase C2) — the pre-launch override push runs for both kinds of
+  // session, so both ends revert.
+  function revertRendererToDefaults(): void {
+    const reverts: Array<[string, Promise<unknown>]> = [
+      ["set_shader_preset", invoke("set_shader_preset", { preset: settings.shaderPreset() })],
+      ["set_scaling_mode", invoke("set_scaling_mode", { mode: settings.scalingMode() })],
+      ["set_window_mode", invoke("set_window_mode", { mode: settings.windowMode(), monitorIndex: settings.monitorIndex() })],
+      ["set_rewind_config", invoke("set_rewind_config", {
+        enabled: settings.rewindEnabled(),
+        captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
+        maxMegabytes: settings.rewindBufferMegabytes(),
+      })],
+      ["set_display_aspect_override", invoke("set_display_aspect_override", { aspect: null })],
+      ["set_overscan_crop", invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 })],
+      ["clear_bezel_image_override", invoke("clear_bezel_image_override")],
+    ];
+    void Promise.allSettled(reverts.map(([, p]) => p)).then((results) => {
+      const failures = results
+        .map((r, i) => (r.status === "rejected" ? `${reverts[i][0]}: ${String(r.reason)}` : null))
+        .filter((s): s is string => s !== null);
+      if (failures.length > 0) {
+        console.warn("[oa-unload] revert-to-defaults failed:", failures);
+      }
+    });
+  }
+
   async function handleUnload() {
     if (!gameRunning()) return;
     const title = currentRomTitle();
@@ -1102,32 +1167,7 @@ const App: Component = () => {
       if (shellMode() === "single-window") {
         setLibraryVisible(true);
       }
-      // Phase 3 slice B — revert renderer + window state to OA-wide defaults
-      // so the NEXT launch (which may have no per-game override) doesn't
-      // inherit stale state from the game that just unloaded. The settings
-      // store's createEffect would catch some of these on subsequent signal
-      // changes, but pushing them explicitly here is the safer guarantee.
-      const reverts: Array<[string, Promise<unknown>]> = [
-        ["set_shader_preset", invoke("set_shader_preset", { preset: settings.shaderPreset() })],
-        ["set_scaling_mode", invoke("set_scaling_mode", { mode: settings.scalingMode() })],
-        ["set_window_mode", invoke("set_window_mode", { mode: settings.windowMode(), monitorIndex: settings.monitorIndex() })],
-        ["set_rewind_config", invoke("set_rewind_config", {
-          enabled: settings.rewindEnabled(),
-          captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
-          maxMegabytes: settings.rewindBufferMegabytes(),
-        })],
-        ["set_display_aspect_override", invoke("set_display_aspect_override", { aspect: null })],
-        ["set_overscan_crop", invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 })],
-        ["clear_bezel_image_override", invoke("clear_bezel_image_override")],
-      ];
-      void Promise.allSettled(reverts.map(([, p]) => p)).then((results) => {
-        const failures = results
-          .map((r, i) => (r.status === "rejected" ? `${reverts[i][0]}: ${String(r.reason)}` : null))
-          .filter((s): s is string => s !== null);
-        if (failures.length > 0) {
-          console.warn("[oa-unload] revert-to-defaults failed:", failures);
-        }
-      });
+      revertRendererToDefaults();
     } catch (e) {
       console.warn("unload_rom failed:", e);
       setStatus(`Unload failed: ${e}`);

@@ -1163,7 +1163,14 @@ const ImportWizard: Component<Props> = (props) => {
         return null;
       })()}
       <div
-        class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
+        // z-[70]: platform-owned modal dialogs render ABOVE the engine
+        // manager takeover (EngineManagerSurface, z-[60]) — Settings →
+        // Library's "Set up your library" summons this wizard from
+        // INSIDE the takeover, and at the pre-theming z-50 it opened
+        // invisibly behind the opaque surface. Layer scale: theme UI <
+        // toasts/drop overlay (z-50) < engine surface (z-[60]) <
+        // platform modals summonable from it (z-[70]).
+        class="fixed inset-0 z-[70] grid place-items-center bg-black/60 backdrop-blur-sm"
         onClick={(e) => {
           if (e.currentTarget === e.target && !scanRunning() && !committing()) {
             props.onClose();

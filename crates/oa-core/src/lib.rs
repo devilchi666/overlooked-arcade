@@ -974,8 +974,11 @@ pub enum LaunchedSession {
 /// launchers support none of it in v1 — the standalone emulator manages
 /// its own saves, input, and rendering, so the corresponding toggles
 /// gray out with a "managed by <emulator>" hint.
+/// Deserialization is lenient: omitted flags default to `false` (via
+/// [`Default`] = [`Self::none`]), so an emulator profile YAML that
+/// lists only the capabilities it HAS fails closed on the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct LauncherCapabilities {
     /// Save / load states (slots, quick save, autosave).
     pub supports_savestate: bool,
@@ -1023,6 +1026,14 @@ impl LauncherCapabilities {
             supports_disc_control: false,
             supports_frame_capture: false,
         }
+    }
+}
+
+impl Default for LauncherCapabilities {
+    /// All-false ([`Self::none`]) — the safe direction for capability
+    /// gating when a profile doesn't say otherwise.
+    fn default() -> Self {
+        Self::none()
     }
 }
 

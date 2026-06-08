@@ -342,6 +342,28 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### HW-Render Pipeline — Milestone 1 (Vulkan handshake, core on screen)
+
+**Planning locked 2026-06-07.** Full plan at
+[docs/PLANS/hw-render-pipeline.md](PLANS/hw-render-pipeline.md); feature
+folder [docs/features/hw-render/](features/hw-render/). Implements the
+libretro HW render interface so GPU-emulator cores (Dolphin,
+paraLLEl-N64, Beetle PSX HW, Flycast, PPSSPP, Beetle Saturn HW) stop
+crashing OA. **M1 scope:** add the `retro_hw_render_callback` + Vulkan
+HW-negotiation structs to `crates/oa-libretro/src/ffi.rs`; replace the
+`SET_HW_RENDER => false` arm in `crates/oa-libretro/src/state.rs` (store
+the callback; answer `GET_PREFERRED_HW_RENDER` 56 + `GET_HW_RENDER_INTERFACE`
+41) and special-case the `RETRO_HW_FRAME_BUFFER_VALID` sentinel in
+`cb_video_refresh`; stand up `crates/oa-render/src/lib.rs` on the Vulkan
+backend with a `VulkanHwContext` that shares the wgpu device handles;
+branch the HW present path in `apps/oa-shell/src/main.rs`'s `LoadRom`
+run loop. **Exit:** a GameCube game renders through internal
+`dolphin_libretro` instead of crashing (simplest present bridge OK in
+M1 — zero-copy is M2). **Gating:** slot **after VL Phase C3** (both
+edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
+Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
+added later only if needed). ~est. 1-2 sessions for M1.
+
 ### Theming Substrate ARC 1 — Phase 1 (engine/theme surface separation)
 
 **Planning locked 2026-06-06.** Full plan at

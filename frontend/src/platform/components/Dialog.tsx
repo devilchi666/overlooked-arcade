@@ -110,7 +110,13 @@ export const Dialog: Component<Props> = (props) => {
       <DialogBackHandler onClose={props.onClose} />
       <HintRegion hints={{ b: "Close" }} />
       <div
-        class="fixed inset-0 z-[55] grid place-items-center bg-black/55 backdrop-blur-sm"
+        // z-[70]: platform-owned modal dialogs render ABOVE the engine
+        // manager takeover (EngineManagerSurface, z-[60]) — Settings →
+        // Help summons KeyboardShortcutsDialog / DebugLogDialog from
+        // INSIDE the takeover, and at the pre-theming z-[55] they
+        // opened invisibly behind the opaque surface. Matches
+        // ResumePromptDialog + DiscPickerDialog (both already z-[70]).
+        class="fixed inset-0 z-[70] grid place-items-center bg-black/55 backdrop-blur-sm"
         onClick={(e) => {
           // Only the backdrop closes — clicks inside the card stop here.
           if (e.currentTarget === e.target) props.onClose();

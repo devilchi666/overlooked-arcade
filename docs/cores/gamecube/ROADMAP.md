@@ -67,6 +67,16 @@ game with gamepad analog sticks driving movement + C-stick aim.
 - ✅ **Per-axis keyboard binding** for main stick and C-stick — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback).
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::gamecube` (6-byte DOL game ID at offset 0); `rom_hashes` points at `metadat/redump/Nintendo - GameCube`.
 - ✅ **GC + Wii cover sync split** — shipped via `apps/oa-shell/src/media.rs::repos_for_entry` + `is_wii_dump` (per-game-region routing).
+- ✅ **Standalone Dolphin launch path (VL Phase C2 pilot)** — gamecube
+  is the pilot system for the external-emulator launcher. Settings →
+  Cores → External emulators points OA at an existing Dolphin install
+  (profile: `config/emulators/dolphin.yaml`); the per-system "Default
+  launcher" pref routes library launches through
+  `ExternalProcessLauncher` (in `apps/oa-shell/src/launcher.rs`) —
+  spawned `--batch --exec=<image>`, OA minimized while running,
+  play time = process lifetime, child stdout/stderr in the OA debug
+  log. Pref unset = `dolphin_libretro.dll` in-process, unchanged.
+  Operator playtest pending.
 
 ---
 
