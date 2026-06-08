@@ -422,6 +422,16 @@ const CoresPage: Component<Props> = (props) => {
     QUEUED_SYSTEM_LABELS[id] ??
     id;
 
+  /// True when at least one installed libretro core claims the system.
+  /// Drives the "no core installed" hint beside the Default-launcher
+  /// select: picking "Libretro core" for a system with no core .dll on
+  /// disk fails at launch, and the installer that fixes it (Browse
+  /// cores, further down this page) is easy to miss. Catalog-based, so
+  /// a hand-dropped .dll the catalog doesn't know about can false-flag
+  /// — the hint stays soft for that reason.
+  const systemHasInstalledCore = (sysId: string): boolean =>
+    (catalog() ?? []).some((c) => c.installed && c.systems.includes(sysId));
+
   async function handlePickEmulatorBinary(p: EmulatorProfileInfo) {
     const picked = await pickFile({
       multiple: false,
@@ -775,6 +785,14 @@ const CoresPage: Component<Props> = (props) => {
                         <Show when={launcherPrefs()?.[sysId] === p.id && !p.binaryPath}>
                           <span class="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-amber-300">
                             set the binary path first
+                          </span>
+                        </Show>
+                        {/* Mirror hint for the libretro side: the core
+                            .dll install lives in Browse cores below, a
+                            full scroll away from this dropdown. */}
+                        <Show when={launcherPrefs()?.[sysId] !== p.id && !systemHasInstalledCore(sysId)}>
+                          <span class="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-widest text-amber-300">
+                            no core installed — see Browse cores below
                           </span>
                         </Show>
                       </div>
