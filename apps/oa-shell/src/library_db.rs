@@ -610,6 +610,9 @@ pub struct GameDiscTracksCache {
     pub tracks: Vec<crate::disc_track_hash::TrackHash>,
     pub file_mtime: i64,
     pub file_size: i64,
+    // Provenance only — cache invalidation keys on (file_mtime,
+    // file_size); this records WHEN the hash ran for debug surfaces.
+    #[allow(dead_code)]
     pub last_hashed_at: i64,
 }
 
@@ -3913,6 +3916,8 @@ impl LibraryDb {
         Ok(count)
     }
 
+    // Test-covered query helper; no production caller yet.
+    #[allow(dead_code)]
     pub fn count_game_serials(&self, system_id: &str) -> Result<i64, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         conn.query_row(
@@ -4802,6 +4807,8 @@ impl LibraryDb {
     /// List `system_id`s with at least one operator override — drives
     /// the per-system Settings drill-in "edited" indicator (similar
     /// to the `✎` badge for per-game edits).
+    // Test-covered query helper; no production caller yet.
+    #[allow(dead_code)]
     pub fn list_system_info_overridden(&self) -> Result<Vec<String>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn
@@ -5141,6 +5148,10 @@ impl LibraryDb {
     /// up the .dll's current mtime itself (same boundary as the
     /// controller-info accessor — DB layer doesn't touch arbitrary
     /// filesystem paths).
+    // Read side of the core_input_descriptors cache; the write path
+    // populates the table, this read surface is wired up by tests and
+    // awaits its production consumer. Kept paired with the cache.
+    #[allow(dead_code)]
     pub fn cached_input_descriptors(
         &self,
         core_filename: &str,

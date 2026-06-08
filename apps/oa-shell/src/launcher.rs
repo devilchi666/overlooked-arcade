@@ -143,10 +143,6 @@ impl ExternalProcessLauncher {
         }
     }
 
-    pub fn display_name(&self) -> &str {
-        &self.display_name
-    }
-
     /// Forward one std stream of the child to the OA debug log, one
     /// line at a time, on a dedicated reader thread. The thread ends
     /// when the child closes the stream (i.e. exits).
@@ -597,7 +593,6 @@ launch_args_template: ["--batch", "--exec={content}"]
         .expect("parse");
         let launcher = ExternalProcessLauncher::new(&profile, PathBuf::from("Dolphin.exe"));
         assert_eq!(launcher.id(), "dolphin");
-        assert_eq!(launcher.display_name(), "Dolphin");
         assert_eq!(launcher.capabilities(), LauncherCapabilities::none());
         // External launchers never own an in-process session.
         assert!(!launcher.is_alive(&LaunchedSession::InProcess));
