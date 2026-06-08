@@ -96,6 +96,35 @@ own saves/input). QuickSettings toggles gray out with a "managed by
 - Per-system default-launcher pref surfaced in the Per-system
   SETTINGS drill-in section.
 
+## C2 implementation decisions (2026-06-07)
+
+- **Binary path lives in appData (`emulators.json`), not the YAML.**
+  D4's `binary_path` profile field stays optional and is reserved for
+  Phase D's installer; the operator-set path from Settings goes to
+  `appDataDir/emulators.json` (mirroring `cores.json`) and wins over
+  the profile field. Why: the YAML ships with the install / lives in
+  the repo — a machine-specific path written into it would dirty git
+  in dev and break multi-machine portable installs. Same reasoning
+  gives `launchers.json` for the per-system default-launcher pref,
+  read at launch time so changes apply without a restart ("reload on
+  restart" in D4 still governs the profiles themselves).
+- **Slot-ownership teardown rule.** `active_launch` pairs the session
+  with the launcher that owns it; whoever TAKES the slot does the
+  teardown choreography (close play session, restore windows). The
+  external exit-watcher only acts when the slot still holds its
+  session, so unload_rom and superseding launches never race it.
+- **Supersede semantics.** libretro→libretro keeps today's implicit
+  LoadRom replace. external→anything and in-process→external
+  terminate the previous session through its owning launcher first —
+  an external spawn does not displace the in-process core by itself.
+- **Archived content doesn't external-launch in C2.** Clear error
+  ("extract the archive or clear the per-system default launcher").
+  Extraction + temp-cleanup tied to process exit is C3+ if wanted.
+- **OA quit leaves the external emulator running.** graceful_exit
+  persists the play session; the child is the operator's own program
+  mid-game — killing it on shell exit would be hostile. The watcher
+  thread dies with the process; no teardown choreography is owed.
+
 ## Exit criteria (from the arc plan, adjusted per D2)
 
 - Operator points the Dolphin profile at an installed binary and

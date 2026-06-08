@@ -275,8 +275,43 @@ spanned every system but was filed under whichever core happened to be active.
       No external launching yet. 807 oa-shell tests pass (803
       baseline + 4 new); typecheck silent.
     - **C2 — profile registry + `ExternalProcessLauncher` + first
-      Dolphin launch** (next).
-    - **C3 — capability gating + session polish.**
+      Dolphin launch ✅ shipped 2026-06-07** (branch
+      `feat/virtual-library-phase-c2`, awaiting operator playtest
+      before merge). New `apps/oa-shell/src/emulator_profiles.rs`:
+      `config/emulators/<id>.yaml` registry (D4 fields; shipped
+      pilot `dolphin.yaml`, supported_systems `[gamecube]`,
+      `--batch --exec={content}`) + two appData pref files
+      mirroring cores.json — `emulators.json` (per-profile binary
+      path, operator-set; wins over the profile's optional
+      `binary_path`) and `launchers.json` (per-system default
+      launcher; no entry = libretro, byte-for-byte today's path).
+      `ExternalProcessLauncher` in launcher.rs: spawn via expanded
+      template, child stdout/stderr pumped into the OA debug log
+      (`oa_shell::external` target), `is_alive` = try_wait,
+      terminate = graceful close (Windows taskkill WM_CLOSE) → 5s
+      grace → kill fallback. `launch_rom` branches per-system
+      BEFORE the bytes/patch machinery (externals never read a
+      1.4 GB image into RAM; archived entries get a clear "extract
+      or clear the pref" error — C3+ territory); `active_launch`
+      slot now pairs session + owning launcher; supersede rules:
+      external→anything and in-process→external terminate through
+      the owning launcher first (libretro→libretro keeps
+      LoadRom-replace). D3: OA minimizes all windows on spawn; an
+      exit-watcher thread (1 Hz `is_alive` poll, slot-ownership
+      guard) persists play time via `close_active_session`,
+      restores + focuses the shell, toasts, and emits
+      `oa://external-session-ended`. Settings surface: CoresPage
+      "External emulators" section — per-profile binary-path
+      picker (validated file-exists; name-mismatch accepted with
+      WARN) + per-system "Default launcher" select + download
+      link. New commands: `list_emulator_profiles` /
+      `set_emulator_binary_path` / `get_launcher_pref` /
+      `set_launcher_pref`. 818 oa-shell tests pass (803 baseline +
+      15 new); typecheck silent. Playtest gate: GameCube game
+      launches through the operator's Dolphin install from the
+      same tile that launched it via libretro yesterday; pref
+      unset = identical to yesterday.
+    - **C3 — capability gating + session polish** (next).
   - **Phase D — external emulator install pipeline (~2–3 weeks):**
     download + setup for v1 pilot trio (Cemu / RPCS3 / Lime3DS) from
     official release endpoints; plugin-style updater; legal posture
