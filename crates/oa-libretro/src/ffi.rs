@@ -504,6 +504,99 @@ pub struct retro_sensor_interface {
     pub get_sensor_input: retro_sensor_get_input_t,
 }
 
+// ---------- hardware rendering (env 14/41/43/56) --------------------
+//
+// HW-rendered cores (Dolphin, paraLLEl-N64, Beetle PSX HW, Flycast,
+// PPSSPP, Beetle Saturn HW) render on the GPU instead of returning a CPU
+// framebuffer. The core registers a `retro_hw_render_callback` via
+// SET_HW_RENDER declaring which graphics API it wants; the frontend
+// stands up that context, resolves API entry points for the core
+// (`get_proc_address`), and hands it a render target each frame
+// (`get_current_framebuffer`). After each `retro_run` the core signals a
+// finished GPU frame by calling `video_refresh` with the data pointer ==
+// `RETRO_HW_FRAME_BUFFER_VALID` (the `(void*)-1` sentinel) rather than a
+// CPU buffer. OA targets the Vulkan context first — see
+// docs/PLANS/hw-render-pipeline.md. The Vulkan-specific negotiation +
+// render-interface structs live alongside the ash bindings (added with
+// the Vulkan context impl), since their fields are Vk* handles.
+
+/// `enum retro_hw_context_type` — which graphics API the core wants.
+/// ABI-stable integer values. Read as a raw `u32` from the callback
+/// struct (the core may in theory write the `DUMMY = INT_MAX` sentinel,
+/// so we compare against constants rather than transmuting to an enum).
+pub const RETRO_HW_CONTEXT_NONE: u32 = 0;
+/// OpenGL 2.x (compatibility profile).
+pub const RETRO_HW_CONTEXT_OPENGL: u32 = 1;
+pub const RETRO_HW_CONTEXT_OPENGLES2: u32 = 2;
+/// Modern desktop OpenGL core profile (3.2+).
+pub const RETRO_HW_CONTEXT_OPENGL_CORE: u32 = 3;
+pub const RETRO_HW_CONTEXT_OPENGLES3: u32 = 4;
+pub const RETRO_HW_CONTEXT_OPENGLES_VERSION: u32 = 5;
+pub const RETRO_HW_CONTEXT_VULKAN: u32 = 6;
+pub const RETRO_HW_CONTEXT_D3D11: u32 = 7;
+pub const RETRO_HW_CONTEXT_D3D10: u32 = 8;
+pub const RETRO_HW_CONTEXT_D3D12: u32 = 9;
+pub const RETRO_HW_CONTEXT_D3D9: u32 = 10;
+
+/// `RETRO_HW_FRAME_BUFFER_VALID` — the `data` value a HW core passes to
+/// `video_refresh` to mean "the frame is already on the GPU, not in this
+/// pointer". In C it's `(void*)-1`; as a `usize` that's `usize::MAX`.
+pub const RETRO_HW_FRAME_BUFFER_VALID: usize = usize::MAX;
+
+/// `retro_proc_address_t` — opaque function pointer. The core casts the
+/// result of `get_proc_address` to the real API entry-point signature.
+pub type retro_proc_address_t = unsafe extern "C" fn();
+
+/// `retro_hw_get_proc_address_t` — frontend-provided resolver. The core
+/// calls it with a symbol name (e.g. `"vkCreateImage"`) and casts the
+/// result. Frontend WRITES this field into the callback struct.
+pub type retro_hw_get_proc_address_t =
+    unsafe extern "C" fn(sym: *const c_char) -> Option<retro_proc_address_t>;
+
+/// `retro_hw_context_reset_t` — core-provided. The frontend calls it once
+/// the GPU context is ready so the core can (re)create its GPU resources;
+/// the same signature is reused for `context_destroy`.
+pub type retro_hw_context_reset_t = unsafe extern "C" fn();
+
+/// `retro_hw_get_current_framebuffer_t` — frontend-provided. The core
+/// calls it each frame to learn which framebuffer/image id to render
+/// into (a `GLuint` FBO for GL; ignored for Vulkan, which uses the
+/// retro_hw_render_interface_vulkan `set_image` path). Returns
+/// `uintptr_t`. Frontend WRITES this field into the callback struct.
+pub type retro_hw_get_current_framebuffer_t = unsafe extern "C" fn() -> usize;
+
+/// `struct retro_hw_render_callback` (SET_HW_RENDER, env 14). Field order
+/// matches libretro.h byte-for-byte. The core fills `context_type`,
+/// `context_reset`, `context_destroy`, the `depth`/`stencil`/origin flags,
+/// the version, and the cache/debug flags; the FRONTEND fills
+/// `get_current_framebuffer` and `get_proc_address` before returning true.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_hw_render_callback {
+    /// One of the `RETRO_HW_CONTEXT_*` values (core → frontend).
+    pub context_type: u32,
+    /// Called by the frontend when the context is (re)created (core → frontend).
+    pub context_reset: Option<retro_hw_context_reset_t>,
+    /// Frontend resolver for the current render target (frontend → core).
+    pub get_current_framebuffer: Option<retro_hw_get_current_framebuffer_t>,
+    /// Frontend symbol resolver (frontend → core).
+    pub get_proc_address: Option<retro_hw_get_proc_address_t>,
+    /// Core wants a depth buffer.
+    pub depth: bool,
+    /// Core wants a stencil buffer.
+    pub stencil: bool,
+    /// Core renders bottom-left origin (GL convention) vs top-left.
+    pub bottom_left_origin: bool,
+    pub version_major: c_uint,
+    pub version_minor: c_uint,
+    /// Core would like its context preserved across frontend reinit.
+    pub cache_context: bool,
+    /// Called by the frontend before tearing the context down (core → frontend).
+    pub context_destroy: Option<retro_hw_context_reset_t>,
+    /// Core wants a debug GPU context.
+    pub debug_context: bool,
+}
+
 // ---------- disc control callback structs ----------
 //
 // Cores with multi-disc support (PCE-CD with `.m3u`, PSX, Saturn, etc.)
