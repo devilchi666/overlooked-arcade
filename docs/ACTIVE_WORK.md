@@ -311,6 +311,28 @@ spanned every system but was filed under whichever core happened to be active.
       launches through the operator's Dolphin install from the
       same tile that launched it via libretro yesterday; pref
       unset = identical to yesterday.
+      - **C2 playtest fixes 2026-06-07** (commit `ba80d8c`, on the
+        same branch). Two bugs surfaced in the first Dolphin
+        playtest: (1) **black inescapable screen after the external
+        emulator exits** — the Rust exit-watcher's
+        `oa://external-session-ended` event had no frontend
+        listener, so the shell un-minimized still in its in-game
+        view (`gameRunning=true`, library hidden) onto a wgpu
+        surface with no core rendering. Added the listener in
+        `App.tsx`; mirrors `handleUnload`'s UI reset (leave in-game
+        view, reveal library, revert renderer overrides) but with NO
+        `unload_rom` call since the session is already torn down;
+        direct-launch mode quits like `rom-unloaded`. Refactored the
+        revert block into shared `revertRendererToDefaults()`. (2)
+        **no discoverable core-install path from the launcher
+        picker** — added a soft amber "no core installed — see
+        Browse cores below" hint beside the per-system Default
+        launcher dropdown when libretro is selected but no installed
+        catalog core claims the system (mirrors the existing "set
+        the binary path first" hint). Frontend typecheck green; no
+        Rust changes. Also rode along: z-index fix lifting platform
+        modals to `z-[70]` above the engine takeover (commit
+        `5d0ac97`).
     - **C3 — capability gating + session polish** (next).
   - **Phase D — external emulator install pipeline (~2–3 weeks):**
     download + setup for v1 pilot trio (Cemu / RPCS3 / Lime3DS) from
