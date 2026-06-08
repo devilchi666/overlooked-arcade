@@ -6,6 +6,51 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 15) — M2 zero-copy import shipped (task 1) — awaiting playtest
+
+- **Shipped (compiles clean, 49 tests pass; NOT yet runtime-tested):** the
+  zero-copy import path that replaces the M1 synchronous readback.
+  - **Researched first (the gate):** wgpu 23.0.1 source confirms a
+    `texture_from_raw` texture is tracked as `TextureUses::UNINITIALIZED`
+    (`wgpu-core/device/resource.rs:729`) → `derive_image_layout` →
+    `vk::ImageLayout::UNDEFINED` (`wgpu-hal/vulkan/conv.rs:227`), with **no
+    public way to seed the layout**. So a direct-import-and-sample WOULD discard
+    the core's pixels. Confirmed `Texture::as_hal` / `CommandEncoder::as_hal_mut`
+    / `Device::as_hal` + the hal `raw_handle()`/`raw_device()` accessors exist →
+    Approach A is viable. (Operator-confirmed: build task 1, then measure.)
+  - **`oa-render::Renderer::present_hw_image(frame, aspect)`** — records a raw
+    `vkCmdBlitImage` (NEAREST, inverted dst-Y when `flip_y`) from the core's
+    `set_image` `VkImage` into a wgpu-native `fb_texture` (its `VkImage` via
+    `Texture::as_hal`), in a DEDICATED wgpu encoder (`as_hal_mut` → raw cmd
+    buffer) with hand-managed barriers. Leaves `fb_texture` in
+    `SHADER_READ_ONLY_OPTIMAL` = exactly where wgpu's `RESOURCE` tracker expects
+    it, so from frame ≥2 wgpu emits NO transition and the blit's own
+    `TRANSFER_WRITE→SHADER_READ` back-barrier supplies copy→sample visibility
+    (frame 1 may be blank — wgpu's first-use `UNDEFINED→SHADER_READ`). Then runs
+    the existing composite/scale/shader/bezel chain (extracted into a shared
+    `composite_and_present`). dst format mirrors the core format (Rgba8/Bgra8)
+    so the blit is identity. Source NEVER enters wgpu's tracker.
+  - **Queue sync (D7 crux):** `oa-libretro::hw_queue_lock/unlock` expose the
+    SAME `VulkanHw::queue_lock` the core's `lock_queue` callback honors; oa-shell
+    brackets each `present_hw_image` (wgpu blit + present) with it so wgpu's
+    submit can't race the core's worker-thread submits on the shared `VkQueue`.
+  - **oa-shell wiring:** `set_hw_import_mode(adopted)` on adopt / `false` on
+    restore (so `hw_after_run` skips the readback when importing); both present
+    sites (main + run-ahead) route through a `present_current` helper that does
+    HW-import when adopted (falling back to `present(framebuffer())` if no HW
+    frame is pending / import fails → adoption-failed cores stay on readback).
+- **Deferred (tasks 2 & 3), per the staged plan:** real multi-buffer
+  `get_sync_index` (still mask=0x1 single-buffer) + narrowing the queue lock /
+  GPU-side sync for CPU run-ahead. Do these only if fps is still capped after
+  measuring task 1 (removing the 31 ms readback should be the main win —
+  the on-GPU blit folds into wgpu's normal Fifo present, no host fence wait).
+- **Next (operator):** rebuild + launch **paraLLEl-N64** (parallel-n64-gfxplugin
+  = parallel, upscaling 1×). SUCCESS = the `readback avg … ms/frame` log
+  DISAPPEARS (import mode), a `first zero-copy HW import …` line appears, fps
+  climbs toward 60, audio correct, **CrtLite shader still applied**. Then
+  confirm a software core + swap-back still render. Do NOT merge to main until
+  this playtest passes.
+
 ## 2026-06-08 (cont. 14) — measurement: readback ~31ms is serialization, NOT upscale → zero-copy justified
 
 - **Measured (paraLLEl-N64, oa-current.log 14:12):** readback steady ~31ms/

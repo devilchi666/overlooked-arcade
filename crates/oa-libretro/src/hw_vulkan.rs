@@ -636,6 +636,21 @@ impl VulkanHw {
         }
     }
 
+    /// Acquire the core's queue lock (M2 zero-copy). The adopted wgpu renderer
+    /// shares this `VkQueue` with the core's worker threads; Vulkan requires
+    /// external synchronization of queue submits. oa-shell brackets its
+    /// `present_hw_image` (wgpu blit + present) with this pair so wgpu's submit
+    /// can't race the core's. Same lock the `lock_queue` interface callback
+    /// honors, so it serializes against the core's background submits.
+    pub(crate) fn lock_queue(&self) {
+        self.queue_lock.lock();
+    }
+
+    /// Release the core's queue lock (see [`lock_queue`](Self::lock_queue)).
+    pub(crate) fn unlock_queue(&self) {
+        self.queue_lock.unlock();
+    }
+
     /// The current `set_image` frame for zero-copy import (M2 Stage 4).
     /// `None` when no usable image is pending. By present time the core has
     /// already signalled the frame via `video_refresh`, so we don't gate on

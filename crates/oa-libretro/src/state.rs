@@ -765,6 +765,35 @@ pub fn loaded_core_hw_frame() -> Option<crate::hw_vulkan::HwVulkanFrame> {
     with_state(|s| s.hw_vulkan.as_ref().and_then(|hw| hw.current_frame())).flatten()
 }
 
+/// Acquire the loaded HW core's `VkQueue` lock (M2 zero-copy). The adopted
+/// wgpu renderer shares the core's queue; Vulkan requires external sync of
+/// submits. oa-shell brackets each `Renderer::present_hw_image` (wgpu blit +
+/// present) with [`hw_queue_lock`] / [`hw_queue_unlock`] — the SAME lock the
+/// core's `lock_queue` interface callback honors — so wgpu's submit can't race
+/// the core's worker-thread submits. No-op for software cores / before a HW
+/// device is built. MUST be paired with [`hw_queue_unlock`].
+///
+/// Note: this briefly takes the STATE mutex to reach the device; the core's
+/// `lock_queue` callback reaches the same `QueueLock` via the interface handle
+/// (NOT the STATE mutex), so a background submit spinning on the lock never
+/// contends on STATE — no re-entrancy with `retro_run`.
+pub fn hw_queue_lock() {
+    with_state(|s| {
+        if let Some(hw) = s.hw_vulkan.as_ref() {
+            hw.lock_queue();
+        }
+    });
+}
+
+/// Release the loaded HW core's `VkQueue` lock (see [`hw_queue_lock`]).
+pub fn hw_queue_unlock() {
+    with_state(|s| {
+        if let Some(hw) = s.hw_vulkan.as_ref() {
+            hw.unlock_queue();
+        }
+    });
+}
+
 /// Tear down the HW-render device. Called from `LibretroCore::drop` BEFORE
 /// the State is uninstalled: invokes the core's `context_destroy`, then
 /// drops the device (its `Drop` waits the device idle + destroys every Vk

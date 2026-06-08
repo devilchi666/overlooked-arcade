@@ -3587,6 +3587,43 @@ fn hw_restore_normal(
     r
 }
 
+/// Present one frame, choosing the M2 zero-copy HW-import path when the
+/// renderer has adopted the core's Vulkan device, else the software/readback
+/// path. When `adopted`, we ask oa-libretro for the core's current rendered
+/// `VkImage` and blit it on-GPU (no CPU readback) — bracketed by the core's
+/// queue lock so wgpu's submit can't race the core's worker-thread submits on
+/// the shared queue. Falls back to `present(framebuffer())` when no HW frame
+/// is pending or the import couldn't run (e.g. adoption-failed cores still on
+/// the M1 readback path, which fills `fb_rgba`).
+fn present_current<C: oa_core::Core>(
+    renderer: &mut oa_render::Renderer,
+    core_ref: &C,
+    adopted: bool,
+) {
+    if adopted {
+        if let Some(hw) = oa_libretro::loaded_core_hw_frame() {
+            let aspect = core_ref.framebuffer().display_aspect;
+            oa_libretro::hw_queue_lock();
+            let ok = renderer.present_hw_image(
+                oa_render::HwVulkanFrame {
+                    image: hw.image,
+                    format: hw.format,
+                    image_layout: hw.image_layout,
+                    width: hw.width,
+                    height: hw.height,
+                    flip_y: hw.flip_y,
+                },
+                aspect,
+            );
+            oa_libretro::hw_queue_unlock();
+            if ok {
+                return;
+            }
+        }
+    }
+    renderer.present(core_ref.framebuffer());
+}
+
 fn run_emu_render(
     running: Arc<AtomicBool>,
     inner_size_fn: Box<dyn Fn() -> Option<(u32, u32)> + Send>,
@@ -4193,6 +4230,7 @@ fn run_emu_render(
                                 let size = inner_size_fn().unwrap_or(initial_size);
                                 renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
                                 renderer_adopted = false;
+                                oa_libretro::set_hw_import_mode(false);
                                 log::info!("oa-shell: HW-render — restored normal renderer before core swap");
                             }
                             // Drop current to release the libretro singleton before loading the new one.
@@ -4675,6 +4713,12 @@ fn run_emu_render(
                                     hw_swap_to_adopted(renderer, raw_window, raw_display, size, &adopt);
                                 renderer = r;
                                 renderer_adopted = adopted;
+                                // M2 Stage 4: when adopted, skip the CPU
+                                // readback in `hw_after_run` — present_current
+                                // imports the VkImage zero-copy instead. On
+                                // adoption failure keep readback (import_mode
+                                // off → fb_rgba path).
+                                oa_libretro::set_hw_import_mode(adopted);
                             }
 
                             // Phase 2.5 — push the core's display rotation to
@@ -5051,6 +5095,7 @@ fn run_emu_render(
                         let size = inner_size_fn().unwrap_or(initial_size);
                         renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
                         renderer_adopted = false;
+                        oa_libretro::set_hw_import_mode(false);
                         log::info!("oa-shell: HW-render — restored normal renderer before unload");
                     }
                     // Drop the entire core, not just the ROM. Mednafen-derived
@@ -6402,7 +6447,7 @@ fn run_emu_render(
                                 core_ref.run_frame();
                                 apply_cheats(core_ref, &cheat_runtime);
                             }
-                            renderer.present(core_ref.framebuffer());
+                            present_current(&mut renderer, core_ref, renderer_adopted);
                             if let Err(e) = core_ref.load_state(&mut run_ahead_save_buf.as_slice()) {
                                 log::warn!("oa-shell: run-ahead rollback failed: {e:?}");
                             } else if let Some(sink) = audio.as_mut() {
@@ -6563,7 +6608,7 @@ fn run_emu_render(
             // real audio; skip both here to avoid double-rendering and
             // duplicated audio samples.
             if !ran_ahead {
-                renderer.present(core_ref.framebuffer());
+                present_current(&mut renderer, core_ref, renderer_adopted);
 
                 // Phase 2.5 — push the freshly-computed game-output
                 // rectangle (in screen coordinates) into the InputPoller

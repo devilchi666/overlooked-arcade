@@ -435,19 +435,21 @@ spanned every system but was filed under whichever core happened to be active.
     re-adopt; R1 holds), and display settings (shader/scaling/etc.) are
     preserved across the rebuild. **Measured (cont. 14):** the M1 readback
     is ~31ms/frame of pure serialization (NOT upscale — confirmed 1×), so
-    zero-copy is justified. **Remaining = the intricate D7 sync work:**
-    (1) zero-copy import replacing the readback — hits the wgpu
-    `texture_from_raw` layout-discard wall (no layout param → UNDEFINED →
-    discards), fix = raw-Vulkan image→image copy into a wgpu texture with
-    hand-managed barriers OR research wgpu-core from-hal state; (2) real
-    multi-buffer `get_sync_index` (M1 stubs single-buffer → forces the core
-    synchronous); (3) drop the host fence wait for CPU/GPU overlap.
-    Scaffolding ready (oa-libretro): `set_hw_import_mode(bool)` (skips
-    readback), `loaded_core_hw_frame() -> HwVulkanFrame` (the core's current
-    VkImage). NOT yet written: oa-render `present_hw_image` (the import path)
-    + the oa-shell wiring to call it when adopted. See the M2 plan section +
-    the cont.14 SESSION_LOG entry. Next session is a focused zero-copy + sync
-    push.
+    zero-copy is justified. **Zero-copy import SHIPPED (cont. 15, task 1 —
+    compiles clean + 49 tests pass, awaiting playtest):** `present_hw_image`
+    GPU-blits the core's `set_image` `VkImage` into a wgpu-native fb_texture
+    (raw `vkCmdBlitImage` via `as_hal_mut`, hand-managed barriers leaving it
+    in `SHADER_READ_ONLY` where wgpu's tracker expects it — sidesteps the
+    confirmed `texture_from_raw` UNDEFINED-discard wall) and runs the existing
+    shader/scale/bezel chain on it. Queue sync via `hw_queue_lock/unlock` (the
+    core's `lock_queue`). oa-shell sets import mode on adopt + routes both
+    present sites through `present_current` (readback stays the fallback).
+    **Deferred (tasks 2 & 3) pending the playtest measurement:** real
+    multi-buffer `get_sync_index` (still single-buffer) + narrowed lock /
+    GPU-side sync for CPU run-ahead — only if fps is still capped after
+    removing the readback. Next: operator playtests paraLLEl-N64 (readback log
+    should disappear, fps → 60, CrtLite intact); do NOT merge to main until
+    it passes. See the cont.15 SESSION_LOG entry.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
