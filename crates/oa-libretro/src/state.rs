@@ -718,7 +718,8 @@ pub(crate) fn hw_after_run() {
     if HW_IMPORT_MODE.load(AtomicOrdering::Relaxed) {
         return;
     }
-    with_state(|s| {
+    let t0 = std::time::Instant::now();
+    let did_readback = with_state(|s| {
         // Disjoint field borrows: `hw_vulkan` (shared) + `fb_*` (mut).
         if let Some(hw) = s.hw_vulkan.as_ref() {
             if let Err(e) =
@@ -729,8 +730,32 @@ pub(crate) fn hw_after_run() {
                     log::error!("oa-libretro HW: readback failed: {e}");
                 }
             }
+            true
+        } else {
+            false
         }
-    });
+    })
+    .unwrap_or(false);
+    // M2 diagnostic: is the synchronous readback (GPU copy + full-drain fence
+    // wait) the speed bottleneck, or is the core itself slow? Log the average
+    // readback cost every 120 frames so we know whether zero-copy is worth
+    // the intricate D7 sync work or whether it's a core-config issue.
+    if did_readback {
+        use std::sync::atomic::AtomicU64;
+        static RB_FRAMES: AtomicU64 = AtomicU64::new(0);
+        static RB_NANOS: AtomicU64 = AtomicU64::new(0);
+        let ns = t0.elapsed().as_nanos() as u64;
+        let frames = RB_FRAMES.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+        let total = RB_NANOS.fetch_add(ns, AtomicOrdering::Relaxed) + ns;
+        if frames % 120 == 0 {
+            log::info!(
+                "oa-libretro HW: readback avg {:.2} ms/frame over {} frames (last {:.2} ms)",
+                (total as f64 / frames as f64) / 1.0e6,
+                frames,
+                ns as f64 / 1.0e6,
+            );
+        }
+    }
 }
 
 /// The HW core's current rendered image for zero-copy import (M2 Stage 4).

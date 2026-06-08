@@ -6,6 +6,32 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 13) — M2 Stage 4: settings preservation + readback timing; zero-copy wall
+
+- **Shipped:** 4a (settings preservation — shader/scaling/etc. carried across
+  the renderer rebuild) + 4b (frame exposure `loaded_core_hw_frame` +
+  `set_hw_import_mode` skip-readback flag) + a **readback timing probe**
+  (`hw_after_run` logs avg readback ms/frame every 120 frames).
+- **Stage 4c wall (researched):** true zero-copy (import the core's VkImage +
+  sample it) hits a confirmed wgpu limitation — `wgpu_hal::vulkan::Device::
+  texture_from_raw` has **no layout parameter** and the docs don't define the
+  initial-state assumption, so wgpu will most likely treat the imported image
+  as UNDEFINED and **discard the core's pixels** on first use. The correct fix
+  is the intricate D7 sync work: a raw-Vulkan image→image copy from the core's
+  VkImage into a wgpu-native texture with hand-managed barriers (src
+  SHADER_READ_ONLY→TRANSFER_SRC, dst restored to wgpu's expected layout) +
+  coordination with wgpu's state tracker. Not a guess-and-go.
+- **Measure-first call:** before investing in that, confirm the readback IS
+  the bottleneck. paraLLEl-RDP logged "Using 1 sync frames" — it may be
+  self-synchronizing / slow regardless of our path, in which case zero-copy
+  won't help and a core option (`parallel-n64-parallel-rdp-synchronous` off,
+  upscale 1×) would. The readback timing probe + the existing fps line will
+  tell us: if readback ≈ most of the ~34 ms/frame → zero-copy is the fix; if
+  readback is small and the core run dominates → it's a core-config/perf issue.
+- **Next (operator):** rebuild + launch paraLLEl-N64; report the
+  `readback avg X ms/frame` line + the `~NN fps` line; and try toggling the
+  parallel-RDP synchronous / upscaling core options to see if fps changes.
+
 ## 2026-06-08 (cont. 12) — ✅ M2 Stage 3 VALIDATED (adoption + lifecycle on hardware)
 
 - **Operator confirmed:** paraLLEl-N64 loads on the adopted device AND swaps
