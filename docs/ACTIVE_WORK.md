@@ -83,8 +83,9 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: Phase C3 — capability gating + session polish**
-  (C1 + C2 shipped + merged; operator picked C over B 2026-06-07 to
+  **Current slice: Phase C3 ✅ shipped — awaiting playtest** (C1 + C2
+  merged; C3 on `feat/virtual-library-phase-c3`; operator picked C
+  over B 2026-06-07 to
   unblock the theming arc's Phase-2 pause; theming plan §7 wants VL
   E + C before theming Phase 3 resumes). Sub-phase plan +
   operator-locked decisions:
@@ -95,7 +96,8 @@ spanned every system but was filed under whichever core happened to be active.
   ride Phase D with the installer); minimize-OA-while-running;
   C1 (trait + LibretroLauncher refactor, invisible) → C2 (profile
   registry + ExternalProcessLauncher + first Dolphin launch) →
-  C3 (capability gating + session polish, in flight).
+  C3 (capability gating + session polish, shipped — awaiting
+  playtest).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
@@ -334,7 +336,31 @@ spanned every system but was filed under whichever core happened to be active.
         Rust changes. Also rode along: z-index fix lifting platform
         modals to `z-[70]` above the engine takeover (commit
         `5d0ac97`).
-    - **C3 — capability gating + session polish** (next).
+    - **C3 — capability gating + session polish ✅ shipped 2026-06-08**
+      (branch `feat/virtual-library-phase-c3`, awaiting operator
+      playtest before merge). Three slices. **(1) Capability gating**
+      (commit `5fd92ab`): new `get_active_launcher_capabilities`
+      command + `ActiveLauncherInfo` (launcher id / display name /
+      isExternal / `LauncherCapabilities`) reads the `active_launch`
+      slot — full libretro set when in-process/no session, the
+      external launcher's caps (v1 all-false) + profile display name
+      otherwise. QuickSettings fetches it on open (fail-open to the
+      full set) and grays the governed action rows (saves / shaders /
+      core options / input / bindings / screenshots / rewind / tas /
+      video / memory / disc) with a "Managed by <name>" hint; Resume /
+      Game info / toggles / Exit always available. Relevant in the
+      OA-restored-during-external-session state (D3 minimizes OA in
+      normal play). **(2) Per-system drill-in launcher pref** +
+      **(3) force-quit affordance** (commit `ff9e86b`): Settings →
+      Per-system gains a "Launcher" card (renders only when an
+      external profile covers the system) mirroring the CoresPage
+      dropdown, with a binary-not-set warning + a note that external
+      launchers bypass the libretro-only cards; the QuickSettings Exit
+      row names the emulator ("Close Dolphin") for external sessions
+      (the unload_rom path already does graceful→5s→kill from C2).
+      818 oa-shell tests pass (unchanged — additive command);
+      frontend typecheck silent. Play-time tracking + graceful
+      terminate/hang fallback were already delivered in C2.
   - **Phase D — external emulator install pipeline (~2–3 weeks):**
     download + setup for v1 pilot trio (Cemu / RPCS3 / Lime3DS) from
     official release endpoints; plugin-style updater; legal posture

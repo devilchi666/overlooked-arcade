@@ -8,7 +8,7 @@
 // resources (overrides, monitors, cores) re-fetch via the hook's
 // systemId-tracked source.
 
-import { createResource, createSignal, Show, type Accessor, type Component } from "solid-js";
+import { createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
@@ -31,6 +31,17 @@ type Props = {
   /// in place rather than remounting.
   systemId: Accessor<SystemId | null>;
   settings: SettingsStore;
+};
+
+// VL Phase C3 — subset of Rust `EmulatorProfileInfo` we need here.
+// Full shape lives in CoresPage; this surface only reads the fields the
+// per-system launcher dropdown uses.
+type EmulatorProfileInfo = {
+  id: string;
+  displayName: string;
+  binaryName: string;
+  supportedSystems: string[];
+  binaryPath: string | null;
 };
 
 const PerSystemSettingsBody: Component<Props> = (props) => {
@@ -67,6 +78,47 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
 
   const [bindingsOpen, setBindingsOpen] = createSignal(false);
   const [coreOptionsOpen, setCoreOptionsOpen] = createSignal(false);
+
+  // VL Phase C3 — per-system default-launcher pref, surfaced here as
+  // well as in Settings → Cores → External emulators. `list_emulator_
+  // profiles` is system-agnostic (fetched once a system is picked); we
+  // filter to the profiles that support THIS system below. The card
+  // only renders when at least one external emulator covers the system.
+  const [launcherProfiles] = createResource(active, async (on): Promise<EmulatorProfileInfo[]> => {
+    if (!on) return [];
+    try {
+      return await invoke<EmulatorProfileInfo[]>("list_emulator_profiles");
+    } catch {
+      return [];
+    }
+  });
+  const [launcherTick, setLauncherTick] = createSignal(0);
+  const [launcherPref] = createResource(
+    () => [props.systemId(), launcherTick()] as const,
+    async ([sysId]): Promise<string | null> => {
+      if (!sysId) return null;
+      try {
+        return (await invoke<string | null>("get_launcher_pref", { systemId: sysId })) ?? null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  const supportingProfiles = (): EmulatorProfileInfo[] => {
+    const sysId = props.systemId();
+    if (!sysId) return [];
+    return (launcherProfiles() ?? []).filter((p) => p.supportedSystems.includes(sysId));
+  };
+  async function setLauncher(profileId: string | null) {
+    const sysId = props.systemId();
+    if (!sysId) return;
+    try {
+      await invoke("set_launcher_pref", { systemId: sysId, profileId });
+      setLauncherTick((n) => n + 1);
+    } catch (e) {
+      console.warn("[per-system] set_launcher_pref failed:", e);
+    }
+  }
 
   return (
     <Show
@@ -138,6 +190,47 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
               cores={() => cores() ?? []}
             />
           </Card>
+
+          {/* Launcher — only when an external emulator covers this
+              system (VL Phase C3). Mirrors Settings → Cores → External
+              emulators' per-system dropdown so the choice is reachable
+              from the per-system drill-in too. Picking a standalone
+              emulator makes the libretro-only cards above (Default
+              core / Display / Rewind / Shaders) moot — the external
+              emulator manages its own rendering + saves + input. */}
+          <Show when={supportingProfiles().length > 0}>
+            <Card title="Launcher">
+              <div class="flex flex-col gap-2">
+                <label class="flex flex-wrap items-center gap-3">
+                  <span class="text-sm text-(--color-oa-ink)">Default launcher</span>
+                  <select
+                    class="rounded border border-white/10 bg-black/40 px-2 py-1 text-sm text-(--color-oa-ink)"
+                    value={launcherPref() ?? ""}
+                    onChange={(e) => void setLauncher(e.currentTarget.value || null)}
+                  >
+                    <option value="">Libretro core (default)</option>
+                    <For each={supportingProfiles()}>
+                      {(p) => <option value={p.id}>{p.displayName} (standalone)</option>}
+                    </For>
+                  </select>
+                </label>
+                <For each={supportingProfiles()}>
+                  {(p) => (
+                    <Show when={launcherPref() === p.id && !p.binaryPath}>
+                      <span class="text-[0.7rem] text-amber-300">
+                        {p.displayName}'s binary path isn't set — launches will fail until you
+                        point OA at your install in Settings → Cores → External emulators.
+                      </span>
+                    </Show>
+                  )}
+                </For>
+                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                  Standalone emulators manage their own video / saves / input — the cards above
+                  apply only to the libretro core.
+                </p>
+              </div>
+            </Card>
+          </Show>
 
           {/* System info — Phase 4 edit UI for the HOME tab's right
               pane fields. Each row inherits from L2 (curated YAML) +
