@@ -10,6 +10,11 @@
 use std::ffi::c_void;
 use std::os::raw::{c_char, c_uint};
 
+// Vulkan handle + PFN types for the HW-render Vulkan interface structs
+// (libretro_vulkan.h). ash's `vk::*` handles are #[repr(transparent)]
+// over the raw C handles, so these libretro structs are ABI-correct.
+use ash::vk;
+
 // ---------- pixel format ----------
 
 #[repr(u32)]
@@ -595,6 +600,176 @@ pub struct retro_hw_render_callback {
     pub context_destroy: Option<retro_hw_context_reset_t>,
     /// Core wants a debug GPU context.
     pub debug_context: bool,
+}
+
+// ---------- Vulkan HW-render interface (libretro_vulkan.h) -----------
+//
+// Two structs flow between core and frontend for Vulkan HW rendering:
+//
+//  * The core hands US a `retro_hw_render_context_negotiation_interface_
+//    vulkan` (via SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, env 43)
+//    whose `create_device` we call to build a VkDevice with exactly the
+//    extensions/features the core needs. (M1 standalone-device path,
+//    docs/PLANS/hw-render-pipeline.md D6.)
+//  * WE hand the core a `retro_hw_render_interface_vulkan` (in response
+//    to GET_HW_RENDER_INTERFACE, env 41) carrying our VkInstance /
+//    PhysicalDevice / Device / Queue + the 8 frontend callbacks the core
+//    drives each frame (set_image, get_sync_index, …).
+//
+// Field order + types match libretro_vulkan.h byte-for-byte. Vulkan API
+// entry points use the system ABI (ash PFN_* = extern "system"); the
+// libretro callbacks use the C ABI (extern "C"), matching the header.
+
+pub const RETRO_HW_RENDER_INTERFACE_VULKAN_VERSION: c_uint = 5;
+pub const RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION: c_uint = 2;
+
+/// `enum retro_hw_render_interface_type` — VULKAN is 0.
+pub const RETRO_HW_RENDER_INTERFACE_VULKAN: u32 = 0;
+/// `enum retro_hw_render_context_negotiation_interface_type` — VULKAN is 0.
+pub const RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN: u32 = 0;
+
+/// `struct retro_vulkan_image` — a rendered frame the core hands us via
+/// `set_image`. We read `image_view` + `image_layout` for readback;
+/// `create_info` describes how the core made the view.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_vulkan_image {
+    pub image_view: vk::ImageView,
+    pub image_layout: vk::ImageLayout,
+    pub create_info: vk::ImageViewCreateInfo<'static>,
+}
+
+// --- the 8 frontend-provided callbacks the core drives each frame ---
+// All take the opaque `handle` we set on the interface struct (we point
+// it back at our HW-render state).
+
+pub type retro_vulkan_set_image_t = unsafe extern "C" fn(
+    handle: *mut c_void,
+    image: *const retro_vulkan_image,
+    num_semaphores: u32,
+    semaphores: *const vk::Semaphore,
+    src_queue_family: u32,
+);
+pub type retro_vulkan_get_sync_index_t = unsafe extern "C" fn(handle: *mut c_void) -> u32;
+pub type retro_vulkan_get_sync_index_mask_t = unsafe extern "C" fn(handle: *mut c_void) -> u32;
+pub type retro_vulkan_set_command_buffers_t =
+    unsafe extern "C" fn(handle: *mut c_void, num_cmd: u32, cmd: *const vk::CommandBuffer);
+pub type retro_vulkan_wait_sync_index_t = unsafe extern "C" fn(handle: *mut c_void);
+pub type retro_vulkan_lock_queue_t = unsafe extern "C" fn(handle: *mut c_void);
+pub type retro_vulkan_unlock_queue_t = unsafe extern "C" fn(handle: *mut c_void);
+pub type retro_vulkan_set_signal_semaphore_t =
+    unsafe extern "C" fn(handle: *mut c_void, semaphore: vk::Semaphore);
+
+/// `struct retro_hw_render_interface_vulkan` — WE fill this and hand it
+/// to the core via GET_HW_RENDER_INTERFACE. The Vk handles are our
+/// standalone device's; the callbacks point back at our HW state via
+/// `handle`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_hw_render_interface_vulkan {
+    /// `RETRO_HW_RENDER_INTERFACE_VULKAN` (0).
+    pub interface_type: u32,
+    /// `RETRO_HW_RENDER_INTERFACE_VULKAN_VERSION`.
+    pub interface_version: c_uint,
+    /// Opaque cookie passed back to every callback below.
+    pub handle: *mut c_void,
+    pub instance: vk::Instance,
+    pub gpu: vk::PhysicalDevice,
+    pub device: vk::Device,
+    pub get_device_proc_addr: vk::PFN_vkGetDeviceProcAddr,
+    pub get_instance_proc_addr: vk::PFN_vkGetInstanceProcAddr,
+    pub queue: vk::Queue,
+    pub queue_index: c_uint,
+    pub set_image: retro_vulkan_set_image_t,
+    pub get_sync_index: retro_vulkan_get_sync_index_t,
+    pub get_sync_index_mask: retro_vulkan_get_sync_index_mask_t,
+    pub set_command_buffers: retro_vulkan_set_command_buffers_t,
+    pub wait_sync_index: retro_vulkan_wait_sync_index_t,
+    pub lock_queue: retro_vulkan_lock_queue_t,
+    pub unlock_queue: retro_vulkan_unlock_queue_t,
+    pub set_signal_semaphore: retro_vulkan_set_signal_semaphore_t,
+}
+
+/// `struct retro_vulkan_context` — the negotiation `create_device`
+/// callback fills this with the device it built for us.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_vulkan_context {
+    pub gpu: vk::PhysicalDevice,
+    pub device: vk::Device,
+    pub queue: vk::Queue,
+    pub queue_family_index: u32,
+    pub presentation_queue: vk::Queue,
+    pub presentation_queue_family_index: u32,
+}
+
+// --- negotiation callbacks the CORE provides to us (env 43) ---
+
+/// Optional — the core's preferred `VkApplicationInfo` (api version etc.).
+pub type retro_vulkan_get_application_info_t =
+    unsafe extern "C" fn() -> *const vk::ApplicationInfo<'static>;
+
+/// v1 device creation. We call this with our instance + a chosen GPU; the
+/// core enables the device extensions/features it needs and fills `context`.
+pub type retro_vulkan_create_device_t = unsafe extern "C" fn(
+    context: *mut retro_vulkan_context,
+    instance: vk::Instance,
+    gpu: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+    get_instance_proc_addr: vk::PFN_vkGetInstanceProcAddr,
+    required_device_extensions: *mut *const c_char,
+    num_required_device_extensions: c_uint,
+    required_device_layers: *mut *const c_char,
+    num_required_device_layers: c_uint,
+    required_features: *const vk::PhysicalDeviceFeatures,
+) -> bool;
+
+pub type retro_vulkan_destroy_device_t = unsafe extern "C" fn();
+
+/// v2 instance creation (wrapper-based). Declared for ABI completeness;
+/// the M1 standalone path uses the v1 `create_device`.
+pub type retro_vulkan_create_instance_wrapper_t = unsafe extern "C" fn(
+    opaque: *mut c_void,
+    create_info: *const vk::InstanceCreateInfo<'static>,
+) -> vk::Instance;
+pub type retro_vulkan_create_instance_t = unsafe extern "C" fn(
+    get_instance_proc_addr: vk::PFN_vkGetInstanceProcAddr,
+    app: *const vk::ApplicationInfo<'static>,
+    create_instance_wrapper: retro_vulkan_create_instance_wrapper_t,
+    opaque: *mut c_void,
+) -> vk::Instance;
+
+/// v2 device creation (wrapper-based). Declared for ABI completeness.
+pub type retro_vulkan_create_device_wrapper_t = unsafe extern "C" fn(
+    gpu: vk::PhysicalDevice,
+    opaque: *mut c_void,
+    create_info: *const vk::DeviceCreateInfo<'static>,
+) -> vk::Device;
+pub type retro_vulkan_create_device2_t = unsafe extern "C" fn(
+    context: *mut retro_vulkan_context,
+    instance: vk::Instance,
+    gpu: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+    get_instance_proc_addr: vk::PFN_vkGetInstanceProcAddr,
+    create_device_wrapper: retro_vulkan_create_device_wrapper_t,
+    opaque: *mut c_void,
+) -> bool;
+
+/// `struct retro_hw_render_context_negotiation_interface_vulkan` — the
+/// core hands this to US (env 43). Field order matches libretro_vulkan.h:
+/// the base `{interface_type, interface_version}` then the five callbacks.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct retro_hw_render_context_negotiation_interface_vulkan {
+    /// `RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN` (0).
+    pub interface_type: u32,
+    /// `RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION`.
+    pub interface_version: c_uint,
+    pub get_application_info: Option<retro_vulkan_get_application_info_t>,
+    pub create_device: Option<retro_vulkan_create_device_t>,
+    pub destroy_device: Option<retro_vulkan_destroy_device_t>,
+    pub create_instance: Option<retro_vulkan_create_instance_t>,
+    pub create_device2: Option<retro_vulkan_create_device2_t>,
 }
 
 // ---------- disc control callback structs ----------

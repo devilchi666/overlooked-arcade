@@ -60,3 +60,24 @@ Explicit operator call: do **not** add a deny-list that refuses HW
 cores. Honest catalog *labeling* ("needs OA hardware-rendering — in
 development") is allowed (it's not a guard); the real fix is this
 pipeline.
+
+---
+
+## 2026-06-08 — M1 implementation decision
+
+### D6 — M1 standalone ash device + readback (not wgpu-shared)
+
+Surfaced once the libretro Vulkan negotiation ABI was in hand. M1
+stands up a separate `VkInstance`/`VkDevice` via `ash`, isolated from
+wgpu, built per the core's negotiation interface; the core's rendered
+`VkImage` is read back to CPU and fed the existing software-framebuffer
+present path. wgpu is untouched (stays DX12).
+
+**Why:** lowest-risk route to "Dolphin actually renders." Keeps the 46
+working software cores at zero regression risk (no global wgpu-Vulkan
+switch in M1) and sidesteps the extension-compatibility wall (the core
+builds the device it needs rather than inheriting wgpu's). The
+wgpu-shared device + zero-copy (plan D3) move to M2. ~150 lines of
+device setup are throwaway; the FFI + handshake + Vulkan interface
+callbacks + run-loop wiring carry over. Recorded in the plan as D6 +
+the refined M1 milestone.

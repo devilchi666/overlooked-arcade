@@ -118,6 +118,27 @@ honestly *label* a core as "needs OA hardware-rendering (in
 development)" until M1 lands — labeling is not a guard — but the real
 fix is this pipeline.
 
+### D6 — M1 uses a standalone ash device, not the wgpu-shared device
+
+For M1 only, OA stands up a **separate `VkInstance`/`VkDevice` via
+`ash`, isolated from wgpu**, purely for the core, and reads the core's
+rendered image back to CPU for the existing present path. wgpu is left
+entirely alone (stays DX12 on Windows). D3's "commit wgpu to the Vulkan
+backend" + true device sharing move to **M2**, alongside the zero-copy
+import they enable.
+
+**Why (operator decision 2026-06-08):** M1's goal is to prove the full
+libretro HW handshake and get Dolphin actually rendering, at the lowest
+risk. The standalone device (a) keeps the 46 working software cores at
+zero regression risk (wgpu untouched), and (b) sidesteps the
+extension-compatibility wall — the core's negotiation interface gets to
+build the device exactly as it needs, instead of being handed wgpu's
+pre-made device that may lack required extensions/features. The cost is
+~150 lines of standalone device setup thrown away in M2; the reusable
+parts (FFI, handshake, the 8 Vulkan interface callbacks, run-loop
+wiring) are built here and carry over. Keeps M1 a safely mergeable
+milestone that can't break the working renderer.
+
 ## Architecture — integration points (real files)
 
 1. **`crates/oa-libretro/src/ffi.rs`** — the env constants already
@@ -164,15 +185,27 @@ fix is this pipeline.
 
 ### M1 — Vulkan context bring-up + handshake, core on screen
 
+**Device strategy (operator decision 2026-06-08, D6): standalone ash
+device for M1, not the wgpu-shared device.** See D6 below.
+
 - ffi structs + `state.rs` handshake (D-section items 1-2).
-- `oa-render` on the Vulkan backend; `VulkanHwContext` creates the
-  shared device handles and a render target the core draws into.
-- Simplest present bridge that works (a Vulkan copy/readback into the
-  existing `fb_rgba` CPU path is acceptable here) — goal is a **frame
-  of Dolphin on screen**, proving negotiation + `context_reset` +
-  `get_proc_address` + the run-loop wiring end-to-end.
-- Nothing built here is thrown away when M2 lands (unlike a GL-first
-  detour): the Vulkan device + handshake + ffi are the reusable core.
+- A **standalone `VkInstance`/`VkDevice` (via `ash`), isolated from
+  wgpu**, stood up in `oa-libretro` purely for the core and built per
+  the core's negotiation interface. `oa-render`/wgpu is NOT touched in
+  M1 — it stays on its current backend (DX12 on Windows), so the 46
+  working software cores are at zero regression risk.
+- The 8 Vulkan HW-interface callbacks (`set_image`, `get_sync_index`,
+  …) + the run-loop wiring — these are the reusable core, carried into
+  M2 unchanged.
+- Present bridge: after the core renders into the `VkImage` it hands us
+  via `set_image`, copy/readback to a host-visible buffer and feed the
+  existing `fb_rgba` CPU path — so wgpu presents it exactly like a
+  software core's frame. Goal is a **frame of Dolphin on screen**,
+  proving negotiation + `context_reset` + `get_proc_address` + the
+  run-loop end-to-end.
+- Throwaway in M2: only the standalone instance/device creation
+  (~150 lines) is replaced by the wgpu-shared device. The FFI,
+  handshake, interface callbacks, and run-loop wiring all carry over.
 - **Exit:** the operator's GameCube game renders through the internal
   `dolphin_libretro` core instead of crashing.
 
