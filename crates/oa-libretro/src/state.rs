@@ -107,6 +107,46 @@ pub(crate) struct State {
     /// pressure-sensitive face buttons. Set per frame via
     /// LibretroCore::set_input from `InputState.analog_buttons`.
     pub input_analog_buttons: [[i16; 16]; 5],
+    /// Held-key state for `RETRO_DEVICE_KEYBOARD` polling, indexed by
+    /// `retro_key` id. Computer/arcade cores (MAME, blueMSX/fMSX,
+    /// DOSBox-Pure, Atari 5200, Odyssey²) read held keys every frame via
+    /// `cb_input_state(port, RETRO_DEVICE_KEYBOARD, 0, retro_key_id)` and
+    /// do NOT register `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` — so the
+    /// event path (`keyboard_cb`) never reaches them. The shell pushes the
+    /// current held set here each frame via `set_keyboard_state` for
+    /// keyboard-passthrough systems; `cb_input_state` returns the matching
+    /// bit. Single host keyboard (not per-port): every port's KEYBOARD
+    /// query reads the same array, matching how a single physical keyboard
+    /// maps onto whichever port a core wires as `RETRO_DEVICE_KEYBOARD`.
+    /// Sized to cover the full `retro_key` range (max in-tree id is
+    /// `RETROK_RMETA` = 309; 512 leaves headroom for the sparse high ids).
+    pub keyboard_state: [bool; 512],
+    /// Per-port mouse state for `RETRO_DEVICE_MOUSE` polling:
+    /// `(rel_x, rel_y, buttons)`. `rel_x`/`rel_y` are per-poll RELATIVE
+    /// deltas (libretro mouse motion is relative, unlike POINTER's absolute
+    /// coords); `buttons` is a bitmask whose bit position matches the
+    /// `RETRO_DEVICE_ID_MOUSE_*` button id (bit 2 = LEFT, 3 = RIGHT,
+    /// 6 = MIDDLE, 9/10 = BUTTON_4/5). Used by arcade trackball / spinner /
+    /// dial games (Marble Madness, Centipede, Arkanoid, Tempest) and the
+    /// SNES/Saturn/PSX Mouse peripheral. The shell pushes deltas each frame
+    /// via `set_mouse_state`; `cb_input_state` returns the component for the
+    /// queried id. Defaults to all-zero so cores that don't poll MOUSE see a
+    /// neutral, motionless device.
+    pub input_mouse: [(i16, i16, u32); 5],
+    /// Frontend throttle state reported via `GET_THROTTLE_STATE` (env 71):
+    /// `(mode, rate)` where `mode` is a `RETRO_THROTTLE_*` constant and
+    /// `rate` is the target fps. The shell updates this each frame from its
+    /// play-mode state (normal / fast-forward / slow-motion / frame-step /
+    /// rewind) via `set_throttle_state`; cores use it for audio-resampling
+    /// and frame-pacing decisions. Defaults to `(RETRO_THROTTLE_NONE, 0.0)`.
+    pub throttle_state: (u32, f32),
+    /// Serialization context reported via `GET_SAVESTATE_CONTEXT` (env 72).
+    /// A `RETRO_SAVESTATE_CONTEXT_*` value telling the core WHY it's being
+    /// (de)serialized so it can drop reconstructable data for transient
+    /// snapshots. The shell sets this to `RUNAHEAD_SAME_INSTANCE` around the
+    /// per-frame run-ahead save/restore and back to `NORMAL` otherwise, via
+    /// `set_savestate_context`. Defaults to `NORMAL`.
+    pub savestate_context: i32,
     /// Snapshotted display aspect (final image W:H, 0.0 = caller falls back to width:height).
     pub display_aspect: f32,
     /// Set when a core revises its timing mid-run via
@@ -347,6 +387,10 @@ impl State {
             input_pointer_secondary: [(0, 0, false, false); 5],
             input_lightgun_buttons: [0; 5],
             input_analog_buttons: [[0; 16]; 5],
+            keyboard_state: [false; 512],
+            input_mouse: [(0, 0, 0); 5],
+            throttle_state: (RETRO_THROTTLE_NONE, 0.0),
+            savestate_context: RETRO_SAVESTATE_CONTEXT_NORMAL,
             display_aspect: 0.0,
             pending_av_info: None,
             system_dir: CString::new(".").unwrap(),
@@ -475,6 +519,16 @@ unsafe fn parse_option_values(
 /// Parse the legacy `retro_variable` array. The `value` field is a
 /// formatted string: `"Display description; option1|option2|option3"`.
 /// First option in the pipe-separated list is treated as the default.
+/// Defensive caps on the sentinel-terminated option / category arrays. A
+/// spec-compliant core always NUL-terminates, but a malformed or corrupt
+/// core that forgets the sentinel would otherwise walk off into unmapped
+/// memory (OOB read / hang). Mirrors the `MAX_PORTS` / `MAX_DESCRIPTORS`
+/// guards on the controller-info + input-descriptor parsers. The ceilings
+/// sit far above any real core's option count (the heaviest in-tree cores
+/// declare ~100 options).
+const MAX_CORE_OPTIONS: isize = 4096;
+const MAX_OPTION_CATEGORIES: isize = 512;
+
 unsafe fn parse_legacy_variables(arr: *const retro_variable) -> Vec<CoreOption> {
     let mut out = Vec::new();
     if arr.is_null() {
@@ -504,6 +558,10 @@ unsafe fn parse_legacy_variables(arr: *const retro_variable) -> Vec<CoreOption> 
         let default_value = values[0].value.clone();
         out.push(CoreOption { key, desc, info: None, category_key: None, default_value, values });
         i += 1;
+        if i >= MAX_CORE_OPTIONS {
+            log::warn!("oa-libretro: SET_VARIABLES exceeded {MAX_CORE_OPTIONS} entries without sentinel — truncating (likely a malformed core array)");
+            break;
+        }
     }
     out
 }
@@ -536,6 +594,10 @@ unsafe fn parse_core_options_v1(arr: *const retro_core_option_definition) -> Vec
             values,
         });
         i += 1;
+        if i >= MAX_CORE_OPTIONS {
+            log::warn!("oa-libretro: SET_CORE_OPTIONS exceeded {MAX_CORE_OPTIONS} entries without sentinel — truncating (likely a malformed core array)");
+            break;
+        }
     }
     out
 }
@@ -568,6 +630,10 @@ unsafe fn parse_core_options_v2(arr: *const retro_core_option_v2_definition) -> 
             values,
         });
         i += 1;
+        if i >= MAX_CORE_OPTIONS {
+            log::warn!("oa-libretro: SET_CORE_OPTIONS_V2 exceeded {MAX_CORE_OPTIONS} entries without sentinel — truncating (likely a malformed core array)");
+            break;
+        }
     }
     out
 }
@@ -624,6 +690,10 @@ unsafe fn parse_v2_categories(arr: *const retro_core_option_v2_category) -> Vec<
             info: unsafe { cstr_to_string(entry.info) },
         });
         i += 1;
+        if i >= MAX_OPTION_CATEGORIES {
+            log::warn!("oa-libretro: SET_CORE_OPTIONS_V2 categories exceeded {MAX_OPTION_CATEGORIES} entries without sentinel — truncating (likely a malformed core array)");
+            break;
+        }
     }
     out
 }
@@ -955,6 +1025,20 @@ pub(crate) unsafe extern "C" fn cb_video_refresh(
         // Cap to the preallocated buffer dimensions.
         const FB_MAX_W: u32 = 1024;
         const FB_MAX_H: u32 = 512;
+        // A frame larger than the preallocated buffer is silently truncated
+        // (top-left region kept). No currently-supported software-rendered
+        // system exceeds 1024×512, but warn ONCE if one ever does so a
+        // corrupted-image bug report points straight here instead of looking
+        // like a core glitch. (HW-render cores use the readback path, not this.)
+        if width > FB_MAX_W || height > FB_MAX_H {
+            static FB_TRUNC_WARNED: AtomicBool = AtomicBool::new(false);
+            if !FB_TRUNC_WARNED.swap(true, AtomicOrdering::Relaxed) {
+                log::warn!(
+                    "oa-libretro: core frame {}x{} exceeds the {}x{} framebuffer cap — truncating (image will be clipped; raise FB_MAX_* or grow fb_rgba)",
+                    width, height, FB_MAX_W, FB_MAX_H,
+                );
+            }
+        }
         let w = width.min(FB_MAX_W);
         let h = height.min(FB_MAX_H);
         s.fb_width = w;
@@ -1067,6 +1151,26 @@ pub(crate) unsafe extern "C" fn cb_get_sensor_input(port: u32, id: u32) -> f32 {
     }
     with_state(|s| s.sensor_values[port as usize][id as usize])
         .unwrap_or(0.0)
+}
+
+/// Pure helper: resolve a `RETRO_DEVICE_ID_MOUSE_*` query against a
+/// stored `(rel_x, rel_y, buttons)` tuple. `rel_x`/`rel_y` are this
+/// poll's RELATIVE deltas; `buttons` is a bitmask whose bit position
+/// matches the libretro mouse button id (bit 2 = LEFT, 3 = RIGHT,
+/// 6 = MIDDLE, 9/10 = BUTTON_4/5). Wheel ids (4/5/7/8) return 0 —
+/// wheel capture isn't plumbed yet. Extracted from cb_input_state so
+/// the dispatch is unit-testable without the libretro singleton.
+pub(crate) fn mouse_field_value(dx: i16, dy: i16, buttons: u32, id: u32) -> i16 {
+    match id {
+        RETRO_DEVICE_ID_MOUSE_X => dx,
+        RETRO_DEVICE_ID_MOUSE_Y => dy,
+        RETRO_DEVICE_ID_MOUSE_LEFT
+        | RETRO_DEVICE_ID_MOUSE_RIGHT
+        | RETRO_DEVICE_ID_MOUSE_MIDDLE
+        | RETRO_DEVICE_ID_MOUSE_BUTTON_4
+        | RETRO_DEVICE_ID_MOUSE_BUTTON_5 => ((buttons >> id) & 1) as i16,
+        _ => 0,
+    }
 }
 
 /// Pure helper: resolve a `RETRO_DEVICE_ID_POINTER_*` query against
@@ -1474,6 +1578,39 @@ pub(crate) unsafe extern "C" fn cb_input_state(
         )).unwrap_or(0);
     }
 
+    // Mouse device — relative-motion pointing (arcade trackball / spinner /
+    // dial, SNES/Saturn/PSX Mouse peripheral, computer mice). Returns per-poll
+    // relative deltas (X/Y) + button bits from the per-port `input_mouse`
+    // tuple. Distinct from POINTER (absolute coords) above. `id` is a
+    // `RETRO_DEVICE_ID_MOUSE_*` value; the button ids (LEFT/RIGHT/MIDDLE/
+    // BUTTON_4/5) read the matching bit from the buttons bitmask. Wheel ids
+    // (4/5/7/8) read 0 — wheel capture isn't plumbed yet.
+    if device == RETRO_DEVICE_MOUSE {
+        return with_state(|s| {
+            let (dx, dy, buttons) = s.input_mouse[port as usize];
+            mouse_field_value(dx, dy, buttons, id)
+        })
+        .unwrap_or(0);
+    }
+
+    // Keyboard device — polled held-key state. Computer/arcade cores (MAME,
+    // blueMSX/fMSX, DOSBox-Pure, Atari 5200, Odyssey²) read keys this way
+    // every frame rather than via the SET_KEYBOARD_CALLBACK event path. `id`
+    // is a `retro_key` value; we return 1 if that key is currently held. The
+    // keyboard is a single host device, so the per-port query reads the same
+    // shared `keyboard_state` array regardless of `port`.
+    if device == RETRO_DEVICE_KEYBOARD {
+        let idx = id as usize;
+        return with_state(|s| {
+            if idx < s.keyboard_state.len() && s.keyboard_state[idx] {
+                1
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+    }
+
     if device != RETRO_DEVICE_JOYPAD {
         return 0;
     }
@@ -1487,10 +1624,11 @@ pub(crate) unsafe extern "C" fn cb_input_state(
 }
 
 pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> bool {
-    // Temporary diagnostic while bringing up the CD path — every env cmd is
-    // logged at info so a crash during init can be correlated to the last
-    // command before death. Downgrade to debug once CD playback is verified.
-    log::info!(
+    // Per-call trace at debug level. Several cores poll GET_VARIABLE_UPDATE /
+    // GET_VARIABLE every frame, so logging this at `info` floods
+    // oa-current.log (60+ lines/sec) and buries the messages that matter —
+    // keep it at `debug` for opt-in CD/init bring-up tracing without the spam.
+    log::debug!(
         "oa-libretro: env cmd {} (raw 0x{:x}), data={}",
         cmd & !RETRO_ENVIRONMENT_EXPERIMENTAL,
         cmd,
@@ -2318,6 +2456,93 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             }
             true
         }
+
+        // SET_VARIABLE (env 70) — the core pushes a single (key, value) pair
+        // BACK to the frontend (the inverse of GET_VARIABLE). Used by cores
+        // that auto-select an option value internally and want the choice
+        // persisted / reflected in the UI. We update `option_values` so a
+        // subsequent GET_VARIABLE returns the core's chosen value, but DON'T
+        // raise `variables_updated` — that flag means "frontend changed a
+        // value, re-read everything"; echoing the core's own write back at it
+        // would be redundant. Returns false (per spec) when the key is NULL
+        // or wasn't part of the declared option set.
+        RETRO_ENVIRONMENT_SET_VARIABLE => {
+            if data.is_null() {
+                // Per spec, NULL is a capability probe: "do you support
+                // SET_VARIABLE?" — answer yes.
+                return true;
+            }
+            let var = unsafe { &*(data as *const retro_variable) };
+            let Some(key) = (unsafe { cstr_to_string(var.key) }) else {
+                return false;
+            };
+            let value = unsafe { cstr_to_string(var.value) }.unwrap_or_default();
+            with_state(|s| {
+                if !s.core_options.iter().any(|o| o.key == key) {
+                    return false;
+                }
+                if let Ok(cstr) = CString::new(value) {
+                    s.option_values.insert(key, cstr);
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false)
+        }
+
+        // GET_THROTTLE_STATE (env 71) — the core asks how the frontend is
+        // currently pacing it (normal / fast-forward / slow-motion / frame-
+        // step / rewind) + the target fps, for audio-resampling decisions.
+        // The shell pushes the live mode/rate into `throttle_state` each
+        // frame via `set_throttle_state`.
+        RETRO_ENVIRONMENT_GET_THROTTLE_STATE => {
+            if data.is_null() {
+                return false;
+            }
+            with_state(|s| {
+                let (mode, rate) = s.throttle_state;
+                unsafe {
+                    *(data as *mut retro_throttle_state) =
+                        retro_throttle_state { mode, rate };
+                }
+                true
+            })
+            .unwrap_or(false)
+        }
+
+        // GET_SAVESTATE_CONTEXT (env 72) — queried by the core INSIDE
+        // retro_serialize / retro_unserialize so it can skip reconstructable
+        // data for transient snapshots. The shell sets `savestate_context` to
+        // RUNAHEAD_SAME_INSTANCE around the per-frame run-ahead save/restore
+        // and back to NORMAL otherwise.
+        RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT => {
+            if data.is_null() {
+                return false;
+            }
+            with_state(|s| {
+                unsafe {
+                    *(data as *mut i32) = s.savestate_context;
+                }
+                true
+            })
+            .unwrap_or(false)
+        }
+
+        // GET_JIT_CAPABLE (env 74) — whether the host permits JIT / dynarec.
+        // Always true on our desktop targets (Windows/macOS/Linux allow W^X
+        // toggling); a core that respects this keeps its recompiler enabled
+        // instead of falling back to a slower interpreter.
+        RETRO_ENVIRONMENT_GET_JIT_CAPABLE => {
+            if data.is_null() {
+                return false;
+            }
+            unsafe {
+                *(data as *mut bool) = true;
+            }
+            true
+        }
+
         _ => false,
     }
 }
@@ -2890,6 +3115,45 @@ mod tests {
         let down = (0i16, 0i16, true, true);
         assert_eq!(pointer_field_value(down, down, 2, RETRO_DEVICE_ID_POINTER_COUNT), 2);
         assert_eq!(pointer_field_value(down, down, 99, RETRO_DEVICE_ID_POINTER_COUNT), 2);
+    }
+
+    // ---- mouse_field_value --------------------------------------------
+
+    #[test]
+    fn mouse_field_value_returns_relative_deltas() {
+        // X/Y read the per-poll relative deltas verbatim, signed.
+        assert_eq!(mouse_field_value(7, -3, 0, RETRO_DEVICE_ID_MOUSE_X), 7);
+        assert_eq!(mouse_field_value(7, -3, 0, RETRO_DEVICE_ID_MOUSE_Y), -3);
+    }
+
+    #[test]
+    fn mouse_field_value_buttons_follow_matching_bit() {
+        // Bit position in `buttons` == the libretro mouse button id.
+        let left = 1 << RETRO_DEVICE_ID_MOUSE_LEFT;
+        let right = 1 << RETRO_DEVICE_ID_MOUSE_RIGHT;
+        let middle = 1 << RETRO_DEVICE_ID_MOUSE_MIDDLE;
+        assert_eq!(mouse_field_value(0, 0, left, RETRO_DEVICE_ID_MOUSE_LEFT), 1);
+        assert_eq!(mouse_field_value(0, 0, left, RETRO_DEVICE_ID_MOUSE_RIGHT), 0);
+        assert_eq!(mouse_field_value(0, 0, right, RETRO_DEVICE_ID_MOUSE_RIGHT), 1);
+        assert_eq!(mouse_field_value(0, 0, middle, RETRO_DEVICE_ID_MOUSE_MIDDLE), 1);
+        // Multiple buttons held at once each report independently.
+        let both = left | right;
+        assert_eq!(mouse_field_value(0, 0, both, RETRO_DEVICE_ID_MOUSE_LEFT), 1);
+        assert_eq!(mouse_field_value(0, 0, both, RETRO_DEVICE_ID_MOUSE_RIGHT), 1);
+        assert_eq!(mouse_field_value(0, 0, both, RETRO_DEVICE_ID_MOUSE_MIDDLE), 0);
+    }
+
+    #[test]
+    fn mouse_field_value_wheel_and_unknown_ids_return_zero() {
+        // Wheel ids aren't plumbed yet → 0; unknown ids → 0. Crucially
+        // these must NOT alias a button bit (a buggy return could fire a
+        // phantom click).
+        let all_buttons = (1 << RETRO_DEVICE_ID_MOUSE_LEFT)
+            | (1 << RETRO_DEVICE_ID_MOUSE_RIGHT)
+            | (1 << RETRO_DEVICE_ID_MOUSE_MIDDLE);
+        assert_eq!(mouse_field_value(9, 9, all_buttons, RETRO_DEVICE_ID_MOUSE_WHEELUP), 0);
+        assert_eq!(mouse_field_value(9, 9, all_buttons, RETRO_DEVICE_ID_MOUSE_WHEELDOWN), 0);
+        assert_eq!(mouse_field_value(9, 9, all_buttons, 99), 0);
     }
 
     // ---- lightgun_field_value -----------------------------------------

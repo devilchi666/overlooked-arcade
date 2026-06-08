@@ -3950,6 +3950,11 @@ fn run_emu_render(
             &system_settings::read_system_settings(&app_data_dir, &current_system_id),
         );
     let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
+    // Previous-frame absolute cursor position for RETRO_DEVICE_MOUSE relative-
+    // delta computation (libretro mouse motion is relative). `None` until the
+    // first poll so the first frame reports a zero delta instead of a jump
+    // from origin. See the mouse-state push in the per-frame input block.
+    let mut prev_mouse_abs: Option<(i32, i32)> = None;
 
     // Per-port tracker for Jaguar's high-bit keypad keys (KP8 / KP9 /
     // KP_STAR / KP0 / KP_HASH = bits 16-20). These live above the
@@ -6036,6 +6041,17 @@ fn run_emu_render(
                                     current_slot, path.display(), buf.len()
                                 );
                                 toast(&app_handle, ToastLevel::Success, format!("Restored slot {current_slot}"));
+                                // M4 — when paused, load_state alone leaves the
+                                // screen on the pre-restore frame: cb_video_refresh
+                                // only fires from retro_run, and the paused branch
+                                // below skips run_frame entirely. Nudge one frame so
+                                // the restored state is visible immediately, matching
+                                // the rewind/scrub restore paths. (Unpaused play
+                                // repaints on its own next frame, so only nudge here.)
+                                if paused {
+                                    core_ref.run_frame();
+                                    apply_cheats(core_ref, &cheat_runtime);
+                                }
                             }
                             Err(e) => {
                                 log::warn!("oa-shell: F8 — deserialize failed: {e:?}");
@@ -6409,6 +6425,61 @@ fn run_emu_render(
                     sensors[0][oa_libretro::ffi::RETRO_SENSOR_ACCELEROMETER_Z as usize] = 9.8;
                     core_ref.set_sensor_values(sensors);
                 }
+
+                // H1 — push polled keyboard held-state for cores that read
+                // RETRO_DEVICE_KEYBOARD every frame (MAME, MSX/blueMSX/fMSX,
+                // DOSBox-Pure, Atari 5200, Odyssey²). These cores do NOT
+                // register the keyboard-event callback, so this state path is
+                // what actually reaches them (the event pump above serves the
+                // cores that DO register). Gated on per-system passthrough so
+                // the full-keyboard scan is skipped for the ~95% of systems
+                // that don't use it; `enable` (window focus) gates it so
+                // typing in the OA UI never leaks into the core. An empty push
+                // when unfocused clears any keys held at focus-loss so they
+                // don't stick down.
+                if keyboard_passthrough_active {
+                    let held: Vec<(u32, bool)> = if enable {
+                        input
+                            .pressed_keys()
+                            .into_iter()
+                            .map(|k| (oa_libretro::keycode_to_retro_key(k), true))
+                            .filter(|&(rk, _)| rk != 0)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    core_ref.set_keyboard_state(&held);
+                }
+
+                // H2 — push relative mouse deltas + buttons for
+                // RETRO_DEVICE_MOUSE cores (arcade trackball / spinner / dial,
+                // SNES/Saturn/PSX Mouse). Deltas = this frame's cursor minus
+                // last frame's (libretro mouse motion is relative). `prev_
+                // mouse_abs` is always advanced so a focus-loss/regain doesn't
+                // produce a phantom jump; deltas + buttons are only fed while
+                // focused. Cheap enough to run every frame — cores that don't
+                // poll MOUSE ignore it. Fed to port 0 (the P1 mouse slot).
+                {
+                    let (mx, my, ml, mr, mm) = input.poll_mouse_raw();
+                    let (dx, dy) = match prev_mouse_abs {
+                        Some((px, py)) => (
+                            (mx - px).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                            (my - py).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                        ),
+                        None => (0, 0),
+                    };
+                    prev_mouse_abs = Some((mx, my));
+                    if enable {
+                        let mut buttons: u32 = 0;
+                        if ml { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_LEFT; }
+                        if mr { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_RIGHT; }
+                        if mm { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_MIDDLE; }
+                        core_ref.set_mouse_state(0, dx, dy, buttons);
+                    } else {
+                        core_ref.set_mouse_state(0, 0, 0, 0);
+                    }
+                }
+
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
                         port0: libretro_bits,
@@ -6438,6 +6509,22 @@ fn run_emu_render(
                 // SLOW-MOTION (F7 held): run_frame only every Nth render
                 // cycle — render stays at full rate, game time slows.
                 // None of these affect scrub / replay / rewind branches.
+                //
+                // L2 — report current pacing to GET_THROTTLE_STATE (env 71)
+                // cores so they can make audio-resampling / frame-pacing
+                // decisions. (Scrub/replay/rewind branches keep the last value;
+                // they're transient and don't poll throttle meaningfully.)
+                let throttle_mode = if paused {
+                    oa_libretro::ffi::RETRO_THROTTLE_FRAME_STEPPING
+                } else if f6_held {
+                    oa_libretro::ffi::RETRO_THROTTLE_FAST_FORWARD
+                } else if f7_held {
+                    oa_libretro::ffi::RETRO_THROTTLE_SLOW_MOTION
+                } else {
+                    oa_libretro::ffi::RETRO_THROTTLE_NONE
+                };
+                core_ref.set_throttle_state(throttle_mode, timing.fps as f32);
+
                 if paused {
                     if frame_advance_request {
                         core_ref.run_frame();
@@ -6546,6 +6633,16 @@ fn run_emu_render(
                         run_ahead_audio_buf.clear();
                         run_ahead_audio_buf.extend_from_slice(core_ref.drain_audio());
                         run_ahead_save_buf.clear();
+                        // Tell the core these are transient same-session
+                        // snapshots (GET_SAVESTATE_CONTEXT env 72) so it can
+                        // skip reconstructable data — a real perf win since
+                        // run-ahead serializes every frame. Tightly bounded:
+                        // reset to NORMAL right after the rollback so a user
+                        // F5/slot save (which must round-trip perfectly) never
+                        // serializes in RUNAHEAD context.
+                        core_ref.set_savestate_context(
+                            oa_libretro::ffi::RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE,
+                        );
                         if core_ref.save_state(&mut run_ahead_save_buf).is_ok() {
                             for _ in 0..run_ahead_frames {
                                 core_ref.run_frame();
@@ -6563,6 +6660,9 @@ fn run_emu_render(
                         } else {
                             log::warn!("oa-shell: run-ahead save_state failed; disabling for this frame");
                         }
+                        core_ref.set_savestate_context(
+                            oa_libretro::ffi::RETRO_SAVESTATE_CONTEXT_NORMAL,
+                        );
                     }
                 }
 

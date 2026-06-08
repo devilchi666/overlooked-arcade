@@ -759,6 +759,24 @@ impl InputPoller {
         (nx, ny, pressed, true)
     }
 
+    /// Sample the OS mouse for `RETRO_DEVICE_MOUSE` dispatch: returns
+    /// `(abs_x, abs_y, left, right, middle)` where `abs_x`/`abs_y` are the
+    /// raw desktop cursor pixel coordinates and the booleans are the button
+    /// states. The caller computes per-frame RELATIVE deltas (libretro mouse
+    /// motion is relative) by differencing `abs_x`/`abs_y` against the
+    /// previous frame's sample. Bypasses the `enabled` gate like the other
+    /// immediate-mode readers — the caller decides whether to forward.
+    ///
+    /// `device_query` reports `button_pressed` 1-indexed (index 1 = left,
+    /// 2 = right, 3 = middle); missing entries read `false`.
+    pub fn poll_mouse_raw(&self) -> (i32, i32, bool, bool, bool) {
+        let mouse = self.device_state.get_mouse();
+        let left = mouse.button_pressed.get(1).copied().unwrap_or(false);
+        let right = mouse.button_pressed.get(2).copied().unwrap_or(false);
+        let middle = mouse.button_pressed.get(3).copied().unwrap_or(false);
+        (mouse.coords.0, mouse.coords.1, left, right, middle)
+    }
+
     fn pump_gilrs_events(&mut self) {
         let mut connects: Vec<GamepadId> = Vec::new();
         let mut disconnects: Vec<GamepadId> = Vec::new();

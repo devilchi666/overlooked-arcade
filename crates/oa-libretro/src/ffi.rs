@@ -79,6 +79,24 @@ pub const RETRO_DEVICE_ID_POINTER_Y: u32       = 1;
 pub const RETRO_DEVICE_ID_POINTER_PRESSED: u32 = 2;
 pub const RETRO_DEVICE_ID_POINTER_COUNT: u32   = 3;
 
+// Mouse device — relative-motion pointing device (arcade trackball /
+// spinner / dial, SNES/Saturn/PSX Mouse peripheral, ST/Amiga/DOS mice).
+// Cores poll `cb_input_state(port, RETRO_DEVICE_MOUSE, 0, id)` per frame
+// for per-poll RELATIVE deltas (X/Y) plus button + wheel state — distinct
+// from RETRO_DEVICE_POINTER, which carries ABSOLUTE normalized coordinates.
+// `RETRO_DEVICE_MOUSE` itself is declared above (id 2).
+pub const RETRO_DEVICE_ID_MOUSE_X: u32               = 0;
+pub const RETRO_DEVICE_ID_MOUSE_Y: u32               = 1;
+pub const RETRO_DEVICE_ID_MOUSE_LEFT: u32            = 2;
+pub const RETRO_DEVICE_ID_MOUSE_RIGHT: u32           = 3;
+pub const RETRO_DEVICE_ID_MOUSE_WHEELUP: u32         = 4;
+pub const RETRO_DEVICE_ID_MOUSE_WHEELDOWN: u32       = 5;
+pub const RETRO_DEVICE_ID_MOUSE_MIDDLE: u32          = 6;
+pub const RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: u32   = 7;
+pub const RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: u32 = 8;
+pub const RETRO_DEVICE_ID_MOUSE_BUTTON_4: u32        = 9;
+pub const RETRO_DEVICE_ID_MOUSE_BUTTON_5: u32        = 10;
+
 // Light gun device — classical arcade-style point-and-shoot input.
 // Used by FCEUmm Zapper, Beetle PSX GunCon (Time Crisis), Flycast
 // House of the Dead, Beetle Saturn Virtua Gun, Genesis Plus GX
@@ -202,6 +220,17 @@ pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: u32                = 67;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: u32           = 68;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK: u32 = 69;
 pub const RETRO_ENVIRONMENT_SET_VARIABLE: u32                       = 70;
+pub const RETRO_ENVIRONMENT_GET_THROTTLE_STATE: u32                 = 71 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT: u32             = 72 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT: u32 = 73 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_GET_JIT_CAPABLE: u32                    = 74;
+pub const RETRO_ENVIRONMENT_GET_MICROPHONE_INTERFACE: u32          = 75 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+// NOTE: the current libretro.h defines further commands above 75 (e.g.
+// SET_NETPACKET_INTERFACE, GET_DEVICE_POWER, GET_PLAYLIST_DIRECTORY,
+// GET_FILE_BROWSER_START_DIRECTORY). They are intentionally NOT declared
+// here yet — they fall through `cb_environment`'s `_ => false`, which is
+// the safe "frontend doesn't support this" answer for all of them. Add a
+// constant + match arm when a target core actually needs one.
 
 // ---------- log levels ----------
 
@@ -942,6 +971,42 @@ pub const RETRO_MESSAGE_TYPE_NOTIFICATION:     u32 = 0;
 pub const RETRO_MESSAGE_TYPE_NOTIFICATION_ALT: u32 = 1;
 pub const RETRO_MESSAGE_TYPE_STATUS:           u32 = 2;
 pub const RETRO_MESSAGE_TYPE_PROGRESS:         u32 = 3;
+
+// ---------- throttle state (env 71, GET_THROTTLE_STATE) -------------
+//
+// Cores query this to learn how the frontend is currently pacing them so
+// they can make audio-resampling / frame-pacing decisions. `mode` is one
+// of RETRO_THROTTLE_*; `rate` is the target frames-per-second the
+// frontend is driving (0 = unbounded/unknown). Mirrors libretro.h's
+// `retro_throttle_state`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_throttle_state {
+    pub mode: u32,
+    pub rate: f32,
+}
+
+pub const RETRO_THROTTLE_NONE:           u32 = 0;
+pub const RETRO_THROTTLE_FRAME_STEPPING: u32 = 1;
+pub const RETRO_THROTTLE_FAST_FORWARD:   u32 = 2;
+pub const RETRO_THROTTLE_SLOW_MOTION:    u32 = 3;
+pub const RETRO_THROTTLE_REWINDING:      u32 = 4;
+pub const RETRO_THROTTLE_VSYNC:          u32 = 5;
+pub const RETRO_THROTTLE_UNBLOCKED:      u32 = 6;
+
+// ---------- savestate context (env 72, GET_SAVESTATE_CONTEXT) -------
+//
+// Passed to a core (as an `int*`) inside retro_serialize/retro_unserialize
+// so it can tell WHY it's being (de)serialized and skip expensive work for
+// the transient contexts. NORMAL = a user save/load that must round-trip
+// perfectly; the RUNAHEAD/ROLLBACK variants are same-session transient
+// snapshots where a core may legally drop data it can reconstruct (huge
+// perf win for run-ahead, which serializes every frame). Mirrors
+// libretro.h's `enum retro_savestate_context`.
+pub const RETRO_SAVESTATE_CONTEXT_NORMAL: i32                  = 0;
+pub const RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE: i32  = 1;
+pub const RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_BINARY: i32    = 2;
+pub const RETRO_SAVESTATE_CONTEXT_ROLLBACK_NETPLAY: i32        = 3;
 
 pub type retro_log_printf_t = unsafe extern "C" fn(level: u32, fmt: *const c_char, ...);
 
