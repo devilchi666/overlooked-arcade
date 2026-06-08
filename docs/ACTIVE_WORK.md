@@ -444,12 +444,15 @@ spanned every system but was filed under whichever core happened to be active.
     shader/scale/bezel chain on it. Queue sync via `hw_queue_lock/unlock` (the
     core's `lock_queue`). oa-shell sets import mode on adopt + routes both
     present sites through `present_current` (readback stays the fallback).
-    **Deferred (tasks 2 & 3) pending the playtest measurement:** real
-    multi-buffer `get_sync_index` (still single-buffer) + narrowed lock /
-    GPU-side sync for CPU run-ahead — only if fps is still capped after
-    removing the readback. Next: operator playtests paraLLEl-N64 (readback log
-    should disappear, fps → 60, CrtLite intact); do NOT merge to main until
-    it passes. See the cont.15 SESSION_LOG entry.
+    **PROVEN at 60 fps (cont. 15b):** playtest log shows readback GONE, steady
+    60.0 fps (the on-screen ~55 was a cumulative-since-launch average), audio
+    0 dropped, CrtLite intact. Tasks 2 & 3 (multi-buffer `get_sync_index` /
+    lock-narrowing) are NOT needed for paraLLEl-N64 — deferred indefinitely.
+    The playtest's "small centered image" was the per-game `scaling: original`
+    override (native 640×240 centered), not a render bug; one follow-up fix
+    refreshes fb dims in import mode (was a stale stat). **Mergeable** once the
+    operator confirms a non-Original scaling looks right + re-checks a software
+    core + swap-back. See the cont.15 / 15b SESSION_LOG entries.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
