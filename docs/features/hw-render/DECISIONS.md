@@ -142,3 +142,56 @@ N64).
 paraLLEl-RDP was written by the libretro-Vulkan spec author, so it
 follows the contract cleanly (renders headless into images for the
 frontend rather than owning a swapchain).
+
+---
+
+## 2026-06-08 — M2 architecture (confirmed with operator)
+
+### D9 — Reinit-per-core, NOT global-Vulkan (refines D3)
+
+Zero-copy requires the core's image and wgpu to share ONE `VkDevice`. The
+core's device is created at core-load (`create_device`), AFTER wgpu's
+startup device exists — so the renderer must ADOPT the core's device,
+which means a renderer rebuild regardless. Given that, globally forcing
+wgpu to Vulkan (D3's literal wording) gains nothing for zero-copy yet
+re-opens R1 (re-validate all 46 software cores on Vulkan). So D3 is
+refined:
+
+- **Software cores stay on the current renderer** (`Backends::PRIMARY` /
+  DX12 here) — untouched, so they CANNOT regress from M2. R1 shrinks from
+  "re-validate 46 cores" to "validate the HW path + the software⇄HW
+  switch-back."
+- **A Vulkan HW core triggers a renderer rebuild** onto the core's Vulkan
+  device (adopted via `wgpu::hal::vulkan` `from_raw`); imported images
+  composite on-GPU with no readback. On unload / switch to a software
+  core, rebuild the normal renderer.
+
+This is RetroArch's "one video driver active, matched to the core" model.
+It necessarily absorbs M3's reinit-on-core-switch (inseparable from
+zero-copy) — accepted.
+
+### D10 — HwContext trait now; Vulkan only in M2; GL/D3D are M4
+
+M2 ships ONLY a `VulkanHwContext`, but behind an `HwContext` trait + a
+per-launch picker keyed on the API the core requests in `SET_HW_RENDER`
+(GL=1, Vulkan=6, D3D11=7, D3D12=9, …). This is the mechanism for the
+operator's end-goal: cores eventually run on whatever API they support
+(glide/GL, DX12, Vulkan, …). Adding a backend = one new trait impl (M4),
+no rework. wgpu already abstracts Vulkan/DX12/Metal/GL, so the foundation
+exists. M2 stays a focused, shippable Vulkan win.
+
+### M2 device-adoption mechanics (verified on wgpu 23.0.1 / ash 0.38)
+
+Single `ash 0.38.0+1.3.281` in the lock ⇒ wgpu-hal's `vk::*` handle types
+unify with ours (no transmute). Path: WE own the `VkInstance` (M1 already
+builds it with WSI exts) + create the window surface on it →
+`create_device` with `required_device_extensions = ["VK_KHR_swapchain"]`
+(so the core's device can present; M1 passed none) → build wgpu via
+`hal::vulkan::Instance::from_raw` → `Instance::from_hal` →
+`expose_adapter(gpu)` → `Adapter::device_from_raw(core_device, …)` →
+`create_device_from_hal` → configure surface + rebuild pipelines. Per
+frame: core `set_image` `VkImage` (already `SHADER_READ_ONLY_OPTIMAL`, no
+transition to sample) → `Device::texture_from_raw` →
+`create_texture_from_hal` → sample through the existing scaling/bezel/
+shader chain. Sync: wait on the core's `set_image` semaphores before
+sampling; real `get_sync_index` multi-buffering (M1 stubbed ≡0).
