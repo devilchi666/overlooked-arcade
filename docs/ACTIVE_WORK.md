@@ -409,8 +409,30 @@ spanned every system but was filed under whichever core happened to be active.
   together finish the GameCube launch story) and **before Theming ARC 2
   (WGSL shaders)** (so shader hooks build on the GPU-resident-texture
   renderer instead of being rewritten). Theming ARC 1's frontend resume
-  can interleave safely (different layer). Not started — planning
-  locked.
+  can interleave safely (different layer).
+  - **M1 ✅ PROVEN 2026-06-08** (branch `feat/hw-render-m1`, NOT merged —
+    8 commits, pushed). A GPU-rendering libretro core (**paraLLEl-N64 /
+    paraLLEl-RDP Vulkan**) runs in-process via a standalone `ash`
+    VkDevice + the core's `create_device` + the 8 Vulkan interface
+    callbacks + CPU readback into `fb_rgba` — wgpu untouched, 46 software
+    cores unaffected. Full chain confirmed in the log
+    (`first readback OK — 640x240 … frame on screen`). Along the way also
+    fixed a real OA bug: per-system **core options were applied AFTER
+    `retro_load_game`** so cores couldn't pick their Vulkan renderer —
+    now pre-applied before load (`main.rs`). Protocol learnings recorded
+    in feature DECISIONS **D7**. Dolphin/GameCube (the plan's literal M1
+    gate) is **parked** — it builds its own windowless Vulkan context and
+    silent-crashes; needs ground-truth Vulkan validation, separate harder
+    problem. **Known M1 limitation:** ~half speed (synchronous readback
+    full-drains the GPU each frame; audio sounds off purely because emu
+    runs at ~half rate) — speed is M2's mandate by design.
+  - **M2 (zero-copy) — NEXT, active milestone.** Replace the CPU readback
+    with direct import of the core's `VkImage` into wgpu
+    (`wgpu_hal::vulkan` `texture_from_raw`) so OA composites the core
+    output on-GPU with no readback + no host wait. Requires sharing ONE
+    Vulkan device between the core and wgpu (commit wgpu to its Vulkan
+    backend per D3) — the M1 standalone device is replaced. See the M2
+    section of the plan + the next-session resume prompt.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2

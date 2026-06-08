@@ -215,8 +215,56 @@ device for M1, not the wgpu-shared device.** See D6 below.
   core's `VkImage`; wire `set_image` / `get_sync_index` synchronization
   (semaphores, queue ownership, layout transitions).
 - OA's compositor samples the core texture directly — no CPU roundtrip.
-- **Exit:** Dolphin at full speed with OA's scaling/bezel/shader stack
-  applied on-GPU; measurable win vs M1 readback.
+- **Exit:** a HW core (paraLLEl-N64 — the M1-proven core) at full speed
+  with OA's scaling/bezel/shader stack applied on-GPU; measurable win vs
+  the M1 readback (M1 ran paraLLEl-N64 at ~half speed purely from the
+  synchronous full-drain readback).
+
+#### M2 implementation notes (added 2026-06-08, post-M1)
+
+**The crux: one shared `VkDevice` for the core AND wgpu.** M1 has TWO
+Vulkan devices — wgpu's own (it's already on the Vulkan backend on this
+machine; confirmed in the log) and our standalone `ash` core device. You
+cannot `texture_from_raw`-import an image across devices, so M2 must put
+the core and wgpu on the SAME device.
+
+- **Approach A (recommended):** create the `VkInstance` with both the WSI
+  extensions (already done in M1) and anything wgpu needs, call the core's
+  `create_device` to build the `VkDevice` (it adds its own device
+  extensions, e.g. `VK_EXT_external_memory_host` for paraLLEl-RDP), then
+  **adopt that instance/gpu/device/queue into wgpu** via
+  `wgpu::hal::vulkan::{Instance,Adapter,Device}::from_raw` →
+  `wgpu::Device`. wgpu then composites on the core's device; import the
+  core's `set_image` `VkImage` with `wgpu_hal::vulkan::Device::texture_from_raw`.
+  Matches RetroArch's model (core builds device, frontend renderer uses it).
+  Cost: OA's renderer lifecycle must (re)build wgpu on the core's device
+  when a HW core loads — that's the RetroArch-style reinit, which is also
+  M3's reinit-on-core-switch, so some of M3 lands here.
+- **Approach B:** let wgpu build its Vulkan device normally, extract its
+  handles via `as_hal`, build the frontend device = wgpu's device, and DON'T
+  call `create_device` (use the self-build fallback) — but then wgpu's
+  device must be created with the core's required extensions/features up
+  front (hard to inject through wgpu). Less clean; A is preferred.
+
+**Carries over from M1 unchanged:** the FFI (`ffi.rs`), the handshake
+(`state.rs` env 14/41/43/56 + the sentinel), the 8 interface callbacks,
+the run-loop wiring (`core.rs` `hw_after_load`/`run`/`teardown`), and the
+core-option-timing fix (`main.rs` pre-`load_rom` apply). The throwaway is
+the standalone device creation + the CPU readback (`readback_into` +
+`Readback`) in `hw_vulkan.rs`.
+
+**Real sync work M1 stubbed (now needed):** honor the core's `set_image`
+semaphores (M1 saw `num_semaphores=0` from paraLLEl-N64 but other cores
+signal them); proper `get_sync_index` multi-buffering instead of the M1
+single index ≡ 0; image-layout transitions + queue-family ownership for
+the imported image; `wait_sync_index` real implementation. See DECISIONS
+D7 for the protocol contract.
+
+**Key files:** `crates/oa-render/src/lib.rs` (wgpu instance/device init —
+currently `Backends::PRIMARY`; M2 forces/uses Vulkan + raw-handle adoption),
+`crates/oa-libretro/src/hw_vulkan.rs` (replace readback with import path),
+`crates/oa-libretro/src/state.rs` (`hw_after_run` → import instead of
+readback). Pin wgpu; isolate the `wgpu-hal` interop (R3).
 
 ### M3 — Backend-matching + reinit-on-core-switch + capability tiering
 

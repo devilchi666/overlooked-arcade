@@ -117,3 +117,28 @@ Captured after three failed Dolphin bring-up attempts, from
   flow (after load), not the env handler. M1 currently calls it from the
   env-43 handler (got the device built successfully); revisit timing only
   if a core needs it.
+
+### D8 — M1 exit met via paraLLEl-N64, not Dolphin (2026-06-08)
+
+The plan's literal M1 gate named Dolphin/GameCube. Dolphin turned out to
+be the worst possible first target: its libretro Vulkan backend builds its
+OWN complete windowless context and silent-crashes (raw access violation,
+no error text) in its renderer init — before it ever queries our HW
+interface. Four evidence-based attempts couldn't crack it without
+ground-truth Vulkan validation. Per operator decision we proved the M1
+*architecture* on a cleaner core instead: **paraLLEl-N64 / paraLLEl-RDP
+renders in-process** end-to-end (create_device → interface → context_reset
+→ set_image → readback → on screen). The architecture M1 set out to prove
+is validated; Dolphin is **parked** as a separate, harder integration
+(reconsider with forced process-wide Vulkan validation layers to capture
+its crash reason, or after M2's shared-device path may change its
+behavior). Two non-doc-discoverable bugs were also fixed en route: the
+windowless context issue (Dolphin-specific, parked) and OA applying
+per-system core options AFTER `retro_load_game` (fixed — cores couldn't
+select their Vulkan renderer; this blocked the whole HW lineup, not just
+N64).
+
+**Why paraLLEl-N64 was the right proof core:** Vulkan-only, no BIOS, and
+paraLLEl-RDP was written by the libretro-Vulkan spec author, so it
+follows the contract cleanly (renders headless into images for the
+frontend rather than owning a swapchain).
