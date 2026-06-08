@@ -353,6 +353,38 @@ spanned every system but was filed under whichever core happened to be active.
     advisor proposal (ChatGPT + Gemini) + three rounds of operator
     Q&A. Total estimate ~14–22 weeks.
 
+- **HW-Render Pipeline (GPU-rendered libretro cores)** — engine arc
+  planned 2026-06-07 after the first internal Dolphin playtest
+  crashed. Implements the libretro HW render interface (`SET_HW_RENDER`
+  + Vulkan HW negotiation) so GPU-emulator cores — Dolphin
+  (GameCube/Wii), paraLLEl-N64, Beetle PSX HW, Flycast (Dreamcast),
+  PPSSPP, Beetle Saturn HW — run in-process instead of falling to a
+  Null video backend and crashing. Plan at
+  [PLANS/hw-render-pipeline.md](PLANS/hw-render-pipeline.md); feature
+  folder [features/hw-render/](features/hw-render/). Operator decisions
+  (2026-06-07): Vulkan-first multi-backend abstraction (RetroArch
+  video-driver model — one backend active at a time, matched to the
+  core — built on wgpu's existing backends + `texture_from_raw`, NOT
+  four hand-written renderers); shared-device zero-copy as the end
+  state (the "OA runs better itself" win); commit wgpu to its Vulkan
+  backend for the HW path; capability tiering + software-peer fallback;
+  **no HW-render guard** — make the cores work. DX12/GL contexts added
+  later only if a core runs better on them or operators hit Vulkan
+  issues. Four milestones: M1 (handshake + core on screen) → M2
+  (zero-copy import) → M3 (full HW lineup + reinit-on-core-switch +
+  tiering) → M4 (more backends if needed + MoltenVK/macOS).
+  **Touches the Rust engine layer only** (`oa-render` +
+  `oa-libretro/{state,ffi}.rs` + `main.rs` run loop) — near-zero
+  overlap with the frontend/schema/launcher-lifecycle work in the
+  Theming + Virtual Library arcs. **Sequencing:** slot **after VL
+  Phase C3** (both edit `main.rs`'s `LoadRom` handler — different
+  regions; let C3 land first to avoid a double-edit, and C3 + HW-render
+  together finish the GameCube launch story) and **before Theming ARC 2
+  (WGSL shaders)** (so shader hooks build on the GPU-resident-texture
+  renderer instead of being rewritten). Theming ARC 1's frontend resume
+  can interleave safely (different layer). Not started — planning
+  locked.
+
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
   + SETTINGS expansion; 2026-05-29 closed the unified controller
