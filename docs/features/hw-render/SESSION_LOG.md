@@ -6,6 +6,41 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 15b) — ✅ zero-copy PROVEN at 60 fps; "small image" was the `original` scaling setting
+
+- **Playtest log (oa-current.log 15:10–15:11) confirms task 1 WORKS:**
+  `adopted HW core Vulkan device (RTX 4090)` → `first set_image
+  R8G8B8A8_UNORM` → `first zero-copy HW import — 640x240 … (no readback)`;
+  the `readback avg ms/frame` line is **GONE** (import engaged). Steady-state
+  fps = **60.0** (frame 480→600 = 120 frames / 2.001 s; same every interval
+  thereafter), audio **0 dropped**. The on-screen "~55 fps" was a
+  cumulative-since-launch average (dragged down by the tg16 bootstrap + load
+  gap), not the instantaneous rate. **So zero-copy hit the M2 speed goal on
+  paraLLEl-N64 — tasks 2 & 3 (multi-buffer sync / lock-narrowing) are NOT
+  needed for this core.**
+- **The three playtest complaints, resolved:**
+  1. *"~1/4 screen / much smaller, centered"* — the per-game override is
+     `scaling: "original"` (log line 96/100: `set_scaling_mode -> original`)
+     = native 640×240 centered on the 1920×1009 surface, no scaling. Working
+     as designed; readback fed the identical 640×240. Operator fix: set this
+     game's scaling to Aspect-Correct Fit / Pixel-Perfect. NOT a zero-copy bug.
+  2. *"still slow"* — actually 60 fps steady (see above); the average display
+     just hadn't caught up (~3–4 s after load it's full speed).
+  3. *"sound off"* — audio pushes steadily with 0 drops at 60 fps; the off-ness
+     was the sub-60 startup ramp.
+- **One real (minor) fix this pass:** import mode skipped the readback that
+  used to refresh `fb_width/fb_height`, so the frame-stat log read a stale
+  `fb 256x240` (the tg16 bootstrap size) and pointer-viewport mapping would
+  use stale dims. `hw_after_run` now refreshes `fb_width/fb_height` from the
+  current import frame even in import mode (cheap scalar copy; no readback).
+  `display_aspect` was already correct (sourced from av_info at load, not the
+  readback) so Aspect-Correct Fit will aspect the HW core properly.
+- **Status:** M2 zero-copy is functionally DONE + proven at full speed on
+  paraLLEl-N64, shader (CrtLite) intact, software-core swap path unchanged.
+  Mergeable once the operator confirms the scaling-mode change looks right +
+  re-checks a software core + swap-back. Tasks 2/3 deferred indefinitely
+  (not needed unless a future HW core is sync-capped).
+
 ## 2026-06-08 (cont. 15) — M2 zero-copy import shipped (task 1) — awaiting playtest
 
 - **Shipped (compiles clean, 49 tests pass; NOT yet runtime-tested):** the

@@ -716,6 +716,23 @@ pub fn set_hw_import_mode(on: bool) {
 /// entirely in zero-copy import mode (the renderer imports the image).
 pub(crate) fn hw_after_run() {
     if HW_IMPORT_MODE.load(AtomicOrdering::Relaxed) {
+        // Zero-copy import: the renderer imports the core's VkImage directly,
+        // so we skip the (slow) CPU readback. We still refresh fb_width/
+        // fb_height from the core's current frame so `framebuffer()` dims, the
+        // frame-stat log, and pointer-viewport mapping stay accurate (the
+        // readback used to do this; display_aspect comes from av_info and is
+        // already correct). Cheap: current_frame just copies a few scalars.
+        with_state(|s| {
+            let dims = s
+                .hw_vulkan
+                .as_ref()
+                .and_then(|hw| hw.current_frame())
+                .map(|f| (f.width, f.height));
+            if let Some((w, h)) = dims {
+                s.fb_width = w;
+                s.fb_height = h;
+            }
+        });
         return;
     }
     let t0 = std::time::Instant::now();
