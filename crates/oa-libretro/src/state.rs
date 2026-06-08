@@ -298,11 +298,18 @@ pub(crate) struct State {
     /// this is captured for diagnostics + the M2 shared-device path.
     #[allow(dead_code)] // consumed by the M2 shared-device path.
     pub hw_negotiation_vulkan: Option<retro_hw_render_context_negotiation_interface_vulkan>,
-    /// The standalone Vulkan device the core renders on (M1, D6). Built
-    /// when we accept a Vulkan `SET_HW_RENDER`; the libretro interface we
-    /// hand the core points back at this allocation. `None` for software
-    /// cores and until a HW core is accepted.
+    /// The standalone Vulkan device the core renders on (M1, D6). Finalized
+    /// either by the core's `create_device` (env 43, canonical) or our
+    /// self-build (fallback, at load). The libretro interface we hand the
+    /// core points back at this allocation. `None` for software cores and
+    /// until a HW core's device is built.
     pub hw_vulkan: Option<Box<crate::hw_vulkan::VulkanHw>>,
+    /// Instance-level Vulkan resources, created when we accept a Vulkan
+    /// `SET_HW_RENDER`, held until the device is finalized into `hw_vulkan`.
+    /// Taken (→ `None`) once the device is built. A leftover here at
+    /// teardown means a HW core was accepted but no device was ever built
+    /// (load failed early) — `hw_teardown` destroys it.
+    pub hw_instance: Option<crate::hw_vulkan::VulkanInstance>,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -362,6 +369,7 @@ impl State {
             hw_render_callback: None,
             hw_negotiation_vulkan: None,
             hw_vulkan: None,
+            hw_instance: None,
         }
     }
 
@@ -658,7 +666,28 @@ pub(crate) fn hw_after_load() {
     let Some(cb) = cb else {
         return;
     };
-    if cb.context_type != RETRO_HW_CONTEXT_VULKAN || !hw_is_active() {
+    if cb.context_type != RETRO_HW_CONTEXT_VULKAN {
+        return;
+    }
+    // If the core never drove create_device (no negotiation interface, or it
+    // failed), self-build the device now from the instance we created at
+    // accept time. Cores WITH a negotiation interface (Dolphin) already have
+    // `hw_vulkan` built by env 43, so this is a no-op for them.
+    if !hw_is_active() {
+        if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+            match inst.into_hw_self_build() {
+                Ok(hw) => {
+                    let mut boxed = Box::new(hw);
+                    boxed.finalize_handle();
+                    with_state(|s| s.hw_vulkan = Some(boxed));
+                    log::info!("oa-libretro HW: self-built device at load — ready");
+                }
+                Err(e) => log::error!("oa-libretro HW: self-build at load failed: {e}"),
+            }
+        }
+    }
+    if !hw_is_active() {
+        log::error!("oa-libretro HW: no Vulkan device available — context_reset skipped");
         return;
     }
     if let Some(reset) = cb.context_reset {
@@ -704,6 +733,12 @@ pub(crate) fn hw_teardown() {
         log::info!("oa-libretro HW: dropping standalone Vulkan device");
     }
     drop(hw);
+    // Clean up a leftover instance (HW core accepted but device never
+    // finalized — e.g. load failed before context_reset).
+    if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+        log::info!("oa-libretro HW: destroying leftover Vulkan instance");
+        inst.destroy();
+    }
 }
 
 /// Supported-device list the loaded core advertised for `port` via
@@ -1981,26 +2016,26 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                 return false;
             }
             hw_probe_once();
-            // Build the standalone device NOW (D6 self-build path — this
-            // Dolphin build ships no negotiation interface). Eager build so
-            // the interface is ready whenever the core queries
-            // GET_HW_RENDER_INTERFACE, which can fire during
-            // retro_load_game — before our finish_load runs.
-            let already = with_state(|s| s.hw_vulkan.is_some()).unwrap_or(false);
-            if !already {
-                match crate::hw_vulkan::VulkanHw::build(cb.bottom_left_origin) {
-                    Ok(hw) => {
-                        // Box first (address-stable), then point the
-                        // interface handle at the boxed allocation. Moving
-                        // the Box into State keeps the heap address valid.
-                        let mut boxed = Box::new(hw);
-                        boxed.finalize_handle();
-                        with_state(|s| s.hw_vulkan = Some(boxed));
-                        log::info!("oa-libretro HW: standalone Vulkan device ready");
+            // Create our VkInstance + select the GPU now. The DEVICE is
+            // built later — preferably by the core's `create_device` when
+            // its negotiation interface arrives (env 43), so the core knows
+            // the frontend is driving Vulkan (and renders headless into
+            // images for us) instead of spinning up its own swapchain
+            // context, which deadlocks with no window. Self-build is the
+            // fallback (at load) for cores with no negotiation interface.
+            let have =
+                with_state(|s| s.hw_vulkan.is_some() || s.hw_instance.is_some()).unwrap_or(false);
+            if !have {
+                match crate::hw_vulkan::VulkanInstance::create(cb.bottom_left_origin) {
+                    Ok(inst) => {
+                        with_state(|s| s.hw_instance = Some(inst));
+                        log::info!(
+                            "oa-libretro HW: Vulkan instance ready (device deferred to create_device / load)"
+                        );
                     }
                     Err(e) => {
                         log::error!(
-                            "oa-libretro HW: device build failed: {e} — declining SET_HW_RENDER (core will fall back / Null)"
+                            "oa-libretro HW: instance create failed: {e} — declining SET_HW_RENDER (core will fall back / Null)"
                         );
                         return false;
                     }
@@ -2062,6 +2097,44 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             crate::hw_vulkan::log_negotiation_interface(&iface);
             with_state(|s| s.hw_negotiation_vulkan = Some(iface));
             hw_probe_once();
+            // Canonical device path: let the core build the device on OUR
+            // instance via create_device. Doing it now — while the core is
+            // still inside its video init — is what tells the core the
+            // frontend owns the Vulkan context, so it renders headless into
+            // images for us instead of trying to create its own swapchain
+            // (the deadlock the first device-build hit). On failure we put
+            // the instance back and fall back to self-build at load.
+            if let Some(create_device) = iface.create_device {
+                let need = with_state(|s| s.hw_vulkan.is_none() && s.hw_instance.is_some())
+                    .unwrap_or(false);
+                if need {
+                    if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+                        match inst.try_create_device(create_device) {
+                            Some((device, queue, qf, gpu)) => match inst.finalize(device, queue, qf, gpu) {
+                                Ok(hw) => {
+                                    let mut boxed = Box::new(hw);
+                                    boxed.finalize_handle();
+                                    with_state(|s| s.hw_vulkan = Some(boxed));
+                                    log::info!(
+                                        "oa-libretro HW: device built via core create_device — ready"
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "oa-libretro HW: finalize after create_device failed: {e}"
+                                    );
+                                }
+                            },
+                            None => {
+                                log::warn!(
+                                    "oa-libretro HW: create_device failed — will self-build the device at load"
+                                );
+                                with_state(|s| s.hw_instance = Some(inst));
+                            }
+                        }
+                    }
+                }
+            }
             true
         }
 

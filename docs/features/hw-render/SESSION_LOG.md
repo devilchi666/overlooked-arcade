@@ -6,6 +6,47 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 3) — M1 fix: use the core's create_device (was deadlocking)
+
+- **Playtest result of cont. 2 (oa-current.log 10:30):** black screen + hard
+  lock (force-killed). Log got MUCH further — `SET_HW_RENDER accepted
+  (Vulkan)`, `standalone Vulkan device ready`, and the **negotiation
+  interface DID arrive** (`create_device(v1)=true`, app="Dolphin-Emu",
+  apiVersion 1.0). But then Dolphin spun up its **own** VkInstance
+  (VulkanContext: "Loading system driver", `VK_KHR_surface`/`win32_surface`,
+  "Using Vulkan 1.2") and hung right after `Using GFX backend: Vulkan` — no
+  env 41, no context_reset.
+- **Root cause:** we **self-built** the device and never called the core's
+  `create_device`. Without that call the core doesn't know the frontend owns
+  the Vulkan context, so Dolphin fell back to creating its own context +
+  swapchain — which needs a window it doesn't have → deadlock. (Two separate
+  devices would also make any handed-back image unreadable on our device.)
+- **Shipped (branch `feat/hw-render-m1`, not merged):** restructured the
+  device bring-up to the canonical libretro path.
+  - `hw_vulkan.rs`: split into `VulkanInstance` (instance + GPU select, made
+    at SET_HW_RENDER accept) and `VulkanHw` (the device). New
+    `VulkanInstance::try_create_device` calls the core's `create_device` with
+    OUR instance + GPU + null surface (headless) and wraps the device the
+    core returns (`ash::Device::load`). `into_hw_self_build` is the fallback
+    (cores with no negotiation). `finalize` builds readback + interface;
+    `destroy` cleans an un-finalized instance.
+  - `state.rs`: SET_HW_RENDER (14) now creates the **instance** only (device
+    deferred). SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE (43) **calls
+    create_device** then and there (before the core can fall back), finalizes
+    the device. `hw_after_load` self-builds only if no device exists yet
+    (no-negotiation cores), then drives context_reset. `hw_teardown` also
+    destroys a leftover instance. New `State.hw_instance`.
+  - Workspace checks clean (zero warnings); oa-libretro 49 tests pass.
+- **Almost / still the KNOWN RISK:** readback still uses
+  `vkCmdCopyImageToBuffer` (needs the core image to have TRANSFER_SRC usage).
+  Now at least the device is shared so handles are valid. If the copy is
+  rejected we pivot to a sampled-blit readback.
+- **Next (operator):** launch again. Success trail now extends to:
+  `device built via core create_device — ready` → `Using GFX backend: Vulkan`
+  → `GET_HW_RENDER_INTERFACE -> Vulkan interface` → `calling context_reset` →
+  `context_reset returned` → then frames. Paste the new `oa-libretro HW:`
+  lines + what's on screen.
+
 ## 2026-06-08 (cont. 2) — M1 device-build: standalone ash device + readback
 
 - **Probe-run findings (oa-current.log 10:02):** GET_PREFERRED_HW_RENDER=Vulkan

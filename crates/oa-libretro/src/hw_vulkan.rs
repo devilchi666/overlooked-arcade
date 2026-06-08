@@ -252,16 +252,31 @@ pub(crate) struct VulkanHw {
 unsafe impl Send for VulkanHw {}
 unsafe impl Sync for VulkanHw {}
 
-impl VulkanHw {
-    /// Stand up the standalone device: instance (Vulkan 1.1) → first
-    /// discrete GPU → a graphics queue → device with all available
-    /// extensions + features → readback command pool/buffer/fence → the
-    /// libretro interface (callbacks wired, `handle` set later).
-    pub(crate) fn build(flip_y: bool) -> Result<VulkanHw, String> {
+/// Instance-level Vulkan resources, created when we accept a Vulkan
+/// `SET_HW_RENDER` — *before* we know whether the core will build the
+/// device for us (negotiation `create_device`) or we self-build it. Held in
+/// `State` until the device is finalized into a [`VulkanHw`].
+///
+/// The split matters: the libretro Vulkan contract is that the FRONTEND
+/// creates the instance, then the CORE builds the device on it via
+/// `create_device`. Doing so tells the core the frontend is driving Vulkan
+/// (so it renders headless into images for us) instead of spinning up its
+/// own context + swapchain — which is exactly the deadlock the first
+/// device-build hit (Dolphin tried to own a swapchain with no window).
+pub(crate) struct VulkanInstance {
+    entry: ash::Entry,
+    instance: ash::Instance,
+    phys: vk::PhysicalDevice,
+    flip_y: bool,
+}
+
+impl VulkanInstance {
+    /// Create the `VkInstance` (Vulkan 1.1) + select the first discrete GPU
+    /// (the dedicated card). Done at `SET_HW_RENDER` accept time.
+    pub(crate) fn create(flip_y: bool) -> Result<VulkanInstance, String> {
         // SAFETY: loads the Vulkan loader.
         let entry = unsafe { ash::Entry::load() }
             .map_err(|e| format!("Vulkan loader unavailable: {e}"))?;
-
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"Overlooked Arcade")
             .api_version(vk::API_VERSION_1_1);
@@ -270,30 +285,17 @@ impl VulkanHw {
         let instance = unsafe { entry.create_instance(&instance_ci, None) }
             .map_err(|e| format!("vkCreateInstance failed: {e:?}"))?;
 
-        // Wrap the rest so a failure still tears down the instance.
-        match Self::build_on_instance(entry, &instance, flip_y) {
-            Ok(hw) => Ok(hw),
-            Err(e) => {
-                // SAFETY: instance live, no children created on the error path
-                // (build_on_instance cleans up its own partial device).
+        let pds = match unsafe { instance.enumerate_physical_devices() } {
+            Ok(p) if !p.is_empty() => p,
+            Ok(_) => {
                 unsafe { instance.destroy_instance(None) };
-                Err(e)
+                return Err("no Vulkan physical devices".into());
             }
-        }
-    }
-
-    fn build_on_instance(
-        entry: ash::Entry,
-        instance: &ash::Instance,
-        flip_y: bool,
-    ) -> Result<VulkanHw, String> {
-        // ---- pick the physical device (first discrete GPU) ----
-        // SAFETY: instance live.
-        let pds = unsafe { instance.enumerate_physical_devices() }
-            .map_err(|e| format!("enumerate_physical_devices failed: {e:?}"))?;
-        if pds.is_empty() {
-            return Err("no Vulkan physical devices".into());
-        }
+            Err(e) => {
+                unsafe { instance.destroy_instance(None) };
+                return Err(format!("enumerate_physical_devices failed: {e:?}"));
+            }
+        };
         let phys = pds
             .iter()
             .copied()
@@ -303,79 +305,163 @@ impl VulkanHw {
             })
             .unwrap_or(pds[0]);
         let props = unsafe { instance.get_physical_device_properties(phys) };
-        let dev_name = unsafe { CStr::from_ptr(props.device_name.as_ptr()) }
+        let name = unsafe { CStr::from_ptr(props.device_name.as_ptr()) }
             .to_string_lossy()
             .into_owned();
         log::info!(
-            "oa-libretro HW: building standalone device on {dev_name} ({})",
+            "oa-libretro HW: instance up; selected GPU {name} ({})",
             device_type_str(props.device_type)
         );
+        Ok(VulkanInstance {
+            entry,
+            instance,
+            phys,
+            flip_y,
+        })
+    }
 
-        // ---- pick a graphics queue family ----
-        let qfps = unsafe { instance.get_physical_device_queue_family_properties(phys) };
-        let queue_family = qfps
+    /// Ask the core to build the device on our instance + GPU (libretro
+    /// Vulkan negotiation v1, the canonical path). Non-consuming: returns
+    /// the wrapped device + queue on success, `None` on failure (so the
+    /// caller can fall back to self-build with the instance intact).
+    pub(crate) fn try_create_device(
+        &self,
+        create_device: retro_vulkan_create_device_t,
+    ) -> Option<(ash::Device, vk::Queue, u32, vk::PhysicalDevice)> {
+        let mut ctx = retro_vulkan_context {
+            gpu: vk::PhysicalDevice::null(),
+            device: vk::Device::null(),
+            queue: vk::Queue::null(),
+            queue_family_index: 0,
+            presentation_queue: vk::Queue::null(),
+            presentation_queue_family_index: 0,
+        };
+        let gipa = self.entry.static_fn().get_instance_proc_addr;
+        // SAFETY: core-provided fn. We pass our live instance + GPU, a null
+        // surface (headless — no swapchain), and no extra required
+        // extensions/layers/features. The core fills `ctx`.
+        let ok = unsafe {
+            create_device(
+                &mut ctx,
+                self.instance.handle(),
+                self.phys,
+                vk::SurfaceKHR::null(),
+                gipa,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null(),
+            )
+        };
+        if !ok || ctx.device == vk::Device::null() {
+            log::warn!("oa-libretro HW: core create_device returned false / null device");
+            return None;
+        }
+        let gpu = if ctx.gpu != vk::PhysicalDevice::null() {
+            ctx.gpu
+        } else {
+            self.phys
+        };
+        log::info!(
+            "oa-libretro HW: core built device via create_device (queue_family={})",
+            ctx.queue_family_index
+        );
+        // Wrap the core-created device handle with ash (loads device fns via
+        // our instance's vkGetDeviceProcAddr).
+        // SAFETY: ctx.device is a valid device created on our instance.
+        let device = unsafe { ash::Device::load(self.instance.fp_v1_0(), ctx.device) };
+        Some((device, ctx.queue, ctx.queue_family_index, gpu))
+    }
+
+    /// Self-build the device (fallback when the core provides no negotiation
+    /// `create_device`). Enables all available device extensions + features.
+    /// Consuming; destroys the instance on failure.
+    pub(crate) fn into_hw_self_build(self) -> Result<VulkanHw, String> {
+        let qfps = unsafe {
+            self.instance
+                .get_physical_device_queue_family_properties(self.phys)
+        };
+        let queue_family = match qfps
             .iter()
             .position(|q| q.queue_flags.contains(vk::QueueFlags::GRAPHICS))
-            .ok_or_else(|| "no graphics queue family".to_string())? as u32;
-
-        // ---- enable all available device extensions + features ----
-        let ext_props = unsafe { instance.enumerate_device_extension_properties(phys) }
-            .map_err(|e| format!("enumerate_device_extension_properties failed: {e:?}"))?;
+        {
+            Some(i) => i as u32,
+            None => {
+                unsafe { self.instance.destroy_instance(None) };
+                return Err("no graphics queue family".into());
+            }
+        };
+        let ext_props =
+            match unsafe { self.instance.enumerate_device_extension_properties(self.phys) } {
+                Ok(p) => p,
+                Err(e) => {
+                    unsafe { self.instance.destroy_instance(None) };
+                    return Err(format!("enumerate_device_extension_properties failed: {e:?}"));
+                }
+            };
         let ext_ptrs: Vec<*const c_char> =
             ext_props.iter().map(|p| p.extension_name.as_ptr()).collect();
-        let features = unsafe { instance.get_physical_device_features(phys) };
-
+        let features = unsafe { self.instance.get_physical_device_features(self.phys) };
         let priorities = [1.0f32];
         let queue_ci = [vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family)
             .queue_priorities(&priorities)];
-
-        // Try with all extensions; if creation rejects one, retry bare.
         let device = {
             let dci = vk::DeviceCreateInfo::default()
                 .queue_create_infos(&queue_ci)
                 .enabled_extension_names(&ext_ptrs)
                 .enabled_features(&features);
-            match unsafe { instance.create_device(phys, &dci, None) } {
+            match unsafe { self.instance.create_device(self.phys, &dci, None) } {
                 Ok(d) => {
-                    log::info!(
-                        "oa-libretro HW: device created with {} extension(s)",
-                        ext_ptrs.len()
-                    );
+                    log::info!("oa-libretro HW: self-built device with {} extension(s)", ext_ptrs.len());
                     d
                 }
                 Err(e) => {
-                    log::warn!(
-                        "oa-libretro HW: create_device with all extensions failed ({e:?}); retrying with none"
-                    );
+                    log::warn!("oa-libretro HW: self-build w/ all extensions failed ({e:?}); retrying bare");
                     let dci = vk::DeviceCreateInfo::default()
                         .queue_create_infos(&queue_ci)
                         .enabled_features(&features);
-                    unsafe { instance.create_device(phys, &dci, None) }
-                        .map_err(|e| format!("vkCreateDevice failed: {e:?}"))?
+                    match unsafe { self.instance.create_device(self.phys, &dci, None) } {
+                        Ok(d) => d,
+                        Err(e) => {
+                            unsafe { self.instance.destroy_instance(None) };
+                            return Err(format!("vkCreateDevice failed: {e:?}"));
+                        }
+                    }
                 }
             }
         };
-
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
-        let mem_props = unsafe { instance.get_physical_device_memory_properties(phys) };
+        let phys = self.phys;
+        self.finalize(device, queue, queue_family, phys)
+    }
 
-        // Build readback resources + the interface against borrows of the
-        // device/entry/instance. On any failure, destroy the device (it
-        // isn't owned by a VulkanHw yet) before propagating.
+    /// Build readback resources + the interface and assemble the
+    /// [`VulkanHw`]. Consuming. On failure, destroys the device + instance.
+    pub(crate) fn finalize(
+        self,
+        device: ash::Device,
+        queue: vk::Queue,
+        queue_family: u32,
+        gpu: vk::PhysicalDevice,
+    ) -> Result<VulkanHw, String> {
+        let mem_props = unsafe { self.instance.get_physical_device_memory_properties(gpu) };
         let (cmd_pool, cmd_buf, fence, interface) =
-            match build_resources(&entry, instance, &device, phys, queue, queue_family) {
+            match build_resources(&self.entry, &self.instance, &device, gpu, queue, queue_family) {
                 Ok(v) => v,
                 Err(e) => {
-                    // SAFETY: device live; nothing references it yet.
-                    unsafe { device.destroy_device(None) };
+                    // SAFETY: device + instance live; nothing references them yet.
+                    unsafe {
+                        device.destroy_device(None);
+                        self.instance.destroy_instance(None);
+                    }
                     return Err(e);
                 }
             };
-
         Ok(VulkanHw {
-            entry,
-            instance: instance.clone(),
+            entry: self.entry,
+            instance: self.instance,
             device,
             queue,
             mem_props,
@@ -391,10 +477,20 @@ impl VulkanHw {
                 cap: 0,
             }),
             interface,
-            flip_y,
+            flip_y: self.flip_y,
         })
     }
 
+    /// Destroy the instance without finalizing a device — for cleanup when a
+    /// HW core was accepted but no device was ever built (e.g. load failed
+    /// before `context_reset`).
+    pub(crate) fn destroy(self) {
+        // SAFETY: instance live; no children created.
+        unsafe { self.instance.destroy_instance(None) };
+    }
+}
+
+impl VulkanHw {
     /// Point the interface `handle` back at this (now-boxed, address-stable)
     /// allocation. MUST be called after the `VulkanHw` is in its final
     /// location (the `State` box). Returns a `*const` to the interface for
