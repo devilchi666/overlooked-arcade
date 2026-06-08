@@ -29,6 +29,7 @@ mod job_registry;
 mod core_installer;
 mod core_options;
 mod cpu_tier;
+mod launcher;
 mod layout;
 mod library_db;
 mod art_pack_importer;
@@ -2067,6 +2068,21 @@ struct ActiveSession {
 
 struct AppState {
     emu_tx: Mutex<mpsc::Sender<EmuCommand>>,
+    /// VL Phase C1 — the launcher that owns the game-session lifecycle
+    /// (`prepare → launch → is_alive → terminate`). Today always the
+    /// in-process `LibretroLauncher`; Phase C2 selects between it and
+    /// `ExternalProcessLauncher` per the per-system default-launcher
+    /// pref. `launch_rom` / `unload_rom` route through this — the
+    /// shell keeps everything launcher-agnostic (content resolution,
+    /// play-session bookkeeping, window choreography) and delegates
+    /// only the dispatch.
+    launcher: Arc<dyn oa_core::Launcher>,
+    /// VL Phase C1 — handle to the running game session, set by
+    /// `launch_rom`, taken by `unload_rom` for `Launcher::terminate`.
+    /// Always `LaunchedSession::InProcess` until Phase C2 introduces
+    /// external child-process sessions (which carry a PID worth
+    /// tracking here).
+    active_launch: Arc<Mutex<Option<oa_core::LaunchedSession>>>,
     shell_window: ShellWindow,
     shell_mode: ShellMode,
     app_data_dir: PathBuf,
@@ -3175,6 +3191,8 @@ fn main() {
                 .ok();
 
                 app.manage(AppState {
+                    launcher: Arc::new(launcher::LibretroLauncher::new(cmd_tx.clone())),
+                    active_launch: Arc::new(Mutex::new(None)),
                     emu_tx: Mutex::new(cmd_tx),
                     shell_window,
                     shell_mode,
@@ -10604,10 +10622,21 @@ fn unload_rom(
     // Retroverse-UI Phase A Slice 2 — record the elapsed session before
     // tearing down the ROM so the operator's play-time stats persist.
     close_active_session(&state.active_session, &db);
-    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
-    tx.send(EmuCommand::UnloadRom { title })
-        .map_err(|e| format!("emu thread closed: {e}"))?;
-    drop(tx);
+    // VL Phase C1 — tear down through the Launcher seam. The libretro
+    // launcher maps terminate onto the exact EmuCommand::UnloadRom
+    // this command sent inline before C1. Unload-with-no-session stays
+    // legal (the emu thread no-ops on an empty core), so a missing
+    // active_launch entry falls back to the in-process session shape.
+    let session = state
+        .active_launch
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take())
+        .unwrap_or(oa_core::LaunchedSession::InProcess);
+    state
+        .launcher
+        .terminate(&session, title)
+        .map_err(|e| e.to_string())?;
     // If the unloading game was an archived CD set, clean its temp dir now.
     // Archived cart games never created a temp dir (they ran from in-memory
     // bytes) so the cleanup_temp call is a no-op for those.
@@ -10805,16 +10834,25 @@ fn launch_rom(
         resolved_path, resolved_bytes.len(), slot, restore_state_path, coreOverride, is_archived
     );
 
-    let tx = state.emu_tx.lock().map_err(|_| "emu_tx poisoned".to_string())?;
-    tx.send(EmuCommand::LoadRom {
-        path: resolved_path,
-        bytes: resolved_bytes,
+    // VL Phase C1 — dispatch through the Launcher seam. For the
+    // in-process libretro launcher, prepare is a passthrough and
+    // launch sends the exact EmuCommand::LoadRom this command built
+    // inline before C1 (same fields, same error strings). Phase C2
+    // selects the launcher per-system, so external emulators ride the
+    // same prepare → launch path.
+    let request = oa_core::LaunchRequest {
+        content_path: resolved_path,
+        content_bytes: resolved_bytes,
+        system_id,
         restore_slot: slot,
         restore_state_path,
         core_override: coreOverride,
-        system_id,
-    })
-        .map_err(|e| format!("emu thread closed: {e}"))?;
+    };
+    let prepared = state.launcher.prepare(request).map_err(|e| e.to_string())?;
+    let session = state.launcher.launch(prepared).map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = state.active_launch.lock() {
+        *guard = Some(session);
+    }
 
     // Retroverse-UI Phase A Slice 2 — start tracking the new session.
     // Library launches always carry an entryId; direct-launch CLI paths
