@@ -51,6 +51,21 @@ pub struct AdoptedVulkanDevice {
     pub api_version: u32,
 }
 
+/// Scalar display settings that survive a renderer rebuild (M2 swaps the
+/// whole renderer when a HW core loads/unloads, which would otherwise reset
+/// these to defaults). Captured from the outgoing renderer and re-applied to
+/// the incoming one. The bezel is a GPU texture (device-bound) so it is NOT
+/// carried here — it re-applies when the frontend next sends it.
+#[derive(Clone, Copy, Debug)]
+pub struct DisplaySettings {
+    pub shader_preset: ShaderPreset,
+    pub scaling_mode: ScalingMode,
+    pub bloom_amount: f32,
+    pub overscan_crop: OverscanCrop,
+    pub display_aspect_override: Option<f32>,
+    pub rotation: u32,
+}
+
 /// How the core's framebuffer is mapped to the surface.
 ///
 /// `AspectCorrectFit` is the default — it matches the Phase 1.5 behavior and is
@@ -1512,6 +1527,33 @@ impl Renderer {
 
     pub fn rotation(&self) -> u32 {
         self.rotation
+    }
+
+    /// Snapshot the scalar display settings (M2: carried across a renderer
+    /// rebuild so the shader/scaling/etc. don't reset when a HW core's device
+    /// is adopted or released). Bezel excluded — it's a device-bound GPU
+    /// texture; the frontend re-sends it.
+    pub fn display_settings(&self) -> DisplaySettings {
+        DisplaySettings {
+            shader_preset: self.shader_preset,
+            scaling_mode: self.scaling_mode,
+            bloom_amount: self.bloom_amount,
+            overscan_crop: self.overscan_crop,
+            display_aspect_override: self.display_aspect_override,
+            rotation: self.rotation,
+        }
+    }
+
+    /// Re-apply settings captured via [`display_settings`](Self::display_settings)
+    /// onto a freshly-built renderer (through the real setters so the effect
+    /// chain / intermediates rebuild correctly).
+    pub fn apply_display_settings(&mut self, s: DisplaySettings) {
+        self.set_scaling_mode(s.scaling_mode);
+        self.set_shader_preset(s.shader_preset);
+        self.set_bloom_amount(s.bloom_amount);
+        self.set_overscan_crop(s.overscan_crop);
+        self.set_display_aspect_override(s.display_aspect_override);
+        self.set_rotation(s.rotation);
     }
 
     /// Last computed game-output rectangle inside the surface, in

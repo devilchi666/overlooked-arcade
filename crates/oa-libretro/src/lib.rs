@@ -60,9 +60,9 @@ mod state;
 
 pub use crate::core::{probe, CoreInfo, LibretroCore, LibretroError, RomSource};
 pub use crate::ffi::PixelFormat;
-pub use crate::hw_vulkan::LoadedHwVulkan;
+pub use crate::hw_vulkan::{HwVulkanFrame, LoadedHwVulkan};
 pub use crate::keycode::{keycode_to_retro_key, modifiers_from_held};
 pub use crate::state::{
-    loaded_core_controller_devices, loaded_core_hw_vulkan, loaded_core_input_descriptors,
-    loaded_core_min_audio_latency_ms,
+    loaded_core_controller_devices, loaded_core_hw_frame, loaded_core_hw_vulkan,
+    loaded_core_input_descriptors, loaded_core_min_audio_latency_ms, set_hw_import_mode,
 };

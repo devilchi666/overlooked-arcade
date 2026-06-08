@@ -697,10 +697,27 @@ pub(crate) fn hw_after_load() {
     }
 }
 
+/// Zero-copy import mode (M2 Stage 4). When the renderer has adopted the
+/// core's Vulkan device, oa-shell sets this true so `hw_after_run` SKIPS the
+/// CPU readback (the slow path) — the renderer imports the `VkImage` directly
+/// via `loaded_core_hw_frame`. False (default) keeps the M1/Stage-3 readback
+/// (software cores + HW cores whose device adoption failed).
+static HW_IMPORT_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Toggle zero-copy import mode (see [`HW_IMPORT_MODE`]). Called by oa-shell
+/// when it adopts (true) / restores (false) the renderer.
+pub fn set_hw_import_mode(on: bool) {
+    HW_IMPORT_MODE.store(on, AtomicOrdering::Relaxed);
+}
+
 /// Copy the core's latest rendered `VkImage` back into `fb_rgba`. Called
 /// from `LibretroCore::run_frame` after `retro_run` returns. No-op for
-/// software cores / when no HW frame is pending this run.
+/// software cores / when no HW frame is pending this run, and SKIPPED
+/// entirely in zero-copy import mode (the renderer imports the image).
 pub(crate) fn hw_after_run() {
+    if HW_IMPORT_MODE.load(AtomicOrdering::Relaxed) {
+        return;
+    }
     with_state(|s| {
         // Disjoint field borrows: `hw_vulkan` (shared) + `fb_*` (mut).
         if let Some(hw) = s.hw_vulkan.as_ref() {
@@ -714,6 +731,13 @@ pub(crate) fn hw_after_run() {
             }
         }
     });
+}
+
+/// The HW core's current rendered image for zero-copy import (M2 Stage 4).
+/// `None` for software cores / when no image is pending. The renderer
+/// imports (does not own) it; the libretro layer owns its lifetime.
+pub fn loaded_core_hw_frame() -> Option<crate::hw_vulkan::HwVulkanFrame> {
+    with_state(|s| s.hw_vulkan.as_ref().and_then(|hw| hw.current_frame())).flatten()
 }
 
 /// Tear down the HW-render device. Called from `LibretroCore::drop` BEFORE

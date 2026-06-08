@@ -3547,9 +3547,13 @@ fn hw_swap_to_adopted(
     size: (u32, u32),
     adopt: &oa_render::AdoptedVulkanDevice,
 ) -> (oa_render::Renderer, bool) {
+    // Carry display settings across the rebuild (shader/scaling/etc. would
+    // otherwise reset to defaults).
+    let settings = old.display_settings();
     drop(old);
     match unsafe { oa_render::Renderer::new_adopting_vulkan(raw_window, raw_display, size, adopt) } {
-        Ok(r) => {
+        Ok(mut r) => {
+            r.apply_display_settings(settings);
             log::info!("oa-shell: HW-render — renderer adopted the core's Vulkan device (M2 zero-copy path)");
             (r, true)
         }
@@ -3557,8 +3561,9 @@ fn hw_swap_to_adopted(
             log::error!(
                 "oa-shell: HW-render — device adoption failed ({e:?}); falling back to normal renderer (M1 readback)"
             );
-            let r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+            let mut r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
                 .expect("oa-render: failed to rebuild normal renderer after adoption failure");
+            r.apply_display_settings(settings);
             (r, false)
         }
     }
@@ -3574,9 +3579,12 @@ fn hw_restore_normal(
     raw_display: raw_window_handle::RawDisplayHandle,
     size: (u32, u32),
 ) -> oa_render::Renderer {
+    let settings = old.display_settings();
     drop(old);
-    unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
-        .expect("oa-render: failed to rebuild normal renderer")
+    let mut r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+        .expect("oa-render: failed to rebuild normal renderer");
+    r.apply_display_settings(settings);
+    r
 }
 
 fn run_emu_render(

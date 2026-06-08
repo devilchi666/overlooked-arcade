@@ -273,6 +273,21 @@ pub struct LoadedHwVulkan {
     pub api_version: u32,
 }
 
+/// The HW core's current rendered image, for zero-copy import (M2 Stage 4).
+/// Raw handle + scalars so no `ash` type crosses the crate boundary — the
+/// renderer reconstructs `vk::Image`/`vk::Format`/`vk::ImageLayout`. The
+/// core owns the image; the renderer imports (does not own) it.
+#[derive(Clone, Copy, Debug)]
+pub struct HwVulkanFrame {
+    pub image: u64,
+    pub format: i32,
+    pub image_layout: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Core renders bottom-left origin → renderer flips V when sampling.
+    pub flip_y: bool,
+}
+
 // SAFETY: ash Entry/Instance/Device + vk handles are Send+Sync; the only
 // non-auto-Send fields are the raw `handle`/fn pointers in `interface`,
 // which are immutable after `finalize_handle`. All per-frame mutation goes
@@ -619,6 +634,27 @@ impl VulkanHw {
             device_extensions: self.device_extensions.clone(),
             api_version: self.api_version,
         }
+    }
+
+    /// The current `set_image` frame for zero-copy import (M2 Stage 4).
+    /// `None` when no usable image is pending. By present time the core has
+    /// already signalled the frame via `video_refresh`, so we don't gate on
+    /// `ready` here (the latest image is the one to show).
+    pub(crate) fn current_frame(&self) -> Option<HwVulkanFrame> {
+        use ash::vk::Handle;
+        let g = self.frame.lock().ok()?;
+        let f = g.as_ref()?;
+        if f.image == vk::Image::null() || f.width == 0 || f.height == 0 {
+            return None;
+        }
+        Some(HwVulkanFrame {
+            image: f.image.as_raw(),
+            format: f.format.as_raw(),
+            image_layout: f.layout.as_raw(),
+            width: f.width,
+            height: f.height,
+            flip_y: self.flip_y,
+        })
     }
 
     /// Record the extent + mark the most-recent `set_image` frame ready.
