@@ -6,6 +6,60 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 2) — M1 device-build: standalone ash device + readback
+
+- **Probe-run findings (oa-current.log 10:02):** GET_PREFERRED_HW_RENDER=Vulkan
+  worked; Dolphin offered Vulkan **first** in its backend list. GPU select
+  correct (only device = RTX 4090, Vulkan 1.4.329). Core wants Vulkan
+  **apiVersion 1.0** (version_major=4194304 = `VK_MAKE_API_VERSION(0,1,0,0)`).
+  `bottom_left_origin=true` → readback flips vertically. **No negotiation
+  interface (env 43) and no env 41** were sent — because we declined every
+  SET_HW_RENDER (Dolphin only registers those after a HW context is
+  accepted). ⇒ M1 decision refined: **self-build the device** (this Dolphin
+  build provides no `create_device`); D6 intent (standalone ash device +
+  CPU readback, wgpu untouched) preserved.
+- **Shipped (branch `feat/hw-render-m1`, not merged):**
+  - `hw_vulkan.rs`: `VulkanHw` — self-builds VkInstance (Vulkan 1.1) → first
+    discrete GPU → graphics queue → device with **all** available device
+    extensions + features (retry bare on failure) → readback cmd
+    pool/buffer/fence. The 8 frontend interface callbacks (`set_image`,
+    `get_sync_index`≡0, `get_sync_index_mask`≡0x1, `set_command_buffers`
+    no-op+warn, `wait_sync_index` no-op, `lock_queue`/`unlock_queue` via an
+    AtomicBool spin-lock, `set_signal_semaphore`). Per-frame **synchronous
+    readback**: barrier core image→TRANSFER_SRC, `vkCmdCopyImageToBuffer`,
+    barrier back, submit (wait on core sems, signal core's done-sem) under
+    the queue lock, host-wait the fence, map, swizzle BGRA/RGBA + vertical
+    flip into `fb_rgba`. `VulkanHw::Drop` waits idle + destroys everything.
+  - `state.rs`: SET_HW_RENDER (14) now **accepts Vulkan** — eagerly builds
+    the device (so the interface is ready whenever the core queries env 41,
+    which can fire mid-load), nulls the GL-style callback fields, returns
+    true; declines non-Vulkan. GET_HW_RENDER_INTERFACE (41) returns our
+    persistent `retro_hw_render_interface_vulkan`. `cb_video_refresh`
+    sentinel now marks the frame ready (extent from w/h). Free fns
+    `hw_after_load` (drives context_reset), `hw_after_run` (readback),
+    `hw_teardown` (context_destroy + device drop). State gained
+    `hw_vulkan: Option<Box<VulkanHw>>` (boxed → stable handle address).
+  - `core.rs`: `finish_load` → `hw_after_load`; `run_frame` → `hw_after_run`;
+    `Drop` → `hw_teardown` before deinit/uninstall.
+  - Workspace checks clean (zero warnings); oa-libretro 49 tests pass.
+- **Almost / KNOWN RISK:** the readback uses `vkCmdCopyImageToBuffer`, which
+  requires the core's presented image to have `VK_IMAGE_USAGE_TRANSFER_SRC_BIT`.
+  The libretro Vulkan spec guarantees the image is **SAMPLED** (for the
+  frontend to composite via a shader), not necessarily TRANSFER_SRC. If
+  Dolphin's output image lacks TRANSFER_SRC, the copy is invalid → likely
+  garbage or a validation/driver error rather than a frame. **Most likely
+  next failure point.** Fix if hit: readback via a tiny sample-into-our-own-
+  TRANSFER_SRC-image pass (render pass + sampler + fullscreen shader) — more
+  code, deferred until the log shows it's needed.
+- **Next (operator):** launch the GameCube game again. Look in
+  `oa-current.log` for: `SET_HW_RENDER accepted (Vulkan)` →
+  `standalone Vulkan device ready` → `GFX backend: Vulkan` (NOT Null) →
+  `GET_HW_RENDER_INTERFACE -> Vulkan interface` → `calling context_reset`.
+  If it renders (even imperfectly) the M1 handshake is proven. Paste the new
+  `oa-libretro HW:` lines + describe what's on screen (frame / garbage /
+  upside-down / crash) so we tune format/flip or pivot to the sampled
+  readback.
+
 ## 2026-06-08 (cont.) — M1 probe phase: negotiation + GPU enumeration logging
 
 - **Shipped (branch `feat/hw-render-m1`, not merged — commit `021bf74`):**

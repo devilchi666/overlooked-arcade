@@ -407,6 +407,12 @@ impl LibretroCore {
             sample_rate: av.timing.sample_rate.round() as u32,
         };
         state::with_state(|s| s.display_aspect = av.geometry.aspect_ratio);
+
+        // HW-render cores (Dolphin et al.): now that the game is loaded and
+        // our standalone Vulkan device + interface are ready, drive the
+        // core's context_reset so it (re)creates its GPU resources. No-op
+        // for software cores. See docs/PLANS/hw-render-pipeline.md (M1/D6).
+        state::hw_after_load();
     }
 
     /// True if the core advertised `SET_SUPPORT_NO_GAME = true` during
@@ -702,6 +708,12 @@ impl Drop for LibretroCore {
             if self.rom_loaded {
                 (self.lib.fns.unload_game)();
             }
+        }
+        // HW-render teardown BEFORE deinit + uninstall: calls the core's
+        // context_destroy, then drops our standalone Vulkan device (waits
+        // idle + destroys all Vk objects). No-op for software cores.
+        state::hw_teardown();
+        unsafe {
             // initialised flag is in State; check before deinit.
             let was_init = state::with_state(|s| s.initialised).unwrap_or(false);
             if was_init {
@@ -734,6 +746,10 @@ impl Core for LibretroCore {
         }
         state::with_state(|s| s.audio.clear());
         unsafe { (self.lib.fns.run)() };
+        // HW-render cores produce no CPU framebuffer — read the core's
+        // rendered VkImage back into fb_rgba so the existing present path
+        // shows it. No-op for software cores. See M1/D6.
+        state::hw_after_run();
     }
 
     fn framebuffer(&self) -> Framebuffer<'_> {
