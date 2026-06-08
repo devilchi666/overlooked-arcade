@@ -441,6 +441,25 @@ Plan: [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 + §13.
 
 ## MEDIUM — Phase 3+ polish
 
+**🆕 2026-06-08 — Audio quality pass: clipping + clicking on some cores (NES confirmed).**
+Operator playtest (after the env-32 audio-rate fix, commit `ed1e463`): N64
+audio is good, but **NES has clipping + clicking**, and possibly other systems
+too. NOT yet investigated (operator: track, don't dig in now). Suspected
+causes to check when picked up:
+- *Clipping* — samples exceeding i16 range somewhere in the path, or a
+  per-system gain/mix issue (the 4-bus mixer in `apps/oa-shell/src/audio_player.rs`?).
+- *Clicking* — buffer underruns (ring runs near-empty → cpal callback
+  zero-fills), resampler discontinuities at batch boundaries, or a rate
+  mismatch on those cores (does the NES core declare a rate the device under/
+  over-feeds, like the paraLLEl-N64 env-32 case?).
+- **First triage step:** confirm whether it's PRE-EXISTING or introduced by
+  the recent audio work (`git log` the audio path; the env-32 sink-rebuild in
+  `main.rs` only fires when a core revises its rate — check if NES cores call
+  env 32). Test 2-3 systems to scope breadth (operator suspects it's not
+  NES-only). Lives in `crates/oa-audio/` (resampler/sink) + `oa-shell` audio
+  pump + `oa-libretro` audio callbacks. Est. unknown until triaged.
+
+
 ~~1. Dedicated `vector-phosphor` shader preset for Vectrex~~ —
    **SHIPPED 2026-05-29** on `feat/vectrex-vector-phosphor-shader`.
    New `ShaderPreset::VectorPhosphor` (id=5) + wider-σ (9-tap σ≈2.5)
