@@ -3061,6 +3061,7 @@ dependencies = [
 name = "oa-libretro"
 version = "0.0.1"
 dependencies = [
+ "ash",
  "cc",
  "device_query",
  "libloading 0.8.9",
@@ -3083,6 +3084,7 @@ dependencies = [
 name = "oa-render"
 version = "0.0.1"
 dependencies = [
+ "ash",
  "bytemuck",
  "log",
  "oa-core",

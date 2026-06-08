@@ -409,8 +409,63 @@ spanned every system but was filed under whichever core happened to be active.
   together finish the GameCube launch story) and **before Theming ARC 2
   (WGSL shaders)** (so shader hooks build on the GPU-resident-texture
   renderer instead of being rewritten). Theming ARC 1's frontend resume
-  can interleave safely (different layer). Not started — planning
-  locked.
+  can interleave safely (different layer).
+  - **M1 ✅ PROVEN 2026-06-08** (branch `feat/hw-render-m1`, NOT merged —
+    8 commits, pushed). A GPU-rendering libretro core (**paraLLEl-N64 /
+    paraLLEl-RDP Vulkan**) runs in-process via a standalone `ash`
+    VkDevice + the core's `create_device` + the 8 Vulkan interface
+    callbacks + CPU readback into `fb_rgba` — wgpu untouched, 46 software
+    cores unaffected. Full chain confirmed in the log
+    (`first readback OK — 640x240 … frame on screen`). Along the way also
+    fixed a real OA bug: per-system **core options were applied AFTER
+    `retro_load_game`** so cores couldn't pick their Vulkan renderer —
+    now pre-applied before load (`main.rs`). Protocol learnings recorded
+    in feature DECISIONS **D7**. Dolphin/GameCube (the plan's literal M1
+    gate) is **parked** — it builds its own windowless Vulkan context and
+    silent-crashes; needs ground-truth Vulkan validation, separate harder
+    problem. **Known M1 limitation:** ~half speed (synchronous readback
+    full-drains the GPU each frame; audio sounds off purely because emu
+    runs at ~half rate) — speed is M2's mandate by design.
+  - **M2 (zero-copy) — IN PROGRESS** (branch `feat/hw-render-m2`, off M1;
+    M1 stays bankable at tag `hw-render-m1-proven`). Architecture confirmed
+    (DECISIONS **D9** reinit-per-core, **D10** HwContext-trait-for-later).
+    **Foundation DONE + working on hardware:** wgpu adopts the core's
+    Vulkan device (`from_raw`/`device_from_raw`, verified runtime), the
+    renderer rebuild-on-core-switch lifecycle is crash-free (swap/restore/
+    re-adopt; R1 holds), and display settings (shader/scaling/etc.) are
+    preserved across the rebuild. **Measured (cont. 14):** the M1 readback
+    is ~31ms/frame of pure serialization (NOT upscale — confirmed 1×), so
+    zero-copy is justified. **Zero-copy import SHIPPED (cont. 15, task 1 —
+    compiles clean + 49 tests pass, awaiting playtest):** `present_hw_image`
+    GPU-blits the core's `set_image` `VkImage` into a wgpu-native fb_texture
+    (raw `vkCmdBlitImage` via `as_hal_mut`, hand-managed barriers leaving it
+    in `SHADER_READ_ONLY` where wgpu's tracker expects it — sidesteps the
+    confirmed `texture_from_raw` UNDEFINED-discard wall) and runs the existing
+    shader/scale/bezel chain on it. Queue sync via `hw_queue_lock/unlock` (the
+    core's `lock_queue`). oa-shell sets import mode on adopt + routes both
+    present sites through `present_current` (readback stays the fallback).
+    **PROVEN at 60 fps (cont. 15b):** playtest log shows readback GONE, steady
+    60.0 fps (the on-screen ~55 was a cumulative-since-launch average), audio
+    0 dropped, CrtLite intact. Tasks 2 & 3 (multi-buffer `get_sync_index` /
+    lock-narrowing) are NOT needed for paraLLEl-N64 — deferred indefinitely.
+    The playtest's "small centered image" was the per-game `scaling: original`
+    override (native 640×240 centered), not a render bug; one follow-up fix
+    refreshes fb dims in import mode (was a stale stat). Also fixed en route: a
+    general libretro audio gap — `SET_SYSTEM_AV_INFO` (env 32) timing revisions
+    were dropped, so cores that revise their rate post-load (paraLLEl-N64)
+    underfed the sink → buzz; now honored (sink rebuild + limiter retime).
+  - **M2 ✅ SHIPPED + MERGED to main 2026-06-08** (tag `hw-render-m2-proven`).
+    Operator validated on hardware: paraLLEl-N64 zero-copy at steady 60 fps,
+    aspect/flip correct, CrtLite intact, audio good, AND software-core render +
+    HW⇄software swap-back confirmed. Tasks 2 & 3 (multi-buffer `get_sync_index`
+    / lock-narrowing) deferred indefinitely — not needed for paraLLEl-N64.
+    **HW-render arc now at a checkpoint** (M1+M2 done). Remaining M3 (validate
+    the rest of the Vulkan lineup — Beetle PSX HW, Flycast, PPSSPP, Saturn HW —
+    + capability tiering / software-peer fallback) and M4 (DX12/GL backends,
+    cross-platform) are **future stretch**, not currently in flight. Known
+    separate to-do: NES (+ maybe others) audio clipping/clicking — filed in
+    `NEXT.md` MEDIUM, independent of the HW path. See the hw-render
+    SESSION_LOG cont.15/15b/15c entries.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2

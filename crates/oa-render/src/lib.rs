@@ -30,6 +30,61 @@ pub enum RenderError {
     /// Failed to request a wgpu device from the chosen adapter.
     #[error("request_device failed: {0}")]
     RequestDevice(#[from] wgpu::RequestDeviceError),
+    /// M2: failed to adopt the HW core's Vulkan device into wgpu.
+    #[error("vulkan device adoption failed: {0}")]
+    VulkanAdopt(String),
+}
+
+/// Raw Vulkan handles for [`Renderer::new_adopting_vulkan`] (M2 zero-copy).
+/// Mirrors `oa_libretro::LoadedHwVulkan` (oa-shell forwards the fields).
+/// Raw `u64` handles keep this dependency-free at the call boundary; the
+/// renderer reconstructs the `ash::vk::*` types. None are owned here — the
+/// libretro layer owns + destroys the instance/device.
+#[derive(Clone, Debug)]
+pub struct AdoptedVulkanDevice {
+    pub instance: u64,
+    pub physical_device: u64,
+    pub device: u64,
+    pub queue: u64,
+    pub queue_family_index: u32,
+    pub queue_index: u32,
+    pub api_version: u32,
+}
+
+/// The HW core's current rendered `VkImage`, for the M2 zero-copy import path
+/// ([`Renderer::present_hw_image`]). Mirrors `oa_libretro::HwVulkanFrame`
+/// (oa-shell forwards the fields). Raw `u64` handle + scalars keep this
+/// dependency-free at the call boundary; the renderer reconstructs the
+/// `ash::vk::*` types. The core owns the image; the renderer only reads it
+/// (a GPU image→image blit into its own framebuffer texture).
+#[derive(Clone, Copy, Debug)]
+pub struct HwVulkanFrame {
+    /// Raw `VkImage` handle (`vk::Image::as_raw`).
+    pub image: u64,
+    /// Raw `VkFormat` (`vk::Format::as_raw`).
+    pub format: i32,
+    /// Raw `VkImageLayout` the core left the image in (`vk::ImageLayout::as_raw`).
+    pub image_layout: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Core renders bottom-left origin → blit with an inverted destination
+    /// Y range so the framebuffer texture ends up top-left for the blit pass.
+    pub flip_y: bool,
+}
+
+/// Scalar display settings that survive a renderer rebuild (M2 swaps the
+/// whole renderer when a HW core loads/unloads, which would otherwise reset
+/// these to defaults). Captured from the outgoing renderer and re-applied to
+/// the incoming one. The bezel is a GPU texture (device-bound) so it is NOT
+/// carried here — it re-applies when the frontend next sends it.
+#[derive(Clone, Copy, Debug)]
+pub struct DisplaySettings {
+    pub shader_preset: ShaderPreset,
+    pub scaling_mode: ScalingMode,
+    pub bloom_amount: f32,
+    pub overscan_crop: OverscanCrop,
+    pub display_aspect_override: Option<f32>,
+    pub rotation: u32,
 }
 
 /// How the core's framebuffer is mapped to the surface.
@@ -399,6 +454,13 @@ struct BezelTexture {
 struct FbTexture {
     width: u32,
     height: u32,
+    /// wgpu format of `texture`. The software path is always `Rgba8Unorm`;
+    /// the M2 zero-copy import path matches it to the core's `VkImage` format
+    /// (Rgba8Unorm / Bgra8Unorm) so the `vkCmdBlitImage` is a same-format copy
+    /// and sampling reads correct channels. Tracked so `present` /
+    /// `present_hw_image` reallocate when the format (not just the size)
+    /// changes between a software and a HW core.
+    format: wgpu::TextureFormat,
     texture: wgpu::Texture,
     /// View kept alongside the texture so chain passes can create their own
     /// bind groups against it without re-creating the view per frame.
@@ -421,6 +483,141 @@ impl Renderer {
         size: (u32, u32),
     ) -> Result<Self, RenderError> {
         pollster::block_on(Self::new_async(window_handle, display_handle, size))
+    }
+
+    /// M2: build the renderer **adopting a HW core's Vulkan device** so the
+    /// core's rendered images can be imported zero-copy (no readback). The
+    /// core's `create_device` already built the `VkDevice` on `adopt.instance`
+    /// (the same instance this window's surface is created on), enabling
+    /// `VK_KHR_swapchain` for us. We wrap those raw handles as wgpu-hal
+    /// objects and lift them to wgpu, then run the same `finish_build` as the
+    /// normal path so the pipeline/bezel/shader stack is identical.
+    ///
+    /// # Safety
+    /// All handles in `adopt` must be live Vulkan objects created on a single
+    /// instance that outlives this renderer (the libretro layer owns +
+    /// destroys them — this renderer must be dropped BEFORE that teardown).
+    /// `window_handle`/`display_handle` must be valid per [`Renderer::new`].
+    pub unsafe fn new_adopting_vulkan(
+        window_handle: RawWindowHandle,
+        display_handle: RawDisplayHandle,
+        size: (u32, u32),
+        adopt: &AdoptedVulkanDevice,
+    ) -> Result<Self, RenderError> {
+        use ash::vk::Handle as _;
+        use wgpu::hal::api::Vulkan;
+
+        let (width, height) = size;
+
+        // Our own Vulkan loader entry (the loader is process-global; loading
+        // a second time alongside oa-libretro's is fine).
+        let entry = unsafe { ash::Entry::load() }
+            .map_err(|e| RenderError::VulkanAdopt(format!("Entry::load: {e}")))?;
+
+        // Wrap the raw handles in ash. The device functions load via the
+        // instance's vkGetDeviceProcAddr — we build ash_device BEFORE moving
+        // ash_instance into wgpu-hal's from_raw.
+        let vk_instance = ash::vk::Instance::from_raw(adopt.instance);
+        let ash_instance = unsafe { ash::Instance::load(entry.static_fn(), vk_instance) };
+        let vk_phys = ash::vk::PhysicalDevice::from_raw(adopt.physical_device);
+        let vk_device = ash::vk::Device::from_raw(adopt.device);
+        let ash_device = unsafe { ash::Device::load(ash_instance.fp_v1_0(), vk_device) };
+
+        // Instance extensions oa-libretro enabled on this VkInstance + the
+        // one device extension wgpu uses beyond Vulkan-1.1 core.
+        let instance_extensions: Vec<&'static std::ffi::CStr> = vec![
+            ash::khr::surface::NAME,
+            ash::khr::win32_surface::NAME,
+            ash::khr::get_physical_device_properties2::NAME,
+            ash::khr::get_surface_capabilities2::NAME,
+        ];
+        let device_extensions: [&'static std::ffi::CStr; 1] = [ash::khr::swapchain::NAME];
+
+        // Wrap the VkInstance as a wgpu-hal instance. drop_callback = no-op:
+        // oa-libretro owns + destroys the instance/device; wgpu must NOT.
+        let hal_instance = unsafe {
+            wgpu::hal::vulkan::Instance::from_raw(
+                entry,
+                ash_instance,
+                adopt.api_version,
+                0,
+                None,
+                instance_extensions,
+                wgpu::InstanceFlags::empty(),
+                false,
+                Some(Box::new(|| {})),
+            )
+        }
+        .map_err(|e| RenderError::VulkanAdopt(format!("hal Instance::from_raw: {e}")))?;
+
+        let exposed = hal_instance
+            .expose_adapter(vk_phys)
+            .ok_or_else(|| RenderError::VulkanAdopt("expose_adapter returned None".into()))?;
+
+        // Adopt the core's VkDevice (non-consuming on the hal adapter, so we
+        // can still move `exposed` into wgpu below). drop_callback = no-op.
+        let open_device = unsafe {
+            exposed.adapter.device_from_raw(
+                ash_device,
+                Some(Box::new(|| {})),
+                &device_extensions,
+                wgpu::Features::empty(),
+                &wgpu::MemoryHints::Performance,
+                adopt.queue_family_index,
+                adopt.queue_index,
+            )
+        }
+        .map_err(|e| RenderError::VulkanAdopt(format!("device_from_raw: {e}")))?;
+
+        // Lift hal → wgpu.
+        let wgpu_instance = unsafe { wgpu::Instance::from_hal::<Vulkan>(hal_instance) };
+        let surface = unsafe {
+            wgpu_instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_window_handle: window_handle,
+                raw_display_handle: display_handle,
+            })?
+        };
+        let adapter = unsafe { wgpu_instance.create_adapter_from_hal::<Vulkan>(exposed) };
+        let adapter_limits = adapter.limits();
+        let (device, queue) = unsafe {
+            adapter.create_device_from_hal(
+                open_device,
+                &wgpu::DeviceDescriptor {
+                    label: Some("oa-render adopted device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: adapter_limits.clone(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
+        }?;
+        log::info!(
+            "oa-render: adopted HW core Vulkan device ({}) — zero-copy path active",
+            adapter.get_info().name
+        );
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(caps.formats[0]);
+        let alpha_mode = caps.alpha_modes[0];
+        let max_dim = adapter_limits.max_texture_dimension_2d;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: width.max(1).min(max_dim),
+            height: height.max(1).min(max_dim),
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        Self::finish_build(surface, device, queue, config, max_dim)
     }
 
     async fn new_async(
@@ -508,6 +705,28 @@ impl Renderer {
         surface.configure(&device, &config);
         log::info!("oa-render: surface configured ({}x{}, {:?})", config.width, config.height, format);
 
+        Self::finish_build(
+            surface,
+            device,
+            queue,
+            config,
+            adapter_limits.max_texture_dimension_2d,
+        )
+    }
+
+    /// Shared pipeline / bind-group / state construction for both the normal
+    /// [`new_async`] path and the M2 device-adopting
+    /// [`new_adopting_vulkan`](Self::new_adopting_vulkan) path. Everything
+    /// here depends only on the already-acquired device + queue + surface +
+    /// config + the device's max 2D texture dimension, so both constructors
+    /// produce an identical renderer regardless of how the device was made.
+    fn finish_build(
+        surface: wgpu::Surface<'static>,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        config: wgpu::SurfaceConfiguration,
+        max_texture_dim: u32,
+    ) -> Result<Self, RenderError> {
         // Chain-pass bind group layout: 0 = framebuffer texture, 1 = sampler,
         // 2 = preset uniform. Used by every effect-chain pass (currently
         // just the H/V blur in blur.wgsl).
@@ -757,7 +976,7 @@ impl Renderer {
             shader_preset: ShaderPreset::default(),
             display_aspect_override: None,
             overscan_crop: OverscanCrop::NONE,
-            max_texture_dim: adapter_limits.max_texture_dimension_2d,
+            max_texture_dim,
         })
     }
 
@@ -1338,6 +1557,33 @@ impl Renderer {
         self.rotation
     }
 
+    /// Snapshot the scalar display settings (M2: carried across a renderer
+    /// rebuild so the shader/scaling/etc. don't reset when a HW core's device
+    /// is adopted or released). Bezel excluded — it's a device-bound GPU
+    /// texture; the frontend re-sends it.
+    pub fn display_settings(&self) -> DisplaySettings {
+        DisplaySettings {
+            shader_preset: self.shader_preset,
+            scaling_mode: self.scaling_mode,
+            bloom_amount: self.bloom_amount,
+            overscan_crop: self.overscan_crop,
+            display_aspect_override: self.display_aspect_override,
+            rotation: self.rotation,
+        }
+    }
+
+    /// Re-apply settings captured via [`display_settings`](Self::display_settings)
+    /// onto a freshly-built renderer (through the real setters so the effect
+    /// chain / intermediates rebuild correctly).
+    pub fn apply_display_settings(&mut self, s: DisplaySettings) {
+        self.set_scaling_mode(s.scaling_mode);
+        self.set_shader_preset(s.shader_preset);
+        self.set_bloom_amount(s.bloom_amount);
+        self.set_overscan_crop(s.overscan_crop);
+        self.set_display_aspect_override(s.display_aspect_override);
+        self.set_rotation(s.rotation);
+    }
+
     /// Last computed game-output rectangle inside the surface, in
     /// physical pixels: `(x, y, width, height)`. Updated by every
     /// `present()` call. `None` until the first frame has rendered.
@@ -1384,38 +1630,19 @@ impl Renderer {
     /// chain output. Single-pass presets skip the chain entirely (effects
     /// apply in the final-blit shader's `preset_id` branch).
     pub fn present(&mut self, fb: Framebuffer<'_>) {
-        // (Re)allocate the framebuffer texture if dimensions changed.
+        // (Re)allocate the framebuffer texture if dimensions OR format changed
+        // (a HW core may have left it on Bgra8Unorm via the import path).
         let need_new_tex = match &self.fb_texture {
-            Some(t) => t.width != fb.width || t.height != fb.height,
+            Some(t) => {
+                t.width != fb.width
+                    || t.height != fb.height
+                    || t.format != wgpu::TextureFormat::Rgba8Unorm
+            }
             None => true,
         };
         if need_new_tex {
             self.fb_texture = Some(self.create_fb_texture(fb.width, fb.height));
         }
-
-        // Update the final-blit uniform. Layout matches the WGSL struct:
-        // [preset_id u32, fb_height u32, bloom_amount f32, _pad u32]. The
-        // bloom_amount slot is reinterpreted as f32 on the GPU side via
-        // the WGSL declaration; we write the raw u32 bit-pattern here.
-        // Overscan crop → UV bounds: when crop is NONE the bounds are
-        // (0,0,1,1) and the shader's UV remap is a no-op.
-        let (u_min, v_min, u_max, v_max) =
-            self.overscan_crop.uv_bounds(fb.width, fb.height);
-        let final_uniform: [u32; 8] = [
-            self.shader_preset.id(),
-            fb.height,
-            self.bloom_amount.to_bits(),
-            self.rotation,
-            u_min.to_bits(),
-            v_min.to_bits(),
-            u_max.to_bits(),
-            v_max.to_bits(),
-        ];
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&final_uniform),
-        );
 
         // Upload pixel bytes into the framebuffer texture.
         {
@@ -1442,6 +1669,40 @@ impl Renderer {
             );
         }
 
+        self.composite_and_present(fb.width, fb.height, fb.display_aspect);
+    }
+
+    /// Run the effect chain (if any), the final blit (with viewport / scaling
+    /// / overscan / rotation math), and the bezel overlay, then present — for
+    /// a framebuffer texture that has ALREADY been populated (by the software
+    /// `present` upload, or the M2 `present_hw_image` GPU blit). `fb_w`/`fb_h`
+    /// are the source framebuffer dimensions; `display_aspect` the core's
+    /// reported aspect (≤0 = square pixels).
+    fn composite_and_present(&mut self, fb_w: u32, fb_h: u32, display_aspect: f32) {
+        // Update the final-blit uniform. Layout matches the WGSL struct:
+        // [preset_id u32, fb_height u32, bloom_amount f32, _pad u32]. The
+        // bloom_amount slot is reinterpreted as f32 on the GPU side via
+        // the WGSL declaration; we write the raw u32 bit-pattern here.
+        // Overscan crop → UV bounds: when crop is NONE the bounds are
+        // (0,0,1,1) and the shader's UV remap is a no-op.
+        let (u_min, v_min, u_max, v_max) =
+            self.overscan_crop.uv_bounds(fb_w, fb_h);
+        let final_uniform: [u32; 8] = [
+            self.shader_preset.id(),
+            fb_h,
+            self.bloom_amount.to_bits(),
+            self.rotation,
+            u_min.to_bits(),
+            v_min.to_bits(),
+            u_max.to_bits(),
+            v_max.to_bits(),
+        ];
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&final_uniform),
+        );
+
         // === Multi-pass effect chain ====================================
         //
         // For Phosphor (2 passes) the dataflow is:
@@ -1451,14 +1712,14 @@ impl Renderer {
         // general, pass i writes to intermediate_a if i is even else
         // intermediate_b; the last write is what the final blit samples.
         let last_intermediate_was_a = if !self.effect_chain.is_empty() {
-            self.ensure_intermediates(fb.width, fb.height);
+            self.ensure_intermediates(fb_w, fb_h);
 
             // Re-pack each pass's uniform with the current fb dims while
             // preserving the constant-per-pass fields (e.g. direction flag).
             for pass in &self.effect_chain {
                 let mut bytes = pass.uniform_bytes;
-                bytes[1] = fb.width;
-                bytes[2] = fb.height;
+                bytes[1] = fb_w;
+                bytes[2] = fb_h;
                 self.queue.write_buffer(&pass.uniform_buffer, 0, bytemuck::cast_slice(&bytes));
             }
             self.run_effect_chain()
@@ -1474,7 +1735,7 @@ impl Renderer {
         // every other preset history_textures stays None and this is a
         // no-op.
         if self.shader_preset.uses_persistence() && !self.effect_chain.is_empty() {
-            self.ensure_history(fb.width, fb.height);
+            self.ensure_history(fb_w, fb_h);
             self.run_persistence(last_intermediate_was_a);
         }
 
@@ -1564,12 +1825,12 @@ impl Renderer {
             pass.set_bind_group(0, bind_group, &[]);
             // Override the core-reported aspect when the operator has
             // pinned one for this system/game; otherwise trust the core.
-            let mut effective_aspect = self.display_aspect_override.unwrap_or(fb.display_aspect);
+            let mut effective_aspect = self.display_aspect_override.unwrap_or(display_aspect);
             // Overscan crop shrinks the SOURCE dimensions the viewport
             // math sees, so Pixel-Perfect / Original / IntegerMultiple
             // pick integer multiples against the visible (cropped) row
             // count. Aspect-Correct / Stretched are unaffected.
-            let (mut eff_w, mut eff_h) = self.overscan_crop.effective_dims(fb.width, fb.height);
+            let (mut eff_w, mut eff_h) = self.overscan_crop.effective_dims(fb_w, fb_h);
             // Rotation swaps the EFFECTIVE source dimensions + inverts
             // aspect for odd rotations (90° / 270°). Pac-Man at native
             // 224×288 with rotation=1 displays as 288×224 on a landscape
@@ -1630,6 +1891,134 @@ impl Renderer {
         frame.present();
 
         self.frames_presented = self.frames_presented.wrapping_add(1);
+    }
+
+    /// M2 zero-copy import: composite the HW core's current rendered `VkImage`
+    /// WITHOUT a CPU readback. The renderer adopted the core's Vulkan device
+    /// ([`new_adopting_vulkan`](Self::new_adopting_vulkan)), so the core's
+    /// image and our wgpu textures share one device — we GPU-blit the core
+    /// image into our own framebuffer texture and run the normal
+    /// composite/scale/shader/bezel chain on it. Replaces the M1 synchronous
+    /// readback (the ~31 ms/frame serialization the measurement isolated).
+    ///
+    /// **Why a raw `vkCmdBlitImage` into a wgpu-native texture** (not a direct
+    /// `texture_from_raw` sample): wgpu-core tracks a `texture_from_raw`
+    /// texture as `UNINITIALIZED` → `vk::ImageLayout::UNDEFINED`, and would
+    /// discard the core's pixels on first use with no public way to seed the
+    /// layout (verified in wgpu 23.0.1 `wgpu-core/device/resource.rs:729` +
+    /// `wgpu-hal/vulkan/conv.rs:227`). So we keep the SOURCE entirely out of
+    /// wgpu's tracker (hand-managed barriers) and blit into a texture wgpu owns.
+    ///
+    /// **State-tracker contract:** the blit is recorded in a DEDICATED encoder
+    /// that never touches `fb_texture` through a wgpu op, so wgpu's tracker for
+    /// `fb_texture` is unchanged by it. The blit leaves `fb_texture` in
+    /// `SHADER_READ_ONLY_OPTIMAL` — exactly the layout wgpu's tracker maps its
+    /// `RESOURCE` state to — so once wgpu has sampled it once (frame ≥ 2) it
+    /// emits NO transition, and the blit's own `TRANSFER_WRITE → SHADER_READ`
+    /// back-barrier supplies copy→sample visibility (cross-submit, via
+    /// same-queue submission order). Frame 1 only: wgpu's first-use
+    /// `UNDEFINED → SHADER_READ` may discard (one possibly-blank frame).
+    ///
+    /// **QUEUE SYNC:** the adopted wgpu and the core's worker threads share ONE
+    /// `VkQueue`, which Vulkan requires be externally synchronized. The CALLER
+    /// (oa-shell) MUST bracket this call with `oa_libretro::hw_queue_lock()` /
+    /// `hw_queue_unlock()` (the same lock the core's `lock_queue` callback
+    /// honors) so wgpu's submit + present here can't race the core's submits.
+    ///
+    /// Returns `false` if the import couldn't run (no Vulkan device/texture
+    /// reachable, or zero extent) — the caller should fall back to `present`.
+    pub fn present_hw_image(&mut self, frame: HwVulkanFrame, display_aspect: f32) -> bool {
+        use ash::vk::Handle as _;
+        use wgpu::hal::api::Vulkan;
+
+        if frame.image == 0 || frame.width == 0 || frame.height == 0 {
+            return false;
+        }
+        let dst_format = map_vk_format_to_wgpu(frame.format);
+
+        // (Re)allocate the framebuffer texture to match the core image's
+        // extent AND format, so the blit is a same-format copy and sampling
+        // reads correct channels.
+        let need_new_tex = match &self.fb_texture {
+            Some(t) => t.width != frame.width || t.height != frame.height || t.format != dst_format,
+            None => true,
+        };
+        if need_new_tex {
+            self.fb_texture =
+                Some(self.create_fb_texture_fmt(frame.width, frame.height, dst_format));
+        }
+
+        // Raw ash::Device + the destination VkImage, via wgpu-hal.
+        // SAFETY: we only read the handles; we do not destroy them (wgpu /
+        // oa-libretro own their lifetimes).
+        // `Device::as_hal` returns `Option<R>` (None on backend mismatch); our
+        // closure returns `Option<ash::Device>` → flatten the two layers.
+        let ash_device = unsafe {
+            self.device
+                .as_hal::<Vulkan, _, _>(|d| d.map(|d| d.raw_device().clone()))
+        }
+        .flatten();
+        let Some(ash_device) = ash_device else {
+            log::error!("oa-render: present_hw_image — wgpu device is not Vulkan; cannot import");
+            return false;
+        };
+        let dst_image = {
+            let fb_tex = self.fb_texture.as_ref().expect("fb_texture ready");
+            // SAFETY: handle read-only; not destroyed here.
+            unsafe {
+                fb_tex
+                    .texture
+                    .as_hal::<Vulkan, _, _>(|t| t.map(|t| t.raw_handle()))
+            }
+        };
+        let Some(dst_image) = dst_image else {
+            log::error!("oa-render: present_hw_image — fb_texture is not a Vulkan texture");
+            return false;
+        };
+
+        let src_image = ash::vk::Image::from_raw(frame.image);
+        let src_layout = ash::vk::ImageLayout::from_raw(frame.image_layout);
+        let (w, h) = (frame.width, frame.height);
+
+        // Record the image→image blit into a DEDICATED encoder; grab its raw
+        // VkCommandBuffer and record raw Vulkan into it, then submit it ahead
+        // of the composite chain (the caller holds the core's queue lock).
+        let mut copy_enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("oa-render hw-import blit encoder"),
+            });
+        let recorded = unsafe {
+            copy_enc.as_hal_mut::<Vulkan, _, _>(|enc| match enc {
+                Some(enc) => {
+                    let cmd = enc.raw_handle();
+                    record_hw_blit(
+                        &ash_device, cmd, src_image, src_layout, dst_image, w, h, frame.flip_y,
+                    );
+                    true
+                }
+                None => false,
+            })
+        };
+        if recorded != Some(true) {
+            log::error!("oa-render: present_hw_image — command encoder is not Vulkan");
+            return false;
+        }
+        self.queue.submit(std::iter::once(copy_enc.finish()));
+
+        static FIRST_IMPORT: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        if !FIRST_IMPORT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!(
+                "oa-render: first zero-copy HW import — {w}x{h} {dst_format:?} flip_y={} (no readback)",
+                frame.flip_y
+            );
+        }
+
+        // Composite the now-populated framebuffer texture through the normal
+        // scale / shader / bezel chain + present.
+        self.composite_and_present(w, h, display_aspect);
+        true
     }
 
     /// Run every entry in the effect chain into the ping-pong intermediates.
@@ -1740,6 +2129,20 @@ impl Renderer {
     }
 
     fn create_fb_texture(&self, width: u32, height: u32) -> FbTexture {
+        self.create_fb_texture_fmt(width, height, wgpu::TextureFormat::Rgba8Unorm)
+    }
+
+    /// As [`create_fb_texture`](Self::create_fb_texture) but with an explicit
+    /// texture format. The software path uses `Rgba8Unorm`; the M2 zero-copy
+    /// import path passes the format mapped from the core's `VkImage` so the
+    /// blit is a straight copy. `COPY_DST` usage gives the underlying VkImage
+    /// `TRANSFER_DST` — valid as a `vkCmdBlitImage` destination.
+    fn create_fb_texture_fmt(
+        &self,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> FbTexture {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("oa-render fb texture"),
             size: wgpu::Extent3d {
@@ -1750,7 +2153,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -1786,8 +2189,175 @@ impl Renderer {
                 },
             ],
         });
-        log::info!("oa-render: allocated fb texture {}x{} (RGBA8)", width, height);
-        FbTexture { width, height, texture, view, bind_group }
+        log::info!("oa-render: allocated fb texture {}x{} ({:?})", width, height, format);
+        FbTexture { width, height, format, texture, view, bind_group }
+    }
+}
+
+/// Map a raw `VkFormat` (the core's `set_image` image format) to the wgpu
+/// texture format we allocate `fb_texture` as for the zero-copy import path.
+/// We mirror the EXACT format so `vkCmdBlitImage` is an identity copy (no
+/// implicit sRGB/channel conversion) and wgpu samples the correct channels.
+/// Unknown formats fall back to `Rgba8Unorm` (colors may be off; logged once).
+fn map_vk_format_to_wgpu(vk_format_raw: i32) -> wgpu::TextureFormat {
+    use ash::vk::Format;
+    match Format::from_raw(vk_format_raw) {
+        Format::R8G8B8A8_UNORM => wgpu::TextureFormat::Rgba8Unorm,
+        Format::R8G8B8A8_SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
+        Format::B8G8R8A8_UNORM => wgpu::TextureFormat::Bgra8Unorm,
+        Format::B8G8R8A8_SRGB => wgpu::TextureFormat::Bgra8UnormSrgb,
+        other => {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static WARNED: AtomicBool = AtomicBool::new(false);
+            if !WARNED.swap(true, Ordering::Relaxed) {
+                log::warn!(
+                    "oa-render: HW import — unexpected core image format {other:?}; \
+                     treating as RGBA8 (colors may be off)"
+                );
+            }
+            wgpu::TextureFormat::Rgba8Unorm
+        }
+    }
+}
+
+/// Record (into `cmd`) the barriers + `vkCmdBlitImage` that copy the core's
+/// `src` image into our framebuffer `dst` image for the zero-copy import path.
+/// Leaves `dst` in `SHADER_READ_ONLY_OPTIMAL` (where wgpu's `RESOURCE` tracker
+/// state expects it) and restores `src` to `src_layout` (where the core left
+/// it). NEAREST filter, same extent. When `flip_y`, the destination Y range is
+/// inverted so a bottom-left-origin core image lands top-left.
+///
+/// The destination's pre-blit old layout is `UNDEFINED` (we overwrite the full
+/// extent, so discarding prior contents is harmless and avoids a layout-mismatch
+/// validation error on the very first frame, before wgpu has touched the texture).
+#[allow(clippy::too_many_arguments)]
+fn record_hw_blit(
+    device: &ash::Device,
+    cmd: ash::vk::CommandBuffer,
+    src: ash::vk::Image,
+    src_layout: ash::vk::ImageLayout,
+    dst: ash::vk::Image,
+    w: u32,
+    h: u32,
+    flip_y: bool,
+) {
+    use ash::vk;
+    let range = vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1);
+    let subres = vk::ImageSubresourceLayers::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .mip_level(0)
+        .base_array_layer(0)
+        .layer_count(1);
+
+    // Front barriers: src (core image) → TRANSFER_SRC; dst (fb_texture) →
+    // TRANSFER_DST. dst old layout = UNDEFINED (whole image overwritten). The
+    // ALL_COMMANDS source stage orders against the core's prior writes (src)
+    // and against the PREVIOUS frame's sample reads of dst (WAR), both in
+    // same-queue submission order.
+    let to_transfer = [
+        vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::MEMORY_WRITE | vk::AccessFlags::MEMORY_READ)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .old_layout(src_layout)
+            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(src)
+            .subresource_range(range),
+        vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(dst)
+            .subresource_range(range),
+    ];
+
+    let src_offsets = [
+        vk::Offset3D { x: 0, y: 0, z: 0 },
+        vk::Offset3D { x: w as i32, y: h as i32, z: 1 },
+    ];
+    let dst_offsets = if flip_y {
+        [
+            vk::Offset3D { x: 0, y: h as i32, z: 0 },
+            vk::Offset3D { x: w as i32, y: 0, z: 1 },
+        ]
+    } else {
+        [
+            vk::Offset3D { x: 0, y: 0, z: 0 },
+            vk::Offset3D { x: w as i32, y: h as i32, z: 1 },
+        ]
+    };
+    let blit = vk::ImageBlit::default()
+        .src_subresource(subres)
+        .src_offsets(src_offsets)
+        .dst_subresource(subres)
+        .dst_offsets(dst_offsets);
+
+    // Back barriers: src → src_layout (return as the core left it); dst →
+    // SHADER_READ_ONLY (where wgpu's tracker expects it). The dst back barrier
+    // (TRANSFER_WRITE → SHADER_READ, dstStage FRAGMENT) is what makes the blit
+    // visible to the subsequent sample in the composite pass.
+    let to_shader = [
+        vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
+            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .new_layout(src_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(src)
+            .subresource_range(range),
+        vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(dst)
+            .subresource_range(range),
+    ];
+
+    // SAFETY: `cmd` is recording on `device`; `src`/`dst` are live images with
+    // the required usages (src TRANSFER_SRC-capable per the libretro Vulkan
+    // contract; dst is our COPY_DST=TRANSFER_DST fb_texture). The barriers
+    // bracket the blit so layouts + hazards are correct.
+    unsafe {
+        device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &to_transfer,
+        );
+        device.cmd_blit_image(
+            cmd,
+            src,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            dst,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &[blit],
+            vk::Filter::NEAREST,
+        );
+        device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &to_shader,
+        );
     }
 }
 

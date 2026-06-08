@@ -48,6 +48,12 @@ tauri-plugin-dialog          = { version = "2" }
 tauri-plugin-global-shortcut = { version = "2" }
 wgpu               = "23"
 raw-window-handle  = "0.6"
+# Vulkan bindings for the HW-render pipeline (docs/PLANS/hw-render-pipeline.md).
+# M1 stands up a standalone VkDevice for HW-rendered cores (Dolphin, …),
+# isolated from wgpu. Default features include `loaded` — the Vulkan loader
+# (vulkan-1.dll) is resolved at runtime, so a host without Vulkan fails
+# gracefully (D4 capability tiering) rather than failing to launch.
+ash                = "0.38"
 pollster           = "0.3"
 bytemuck           = { version = "1", features = ["derive"] }
 cpal               = "0.15"

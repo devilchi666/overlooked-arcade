@@ -109,6 +109,17 @@ pub(crate) struct State {
     pub input_analog_buttons: [[i16; 16]; 5],
     /// Snapshotted display aspect (final image W:H, 0.0 = caller falls back to width:height).
     pub display_aspect: f32,
+    /// Set when a core revises its timing mid-run via
+    /// `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO` (env 32) — `(fps, sample_rate)`.
+    /// Many cores (paraLLEl-N64, some Mednafen cores) declare a placeholder
+    /// av_info at `retro_get_system_av_info` and revise the REAL fps / audio
+    /// rate once the game's region/VI mode is known, after `retro_load_game`.
+    /// The shell drains this each frame via `take_pending_av_info` and, if the
+    /// rate/fps changed, rebuilds the audio sink + retimes the frame limiter —
+    /// without this the sink keeps the stale rate and chronically under/over-
+    /// feeds the device (audible as a buzzing/garbled stream). `None` until a
+    /// core actually calls env 32 with new timing.
+    pub pending_av_info: Option<(f64, u32)>,
     /// Path/dir/ext strings the core may request via environment callbacks.
     /// CStrings own the bytes; the raw pointers we hand back must stay valid
     /// until the next env call. We hold them in State for that lifetime.
@@ -281,6 +292,35 @@ pub(crate) struct State {
     /// reads `LibretroCore::rotation()` after `retro_load_game` returns
     /// and pushes the value to the renderer for viewport math.
     pub rotation: u32,
+    /// HW-render callback the core registered via `SET_HW_RENDER` (env 14)
+    /// — carries the requested context type (Vulkan/GL/D3D), API version,
+    /// and the core's `context_reset` / `context_destroy` pointers. `None`
+    /// for the software cores (the common case). Captured in the M1 probe
+    /// phase; the device-build commit fills its frontend-provided fields
+    /// (`get_proc_address` / `get_current_framebuffer`) and drives
+    /// `context_reset`. See docs/PLANS/hw-render-pipeline.md.
+    #[allow(dead_code)] // read by the M1 device-build commit (next).
+    pub hw_render_callback: Option<retro_hw_render_callback>,
+    /// Vulkan context-negotiation interface the core handed us via env 43.
+    /// The M1 standalone-device build calls its `create_device` to stand up
+    /// a `VkDevice` with exactly the extensions/features the core needs.
+    /// `None` until a Vulkan HW core registers one. M1 self-builds the
+    /// device (this Dolphin build provides no negotiation interface), so
+    /// this is captured for diagnostics + the M2 shared-device path.
+    #[allow(dead_code)] // consumed by the M2 shared-device path.
+    pub hw_negotiation_vulkan: Option<retro_hw_render_context_negotiation_interface_vulkan>,
+    /// The standalone Vulkan device the core renders on (M1, D6). Finalized
+    /// either by the core's `create_device` (env 43, canonical) or our
+    /// self-build (fallback, at load). The libretro interface we hand the
+    /// core points back at this allocation. `None` for software cores and
+    /// until a HW core's device is built.
+    pub hw_vulkan: Option<Box<crate::hw_vulkan::VulkanHw>>,
+    /// Instance-level Vulkan resources, created when we accept a Vulkan
+    /// `SET_HW_RENDER`, held until the device is finalized into `hw_vulkan`.
+    /// Taken (→ `None`) once the device is built. A leftover here at
+    /// teardown means a HW core was accepted but no device was ever built
+    /// (load failed early) — `hw_teardown` destroys it.
+    pub hw_instance: Option<crate::hw_vulkan::VulkanInstance>,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -308,6 +348,7 @@ impl State {
             input_lightgun_buttons: [0; 5],
             input_analog_buttons: [[0; 16]; 5],
             display_aspect: 0.0,
+            pending_av_info: None,
             system_dir: CString::new(".").unwrap(),
             save_dir: CString::new(".").unwrap(),
             pending_rom_data: std::ptr::null(),
@@ -337,6 +378,10 @@ impl State {
             memory_descriptors: Vec::new(),
             memory_map_ptrs: Vec::new(),
             rotation: 0,
+            hw_render_callback: None,
+            hw_negotiation_vulkan: None,
+            hw_vulkan: None,
+            hw_instance: None,
         }
     }
 
@@ -606,6 +651,213 @@ pub(crate) fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     g.as_mut().map(f)
 }
 
+/// Enumerate + log the host's Vulkan physical devices exactly once per
+/// process. Called from the HW-render env handlers (SET_HW_RENDER /
+/// negotiation interface) — both can fire and we only want one device
+/// dump. Process-global (not per-load) is fine: it's a diagnostic, and the
+/// device set doesn't change across core reloads. See `hw_vulkan`.
+fn hw_probe_once() {
+    static HW_PROBED: AtomicBool = AtomicBool::new(false);
+    if !HW_PROBED.swap(true, AtomicOrdering::Relaxed) {
+        crate::hw_vulkan::probe_physical_devices();
+    }
+}
+
+/// True when a standalone Vulkan HW-render device is live (a Vulkan HW core
+/// was accepted and its device built).
+pub(crate) fn hw_is_active() -> bool {
+    with_state(|s| s.hw_vulkan.is_some()).unwrap_or(false)
+}
+
+/// Drive the core's `context_reset` once the device + interface are ready.
+/// Called from `LibretroCore::finish_load` after `retro_load_game` returns;
+/// the core typically fetches our interface (env 41) from inside it. No-op
+/// for software cores.
+pub(crate) fn hw_after_load() {
+    let cb = with_state(|s| s.hw_render_callback).flatten();
+    let Some(cb) = cb else {
+        return;
+    };
+    if cb.context_type != RETRO_HW_CONTEXT_VULKAN {
+        return;
+    }
+    // If the core never drove create_device (no negotiation interface, or it
+    // failed), self-build the device now from the instance we created at
+    // accept time. Cores WITH a negotiation interface (Dolphin) already have
+    // `hw_vulkan` built by env 43, so this is a no-op for them.
+    if !hw_is_active() {
+        if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+            match inst.into_hw_self_build() {
+                Ok(hw) => {
+                    let mut boxed = Box::new(hw);
+                    boxed.finalize_handle();
+                    with_state(|s| s.hw_vulkan = Some(boxed));
+                    log::info!("oa-libretro HW: self-built device at load — ready");
+                }
+                Err(e) => log::error!("oa-libretro HW: self-build at load failed: {e}"),
+            }
+        }
+    }
+    if !hw_is_active() {
+        log::error!("oa-libretro HW: no Vulkan device available — context_reset skipped");
+        return;
+    }
+    if let Some(reset) = cb.context_reset {
+        log::info!("oa-libretro HW: calling context_reset");
+        unsafe { reset() };
+        log::info!("oa-libretro HW: context_reset returned");
+    }
+}
+
+/// Zero-copy import mode (M2 Stage 4). When the renderer has adopted the
+/// core's Vulkan device, oa-shell sets this true so `hw_after_run` SKIPS the
+/// CPU readback (the slow path) — the renderer imports the `VkImage` directly
+/// via `loaded_core_hw_frame`. False (default) keeps the M1/Stage-3 readback
+/// (software cores + HW cores whose device adoption failed).
+static HW_IMPORT_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Toggle zero-copy import mode (see [`HW_IMPORT_MODE`]). Called by oa-shell
+/// when it adopts (true) / restores (false) the renderer.
+pub fn set_hw_import_mode(on: bool) {
+    HW_IMPORT_MODE.store(on, AtomicOrdering::Relaxed);
+}
+
+/// Copy the core's latest rendered `VkImage` back into `fb_rgba`. Called
+/// from `LibretroCore::run_frame` after `retro_run` returns. No-op for
+/// software cores / when no HW frame is pending this run, and SKIPPED
+/// entirely in zero-copy import mode (the renderer imports the image).
+pub(crate) fn hw_after_run() {
+    if HW_IMPORT_MODE.load(AtomicOrdering::Relaxed) {
+        // Zero-copy import: the renderer imports the core's VkImage directly,
+        // so we skip the (slow) CPU readback. We still refresh fb_width/
+        // fb_height from the core's current frame so `framebuffer()` dims, the
+        // frame-stat log, and pointer-viewport mapping stay accurate (the
+        // readback used to do this; display_aspect comes from av_info and is
+        // already correct). Cheap: current_frame just copies a few scalars.
+        with_state(|s| {
+            let dims = s
+                .hw_vulkan
+                .as_ref()
+                .and_then(|hw| hw.current_frame())
+                .map(|f| (f.width, f.height));
+            if let Some((w, h)) = dims {
+                s.fb_width = w;
+                s.fb_height = h;
+            }
+        });
+        return;
+    }
+    let t0 = std::time::Instant::now();
+    let did_readback = with_state(|s| {
+        // Disjoint field borrows: `hw_vulkan` (shared) + `fb_*` (mut).
+        if let Some(hw) = s.hw_vulkan.as_ref() {
+            if let Err(e) =
+                hw.readback_into(&mut s.fb_rgba, &mut s.fb_width, &mut s.fb_height)
+            {
+                static WARNED: AtomicBool = AtomicBool::new(false);
+                if !WARNED.swap(true, AtomicOrdering::Relaxed) {
+                    log::error!("oa-libretro HW: readback failed: {e}");
+                }
+            }
+            true
+        } else {
+            false
+        }
+    })
+    .unwrap_or(false);
+    // M2 diagnostic: is the synchronous readback (GPU copy + full-drain fence
+    // wait) the speed bottleneck, or is the core itself slow? Log the average
+    // readback cost every 120 frames so we know whether zero-copy is worth
+    // the intricate D7 sync work or whether it's a core-config issue.
+    if did_readback {
+        use std::sync::atomic::AtomicU64;
+        static RB_FRAMES: AtomicU64 = AtomicU64::new(0);
+        static RB_NANOS: AtomicU64 = AtomicU64::new(0);
+        let ns = t0.elapsed().as_nanos() as u64;
+        let frames = RB_FRAMES.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+        let total = RB_NANOS.fetch_add(ns, AtomicOrdering::Relaxed) + ns;
+        if frames % 120 == 0 {
+            log::info!(
+                "oa-libretro HW: readback avg {:.2} ms/frame over {} frames (last {:.2} ms)",
+                (total as f64 / frames as f64) / 1.0e6,
+                frames,
+                ns as f64 / 1.0e6,
+            );
+        }
+    }
+}
+
+/// The HW core's current rendered image for zero-copy import (M2 Stage 4).
+/// `None` for software cores / when no image is pending. The renderer
+/// imports (does not own) it; the libretro layer owns its lifetime.
+pub fn loaded_core_hw_frame() -> Option<crate::hw_vulkan::HwVulkanFrame> {
+    with_state(|s| s.hw_vulkan.as_ref().and_then(|hw| hw.current_frame())).flatten()
+}
+
+/// Take (and clear) any timing revision a core published via
+/// `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO` (env 32) since the last call.
+/// Returns `(fps, sample_rate)`. The shell polls this each frame and, when
+/// the rate/fps differs from the live values, rebuilds the audio sink +
+/// retimes the frame limiter. Returns `None` when no revision is pending.
+/// See [`State::pending_av_info`].
+pub fn take_pending_av_info() -> Option<(f64, u32)> {
+    with_state(|s| s.pending_av_info.take()).flatten()
+}
+
+/// Acquire the loaded HW core's `VkQueue` lock (M2 zero-copy). The adopted
+/// wgpu renderer shares the core's queue; Vulkan requires external sync of
+/// submits. oa-shell brackets each `Renderer::present_hw_image` (wgpu blit +
+/// present) with [`hw_queue_lock`] / [`hw_queue_unlock`] — the SAME lock the
+/// core's `lock_queue` interface callback honors — so wgpu's submit can't race
+/// the core's worker-thread submits. No-op for software cores / before a HW
+/// device is built. MUST be paired with [`hw_queue_unlock`].
+///
+/// Note: this briefly takes the STATE mutex to reach the device; the core's
+/// `lock_queue` callback reaches the same `QueueLock` via the interface handle
+/// (NOT the STATE mutex), so a background submit spinning on the lock never
+/// contends on STATE — no re-entrancy with `retro_run`.
+pub fn hw_queue_lock() {
+    with_state(|s| {
+        if let Some(hw) = s.hw_vulkan.as_ref() {
+            hw.lock_queue();
+        }
+    });
+}
+
+/// Release the loaded HW core's `VkQueue` lock (see [`hw_queue_lock`]).
+pub fn hw_queue_unlock() {
+    with_state(|s| {
+        if let Some(hw) = s.hw_vulkan.as_ref() {
+            hw.unlock_queue();
+        }
+    });
+}
+
+/// Tear down the HW-render device. Called from `LibretroCore::drop` BEFORE
+/// the State is uninstalled: invokes the core's `context_destroy`, then
+/// drops the device (its `Drop` waits the device idle + destroys every Vk
+/// object). No-op for software cores.
+pub(crate) fn hw_teardown() {
+    let cb = with_state(|s| s.hw_render_callback).flatten();
+    if let Some(cb) = cb {
+        if let Some(destroy) = cb.context_destroy {
+            log::info!("oa-libretro HW: calling context_destroy");
+            unsafe { destroy() };
+        }
+    }
+    let hw = with_state(|s| s.hw_vulkan.take()).flatten();
+    if hw.is_some() {
+        log::info!("oa-libretro HW: dropping standalone Vulkan device");
+    }
+    drop(hw);
+    // Clean up a leftover instance (HW core accepted but device never
+    // finalized — e.g. load failed before context_reset).
+    if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+        log::info!("oa-libretro HW: destroying leftover Vulkan instance");
+        inst.destroy();
+    }
+}
+
 /// Supported-device list the loaded core advertised for `port` via
 /// `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO`. Reads the singleton State
 /// directly so Tauri commands (which don't hold a `LibretroCore` ref —
@@ -657,6 +909,16 @@ pub fn loaded_core_min_audio_latency_ms() -> u32 {
     with_state(|s| s.min_audio_latency_ms).unwrap_or(0)
 }
 
+/// Raw Vulkan handles for the renderer to adopt the loaded HW core's device
+/// (M2 zero-copy). `Some` only when a Vulkan HW core's device has been built
+/// (`State.hw_vulkan` present); `None` for software cores. The renderer
+/// (oa-render) reconstructs the `vk::*` types from these raw `u64`s and
+/// builds wgpu on this exact device so it can import the core's images with
+/// no readback. See docs/PLANS/hw-render-pipeline.md (M2) + DECISIONS D9/D10.
+pub fn loaded_core_hw_vulkan() -> Option<crate::hw_vulkan::LoadedHwVulkan> {
+    with_state(|s| s.hw_vulkan.as_ref().map(|hw| hw.adopted_handles())).flatten()
+}
+
 // ---------- extern "C" callback trampolines ----------
 
 pub(crate) unsafe extern "C" fn cb_video_refresh(
@@ -665,6 +927,26 @@ pub(crate) unsafe extern "C" fn cb_video_refresh(
     height: u32,
     pitch: usize,
 ) {
+    // HW-rendered-frame sentinel. A Vulkan/GL core signals "the frame is
+    // already on the GPU, not in this pointer" by passing
+    // `data == RETRO_HW_FRAME_BUFFER_VALID` (the `(void*)-1` value). It is
+    // NOT a CPU buffer — running `pixel::convert` on it would dereference
+    // `0xFFFF…` and crash (a latent bug even before HW support: the
+    // null-check below lets `-1` through). The M1 device-build commit reads
+    // the core's `VkImage` back into `fb_rgba` here; in this probe phase we
+    // have no GPU readback yet, so we simply drop the HW frame. Either way:
+    // never treat the sentinel as a pixel pointer.
+    if data as usize == RETRO_HW_FRAME_BUFFER_VALID {
+        // The core handed us the rendered image via `set_image` earlier in
+        // this `retro_run`; record its extent + mark it ready so the
+        // post-run readback (`hw_after_run`) copies it into `fb_rgba`.
+        with_state(|s| {
+            if let Some(hw) = s.hw_vulkan.as_ref() {
+                hw.mark_frame_ready(width, height);
+            }
+        });
+        return;
+    }
     if data.is_null() || width == 0 || height == 0 {
         return;
     }
@@ -1340,7 +1622,25 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                 return false;
             }
             let av = unsafe { &*(data as *const retro_system_av_info) };
-            with_state(|s| s.display_aspect = av.geometry.aspect_ratio);
+            let fps = av.timing.fps;
+            let sample_rate = av.timing.sample_rate.round() as u32;
+            log::info!(
+                "oa-libretro: SET_SYSTEM_AV_INFO — fps={fps:.3} sample_rate={sample_rate} \
+                 geometry {}x{} aspect={:.4} (revised post-load)",
+                av.geometry.base_width,
+                av.geometry.base_height,
+                av.geometry.aspect_ratio,
+            );
+            with_state(|s| {
+                s.display_aspect = av.geometry.aspect_ratio;
+                // Stash the revised timing for the shell to apply (rebuild the
+                // audio sink + retime the limiter). Only meaningful when fps /
+                // sample_rate are sane; cores occasionally pass 0 for fields
+                // they don't intend to change.
+                if sample_rate > 0 && fps > 0.0 {
+                    s.pending_av_info = Some((fps, sample_rate));
+                }
+            });
             true
         }
         RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
@@ -1800,12 +2100,188 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
             unsafe { *(data as *mut retro_sensor_interface) = iface; }
             true
         }
-        // Decline these — we don't have camera / location / HW render
-        // interfaces, and lying about them risks the core calling a
-        // null function pointer.
+        // Decline these — we don't have camera / location interfaces, and
+        // lying about them risks the core calling a null function pointer.
         RETRO_ENVIRONMENT_GET_CAMERA_INTERFACE
-        | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE
-        | RETRO_ENVIRONMENT_SET_HW_RENDER => false,
+        | RETRO_ENVIRONMENT_GET_LOCATION_INTERFACE => false,
+
+        // ---- HW render (M1 probe phase) ----
+        //
+        // docs/PLANS/hw-render-pipeline.md + DECISIONS D6. These three
+        // env commands form the libretro HW-render handshake. In this
+        // PROBE commit we capture + log what the core requests but do NOT
+        // yet stand up the standalone Vulkan device — so `SET_HW_RENDER`
+        // still returns false (today's behavior; the core falls back / the
+        // crash is unchanged). The point is to read the log afterward and
+        // see exactly which negotiation version + apiVersion + GPU the
+        // operator's Dolphin .dll wants, then write the device code to
+        // match. The device-build commit flips `SET_HW_RENDER` to accept.
+        RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER => {
+            // Answer Vulkan so the core selects its Vulkan path and hands
+            // us the Vulkan negotiation interface (env 43). Without this,
+            // Dolphin defaults to OpenGL (observed in the 2026-06-07 log)
+            // and we never see the Vulkan negotiation struct we need to
+            // probe. Harmless as a hint even while we still decline
+            // SET_HW_RENDER below.
+            if data.is_null() {
+                return false;
+            }
+            unsafe {
+                *(data as *mut u32) = RETRO_HW_CONTEXT_VULKAN;
+            }
+            log::info!("oa-libretro HW: GET_PREFERRED_HW_RENDER -> Vulkan");
+            true
+        }
+        RETRO_ENVIRONMENT_SET_HW_RENDER => {
+            if data.is_null() {
+                return false;
+            }
+            // SAFETY: core hands us a *retro_hw_render_callback it filled in.
+            let cb = unsafe { *(data as *const retro_hw_render_callback) };
+            log::info!(
+                "oa-libretro HW: SET_HW_RENDER — context_type={} version={}.{} depth={} \
+                 stencil={} bottom_left_origin={} cache_context={} debug_context={}",
+                cb.context_type,
+                cb.version_major,
+                cb.version_minor,
+                cb.depth,
+                cb.stencil,
+                cb.bottom_left_origin,
+                cb.cache_context,
+                cb.debug_context,
+            );
+            // M1 targets Vulkan only. Decline other APIs so the core moves
+            // to its next preferred backend (it offers Vulkan first because
+            // we answered GET_PREFERRED_HW_RENDER = Vulkan).
+            if cb.context_type != RETRO_HW_CONTEXT_VULKAN {
+                log::warn!(
+                    "oa-libretro HW: declining non-Vulkan context_type {} — M1 targets Vulkan only",
+                    cb.context_type,
+                );
+                return false;
+            }
+            hw_probe_once();
+            // Create our VkInstance + select the GPU now. The DEVICE is
+            // built later — preferably by the core's `create_device` when
+            // its negotiation interface arrives (env 43), so the core knows
+            // the frontend is driving Vulkan (and renders headless into
+            // images for us) instead of spinning up its own swapchain
+            // context, which deadlocks with no window. Self-build is the
+            // fallback (at load) for cores with no negotiation interface.
+            let have =
+                with_state(|s| s.hw_vulkan.is_some() || s.hw_instance.is_some()).unwrap_or(false);
+            if !have {
+                match crate::hw_vulkan::VulkanInstance::create(cb.bottom_left_origin) {
+                    Ok(inst) => {
+                        with_state(|s| s.hw_instance = Some(inst));
+                        log::info!(
+                            "oa-libretro HW: Vulkan instance ready (device deferred to create_device / load)"
+                        );
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "oa-libretro HW: instance create failed: {e} — declining SET_HW_RENDER (core will fall back / Null)"
+                        );
+                        return false;
+                    }
+                }
+            }
+            // Vulkan cores resolve entry points through the interface's
+            // get_*_proc_addr, not the GL-style callback fields — null them.
+            unsafe {
+                let p = data as *mut retro_hw_render_callback;
+                (*p).get_current_framebuffer = None;
+                (*p).get_proc_address = None;
+            }
+            with_state(|s| s.hw_render_callback = Some(cb));
+            log::info!("oa-libretro HW: SET_HW_RENDER accepted (Vulkan)");
+            true
+        }
+        RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE => {
+            if data.is_null() {
+                return false;
+            }
+            // Hand the core our persistent interface struct (lives inside
+            // the boxed VulkanHw → pointer stays valid for the core's life).
+            let ptr = with_state(|s| s.hw_vulkan.as_ref().map(|hw| hw.interface_ptr())).flatten();
+            match ptr {
+                Some(p) => {
+                    unsafe {
+                        *(data as *mut *const retro_hw_render_interface_vulkan) = p;
+                    }
+                    log::info!("oa-libretro HW: GET_HW_RENDER_INTERFACE -> Vulkan interface");
+                    true
+                }
+                None => {
+                    log::warn!(
+                        "oa-libretro HW: GET_HW_RENDER_INTERFACE requested but no device is built"
+                    );
+                    false
+                }
+            }
+        }
+        RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE => {
+            if data.is_null() {
+                return false;
+            }
+            // The interface starts with `{ interface_type, interface_version }`;
+            // confirm it's the Vulkan variant (type 0) before reinterpreting
+            // the rest of the struct.
+            let base_type = unsafe { *(data as *const u32) };
+            if base_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN {
+                log::warn!(
+                    "oa-libretro HW: negotiation interface type {base_type} is not Vulkan (0) — ignoring"
+                );
+                return false;
+            }
+            // SAFETY: type-checked above; the core owns the struct for the
+            // duration of the call. We copy it out (it's Copy — fn pointers
+            // + scalars only).
+            let iface =
+                unsafe { *(data as *const retro_hw_render_context_negotiation_interface_vulkan) };
+            crate::hw_vulkan::log_negotiation_interface(&iface);
+            with_state(|s| s.hw_negotiation_vulkan = Some(iface));
+            hw_probe_once();
+            // Canonical device path: let the core build the device on OUR
+            // instance via create_device. Doing it now — while the core is
+            // still inside its video init — is what tells the core the
+            // frontend owns the Vulkan context, so it renders headless into
+            // images for us instead of trying to create its own swapchain
+            // (the deadlock the first device-build hit). On failure we put
+            // the instance back and fall back to self-build at load.
+            if let Some(create_device) = iface.create_device {
+                let need = with_state(|s| s.hw_vulkan.is_none() && s.hw_instance.is_some())
+                    .unwrap_or(false);
+                if need {
+                    if let Some(inst) = with_state(|s| s.hw_instance.take()).flatten() {
+                        match inst.try_create_device(create_device) {
+                            Some((device, queue, qf, gpu)) => match inst.finalize(device, queue, qf, gpu) {
+                                Ok(hw) => {
+                                    let mut boxed = Box::new(hw);
+                                    boxed.finalize_handle();
+                                    with_state(|s| s.hw_vulkan = Some(boxed));
+                                    log::info!(
+                                        "oa-libretro HW: device built via core create_device — ready"
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "oa-libretro HW: finalize after create_device failed: {e}"
+                                    );
+                                }
+                            },
+                            None => {
+                                log::warn!(
+                                    "oa-libretro HW: create_device failed — will self-build the device at load"
+                                );
+                                with_state(|s| s.hw_instance = Some(inst));
+                            }
+                        }
+                    }
+                }
+            }
+            true
+        }
 
         // Keyboard callback registration. Cores that want raw key events
         // (MAME for operator-test / TAB menu, MSX for BASIC, every future

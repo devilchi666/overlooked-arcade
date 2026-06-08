@@ -3535,6 +3535,95 @@ fn setup_single_window(
     Ok(ShellWindow::SingleWindow { window })
 }
 
+/// M2 HW-render: rebuild the renderer **adopting** a HW core's Vulkan device.
+/// Drops `old` FIRST so its window surface is released before the new one is
+/// created — Windows allows only one surface per HWND ("Native window is in
+/// use"). On adoption failure, falls back to a normal renderer (the M1
+/// readback path). Returns `(renderer, adopted?)`.
+fn hw_swap_to_adopted(
+    old: oa_render::Renderer,
+    raw_window: raw_window_handle::RawWindowHandle,
+    raw_display: raw_window_handle::RawDisplayHandle,
+    size: (u32, u32),
+    adopt: &oa_render::AdoptedVulkanDevice,
+) -> (oa_render::Renderer, bool) {
+    // Carry display settings across the rebuild (shader/scaling/etc. would
+    // otherwise reset to defaults).
+    let settings = old.display_settings();
+    drop(old);
+    match unsafe { oa_render::Renderer::new_adopting_vulkan(raw_window, raw_display, size, adopt) } {
+        Ok(mut r) => {
+            r.apply_display_settings(settings);
+            log::info!("oa-shell: HW-render — renderer adopted the core's Vulkan device (M2 zero-copy path)");
+            (r, true)
+        }
+        Err(e) => {
+            log::error!(
+                "oa-shell: HW-render — device adoption failed ({e:?}); falling back to normal renderer (M1 readback)"
+            );
+            let mut r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+                .expect("oa-render: failed to rebuild normal renderer after adoption failure");
+            r.apply_display_settings(settings);
+            (r, false)
+        }
+    }
+}
+
+/// M2 HW-render: rebuild the NORMAL renderer, dropping `old` (which may be
+/// adopting a HW core's device) FIRST so the window surface AND the core's
+/// device are released before the caller drops the core (whose teardown
+/// destroys that device).
+fn hw_restore_normal(
+    old: oa_render::Renderer,
+    raw_window: raw_window_handle::RawWindowHandle,
+    raw_display: raw_window_handle::RawDisplayHandle,
+    size: (u32, u32),
+) -> oa_render::Renderer {
+    let settings = old.display_settings();
+    drop(old);
+    let mut r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+        .expect("oa-render: failed to rebuild normal renderer");
+    r.apply_display_settings(settings);
+    r
+}
+
+/// Present one frame, choosing the M2 zero-copy HW-import path when the
+/// renderer has adopted the core's Vulkan device, else the software/readback
+/// path. When `adopted`, we ask oa-libretro for the core's current rendered
+/// `VkImage` and blit it on-GPU (no CPU readback) — bracketed by the core's
+/// queue lock so wgpu's submit can't race the core's worker-thread submits on
+/// the shared queue. Falls back to `present(framebuffer())` when no HW frame
+/// is pending or the import couldn't run (e.g. adoption-failed cores still on
+/// the M1 readback path, which fills `fb_rgba`).
+fn present_current<C: oa_core::Core>(
+    renderer: &mut oa_render::Renderer,
+    core_ref: &C,
+    adopted: bool,
+) {
+    if adopted {
+        if let Some(hw) = oa_libretro::loaded_core_hw_frame() {
+            let aspect = core_ref.framebuffer().display_aspect;
+            oa_libretro::hw_queue_lock();
+            let ok = renderer.present_hw_image(
+                oa_render::HwVulkanFrame {
+                    image: hw.image,
+                    format: hw.format,
+                    image_layout: hw.image_layout,
+                    width: hw.width,
+                    height: hw.height,
+                    flip_y: hw.flip_y,
+                },
+                aspect,
+            );
+            oa_libretro::hw_queue_unlock();
+            if ok {
+                return;
+            }
+        }
+    }
+    renderer.present(core_ref.framebuffer());
+}
+
 fn run_emu_render(
     running: Arc<AtomicBool>,
     inner_size_fn: Box<dyn Fn() -> Option<(u32, u32)> + Send>,
@@ -3587,6 +3676,14 @@ fn run_emu_render(
             return;
         }
     };
+
+    // M2 HW-render: true when `renderer` is adopting the loaded HW core's
+    // Vulkan device (built via `Renderer::new_adopting_vulkan`). When set, the
+    // renderer references the core's `VkDevice`, so it MUST be rebuilt to a
+    // normal renderer BEFORE that core is dropped (its teardown destroys the
+    // device). `false` = the normal `Renderer::new` path (all software cores
+    // + HW cores whose adoption failed → they fall back to M1 readback).
+    let mut renderer_adopted = false;
 
     let mut input = oa_input::InputPoller::with_mappings(
         oa_input::KeyboardMapping::empty(),
@@ -4125,6 +4222,17 @@ fn run_emu_render(
                             log::error!("oa-shell: {context} aborted — probe {} failed: {e:?}; keeping current core", target_dll);
                             toast(&app_handle, ToastLevel::Error, format!("Core probe failed: {target_dll}"));
                         } else {
+                            // M2: if the renderer is adopting the outgoing core's
+                            // Vulkan device, rebuild the normal renderer FIRST so
+                            // wgpu releases that device before the core drops (its
+                            // teardown destroys it) — otherwise use-after-free.
+                            if renderer_adopted {
+                                let size = inner_size_fn().unwrap_or(initial_size);
+                                renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
+                                renderer_adopted = false;
+                                oa_libretro::set_hw_import_mode(false);
+                                log::info!("oa-shell: HW-render — restored normal renderer before core swap");
+                            }
                             // Drop current to release the libretro singleton before loading the new one.
                             let _ = core.take();
                             // Engine-launcher cores (scummvm, dosbox) want a per-core
@@ -4541,6 +4649,35 @@ fn run_emu_render(
                             }
                         }
                     }
+                    // HW-render renderer-option fix (2026-06-08): apply the
+                    // operator's per-system core-option overrides BEFORE
+                    // retro_load_game, not only after (the post-load block
+                    // further down). Cores that gate their hardware-render API
+                    // on a core option read it DURING retro_load_game to decide
+                    // which SET_HW_RENDER context to request:
+                    //   paraLLEl-N64  parallel-n64-gfxplugin = parallel → Vulkan
+                    //   Beetle PSX HW beetle_psx_hw_renderer = vulkan
+                    //   Flycast / PPSSPP likewise.
+                    // Without this, the override lands too late and the core
+                    // requests its DEFAULT API (OpenGL for paraLLEl-N64), which
+                    // M1 declines → the core can't fall back → crash. set_option
+                    // just stages the value in State.option_values, so the
+                    // core's GET_VARIABLE poll during load returns it even
+                    // before the schema is captured. Per-system only (matches
+                    // the post-load block; per-game options apply separately).
+                    {
+                        let pre = core_options::read(&app_data_dir, &current_system_id);
+                        if !pre.values.is_empty() {
+                            for (k, v) in &pre.values {
+                                core_ref.set_option(k, v);
+                            }
+                            log::info!(
+                                "oa-shell: pre-applied {} core-option override(s) for {} before load_rom (renderer-option fix)",
+                                pre.values.len(),
+                                current_system_id,
+                            );
+                        }
+                    }
                     // Pre-compute the stem — cores read it via info_ext->name
                     // during retro_load_game (e.g. FCEUmm uses it to derive
                     // <save_dir>/<name>.sav). Passing the actual ROM stem
@@ -4550,6 +4687,39 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // M2 HW-render: if this is a Vulkan HW core, rebuild
+                            // the renderer ADOPTING the core's Vulkan device so
+                            // its images can be imported zero-copy (Stage 4).
+                            // Stage 3 keeps the readback present path, so this
+                            // proves the adoption + renderer lifecycle while the
+                            // game still renders via fb_rgba. On adoption failure
+                            // we keep the normal renderer and the HW core falls
+                            // back to the M1 readback path (slow but works).
+                            if let Some(hw) = oa_libretro::loaded_core_hw_vulkan() {
+                                let size = inner_size_fn().unwrap_or(initial_size);
+                                let adopt = oa_render::AdoptedVulkanDevice {
+                                    instance: hw.instance,
+                                    physical_device: hw.physical_device,
+                                    device: hw.device,
+                                    queue: hw.queue,
+                                    queue_family_index: hw.queue_family_index,
+                                    queue_index: hw.queue_index,
+                                    api_version: hw.api_version,
+                                };
+                                // Consume the old renderer FIRST (frees the window
+                                // surface) before building the adopted one.
+                                let (r, adopted) =
+                                    hw_swap_to_adopted(renderer, raw_window, raw_display, size, &adopt);
+                                renderer = r;
+                                renderer_adopted = adopted;
+                                // M2 Stage 4: when adopted, skip the CPU
+                                // readback in `hw_after_run` — present_current
+                                // imports the VkImage zero-copy instead. On
+                                // adoption failure keep readback (import_mode
+                                // off → fb_rgba path).
+                                oa_libretro::set_hw_import_mode(adopted);
+                            }
 
                             // Phase 2.5 — push the core's display rotation to
                             // the renderer. Vertical arcade boards (Pac-Man,
@@ -4917,6 +5087,16 @@ fn run_emu_render(
                     } else {
                         log::info!("oa-shell: UnloadRom — no ROM loaded");
                         toast(&app_handle, ToastLevel::Info, "No ROM loaded");
+                    }
+                    // M2: rebuild the normal renderer before dropping a HW core
+                    // whose Vulkan device the renderer is adopting (else the
+                    // core teardown destroys a device wgpu still holds).
+                    if renderer_adopted {
+                        let size = inner_size_fn().unwrap_or(initial_size);
+                        renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
+                        renderer_adopted = false;
+                        oa_libretro::set_hw_import_mode(false);
+                        log::info!("oa-shell: HW-render — restored normal renderer before unload");
                     }
                     // Drop the entire core, not just the ROM. Mednafen-derived
                     // cores don't recover from `retro_unload_game` followed by
@@ -6222,6 +6402,48 @@ fn run_emu_render(
                     core_ref.run_frame();
                     apply_cheats(core_ref, &cheat_runtime);
 
+                    // A core may revise its REAL fps / audio rate AFTER load
+                    // via SET_SYSTEM_AV_INFO (env 32): paraLLEl-N64 declares a
+                    // placeholder at get_system_av_info, then publishes the
+                    // true timing once the game's VI/region is known (during
+                    // the first run_frame). Apply it — rebuild the audio sink
+                    // at the new rate (otherwise it chronically under/over-
+                    // feeds the device → a buzzing/garbled stream) and retime
+                    // the frame limiter. Fires once shortly after load, so a
+                    // brief glitch during the rebuild is acceptable.
+                    if let Some((new_fps, new_rate)) = oa_libretro::take_pending_av_info() {
+                        if new_rate != timing.sample_rate {
+                            log::info!(
+                                "oa-shell: core revised audio rate {} -> {} Hz (SET_SYSTEM_AV_INFO); rebuilding sink",
+                                timing.sample_rate, new_rate
+                            );
+                            let device_pref = read_audio_pref(&app_data_dir);
+                            audio = match oa_audio::AudioSink::with_device(new_rate, device_pref.as_deref()) {
+                                Ok(mut a) => {
+                                    let _ = a.ensure_min_latency_ms(
+                                        oa_libretro::loaded_core_min_audio_latency_ms(),
+                                    );
+                                    Some(a)
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "oa-shell: audio sink rebuild after av-info change failed ({e:?}); silent"
+                                    );
+                                    None
+                                }
+                            };
+                            timing.sample_rate = new_rate;
+                        }
+                        if new_fps > 0.0 && (new_fps - timing.fps).abs() > 0.001 {
+                            log::info!(
+                                "oa-shell: core revised fps {:.3} -> {:.3} (SET_SYSTEM_AV_INFO); retiming limiter",
+                                timing.fps, new_fps
+                            );
+                            frame_period = Duration::from_secs_f64(1.0 / new_fps);
+                            timing.fps = new_fps;
+                        }
+                    }
+
                     // === Run-Ahead lookahead =============================
                     //
                     // Reduce perceived input latency by N frames: after
@@ -6267,7 +6489,7 @@ fn run_emu_render(
                                 core_ref.run_frame();
                                 apply_cheats(core_ref, &cheat_runtime);
                             }
-                            renderer.present(core_ref.framebuffer());
+                            present_current(&mut renderer, core_ref, renderer_adopted);
                             if let Err(e) = core_ref.load_state(&mut run_ahead_save_buf.as_slice()) {
                                 log::warn!("oa-shell: run-ahead rollback failed: {e:?}");
                             } else if let Some(sink) = audio.as_mut() {
@@ -6428,7 +6650,7 @@ fn run_emu_render(
             // real audio; skip both here to avoid double-rendering and
             // duplicated audio samples.
             if !ran_ahead {
-                renderer.present(core_ref.framebuffer());
+                present_current(&mut renderer, core_ref, renderer_adopted);
 
                 // Phase 2.5 — push the freshly-computed game-output
                 // rectangle (in screen coordinates) into the InputPoller

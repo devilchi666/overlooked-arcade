@@ -30,9 +30,17 @@ with a connected gamepad's analog stick driving Mario / Link.
 
 ---
 
-## ⬜ Phase 1 — First N64 game running
+## 🟨 Phase 1 — First N64 game running
 
-- ⬜ Operator validation: SM64 / GoldenEye / Ocarina of Time / MK64 / Smash 64 — operator playtest.
+> **2026-06-08 — paraLLEl-N64 now actually RUNS in-process at full speed.**
+> The HW-Render Pipeline M1+M2 (merged to main, tag `hw-render-m2-proven`)
+> made the Vulkan core viable: it renders zero-copy at a steady 60 fps with
+> correct audio (after the `SET_SYSTEM_AV_INFO` rate fix), aspect, and the
+> CrtLite shader. Before this the core crashed / ran at half speed. The
+> specific-title + multi-region matrix below is still operator-pending. See
+> [docs/PLANS/hw-render-pipeline.md](../../PLANS/hw-render-pipeline.md) M2.
+
+- 🟨 Operator validation: SM64 / GoldenEye / Ocarina of Time / MK64 / Smash 64 — paraLLEl-N64 proven running at 60 fps on operator's hardware (HW-render M2); full per-title sweep still pending operator playtest.
 - ✅ Analog stick smoke-test — closed by cross-system analog axes (`InputState.axes` + `compute_stick_output` with keyboard fallback + deadzone + sensitivity).
 - ✅ Save state F5/F8 round-trip — closed by cross-system save-state infra (`oa_libretro::LibretroCore::save_state / load_state`).
 - ⬜ Multi-region testing (NTSC US + NTSC JP + PAL EU) — operator playtest.
