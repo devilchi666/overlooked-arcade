@@ -81,3 +81,39 @@ wgpu-shared device + zero-copy (plan D3) move to M2. ~150 lines of
 device setup are throwaway; the FFI + handshake + Vulkan interface
 callbacks + run-loop wiring carry over. Recorded in the plan as D6 +
 the refined M1 milestone.
+
+### D7 — libretro Vulkan HW protocol (researched from source, 2026-06-08)
+
+Captured after three failed Dolphin bring-up attempts, from
+`libretro_vulkan.h`, DolphinLibretro `Vulkan.cpp`, and RetroArch
+`gfx/common/vulkan_common.c`. The authoritative contract:
+
+- **Frontend owns the instance; core builds the device.** The frontend
+  creates the `VkInstance` (honoring `get_application_info`'s apiVersion,
+  else 1.0 upgraded to 1.1), selects a GPU, then calls the core's
+  `create_device` (v1) / `create_device2` (v2) passing that instance +
+  GPU. The core creates the `VkDevice` + a GRAPHICS+COMPUTE queue and
+  fills `retro_vulkan_context`. Fallback: if `create_device` is NULL or
+  returns false, the frontend builds the device itself.
+- **The frontend instance MUST carry the WSI/surface extensions**
+  (`VK_KHR_surface` + platform surface, e.g. `VK_KHR_win32_surface`, plus
+  `get_physical_device_properties2` / `get_surface_capabilities2`). HW
+  cores create a surface + swapchain internally (headless/fake — they
+  render into images, never to a real window) and will null-deref the
+  surface/swapchain entry points if the instance lacks these. **This was
+  the cont. 3 crash.**
+- **The core renders headless; the frontend composites.** The core never
+  presents to a window. It hands the frontend a finished image via
+  `set_image` and signals `video_refresh(RETRO_HW_FRAME_BUFFER_VALID)`.
+- **The `set_image` image is guaranteed `TRANSFER_SRC | SAMPLED`** (Dolphin
+  also adds `TRANSFER_DST | COLOR_ATTACHMENT`), layout
+  `SHADER_READ_ONLY_OPTIMAL`. So a `vkCmdCopyImageToBuffer` readback (M1)
+  is valid, and an on-GPU sampled composite (M2) is the zero-copy path.
+- **Surface passed to create_device:** RetroArch passes its real window
+  surface; M1 passes `VK_NULL_HANDLE` (headless — we have no window for the
+  core and read back to CPU). Contract-legal ("if surface is NULL, the
+  core need not consider presentation when creating queues").
+- **create_device timing:** RetroArch calls it from its own video-init
+  flow (after load), not the env handler. M1 currently calls it from the
+  env-43 handler (got the device built successfully); revisit timing only
+  if a core needs it.

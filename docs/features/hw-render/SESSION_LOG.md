@@ -6,6 +6,43 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 4) — M1: researched the protocol; instance needs WSI extensions
+
+- **Playtest of cont. 3 (oa-current.log 10:55):** create_device **worked**
+  (`core built device via create_device — ready`), but Dolphin then ran its
+  OWN `VulkanContext::Create`, reached `Using GFX backend: Vulkan`, and
+  hard-crashed — *before* ever calling GET_HW_RENDER_INTERFACE (env 41). Same
+  death point as cont. 2.
+- **Researched the actual contract** (operator chose research-first) by
+  fetching `libretro_vulkan.h`, DolphinLibretro `Vulkan.cpp`, and RetroArch
+  `gfx/common/vulkan_common.c`. Findings (recorded in DECISIONS D7):
+  - The core renders **headless** into images it hands us via `set_image`;
+    it never presents to a real window. Our readback model is correct.
+  - The `set_image` image is created with **TRANSFER_SRC | SAMPLED |
+    TRANSFER_DST | COLOR_ATTACHMENT**, layout `SHADER_READ_ONLY_OPTIMAL` —
+    so our `vkCmdCopyImageToBuffer` readback is valid. **The "TRANSFER_SRC
+    risk" is resolved** (it's guaranteed present).
+  - **Root cause of the crash:** RetroArch creates its `VkInstance` WITH the
+    WSI/surface instance extensions (`VK_KHR_surface`, `VK_KHR_win32_surface`,
+    `get_physical_device_properties2`, `get_surface_capabilities2`). We
+    created ours bare. Dolphin's video backend creates a surface + (fake)
+    swapchain internally and dereferences `vkCreate*SurfaceKHR` / swapchain
+    entry points — which are **NULL without those instance extensions** →
+    crash in the core's own init, exactly where we saw it.
+- **Shipped (branch `feat/hw-render-m1`, not merged):**
+  `VulkanInstance::create` now enables the four WSI/surface instance
+  extensions (each only if the loader reports it available), matching
+  RetroArch's `vulkan_context_create_instance_wrapper`. Workspace checks
+  clean (zero warnings); oa-libretro 49 tests pass.
+- **Next (operator):** launch again. If the missing-extension theory is
+  right, Dolphin's own context init now succeeds and it proceeds past
+  `Using GFX backend: Vulkan` to call `GET_HW_RENDER_INTERFACE` (env 41) →
+  `context_reset` → frames. Paste the new `oa-libretro HW:` lines + what's on
+  screen. If it still dies at the same spot, the next lever is matching
+  RetroArch's create_device *timing* (it calls create_device from video init
+  after load, not from the env handler) and/or passing a real/headless
+  surface.
+
 ## 2026-06-08 (cont. 3) — M1 fix: use the core's create_device (was deadlocking)
 
 - **Playtest result of cont. 2 (oa-current.log 10:30):** black screen + hard

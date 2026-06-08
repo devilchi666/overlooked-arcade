@@ -280,8 +280,46 @@ impl VulkanInstance {
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"Overlooked Arcade")
             .api_version(vk::API_VERSION_1_1);
-        let instance_ci = vk::InstanceCreateInfo::default().application_info(&app_info);
-        // SAFETY: instance_ci valid for the call.
+
+        // Enable the WSI/surface INSTANCE extensions, matching RetroArch's
+        // frontend instance. HW cores (Dolphin) create a surface + swapchain
+        // internally (headless/fake — they render into images they hand us
+        // via set_image, never to a real window) and dereference the
+        // vkCreate*SurfaceKHR / swapchain entry points. With a bare instance
+        // those resolve to NULL and the core crashes during its OWN context
+        // init, right after it selects the Vulkan backend and before it ever
+        // queries our render interface (observed 2026-06-08). Add each only
+        // if the loader reports it available. Verified against RetroArch
+        // gfx/common/vulkan_common.c (vulkan_context_create_instance_wrapper).
+        let avail = unsafe { entry.enumerate_instance_extension_properties(None) }
+            .unwrap_or_default();
+        let has = |name: &CStr| {
+            avail
+                .iter()
+                .any(|e| unsafe { CStr::from_ptr(e.extension_name.as_ptr()) } == name)
+        };
+        let wanted: [&CStr; 4] = [
+            ash::khr::surface::NAME,
+            ash::khr::win32_surface::NAME,
+            ash::khr::get_physical_device_properties2::NAME,
+            ash::khr::get_surface_capabilities2::NAME,
+        ];
+        let ext_ptrs: Vec<*const c_char> =
+            wanted.iter().copied().filter(|n| has(n)).map(|n| n.as_ptr()).collect();
+        log::info!(
+            "oa-libretro HW: enabling {} instance extension(s): {}",
+            ext_ptrs.len(),
+            wanted
+                .iter()
+                .filter(|n| has(n))
+                .map(|n| n.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        let instance_ci = vk::InstanceCreateInfo::default()
+            .application_info(&app_info)
+            .enabled_extension_names(&ext_ptrs);
+        // SAFETY: instance_ci + ext_ptrs valid for the call.
         let instance = unsafe { entry.create_instance(&instance_ci, None) }
             .map_err(|e| format!("vkCreateInstance failed: {e:?}"))?;
 
