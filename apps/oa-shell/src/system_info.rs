@@ -711,10 +711,12 @@ pub fn parse_history_slim_xml(content: &str) -> Result<HashMap<String, String>, 
                     _ => {}
                 }
             }
-            Event::Empty(ref e) | Event::Start(ref e) if in_systems => {
-                // `<system name="…"/>` — could be Start (rare, with
-                // child content) or Empty (the common self-closing
-                // form). Both routes record the name.
+            Event::Empty(ref e) if in_systems => {
+                // `<system name="…"/>` — always self-closing in MAME's
+                // history XML, so it arrives as an Empty event. (A Start
+                // form would be caught by the unconditional `Event::Start`
+                // arm above before reaching here, so listing it as an
+                // alternative was unreachable.)
                 let name = e.name();
                 let tag = std::str::from_utf8(name.as_ref()).unwrap_or("");
                 if tag == "system" {

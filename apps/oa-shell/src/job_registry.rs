@@ -260,7 +260,12 @@ pub enum JobEvent {
 /// outside callers can flip the flags via Tauri commands.
 #[derive(Clone)]
 pub struct JobHandle {
+    // Identity the handle carries for diagnostics + a future
+    // cancel-by-id command surface; today the worker acts on the
+    // cancel/pause Arc flags, so these are write-only for now.
+    #[allow(dead_code)]
     pub job_id: i64,
+    #[allow(dead_code)]
     pub kind: String,
     pub cancel: Arc<AtomicBool>,
     pub pause: Arc<AtomicBool>,

@@ -914,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn unl_is_NOT_homebrew() {
+    fn unl_is_not_homebrew() {
         // Unlicensed commercial games (Wisdom Tree, Color Dreams,
         // Camerica) sit in a different preservation category from
         // amateur homebrew. `Unl` becomes a plain flag, never sets

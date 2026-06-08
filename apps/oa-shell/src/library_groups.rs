@@ -139,6 +139,11 @@ pub struct GameVariant {
 /// Filters are AND-combined: a variant is included only when EVERY
 /// active filter passes. Want OR semantics? Compose multiple filter
 /// passes at the call site.
+// Phase F foundation — shipped in A2, consumed when Phase F wires the
+// Preservation Vault filter ribbon. #[allow(dead_code)] on the struct +
+// its impl + the predicate keeps the build clean without discarding the
+// foundation ahead of its UI.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VariantFilters {
     /// Drop variants flagged as bad dumps (`[b]` / `[b1]` / …).
@@ -160,6 +165,7 @@ pub struct VariantFilters {
     pub exclude_prerelease: bool,
 }
 
+#[allow(dead_code)]
 impl VariantFilters {
     /// Default Casual-view filter set: exclude bad dumps + over-dumps
     /// + BIOS + prerelease. Hacks / translations / pirate / homebrew
@@ -184,6 +190,7 @@ impl VariantFilters {
 
 /// True when `variant` passes every active filter in `filters`.
 /// Variants with no filter exclusions always pass.
+#[allow(dead_code)]
 pub fn variant_passes_filters(variant: &GameVariant, filters: &VariantFilters) -> bool {
     if filters.exclude_bad_dumps && variant.dump_status == DumpStatus::BadDump {
         return false;

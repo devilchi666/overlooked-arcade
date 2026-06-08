@@ -911,20 +911,26 @@ impl GameInfoIndex {
         None
     }
 
+    // Diagnostic accessors over the index. No production caller yet
+    // (len/is_empty are exercised by tests); kept as the read API the
+    // debug-log / "every game with a Blocker bug" report surfaces will
+    // consume. #[allow] rather than delete so that work isn't redone.
     /// All records in stable order — system_id alphabetical, then
-    /// source-file order within each system. Useful for "show every
-    /// game with a Blocker bug" reports.
+    /// source-file order within each system.
+    #[allow(dead_code)]
     pub fn all(&self) -> &[GameInfo] {
         &self.all
     }
 
     /// Number of indexed records — for diagnostic / debug-log surfaces.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.all.len()
     }
 
     /// True when no records loaded — useful for tests + the empty()
     /// fallback path.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.all.is_empty()
     }
