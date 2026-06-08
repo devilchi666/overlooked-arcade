@@ -3535,6 +3535,50 @@ fn setup_single_window(
     Ok(ShellWindow::SingleWindow { window })
 }
 
+/// M2 HW-render: rebuild the renderer **adopting** a HW core's Vulkan device.
+/// Drops `old` FIRST so its window surface is released before the new one is
+/// created — Windows allows only one surface per HWND ("Native window is in
+/// use"). On adoption failure, falls back to a normal renderer (the M1
+/// readback path). Returns `(renderer, adopted?)`.
+fn hw_swap_to_adopted(
+    old: oa_render::Renderer,
+    raw_window: raw_window_handle::RawWindowHandle,
+    raw_display: raw_window_handle::RawDisplayHandle,
+    size: (u32, u32),
+    adopt: &oa_render::AdoptedVulkanDevice,
+) -> (oa_render::Renderer, bool) {
+    drop(old);
+    match unsafe { oa_render::Renderer::new_adopting_vulkan(raw_window, raw_display, size, adopt) } {
+        Ok(r) => {
+            log::info!("oa-shell: HW-render — renderer adopted the core's Vulkan device (M2 zero-copy path)");
+            (r, true)
+        }
+        Err(e) => {
+            log::error!(
+                "oa-shell: HW-render — device adoption failed ({e:?}); falling back to normal renderer (M1 readback)"
+            );
+            let r = unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+                .expect("oa-render: failed to rebuild normal renderer after adoption failure");
+            (r, false)
+        }
+    }
+}
+
+/// M2 HW-render: rebuild the NORMAL renderer, dropping `old` (which may be
+/// adopting a HW core's device) FIRST so the window surface AND the core's
+/// device are released before the caller drops the core (whose teardown
+/// destroys that device).
+fn hw_restore_normal(
+    old: oa_render::Renderer,
+    raw_window: raw_window_handle::RawWindowHandle,
+    raw_display: raw_window_handle::RawDisplayHandle,
+    size: (u32, u32),
+) -> oa_render::Renderer {
+    drop(old);
+    unsafe { oa_render::Renderer::new(raw_window, raw_display, size) }
+        .expect("oa-render: failed to rebuild normal renderer")
+}
+
 fn run_emu_render(
     running: Arc<AtomicBool>,
     inner_size_fn: Box<dyn Fn() -> Option<(u32, u32)> + Send>,
@@ -4139,16 +4183,9 @@ fn run_emu_render(
                             // teardown destroys it) — otherwise use-after-free.
                             if renderer_adopted {
                                 let size = inner_size_fn().unwrap_or(initial_size);
-                                match unsafe { oa_render::Renderer::new(raw_window, raw_display, size) } {
-                                    Ok(r) => {
-                                        renderer = r;
-                                        renderer_adopted = false;
-                                        log::info!("oa-shell: HW-render — restored normal renderer before core swap");
-                                    }
-                                    Err(e) => log::error!(
-                                        "oa-shell: HW-render — failed to restore normal renderer before swap: {e:?}"
-                                    ),
-                                }
+                                renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
+                                renderer_adopted = false;
+                                log::info!("oa-shell: HW-render — restored normal renderer before core swap");
                             }
                             // Drop current to release the libretro singleton before loading the new one.
                             let _ = core.take();
@@ -4624,22 +4661,12 @@ fn run_emu_render(
                                     queue_index: hw.queue_index,
                                     api_version: hw.api_version,
                                 };
-                                match unsafe {
-                                    oa_render::Renderer::new_adopting_vulkan(
-                                        raw_window, raw_display, size, &adopt,
-                                    )
-                                } {
-                                    Ok(r) => {
-                                        renderer = r;
-                                        renderer_adopted = true;
-                                        log::info!(
-                                            "oa-shell: HW-render — renderer adopted the core's Vulkan device (M2 zero-copy path)"
-                                        );
-                                    }
-                                    Err(e) => log::error!(
-                                        "oa-shell: HW-render — device adoption failed ({e:?}); keeping normal renderer (M1 readback fallback)"
-                                    ),
-                                }
+                                // Consume the old renderer FIRST (frees the window
+                                // surface) before building the adopted one.
+                                let (r, adopted) =
+                                    hw_swap_to_adopted(renderer, raw_window, raw_display, size, &adopt);
+                                renderer = r;
+                                renderer_adopted = adopted;
                             }
 
                             // Phase 2.5 — push the core's display rotation to
@@ -5014,16 +5041,9 @@ fn run_emu_render(
                     // core teardown destroys a device wgpu still holds).
                     if renderer_adopted {
                         let size = inner_size_fn().unwrap_or(initial_size);
-                        match unsafe { oa_render::Renderer::new(raw_window, raw_display, size) } {
-                            Ok(r) => {
-                                renderer = r;
-                                renderer_adopted = false;
-                                log::info!("oa-shell: HW-render — restored normal renderer before unload");
-                            }
-                            Err(e) => log::error!(
-                                "oa-shell: HW-render — failed to restore normal renderer before unload: {e:?}"
-                            ),
-                        }
+                        renderer = hw_restore_normal(renderer, raw_window, raw_display, size);
+                        renderer_adopted = false;
+                        log::info!("oa-shell: HW-render — restored normal renderer before unload");
                     }
                     // Drop the entire core, not just the ROM. Mednafen-derived
                     // cores don't recover from `retro_unload_game` followed by

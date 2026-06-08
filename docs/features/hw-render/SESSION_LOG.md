@@ -6,6 +6,30 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 11) — M2 Stage 3 smoke test: adoption WORKS; fixed surface-in-use
+
+- **Smoke test (oa-current.log 13:30): the device adoption SUCCEEDED at
+  runtime** — `oa-render: adopted HW core Vulkan device (RTX 4090) — zero-copy
+  path active`. The whole novel chain ran: create_device(require swapchain) ok
+  → context_reset → GET_HW_RENDER_INTERFACE → wgpu `from_raw`/`device_from_raw`/
+  `create_device_from_hal`. The biggest M2 risk (wgpu adopting a device it
+  didn't create) is PROVEN on real hardware.
+- **Crash cause (fixed): `surface configuration failed: Native window is in
+  use`.** My swap built the new adopted renderer (new surface on the HWND)
+  while the OLD renderer's surface was still alive — Windows allows one
+  surface per HWND. Fix: route all 3 swap sites through `hw_swap_to_adopted` /
+  `hw_restore_normal` helpers that **`drop(old)` FIRST** (freeing the window)
+  before building the new renderer; adoption failure falls back to a normal
+  renderer (M1 readback). Compiles; workspace clean.
+- **Known next risk (queue sync):** the adopted wgpu and oa-libretro's
+  readback + the core's Granite threads all submit to the SAME VkQueue.
+  wgpu's present (emu/render thread) isn't taking the core's `lock_queue`, so
+  it can race the core's background submits (VkQueue needs external sync).
+  May glitch/crash intermittently in Stage 3; the proper fix is the Stage 4
+  sync work (D7). Re-testing Stage 3 first to see if it renders.
+- **Next:** operator re-tests paraLLEl-N64 (expect: renders via readback on
+  the adopted device, no surface crash; watch for queue-race glitches).
+
 ## 2026-06-08 (cont. 10) — M2 Stage 3: device adoption + lifecycle wired (compiles)
 
 - **Stage 3a (committed `855bbf7`) — adoption machinery, de-risked:** the
