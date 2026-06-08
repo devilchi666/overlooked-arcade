@@ -6,6 +6,36 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 10) — M2 Stage 3: device adoption + lifecycle wired (compiles)
+
+- **Stage 3a (committed `855bbf7`) — adoption machinery, de-risked:** the
+  wgpu-hal `from_raw` path COMPILES on wgpu 23.0.1 (the central M2
+  assumption). `oa-render`: extracted `Renderer::finish_build` (shared
+  pipeline build) + `Renderer::new_adopting_vulkan` (wraps the core's raw
+  VkInstance/device → `Instance::from_raw`/`expose_adapter`/`device_from_raw`
+  → wgpu `from_hal`/`create_*_from_hal`, no-op drop callbacks so oa-libretro
+  stays the sole owner) + `AdoptedVulkanDevice` + `RenderError::VulkanAdopt`;
+  added `ash` (workspace 0.38 → handle types unify). `oa-libretro`:
+  `try_create_device` now requires `[VK_KHR_swapchain]`.
+- **Stage 3b (this commit) — oa-shell lifecycle wired:** `run_emu_render`
+  (emu + render on ONE thread) now: on a Vulkan HW-core load swaps `renderer`
+  to `new_adopting_vulkan` (`renderer_adopted` flag); on core-swap / UnloadRom
+  rebuilds the normal renderer BEFORE the core drops (safe ordering — the core
+  teardown destroys the device); adoption failure keeps the normal renderer →
+  HW core falls back to the M1 readback path. **Stage 3 keeps readback**, so
+  no speed change yet — it proves adoption + lifecycle. Workspace clean (zero
+  warnings).
+- **Known gap (to fix before/with Stage 4):** rebuilding the renderer resets
+  display settings (shader preset / scaling / bloom / bezel) to defaults —
+  they arrive via separate `ApplyShaderPreset`/`SetScalingMode` EmuCommands,
+  not LoadRom. Affects HW cores only (software cores never rebuild). Simple
+  scalar settings are easy to transfer via getters; the bezel's source RGBA
+  isn't retained (minor). Will handle alongside Stage 4.
+- **Runtime status:** compiles; NOT yet runtime-tested (the adoption could
+  fail/crash at runtime). Decision pending: smoke-test Stage 3 (no speed
+  change) vs roll straight into Stage 4 (zero-copy import = the speed win) +
+  settings preservation, then one playtest.
+
 ## 2026-06-08 (cont. 9) — M2 started: architecture confirmed + Stage 1/2
 
 - **Branch `feat/hw-render-m2`** (off `feat/hw-render-m1`; M1 stays bankable

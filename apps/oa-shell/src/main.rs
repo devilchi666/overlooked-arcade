@@ -3588,6 +3588,14 @@ fn run_emu_render(
         }
     };
 
+    // M2 HW-render: true when `renderer` is adopting the loaded HW core's
+    // Vulkan device (built via `Renderer::new_adopting_vulkan`). When set, the
+    // renderer references the core's `VkDevice`, so it MUST be rebuilt to a
+    // normal renderer BEFORE that core is dropped (its teardown destroys the
+    // device). `false` = the normal `Renderer::new` path (all software cores
+    // + HW cores whose adoption failed → they fall back to M1 readback).
+    let mut renderer_adopted = false;
+
     let mut input = oa_input::InputPoller::with_mappings(
         oa_input::KeyboardMapping::empty(),
         oa_input::GamepadMapping::empty(),
@@ -4125,6 +4133,23 @@ fn run_emu_render(
                             log::error!("oa-shell: {context} aborted — probe {} failed: {e:?}; keeping current core", target_dll);
                             toast(&app_handle, ToastLevel::Error, format!("Core probe failed: {target_dll}"));
                         } else {
+                            // M2: if the renderer is adopting the outgoing core's
+                            // Vulkan device, rebuild the normal renderer FIRST so
+                            // wgpu releases that device before the core drops (its
+                            // teardown destroys it) — otherwise use-after-free.
+                            if renderer_adopted {
+                                let size = inner_size_fn().unwrap_or(initial_size);
+                                match unsafe { oa_render::Renderer::new(raw_window, raw_display, size) } {
+                                    Ok(r) => {
+                                        renderer = r;
+                                        renderer_adopted = false;
+                                        log::info!("oa-shell: HW-render — restored normal renderer before core swap");
+                                    }
+                                    Err(e) => log::error!(
+                                        "oa-shell: HW-render — failed to restore normal renderer before swap: {e:?}"
+                                    ),
+                                }
+                            }
                             // Drop current to release the libretro singleton before loading the new one.
                             let _ = core.take();
                             // Engine-launcher cores (scummvm, dosbox) want a per-core
@@ -4580,6 +4605,43 @@ fn run_emu_render(
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
 
+                            // M2 HW-render: if this is a Vulkan HW core, rebuild
+                            // the renderer ADOPTING the core's Vulkan device so
+                            // its images can be imported zero-copy (Stage 4).
+                            // Stage 3 keeps the readback present path, so this
+                            // proves the adoption + renderer lifecycle while the
+                            // game still renders via fb_rgba. On adoption failure
+                            // we keep the normal renderer and the HW core falls
+                            // back to the M1 readback path (slow but works).
+                            if let Some(hw) = oa_libretro::loaded_core_hw_vulkan() {
+                                let size = inner_size_fn().unwrap_or(initial_size);
+                                let adopt = oa_render::AdoptedVulkanDevice {
+                                    instance: hw.instance,
+                                    physical_device: hw.physical_device,
+                                    device: hw.device,
+                                    queue: hw.queue,
+                                    queue_family_index: hw.queue_family_index,
+                                    queue_index: hw.queue_index,
+                                    api_version: hw.api_version,
+                                };
+                                match unsafe {
+                                    oa_render::Renderer::new_adopting_vulkan(
+                                        raw_window, raw_display, size, &adopt,
+                                    )
+                                } {
+                                    Ok(r) => {
+                                        renderer = r;
+                                        renderer_adopted = true;
+                                        log::info!(
+                                            "oa-shell: HW-render — renderer adopted the core's Vulkan device (M2 zero-copy path)"
+                                        );
+                                    }
+                                    Err(e) => log::error!(
+                                        "oa-shell: HW-render — device adoption failed ({e:?}); keeping normal renderer (M1 readback fallback)"
+                                    ),
+                                }
+                            }
+
                             // Phase 2.5 — push the core's display rotation to
                             // the renderer. Vertical arcade boards (Pac-Man,
                             // Galaxian, Donkey Kong, …) set this via
@@ -4946,6 +5008,22 @@ fn run_emu_render(
                     } else {
                         log::info!("oa-shell: UnloadRom — no ROM loaded");
                         toast(&app_handle, ToastLevel::Info, "No ROM loaded");
+                    }
+                    // M2: rebuild the normal renderer before dropping a HW core
+                    // whose Vulkan device the renderer is adopting (else the
+                    // core teardown destroys a device wgpu still holds).
+                    if renderer_adopted {
+                        let size = inner_size_fn().unwrap_or(initial_size);
+                        match unsafe { oa_render::Renderer::new(raw_window, raw_display, size) } {
+                            Ok(r) => {
+                                renderer = r;
+                                renderer_adopted = false;
+                                log::info!("oa-shell: HW-render — restored normal renderer before unload");
+                            }
+                            Err(e) => log::error!(
+                                "oa-shell: HW-render — failed to restore normal renderer before unload: {e:?}"
+                            ),
+                        }
                     }
                     // Drop the entire core, not just the ROM. Mednafen-derived
                     // cores don't recover from `retro_unload_game` followed by
