@@ -792,6 +792,16 @@ pub fn loaded_core_min_audio_latency_ms() -> u32 {
     with_state(|s| s.min_audio_latency_ms).unwrap_or(0)
 }
 
+/// Raw Vulkan handles for the renderer to adopt the loaded HW core's device
+/// (M2 zero-copy). `Some` only when a Vulkan HW core's device has been built
+/// (`State.hw_vulkan` present); `None` for software cores. The renderer
+/// (oa-render) reconstructs the `vk::*` types from these raw `u64`s and
+/// builds wgpu on this exact device so it can import the core's images with
+/// no readback. See docs/PLANS/hw-render-pipeline.md (M2) + DECISIONS D9/D10.
+pub fn loaded_core_hw_vulkan() -> Option<crate::hw_vulkan::LoadedHwVulkan> {
+    with_state(|s| s.hw_vulkan.as_ref().map(|hw| hw.adopted_handles())).flatten()
+}
+
 // ---------- extern "C" callback trampolines ----------
 
 pub(crate) unsafe extern "C" fn cb_video_refresh(

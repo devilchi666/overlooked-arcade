@@ -242,6 +242,35 @@ pub(crate) struct VulkanHw {
     /// Core renders bottom-left origin (Dolphin reports this) → flip on
     /// readback so the image is top-left for our renderer.
     flip_y: bool,
+    /// Device extensions we required when building the device (the list we
+    /// pass to `create_device` / enable on self-build). M2 hands this to
+    /// wgpu's `device_from_raw` so it uses the same enabled set. Empty in
+    /// M1 (we required none); populated once M2 requests VK_KHR_swapchain +
+    /// wgpu's needed extensions.
+    device_extensions: Vec<String>,
+    /// Vulkan instance apiVersion we created the instance with (for wgpu
+    /// `Instance::from_raw` when M2 adopts this device).
+    api_version: u32,
+}
+
+/// Raw handles for adopting the core's Vulkan device into the renderer (M2
+/// zero-copy). All handles are raw `u64` (`vk::Handle::as_raw`) so this
+/// type carries no `ash` dependency across the crate boundary — the
+/// renderer reconstructs the `vk::*` types. None are owned here; the
+/// `VulkanHw` (in `State`) owns the lifetimes.
+#[derive(Clone, Debug)]
+pub struct LoadedHwVulkan {
+    pub instance: u64,
+    pub physical_device: u64,
+    pub device: u64,
+    pub queue: u64,
+    pub queue_family_index: u32,
+    pub queue_index: u32,
+    /// Device extensions enabled on the core's device (so the renderer can
+    /// tell wgpu which to use in `device_from_raw`).
+    pub device_extensions: Vec<String>,
+    /// Vulkan instance apiVersion.
+    pub api_version: u32,
 }
 
 // SAFETY: ash Entry/Instance/Device + vk handles are Send+Sync; the only
@@ -533,6 +562,12 @@ impl VulkanInstance {
             }),
             interface,
             flip_y: self.flip_y,
+            // Stage 2: M1 requires no device extensions and creates the
+            // instance at Vulkan 1.1. Stage 3 threads the real required-
+            // extensions list (VK_KHR_swapchain + wgpu's set) + api_version
+            // through here for the wgpu adoption.
+            device_extensions: Vec::new(),
+            api_version: vk::API_VERSION_1_1,
         })
     }
 
@@ -558,6 +593,25 @@ impl VulkanHw {
     /// GET_HW_RENDER_INTERFACE reply (`*data = this`).
     pub(crate) fn interface_ptr(&self) -> *const retro_hw_render_interface_vulkan {
         &self.interface
+    }
+
+    /// Raw handles for the renderer to adopt this device (M2 zero-copy).
+    /// All from the interface we built — instance/gpu/device/queue +
+    /// queue family (the interface's `queue_index` field holds the family
+    /// index per libretro_vulkan.h), plus the required device-extension
+    /// list + instance apiVersion wgpu needs for `from_raw`.
+    pub(crate) fn adopted_handles(&self) -> LoadedHwVulkan {
+        use ash::vk::Handle;
+        LoadedHwVulkan {
+            instance: self.interface.instance.as_raw(),
+            physical_device: self.interface.gpu.as_raw(),
+            device: self.interface.device.as_raw(),
+            queue: self.interface.queue.as_raw(),
+            queue_family_index: self.interface.queue_index,
+            queue_index: 0,
+            device_extensions: self.device_extensions.clone(),
+            api_version: self.api_version,
+        }
     }
 
     /// Record the extent + mark the most-recent `set_image` frame ready.

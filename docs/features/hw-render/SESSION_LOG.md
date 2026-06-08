@@ -6,6 +6,42 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 9) — M2 started: architecture confirmed + Stage 1/2
+
+- **Branch `feat/hw-render-m2`** (off `feat/hw-render-m1`; M1 stays bankable
+  at tag `hw-render-m1-proven`).
+- **Architecture confirmed with operator (DECISIONS D9/D10):** reinit-per-core
+  (software cores stay on their current backend, untouched → can't regress;
+  only Vulkan HW cores rebuild the renderer onto the core's device). HwContext
+  trait + per-launch picker is the path to per-core backend selection
+  (Vulkan now; GL/D3D = M4, one trait impl each — the operator's "cores pick
+  what they run on" goal). Operator confirmed zero-copy is a framerate/timing
+  WIN with no added input lag, given we keep the pipeline shallow (no
+  latency-for-throughput buffering).
+- **Stage 1 (done) — wgpu-hal 23 API verified** for Approach A: single
+  `ash 0.38` in the lock ⇒ handle types unify (no transmute);
+  `Instance::from_raw` + `expose_adapter` + `Adapter::required_device_extensions`
+  + `Adapter::device_from_raw` + wgpu `create_*_from_hal` all present. Clean
+  ordering: build hal Adapter first → ask it which device exts it needs →
+  feed those into `create_device`. Key files confirmed: `oa-render/src/lib.rs`
+  `new_async` (Backends::PRIMARY); **`run_emu_render` (main.rs:3538) owns BOTH
+  the emu loop AND the renderer on ONE thread** → no cross-thread handoff for
+  the device adoption (big simplification); `renderer` is a swappable
+  `let mut` (main.rs:3583).
+- **Stage 2 (shipped) — exposure scaffolding, NO behavior change:**
+  oa-libretro exposes the core's adopted-device handles via
+  `loaded_core_hw_vulkan() -> Option<LoadedHwVulkan>` (raw u64 handles +
+  device-extension list + apiVersion, no ash leak across crates) + the
+  `VulkanHw::adopted_handles` accessor + two new VulkanHw fields
+  (`device_extensions`, `api_version`; empty/1.1 in M1, real values threaded
+  in Stage 3). Readback path untouched → paraLLEl-N64 still renders exactly
+  as M1. Workspace clean (zero warnings); 49 tests pass.
+- **Next — Stage 3 (the gated interop):** build wgpu from the core's adopted
+  device + move the surface onto our instance + `create_device` requests
+  VK_KHR_swapchain + swap the `Renderer` in `run_emu_render` on HW-core load.
+  CONFIRM with operator before this (R1: software cores re-validated after a
+  software⇄HW switch).
+
 ## 2026-06-08 (cont. 8) — 🎉 M1 PIPELINE PROVEN (paraLLEl-N64 renders in-process)
 
 - **The null-features fix worked.** Full pipeline confirmed end-to-end with
