@@ -6,6 +6,35 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 15c) — audio: honor SET_SYSTEM_AV_INFO (env 32) — fixes paraLLEl-N64 buzz
+
+- **Symptom (playtest):** speed + aspect/flip good, but sound "horrible".
+- **Diagnosed from the log math (NOT a zero-copy regression):** the sink was
+  fed at ~48,065 i16/s while the 48 kHz device drains 96,000 i16/s — **exactly
+  half** → the cpal callback zero-fills the gap every callback = buzzing. The
+  audio collection (`cb_audio_sample_batch` frames×2, `drain_audio`) + the
+  resampler are provably correct and shared with working software cores, so the
+  CORE was producing ~22050 stereo frames/run_frame (half of the declared
+  44100@60).
+- **Root cause:** paraLLEl-N64 calls `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO`
+  (env 32) AFTER load (log line 504, post the line-142 core-load) to publish its
+  REAL timing once the game's VI/region is known — but our env-32 handler only
+  updated `display_aspect` and **threw away the revised `sample_rate`/`fps`**.
+  The sink kept the placeholder 44100 captured at `finish_load` → chronic
+  under/over-feed. A general libretro gap (any env-32 core), surfaced by the M2
+  playtest.
+- **Fix:** env-32 handler now captures + logs `fps`/`sample_rate`/geometry and
+  stashes `(fps, sample_rate)` in `State.pending_av_info`; `take_pending_av_info()`
+  drains it; the shell run loop applies it each frame — rebuilds the audio sink
+  at the new rate (mirrors the core-swap rebuild path + re-applies min-latency)
+  and retimes the frame limiter. oa-libretro 49 tests pass; workspace clean.
+- **Next (operator):** rebuild + relaunch paraLLEl-N64. The log should now show
+  `SET_SYSTEM_AV_INFO — fps=… sample_rate=…` (this tells us the core's REAL
+  rate) and `core revised audio rate 44100 -> N Hz; rebuilding sink`, and the
+  pushed-samples/s should match the device drain (no more half-feed) → clean
+  audio. If env 32 reports sample_rate=44100 unchanged, the half-feed is a
+  different (deeper) core quirk and the log will say so.
+
 ## 2026-06-08 (cont. 15b) — ✅ zero-copy PROVEN at 60 fps; "small image" was the `original` scaling setting
 
 - **Playtest log (oa-current.log 15:10–15:11) confirms task 1 WORKS:**

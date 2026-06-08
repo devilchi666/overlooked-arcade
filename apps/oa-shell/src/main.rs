@@ -6402,6 +6402,48 @@ fn run_emu_render(
                     core_ref.run_frame();
                     apply_cheats(core_ref, &cheat_runtime);
 
+                    // A core may revise its REAL fps / audio rate AFTER load
+                    // via SET_SYSTEM_AV_INFO (env 32): paraLLEl-N64 declares a
+                    // placeholder at get_system_av_info, then publishes the
+                    // true timing once the game's VI/region is known (during
+                    // the first run_frame). Apply it — rebuild the audio sink
+                    // at the new rate (otherwise it chronically under/over-
+                    // feeds the device → a buzzing/garbled stream) and retime
+                    // the frame limiter. Fires once shortly after load, so a
+                    // brief glitch during the rebuild is acceptable.
+                    if let Some((new_fps, new_rate)) = oa_libretro::take_pending_av_info() {
+                        if new_rate != timing.sample_rate {
+                            log::info!(
+                                "oa-shell: core revised audio rate {} -> {} Hz (SET_SYSTEM_AV_INFO); rebuilding sink",
+                                timing.sample_rate, new_rate
+                            );
+                            let device_pref = read_audio_pref(&app_data_dir);
+                            audio = match oa_audio::AudioSink::with_device(new_rate, device_pref.as_deref()) {
+                                Ok(mut a) => {
+                                    let _ = a.ensure_min_latency_ms(
+                                        oa_libretro::loaded_core_min_audio_latency_ms(),
+                                    );
+                                    Some(a)
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "oa-shell: audio sink rebuild after av-info change failed ({e:?}); silent"
+                                    );
+                                    None
+                                }
+                            };
+                            timing.sample_rate = new_rate;
+                        }
+                        if new_fps > 0.0 && (new_fps - timing.fps).abs() > 0.001 {
+                            log::info!(
+                                "oa-shell: core revised fps {:.3} -> {:.3} (SET_SYSTEM_AV_INFO); retiming limiter",
+                                timing.fps, new_fps
+                            );
+                            frame_period = Duration::from_secs_f64(1.0 / new_fps);
+                            timing.fps = new_fps;
+                        }
+                    }
+
                     // === Run-Ahead lookahead =============================
                     //
                     // Reduce perceived input latency by N frames: after

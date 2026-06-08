@@ -65,5 +65,5 @@ pub use crate::keycode::{keycode_to_retro_key, modifiers_from_held};
 pub use crate::state::{
     hw_queue_lock, hw_queue_unlock, loaded_core_controller_devices, loaded_core_hw_frame,
     loaded_core_hw_vulkan, loaded_core_input_descriptors, loaded_core_min_audio_latency_ms,
-    set_hw_import_mode,
+    set_hw_import_mode, take_pending_av_info,
 };

@@ -109,6 +109,17 @@ pub(crate) struct State {
     pub input_analog_buttons: [[i16; 16]; 5],
     /// Snapshotted display aspect (final image W:H, 0.0 = caller falls back to width:height).
     pub display_aspect: f32,
+    /// Set when a core revises its timing mid-run via
+    /// `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO` (env 32) — `(fps, sample_rate)`.
+    /// Many cores (paraLLEl-N64, some Mednafen cores) declare a placeholder
+    /// av_info at `retro_get_system_av_info` and revise the REAL fps / audio
+    /// rate once the game's region/VI mode is known, after `retro_load_game`.
+    /// The shell drains this each frame via `take_pending_av_info` and, if the
+    /// rate/fps changed, rebuilds the audio sink + retimes the frame limiter —
+    /// without this the sink keeps the stale rate and chronically under/over-
+    /// feeds the device (audible as a buzzing/garbled stream). `None` until a
+    /// core actually calls env 32 with new timing.
+    pub pending_av_info: Option<(f64, u32)>,
     /// Path/dir/ext strings the core may request via environment callbacks.
     /// CStrings own the bytes; the raw pointers we hand back must stay valid
     /// until the next env call. We hold them in State for that lifetime.
@@ -337,6 +348,7 @@ impl State {
             input_lightgun_buttons: [0; 5],
             input_analog_buttons: [[0; 16]; 5],
             display_aspect: 0.0,
+            pending_av_info: None,
             system_dir: CString::new(".").unwrap(),
             save_dir: CString::new(".").unwrap(),
             pending_rom_data: std::ptr::null(),
@@ -780,6 +792,16 @@ pub(crate) fn hw_after_run() {
 /// imports (does not own) it; the libretro layer owns its lifetime.
 pub fn loaded_core_hw_frame() -> Option<crate::hw_vulkan::HwVulkanFrame> {
     with_state(|s| s.hw_vulkan.as_ref().and_then(|hw| hw.current_frame())).flatten()
+}
+
+/// Take (and clear) any timing revision a core published via
+/// `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO` (env 32) since the last call.
+/// Returns `(fps, sample_rate)`. The shell polls this each frame and, when
+/// the rate/fps differs from the live values, rebuilds the audio sink +
+/// retimes the frame limiter. Returns `None` when no revision is pending.
+/// See [`State::pending_av_info`].
+pub fn take_pending_av_info() -> Option<(f64, u32)> {
+    with_state(|s| s.pending_av_info.take()).flatten()
 }
 
 /// Acquire the loaded HW core's `VkQueue` lock (M2 zero-copy). The adopted
@@ -1600,7 +1622,25 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                 return false;
             }
             let av = unsafe { &*(data as *const retro_system_av_info) };
-            with_state(|s| s.display_aspect = av.geometry.aspect_ratio);
+            let fps = av.timing.fps;
+            let sample_rate = av.timing.sample_rate.round() as u32;
+            log::info!(
+                "oa-libretro: SET_SYSTEM_AV_INFO — fps={fps:.3} sample_rate={sample_rate} \
+                 geometry {}x{} aspect={:.4} (revised post-load)",
+                av.geometry.base_width,
+                av.geometry.base_height,
+                av.geometry.aspect_ratio,
+            );
+            with_state(|s| {
+                s.display_aspect = av.geometry.aspect_ratio;
+                // Stash the revised timing for the shell to apply (rebuild the
+                // audio sink + retime the limiter). Only meaningful when fps /
+                // sample_rate are sane; cores occasionally pass 0 for fields
+                // they don't intend to change.
+                if sample_rate > 0 && fps > 0.0 {
+                    s.pending_av_info = Some((fps, sample_rate));
+                }
+            });
             true
         }
         RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
