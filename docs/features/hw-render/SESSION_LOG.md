@@ -6,6 +6,40 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-08 (cont. 6) — M1: fixed core-option timing (renderer option applied too late)
+
+- **Playtest of paraLLEl-N64:** crashed — but NOT in our code. Log: core
+  requested `SET_HW_RENDER context_type=1` (OpenGL), we correctly declined
+  (Vulkan-only), core logged `mupen64plus: libretro frontend doesn't have
+  OpenGL support` and bailed. So paraLLEl-N64 ran its GL plugin, never Vulkan.
+- **Operator set `parallel-n64-gfxplugin = parallel`** (verified persisted in
+  `core-options/n64.json` → `values: {parallel-n64-gfxplugin: parallel}`) and
+  relaunched — **still `context_type=1`**. Root cause found:
+  - `main.rs` applied per-system core-option overrides only in the **post-load**
+    block (~line 4654), which the comment at ~4684 confirms runs AFTER
+    `retro_load_game`. But cores gate their HW-render API on a core option read
+    **during** `retro_load_game` (paraLLEl-N64 `gfxplugin`, Beetle PSX HW
+    `renderer`, Flycast, PPSSPP). So the override landed too late → core saw
+    the default (GL) → requested OpenGL → declined → crash. **A blocker for
+    the whole Vulkan HW lineup, not just N64.**
+- **Shipped (branch `feat/hw-render-m1`, not merged):** `main.rs` now
+  pre-applies the operator's stored per-system core-option overrides via
+  `core_ref.set_option` **immediately before `core_ref.load_rom`** (new block
+  just above the stem precompute, ~line 4544). `set_option` only stages the
+  value in `State.option_values`, so the core's `GET_VARIABLE` poll during
+  load returns it even before the schema is captured. The post-load block
+  still runs (full effective merge + visibility). oa-shell checks clean (zero
+  warnings).
+- **Next (operator):** **rebuild** (release) so the fix is in the binary, then
+  relaunch the N64 game (option already set). Expect `SET_HW_RENDER
+  context_type=6` → `accepted (Vulkan)` → device → `GET_HW_RENDER_INTERFACE`
+  → `context_reset` → `first set_image` → `first readback OK`. If it STILL
+  shows `context_type=1`, paraLLEl-N64 reads gfxplugin during retro_init
+  (before our pre-apply) and we'd need to push overrides inside
+  `LibretroCore::load` before set_environment — but the log timing
+  (SET_HW_RENDER fires during load_game, after load() returns) says
+  pre-load_rom should be in time.
+
 ## 2026-06-08 (cont. 5) — M1: WSI ext didn't fix it; pivot to a simpler Vulkan core
 
 - **Playtest of cont. 4 (oa-current.log 11:23):** instance extensions now

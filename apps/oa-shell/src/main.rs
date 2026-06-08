@@ -4541,6 +4541,35 @@ fn run_emu_render(
                             }
                         }
                     }
+                    // HW-render renderer-option fix (2026-06-08): apply the
+                    // operator's per-system core-option overrides BEFORE
+                    // retro_load_game, not only after (the post-load block
+                    // further down). Cores that gate their hardware-render API
+                    // on a core option read it DURING retro_load_game to decide
+                    // which SET_HW_RENDER context to request:
+                    //   paraLLEl-N64  parallel-n64-gfxplugin = parallel → Vulkan
+                    //   Beetle PSX HW beetle_psx_hw_renderer = vulkan
+                    //   Flycast / PPSSPP likewise.
+                    // Without this, the override lands too late and the core
+                    // requests its DEFAULT API (OpenGL for paraLLEl-N64), which
+                    // M1 declines → the core can't fall back → crash. set_option
+                    // just stages the value in State.option_values, so the
+                    // core's GET_VARIABLE poll during load returns it even
+                    // before the schema is captured. Per-system only (matches
+                    // the post-load block; per-game options apply separately).
+                    {
+                        let pre = core_options::read(&app_data_dir, &current_system_id);
+                        if !pre.values.is_empty() {
+                            for (k, v) in &pre.values {
+                                core_ref.set_option(k, v);
+                            }
+                            log::info!(
+                                "oa-shell: pre-applied {} core-option override(s) for {} before load_rom (renderer-option fix)",
+                                pre.values.len(),
+                                current_system_id,
+                            );
+                        }
+                    }
                     // Pre-compute the stem — cores read it via info_ext->name
                     // during retro_load_game (e.g. FCEUmm uses it to derive
                     // <save_dir>/<name>.sav). Passing the actual ROM stem
