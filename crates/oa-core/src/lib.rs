@@ -937,6 +937,14 @@ pub struct LaunchRequest {
     /// `<exe_dir>/cores/`). Only meaningful to in-process launchers;
     /// external launchers ignore it.
     pub core_override: Option<String>,
+    /// Bootless launch — load the core with no content
+    /// (`retro_load_game(NULL)`) so it boots into its own built-in
+    /// browser/menu (DOSBox-Pure's DOS-game picker, ScummVM's engine
+    /// launcher). Only valid against in-process libretro cores that
+    /// advertised `SET_SUPPORT_NO_GAME`; `content_path`/`content_bytes`
+    /// are ignored when set. External launchers reject it (they need a
+    /// content path). Defaults to `false` (a normal content launch).
+    pub no_rom: bool,
 }
 
 /// A launch request after [`Launcher::prepare`] — validated and ready

@@ -67,8 +67,9 @@ spanned every system but was filed under whichever core happened to be active.
     `ThemeManifest` type in `platform/theme/manifest.ts`. 790
     oa-shell tests pass; typecheck silent. **Phase 2 complete**
     modulo the ESLint boundary rule (deferred to Phase 4).
-    **ARC 1 now PAUSED per plan §7** — VL Phase E + C land before
-    theming Phase 3 resumes.
+    **ARC 1 unblocked 2026-06-08** — plan §7's pause condition (VL
+    Phase E + C land first) is now satisfied: both merged to main.
+    Theming Phase 3 is ready to resume.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
@@ -83,11 +84,13 @@ spanned every system but was filed under whichever core happened to be active.
   — major multi-month arc planned 2026-06-03. 8 phases (A → E → B → C
   → D → F → G; Phase H deferred). Plan at
   [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md).
-  **Current slice: Phase C3 ✅ shipped — awaiting playtest** (C1 + C2
-  merged; C3 on `feat/virtual-library-phase-c3`; operator picked C
-  over B 2026-06-07 to
-  unblock the theming arc's Phase-2 pause; theming plan §7 wants VL
-  E + C before theming Phase 3 resumes). Sub-phase plan +
+  **Phase C COMPLETE ✅ — C3 merged + playtest passed 2026-06-08**
+  (merge `28875d5`; C1 + C2 + C3 all on main). Operator picked C
+  over B 2026-06-07 to unblock the theming arc's Phase-2 pause;
+  theming plan §7 wanted VL E + C before theming Phase 3 resumes —
+  **both are now merged, so Theming Phase 3 is unblocked.** Next VL
+  slice = **Phase B** (two-mode UX + Collection Health). Sub-phase
+  plan +
   operator-locked decisions:
   [PLANS/launcher-abstraction.md](PLANS/launcher-abstraction.md).
   Key decisions: Launcher = lifecycle trait ABOVE the untouched
@@ -96,8 +99,8 @@ spanned every system but was filed under whichever core happened to be active.
   ride Phase D with the installer); minimize-OA-while-running;
   C1 (trait + LibretroLauncher refactor, invisible) → C2 (profile
   registry + ExternalProcessLauncher + first Dolphin launch) →
-  C3 (capability gating + session polish, shipped — awaiting
-  playtest).
+  C3 (capability gating + session polish, merged + playtest
+  passed).
   - **Phase 0 ✅ shipped 2026-06-03** (merged from
     `feat/virtual-library-arc-foundation`, merge `dd430e4`-ish — Phase 0
     + the subsequent docs cleanup merged to main together). DECISIONS
@@ -336,9 +339,9 @@ spanned every system but was filed under whichever core happened to be active.
         Rust changes. Also rode along: z-index fix lifting platform
         modals to `z-[70]` above the engine takeover (commit
         `5d0ac97`).
-    - **C3 — capability gating + session polish ✅ shipped 2026-06-08**
-      (branch `feat/virtual-library-phase-c3`, awaiting operator
-      playtest before merge). Three slices. **(1) Capability gating**
+    - **C3 — capability gating + session polish ✅ shipped + merged
+      2026-06-08** (merge `28875d5`; operator playtest passed —
+      **Phase C complete**). Three slices. **(1) Capability gating**
       (commit `5fd92ab`): new `get_active_launcher_capabilities`
       command + `ActiveLauncherInfo` (launcher id / display name /
       isExternal / `LauncherCapabilities`) reads the `active_launch`
