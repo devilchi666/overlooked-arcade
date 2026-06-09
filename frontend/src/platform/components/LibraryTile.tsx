@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Show, type Component } from "solid-js";
+import { createEffect, createSignal, For, Show, type Component } from "solid-js";
 import type { RomEntry } from "@oa/platform/library/types";
 import { useMedia } from "@oa/platform/library/media";
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
@@ -52,6 +52,13 @@ type Props = {
   /// right-click menu offers "Run version ▸ ...". Single-file games
   /// pass `undefined` (or 1) — no badge rendered.
   variantCount?: number;
+  /// VL Phase B — Preservation-mode variant ribbon: short region /
+  /// revision chips (e.g. `["USA", "JP", "EU"]`) summarizing the group's
+  /// variants. When present (preservation mode + multi-variant group)
+  /// the tile renders the ribbon along the bottom and suppresses the
+  /// plain ▼N badge — the ribbon already conveys the multi-variant
+  /// state with more detail. `undefined` in casual mode.
+  variantRibbon?: string[];
   /// Retroverse-UI Phase C3 — flip favorite state. Fires from the heart
   /// overlay (always-visible top-right) and the context-menu Favorite
   /// item. When omitted the heart hides entirely (caller didn't wire
@@ -281,13 +288,40 @@ const LibraryTile: Component<Props> = (props) => {
             Core ◆
           </span>
         </Show>
-        <Show when={!props.entry.seed && (props.variantCount ?? 0) > 1}>
+        {/* Casual-mode multi-variant badge. Suppressed when the
+            Preservation ribbon is shown (the ribbon below conveys the
+            same multi-variant state with region/revision detail). */}
+        <Show
+          when={
+            !props.entry.seed &&
+            (props.variantCount ?? 0) > 1 &&
+            !(props.variantRibbon && props.variantRibbon.length > 0)
+          }
+        >
           <span
             class="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft) backdrop-blur"
             title={`${props.variantCount} versions / regions — right-click to pick`}
           >
             ▼ {props.variantCount}
           </span>
+        </Show>
+        {/* VL Phase B — Preservation-mode variant ribbon. A row of
+            region / revision chips summarizing every dump under this
+            identity. Bottom-left, wraps, capped (the helper bakes a
+            "+N" overflow chip) so it can't blow out the tile. */}
+        <Show when={!props.entry.seed && props.variantRibbon && props.variantRibbon.length > 0}>
+          <div
+            class="absolute bottom-2 left-2 right-10 flex flex-wrap gap-1"
+            title="Versions / regions in your library — open the Variants tab to launch a specific one"
+          >
+            <For each={props.variantRibbon}>
+              {(chip) => (
+                <span class="rounded bg-black/70 px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wider text-(--color-system-accent-soft) backdrop-blur">
+                  {chip}
+                </span>
+              )}
+            </For>
+          </div>
         </Show>
         {/* Phase A1 Sub-phase 4 polish — disc-set badge. Renders in
             the top-left corner when the entry is a collapsed multi-

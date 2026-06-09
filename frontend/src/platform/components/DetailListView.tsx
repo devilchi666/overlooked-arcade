@@ -28,6 +28,9 @@ type Props = {
   selectedId?: () => string | null;
   /// Lookup for the variant count badge — see VirtualLibraryGrid.
   variantCountFor?: (id: string) => number | undefined;
+  /// VL Phase B — Preservation-mode variant ribbon chips for a row's
+  /// group. Replaces the ▼N badge with region/revision chips when set.
+  variantRibbonFor?: (id: string) => string[] | undefined;
   /// Override neighbours for DPad edge-spillover and L1/R1 — defaults
   /// match VirtualLibraryGrid (legacy `left-sidebar` / `right-sidebar`).
   focusGroupNeighbours?: { left?: string; right?: string };
@@ -225,6 +228,7 @@ const DetailListView: Component<Props> = (props) => {
                         variantCount={
                           props.variantCountFor?.(r.entry.id)
                         }
+                        variantRibbon={props.variantRibbonFor?.(r.entry.id)}
                         focusedActive={isFocused() && focusGroup.isActive()}
                         bindRef={(el) => {
                           if (!el) return;
@@ -258,6 +262,9 @@ const DetailRow: Component<{
   onFocus?: (e: RomEntry) => void;
   selectedId?: () => string | null;
   variantCount?: number;
+  /// VL Phase B — Preservation-mode variant ribbon chips; when present,
+  /// rendered in place of the ▼N count.
+  variantRibbon?: string[];
   /// True when this row is the active focus target via gamepad. The
   /// `data-oa-focus*` attributes drive the same ring styling tiles use.
   focusedActive?: boolean;
@@ -329,10 +336,24 @@ const DetailRow: Component<{
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium text-(--color-oa-ink)">
           {props.entry.title}
-          <Show when={(props.variantCount ?? 0) > 1}>
-            <span class="ml-2 rounded bg-white/5 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft)">
-              ▼ {props.variantCount}
-            </span>
+          {/* Preservation ribbon takes precedence over the ▼N count. */}
+          <Show
+            when={props.variantRibbon && props.variantRibbon.length > 0}
+            fallback={
+              <Show when={(props.variantCount ?? 0) > 1}>
+                <span class="ml-2 rounded bg-white/5 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-widest text-(--color-system-accent-soft)">
+                  ▼ {props.variantCount}
+                </span>
+              </Show>
+            }
+          >
+            <For each={props.variantRibbon}>
+              {(chip) => (
+                <span class="ml-1 rounded bg-white/5 px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wider text-(--color-system-accent-soft)">
+                  {chip}
+                </span>
+              )}
+            </For>
           </Show>
         </p>
         <p class="mt-0.5 truncate text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">

@@ -48,6 +48,11 @@ type Props = {
   /// function so the grid doesn't re-render every tile when a single
   /// group's pin changes.
   variantCountFor?: (id: string) => number | undefined;
+  /// VL Phase B — Preservation-mode variant ribbon chips for a tile's
+  /// group (region/revision summary). `undefined` in casual mode or for
+  /// single-variant games; when present the tile renders the ribbon in
+  /// place of the plain ▼N badge.
+  variantRibbonFor?: (id: string) => string[] | undefined;
   /// Retroverse-UI Phase C3 — pass-through favorite toggle. Forwarded
   /// to LibraryTile so the heart overlay can fire without the tile
   /// reaching into the library store directly.
@@ -427,6 +432,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
                               }}
                               selected={props.selectedId?.() === entry.id}
                               variantCount={props.variantCountFor?.(entry.id)}
+                              variantRibbon={props.variantRibbonFor?.(entry.id)}
                               onToggleFavorite={props.onToggleFavorite}
                               showSystemHeader={props.showSystemHeader}
                             />

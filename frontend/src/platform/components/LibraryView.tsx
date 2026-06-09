@@ -9,7 +9,9 @@ import {
   filterEntries,
   groupEntries,
   sortEntries,
+  variantRibbonChips,
 } from "@oa/platform/library/filter";
+import type { LibraryMode } from "@oa/platform/settings/store";
 import DiscPickerDialog from "./DiscPickerDialog";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -58,6 +60,12 @@ type Props = {
   /// the Retroverse page's per-region groups instead of the legacy
   /// left-sidebar / right-sidebar ids.
   gridFocusNeighbours?: { left?: string; right?: string };
+  /// VL Phase B — library presentation mode. `preservation` makes
+  /// multi-variant tiles render a region/revision ribbon; `casual`
+  /// (or omitted) keeps the clean one-tile-per-game look. Tiles still
+  /// collapse to one-per-identity in both modes; the ribbon is the
+  /// only visible difference (the Variants tab is the launch surface).
+  libraryMode?: LibraryMode;
 };
 
 /**
@@ -182,6 +190,18 @@ const LibraryView: Component<Props> = (props) => {
   // DiscPickerDialog instead of launching directly. The dialog fetches
   // members via list_disc_set_members and forwards the operator's pick
   // to the real `props.onLaunch`.
+  // VL Phase B — Preservation-mode variant ribbon. Returns the chip
+  // list for a tile's group only in preservation mode; casual mode (or
+  // a single-variant group) returns undefined so the grid renders the
+  // plain ▼N badge / nothing.
+  const variantRibbonFor = (id: string): string[] | undefined => {
+    if (props.libraryMode !== "preservation") return undefined;
+    const group = props.library.groupsByVariantId().get(id);
+    if (!group) return undefined;
+    const chips = variantRibbonChips(group);
+    return chips.length > 0 ? chips : undefined;
+  };
+
   const [discPickerEntry, setDiscPickerEntry] = createSignal<RomEntry | null>(null);
   const wrappedOnLaunch = (entry: RomEntry) => {
     if (entry.discSetId !== undefined) {
@@ -232,6 +252,7 @@ const LibraryView: Component<Props> = (props) => {
                 variantCountFor={(id) =>
                   props.library.groupsByVariantId().get(id)?.variants.length
                 }
+                variantRibbonFor={variantRibbonFor}
                 onToggleFavorite={props.onToggleFavorite}
                 showSystemHeader={props.showSystemHeader}
                 focusGroupNeighbours={props.gridFocusNeighbours}
@@ -249,6 +270,7 @@ const LibraryView: Component<Props> = (props) => {
               variantCountFor={(id) =>
                 props.library.groupsByVariantId().get(id)?.variants.length
               }
+              variantRibbonFor={variantRibbonFor}
               focusGroupNeighbours={props.gridFocusNeighbours}
             />
           </Show>

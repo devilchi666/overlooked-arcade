@@ -257,6 +257,67 @@ function stripDiscSuffix(title: string): string {
   return title.replace(/\s*\(\s*Disc\s+\d+\s*\)/gi, "").trim();
 }
 
+/// Short display labels for the canonical region strings `title_parse`
+/// emits. Unmapped regions pass through verbatim (truncated by the chip
+/// styling if long). VL Phase B — Preservation-mode variant ribbon.
+const REGION_SHORT: Record<string, string> = {
+  USA: "USA",
+  Japan: "JP",
+  Europe: "EU",
+  World: "World",
+  Korea: "KR",
+  China: "CN",
+  Taiwan: "TW",
+  Brazil: "BR",
+  France: "FR",
+  Germany: "DE",
+  Spain: "ES",
+  Italy: "IT",
+  Netherlands: "NL",
+  Sweden: "SE",
+  Australia: "AU",
+  Asia: "Asia",
+  Canada: "CA",
+};
+
+/// Cap on visible ribbon chips before collapsing the rest into a "+N"
+/// overflow chip — keeps a 12-region identity from blowing out the tile.
+const MAX_RIBBON_CHIPS = 4;
+
+/// Build the Preservation-mode variant ribbon for a group — a compact
+/// summary of the distinct regions / revisions / preservation-relevant
+/// kinds across the group's variants (e.g. `["USA", "JP", "EU", "Rev 1"]`).
+/// Returns `[]` for single-variant groups (nothing to disambiguate). The
+/// last chip is a `+N` overflow marker when more than `MAX_RIBBON_CHIPS`
+/// distinct chips exist. Pure — the tile renders whatever this returns.
+export function variantRibbonChips(group: GameGroupInfo): string[] {
+  if (group.variants.length <= 1) return [];
+  const chips: string[] = [];
+  const seen = new Set<string>();
+  const push = (c: string): void => {
+    if (c && !seen.has(c)) {
+      seen.add(c);
+      chips.push(c);
+    }
+  };
+  // Regions first, in variant (priority) order so the canonical region
+  // leads. `region` is the primary; fall back to the first of `regions`.
+  for (const v of group.variants) {
+    const region = v.region ?? v.regions[0];
+    if (region) push(REGION_SHORT[region] ?? region);
+  }
+  // One revision chip when any dump carries a non-zero revision.
+  const maxRev = group.variants.reduce((m, v) => Math.max(m, v.revision), 0);
+  if (maxRev > 0) push(`Rev ${maxRev}`);
+  // Preservation-relevant kinds present anywhere in the group.
+  if (group.variants.some((v) => v.isTranslation)) push("Tr");
+  if (group.variants.some((v) => v.isHack)) push("Hack");
+  if (chips.length > MAX_RIBBON_CHIPS) {
+    return [...chips.slice(0, MAX_RIBBON_CHIPS), `+${chips.length - MAX_RIBBON_CHIPS}`];
+  }
+  return chips;
+}
+
 export function collapseVariantGroups(
   entries: RomEntry[],
   groupsByVariantId: Map<string, GameGroupInfo>,
