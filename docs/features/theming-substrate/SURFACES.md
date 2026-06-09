@@ -129,6 +129,87 @@ don't surprise anyone.
 
 ---
 
+## Layer boundary contract (ENFORCED — see `frontend/eslint.config.mjs`)
+
+The whole point of the engine/theme split is that **a new feature or fix
+can't silently re-wire the layers back together.** Naming the layers isn't
+enough — the boundary has to be machine-checked, or it rots (the
+`SystemHeader → useTheme` reverse leak introduced with the 2026-06-09
+bootless feature is proof: a small, well-intentioned change quietly made
+platform depend on theme). So the boundary is a build-checked lint, not a
+convention.
+
+### The layers (foundation → up)
+
+| Layer | Dirs (`frontend/src/`) | May import | Must NOT import |
+| --- | --- | --- | --- |
+| **Platform** (foundation SDK) | `platform/**`, `nav/**` | external libs, Tauri, `oa-core` types, other platform/nav | `engine/`, `routes/`, `themes/` (top-level), `components/` (grab-bag), `App.tsx` |
+| **Engine** (engine-owned UI) | `engine/**` | platform, nav | `routes/` (theme), `themes/` |
+| **Theme** (the active theme) | `routes/retroverse/**`, `layout/retroverse/**`, `themes/**` | platform, nav, **engine-public components** (e.g. `<EngineSummonIcon/>`) | other themes' internals, `App.tsx` |
+| **Composition root** | `App.tsx`, `main.tsx` | everything (it wires the layers) | — (nothing imports it) |
+
+Rule of thumb: **dependencies point DOWN** (theme → engine → platform).
+Platform is pure foundation; it never knows a theme or the engine exists.
+The theme mounting engine-owned components (theme → engine-public) is the
+one intended upward edge.
+
+### Enforced today (Slice 1 — `feat/theming-boundary-enforcement`, 2026-06-09)
+
+`npm run lint` runs an ESLint flat config that is a **boundary linter only**
+(no style rules — `tsc` + review own those). Slice 1 enforces the two
+invariants that hold cleanly today, via `import/no-restricted-paths` zones:
+
+- ✅ **`platform/**` ↛ `routes/**`** (platform must not import theme). The
+  only violation was the SystemHeader leak — fixed by passing
+  `onBootWithoutGame` down as a prop (LibraryPage → LibraryView →
+  SystemHeader) instead of calling `useTheme()` inside a platform component.
+- ✅ **`platform/**` ↛ `engine/**`** (platform must not import engine). Zero
+  violations — added preventively.
+- ✅ **`platform/**` ↛ `components/**`** (platform must not import the
+  unclassified grab-bag) — added in Slice 2 (2026-06-09). Closing it
+  required: relocating `SystemCoresStrip` + `CatalogCoreCard` into
+  `platform/components/` (they're platform UI), and extracting the dialog-
+  *state* types (`GameDialogKind`/`GameDialogState`/`CollectionDialogMode`/
+  `SystemDialogSection`) out of the grab-bag dialog files into
+  `platform/dialogs.ts` (platform owns dialog state; the components import
+  them back). Platform is now pure of theme, engine, AND the grab-bag.
+- ✅ **`engine/**` ↛ `routes/**`** (engine must not import theme) — added in
+  Slice 2 batch 3 (2026-06-09). Closing it required the **store-context
+  split** (`usePlatform()`, DECISIONS D11) so engine components read stores
+  without the theme context, then relocating the engine surface's Settings
+  *content* — `PerSystemSettingsBody`, `PerSystemInfoSection`,
+  `SystemHealthPage` — out of `routes/retroverse/` into `engine/` (migrating
+  `SystemHealthPage`'s `useTheme().library` → `usePlatform()`). The engine
+  surface (`SettingsPanel` + content) no longer touches theme code.
+
+### Known-violating edges deferred to later slices (NOT yet enforced)
+
+Tracked here so they're not forgotten; each becomes a new zone/rule as its
+batch lands, and `npm run lint` stays green until then.
+
+- ⬜ **`engine/**` ↛ `components/**`** — the relocated engine content still
+  imports `SettingsSections` / `SystemDialogs` / `SystemReadinessChecklist`
+  from the `components/` grab-bag. Closes as those engine-manager surfaces
+  drain into `engine/` (next batches). Not yet enforced.
+- ⬜ **The `components/` grab-bag (~43 files)** is unclassified — a mix of
+  engine-manager surfaces (→ `engine/`), shared platform UI (→ `platform/`),
+  and theme menus (→ theme). Until each file is on the right side of the
+  line the grab-bag is exempt. **Slice 2+ drains it batch by batch**,
+  tightening the lint as it shrinks to zero.
+- ⬜ **Raw `invoke()` outside `platform/api/`** (157 calls / 37 files) —
+  themes/components bind directly to backend command names. **Phase 4** adds
+  `platform/api/{library,settings,media,…}Api.ts` typed wrappers + an ESLint
+  rule banning raw `invoke()` elsewhere.
+
+### The endpoint
+
+Every file in exactly one layer; the lint makes a cross-layer import a build
+failure; `invoke()` corralled into `platform/api/`. At that point platform
+and theme **physically cannot** be re-coupled by a new feature without
+ESLint stopping the commit.
+
+---
+
 ## Dialog open/close ownership map (Phase 1 migration target)
 
 Per operator confirmation: **Platform owns open/close state; themes

@@ -265,3 +265,120 @@ Each session that touches this feature appends a 3-line entry:
   theming work when resumed: Phase 3 — palette JSON extraction +
   asset resolver generalization + 5 nav primitives + toy second
   theme.
+
+## 2026-06-09 — Boundary enforcement Slice 1 (lint + first fix)
+
+Operator's explicit goal: a **clear, enforced** platform/theme separation
+"so we can add to the platform or theme without accidentally wiring them
+back together with new features or fixes." Reframed the remaining ARC-1
+decoupling work around enforcement-first (DECISIONS D8/D9/D10), inverting
+the plan's Phase-3-first order. A code audit found the structure isn't yet
+clean enough to draw the full line — `components/` is a 48-file grab-bag
+mixing engine/platform/theme — so this slice locks the already-clean edges
+and tracks the rest. Branch `feat/theming-boundary-enforcement`.
+
+- **Shipped:** ESLint boundary linter stood up (frontend had none).
+  `frontend/eslint.config.mjs` — boundary-ONLY (no style rules), flat
+  config, `import/no-restricted-paths` zones enforcing **platform↛routes**
+  + **platform↛engine** (the platform foundation never depends on anything
+  above it). `npm run lint` script added. Fixed the one live violation: the
+  bootless feature's `SystemHeader → useTheme` reverse leak — SystemHeader
+  now takes `onBootWithoutGame?` as a prop, threaded LibraryPage →
+  LibraryView → SystemHeader (D10 prop-driven pattern). Lint + typecheck
+  both green. Full layer contract + the deferred edges documented in
+  [SURFACES.md](SURFACES.md) §"Layer boundary contract".
+- **Almost:** Slice 1 complete + green; awaiting an operator playtest that
+  the "Boot without game" button still works (behavior unchanged — pure
+  refactor of where the handler comes from).
+- **Next (Slice 2):** drain the `components/` grab-bag (48 files) into
+  `engine/` vs `platform/` vs theme, batch by batch, tightening the lint as
+  it shrinks — first targets: relocate Settings content
+  (`PerSystemSettingsBody`/`SystemHealthPage`/`SettingsSections`) into
+  `engine/` to close the `engine↛routes` edge, and move `SystemCoresStrip`
+  into `platform/components/` to close `platform↛components`. Then Phase 4
+  (typed `platform/api/` Tauri bridge) corrals raw `invoke()`.
+
+## 2026-06-09 — CI wiring + Slice 2 batch 1 (close platform↛components)
+
+- **Shipped:**
+  - **CI now runs the boundary lint.** `.github/workflows/ci.yml` runs
+    `npm run lint` (before the cargo build, fast-fail) so a cross-layer
+    import fails CI on every push to main + PR — the enforcement actually
+    bites now, not just locally.
+  - **`platform/**` ↛ `components/**` enforced** (third zone). Closing it:
+    `git mv` `SystemCoresStrip` + `CatalogCoreCard` → `platform/components/`
+    (platform UI that was still in the grab-bag; updated the 2 importers),
+    and extracted the dialog-*state* types
+    (`GameDialogKind`/`GameDialogState` from GameDialogs,
+    `CollectionDialogMode` from NewCollectionDialog, `SystemDialogSection`
+    from SystemDialogs) into `platform/dialogs.ts` — platform owns dialog
+    state, so the state-shape types belong there; the component files import
+    them back (components→platform, allowed). This removed platform/dialogs.ts's
+    last type-only crossing into the grab-bag. **Platform is now pure of
+    theme, engine, AND the grab-bag.** lint + typecheck green.
+- **Almost:** nothing half-done. Operator playtest is the usual
+  same-behavior check (the cores strip + the create-collection / per-system
+  / per-game dialogs are pure relocations).
+- **Next (Slice 2 batch 2 — the keystone):** close `engine↛routes`. The
+  blocker is the **store-context split**: `engine/SettingsPanel` pulls its
+  content from `routes/retroverse/{PerSystemSettingsBody,SystemHealthPage}`
+  + `components/SettingsSections`, and those read platform stores via
+  `useTheme()` (the ThemeContext bundles platform stores + theme concerns).
+  To relocate that content into `engine/` cleanly, split a
+  platform-level `usePlatform()` provider (settings/library/layout/views
+  stores) out of `useTheme()` so engine + platform components get stores
+  without importing the theme context. That's the next major batch; it
+  also unblocks the bulk of the remaining grab-bag drain (any
+  ctx-store-reading component can then move out of theme). Then Phase 4
+  (typed `platform/api/`).
+
+## 2026-06-09 — Slice 2 batch 2: store-context split (the keystone)
+
+- **Shipped (DECISIONS D11):** `platform/platformContext.tsx` —
+  `PlatformProvider` + `usePlatform()` exposing the platform stores
+  (library / customCollections / layout / views / settings) + shared state
+  (searchQuery / focusedEntry / currentView), theme-agnostic. App.tsx now
+  wraps the tree in `<PlatformProvider>` (around ThemeProvider + the engine
+  surface + trailing modals) from the SAME store instances ThemeProvider
+  uses — so theme code's `useTheme().settings` is untouched while engine/
+  platform code can read stores without importing the theme context.
+  First consumer migrated: `engine/SettingsPanel` (`useTheme()` →
+  `usePlatform()`; it read only `ctx.settings`). That engine file no longer
+  imports `routes/retroverse/context`. lint + typecheck green.
+- **Almost:** the keystone is in, but `engine↛routes` isn't enforced YET —
+  SettingsPanel still imports its CONTENT (`PerSystemSettingsBody` +
+  `SystemHealthPage` from routes/, `SettingsSections` from components/).
+  Those relocate next.
+- **Next (Slice 2 batch 3):** relocate the Settings content into `engine/`,
+  migrating each file's store reads to `usePlatform()`:
+  `PerSystemSettingsBody` (0 useTheme — trivial), `SystemHealthPage`
+  (1 × ctx.library), `SettingsSections` (stores + 5 app-action handlers —
+  the handlers either come as props from the engine surface or call
+  platform/dialogs setters directly). Then add + enforce the `engine↛routes`
+  lint zone. After that, the rest of the grab-bag drains the same way
+  (usePlatform unblocks every ctx-store reader), then Phase 4 (typed
+  `platform/api/`).
+
+## 2026-06-09 — Slice 2 batch 3: close engine↛routes (4th enforced zone)
+
+- **Shipped:** relocated the engine surface's Settings *content* out of
+  `routes/retroverse/` into `engine/` — `PerSystemSettingsBody`,
+  `PerSystemInfoSection`, `SystemHealthPage` (all confirmed engine-only
+  content, not Retroverse router pages). `SystemHealthPage`'s
+  `useTheme().library` → `usePlatform()`; `SettingsPanel` imports the trio
+  from `./` now. Their remaining cross-layer imports are `components/`
+  (SettingsSections / SystemDialogs / SystemReadinessChecklist) — a
+  separate, not-yet-enforced edge — NOT routes/, so `engine↛routes` is
+  clean. Added + enforced the `engine/** ↛ routes/**` lint zone.
+  **Four zones now enforced + green:** platform↛routes, platform↛engine,
+  platform↛components, engine↛routes. lint + typecheck silent.
+- **Almost:** engine surface is now theme-free; the engine↛components edge
+  remains (the engine-manager surfaces still in the grab-bag).
+- **Next:** continue the grab-bag drain — relocate the engine-manager
+  surfaces (`SettingsSections`, `CoresPage`, `LibraryManagerPage`,
+  `ImportWizard`, `DebugLogDialog`, `SystemDialogs`, the dialogs cluster…)
+  into `engine/`, migrating each `useTheme()` store read to `usePlatform()`
+  and resolving SettingsSections' 5 app-action handlers (props from the
+  engine surface, or direct platform/dialogs setters). Then add the
+  `engine↛components` + classify-the-rest zones. Finally Phase 4 (typed
+  `platform/api/` Tauri bridge corrals the 157 raw invoke() calls).

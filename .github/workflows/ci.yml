@@ -70,10 +70,16 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
+      - name: Frontend — install + boundary lint + build
         run: |
           cd frontend
           npm ci
+          # Layer-boundary linter (platform/engine/theme separation). A
+          # cross-layer import (e.g. platform/ importing theme routes/) fails
+          # the build here — this is what keeps the engine/theme split from
+          # silently re-coupling. Contract:
+          # docs/features/theming-substrate/SURFACES.md §"Layer boundary contract".
+          npm run lint
           npm run build
 
       - name: cargo build

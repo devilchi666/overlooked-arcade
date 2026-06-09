@@ -20,19 +20,42 @@
 // settingsDialog was dead-letter (zero open call sites) and deleted
 // outright in Phase 2 Slice A alongside SettingsDialogs.tsx.
 //
-// Architectural note: type imports from components/ are pragmatic for
-// Phase 2 Slice A — the ESLint boundary rule (Phase 4) will catch any
-// runtime imports, and Slice B / later phases that move dialog
-// components into platform/ will eliminate the type-only crossing.
-// Slice A keeps the diff focused on the signal migration.
+// Dialog STATE types live here (platform owns the open/close state), not in
+// the grab-bag dialog component files. The components import these back from
+// platform — keeping platform free of any source dependency on components/
+// (boundary: platform must not import the grab-bag). Extracted in the Slice 2
+// grab-bag drain (2026-06-09), replacing the earlier type-only crossing.
 
 import { createSignal, type Accessor } from "solid-js";
 import type { ContainerNode } from "@oa/platform/views/types";
-import type { GameDialogState } from "../components/GameDialogs";
-import type { CollectionDialogMode } from "../components/NewCollectionDialog";
-import type { SystemDialogSection } from "../components/SystemDialogs";
-import type { RomEntry } from "@oa/platform/library/types";
+import type { RomEntry, RomId } from "@oa/platform/library/types";
 import type { SystemId } from "@oa/platform/themes/registry";
+
+/// Per-game settings dialog discriminant — which sub-dialog is open and the
+/// game it targets. Consumed by App.tsx (renders the dialog) + GameDialogs.
+export type GameDialogKind =
+  | "core-options"
+  | "display"
+  | "input"
+  | "rewind"
+  | "shaders"
+  | "milestones"
+  | "cheats";
+export type GameDialogState = { kind: GameDialogKind; target: RomEntry } | null;
+
+/// Create/rename collection dialog state (NewCollectionDialog).
+export type CollectionDialogMode =
+  | { kind: "create"; seedRomId: RomId | null }
+  | { kind: "rename"; collectionId: string; currentName: string };
+
+/// Per-system settings dialog section (SystemDialogs).
+export type SystemDialogSection =
+  | "bindings"
+  | "display"
+  | "rewind"
+  | "shaders"
+  | "default-core"
+  | "core-options";
 
 /// Tile/grid context-menu payload. `entry` is the game the menu was
 /// summoned for; `position` is the click coordinate where the menu

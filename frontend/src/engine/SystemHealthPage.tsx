@@ -29,10 +29,10 @@ import {
   BiosSettings,
   CoresCategorySettings,
   StorageSettings,
-} from "../../components/SettingsSections";
-import SystemReadinessChecklist from "../../components/import-wizard/SystemReadinessChecklist";
+} from "../components/SettingsSections";
+import SystemReadinessChecklist from "../components/import-wizard/SystemReadinessChecklist";
 import { activeJobs } from "@oa/platform/lib/backgroundJobs";
-import { useTheme } from "./context";
+import { usePlatform } from "@oa/platform/platformContext";
 
 export type HealthTabId = "overview" | "bios" | "cores" | "storage" | "jobs";
 
@@ -146,7 +146,7 @@ type OverviewProps = {
 };
 
 const OverviewBody: Component<OverviewProps> = (props) => {
-  const ctx = useTheme();
+  const ctx = usePlatform();
 
   const librarySystems = createMemo<SystemId[]>(() =>
     Array.from(new Set(ctx.library.state.entries.map((e) => e.systemId))),

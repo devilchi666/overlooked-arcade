@@ -27,13 +27,10 @@ import {
   usePerSystemOverrides,
 } from "@oa/platform/components/perSystemSections";
 
-export type SystemDialogSection =
-  | "bindings"
-  | "display"
-  | "rewind"
-  | "shaders"
-  | "default-core"
-  | "core-options";
+// SystemDialogSection now lives in @oa/platform/dialogs (platform owns
+// dialog state); re-exported for any caller that imported it from here.
+import type { SystemDialogSection } from "@oa/platform/dialogs";
+export type { SystemDialogSection };
 
 // Re-exports for callers that still imported these helpers from this
 // module before the perSystemSections lift. New code should import
