@@ -6,6 +6,40 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-09 — Bootless launch ("Boot without game") + VL Phase C merge bookkeeping
+
+Picked up the libretro-plumbing follow-up. Also corrected stale
+ACTIVE_WORK bookkeeping: VL **Phase C3 was already merged** (`28875d5`)
+and playtest-passed — the docs still said "awaiting playtest before
+merge". Phase C is complete; Theming ARC 1's §7 pause condition (VL
+E + C) is now satisfied, so Theming Phase 3 is unblocked.
+
+- **Shipped (`feat/bootless-launch`, awaiting operator playtest):**
+  content-free launch wiring. `LaunchRequest.no_rom` +
+  `EmuCommand::LoadRom { no_rom }` carry the flag through the Launcher
+  seam; the LoadRom handler branches to `LibretroCore::load_no_rom()`
+  after gating on the live `supports_no_game()` (refuses + toasts if
+  the core didn't advertise `SET_SUPPORT_NO_GAME`, so a lying core
+  can't crash us). New `boot_without_game` + `system_supports_bootless`
+  commands (libretro-only — external-routed systems refused); static
+  `system_default_core_supports_bootless` allowlist (dosbox / scummvm),
+  backstopped by the runtime check. Frontend: `bootWithoutGame` /
+  `systemSupportsBootless` helpers, `ThemeContext.onBootWithoutGame`
+  bridge → `App.handleBootWithoutGame` (synthetic "<System> (no game)"
+  title, null runningEntry, in-game view), and a "▶ Boot without game"
+  button in SystemHeader gated on the capability check. 822 oa-shell
+  tests pass (+1 capability test); frontend typecheck silent.
+- **Almost:** nothing outstanding for bootless — code-complete, gated
+  on operator playtest (drop DOSBox-Pure / ScummVM .dll, open the
+  system in LIBRARY, click "Boot without game", confirm the core's
+  built-in browser appears).
+- **Next:** VL **Phase B** (Casual/Preservation toggle + Variants tab +
+  Collection Health rollups) — the phase that cashes the invisible
+  A2 + E infrastructure into operator-visible value. Deferred libretro
+  audit items remain: M6 (SET_SUBSYSTEM_INFO) + L3 (microphone).
+
+---
+
 ## 2026-06-06 — VB right D-pad verification — already shipped, NEXT.md was double-stale
 
 Followup to yesterday's DEFERRED-band honesty pass. The

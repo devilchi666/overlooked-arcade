@@ -52,8 +52,8 @@ import {
 } from "@oa/platform/library/ingest";
 import { listen } from "@tauri-apps/api/event";
 import { listenScoped } from "@oa/platform/lib/eventListener";
-import { allSupportedExtensions, resolveShaderPreset, systemForExtension } from "@oa/platform/themes/registry";
-import { launchRom, type LaunchResult } from "@oa/platform/library/launch";
+import { allSupportedExtensions, resolveShaderPreset, systemForExtension, systemThemes } from "@oa/platform/themes/registry";
+import { launchRom, bootWithoutGame, type LaunchResult } from "@oa/platform/library/launch";
 import { MediaProvider } from "@oa/platform/library/media";
 import { PlatformMediaProvider } from "@oa/platform/library/platformMedia";
 import { GameInfoBadgesProvider } from "@oa/platform/library/gameInfoBadges";
@@ -1123,6 +1123,28 @@ const App: Component = () => {
     }
   }
 
+  /// Boot a no-game-capable core (DOSBox-Pure, ScummVM) with no content
+  /// so it opens its own built-in browser. No RomEntry exists, so we skip
+  /// the per-game arming (milestones / analog / device / cheats) — there's
+  /// no game id to resolve them against — and enter the in-game view with
+  /// a synthetic "<System> (no game)" title and a null runningEntry (the
+  /// same shape handleUnload uses for the not-a-specific-game case). The
+  /// Rust command surfaces its own failure toasts; we only flip the UI on
+  /// a confirmed dispatch.
+  async function handleBootWithoutGame(systemId: string) {
+    const ok = await bootWithoutGame(systemId);
+    if (!ok) return;
+    const label = systemThemes[systemId as keyof typeof systemThemes]?.displayName ?? systemId;
+    setStatus(`Booted ${label} without a game.`);
+    setGameRunning(true);
+    setCurrentRomTitle(`${label} (no game)`);
+    setRunningEntry(null);
+    if (shellMode() === "single-window") {
+      setLibraryVisible(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
+  }
+
   // Phase 3 slice B — revert renderer + window state to OA-wide defaults
   // so the NEXT launch (which may have no per-game override) doesn't
   // inherit stale state from the game that just unloaded. The settings
@@ -1497,6 +1519,7 @@ const App: Component = () => {
           currentView,
           setCurrentView,
           onLaunch: handleLaunch,
+          onBootWithoutGame: (systemId) => void handleBootWithoutGame(systemId),
           onShowSaves: (e) => setSavesEntry(e),
           onShowInfo: (e) => setGameInfoFor(e),
           onPickContext: (entry, position) => setContextMenuFor({ entry, position }),

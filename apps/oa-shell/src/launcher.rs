@@ -73,6 +73,7 @@ impl Launcher for LibretroLauncher {
             restore_state_path: req.restore_state_path,
             core_override: req.core_override,
             system_id: req.system_id,
+            no_rom: req.no_rom,
         })
         .map_err(|e| LaunchError::Launch(format!("emu thread closed: {e}")))?;
         Ok(LaunchedSession::InProcess)
@@ -365,6 +366,7 @@ mod tests {
             restore_slot: Some(2),
             restore_state_path: Some(PathBuf::from("G:/states/replay.oastate")),
             core_override: Some("mednafen_pce_libretro.dll".to_string()),
+            no_rom: false,
         }
     }
 
@@ -385,6 +387,7 @@ mod tests {
                 restore_state_path,
                 core_override,
                 system_id,
+                no_rom,
             } => {
                 assert_eq!(path, "G:/roms/Bonk's Adventure (USA).pce");
                 assert_eq!(bytes, vec![0xAA, 0xBB, 0xCC]);
@@ -395,6 +398,7 @@ mod tests {
                 );
                 assert_eq!(core_override.as_deref(), Some("mednafen_pce_libretro.dll"));
                 assert_eq!(system_id, "tg16");
+                assert!(!no_rom, "a content launch must not set no_rom");
             }
             _ => panic!("expected EmuCommand::LoadRom"),
         }
@@ -493,6 +497,7 @@ launch_args_template: ["/C", "type", "{content}"]
             restore_slot: None,
             restore_state_path: None,
             core_override: None,
+            no_rom: false,
         }
     }
 
