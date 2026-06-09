@@ -24,6 +24,7 @@ mod data_dir;
 mod disc_track_hash;
 mod game_info;
 mod http_retry;
+mod hw_render;
 mod job_prefs;
 mod job_registry;
 mod core_installer;
@@ -3958,6 +3959,16 @@ fn run_emu_render(
                 // 32040, fceumm 48000, …) gets fed the wrong rate → crackle +
                 // wrong pitch.
                 timing = core_ref.timing();
+                // HW-Render M3 (D4) — same handshake-outcome log + decline
+                // toast as the runtime LoadRom path, for cold direct-launch.
+                let hw_status = core_ref.hw_render_status();
+                log::info!(
+                    "oa-shell: {}",
+                    hw_render::hw_status_log_line(hw_status, &current_core_dll),
+                );
+                if let Some(msg) = hw_render::hw_decline_toast(hw_status, &current_core_dll) {
+                    toast(&app_handle, ToastLevel::Warn, msg);
+                }
             }
             Err(e) => {
                 log::error!("oa-shell: ROM rejected: {e:?}");
@@ -4844,6 +4855,24 @@ fn run_emu_render(
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
+
+                            // HW-Render M3 (D4) — surface the HW-render
+                            // handshake outcome unambiguously: a log line
+                            // every launch (so a core-validation run shows
+                            // exactly what negotiation did), plus a toast
+                            // pointing at the software-peer core when we
+                            // declined HW for a system that has one. Not an
+                            // auto-swap — see hw_render.rs.
+                            let hw_status = core_ref.hw_render_status();
+                            log::info!(
+                                "oa-shell: {}",
+                                hw_render::hw_status_log_line(hw_status, &current_core_dll),
+                            );
+                            if let Some(msg) =
+                                hw_render::hw_decline_toast(hw_status, &current_core_dll)
+                            {
+                                toast(&app_handle, ToastLevel::Warn, msg);
+                            }
 
                             // Adopt the core's REAL timing now that a ROM is
                             // loaded. `LibretroCore::load` (the core-swap path

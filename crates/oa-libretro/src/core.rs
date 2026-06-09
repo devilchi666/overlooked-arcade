@@ -14,7 +14,7 @@ use oa_core::{
 
 use crate::ffi::*;
 use crate::loader::LibretroLibrary;
-use crate::state::{self, State};
+use crate::state::{self, HwRenderStatus, State};
 
 /// How the ROM gets handed to the libretro core. HuCard / cart formats
 /// (`.pce`, `.sgx`, `.nes`, `.smc`, etc.) load fine from in-memory bytes; CD
@@ -430,6 +430,15 @@ impl LibretroCore {
     /// can't change their mind later.
     pub fn supports_no_game(&self) -> bool {
         state::with_state(|s| s.supports_no_game).unwrap_or(false)
+    }
+
+    /// Outcome of this core's hardware-render negotiation (Vulkan
+    /// accepted / declined non-Vulkan / declined on instance error /
+    /// not requested). Set once during `retro_set_environment`; the
+    /// shell logs it per launch and, on a decline, can suggest the
+    /// system's software-peer core. See [`HwRenderStatus`].
+    pub fn hw_render_status(&self) -> HwRenderStatus {
+        state::with_state(|s| s.hw_render_status).unwrap_or(HwRenderStatus::NotRequested)
     }
 
     /// Append an empty disc slot to the core's image list. The newly-
