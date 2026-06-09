@@ -45,6 +45,12 @@ export type ThemeContextValue = {
   currentView: Accessor<SidebarView>;
   setCurrentView: (v: SidebarView) => void;
   onLaunch: (entry: RomEntry, slot?: number, stateFile?: string) => Promise<unknown>;
+  /// Boot a system's libretro core with no content so it opens its own
+  /// built-in browser/menu (DOSBox-Pure, ScummVM). Surfaced by
+  /// SystemHeader's "Boot without game" button, shown only when
+  /// `systemSupportsBootless(systemId)` returns true. Sourced from
+  /// App.handleBootWithoutGame.
+  onBootWithoutGame: (systemId: string) => void;
   onShowSaves: (entry: RomEntry) => void;
   onShowInfo: (entry: RomEntry) => void;
   onPickContext: (entry: RomEntry, position: { x: number; y: number }) => void;

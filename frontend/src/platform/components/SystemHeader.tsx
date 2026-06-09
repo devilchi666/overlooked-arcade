@@ -1,6 +1,8 @@
-import { Show, type Component } from "solid-js";
+import { Show, createResource, type Component } from "solid-js";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatformMedia } from "@oa/platform/library/platformMedia";
+import { systemSupportsBootless } from "@oa/platform/library/launch";
+import { useTheme } from "../../routes/retroverse/context";
 import SystemCoresStrip from "../../components/SystemCoresStrip";
 
 type Props = {
@@ -23,6 +25,11 @@ const SystemHeader: Component<Props> = (props) => {
   const theme = () => systemThemes[props.systemId];
   const platformMedia = usePlatformMedia();
   const wheel = () => platformMedia.wheelUrl(props.systemId);
+  const ctx = useTheme();
+  // Whether to offer "Boot without game" for this system — true only for
+  // no-game-capable cores (DOSBox-Pure, ScummVM) not routed to an
+  // external emulator. Re-queried whenever the visible system changes.
+  const [bootless] = createResource(() => props.systemId, systemSupportsBootless);
   return (
     <header
       class="border-b border-white/5 bg-(--color-oa-bg-deep)/95 px-(--layout-content-padding-x) py-4 backdrop-blur"
@@ -49,6 +56,16 @@ const SystemHeader: Component<Props> = (props) => {
         <h1 class="truncate text-lg font-semibold text-(--color-oa-ink)">
           {theme()?.displayName ?? props.systemId}
         </h1>
+        <Show when={bootless()}>
+          <button
+            type="button"
+            class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-medium text-(--color-system-accent-soft) transition hover:bg-(--color-system-accent)/25 focus-visible:outline-none data-[oa-focus=true]:outline data-[oa-focus=true]:outline-2 data-[oa-focus=true]:outline-(--color-system-accent)"
+            title="Boot this core with no game — opens its own built-in browser (DOSBox / ScummVM)"
+            onClick={() => ctx.onBootWithoutGame(props.systemId)}
+          >
+            ▶ Boot without game
+          </button>
+        </Show>
       </div>
       <p class="mt-1 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         {props.gameCount} {props.gameCount === 1 ? "game" : "games"} in library

@@ -367,15 +367,22 @@ core source + our `file:line`. **Most of the audit shipped on
   path (M6 — SGB / Sufami Turbo / BS-X; needs parse + store + subsystem-aware load
   + picker UI) and GET_MICROPHONE_INTERFACE (L3, env 75 — NDS mic; needs a new
   interface struct + audio-input source). Pick up when a target system needs them.
-- ⬜ **Bootless launch** (~0.5 session) — wire the existing-but-unused
-  `LibretroCore::load_no_rom()` + `supports_no_game()` (in
-  `crates/oa-libretro/src/core.rs`) into a "Boot without game" launch path +
-  UI affordance (gated on `supports_no_game()`), so DOSBox-Pure / ScummVM /
-  blueMSX (if it advertises `SET_SUPPORT_NO_GAME`) can boot to their built-in
-  prompt/browser with no content. The wrapper layer + env handling already
-  exist; only the shell launch path + button are missing (the long-standing
-  "Almost" item in SESSION_LOG). Natural companion to the keyboard work — a
-  computer core booting to its prompt is the motivating case.
+- ✅ **Bootless launch** — SHIPPED on `feat/bootless-launch` (2026-06-09;
+  awaiting operator playtest). `LaunchRequest.no_rom` + `EmuCommand::LoadRom
+  { no_rom }` thread a content-free flag through the Launcher seam to the
+  LoadRom handler, which branches to `LibretroCore::load_no_rom()` after
+  gating on the live `supports_no_game()` (refuses + toasts if the core
+  didn't advertise `SET_SUPPORT_NO_GAME`). New `boot_without_game` +
+  `system_supports_bootless` Tauri commands (libretro-only — external-routed
+  systems are refused); `system_default_core_supports_bootless` allowlist
+  (dosbox / scummvm; backstopped by the runtime check). Frontend:
+  `bootWithoutGame` / `systemSupportsBootless` helpers, a `ThemeContext
+  .onBootWithoutGame` bridge, and a "▶ Boot without game" button in
+  SystemHeader shown only when the capability check passes (enters the
+  in-game view with a synthetic "<System> (no game)" title, null
+  runningEntry). 822 oa-shell tests pass (+1 capability test); frontend
+  typecheck silent. So DOSBox-Pure / ScummVM boot to their built-in browser
+  with no content.
 
 ### HW-Render Pipeline — Milestone 1 (Vulkan handshake, core on screen)
 

@@ -199,6 +199,12 @@ enum EmuCommand {
         // metadata (`core.system()`). Defaults to "tg16" if absent for
         // backward compatibility with any path that hasn't been updated yet.
         system_id: String,
+        /// Bootless launch — call `retro_load_game(NULL)` instead of
+        /// loading `path`/`bytes`, so a no-game-capable core (DOSBox-Pure,
+        /// ScummVM) boots into its own built-in browser. The handler
+        /// gates on `LibretroCore::supports_no_game()` before honoring it.
+        /// `path`/`bytes` are empty for this case. Defaults to `false`.
+        no_rom: bool,
     },
     /// Release the currently-loaded ROM but keep the core initialised so a
     /// subsequent LoadRom can re-use it. The renderer keeps presenting the
@@ -541,6 +547,24 @@ fn is_descriptor_extension(ext: &str) -> bool {
 /// per-system check (`is_descriptor_extension`).
 fn is_directory_path_system(system_id: &str) -> bool {
     matches!(system_id, "dosbox")
+}
+
+/// Systems whose default core is expected to advertise
+/// `SET_SUPPORT_NO_GAME` — i.e. it can `retro_load_game(NULL)` and boot
+/// into its own built-in browser/menu (DOSBox-Pure's DOS-game picker,
+/// ScummVM's engine launcher). Used only to decide whether the frontend
+/// offers a "Boot without game" affordance; the real gate is the live
+/// `LibretroCore::supports_no_game()` check inside the LoadRom handler,
+/// which can't be consulted ahead of time without loading the core (the
+/// flag is set during `retro_set_environment`, and the libretro singleton
+/// means probing it would clobber any running core).
+///
+/// Kept deliberately narrow to the engine-launcher cores OA ships today.
+/// A core that lies (or one added later) is still safe: `load_no_rom`
+/// refuses and toasts. Graduate to a per-system descriptor field if the
+/// set grows much beyond these.
+fn system_default_core_supports_bootless(system_id: &str) -> bool {
+    matches!(system_id, "dosbox" | "scummvm")
 }
 
 /// Resolve the libretro `system_dir` for a given system. Most cores
@@ -2679,6 +2703,8 @@ fn main() {
             get_launcher_pref,
             set_launcher_pref,
             get_active_launcher_capabilities,
+            system_supports_bootless,
+            boot_without_game,
             media::get_media_index,
             media::get_region_priority,
             media::set_region_priority,
@@ -4266,8 +4292,8 @@ fn run_emu_render(
         // to-back swaps are safe.
         loop {
             match cmd_rx.try_recv() {
-                Ok(EmuCommand::LoadRom { path, bytes, restore_slot, restore_state_path, core_override, system_id }) => {
-                    log::info!("oa-shell: launch_rom -> {} ({} bytes, restore_slot={:?}, restore_state_path={:?}, override={:?}, system={})", path, bytes.len(), restore_slot, restore_state_path, core_override, system_id);
+                Ok(EmuCommand::LoadRom { path, bytes, restore_slot, restore_state_path, core_override, system_id, no_rom }) => {
+                    log::info!("oa-shell: launch_rom -> {} ({} bytes, restore_slot={:?}, restore_state_path={:?}, override={:?}, system={}, no_rom={})", path, bytes.len(), restore_slot, restore_state_path, core_override, system_id, no_rom);
                     let system_changed = current_system_id != system_id;
                     current_system_id = system_id.clone();
 
@@ -4414,7 +4440,7 @@ fn run_emu_render(
                     // crashes during CD init with an access violation rather
                     // than failing cleanly. Refuse the launch with a clear
                     // message instead so the user can fix the BIOS file.
-                    if is_cd_extension(&ext) {
+                    if is_cd_extension(&ext) && !no_rom {
                         // Per-system BIOS pre-check. Each CD-shape system
                         // has its own canonical BIOS filenames + hashes +
                         // missing-BIOS guidance, so the dispatch + messages
@@ -4779,8 +4805,42 @@ fn run_emu_render(
                     // during retro_load_game (e.g. FCEUmm uses it to derive
                     // <save_dir>/<name>.sav). Passing the actual ROM stem
                     // beats the State::new() default `"rom"`.
-                    let stem = sanitize_stem(&path);
-                    match core_ref.load_rom(source, &ext, &stem) {
+                    // Bootless launches have no per-game file, so derive a
+                    // stable per-system stem (`<system>-bootless`) instead of
+                    // sanitize_stem("") → "unknown" — keeps each engine core's
+                    // OA save-state directory distinct.
+                    let stem = if no_rom {
+                        format!("{current_system_id}-bootless")
+                    } else {
+                        sanitize_stem(&path)
+                    };
+                    // Bootless launch: call retro_load_game(NULL) so the core
+                    // boots into its own browser/menu. Gate on the core's
+                    // advertised SET_SUPPORT_NO_GAME — `load_no_rom` would
+                    // error anyway, but a core that lied could crash in
+                    // retro_load_game, so refuse up front with a clear toast.
+                    let load_result = if no_rom {
+                        if !core_ref.supports_no_game() {
+                            log::warn!(
+                                "oa-shell: bootless launch requested for {} but core {} did not advertise SET_SUPPORT_NO_GAME — refusing",
+                                current_system_id, current_core_dll,
+                            );
+                            toast(
+                                &app_handle,
+                                ToastLevel::Error,
+                                format!("{current_core_dll} can't boot without a game"),
+                            );
+                            continue;
+                        }
+                        log::info!(
+                            "oa-shell: bootless launch (load_no_rom) — {} via {}",
+                            current_system_id, current_core_dll,
+                        );
+                        core_ref.load_no_rom()
+                    } else {
+                        core_ref.load_rom(source, &ext, &stem)
+                    };
+                    match load_result {
                         Ok(()) => {
                             log::info!("oa-shell: ROM swap OK; save-state dir = {}/saves/{}", app_data_dir.display(), stem);
                             current_rom_stem = Some(stem.clone());
@@ -11667,6 +11727,7 @@ fn launch_rom(
         restore_slot: slot,
         restore_state_path,
         core_override: coreOverride,
+        no_rom: false,
     };
     let prepared = state.launcher.prepare(request).map_err(|e| e.to_string())?;
     let session = state.launcher.launch(prepared).map_err(|e| e.to_string())?;
@@ -11691,6 +11752,117 @@ fn launch_rom(
         }
     }
 
+    state.shell_window.focus_game();
+    Ok(())
+}
+
+/// Whether the frontend should offer a "Boot without game" affordance
+/// for this system — i.e. its default in-process core is expected to
+/// support `retro_load_game(NULL)`. See
+/// [`system_default_core_supports_bootless`] for why this is a static
+/// hint rather than a live probe. Returns `false` for systems routed to
+/// an external emulator (those open content themselves; there's no
+/// built-in browser to boot into through OA).
+#[tauri::command]
+#[allow(non_snake_case)]
+fn system_supports_bootless(
+    systemId: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> bool {
+    let Some(system_id) = systemId else { return false };
+    // An external default-launcher pref takes the system off the
+    // in-process libretro path entirely — no bootless there.
+    let external = emulator_profiles::read_launcher_prefs(&state.app_data_dir)
+        .get(&system_id)
+        .is_some();
+    !external && system_default_core_supports_bootless(&system_id)
+}
+
+/// Boot a system's in-process libretro core with NO content
+/// (`retro_load_game(NULL)`), so a no-game-capable core boots into its
+/// own built-in browser/menu — DOSBox-Pure's DOS-game picker, ScummVM's
+/// engine launcher. The natural companion to the keyboard/mouse plumbing:
+/// a computer core booting to its prompt is the motivating case.
+///
+/// Libretro-only by design. Bootless means "boot the built-in browser",
+/// which an external standalone emulator doesn't model — so a system
+/// routed to an external profile is refused with a clear message. The
+/// actual no-game capability is enforced in the LoadRom handler via the
+/// live `LibretroCore::supports_no_game()` check after the core loads.
+#[tauri::command]
+#[allow(non_snake_case)]
+fn boot_without_game(
+    systemId: Option<String>,
+    state: tauri::State<'_, AppState>,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    let system_id = systemId.ok_or_else(|| "systemId required".to_string())?;
+
+    // Bootless is the in-process libretro path only. If this system is
+    // routed to an external emulator, there's no OA-controlled core to
+    // boot content-free — refuse rather than silently doing nothing.
+    if emulator_profiles::read_launcher_prefs(&state.app_data_dir)
+        .get(&system_id)
+        .is_some()
+    {
+        return Err(format!(
+            "{system_id} launches through an external emulator — \
+             boot without game is only available for the built-in libretro core"
+        ));
+    }
+
+    // Persist any in-flight session before replacing it (mirrors
+    // launch_rom). Idempotent when nothing is active.
+    close_active_session(&state.active_session, &db);
+
+    // Supersede an active external session — its child process owns the
+    // screen and must be torn down through its owning launcher first
+    // (mirrors launch_rom's supersede rule). A libretro→libretro swap
+    // needs no explicit unload; the LoadRom handler re-loads in place.
+    if let Ok(mut guard) = state.active_launch.lock() {
+        let must_terminate = matches!(
+            guard.as_ref().map(|a| &a.session),
+            Some(oa_core::LaunchedSession::External { .. })
+        );
+        if must_terminate {
+            if let Some(active) = guard.take() {
+                if let Err(e) = active.launcher.terminate(&active.session, None) {
+                    log::warn!("oa-shell: terminating superseded session for bootless launch: {e}");
+                }
+            }
+        }
+    }
+    // A superseded archived CD set leaves a temp dir; clean it as
+    // unload_rom would (the bootless path won't pass through unload_rom).
+    if let Ok(mut active) = state.active_archive_entry_id.lock() {
+        if let Some(prev_entry_id) = active.take() {
+            let temp_root = state.app_data_dir.join("temp");
+            archive::cleanup_temp(&temp_root, &prev_entry_id);
+        }
+    }
+
+    log::info!("oa-shell: boot_without_game dispatch (system={system_id})");
+    let request = oa_core::LaunchRequest {
+        content_path: String::new(),
+        content_bytes: Vec::new(),
+        system_id,
+        restore_slot: None,
+        restore_state_path: None,
+        core_override: None,
+        no_rom: true,
+    };
+    let prepared = state.launcher.prepare(request).map_err(|e| e.to_string())?;
+    let session = state.launcher.launch(prepared).map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = state.active_launch.lock() {
+        *guard = Some(ActiveLaunch {
+            launcher: state.launcher.clone(),
+            session,
+        });
+    }
+    // No ActiveSession bookkeeping — a content-free boot isn't a game,
+    // so there's no library row to attribute play time to. The browse
+    // session inside the core isn't tracked; the next real launch (or
+    // unload) supersedes it.
     state.shell_window.focus_game();
     Ok(())
 }
@@ -11747,6 +11919,7 @@ fn launch_rom_external(
         restore_slot: None,
         restore_state_path: None,
         core_override: None,
+        no_rom: false,
     };
     log::info!(
         "oa-shell: launch_rom dispatch → external profile '{profile_id}' ({}, system={system_id})",
@@ -11842,6 +12015,22 @@ fn spawn_external_exit_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bootless_capability_covers_engine_cores_only() {
+        // The two engine-launcher cores OA ships today advertise
+        // SET_SUPPORT_NO_GAME (DOSBox-Pure browser, ScummVM launcher).
+        assert!(system_default_core_supports_bootless("dosbox"));
+        assert!(system_default_core_supports_bootless("scummvm"));
+        // Ordinary console systems boot a ROM — no content-free path.
+        for sys in ["tg16", "snes", "psx", "n64", "gamecube", "lynx"] {
+            assert!(
+                !system_default_core_supports_bootless(sys),
+                "{sys} should not advertise a bootless affordance",
+            );
+        }
+        assert!(!system_default_core_supports_bootless(""));
+    }
 
     #[test]
     fn game_focus_chord_round_trips() {
