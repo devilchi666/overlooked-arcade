@@ -367,6 +367,15 @@ core source + our `file:line`. **Most of the audit shipped on
   path (M6 — SGB / Sufami Turbo / BS-X; needs parse + store + subsystem-aware load
   + picker UI) and GET_MICROPHONE_INTERFACE (L3, env 75 — NDS mic; needs a new
   interface struct + audio-input source). Pick up when a target system needs them.
+- ⬜ **Bootless launch** (~0.5 session) — wire the existing-but-unused
+  `LibretroCore::load_no_rom()` + `supports_no_game()` (in
+  `crates/oa-libretro/src/core.rs`) into a "Boot without game" launch path +
+  UI affordance (gated on `supports_no_game()`), so DOSBox-Pure / ScummVM /
+  blueMSX (if it advertises `SET_SUPPORT_NO_GAME`) can boot to their built-in
+  prompt/browser with no content. The wrapper layer + env handling already
+  exist; only the shell launch path + button are missing (the long-standing
+  "Almost" item in SESSION_LOG). Natural companion to the keyboard work — a
+  computer core booting to its prompt is the motivating case.
 
 ### HW-Render Pipeline — Milestone 1 (Vulkan handshake, core on screen)
 

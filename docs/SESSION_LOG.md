@@ -1108,6 +1108,43 @@ dispatch arm as the 9th system; PSP is BIOS-free.
 
 ---
 
+**2026-06-08 — Libretro plumbing audit + fixes + Game-focus keyboard switch**
+
+- **Shipped (audit):** read-only sweep of the oa-libretro FFI plumbing →
+  `docs/cores/AUDIT_2026-06-08.md` (finder agents per dimension + per-core
+  source research + adversarial verification, committed `1ed8efb`). Headline:
+  polled `RETRO_DEVICE_KEYBOARD` / `RETRO_DEVICE_MOUSE` state both returned 0
+  (computer-core tier + arcade trackball games dead); plus env/parser/lifecycle
+  gaps. Several first-pass alarms refuted into a checked-and-cleared appendix.
+- **Shipped (fixes, branch `feat/libretro-plumbing-fixes`, commit `d98417b`):**
+  H1/H2 polled keyboard + mouse state (512-key bitset + per-port mouse deltas in
+  State; `cb_input_state` arms + pure `mouse_field_value` helper;
+  `set_keyboard_state`/`set_mouse_state`; `poll_mouse_raw` in oa-input; focus-
+  gated shell push). M1 option-parser sentinel caps; M2 env `info!`→`debug!`;
+  M3 ports 0-4 wired in `finish_load`; M4 F8 paused-restore framebuffer nudge;
+  M5 `GET_SAVESTATE_CONTEXT` (env 72) wired to run-ahead; M7 frame-truncation
+  warn; L1 `SET_VARIABLE` (70); L2 `GET_THROTTLE_STATE` (71); `GET_JIT_CAPABLE`
+  (74); ffi constants for envs 71-75 + mouse ids + throttle/savestate types.
+- **Shipped (Game-focus keyboard switch, commit `ce2034d`):** keyboard
+  passthrough (event pump + the new H1 held-state push) now gates on
+  `game_focus_on` → clean RetroArch-style switch (Game focus OFF = keyboard
+  drives the shell; ON = keyboard drives the emulated machine). The toggle is
+  now a configurable device_query chord (was hardcoded Ctrl+G): `game_focus.json`
+  + process-global + `get/set_game_focus_toggle` commands + a capture control in
+  Settings › Controls. Default stays Ctrl+G (device_query has no ScrollLock).
+- **Validation:** oa-libretro 52 tests; oa-shell builds clean + 821 tests
+  (3 new chord tests); frontend `tsc --noEmit` clean. **NOT yet operator-
+  playtested** (merged at operator request; revertible).
+- **Almost:** operator playtest — load blueMSX, toggle Game focus ON → type into
+  MSX BASIC; OFF → F5/F8 save/load work + no key leak; rebind the toggle in
+  Settings › Controls. (Needs per-system keyboard passthrough ON for MSX.)
+- **Next:** bootless launch — wire the existing-but-unused `load_no_rom()` +
+  `supports_no_game()` into a "Boot without game" path so blueMSX/DOSBox/ScummVM
+  can boot to their prompt with no content (queued in NEXT.md). Then the deferred
+  audit items M6 (`SET_SUBSYSTEM_INFO` launch path) + L3 (microphone interface).
+
+---
+
 ---
 
 Older entries (everything 2026-05-20 and earlier) live in [SESSION_LOG_ARCHIVE.md](SESSION_LOG_ARCHIVE.md).
