@@ -27,7 +27,8 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 import { launchRom } from "@oa/platform/library/launch";
 import { useMedia, type MediaVariant } from "@oa/platform/library/media";
-import type { RomEntry } from "@oa/platform/library/types";
+import type { GameGroupInfo, RomEntry, VariantInfo } from "@oa/platform/library/types";
+import type { LibraryStore } from "@oa/platform/library/store";
 import { systemThemes } from "@oa/platform/themes/registry";
 import { captureFocusReturn, useFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
@@ -58,6 +59,12 @@ type Props = {
   /// (e.g. caller deselects the focused tile) so the prop stays
   /// required.
   variant?: "modal" | "panel";
+  /// VL Phase B — library store, supplied so the Variants tab can read
+  /// the game's variant group + launch / pin a specific dump. Optional:
+  /// when omitted the Variants tab simply doesn't render (single call
+  /// site in App.tsx passes it; the tab also hides for single-variant
+  /// games regardless).
+  library?: LibraryStore;
 };
 
 type SaveSlot = {
@@ -68,7 +75,16 @@ type SaveSlot = {
   thumbnailDataUrl?: string;
 };
 
-type TabId = "screenshots" | "titles" | "saves" | "gameInfo";
+type TabId = "screenshots" | "titles" | "saves" | "gameInfo" | "variants";
+
+/// Short, human labels for the A2-decoded dump-status enum.
+const DUMP_STATUS_LABELS: Record<string, string> = {
+  verified: "Verified",
+  "bad-dump": "Bad dump",
+  "over-dump": "Over-dump",
+  fixed: "Fixed",
+  unknown: "—",
+};
 
 const BUG_SEVERITIES: BugSeverity[] = ["blocker", "major", "minor", "cosmetic"];
 
@@ -364,16 +380,92 @@ const GameInfoModal: Component<Props> = (props) => {
     }
   }
 
+  // --- VL Phase B — Variants tab -------------------------------------
+  // The game's variant group (every dump of this identity). Absent for
+  // single-file games and when no library store was supplied.
+  const gameGroup = createMemo<GameGroupInfo | null>(() => {
+    const e = props.entry;
+    if (!e || !props.library) return null;
+    return props.library.groupsByVariantId().get(e.id) ?? null;
+  });
+  const allVariants = createMemo<VariantInfo[]>(() => gameGroup()?.variants ?? []);
+  // The Variants tab only earns its place for multi-dump identities.
+  const hasVariants = createMemo(() => allVariants().length >= 2);
+  const entriesById = createMemo(() => {
+    const map = new Map<string, RomEntry>();
+    for (const e of props.library?.state.entries ?? []) map.set(e.id, e);
+    return map;
+  });
+  // Filters (preservation browsing). `null` = no filter on that axis.
+  const [regionFilter, setRegionFilter] = createSignal<string | null>(null);
+  const [verifiedOnly, setVerifiedOnly] = createSignal(false);
+  // Distinct regions present across the group's variants, for the filter
+  // dropdown. Preserves variant (priority) order, de-duped.
+  const variantRegions = createMemo<string[]>(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const v of allVariants()) {
+      const r = v.region ?? v.regions[0];
+      if (r && !seen.has(r)) { seen.add(r); out.push(r); }
+    }
+    return out;
+  });
+  const filteredVariants = createMemo<VariantInfo[]>(() => {
+    const region = regionFilter();
+    const verified = verifiedOnly();
+    return allVariants().filter((v) => {
+      if (region && (v.region ?? v.regions[0]) !== region) return false;
+      if (verified && v.dumpStatus !== "verified") return false;
+      return true;
+    });
+  });
+
+  function launchVariant(v: VariantInfo): void {
+    const target = entriesById().get(v.id);
+    if (!target) return;
+    void launchRom(target).then((result) => {
+      if (result.kind === "launched") {
+        props.onLaunched?.(target);
+        props.onClose();
+      } else if (result.kind === "error") {
+        console.warn("[GameInfoModal] launch variant failed:", result.message);
+      }
+    });
+  }
+  async function pinVariantAsDefault(v: VariantInfo): Promise<void> {
+    const group = gameGroup();
+    if (!group || !props.library) return;
+    await props.library.setGroupDefault(group.systemId, group.displayBaseTitle, v.id);
+  }
+
+  /// Human label for a variant row's region/revision/prerelease shape —
+  /// mirrors TileContextMenu.variantLabel.
+  function variantLabel(v: VariantInfo): string {
+    const parts: string[] = [];
+    if (v.region) parts.push(v.region);
+    if (v.revision > 0) parts.push(`Rev ${v.revision}`);
+    if (v.isPrerelease) parts.push("β");
+    if (v.isTranslation) parts.push("Translation");
+    if (v.isHack) parts.push("Hack");
+    return parts.length > 0 ? parts.join(" · ") : "Release";
+  }
+
   // Controller-nav: modal acts as a single "primary action" surface.
   // Body is read-only metadata + galleries; the buttons that matter are
   // Launch (A), Resume-from-slot (Y, when one exists), Close (B), and
   // L1/R1 cycle the tabs. No focus ring on individual elements — the
   // modal owns the visible focus.
-  const TABS: TabId[] = ["screenshots", "titles", "saves", "gameInfo"];
+  // `visibleTabs` is reactive — the Variants tab only appears for
+  // multi-dump games, so L1/R1 cycling skips it otherwise.
+  const visibleTabs = createMemo<TabId[]>(() => {
+    const base: TabId[] = ["screenshots", "titles", "saves", "gameInfo"];
+    return hasVariants() ? [...base, "variants"] : base;
+  });
   function cycleTab(delta: -1 | 1): void {
-    const cur = TABS.indexOf(activeTab());
-    const next = (cur + delta + TABS.length) % TABS.length;
-    setActiveTab(TABS[next]);
+    const tabs = visibleTabs();
+    const cur = Math.max(0, tabs.indexOf(activeTab()));
+    const next = (cur + delta + tabs.length) % tabs.length;
+    setActiveTab(tabs[next]);
   }
   const [infoFocusIndex, setInfoFocusIndex] = createSignal(0);
   const infoFocusGroup = useFocusGroup({
@@ -631,6 +723,20 @@ const GameInfoModal: Component<Props> = (props) => {
                     >
                       Game info
                     </button>
+                    <Show when={hasVariants()}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.currentTarget.blur(); setActiveTab("variants"); }}
+                        class={TAB_BUTTON_CLASS}
+                        classList={{
+                          "border-(--color-system-accent) bg-white/[0.06] text-(--color-oa-ink)": activeTab() === "variants",
+                          "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)": activeTab() !== "variants",
+                        }}
+                        title="Every regional / revision / hack dump of this game in your library — launch or set the default version"
+                      >
+                        Variants ({allVariants().length})
+                      </button>
+                    </Show>
                   </div>
 
                   <div class="min-h-0 flex-1 overflow-auto rounded border border-white/5 bg-white/[0.02] p-3">
@@ -980,6 +1086,127 @@ const GameInfoModal: Component<Props> = (props) => {
                             {editSubmitToast()}
                           </p>
                         </Show>
+                      </div>
+                    </Show>
+
+                    {/* Variants tab — every dump of this identity (VL
+                        Phase B). Per-variant launch + set-default +
+                        thumbnail + region/verified filters. Only mounted
+                        for multi-dump games (the tab button hides
+                        otherwise). */}
+                    <Show when={activeTab() === "variants"}>
+                      <div class="flex flex-col gap-3 text-xs">
+                        <p class="text-[0.7rem] leading-relaxed text-(--color-oa-ink-dim)/80">
+                          Every version of this game in your library. Launch any
+                          dump directly, or set one as the default that the tile
+                          launches on click.
+                        </p>
+                        {/* Filter bar */}
+                        <div class="flex flex-wrap items-center gap-2">
+                          <select
+                            value={regionFilter() ?? ""}
+                            onChange={(e) =>
+                              setRegionFilter(e.currentTarget.value || null)
+                            }
+                            class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink)"
+                          >
+                            <option value="">All regions</option>
+                            <For each={variantRegions()}>
+                              {(r) => <option value={r}>{r}</option>}
+                            </For>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.currentTarget.blur(); setVerifiedOnly((v) => !v); }}
+                            class="rounded border px-2 py-1 text-[0.65rem] uppercase tracking-widest transition"
+                            classList={{
+                              "border-(--color-system-accent) bg-(--color-system-accent)/15 text-(--color-oa-ink)": verifiedOnly(),
+                              "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08]": !verifiedOnly(),
+                            }}
+                          >
+                            Verified only
+                          </button>
+                          <span class="ml-auto text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                            {filteredVariants().length} / {allVariants().length}
+                          </span>
+                        </div>
+                        {/* Variant rows */}
+                        <ul class="flex flex-col gap-1.5">
+                          <For each={filteredVariants()}>
+                            {(v) => (
+                              <li
+                                class="flex items-center gap-3 rounded border bg-white/[0.02] p-2"
+                                classList={{
+                                  "border-(--color-system-accent)/50": v.isDefault,
+                                  "border-white/5": !v.isDefault,
+                                }}
+                              >
+                                <Show
+                                  when={media.coverUrl(entry().systemId, v.id)}
+                                  fallback={<div class="h-12 w-9 shrink-0 rounded bg-black/40" />}
+                                >
+                                  {(src) => (
+                                    <img
+                                      src={src()}
+                                      alt=""
+                                      class="h-12 w-9 shrink-0 rounded bg-black/40 object-cover"
+                                      loading="lazy"
+                                    />
+                                  )}
+                                </Show>
+                                <div class="min-w-0 flex-1">
+                                  <p class="truncate text-xs font-medium text-(--color-oa-ink)">
+                                    {v.title}
+                                    <Show when={v.isDefault}>
+                                      <span class="ml-2 text-[0.55rem] uppercase tracking-widest text-(--color-system-accent-soft)">
+                                        ✓ default
+                                      </span>
+                                    </Show>
+                                  </p>
+                                  <p class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                                    <span>{variantLabel(v)}</span>
+                                    <Show when={v.dumpStatus !== "unknown"}>
+                                      <span
+                                        class="rounded px-1 py-0.5"
+                                        classList={{
+                                          "bg-emerald-500/15 text-emerald-300": v.dumpStatus === "verified",
+                                          "bg-red-500/15 text-red-300": v.dumpStatus === "bad-dump",
+                                          "bg-amber-500/15 text-amber-300":
+                                            v.dumpStatus === "over-dump" || v.dumpStatus === "fixed",
+                                        }}
+                                      >
+                                        {DUMP_STATUS_LABELS[v.dumpStatus] ?? v.dumpStatus}
+                                      </span>
+                                    </Show>
+                                    <Show when={v.translationLanguages.length > 0}>
+                                      <span class="rounded bg-white/[0.06] px-1 py-0.5">
+                                        {v.translationLanguages.join(", ")}
+                                      </span>
+                                    </Show>
+                                  </p>
+                                </div>
+                                <div class="flex shrink-0 items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.currentTarget.blur(); launchVariant(v); }}
+                                    class="rounded-md border border-(--color-system-accent) bg-(--color-system-accent)/15 px-2.5 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:bg-(--color-system-accent)/25"
+                                  >
+                                    ▶ Play
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={v.isDefault}
+                                    onClick={(e) => { e.currentTarget.blur(); void pinVariantAsDefault(v); }}
+                                    class="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:opacity-40"
+                                    title="Make this the version the tile launches on click"
+                                  >
+                                    Set default
+                                  </button>
+                                </div>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
                       </div>
                     </Show>
                   </div>

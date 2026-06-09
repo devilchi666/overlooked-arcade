@@ -1782,6 +1782,7 @@ const App: Component = () => {
         entry={gameInfoFor()}
         onClose={() => setGameInfoFor(null)}
         onLaunched={postLaunchUiUpdate}
+        library={library}
       />
       <CorePickerMenu
         entry={coreMenuFor()?.entry ?? null}
