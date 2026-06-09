@@ -555,6 +555,18 @@ spanned every system but was filed under whichever core happened to be active.
 Compressed log. Full per-arc detail lives in `docs/_archive/` — see
 [_archive/INDEX.md](_archive/INDEX.md) for the searchable manifest.
 
+**2026-06-08**
+- Libretro plumbing audit (`docs/cores/AUDIT_2026-06-08.md`) + fixes +
+  Game-focus keyboard switch — branch `feat/libretro-plumbing-fixes`
+  (commits `1ed8efb` audit, `d98417b` fixes, `ce2034d` game-focus; merged to
+  main 2026-06-08). Polled keyboard/mouse state (H1/H2) unblocks the computer-
+  core tier (MSX/DOS/5200/O2) + arcade trackball/spinner games; eight more
+  env/parser/lifecycle fixes (M1-M7, L1/L2). Game focus is now a clean
+  RetroArch-style keyboard switch (OFF=shell, ON=machine) with a configurable
+  toggle chord (Settings › Controls). oa-shell 821 tests green; frontend
+  typecheck clean. Not yet operator-playtested. Follow-ups: bootless `load_no_rom`
+  launch; audit M6 (subsystems) + L3 (microphone).
+
 **2026-06-04**
 - Audit-derived structural sweep — three tiers landed in sequence:
   silent-bug (frontend `.catch(() => {})` swallows replaced with

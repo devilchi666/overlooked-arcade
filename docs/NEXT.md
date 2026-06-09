@@ -342,27 +342,40 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Libretro plumbing audit — HIGH-severity gaps (from 2026-06-08 audit)
+### Libretro plumbing audit — gaps (from 2026-06-08 audit)
 
 Surfaced by the read-only libretro plumbing sweep —
 [docs/cores/AUDIT_2026-06-08.md](cores/AUDIT_2026-06-08.md). Verified against
-core source + our `file:line`. Top items below; the audit doc has the Med/Low
-band + recommended ordering.
+core source + our `file:line`. **Most of the audit shipped on
+`feat/libretro-plumbing-fixes` (2026-06-08)** — see below.
 
-- ⬜ **Polled keyboard + mouse input state** (H1+H2 — one input-state slice).
-  `cb_input_state` returns 0 for `RETRO_DEVICE_KEYBOARD` and `RETRO_DEVICE_MOUSE`
-  (the `device != JOYPAD { return 0 }` fall-through at
-  `crates/oa-libretro/src/state.rs:1477`); no key/mouse state arrays in `State`.
-  Add a held-key bitset + per-port mouse delta/button state, feed from the shell
-  pump, add two `cb_input_state` arms. Confirmed by reading MAME2003-plus / FBNeo
-  / blueMSX / DOSBox-Pure source. Unblocks the entire computer-core tier (MSX,
-  DOSBox, Atari 5200, O2) + arcade trackball/spinner/paddle games. ~1 session.
-- ⬜ **Quick wins** (ride along on the same branch): downgrade per-frame env
-  `log::info!` spam to `debug!` (`state.rs:1493`, M2, ~1 line); cap the core-option
-  parser sentinel walks (`state.rs:478/512/544/610`, M1, crash-class hardening);
-  F8 slot-restore framebuffer nudge while paused (`apps/oa-shell/src/main.rs:6028`,
-  M4); wire controller ports 1-4 post-load (`crates/oa-libretro/src/core.rs:387`,
-  M3, multitap). ~0.5 session combined.
+- ✅ **Polled keyboard + mouse input state** (H1+H2). Added a 512-wide held-key
+  bitset + per-port mouse delta/button state to `State`, `RETRO_DEVICE_KEYBOARD`
+  and `RETRO_DEVICE_MOUSE` arms in `cb_input_state` (in `state.rs`, with a pure
+  `mouse_field_value` helper + tests), `set_keyboard_state`/`set_mouse_state` on
+  `LibretroCore`, `poll_mouse_raw` in oa-input, and the per-frame push in the
+  shell input loop (focus-gated). Unblocks the computer-core tier (MSX, DOSBox,
+  5200, O2) + arcade trackball/spinner/paddle games.
+- ✅ **Quick wins** (same branch): env `log::info!`→`debug!` spam downgrade (M2);
+  core-option parser sentinel caps (M1); F8 paused-restore framebuffer nudge (M4);
+  controller ports 0-4 wired post-load (M3, in `core.rs::finish_load`).
+- ✅ **GET_SAVESTATE_CONTEXT** (M5, env 72) wired to run-ahead serialization;
+  **GET_THROTTLE_STATE** (L2, env 71), **SET_VARIABLE** (L1, env 70),
+  **GET_JIT_CAPABLE** (74), frame-truncation `log::warn` (M7), and ffi constants
+  for envs 71-75 — all in the same branch.
+- ⬜ **Deferred (feature-sized, not in the branch):** SET_SUBSYSTEM_INFO launch
+  path (M6 — SGB / Sufami Turbo / BS-X; needs parse + store + subsystem-aware load
+  + picker UI) and GET_MICROPHONE_INTERFACE (L3, env 75 — NDS mic; needs a new
+  interface struct + audio-input source). Pick up when a target system needs them.
+- ⬜ **Bootless launch** (~0.5 session) — wire the existing-but-unused
+  `LibretroCore::load_no_rom()` + `supports_no_game()` (in
+  `crates/oa-libretro/src/core.rs`) into a "Boot without game" launch path +
+  UI affordance (gated on `supports_no_game()`), so DOSBox-Pure / ScummVM /
+  blueMSX (if it advertises `SET_SUPPORT_NO_GAME`) can boot to their built-in
+  prompt/browser with no content. The wrapper layer + env handling already
+  exist; only the shell launch path + button are missing (the long-standing
+  "Almost" item in SESSION_LOG). Natural companion to the keyboard work — a
+  computer core booting to its prompt is the motivating case.
 
 ### HW-Render Pipeline — Milestone 1 (Vulkan handshake, core on screen)
 

@@ -1451,3 +1451,18 @@ Until one of those lands, this is closed.
 **Cross-ref:** instrumentation commit `b894ef4` (added the counters); strip commit on the same branch removes them; measurement raw data in `oa-current.log` 2026-06-04 18:34:52 – 18:36:48 entries beginning with `oa-render: bind-group perf`.
 
 ---
+
+## 2026-06-08 — Game focus is a clean keyboard switch; the toggle hotkey is configurable
+
+**Decision:** Keyboard *passthrough* to the core — both the `SET_KEYBOARD_CALLBACK` event pump AND the newly-added polled `RETRO_DEVICE_KEYBOARD` held-state push — now gates on Game focus being ON, mirroring how OA hotkeys already gate on Game focus being OFF. Game focus is therefore a true RetroArch-style switch: **OFF → the keyboard drives the shell** (hotkeys / UI nav; the core sees nothing); **ON → the keyboard drives the emulated machine** (typing reaches the core; OA hotkeys suppressed). The Game-focus toggle binding is operator-configurable — a `device_query` key *chord* (all-keys-held) persisted in `game_focus.json`, exposed via `get/set_game_focus_toggle` + a capture control in Settings › Controls — default **Ctrl+G**.
+
+**Why:** The prior Slice 2/3 behavior gated only OA hotkeys on Game focus and left keyboard passthrough always-on. On computer cores (MSX / DOSBox) that meant pressing a digit both typed into the machine *and* fired an OA save-slot select, and there was no clean "keyboard belongs to the shell" state. Gating passthrough on Game focus removes the double-duty and matches both operator intuition and RetroArch's Game Focus. The toggle was made configurable on operator request (it had been hardcoded); `device_query` exposes no Scroll Lock variant (RetroArch's default), so Ctrl+G stays the default and a chord covers single keys + combos.
+
+**Considered and rejected:**
+- **Also gate the keyboard *controller* bindings (arrow-keys→D-pad) on Game focus** — rejected: console cores (NES etc.) are played with keyboard-mapped controls and never touch Game focus; gating those would break keyboard play unless the operator toggled focus. Only the raw keyboard PASSTHROUGH (typing) gates on Game focus.
+- **Gate the mouse on Game focus** — rejected: arcade trackball / mouse games aren't a keyboard concept; mouse stays gated only on window focus so trackball games work without a toggle.
+- **Ship a fixed alternate default (Scroll Lock)** — not available in `device_query`; kept Ctrl+G default and made it rebindable instead.
+
+**Cross-ref:** commits `ce2034d` (this change) + `d98417b` (the H1 polled-keyboard path it gates); audit `docs/cores/AUDIT_2026-06-08.md` (H1/H2).
+
+---

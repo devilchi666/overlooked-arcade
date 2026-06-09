@@ -1765,6 +1765,69 @@ fn write_shell_pref(app_data_dir: &Path, mode: ShellMode) -> std::io::Result<()>
     std::fs::write(&path, body)
 }
 
+// ---- Game-focus toggle chord (configurable hotkey) -----------------------
+//
+// The Game-focus toggle (hand the keyboard to the emulated machine vs. keep it
+// for the shell) is operator-configurable. The binding is a CHORD — a set of
+// device_query keys that must ALL be held at once — persisted to
+// `game_focus.json` as a `+`-joined string of keycode names (e.g. "LControl+G",
+// "Pause", "F11"). Default is Ctrl+G (RetroArch's Scroll Lock isn't exposed by
+// device_query, hence the chord). Stored process-globally (like the libretro
+// callback singleton) so the emu thread's matcher and the Tauri set command
+// share it without threading an Arc through every setup signature; the set
+// command updates both the file and this global so changes take effect live.
+
+const DEFAULT_GAME_FOCUS_CHORD: &str = "LControl+G";
+
+static GAME_FOCUS_CHORD: std::sync::LazyLock<std::sync::RwLock<Vec<Keycode>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(parse_game_focus_chord(DEFAULT_GAME_FOCUS_CHORD)));
+
+/// Parse a `+`-joined chord string into device_query keycodes, dropping any
+/// token device_query doesn't recognize. Order-independent (matched as a set).
+fn parse_game_focus_chord(s: &str) -> Vec<Keycode> {
+    s.split('+')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .filter_map(crate::bindings::keycode_from_name)
+        .collect()
+}
+
+/// Serialize a chord back to its `+`-joined string. `{:?}` emits the exact
+/// device_query variant name `keycode_from_name` (Keycode::from_str) accepts,
+/// so this round-trips (locked by a unit test).
+fn game_focus_chord_to_string(chord: &[Keycode]) -> String {
+    chord
+        .iter()
+        .map(|k| format!("{k:?}"))
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// Load the persisted toggle chord from `game_focus.json`, falling back to the
+/// Ctrl+G default when the file is missing, malformed, or names no valid keys.
+fn read_game_focus_chord(app_data_dir: &Path) -> Vec<Keycode> {
+    let parsed = (|| {
+        let raw = std::fs::read_to_string(app_data_dir.join("game_focus.json")).ok()?;
+        let map: std::collections::HashMap<String, String> = serde_json::from_str(&raw).ok()?;
+        let chord = parse_game_focus_chord(map.get("toggleChord")?);
+        if chord.is_empty() {
+            None
+        } else {
+            Some(chord)
+        }
+    })();
+    parsed.unwrap_or_else(|| parse_game_focus_chord(DEFAULT_GAME_FOCUS_CHORD))
+}
+
+fn write_game_focus_chord(app_data_dir: &Path, chord: &[Keycode]) -> std::io::Result<()> {
+    std::fs::create_dir_all(app_data_dir)?;
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "toggleChord": game_focus_chord_to_string(chord),
+    }))
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(app_data_dir.join("game_focus.json"), body)
+}
+
 /// Read the persisted per-system core preferences from `appDataDir/cores.json`.
 /// Format: `{ "tg16": "mednafen_pce_fast_libretro.dll", ... }`. Missing or
 /// malformed yields an empty map.
@@ -2580,6 +2643,8 @@ fn main() {
             set_ui_intercepting,
             set_game_focus,
             get_game_focus,
+            get_game_focus_toggle,
+            set_game_focus_toggle,
             list_cores,
             probe_core_file,
             install_core_from_path,
@@ -3950,6 +4015,11 @@ fn run_emu_render(
             &system_settings::read_system_settings(&app_data_dir, &current_system_id),
         );
     let mut prev_keyboard_keys: HashSet<Keycode> = HashSet::new();
+    // Previous-frame absolute cursor position for RETRO_DEVICE_MOUSE relative-
+    // delta computation (libretro mouse motion is relative). `None` until the
+    // first poll so the first frame reports a zero delta instead of a jump
+    // from origin. See the mouse-state push in the per-frame input block.
+    let mut prev_mouse_abs: Option<(i32, i32)> = None;
 
     // Per-port tracker for Jaguar's high-bit keypad keys (KP8 / KP9 /
     // KP_STAR / KP0 / KP_HASH = bits 16-20). These live above the
@@ -3964,11 +4034,18 @@ fn run_emu_render(
 
     // Phase 6 Cross-system slice 3 — rising-edge tracking for the Ctrl+G
     // Game-focus toggle hotkey. We can't use Scroll Lock because the
-    // `device_query` crate doesn't expose a ScrollLock variant; Ctrl+G is
-    // the single binding. Bypasses every input gate (focus / UI-intercept /
-    // game-focus / hotkeys_enabled) so the user can always toggle out.
+    // Game-focus toggle is an operator-configurable CHORD (default Ctrl+G;
+    // device_query exposes no ScrollLock variant). Load the persisted binding
+    // into the process-global now so the matcher below + the `set_game_focus
+    // _toggle` command share one source of truth (the command updates the
+    // global live). The matcher bypasses every input gate (focus / UI-intercept
+    // / game-focus / hotkeys_enabled) so the user can always toggle out.
     // Edge state lives outside the loop so a held combo only fires once.
-    let mut prev_ctrl_g_held = false;
+    if let Ok(mut g) = GAME_FOCUS_CHORD.write() {
+        *g = read_game_focus_chord(&app_data_dir);
+        log::info!("oa-shell: game-focus toggle chord = {}", game_focus_chord_to_string(&g));
+    }
+    let mut prev_focus_chord_held = false;
 
     // Rewind ring (Phase 4 slice A). Bounded by total bytes; populated only
     // when `rewind_config.enabled` is true. Holding Backspace pops the
@@ -5786,29 +5863,32 @@ fn run_emu_render(
         let enable = game_focused.load(Ordering::SeqCst) && !ui_intercepting.load(Ordering::SeqCst);
         input.set_enabled(enable);
 
-        // Phase 6 Cross-system slice 3 — Ctrl+G toggles Game focus. This
-        // edge detector runs UNCONDITIONALLY (no `enable` gate) so the
-        // user can always toggle out of Game-focus even when the WebView
-        // has stolen focus or a modal is intercepting. The trade is that
-        // a Ctrl+G chord typed for any other reason while OA is running
-        // also flips the toggle — Ctrl+G isn't bound to anything OA-side
-        // and most apps don't use it either, so the collision is rare.
-        let ctrl_g_held = (input.is_pressed(Keycode::LControl) || input.is_pressed(Keycode::RControl))
-            && input.is_pressed(Keycode::G);
-        if ctrl_g_held && !prev_ctrl_g_held {
+        // Configurable Game-focus toggle chord. Runs UNCONDITIONALLY (no
+        // `enable` gate) so the user can always toggle out of Game-focus even
+        // when the WebView has stolen focus or a modal is intercepting. A chord
+        // fires when EVERY key in it is held this frame (rising-edge on the full
+        // combo). An empty chord (operator cleared it) disables the hotkey —
+        // the Tools-menu checkbox / `set_game_focus` command still work.
+        let focus_chord = GAME_FOCUS_CHORD.read().map(|c| c.clone()).unwrap_or_default();
+        let chord_held =
+            !focus_chord.is_empty() && focus_chord.iter().all(|k| input.is_pressed(*k));
+        if chord_held && !prev_focus_chord_held {
             let new_state = !game_focus.load(Ordering::SeqCst);
             game_focus.store(new_state, Ordering::SeqCst);
             // Tell the frontend so the Tools-menu checkbox + toolbar chip
             // reflect the live state without polling. The single-window
             // WebView sees the keydown too (and the frontend's keydown
-            // handler is a no-op for Ctrl+G), but two-window users have
+            // handler is a no-op for the toggle), but two-window users have
             // no other way for the UI to know.
             if let Err(e) = app_handle.emit("oa://game-focus-changed", new_state) {
                 log::warn!("oa-shell: emit game-focus-changed failed: {e:?}");
             }
-            log::info!("oa-shell: Ctrl+G — game_focus = {new_state}");
+            log::info!(
+                "oa-shell: game-focus toggle ({}) — game_focus = {new_state}",
+                game_focus_chord_to_string(&focus_chord),
+            );
         }
-        prev_ctrl_g_held = ctrl_g_held;
+        prev_focus_chord_held = chord_held;
 
         // Phase 6 Cross-system slice 3 — when Game-focus mode is ON, OA's
         // hotkeys (F1/F2/F3/F5/F6/F7/F8/F12/Esc/digits/Backspace-rewind)
@@ -5832,12 +5912,16 @@ fn run_emu_render(
         // without OA conflict; F-keys + Esc go to both.
         //
         // `should_pump` combines: focused + UI not intercepting + per-
-        // system passthrough on + core has actually registered a callback.
-        // The last condition short-circuits work when the active core
-        // declined keyboard input even though the system defaults to on
-        // (e.g. an old MAME build without keyboard support).
+        // system passthrough on + core has actually registered a callback
+        // + Game-focus ON. The `game_focus_on` gate makes the keyboard a
+        // clean toggle (RetroArch parity): only when the user has explicitly
+        // handed the keyboard to the machine (Game focus) does typing reach
+        // the core — otherwise every key stays with the shell (hotkeys / UI
+        // nav), with no digit/F-key double-duty. The callback condition
+        // short-circuits work when the active core declined keyboard input
+        // even though the system defaults to on (e.g. an old MAME build).
         let core_has_kb_cb = core.as_ref().map(|c| c.has_keyboard_callback()).unwrap_or(false);
-        let should_pump = enable && keyboard_passthrough_active && core_has_kb_cb;
+        let should_pump = enable && game_focus_on && keyboard_passthrough_active && core_has_kb_cb;
         let current_keys: HashSet<Keycode> = if should_pump {
             input.pressed_keys().into_iter().collect()
         } else {
@@ -6036,6 +6120,17 @@ fn run_emu_render(
                                     current_slot, path.display(), buf.len()
                                 );
                                 toast(&app_handle, ToastLevel::Success, format!("Restored slot {current_slot}"));
+                                // M4 — when paused, load_state alone leaves the
+                                // screen on the pre-restore frame: cb_video_refresh
+                                // only fires from retro_run, and the paused branch
+                                // below skips run_frame entirely. Nudge one frame so
+                                // the restored state is visible immediately, matching
+                                // the rewind/scrub restore paths. (Unpaused play
+                                // repaints on its own next frame, so only nudge here.)
+                                if paused {
+                                    core_ref.run_frame();
+                                    apply_cheats(core_ref, &cheat_runtime);
+                                }
                             }
                             Err(e) => {
                                 log::warn!("oa-shell: F8 — deserialize failed: {e:?}");
@@ -6409,6 +6504,61 @@ fn run_emu_render(
                     sensors[0][oa_libretro::ffi::RETRO_SENSOR_ACCELEROMETER_Z as usize] = 9.8;
                     core_ref.set_sensor_values(sensors);
                 }
+
+                // H1 — push polled keyboard held-state for cores that read
+                // RETRO_DEVICE_KEYBOARD every frame (MAME, MSX/blueMSX/fMSX,
+                // DOSBox-Pure, Atari 5200, Odyssey²). These cores do NOT
+                // register the keyboard-event callback, so this state path is
+                // what actually reaches them (the event pump above serves the
+                // cores that DO register). Same clean-toggle gating as the
+                // event pump: only fed when the system uses keyboard passthrough
+                // AND the window is focused AND Game-focus is ON (the user has
+                // handed the keyboard to the machine). Outside that, push an
+                // empty set so any keys held when Game-focus / focus dropped are
+                // released rather than sticking down.
+                if keyboard_passthrough_active {
+                    let held: Vec<(u32, bool)> = if enable && game_focus_on {
+                        input
+                            .pressed_keys()
+                            .into_iter()
+                            .map(|k| (oa_libretro::keycode_to_retro_key(k), true))
+                            .filter(|&(rk, _)| rk != 0)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    core_ref.set_keyboard_state(&held);
+                }
+
+                // H2 — push relative mouse deltas + buttons for
+                // RETRO_DEVICE_MOUSE cores (arcade trackball / spinner / dial,
+                // SNES/Saturn/PSX Mouse). Deltas = this frame's cursor minus
+                // last frame's (libretro mouse motion is relative). `prev_
+                // mouse_abs` is always advanced so a focus-loss/regain doesn't
+                // produce a phantom jump; deltas + buttons are only fed while
+                // focused. Cheap enough to run every frame — cores that don't
+                // poll MOUSE ignore it. Fed to port 0 (the P1 mouse slot).
+                {
+                    let (mx, my, ml, mr, mm) = input.poll_mouse_raw();
+                    let (dx, dy) = match prev_mouse_abs {
+                        Some((px, py)) => (
+                            (mx - px).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                            (my - py).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                        ),
+                        None => (0, 0),
+                    };
+                    prev_mouse_abs = Some((mx, my));
+                    if enable {
+                        let mut buttons: u32 = 0;
+                        if ml { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_LEFT; }
+                        if mr { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_RIGHT; }
+                        if mm { buttons |= 1 << oa_libretro::ffi::RETRO_DEVICE_ID_MOUSE_MIDDLE; }
+                        core_ref.set_mouse_state(0, dx, dy, buttons);
+                    } else {
+                        core_ref.set_mouse_state(0, 0, 0, 0);
+                    }
+                }
+
                 if let Some(rec) = tas_recording.as_mut() {
                     rec.input_frames.push(oa_savestate::tas::TasInputFrame {
                         port0: libretro_bits,
@@ -6438,6 +6588,22 @@ fn run_emu_render(
                 // SLOW-MOTION (F7 held): run_frame only every Nth render
                 // cycle — render stays at full rate, game time slows.
                 // None of these affect scrub / replay / rewind branches.
+                //
+                // L2 — report current pacing to GET_THROTTLE_STATE (env 71)
+                // cores so they can make audio-resampling / frame-pacing
+                // decisions. (Scrub/replay/rewind branches keep the last value;
+                // they're transient and don't poll throttle meaningfully.)
+                let throttle_mode = if paused {
+                    oa_libretro::ffi::RETRO_THROTTLE_FRAME_STEPPING
+                } else if f6_held {
+                    oa_libretro::ffi::RETRO_THROTTLE_FAST_FORWARD
+                } else if f7_held {
+                    oa_libretro::ffi::RETRO_THROTTLE_SLOW_MOTION
+                } else {
+                    oa_libretro::ffi::RETRO_THROTTLE_NONE
+                };
+                core_ref.set_throttle_state(throttle_mode, timing.fps as f32);
+
                 if paused {
                     if frame_advance_request {
                         core_ref.run_frame();
@@ -6546,6 +6712,16 @@ fn run_emu_render(
                         run_ahead_audio_buf.clear();
                         run_ahead_audio_buf.extend_from_slice(core_ref.drain_audio());
                         run_ahead_save_buf.clear();
+                        // Tell the core these are transient same-session
+                        // snapshots (GET_SAVESTATE_CONTEXT env 72) so it can
+                        // skip reconstructable data — a real perf win since
+                        // run-ahead serializes every frame. Tightly bounded:
+                        // reset to NORMAL right after the rollback so a user
+                        // F5/slot save (which must round-trip perfectly) never
+                        // serializes in RUNAHEAD context.
+                        core_ref.set_savestate_context(
+                            oa_libretro::ffi::RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE,
+                        );
                         if core_ref.save_state(&mut run_ahead_save_buf).is_ok() {
                             for _ in 0..run_ahead_frames {
                                 core_ref.run_frame();
@@ -6563,6 +6739,9 @@ fn run_emu_render(
                         } else {
                             log::warn!("oa-shell: run-ahead save_state failed; disabling for this frame");
                         }
+                        core_ref.set_savestate_context(
+                            oa_libretro::ffi::RETRO_SAVESTATE_CONTEXT_NORMAL,
+                        );
                     }
                 }
 
@@ -10548,6 +10727,48 @@ fn get_game_focus(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     Ok(state.game_focus.load(Ordering::SeqCst))
 }
 
+/// Read the operator-configured Game-focus toggle chord as a `+`-joined
+/// string of device_query key names (e.g. "LControl+G"). The frontend
+/// renders this and offers a re-capture control. Empty string = no hotkey
+/// bound (toggle only via the Tools-menu checkbox).
+#[tauri::command]
+fn get_game_focus_toggle() -> Result<String, String> {
+    let chord = GAME_FOCUS_CHORD
+        .read()
+        .map_err(|_| "game-focus chord lock poisoned".to_string())?;
+    Ok(game_focus_chord_to_string(&chord))
+}
+
+/// Set the Game-focus toggle chord. `chord` is a `+`-joined string of
+/// device_query key names (what the capture control produces, e.g.
+/// "LControl+G", "Pause", "F11"). Persists to `game_focus.json` and updates
+/// the live process-global so the emu-thread matcher picks it up immediately.
+/// An empty/all-invalid chord clears the hotkey (still toggleable via the
+/// Tools menu). Returns the normalized chord string actually stored.
+#[tauri::command]
+fn set_game_focus_toggle(
+    chord: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let parsed = parse_game_focus_chord(&chord);
+    // Reject a non-empty input that named ZERO valid keys — that's a typo /
+    // unsupported key, not a deliberate "clear" (clearing sends "").
+    if parsed.is_empty() && !chord.trim().is_empty() {
+        return Err(format!("no device_query keys recognized in chord {chord:?}"));
+    }
+    write_game_focus_chord(&state.app_data_dir, &parsed)
+        .map_err(|e| format!("failed to persist game_focus.json: {e}"))?;
+    {
+        let mut g = GAME_FOCUS_CHORD
+            .write()
+            .map_err(|_| "game-focus chord lock poisoned".to_string())?;
+        *g = parsed;
+    }
+    let normalized = get_game_focus_toggle()?;
+    log::info!("oa-shell: game-focus toggle chord set to '{normalized}'");
+    Ok(normalized)
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CoreEntry {
@@ -11621,6 +11842,38 @@ fn spawn_external_exit_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_focus_chord_round_trips() {
+        // The chord scheme relies on `{:?}` (Debug) names parsing back through
+        // keycode_from_name (Keycode::from_str). Lock that contract — a
+        // device_query bump that diverges Debug from FromStr would silently
+        // break every persisted toggle binding.
+        for s in ["LControl+G", "Escape", "F11", "Space", "RControl+RShift+G"] {
+            let chord = parse_game_focus_chord(s);
+            assert!(!chord.is_empty(), "no keys parsed from {s:?}");
+            let back = game_focus_chord_to_string(&chord);
+            assert_eq!(
+                parse_game_focus_chord(&back),
+                chord,
+                "round-trip mismatch for {s:?} (serialized as {back:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn game_focus_chord_default_is_ctrl_g() {
+        let chord = parse_game_focus_chord(DEFAULT_GAME_FOCUS_CHORD);
+        assert_eq!(chord, vec![Keycode::LControl, Keycode::G]);
+    }
+
+    #[test]
+    fn game_focus_chord_drops_unknown_tokens() {
+        // Garbage tokens are dropped, not fatal; an all-garbage chord is empty.
+        assert_eq!(parse_game_focus_chord("NotAKey+G"), vec![Keycode::G]);
+        assert!(parse_game_focus_chord("Totally+Bogus").is_empty());
+        assert!(parse_game_focus_chord("").is_empty());
+    }
 
     /// Make a fresh empty tmp dir for filesystem-shaped tests. Caller is
     /// responsible for cleanup if they care; tmp dir leaks are acceptable

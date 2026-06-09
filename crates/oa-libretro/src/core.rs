@@ -384,7 +384,16 @@ impl LibretroCore {
     /// clobber data_ptr[] during MDFNI_LoadGame so this MUST run AFTER
     /// retro_load_game) and snapshots real av_info into `self.timing`.
     fn finish_load(&mut self) {
-        unsafe { (self.lib.fns.set_controller_port_device)(0, RETRO_DEVICE_JOYPAD) };
+        // Wire EVERY port (not just port 0) to RETRO_DEVICE_JOYPAD, matching
+        // RetroArch's default (all ports init to JOYPAD). Must run AFTER
+        // retro_load_game — Mednafen-derived cores clobber data_ptr[] during
+        // load, so a port left un-wired post-load can read as disconnected,
+        // which silently kills players 2-5 on multitap titles (PCE 5-player,
+        // SNES/Saturn/PSX multitap). The operator's per-game device dialog can
+        // still re-wire any port to a peripheral via `set_port_device`.
+        for port in 0..5u32 {
+            unsafe { (self.lib.fns.set_controller_port_device)(port, RETRO_DEVICE_JOYPAD) };
+        }
 
         let mut av = retro_system_av_info {
             geometry: retro_game_geometry {
@@ -684,6 +693,57 @@ impl LibretroCore {
                 .any(|p| p.iter().any(|&e| e))
         })
         .unwrap_or(false)
+    }
+
+    /// Push polled keyboard held-state for `RETRO_DEVICE_KEYBOARD` cores
+    /// (MAME, blueMSX/fMSX, DOSBox-Pure, Atari 5200, Odyssey²). These cores
+    /// read held keys every frame via `cb_input_state(.., RETRO_DEVICE_
+    /// KEYBOARD, 0, retro_key)` and do NOT register the keyboard-event
+    /// callback, so the event path (`send_keyboard_event`) never reaches
+    /// them — this is the parallel state path. `keys` is indexed by
+    /// `retro_key` id; the shell builds it from the host's currently-held
+    /// keys (via `keycode_to_retro_key`) for keyboard-passthrough systems.
+    /// Indices ≥ the array length are ignored.
+    pub fn set_keyboard_state(&self, keys: &[(u32, bool)]) {
+        state::with_state(|s| {
+            // Clear then set — the shell pushes the full held set each frame.
+            for k in s.keyboard_state.iter_mut() {
+                *k = false;
+            }
+            for &(id, held) in keys {
+                let idx = id as usize;
+                if idx < s.keyboard_state.len() {
+                    s.keyboard_state[idx] = held;
+                }
+            }
+        });
+    }
+
+    /// Push per-port mouse state for `RETRO_DEVICE_MOUSE` cores (arcade
+    /// trackball / spinner / dial games, SNES/Saturn/PSX Mouse). `dx`/`dy`
+    /// are per-poll RELATIVE deltas; `buttons` is a bitmask whose bit
+    /// position matches the `RETRO_DEVICE_ID_MOUSE_*` button id (bit 2 =
+    /// LEFT, 3 = RIGHT, 6 = MIDDLE). The shell computes deltas frame-over-
+    /// frame from the host cursor and resets them after each poll.
+    pub fn set_mouse_state(&self, port: usize, dx: i16, dy: i16, buttons: u32) {
+        if port >= 5 {
+            return;
+        }
+        state::with_state(|s| s.input_mouse[port] = (dx, dy, buttons));
+    }
+
+    /// Push the frontend's current throttle mode + target fps for
+    /// `GET_THROTTLE_STATE` (env 71). `mode` is a `RETRO_THROTTLE_*` constant.
+    pub fn set_throttle_state(&self, mode: u32, rate: f32) {
+        state::with_state(|s| s.throttle_state = (mode, rate));
+    }
+
+    /// Set the serialization context reported via `GET_SAVESTATE_CONTEXT`
+    /// (env 72). The shell sets `RUNAHEAD_SAME_INSTANCE` around the per-frame
+    /// run-ahead save/restore and `NORMAL` otherwise so cores can drop
+    /// reconstructable data for transient snapshots.
+    pub fn set_savestate_context(&self, context: i32) {
+        state::with_state(|s| s.savestate_context = context);
     }
 
     /// Release the currently-loaded ROM via `retro_unload_game` but keep the
