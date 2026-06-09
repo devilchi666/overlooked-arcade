@@ -253,10 +253,30 @@ spanned every system but was filed under whichever core happened to be active.
       metadata. 803 oa-shell tests pass; typecheck silent.
       **Merging this completes Phase E** (identity editor UI
       rides Phase B).
-  - **Phase B — two-mode UX + Collection Health (~2 weeks):** global
-    Casual / Preservation toggle; Variants tab on GameDetailPanel;
-    System Health Overview gains % verified / % covers / % metadata
-    rollups.
+  - **Phase B — two-mode UX + Collection Health (~2 weeks) — IN FLIGHT**
+    on `feat/virtual-library-phase-b`. global Casual / Preservation
+    toggle; Variants tab on GameDetailPanel; System Health Overview
+    gains % verified / % covers / % metadata rollups.
+    - **Slice 1 ✅ (commit `e4aa4b0`)** — OA-wide `libraryMode`
+      ("casual"|"preservation", default casual) in the localStorage
+      settings store + "Library presentation" card in Settings →
+      Display. Backend already returns variants per group (Phase E), so
+      this is a frontend presentation pref.
+    - **Slice 2 ✅ (commit `a34f1c6`)** — Preservation-mode variant
+      ribbon. `variantRibbonChips(group)` pure helper in `filter.ts`
+      (distinct short-labeled regions + Rev chip + Tr/Hack markers,
+      capped at 4 + "+N"); threaded `libraryMode` → `variantRibbonFor`
+      → VirtualLibraryGrid + DetailListView → LibraryTile/DetailRow.
+      Preservation tiles show the ribbon (suppressing ▼N); Casual
+      unchanged. Frontend typecheck silent; awaiting playtest.
+    - **Slice 3 ⬜ — Variants tab** on GameInfoModal (the tabbed
+      surface; GameDetailPanel is the single-pane sidebar). New
+      `variants` TabId listing every dump with region/revision/
+      dump-status/hack/translation + per-variant launch + set-default
+      (`library.setGroupDefault`) + thumbnail + filters. Reuse
+      TileContextMenu's `launchVariant`/`pinAsDefault` pattern.
+    - **Slice 4 ⬜ — Collection Health** rollups (% verified / %
+      covers / % metadata) on SystemHealthPage's OverviewBody.
   - **Phase C — launcher abstraction (~2–3 weeks):** `Launcher`
     lifecycle trait ABOVE the untouched `oa_core::Core`;
     `LibretroLauncher` + `ExternalProcessLauncher` impls;
