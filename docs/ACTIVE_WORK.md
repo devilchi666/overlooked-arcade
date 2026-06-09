@@ -70,21 +70,32 @@ spanned every system but was filed under whichever core happened to be active.
     **ARC 1 unblocked 2026-06-08** — plan §7's pause condition (VL
     Phase E + C land first) is now satisfied: both merged to main.
     Theming Phase 3 is ready to resume.
-  - **Boundary enforcement track — Slice 1 ✅ (2026-06-09, branch
-    `feat/theming-boundary-enforcement`, awaiting playtest).** Per
-    operator ask for a *clear enforced* platform/theme separation,
-    reframed the remaining ARC-1 decoupling enforcement-first
-    (DECISIONS D8/D9/D10 — inverts plan's Phase-3-first). Shipped an
-    ESLint boundary-only linter (`frontend/eslint.config.mjs` +
-    `npm run lint`) enforcing **platform↛routes** + **platform↛engine**,
-    and fixed the live `SystemHeader→useTheme` reverse leak (now
-    prop-driven). Full layer contract + deferred edges in
+  - **Boundary enforcement track ✅ MERGED to main 2026-06-09**
+    (`feat/theming-boundary-enforcement`; operator playtested each
+    batch). Per operator ask for a *clear enforced* platform/theme
+    separation, reframed the remaining ARC-1 decoupling
+    enforcement-first (DECISIONS D8–D11 — inverts plan's Phase-3-first).
+    Shipped: an ESLint **boundary-only** linter
+    (`frontend/eslint.config.mjs` + `npm run lint`, wired into CI) +
+    the **`usePlatform()` store-context split** keystone
+    (`platform/platformContext.tsx`, D11). **Four zones enforced +
+    green:** `platform↛routes`, `platform↛engine`, `platform↛components`,
+    `engine↛routes`. Platform is fully isolated from theme/engine/
+    grab-bag; the engine surface is fully theme-free (Settings content
+    relocated into `engine/`). Layer contract +
+    enforced/deferred edges:
     [features/theming-substrate/SURFACES.md](features/theming-substrate/SURFACES.md)
-    §"Layer boundary contract". **Slice 2 next:** drain the 48-file
-    `components/` grab-bag into engine/platform/theme, tightening the
-    lint as it shrinks; then Phase 4 typed `platform/api/` Tauri
-    bridge. This supersedes the "ESLint boundary rule deferred to
-    Phase 4" note above.
+    §"Layer boundary contract".
+    - **NEXT (queued): engine-manager grab-bag drain** — close
+      `engine↛components` by relocating the ~15-file engine-manager
+      cluster (SettingsSections + CoresPage + LibraryManagerPage +
+      SystemDialogs + … ) out of `components/` into `engine/`,
+      migrating each `useTheme()` store read → `usePlatform()` (incl.
+      the SettingsSections 5-handler split). Self-contained plan:
+      **[PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md)**.
+      Then Phase 4 (typed `platform/api/` Tauri bridge for the 157 raw
+      `invoke()` calls). This supersedes the "ESLint boundary rule
+      deferred to Phase 4" note below.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
