@@ -2,7 +2,7 @@ import { Show, createResource, type Component } from "solid-js";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatformMedia } from "@oa/platform/library/platformMedia";
 import { systemSupportsBootless } from "@oa/platform/library/launch";
-import SystemCoresStrip from "../../components/SystemCoresStrip";
+import SystemCoresStrip from "./SystemCoresStrip";
 
 type Props = {
   systemId: SystemId;

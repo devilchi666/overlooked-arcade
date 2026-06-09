@@ -23,10 +23,9 @@ import { createEffect, createSignal, Show, type Component } from "solid-js";
 import { Dialog } from "@oa/platform/components/Dialog";
 import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
 import type { RomId } from "@oa/platform/library/types";
-
-export type CollectionDialogMode =
-  | { kind: "create"; seedRomId: RomId | null }
-  | { kind: "rename"; collectionId: string; currentName: string };
+// CollectionDialogMode now lives in @oa/platform/dialogs (platform owns
+// dialog state).
+import type { CollectionDialogMode } from "@oa/platform/dialogs";
 
 type Props = {
   /// Non-null = open in this mode. Null = closed. The mode shape

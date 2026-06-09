@@ -165,6 +165,14 @@ invariants that hold cleanly today, via `import/no-restricted-paths` zones:
   SystemHeader) instead of calling `useTheme()` inside a platform component.
 - ✅ **`platform/**` ↛ `engine/**`** (platform must not import engine). Zero
   violations — added preventively.
+- ✅ **`platform/**` ↛ `components/**`** (platform must not import the
+  unclassified grab-bag) — added in Slice 2 (2026-06-09). Closing it
+  required: relocating `SystemCoresStrip` + `CatalogCoreCard` into
+  `platform/components/` (they're platform UI), and extracting the dialog-
+  *state* types (`GameDialogKind`/`GameDialogState`/`CollectionDialogMode`/
+  `SystemDialogSection`) out of the grab-bag dialog files into
+  `platform/dialogs.ts` (platform owns dialog state; the components import
+  them back). Platform is now pure of theme, engine, AND the grab-bag.
 
 ### Known-violating edges deferred to later slices (NOT yet enforced)
 
@@ -177,11 +185,7 @@ batch lands, and `npm run lint` stays green until then.
   the *mounting* into the engine takeover but left the content in theme/
   grab-bag locations. **Fix (Slice 2): relocate that Settings content into
   `engine/`**, then enforce this zone.
-- ⬜ **`platform/**` ↛ `components/**`** — `platform/components/SystemHeader`
-  imports `components/SystemCoresStrip` (platform UI still sitting in the
-  grab-bag). **Fix (Slice 2): classify + move `SystemCoresStrip` into
-  `platform/components/`**, then enforce.
-- ⬜ **The `components/` grab-bag (48 files)** is unclassified — a mix of
+- ⬜ **The `components/` grab-bag (~46 files)** is unclassified — a mix of
   engine-manager surfaces (→ `engine/`), shared platform UI (→ `platform/`),
   and theme menus (→ theme). Until each file is on the right side of the
   line the grab-bag is exempt. **Slice 2+ drains it batch by batch**,

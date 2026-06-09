@@ -297,3 +297,37 @@ and tracks the rest. Branch `feat/theming-boundary-enforcement`.
   `engine/` to close the `engine↛routes` edge, and move `SystemCoresStrip`
   into `platform/components/` to close `platform↛components`. Then Phase 4
   (typed `platform/api/` Tauri bridge) corrals raw `invoke()`.
+
+## 2026-06-09 — CI wiring + Slice 2 batch 1 (close platform↛components)
+
+- **Shipped:**
+  - **CI now runs the boundary lint.** `.github/workflows/ci.yml` runs
+    `npm run lint` (before the cargo build, fast-fail) so a cross-layer
+    import fails CI on every push to main + PR — the enforcement actually
+    bites now, not just locally.
+  - **`platform/**` ↛ `components/**` enforced** (third zone). Closing it:
+    `git mv` `SystemCoresStrip` + `CatalogCoreCard` → `platform/components/`
+    (platform UI that was still in the grab-bag; updated the 2 importers),
+    and extracted the dialog-*state* types
+    (`GameDialogKind`/`GameDialogState` from GameDialogs,
+    `CollectionDialogMode` from NewCollectionDialog, `SystemDialogSection`
+    from SystemDialogs) into `platform/dialogs.ts` — platform owns dialog
+    state, so the state-shape types belong there; the component files import
+    them back (components→platform, allowed). This removed platform/dialogs.ts's
+    last type-only crossing into the grab-bag. **Platform is now pure of
+    theme, engine, AND the grab-bag.** lint + typecheck green.
+- **Almost:** nothing half-done. Operator playtest is the usual
+  same-behavior check (the cores strip + the create-collection / per-system
+  / per-game dialogs are pure relocations).
+- **Next (Slice 2 batch 2 — the keystone):** close `engine↛routes`. The
+  blocker is the **store-context split**: `engine/SettingsPanel` pulls its
+  content from `routes/retroverse/{PerSystemSettingsBody,SystemHealthPage}`
+  + `components/SettingsSections`, and those read platform stores via
+  `useTheme()` (the ThemeContext bundles platform stores + theme concerns).
+  To relocate that content into `engine/` cleanly, split a
+  platform-level `usePlatform()` provider (settings/library/layout/views
+  stores) out of `useTheme()` so engine + platform components get stores
+  without importing the theme context. That's the next major batch; it
+  also unblocks the bulk of the remaining grab-bag drain (any
+  ctx-store-reading component can then move out of theme). Then Phase 4
+  (typed `platform/api/`).

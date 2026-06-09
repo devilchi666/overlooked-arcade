@@ -10,7 +10,7 @@ import {
   humanBytes,
   type AvailableCore,
   type DownloadProgress,
-} from "./CatalogCoreCard";
+} from "@oa/platform/components/CatalogCoreCard";
 
 /// Display labels for system slugs that don't have OA registry entries
 /// yet. The frontend uses these to render section headers under

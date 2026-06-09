@@ -2016,14 +2016,7 @@ export const CheatsDialog: Component<{
 };
 
 // --- Discriminated state union (consumed by App.tsx) -------------------
-
-export type GameDialogKind =
-  | "core-options"
-  | "display"
-  | "input"
-  | "rewind"
-  | "shaders"
-  | "milestones"
-  | "cheats";
-
-export type GameDialogState = { kind: GameDialogKind; target: RomEntry } | null;
+// GameDialogKind / GameDialogState moved to @oa/platform/dialogs (platform
+// owns dialog state) in the Slice 2 grab-bag drain. Re-exported here so
+// existing `from "./GameDialogs"` importers keep working.
+export type { GameDialogKind, GameDialogState } from "@oa/platform/dialogs";

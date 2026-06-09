@@ -73,6 +73,14 @@ export default [
                 "Boundary: platform/ must not import the engine layer (engine/). " +
                 "Engine sits above platform and imports it — never the reverse.",
             },
+            {
+              target: "./src/platform",
+              from: "./src/components",
+              message:
+                "Boundary: platform/ must not import the unclassified components/ " +
+                "grab-bag. If a component is platform UI, move it into " +
+                "platform/components/ (Slice 2 grab-bag drain).",
+            },
           ],
         },
       ],
