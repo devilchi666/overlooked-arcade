@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
 import GameInfoModal from "./platform/components/GameInfoModal";
-import ImportWizard from "./components/ImportWizard";
+import ImportWizard from "./engine/ImportWizard";
 import StylusOverlay from "./platform/components/StylusOverlay";
 import TouchHotspotOverlay from "./platform/components/TouchHotspotOverlay";
 import GamePropertiesDialog from "./platform/components/GamePropertiesDialog";
@@ -35,9 +35,9 @@ import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
   SystemSettingsDialog,
-} from "./components/SystemDialogs";
-import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
-import { DebugLogDialog } from "./components/DebugLogDialog";
+} from "./engine/SystemDialogs";
+import { AboutDialog, KeyboardShortcutsDialog } from "./engine/HelpDialogs";
+import { DebugLogDialog } from "./engine/DebugLogDialog";
 import { ScreenshotGalleryDialog } from "./platform/components/ScreenshotGalleryDialog";
 import { PerformanceHud } from "./platform/components/PerformanceHud";
 import { createLayoutStore } from "@oa/platform/layout/state";
@@ -65,6 +65,7 @@ import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } f
 import type { SystemId } from "@oa/platform/themes/registry";
 import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar } from "./nav/HintBar";
+import { registerLibraryAdmin } from "@oa/platform/libraryAdmin";
 import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJobsBar";
 import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
 import { setSwapAB } from "./nav/focus";
@@ -899,6 +900,17 @@ const App: Component = () => {
     }
     setBusy("idle");
   }
+
+  // Expose the two library-admin actions to the engine Library surface
+  // (engine/SettingsSections → LibraryManagerPage) through the platform
+  // registry, so engine code can trigger them without importing App or the
+  // theme context (boundary: engine must not import theme/App). The
+  // ThemeContext still hands the same handlers to theme code (LibraryPage's
+  // import-wizard entry point) — both wire the one App-scoped implementation.
+  registerLibraryAdmin({
+    addLibraryFolder: handleAddLibraryFolder,
+    rescanLibraryFolders: handleRescanLibraryFolders,
+  });
 
   /// Post-launch UI bridge. Status toast, gameRunning flip, runningEntry
   /// capture, single-window library auto-hide. Shared between

@@ -6,21 +6,23 @@
 // docs/features/theming-substrate/SURFACES.md §"Layer boundary contract",
 // so new features/fixes can't silently re-couple the layers.
 //
-// Slice 1 (theming-boundary-enforcement) enforces the two invariants that
-// hold today after one fix:
-//   - platform/** must not import theme code (routes/**)
-//   - platform/** must not import the engine layer (engine/**)
-// i.e. the PLATFORM FOUNDATION never depends on anything above it.
+// Enforced zones (all green) — dependencies point DOWN (theme → engine →
+// platform); the platform FOUNDATION never depends on anything above it:
+//   - platform/** ↛ routes/**     (platform must not import theme)
+//   - platform/** ↛ engine/**     (platform must not import engine)
+//   - platform/** ↛ components/** (platform must not import the grab-bag)
+//   - engine/**   ↛ routes/**     (engine must not import theme)
+//   - engine/**   ↛ components/** (engine must not import the grab-bag)
 //
-// KNOWN-violating edges deferred to Slice 2 (the components/ grab-bag drain)
-// are tracked in SURFACES.md and intentionally NOT yet enforced here, so
-// `npm run lint` stays green:
-//   - engine/** → routes/** (SettingsPanel pulls Settings content from
-//     theme files; fixed by relocating that content into engine/)
-//   - platform/** → components/** (SystemCoresStrip; fixed by classifying
-//     the grab-bag)
+// The src/components/ grab-bag is now fully DRAINED (theming-grabbag-drain,
+// 2026-06-09): every file relocated to engine/ (manager surfaces) or
+// platform/components/ (shared per-game / in-game UI), and src/components/
+// removed. The two components/** zones above are ratchets that keep anything
+// from landing back in an unclassified grab-bag.
+//
+// Still deferred (NOT yet enforced — tracked in SURFACES.md):
 //   - raw invoke() outside platform/api/ (Phase 4 — the typed Tauri bridge)
-// Each becomes a new zone / rule here as its batch lands.
+// Becomes a new rule here when that batch lands.
 
 import tseslint from "typescript-eslint";
 import importPlugin from "eslint-plugin-import";
@@ -88,6 +90,15 @@ export default [
                 "Boundary: engine/ must not import theme code (routes/). The engine " +
                 "surface owns its content — relocate it into engine/ and read stores " +
                 "via usePlatform(), not useTheme().",
+            },
+            {
+              target: "./src/engine",
+              from: "./src/components",
+              message:
+                "Boundary: engine/ must not import the unclassified components/ " +
+                "grab-bag. Engine-manager surfaces live in engine/; shared per-game " +
+                "UI lives in platform/components/. The grab-bag is drained — nothing " +
+                "should land back in src/components/.",
             },
           ],
         },

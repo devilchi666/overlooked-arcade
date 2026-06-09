@@ -36,7 +36,9 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
-import { useTheme } from "../routes/retroverse/context";
+import { usePlatform } from "@oa/platform/platformContext";
+import { setHelpDialog, setWizardOpen } from "@oa/platform/dialogs";
+import { addLibraryFolder, rescanLibraryFolders } from "@oa/platform/libraryAdmin";
 import SettingRow from "@oa/platform/components/SettingRow";
 import {
   SCALING_MODE_LABELS,
@@ -926,7 +928,7 @@ export const LibrarySettings: Component = () => {
   // The System Readiness card lived here until 2026-06-03; it
   // moved to Settings → System Health → Overview as part of the
   // declutter arc (see docs/PLANS/settings-declutter-system-health.md).
-  const ctx = useTheme();
+  const platform = usePlatform();
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard
@@ -938,7 +940,7 @@ export const LibrarySettings: Component = () => {
           class="self-start rounded-md bg-(--color-system-accent) px-4 py-2 text-xs font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
           onClick={(e) => {
             e.currentTarget.blur();
-            ctx.onOpenImportWizard();
+            setWizardOpen(true);
           }}
         >
           Set up your library
@@ -946,12 +948,12 @@ export const LibrarySettings: Component = () => {
       </SettingsCard>
       <div class="-mx-8 -mb-6">
         <LibraryManagerPage
-          settings={ctx.settings}
-          library={ctx.library}
-          layout={ctx.layout}
-          views={ctx.views}
-          onAddLibraryFolder={ctx.onAddLibraryFolder}
-          onRescanLibraryFolders={ctx.onRescanLibraryFolders}
+          settings={platform.settings}
+          library={platform.library}
+          layout={platform.layout}
+          views={platform.views}
+          onAddLibraryFolder={addLibraryFolder}
+          onRescanLibraryFolders={rescanLibraryFolders}
         />
       </div>
     </div>
@@ -1196,7 +1198,6 @@ export const BiosSettings: Component = () => {
 // --- About -------------------------------------------------------------
 
 export const AboutSettings: Component = () => {
-  const ctx = useTheme();
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard title="Overlooked Arcade">
@@ -1260,7 +1261,7 @@ export const AboutSettings: Component = () => {
             type="button"
             onClick={(e) => {
               e.currentTarget.blur();
-              ctx.onOpenDebugLog();
+              setHelpDialog("debug-log");
             }}
             class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/10 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-(--color-system-accent) transition hover:bg-(--color-system-accent)/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
           >
@@ -1270,7 +1271,7 @@ export const AboutSettings: Component = () => {
             type="button"
             onClick={(e) => {
               e.currentTarget.blur();
-              ctx.onOpenKeyboardShortcuts();
+              setHelpDialog("shortcuts");
             }}
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-(--color-oa-ink-dim)/50 hover:bg-white/[0.08] hover:text-(--color-oa-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
           >
