@@ -156,13 +156,14 @@ const RetroverseShell: Component = () => {
             </span>
           </div>
           {/* Game-focus indicator — visible only when keyboard
-              passthrough is ON (Ctrl+G). Mirrors the legacy
-              toolbarRight pill at App.tsx:1457-1464 so operators
-              running a game with the core grabbing hotkeys see
-              the same "Game focus" cue in Retroverse. */}
+              passthrough is ON. Mirrors the legacy toolbarRight pill
+              at App.tsx:1457-1464 so operators running a game with the
+              core grabbing the keyboard see the same "Game focus" cue
+              in Retroverse. The toggle hotkey is configurable (Settings
+              › Controls), so the cue names the action, not a fixed key. */}
           <Show when={ctx.gameFocus()}>
             <span
-              title="Game focus is ON — OA hotkeys pass through to the core. Press Ctrl+G to disable."
+              title="Game focus is ON — the keyboard is going to the emulated machine. Press your Game-focus hotkey (default Ctrl+G; rebindable in Settings › Controls) to return the keyboard to the shell."
               class="shrink-0 rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--color-system-accent)"
             >
               Game focus

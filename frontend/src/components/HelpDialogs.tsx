@@ -22,7 +22,7 @@ const SHORTCUTS: readonly Shortcut[] = [
   { keys: "Esc", scope: "anywhere", action: "Close menus / dialogs" },
   { keys: "Ctrl+W", scope: "in-game", action: "Exit to library" },
   { keys: "Ctrl+B", scope: "anywhere", action: "Toggle left sidebar" },
-  { keys: "Ctrl+G", scope: "anywhere", action: "Toggle Game focus (OA hotkeys ↔ core)" },
+  { keys: "Ctrl+G*", scope: "anywhere", action: "Toggle Game focus (keyboard: shell ↔ core) — *rebindable in Settings › Controls" },
   { keys: "F1", scope: "in-game", action: "Reset" },
   { keys: "F2", scope: "in-game", action: "Pause / resume" },
   { keys: "F3", scope: "in-game", action: "Frame advance (while paused)" },

@@ -50,6 +50,7 @@ import {
   type WindowMode,
 } from "@oa/platform/settings/store";
 import { shaderPresets, shaderPresetLabel } from "@oa/platform/settings/shader_presets";
+import { eventCodeToRustKey, formatKey } from "../systems/keymap";
 
 const REWIND_INTERVAL_OPTIONS: readonly number[] = [1, 2, 3, 6, 10, 15, 30];
 const REWIND_BUFFER_OPTIONS: readonly number[] = [8, 16, 32, 64, 128, 256, 512];
@@ -215,6 +216,127 @@ export const PerSystemUiSettings: Component<{ settings: SettingsStore }> = (prop
   );
 };
 
+// --- Game-focus toggle hotkey -----------------------------------------
+
+const FOCUS_MODIFIER_KEYS = new Set([
+  "LShift", "RShift", "LControl", "RControl",
+  "LAlt", "RAlt", "LMeta", "RMeta",
+]);
+
+/// Capture control for the operator-configurable Game-focus toggle chord.
+/// Reads the current binding via `get_game_focus_toggle`; "Change" listens
+/// for a key combo (modifiers tracked left/right via `eventCodeToRustKey`)
+/// and completes on the first non-modifier key, persisting via
+/// `set_game_focus_toggle`. "Clear" unbinds the hotkey (toggle still works
+/// from the running emulator via the chord — empty just disables it).
+const GameFocusToggleCard: Component = () => {
+  const [chord, setChord] = createSignal<string>("");
+  const [capturing, setCapturing] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  onMount(() => {
+    void invoke<string>("get_game_focus_toggle").then(setChord).catch(() => {});
+  });
+
+  const pretty = (c: string) =>
+    c ? c.split("+").map((k) => formatKey(k)).join(" + ") : "Unbound";
+
+  let held = new Set<string>();
+  let keyDownHandler: ((e: KeyboardEvent) => void) | null = null;
+  let keyUpHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  const stopCapture = () => {
+    if (keyDownHandler) window.removeEventListener("keydown", keyDownHandler, true);
+    if (keyUpHandler) window.removeEventListener("keyup", keyUpHandler, true);
+    keyDownHandler = null;
+    keyUpHandler = null;
+    held = new Set();
+    // Release the input gate we took while capturing.
+    void invoke("set_ui_intercepting", { intercepting: false }).catch(() => {});
+    setCapturing(false);
+  };
+
+  const save = (c: string) => {
+    void invoke<string>("set_game_focus_toggle", { chord: c })
+      .then((normalized) => {
+        setChord(normalized);
+        setError(null);
+      })
+      .catch((e) => setError(String(e)));
+  };
+
+  const beginCapture = () => {
+    setError(null);
+    held = new Set();
+    setCapturing(true);
+    // Gate gameplay/hotkey input while we listen so stray keys don't fire
+    // hotkeys or leak to the core during capture.
+    void invoke("set_ui_intercepting", { intercepting: true }).catch(() => {});
+    keyDownHandler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        stopCapture();
+        return;
+      }
+      const name = eventCodeToRustKey(e.code);
+      if (!name) return;
+      held.add(name);
+      // Complete the chord on the first non-modifier key, capturing whatever
+      // modifiers are still held (insertion order → "LControl+G").
+      if (!FOCUS_MODIFIER_KEYS.has(name)) {
+        const combo = Array.from(held).join("+");
+        stopCapture();
+        save(combo);
+      }
+    };
+    keyUpHandler = (e: KeyboardEvent) => {
+      const name = eventCodeToRustKey(e.code);
+      if (name) held.delete(name);
+    };
+    window.addEventListener("keydown", keyDownHandler, true);
+    window.addEventListener("keyup", keyUpHandler, true);
+  };
+
+  return (
+    <SettingsCard
+      title="Game focus (keyboard routing)"
+      description="When Game focus is ON, the keyboard goes to the emulated machine — type into MSX BASIC / DOS / arcade test menus — and OA's hotkeys (save/load/slots) are suppressed. When OFF, the keyboard drives the shell. This is the hotkey that toggles between the two; it always works, even from inside a running game."
+    >
+      <div class="flex items-center justify-between gap-4 py-2">
+        <div class="flex flex-col gap-0.5">
+          <span class="text-sm text-(--color-oa-ink)">Toggle hotkey</span>
+          <span class="text-xs text-white/50">
+            {capturing()
+              ? "Press a key or combo… (Esc to cancel)"
+              : pretty(chord())}
+          </span>
+          <Show when={error()}>
+            <span class="text-xs text-red-400">{error()}</span>
+          </Show>
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-(--color-oa-ink) hover:bg-white/10"
+            onClick={() => (capturing() ? stopCapture() : beginCapture())}
+          >
+            {capturing() ? "Cancel" : "Change"}
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-(--color-oa-ink) hover:bg-white/10 disabled:opacity-40"
+            disabled={capturing() || !chord()}
+            onClick={() => save("")}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </SettingsCard>
+  );
+};
+
 // --- Controller navigation --------------------------------------------
 
 export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (props) => {
@@ -263,6 +385,7 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
           description="How long the focus ring transitions when moving between elements."
         />
       </SettingsCard>
+      <GameFocusToggleCard />
     </div>
   );
 };
