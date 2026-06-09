@@ -6,6 +6,41 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-09 — M3 Half 2: status observability + software-peer table (branch `feat/hw-render-m3`)
+
+Resumed the arc for M3. Reading the M2 code first reframed the milestone:
+the Vulkan path is already **core-agnostic** — `set_image` captures + the
+present path waits on the core's wait-semaphores (so cores with
+`num_semaphores>0`, unlike paraLLEl-N64, already work), and `SET_HW_RENDER`
+already gracefully declines non-Vulkan context requests (the core falls to
+its own SW/GL renderer). So M3 splits into **Half 1 — per-core hardware
+validation** (needs the operator's cores + BIOS + GPU; can't be done from
+this side) and **Half 2 — hardware-independent groundwork** (this session).
+
+- **Shipped (`feat/hw-render-m3`, not merged):** D4 observability + fallback
+  signal. oa-libretro: `HwRenderStatus` enum on `State` (NotRequested /
+  AcceptedVulkan / DeclinedNonVulkan(ctx) / DeclinedInstanceError), set in
+  the three `SET_HW_RENDER` branches; `LibretroCore::hw_render_status()`
+  accessor + crate re-export. oa-shell: new `hw_render.rs` —
+  `software_peer_core()` (PSX `*_psx_hw`→`mednafen_psx`; Saturn
+  `kronos`/`yabasanshiro`→`mednafen_saturn`; N64/DC/PSP → None, they fall
+  back via their own renderer option) + `hw_status_log_line()` +
+  `hw_decline_toast()`, 6 tests. Both load paths now log the handshake
+  outcome every launch + toast a software-peer suggestion on a decline.
+  Deliberately NOT an auto-swap (deferred to Half 1 — don't know which cores
+  crash vs. fall back cleanly yet; blind swap risks a load loop). oa-libretro
+  52 + oa-shell 828 tests pass.
+- **Almost:** Half 2 complete; needs an operator playtest just to confirm the
+  new log line + decline toast read correctly on a real launch (low risk).
+- **Next (Half 1 — operator-driven):** validate a second HW core. Beetle PSX
+  HW Vulkan is the natural first (drop `beetle_psx_hw_libretro.dll` + PSX
+  BIOS, set core option `beetle_psx_hw_renderer = vulkan`, launch a game,
+  paste `oa-current.log`). Watch for: `SET_HW_RENDER accepted (Vulkan)` →
+  `adopted HW core Vulkan device` → `first zero-copy HW import`. The likely
+  per-core gap is `get_sync_index`/`wait_sync_index` (M2 stubbed to const-0;
+  a multi-buffered core may need real rotation) — fix that against the log if
+  frames tear/corrupt. Then Flycast / PPSSPP / Saturn HW the same way.
+
 ## 2026-06-08 (cont. 15d) — ✅ M2 MERGED to main
 
 - **Shipped:** operator confirmed core-switching works (last validation item)
