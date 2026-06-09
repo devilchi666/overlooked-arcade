@@ -388,6 +388,14 @@ cores AND external-process emulators.
 
 ### Phase F — Preservation Vault polish (~1–2 weeks)
 
+**Re-categorized 2026-06-09: the Vault is a Retroverse THEME addition,
+not engine/platform work.** It's a pure UI surface that reads existing
+data (Phase A2 tags + Phase E identities/variants) and calls existing
+commands (`setGroupDefault`, metadata-override, Tier-5 dispatch). Per
+the theming-substrate engine/theme split it lives in theme territory —
+build it as a Retroverse surface, not in the Rust engine. Slot it with
+the other Retroverse theme work, not the platform/emulation queue.
+
 **New dedicated surface.** Either a new top-level Retroverse tab OR
 a sub-section under Library. Operator picks at execution time.
 
