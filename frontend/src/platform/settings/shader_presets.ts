@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listShaderPresets } from "@oa/platform/api/settingsApi";
 
 /// Summary view of a TOML preset (built-in or user-provided). Mirrors
 /// the Rust `ShaderPresetSummary` returned by `list_shader_presets`.
@@ -36,7 +36,7 @@ let loadOnce: Promise<ShaderPresetEntry[]> | null = null;
 /// signal updates `presets()` for every subscribed component.
 export function loadShaderPresets(): Promise<ShaderPresetEntry[]> {
   if (loadOnce) return loadOnce;
-  loadOnce = invoke<ShaderPresetEntry[]>("list_shader_presets")
+  loadOnce = listShaderPresets()
     .then((list) => {
       if (Array.isArray(list) && list.length > 0) {
         setPresets(list);

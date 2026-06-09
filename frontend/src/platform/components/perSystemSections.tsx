@@ -10,6 +10,7 @@
 
 import { createEffect, createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getSystemSettings, setSystemSettings, setBloomAmount } from "@oa/platform/api/settingsApi";
 import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
@@ -101,9 +102,7 @@ export function usePerSystemOverrides(args: {
     async (src): Promise<PerSystemOverrides> => {
       if (!src.active || !src.sysId) return {};
       try {
-        return (await invoke<PerSystemOverrides>("get_system_settings", {
-          systemId: src.sysId,
-        })) ?? {};
+        return (await getSystemSettings<PerSystemOverrides>(src.sysId)) ?? {};
       } catch (e) {
         console.warn("[oa-per-system] get_system_settings failed:", e);
         return {};
@@ -142,7 +141,7 @@ export function usePerSystemOverrides(args: {
       delete cleaned.overscanCropOverride;
     }
     try {
-      await invoke("set_system_settings", { systemId: sysId, settings: cleaned });
+      await setSystemSettings(sysId, cleaned);
       void refetch();
     } catch (e) {
       console.warn("[oa-per-system] set_system_settings failed:", e);
@@ -420,7 +419,7 @@ export const PerSystemShadersSection: Component<ShadersProps> = (props) => {
           value: o().bloomAmount ?? 0.6,
           onInput: (v) => {
             void props.api.patch({ bloomAmount: v });
-            void invoke("set_bloom_amount", { amount: v }).catch(() => {});
+            void setBloomAmount(v).catch(() => {});
           },
         }}
         onReset={() => void props.api.patch({ bloomAmount: null })}

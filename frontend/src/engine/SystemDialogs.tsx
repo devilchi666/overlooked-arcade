@@ -10,6 +10,7 @@
 
 import { createResource, Show, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listMonitors } from "@oa/platform/api/settingsApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 import type {
   CoreEntry,
@@ -79,7 +80,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
     async (cond): Promise<MonitorInfo[]> => {
       if (!cond) return [];
       try {
-        return await invoke<MonitorInfo[]>("list_monitors");
+        return await listMonitors();
       } catch {
         return [];
       }

@@ -8,6 +8,7 @@
 
 import { createEffect, createSignal, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as settingsApi from "@oa/platform/api/settingsApi";
 
 export type PresentationMode = "desktop" | "theater" | "cabinet";
 
@@ -153,7 +154,7 @@ export function createLayoutStore() {
 
   onMount(async () => {
     try {
-      const mode = await invoke<string>("get_presentation_mode");
+      const mode = await settingsApi.getPresentationMode();
       if (isPresentationMode(mode)) setPresentationMode(mode);
     } catch (e) {
       console.warn("LayoutStore: get_presentation_mode failed:", e);
@@ -164,7 +165,7 @@ export function createLayoutStore() {
     // back to presentation.json. The operator's on-disk preference stays
     // intact for the next library-mode launch.
     try {
-      const kiosk = await invoke<boolean>("get_kiosk_mode");
+      const kiosk = await settingsApi.getKioskMode();
       if (kiosk) setPresentationMode("cabinet");
     } catch (e) {
       console.warn("LayoutStore: get_kiosk_mode failed:", e);
@@ -232,7 +233,7 @@ export function createLayoutStore() {
   createEffect(() => {
     if (!hydrated()) return;
     const mode = presentationMode();
-    invoke("set_presentation_mode", { mode }).catch((e) =>
+    settingsApi.setPresentationMode(mode).catch((e) =>
       console.warn("LayoutStore: set_presentation_mode failed:", e),
     );
   });

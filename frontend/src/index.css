@@ -111,7 +111,7 @@
   /* Single-window mode: oa-shell hosts the wgpu game surface in the same
      HWND that backs this WebView. The body must be transparent so DWM
      composites the wgpu pixels under the library UI's transparent regions.
-     Set by App.tsx onMount via invoke('get_shell_mode'). */
+     Set by App.tsx onMount via settingsApi.getShellMode(). */
   body[data-shell="single-window"] {
     background: transparent;
   }

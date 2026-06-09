@@ -406,7 +406,7 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slice 1)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slice 1 ✅ / Slice 2 next)
 
 **Queued 2026-06-09.** Plan:
 [docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
@@ -420,17 +420,33 @@ command names bind themes + components directly to backend command-name
 strings. Phase 4 corrals them behind typed `platform/api/<domain>Api.ts`
 wrappers + an ESLint rule banning raw `invoke()` outside `platform/api/`.
 
-**Slice 1 — `settingsApi` + the wrapper convention** (the next fresh-session
-task). Create `frontend/src/platform/api/settingsApi.ts` and migrate the
-display/video/audio/shaders + system-settings + per-game-overrides + shell-mode
-command cluster (~50 call sites — concentrated in `QuickSettings` (37 invokes),
-`GameDialogs`, `SettingsSections`, `SystemDialogs`, `App.tsx` AV paths,
-`settings/store.ts`). Establishes the convention: one typed named export per
-command, thin pass-through (no error-handling change — call sites keep their
-`reportInvokeError`), command string lives only in the wrapper.
-`npm run typecheck && npm run lint` green; operator smoke-test of QuickSettings
-+ per-game Display/Shaders/Audio dialogs. The lint rule turns on later (Slice 6,
+**Slice 1 — `settingsApi` + the wrapper convention ✅ SHIPPED on
+`feat/theming-platform-api-settings` (2026-06-09; awaiting operator playtest +
+merge).** Created `frontend/src/platform/api/settingsApi.ts` (28 typed wrappers)
+and migrated the display/video/audio/shaders + system-settings + per-game-
+overrides + shell-mode/kiosk + presentation-mode cluster across 13 files
+(App.tsx AV/launch paths, `settings/store.ts`, `lib/audio.ts`, `layout/state.ts`,
+`shader_presets.ts`, QuickSettings, GameDialogs, GamePropertiesDialog,
+perSystemSections, AnalogBindingsSection, SettingsSections, SystemDialogs,
+PerSystemSettingsBody). Convention locked: one typed named export per command,
+thin pass-through (call sites keep their own `reportInvokeError`/try-catch),
+command string lives only in the wrapper. Three judgment calls (see
+SESSION_LOG 2026-06-09): (1) shape-divergent getters (`get_game_overrides` /
+`get_system_settings` — each call site declares its own partial view) are
+**generic with a canonical default type**, so every call site keeps its exact
+local view via the type arg, zero type churn; (2) `layout/state.ts`'s
+presentation/kiosk calls migrated but `get/set_layout` left for Slice 2's
+`viewsApi` (separate call sites, not entangled); (3) AnalogBindingsSection's
+`get_game_overrides` was passing `{ gameId }` where the backend wants `{ id }` —
+a **latent bug** (the call silently errored, analog routing fell back to empty);
+the typed wrapper corrects it. typecheck + lint green; every migrated command
+string greps to only `settingsApi.ts`. The lint rule turns on later (Slice 6,
 when the count hits zero). Module map + the 6-slice order are in the plan.
+
+**Slice 2 (next) — `libraryApi` + `collectionsApi` + `viewsApi`** — the
+store-heavy core (`library/store.ts`, `customCollections.ts`, `ingest.ts`,
+`views/store.ts` + the `get/set_layout` calls left in `layout/state.ts`,
+App.tsx library paths). ~55 sites. Same convention as Slice 1.
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

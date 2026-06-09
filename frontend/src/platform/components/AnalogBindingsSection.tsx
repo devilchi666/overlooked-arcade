@@ -8,6 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getGameOverrides, getSystemSettings } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import { eventCodeToRustKey, formatKey } from "../../systems/keymap";
 import type { SystemId } from "@oa/platform/themes/registry";
@@ -113,10 +114,14 @@ const AnalogBindingsSection: Component<Props> = (props) => {
     async (input): Promise<void> => {
       try {
         if (input.mode === "game" && input.gameId) {
-          const overrides = await invoke<GameOverrides>("get_game_overrides", { gameId: input.gameId });
+          // NOTE: pre-migration this passed `{ gameId }`, but the backend
+          // command's arg is `id` — so the call silently errored and analog
+          // routing fell back to empty. The typed wrapper sends the correct
+          // `{ id }`, fixing that latent bug.
+          const overrides = await getGameOverrides<GameOverrides>(input.gameId);
           setPrefs(overrides.analogRouting ?? { ports: [] });
         } else {
-          const settings = await invoke<SystemSettings>("get_system_settings", { systemId: input.id });
+          const settings = await getSystemSettings<SystemSettings>(input.id);
           setPrefs(settings.analogRouting ?? { ports: [] });
         }
       } catch (e) {
