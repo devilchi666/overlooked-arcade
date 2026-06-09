@@ -361,6 +361,37 @@ pub(crate) struct State {
     /// teardown means a HW core was accepted but no device was ever built
     /// (load failed early) — `hw_teardown` destroys it.
     pub hw_instance: Option<crate::hw_vulkan::VulkanInstance>,
+    /// Outcome of the core's HW-render negotiation this session — set in
+    /// the `SET_HW_RENDER` handler. Read by the shell (`hw_render_status`)
+    /// to log the per-launch HW outcome unambiguously and to decide
+    /// whether to surface a software-peer suggestion (D4 — "never a
+    /// silent crash"). Stays `NotRequested` for the 46 software cores.
+    pub hw_render_status: HwRenderStatus,
+}
+
+/// What happened when the loaded core negotiated hardware rendering.
+///
+/// HW negotiation runs once during `retro_set_environment` (before the
+/// first `retro_load_game`), so this reflects the loaded core for its
+/// whole life. The shell reads it via
+/// [`LibretroCore::hw_render_status`](crate::LibretroCore::hw_render_status)
+/// to log the outcome and, on a decline, suggest the system's
+/// software-peer core instead of leaving the operator with a black
+/// screen (M3 / DECISIONS D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HwRenderStatus {
+    /// No `SET_HW_RENDER` — an ordinary software core (the common case).
+    NotRequested,
+    /// Accepted: the core requested Vulkan and we stood up the HW path.
+    AcceptedVulkan,
+    /// Declined: the core asked for a non-Vulkan context (GL / D3D).
+    /// Carries the requested `RETRO_HW_CONTEXT_*` value. The core falls
+    /// back to its own software renderer if it has one; if it doesn't,
+    /// the shell's software-peer suggestion is the escape hatch.
+    DeclinedNonVulkan(u32),
+    /// Declined: the core requested Vulkan but our `VkInstance` create
+    /// failed (driver / loader problem). Same fallback story.
+    DeclinedInstanceError,
 }
 
 // SAFETY: raw pointers stored in `pending_rom_data` are only dereferenced
@@ -426,6 +457,7 @@ impl State {
             hw_negotiation_vulkan: None,
             hw_vulkan: None,
             hw_instance: None,
+            hw_render_status: HwRenderStatus::NotRequested,
         }
     }
 
@@ -2296,6 +2328,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                     "oa-libretro HW: declining non-Vulkan context_type {} — M1 targets Vulkan only",
                     cb.context_type,
                 );
+                with_state(|s| s.hw_render_status = HwRenderStatus::DeclinedNonVulkan(cb.context_type));
                 return false;
             }
             hw_probe_once();
@@ -2320,6 +2353,7 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                         log::error!(
                             "oa-libretro HW: instance create failed: {e} — declining SET_HW_RENDER (core will fall back / Null)"
                         );
+                        with_state(|s| s.hw_render_status = HwRenderStatus::DeclinedInstanceError);
                         return false;
                     }
                 }
@@ -2331,7 +2365,10 @@ pub(crate) unsafe extern "C" fn cb_environment(cmd: u32, data: *mut c_void) -> b
                 (*p).get_current_framebuffer = None;
                 (*p).get_proc_address = None;
             }
-            with_state(|s| s.hw_render_callback = Some(cb));
+            with_state(|s| {
+                s.hw_render_callback = Some(cb);
+                s.hw_render_status = HwRenderStatus::AcceptedVulkan;
+            });
             log::info!("oa-libretro HW: SET_HW_RENDER accepted (Vulkan)");
             true
         }
