@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { reportInvokeError } from "@oa/platform/lib/toast";
-import { eventCodeToRustKey, formatKey } from "../systems/keymap";
+import { eventCodeToRustKey, formatKey } from "../../systems/keymap";
 import type { SystemId } from "@oa/platform/themes/registry";
 
 // Per-system / per-game analog Bindings UI (Phase 2.5).

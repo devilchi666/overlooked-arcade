@@ -4,9 +4,9 @@ import { getDataDir } from "@oa/platform/lib/dataDir";
 import type { RomEntry } from "@oa/platform/library/types";
 import { useMedia } from "@oa/platform/library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "@oa/platform/themes/registry";
-import { captureFocusReturn, useFocusGroup } from "../nav/focus";
-import { useBackHandler } from "../nav/back";
-import { HintRegion } from "../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
+import { useBackHandler } from "../../nav/back";
+import { HintRegion } from "../../nav/HintBar";
 
 type Props = {
   entry: RomEntry | null;

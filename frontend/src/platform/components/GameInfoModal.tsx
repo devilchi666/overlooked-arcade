@@ -29,9 +29,9 @@ import { launchRom } from "@oa/platform/library/launch";
 import { useMedia, type MediaVariant } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes } from "@oa/platform/themes/registry";
-import { captureFocusReturn, useFocusGroup } from "../nav/focus";
-import { useBackHandler } from "../nav/back";
-import { HintRegion } from "../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
+import { useBackHandler } from "../../nav/back";
+import { HintRegion } from "../../nav/HintBar";
 import {
   getGameInfoOverride,
   setGameInfoOverride,

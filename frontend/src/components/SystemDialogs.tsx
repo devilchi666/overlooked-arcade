@@ -18,7 +18,7 @@ import type {
 } from "@oa/platform/settings/store";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import SystemBindingsEditor from "./SystemBindingsEditor";
-import CoreOptionsPanel from "./CoreOptionsPanel";
+import CoreOptionsPanel from "@oa/platform/components/CoreOptionsPanel";
 import {
   PerSystemDefaultCoreSection,
   PerSystemDisplaySection,

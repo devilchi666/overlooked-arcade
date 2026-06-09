@@ -31,7 +31,7 @@ import {
   pathBasename,
   RewindLiveStats,
   type OverscanCropPrefs,
-} from "./SystemDialogs";
+} from "@oa/platform/components/perSystemSections";
 import CoreOptionsPanel from "./CoreOptionsPanel";
 import AnalogBindingsSection from "./AnalogBindingsSection";
 import KeypadReference from "./KeypadReference";
