@@ -253,10 +253,11 @@ spanned every system but was filed under whichever core happened to be active.
       metadata. 803 oa-shell tests pass; typecheck silent.
       **Merging this completes Phase E** (identity editor UI
       rides Phase B).
-  - **Phase B — two-mode UX + Collection Health (~2 weeks) — IN FLIGHT**
-    on `feat/virtual-library-phase-b`. global Casual / Preservation
-    toggle; Variants tab on GameDetailPanel; System Health Overview
-    gains % verified / % covers / % metadata rollups.
+  - **Phase B — two-mode UX + Collection Health ✅ CODE COMPLETE**
+    (all 4 slices on `feat/virtual-library-phase-b`; frontend typecheck
+    silent; awaiting operator playtest before merge). global Casual /
+    Preservation toggle; Variants tab; System Health % verified /
+    covers / metadata rollups.
     - **Slice 1 ✅ (commit `e4aa4b0`)** — OA-wide `libraryMode`
       ("casual"|"preservation", default casual) in the localStorage
       settings store + "Library presentation" card in Settings →
@@ -269,14 +270,21 @@ spanned every system but was filed under whichever core happened to be active.
       → VirtualLibraryGrid + DetailListView → LibraryTile/DetailRow.
       Preservation tiles show the ribbon (suppressing ▼N); Casual
       unchanged. Frontend typecheck silent; awaiting playtest.
-    - **Slice 3 ⬜ — Variants tab** on GameInfoModal (the tabbed
-      surface; GameDetailPanel is the single-pane sidebar). New
-      `variants` TabId listing every dump with region/revision/
-      dump-status/hack/translation + per-variant launch + set-default
-      (`library.setGroupDefault`) + thumbnail + filters. Reuse
-      TileContextMenu's `launchVariant`/`pinAsDefault` pattern.
-    - **Slice 4 ⬜ — Collection Health** rollups (% verified / %
-      covers / % metadata) on SystemHealthPage's OverviewBody.
+    - **Slice 3 ✅ (commit `fb279af`) — Variants tab** on GameInfoModal
+      (the tabbed surface; GameDetailPanel is the single-pane sidebar).
+      `variants` TabId lists every dump with region/revision/
+      dump-status/hack/translation + per-variant ▶ Play + Set-default
+      (`library.setGroupDefault`) + MediaDb thumbnail + region/verified
+      filters. Tab only mounts for multi-dump games. GameInfoModal
+      gained an optional `library` prop (App.tsx passes it).
+    - **Slice 4 ✅ (commit `f9af29e`) — Collection Health** rollups on
+      SystemHealthPage Overview: Verified dumps / Cover art / Metadata
+      cards, computed client-side from identity groups + MediaDb.
+      Verified card keys status off bad/over dumps (unmarked
+      "unknown" dumps not penalized). "Per-system ↓" CTAs scroll to
+      the readiness section. **Phase B complete; next = Phase D**
+      (external install pipeline) or Phase F (Preservation Vault) per
+      the arc order — operator's pick.
   - **Phase C — launcher abstraction (~2–3 weeks):** `Launcher`
     lifecycle trait ABOVE the untouched `oa_core::Core`;
     `LibretroLauncher` + `ExternalProcessLauncher` impls;

@@ -6,6 +6,43 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-09 — VL Phase B (two-mode UX + Collection Health) — code complete
+
+Bootless playtest passed → merged to main (`4dbcc3f`). Continued straight
+into VL Phase B on `feat/virtual-library-phase-b` (branched off main with
+the bootless merge folded in). All four slices landed, frontend-only
+(backend untouched; the Phase E group/variant data + A2 typed tags supply
+everything). Operator confirmed Slices 1+2 mid-flight ("everything is
+working"); 3+4 built on top, awaiting a fuller playtest before merge.
+
+- **Shipped:**
+  - **Slice 1** (`e4aa4b0`) — `libraryMode` pref (casual default /
+    preservation) in the settings store + "Library presentation" card in
+    Settings → Display.
+  - **Slice 2** (`a34f1c6`) — Preservation-mode variant ribbon.
+    `variantRibbonChips(group)` pure helper in `filter.ts`; threaded
+    `libraryMode` → `variantRibbonFor` → grid + list → tile/row. Casual
+    unchanged (one clean tile); Preservation shows `[USA][JP][EU][Rev N]`.
+  - **Slice 3** (`fb279af`) — Variants tab on GameInfoModal. Lists every
+    dump with region/revision/dump-status/flags + per-variant Play +
+    Set-default + thumbnail + region/verified filters. Optional `library`
+    prop on GameInfoModal (App.tsx passes it); tab hidden for single-dump
+    games.
+  - **Slice 4** (`f9af29e`) — Collection Health rollups (Verified dumps /
+    Cover art / Metadata) on SystemHealthPage Overview, computed
+    client-side. Verified status keys off bad/over dumps so unmarked
+    "unknown" dumps aren't falsely flagged.
+- **Almost:** Phase B code-complete; needs an operator playtest of the
+  Preservation experience end-to-end (toggle → ribbon → Variants tab
+  launch/set-default → Collection Health numbers) before the branch
+  merges to main.
+- **Next:** merge Phase B after playtest, then pick the next VL phase —
+  **Phase D** (external emulator install pipeline) or **Phase F**
+  (Preservation Vault polish). Theming ARC 1 Phase 3 is also unblocked
+  and competing for the slot.
+
+---
+
 ## 2026-06-09 — Bootless launch ("Boot without game") + VL Phase C merge bookkeeping
 
 Picked up the libretro-plumbing follow-up. Also corrected stale
