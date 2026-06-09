@@ -62,7 +62,9 @@ cores are currently being worked on.
 - [PLANS/guided-setup.md](PLANS/guided-setup.md) — Phase 2 (curated CPU-tier core selection) queued.
 - [PLANS/per-system-ui.md](PLANS/per-system-ui.md) — Stages 2+3 of the per-system UI arc.
 - [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md) — Retroverse §10 open work tracker.
-- [PLANS/theming-substrate.md](PLANS/theming-substrate.md) — 3-arc theming substrate plan (engine/theme territory split + `.oatheme` distribution; absorbs Kiosk plan's 4-layer substrate). ARC 1 (~22-26 weeks) queued; first slice = engine/theme surface separation.
+- [PLANS/theming-substrate.md](PLANS/theming-substrate.md) — 3-arc theming substrate plan (engine/theme territory split + `.oatheme` distribution; absorbs Kiosk plan's 4-layer substrate). Phases 1-2 + boundary-enforcement track + grab-bag drain shipped; Phase 4 next, then the enable-other-themes track (Phase 3/5/6 + ARC 2-3).
+- [PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md) — ✅ SHIPPED 2026-06-09. Drained `src/components/` to zero (→ `engine/` + `platform/components/`); six boundary lint zones enforced.
+- [PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md) — **Theming Phase 4** (queued 2026-06-09). Last platform/theme decoupling step: corral 351 raw `invoke()` calls (54 files / 222 commands) behind typed `platform/api/*` wrappers + an invoke-ban lint rule. Slice 1 (`settingsApi`) in NEXT.md HIGH band.
 
 **Shipped plans (archived):** background-jobs-and-progress-bar, collections-tab-retroverse, discover-tab-retroverse, game-info-panel, main-window, play-now-tab-retroverse, retroverse-flag-deprecation, settings-declutter-system-health, settings-tab-retroverse, system-info-panel-v1, system-wiring-plan. See [_archive/INDEX.md](_archive/INDEX.md).
 

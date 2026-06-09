@@ -406,41 +406,38 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate ARC 1 — Phase 1 (engine/theme surface separation)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slice 1)
 
-**Planning locked 2026-06-06.** Full plan at
-[docs/PLANS/theming-substrate.md](PLANS/theming-substrate.md);
-feature folder
-[docs/features/theming-substrate/](features/theming-substrate/).
-**Phase 1 is the next slice when arc starts** — extract Settings +
-Library Manager + Import Wizard + BIOS pre-checks + Core installer
-+ System Health + Background Jobs out of Retroverse's 6-tab layout
-into an engine-owned fullscreen-takeover surface summoned via
-`F12` (hotkey) / `Select+Start` (controller chord) / top-right
-corner icon themes reserve. Retroverse drops from 6 → 5 tabs;
-functionally indistinguishable for operators.
+**Queued 2026-06-09.** Plan:
+[docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
+Feature folder [docs/features/theming-substrate/](features/theming-substrate/).
 
-The 3-arc structure: ARC 1 (~22-26 weeks) = Minimum Viable
-Substrate (layout + assets + palette overrides; no scripting or
-shaders); ARC 2 (~7 weeks) = Behaviors + Shaders (Rhai + WGSL per
-KIOSK_PLAN §2.2); ARC 3 (~5-7 weeks) = Theme Studio (in-engine
-visual + code editor per KIOSK_PLAN §2.3). Absorbs the Kiosk
-plan's theme substrate spec — Kiosk-as-such (attract mode,
-multi-monitor, 5-bus mixer) becomes substrate capabilities themes
-opt into.
+This is the **last platform/theme decoupling step**. The file-level boundary
+is done + lint-enforced (six zones; the `src/components/` grab-bag fully
+drained — see SESSION_LOG 2026-06-09). The one remaining coupling is
+**content-level**: 351 raw `invoke()` calls across 54 files / 222 distinct
+command names bind themes + components directly to backend command-name
+strings. Phase 4 corrals them behind typed `platform/api/<domain>Api.ts`
+wrappers + an ESLint rule banning raw `invoke()` outside `platform/api/`.
 
-Sequencing per plan §7: Phases 1-2 run parallel with VL Phase A
-(currently in flight); ARC 1 pauses at end of Phase 2 for VL
-Phase E (game_identities schema, ~3-4 weeks) + VL Phase C
-(Launcher trait, ~2-3 weeks) to land first; resume Phases 3-6
-after both VL phases ship.
+**Slice 1 — `settingsApi` + the wrapper convention** (the next fresh-session
+task). Create `frontend/src/platform/api/settingsApi.ts` and migrate the
+display/video/audio/shaders + system-settings + per-game-overrides + shell-mode
+command cluster (~50 call sites — concentrated in `QuickSettings` (37 invokes),
+`GameDialogs`, `SettingsSections`, `SystemDialogs`, `App.tsx` AV paths,
+`settings/store.ts`). Establishes the convention: one typed named export per
+command, thin pass-through (no error-handling change — call sites keep their
+`reportInvokeError`), command string lives only in the wrapper.
+`npm run typecheck && npm run lint` green; operator smoke-test of QuickSettings
++ per-game Display/Shaders/Audio dialogs. The lint rule turns on later (Slice 6,
+when the count hits zero). Module map + the 6-slice order are in the plan.
 
-Operator decisions locked: one unified premium frontend (no
-LaunchBox/BigBox split); engine vs theme territory inside one
-window; engine summon = fullscreen takeover, top-right corner,
-`F12` / `Select+Start`; manifest = TOML; theme swap requires
-restart (ARC 1); build-time bundling only (ARC 1). See
-[features/theming-substrate/DECISIONS.md](features/theming-substrate/DECISIONS.md).
+> Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
+> platform extraction, the boundary-enforcement track, the grab-bag drain) are
+> all **shipped + merged**. The 3-arc *enable-other-themes* track (Phase 3 nav
+> primitives, Phase 5 packaging, Phase 6 Retroverse-as-theme, ARC 2-3 Rhai +
+> WGSL + Theme Studio) follows Phase 4 and builds on the now-clean boundary.
+> Decisions: [features/theming-substrate/DECISIONS.md](features/theming-substrate/DECISIONS.md).
 
 ~~### Guided Setup Phase 2 — curated CPU-tier core selection~~ —
 **SHIPPED 2026-06-06** on `feat/guided-setup-cpu-tier`. Decision-locked

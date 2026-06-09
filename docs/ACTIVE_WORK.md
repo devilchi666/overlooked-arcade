@@ -100,12 +100,15 @@ spanned every system but was filed under whichever core happened to be active.
       platform; library-admin handlers → registry not props. Plan +
       log: **[PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md)**,
       theming-substrate SESSION_LOG 2026-06-09.
-    - **NEXT (queued): Phase 4 — typed `platform/api/` Tauri bridge**
-      for the 157 raw `invoke()` calls + a `no raw invoke() outside
-      platform/api/` lint rule. The platform/engine/theme separation is
-      now fully lint-enforced; raw `invoke()` is the last coupling. This
-      supersedes the "ESLint boundary rule deferred to Phase 4" note
-      below.
+    - **NEXT (queued): Phase 4 — typed `platform/api/` Tauri bridge.**
+      The last platform/theme decoupling step: corral **351 raw
+      `invoke()` calls / 54 files / 222 command names** behind typed
+      `platform/api/<domain>Api.ts` wrappers + a `no raw invoke()
+      outside platform/api/` lint rule. Plan + 6-slice order:
+      **[PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md)**;
+      **Slice 1 (`settingsApi` + the wrapper convention) is queued in
+      NEXT.md HIGH band.** Supersedes the "ESLint boundary rule deferred
+      to Phase 4" note below (and the stale "157 calls" estimate).
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
