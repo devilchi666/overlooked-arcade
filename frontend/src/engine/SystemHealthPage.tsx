@@ -29,8 +29,8 @@ import {
   BiosSettings,
   CoresCategorySettings,
   StorageSettings,
-} from "../components/SettingsSections";
-import SystemReadinessChecklist from "../components/import-wizard/SystemReadinessChecklist";
+} from "./SettingsSections";
+import SystemReadinessChecklist from "./import-wizard/SystemReadinessChecklist";
 import { activeJobs } from "@oa/platform/lib/backgroundJobs";
 import { usePlatform } from "@oa/platform/platformContext";
 

@@ -1,8 +1,25 @@
 # Theming boundary — engine-manager grab-bag drain (deferred batch)
 
-**Status:** queued. The boundary-enforcement track's high-value work is
-**done + merged** (4 enforced lint zones; `usePlatform()` keystone — see
-below). This doc is the self-contained plan for the remaining `components/`
+**Status:** ✅ **SHIPPED on `feat/theming-grabbag-drain` (2026-06-09)** —
+awaiting operator playtest + merge to main. The `src/components/` grab-bag is
+**fully drained and the directory removed**; six boundary zones are now lint-
+enforced (platform↛{routes,engine,components}, engine↛{routes,components},
+routes↛components). Two judgment calls landed differently from this plan's
+literal lists (both forced by the import graph): shared leaves
+(CoreOptionsPanel / AnalogBindingsSection / reference cards) + background-jobs/*
+went to `platform/components/` not `engine/` (DECISIONS D12), and
+SettingsSections' 2 library-admin handlers went to a `platform/libraryAdmin.ts`
+registry rather than props (DECISIONS D13). The plan body below is preserved as
+the original spec for reference. The next theming batch is Phase 4 (typed
+`platform/api/` Tauri bridge). See
+[features/theming-substrate/SESSION_LOG.md](../features/theming-substrate/SESSION_LOG.md)
+2026-06-09 "Grab-bag drain" entry.
+
+---
+
+**Original plan (for reference):** The boundary-enforcement track's high-value
+work was **done + merged** (4 enforced lint zones; `usePlatform()` keystone —
+see below). This doc is the self-contained plan for the remaining `components/`
 grab-bag drain, deferred out of the 2026-06-09 session because it's a single
 ~15-file interconnected refactor that deserves a fresh, focused session
 rather than a marathon-tail push.

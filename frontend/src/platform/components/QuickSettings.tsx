@@ -15,9 +15,9 @@ import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
 import type { SettingsStore } from "@oa/platform/settings/store";
-import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../nav/focus";
-import { useBackHandler } from "../nav/back";
-import { HintRegion } from "./../nav/HintBar";
+import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../../nav/focus";
+import { useBackHandler } from "../../nav/back";
+import { HintRegion } from "../../nav/HintBar";
 
 // Phase 2.8 slice B (Quick Settings overlay) + Phase 4 slice B (rewind
 // scrubbing). Triggered by Escape during gameplay. Two-mode card:

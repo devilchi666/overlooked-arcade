@@ -36,7 +36,7 @@ import {
   ProfileSettings,
   ShadersSettings,
   ThemesSettings,
-} from "../components/SettingsSections";
+} from "./SettingsSections";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
 import { useDomQueryFocusGroup } from "../nav/focus";

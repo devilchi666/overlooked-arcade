@@ -2,12 +2,12 @@ import { createEffect, createMemo, createResource, createSignal, Match, onCleanu
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
-import CorePickerMenu from "./components/CorePickerMenu";
-import GameInfoModal from "./components/GameInfoModal";
-import ImportWizard from "./components/ImportWizard";
-import StylusOverlay from "./components/StylusOverlay";
-import TouchHotspotOverlay from "./components/TouchHotspotOverlay";
-import GamePropertiesDialog from "./components/GamePropertiesDialog";
+import CorePickerMenu from "./platform/components/CorePickerMenu";
+import GameInfoModal from "./platform/components/GameInfoModal";
+import ImportWizard from "./engine/ImportWizard";
+import StylusOverlay from "./platform/components/StylusOverlay";
+import TouchHotspotOverlay from "./platform/components/TouchHotspotOverlay";
+import GamePropertiesDialog from "./platform/components/GamePropertiesDialog";
 import {
   CheatsDialog,
   GameCoreOptionsDialog,
@@ -16,30 +16,30 @@ import {
   GameRewindDialog,
   GameShadersDialog,
   MilestonesDialog,
-} from "./components/GameDialogs";
-import QuickSettings from "./components/QuickSettings";
-import SaveSlotsModal from "./components/SaveSlotsModal";
-import SystemContextMenu, { type MoveTarget } from "./components/SystemContextMenu";
-import RegionPicker from "./components/RegionPicker";
-import TileContextMenu from "./components/TileContextMenu";
-import NewCollectionDialog from "./components/NewCollectionDialog";
-import ToastStack from "./components/ToastStack";
+} from "./platform/components/GameDialogs";
+import QuickSettings from "./platform/components/QuickSettings";
+import SaveSlotsModal from "./platform/components/SaveSlotsModal";
+import SystemContextMenu, { type MoveTarget } from "./platform/components/SystemContextMenu";
+import RegionPicker from "./platform/components/RegionPicker";
+import TileContextMenu from "./platform/components/TileContextMenu";
+import NewCollectionDialog from "./platform/components/NewCollectionDialog";
+import ToastStack from "./platform/components/ToastStack";
 import { type SidebarView } from "@oa/platform/layout/types";
 import { createViewsStore } from "@oa/platform/views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
 import { findNode, nodeContainsId } from "@oa/platform/views/resolver";
 import type { ContainerNode } from "@oa/platform/views/types";
-import ContainerContextMenu from "./components/ContainerContextMenu";
+import ContainerContextMenu from "./platform/components/ContainerContextMenu";
 import type { ShellMode } from "@oa/platform/settings/store";
 import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
   SystemSettingsDialog,
-} from "./components/SystemDialogs";
-import { AboutDialog, KeyboardShortcutsDialog } from "./components/HelpDialogs";
-import { DebugLogDialog } from "./components/DebugLogDialog";
-import { ScreenshotGalleryDialog } from "./components/ScreenshotGalleryDialog";
-import { PerformanceHud } from "./components/PerformanceHud";
+} from "./engine/SystemDialogs";
+import { AboutDialog, KeyboardShortcutsDialog } from "./engine/HelpDialogs";
+import { DebugLogDialog } from "./engine/DebugLogDialog";
+import { ScreenshotGalleryDialog } from "./platform/components/ScreenshotGalleryDialog";
+import { PerformanceHud } from "./platform/components/PerformanceHud";
 import { createLayoutStore } from "@oa/platform/layout/state";
 import {
   ingestFolderPath,
@@ -65,8 +65,9 @@ import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } f
 import type { SystemId } from "@oa/platform/themes/registry";
 import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
 import { HintBar } from "./nav/HintBar";
-import BackgroundJobsBar from "./components/background-jobs/BackgroundJobsBar";
-import ResumePromptDialog from "./components/background-jobs/ResumePromptDialog";
+import { registerLibraryAdmin } from "@oa/platform/libraryAdmin";
+import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJobsBar";
+import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
 import { setSwapAB } from "./nav/focus";
 import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
@@ -899,6 +900,17 @@ const App: Component = () => {
     }
     setBusy("idle");
   }
+
+  // Expose the two library-admin actions to the engine Library surface
+  // (engine/SettingsSections → LibraryManagerPage) through the platform
+  // registry, so engine code can trigger them without importing App or the
+  // theme context (boundary: engine must not import theme/App). The
+  // ThemeContext still hands the same handlers to theme code (LibraryPage's
+  // import-wizard entry point) — both wire the one App-scoped implementation.
+  registerLibraryAdmin({
+    addLibraryFolder: handleAddLibraryFolder,
+    rescanLibraryFolders: handleRescanLibraryFolders,
+  });
 
   /// Post-launch UI bridge. Status toast, gameRunning flip, runningEntry
   /// capture, single-window library auto-hide. Shared between

@@ -4,9 +4,9 @@ import type { LibraryStore } from "@oa/platform/library/store";
 import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
 import type { RomEntry, VariantInfo } from "@oa/platform/library/types";
 import { useMedia } from "@oa/platform/library/media";
-import { captureFocusReturn, useFocusGroup } from "../nav/focus";
-import { useBackHandler } from "../nav/back";
-import { HintRegion } from "../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
+import { useBackHandler } from "../../nav/back";
+import { HintRegion } from "../../nav/HintBar";
 
 type Props = {
   entry: RomEntry | null;

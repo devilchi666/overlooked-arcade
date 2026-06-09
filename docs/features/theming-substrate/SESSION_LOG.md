@@ -382,3 +382,52 @@ and tracks the rest. Branch `feat/theming-boundary-enforcement`.
   engine surface, or direct platform/dialogs setters). Then add the
   `engine↛components` + classify-the-rest zones. Finally Phase 4 (typed
   `platform/api/` Tauri bridge corrals the 157 raw invoke() calls).
+
+---
+
+## 2026-06-09 — Grab-bag drain: components/ emptied, engine↛components enforced
+
+- **Shipped:** drained the entire `src/components/` grab-bag (38 top-level +
+  2 subtrees) in two commits on `feat/theming-grabbag-drain`, then removed the
+  directory. **Batch 1** (`0286dae`): in-game / per-game / shared UI →
+  `platform/components/` — QuickSettings, GameDialogs (+ the per-game dialog
+  family), GamePropertiesDialog, GameInfoModal, SaveSlotsModal, RegionPicker,
+  CorePickerMenu, ScreenshotGalleryDialog, ToastStack, PerformanceHud, the
+  three context menus, NewCollectionDialog, the overlays (Stylus /
+  TouchHotspot / SystemBackground / SystemBootAnimation), the reference cards
+  (Keypad / LightGun / GenesisPad), AnalogBindingsSection, CoreOptionsPanel,
+  and the whole `background-jobs/` subtree. **Batch 2** (`aba360b`): the
+  engine-manager surfaces → `engine/` — SettingsSections, CoresPage,
+  LibraryManagerPage, ImportWizard, ImportArtPackDialog, ScummvmDetectDialog,
+  DebugLogDialog, HelpDialogs, PlatformMediaDialog, GameMediaManagePanel,
+  UnidentifiedGamesDialog, ViewsManagerTab, ViewEditorPane, SystemDialogs,
+  SystemBindingsEditor, `import-wizard/*`. Added + verified the
+  `engine/** ↛ components/**` lint zone (the batch's goal) plus a
+  `routes/** ↛ components/**` ratchet; the eslint header now documents **six
+  enforced zones**, only raw `invoke()` (Phase 4) left. typecheck + lint green
+  after each commit.
+- **Two judgment calls** (both deviate from the plan's literal lists, both
+  forced by the import graph — see DECISIONS D12/D13):
+  - *Shared leaves go to the LOWER layer.* AnalogBindingsSection +
+    CoreOptionsPanel + the reference cards are imported by BOTH engine
+    surfaces (SystemBindingsEditor / SystemDialogs) AND per-game platform UI
+    (GameDialogs); putting them in engine would force a platform→engine edge,
+    so they land in `platform/components/`. GameDialogs's only other engine
+    coupling — a re-export block from SystemDialogs — was redirected to its
+    true source `@oa/platform/components/perSystemSections`, severing the edge.
+    background-jobs/* likewise → platform (the persistent bar is
+    theme-territory per SURFACES; RecentActivityPanel / ResumePromptDialog are
+    consumed only by the bar / App).
+  - *SettingsSections' 5 app-action handlers.* 3 → direct
+    `@oa/platform/dialogs` setters (`setWizardOpen` / `setHelpDialog`); the 2
+    library-admin actions → a new `platform/libraryAdmin.ts` registry (App
+    registers its App-scoped handlers on mount; engine calls them without
+    importing App/theme). Chosen over 3-layer prop drilling (D10/D13).
+- **Almost:** pure relocations + store-source swaps, no behavior change
+  intended — awaiting operator playtest (Settings all categories + per-system
+  drill-in + System Health; per-game dialogs; Library Manager; Import Wizard)
+  before merge to main.
+- **Next:** Phase 4 — typed `platform/api/` Tauri bridge (corral 157 raw
+  `invoke()` calls + a `no raw invoke() outside platform/api/` rule). The
+  platform/engine/theme separation is now fully lint-enforced; raw `invoke()`
+  is the last coupling.

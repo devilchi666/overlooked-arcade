@@ -42,12 +42,12 @@ already know it.
 
 | Surface | Today's location (pre-Phase 1) | After Phase 1 | Notes |
 | --- | --- | --- | --- |
-| **Settings — 14 OA-wide / content / system categories** (Display / Audio / Shaders / Gameplay / Performance / Controller nav / Per-system UI / Experimental / Themes / Library / Media / System Health / Profile / About) | `routes/retroverse/SettingsPage.tsx` tab body | `engine/manager/SettingsPanel.tsx` (extracted, identical UX) | Category bodies in `components/SettingsSections.tsx` stay platform-shared and are reused as-is. |
-| **Per-system drill-in** (45-system picker → Display / Rewind / Shaders / Default core inline + Bindings / Core options launchers) | `routes/retroverse/SettingsPage.tsx` Per-system group + `PerSystemSettingsBody.tsx` | Same files, mounted inside `EngineManagerSurface` | `components/perSystemSections.tsx` (operator-blessed shared component) is the engine-owned canonical reference per plan §10. |
-| **Library Manager** (folders / views / game media tabs) | Embedded in SETTINGS → Library category via `LibrarySettings` → `components/LibraryManagerPage.tsx` | Same file, mounted inside engine surface's Library category | Same path. The `LibrarySettings` wrapper that decides what to show inside the Library card stays. |
+| **Settings — 14 OA-wide / content / system categories** (Display / Audio / Shaders / Gameplay / Performance / Controller nav / Per-system UI / Experimental / Themes / Library / Media / System Health / Profile / About) | `routes/retroverse/SettingsPage.tsx` tab body | `engine/manager/SettingsPanel.tsx` (extracted, identical UX) | Category bodies in `engine/SettingsSections.tsx` are engine-owned and are reused as-is. |
+| **Per-system drill-in** (45-system picker → Display / Rewind / Shaders / Default core inline + Bindings / Core options launchers) | `routes/retroverse/SettingsPage.tsx` Per-system group + `PerSystemSettingsBody.tsx` | Same files, mounted inside `EngineManagerSurface` | `platform/components/perSystemSections.tsx` (operator-blessed shared component) is the engine-owned canonical reference per plan §10. |
+| **Library Manager** (folders / views / game media tabs) | Embedded in SETTINGS → Library category via `LibrarySettings` → `engine/LibraryManagerPage.tsx` | Same file, mounted inside engine surface's Library category | Same path. The `LibrarySettings` wrapper that decides what to show inside the Library card stays. |
 | **Import Wizard** (4-step modal) | Modal — opened via `wizardOpen` signal from SETTINGS → Library "Re-scan with smart detection" card | Modal still — open state migrated to Platform store, summon path stays through engine Library card | The wizard itself is a modal; engine card is the *entry point*. Themes never summon the wizard. |
 | **BIOS pre-checks** | Inside System Health page, BIOS tab — `routes/retroverse/SystemHealthPage.tsx` + `BiosSettings` body | Same files inside engine surface's System Health category | No file moves; just changes container. |
-| **Core installer** (CoresPage) | Inside System Health page, Cores tab — `components/CoresPage.tsx` mounted via `CoresCategorySettings` | Same files inside engine surface | Same. |
+| **Core installer** (CoresPage) | Inside System Health page, Cores tab — `engine/CoresPage.tsx` mounted via `CoresCategorySettings` | Same files inside engine surface | Same. |
 | **System Health overview** (Overview / BIOS / Cores / Storage / Jobs internal tabs) | `routes/retroverse/SystemHealthPage.tsx` | Same file inside engine surface | Internal tab state (`oa.systemHealth.activeTab` in localStorage) survives. |
 | **Background Jobs editor** (live + recent activity) | System Health → Jobs tab — `BackgroundJobsSettings` + `RecentActivityPanel` | Same files inside engine surface | The persistent **progress bar** at the bottom of every theme stays theme-territory (see §Theme territory below). |
 | **Help dialogs** (Shortcuts / About / Debug log) | Opened via `helpDialog` signal from `onOpenDebugLog` / `onOpenKeyboardShortcuts` callbacks on RetroverseContext, surfaced inside SETTINGS → About | Same dialogs — open state migrated to Platform store, summon paths preserved | Themes don't summon these directly today; the engine About category does. |
@@ -124,7 +124,7 @@ don't surprise anyone.
 | Per-system theme registry | `themes/registry.ts` + `themes/systemUIConfigs.ts` | `platform/per-system/` |
 | Tauri API wrappers (Phase 4 work) | Direct `invoke()` everywhere | `platform/api/{library,settings,media,…}Api.ts` |
 | Shared dialog open/close signals (this phase) | App.tsx createSignals | `platform/dialogs/store.ts` (new in Phase 1) |
-| Shared nav primitives (grid / wheel / list / carousel / custom) | `components/LibraryView.tsx` is the grid today | `platform/nav/` (Phase 3) |
+| Shared nav primitives (grid / wheel / list / carousel / custom) | `platform/components/LibraryView.tsx` is the grid today | `platform/nav/` (Phase 3) |
 | Shared scoped event helper | `lib/listenScoped.ts` | `platform/lib/listenScoped.ts` |
 
 ---
@@ -182,20 +182,26 @@ invariants that hold cleanly today, via `import/no-restricted-paths` zones:
   `SystemHealthPage`'s `useTheme().library` → `usePlatform()`). The engine
   surface (`SettingsPanel` + content) no longer touches theme code.
 
+### Enforced after the grab-bag drain (`feat/theming-grabbag-drain`, 2026-06-09)
+
+- ✅ **`engine/**` ↛ `components/**`** + ✅ **`routes/**` ↛ `components/**`** —
+  the `src/components/` grab-bag is **fully drained and the directory
+  removed**. The 38 top-level files + 2 subtrees split by layer: in-game /
+  per-game / shared UI → `platform/components/` (incl. the shared leaves
+  CoreOptionsPanel / AnalogBindingsSection / reference cards — see DECISIONS
+  D12 on why dual-consumed leaves go to the lower layer), engine-manager
+  surfaces → `engine/`. `SettingsSections` shed its last `useTheme()` (stores
+  → `usePlatform()`; the 5 app-action handlers → `@oa/platform/dialogs`
+  setters + the new `platform/libraryAdmin.ts` registry, DECISIONS D13). Both
+  `components/**` zones are now ratchets preventing a new unclassified bucket.
+  **Six zones enforced + green:** platform↛{routes,engine,components},
+  engine↛{routes,components}, routes↛components.
+
 ### Known-violating edges deferred to later slices (NOT yet enforced)
 
 Tracked here so they're not forgotten; each becomes a new zone/rule as its
 batch lands, and `npm run lint` stays green until then.
 
-- ⬜ **`engine/**` ↛ `components/**`** — the relocated engine content still
-  imports `SettingsSections` / `SystemDialogs` / `SystemReadinessChecklist`
-  from the `components/` grab-bag. Closes as those engine-manager surfaces
-  drain into `engine/` (next batches). Not yet enforced.
-- ⬜ **The `components/` grab-bag (~43 files)** is unclassified — a mix of
-  engine-manager surfaces (→ `engine/`), shared platform UI (→ `platform/`),
-  and theme menus (→ theme). Until each file is on the right side of the
-  line the grab-bag is exempt. **Slice 2+ drains it batch by batch**,
-  tightening the lint as it shrinks to zero.
 - ⬜ **Raw `invoke()` outside `platform/api/`** (157 calls / 37 files) —
   themes/components bind directly to backend command names. **Phase 4** adds
   `platform/api/{library,settings,media,…}Api.ts` typed wrappers + an ESLint
