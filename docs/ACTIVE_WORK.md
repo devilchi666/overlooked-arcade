@@ -86,16 +86,26 @@ spanned every system but was filed under whichever core happened to be active.
     enforced/deferred edges:
     [features/theming-substrate/SURFACES.md](features/theming-substrate/SURFACES.md)
     §"Layer boundary contract".
-    - **NEXT (queued): engine-manager grab-bag drain** — close
-      `engine↛components` by relocating the ~15-file engine-manager
-      cluster (SettingsSections + CoresPage + LibraryManagerPage +
-      SystemDialogs + … ) out of `components/` into `engine/`,
-      migrating each `useTheme()` store read → `usePlatform()` (incl.
-      the SettingsSections 5-handler split). Self-contained plan:
-      **[PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md)**.
-      Then Phase 4 (typed `platform/api/` Tauri bridge for the 157 raw
-      `invoke()` calls). This supersedes the "ESLint boundary rule
-      deferred to Phase 4" note below.
+    - **Grab-bag drain ✅ SHIPPED on `feat/theming-grabbag-drain`
+      (2026-06-09) — awaiting operator playtest + merge.** The
+      `src/components/` grab-bag is **fully drained and removed**: 38
+      files + 2 subtrees split into `engine/` (manager surfaces) and
+      `platform/components/` (shared per-game / in-game UI).
+      SettingsSections shed its last `useTheme()` (stores →
+      `usePlatform()`; 5 handlers → `@oa/platform/dialogs` setters +
+      new `platform/libraryAdmin.ts` registry). **Six zones now
+      enforced + green:** `platform↛{routes,engine,components}`,
+      `engine↛{routes,components}`, `routes↛components`. Two judgment
+      calls (DECISIONS D12/D13): shared leaves + background-jobs →
+      platform; library-admin handlers → registry not props. Plan +
+      log: **[PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md)**,
+      theming-substrate SESSION_LOG 2026-06-09.
+    - **NEXT (queued): Phase 4 — typed `platform/api/` Tauri bridge**
+      for the 157 raw `invoke()` calls + a `no raw invoke() outside
+      platform/api/` lint rule. The platform/engine/theme separation is
+      now fully lint-enforced; raw `invoke()` is the last coupling. This
+      supersedes the "ESLint boundary rule deferred to Phase 4" note
+      below.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

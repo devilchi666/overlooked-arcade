@@ -100,6 +100,15 @@ export default [
                 "UI lives in platform/components/. The grab-bag is drained — nothing " +
                 "should land back in src/components/.",
             },
+            {
+              target: "./src/routes",
+              from: "./src/components",
+              message:
+                "Boundary: theme (routes/) must not import the unclassified " +
+                "components/ grab-bag. The grab-bag is drained to zero — shared UI " +
+                "lives in platform/components/, engine surfaces in engine/. Don't " +
+                "re-create an unclassified src/components/ bucket.",
+            },
           ],
         },
       ],

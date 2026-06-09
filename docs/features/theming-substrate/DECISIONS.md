@@ -238,3 +238,59 @@ reads stores through it — but that cleanup isn't required for the boundary.
 components at many tree depths; prop-drilling five stores everywhere is the
 churn this split exists to avoid. Handlers (few, app-specific) stay
 prop/`useTheme`-driven per [D10]; data (pervasive, stable) gets a context.
+
+### D12 — A leaf shared by two layers belongs to the LOWER layer
+
+Made during the grab-bag drain (2026-06-09, `feat/theming-grabbag-drain`)
+when classifying components imported by BOTH an engine surface and a platform
+(per-game) surface: `CoreOptionsPanel`, `AnalogBindingsSection`, and the
+reference cards (Keypad / LightGun / GenesisPad) are imported by
+`SystemBindingsEditor` / `SystemDialogs` (→ engine) AND by `GameDialogs`
+(→ platform). The grab-bag plan's literal list put a couple under engine.
+
+**Decision:** when a leaf is consumed by more than one layer, it lands in the
+**lowest** consuming layer (here: `platform/components/`), regardless of which
+layer "feels" like its conceptual owner. Putting a dual-consumed leaf in
+engine would force the platform consumer to import engine — exactly the
+inversion the boundary forbids. The litmus the plan gives ("does a THEME need
+to render this?") is the tie-breaker only for single-consumer files; a
+two-layer consumer is decided by this rule.
+
+**Corollary — sever, don't relocate, when the edge is a re-export:**
+`GameDialogs` (platform) appeared to depend on `SystemDialogs` (engine), but
+only pulled a block (`BezelPicker` / `OverscanEditor` / …) that `SystemDialogs`
+itself merely **re-exported** from `@oa/platform/components/perSystemSections`.
+The fix was to import from the true source, deleting the cross-layer edge
+rather than dragging `SystemDialogs` down a layer. Check for re-export
+indirection before classifying by apparent import.
+
+**How to apply:** future drains / new components — grep every importer first;
+if importers span layers, file under the lowest; if the only cross-layer
+import is a re-export, repoint it at the original.
+
+### D13 — App-scoped action singletons use a platform registry, not prop-drilling
+
+`SettingsSections` (now `engine/`) read 5 app-action handlers off
+`useTheme()`. Once engine-resident it can't touch the theme context. Three
+(`onOpenImportWizard` / `onOpenDebugLog` / `onOpenKeyboardShortcuts`) are thin
+wrappers over `@oa/platform/dialogs` setters and were inlined as direct
+`setWizardOpen` / `setHelpDialog` calls. The other two — `onAddLibraryFolder`
+/ `onRescanLibraryFolders` — are App-scoped behaviours coupled to App-local UI
+state (status / busy toasts, scan-progress reporter, post-ingest auto-sync).
+
+**Decision:** expose the two via a platform module-singleton registry
+(`platform/libraryAdmin.ts`): App calls `registerLibraryAdmin({...})` on mount;
+engine code calls `addLibraryFolder()` / `rescanLibraryFolders()`. This
+mirrors `platform/engineSurface.ts` and `platform/dialogs.ts` (platform owns a
+stable surface; App wires behaviour into it).
+
+**Why not prop-threading per D10:** D10's prop rule targets *theme-supplied*
+handlers a platform component optionally renders (e.g. SystemHeader's
+"Boot without game"). These two are different: App-scoped singletons (one
+library per app) reached through three intermediary layers
+(EngineManagerSurface → SettingsPanel → SettingsSections) that have no other
+reason to know about them. Threading two props through three layers expresses
+nothing the registry doesn't, with more churn. The registry states the real
+ownership: App owns the behaviour, engine merely triggers it. D10 still
+governs genuine theme→platform handlers; D13 carves out App-scoped action
+singletons that cross into engine.
