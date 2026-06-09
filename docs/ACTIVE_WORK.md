@@ -70,6 +70,21 @@ spanned every system but was filed under whichever core happened to be active.
     **ARC 1 unblocked 2026-06-08** — plan §7's pause condition (VL
     Phase E + C land first) is now satisfied: both merged to main.
     Theming Phase 3 is ready to resume.
+  - **Boundary enforcement track — Slice 1 ✅ (2026-06-09, branch
+    `feat/theming-boundary-enforcement`, awaiting playtest).** Per
+    operator ask for a *clear enforced* platform/theme separation,
+    reframed the remaining ARC-1 decoupling enforcement-first
+    (DECISIONS D8/D9/D10 — inverts plan's Phase-3-first). Shipped an
+    ESLint boundary-only linter (`frontend/eslint.config.mjs` +
+    `npm run lint`) enforcing **platform↛routes** + **platform↛engine**,
+    and fixed the live `SystemHeader→useTheme` reverse leak (now
+    prop-driven). Full layer contract + deferred edges in
+    [features/theming-substrate/SURFACES.md](features/theming-substrate/SURFACES.md)
+    §"Layer boundary contract". **Slice 2 next:** drain the 48-file
+    `components/` grab-bag into engine/platform/theme, tightening the
+    lint as it shrinks; then Phase 4 typed `platform/api/` Tauri
+    bridge. This supersedes the "ESLint boundary rule deferred to
+    Phase 4" note above.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

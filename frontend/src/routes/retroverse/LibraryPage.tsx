@@ -268,6 +268,7 @@ const LibraryPage: Component = () => {
             onImportWizard={() => ctx.onOpenImportWizard()}
             onToggleFavorite={ctx.onToggleFavorite}
             showSystemHeader
+            onBootWithoutGame={(id) => ctx.onBootWithoutGame(id)}
             gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
           />
         </div>

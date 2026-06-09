@@ -58,6 +58,11 @@ type Props = {
   /// the Retroverse page's per-region groups instead of the legacy
   /// left-sidebar / right-sidebar ids.
   gridFocusNeighbours?: { left?: string; right?: string };
+  /// Boot a no-game-capable core's built-in browser (DOSBox / ScummVM).
+  /// Forwarded to SystemHeader's "Boot without game" button. Supplied by
+  /// the theme (LibraryPage) so platform components stay prop-driven and
+  /// don't reach into the theme context (layer boundary).
+  onBootWithoutGame?: (systemId: SystemId) => void;
 };
 
 /**
@@ -197,6 +202,7 @@ const LibraryView: Component<Props> = (props) => {
         <SystemHeader
           systemId={selectedSystemId()!}
           gameCount={count()}
+          onBootWithoutGame={props.onBootWithoutGame}
         />
       </Show>
       <GridControls

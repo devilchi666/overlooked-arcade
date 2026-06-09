@@ -139,3 +139,69 @@ specifics (attract mode, multi-monitor, 5-bus mixer) once those
 are implemented as substrate capabilities. The 4 reference themes
 KIOSK_PLAN §2.5 specs become substrate-level reference themes
 rather than kiosk-exclusive.
+
+---
+
+## 2026-06-09 — Boundary enforcement decisions
+
+Made while starting the "clear, **enforced** platform/theme separation"
+work the operator asked for ("so we can add to the platform or theme
+without accidentally wiring them back together with new features or
+fixes"). Branch `feat/theming-boundary-enforcement`.
+
+### D8 — Enforce the boundary with a build-checked lint, not convention
+
+The engine/theme split is worthless if it's only documented — it rots the
+moment a well-meaning change crosses a layer. Proof: the 2026-06-09 bootless
+feature made `platform/components/SystemHeader` import `useTheme` from
+`routes/retroverse/` (platform depending on theme) and nothing caught it.
+
+**Decision:** add an ESLint flat config (`frontend/eslint.config.mjs`) that
+is a **boundary linter ONLY** — no style/quality rules (`tsc` + review own
+those). Its single job is `import/no-restricted-paths` zones encoding the
+layer contract in [SURFACES.md](SURFACES.md) §"Layer boundary contract". A
+cross-layer import becomes a `npm run lint` failure.
+
+**Why boundary-only:** turning on a full ruleset would flood the codebase
+with hundreds of pre-existing style nits, burying the one signal that
+matters and making `lint` permanently red (so nobody runs it). A tiny,
+always-green boundary linter is one that actually gets run + trusted.
+
+**How to apply:** new layer invariants are added as `no-restricted-paths`
+zones as each becomes enforceable. Run `npm run lint` in CI / pre-merge.
+
+### D9 — Enforce-now-then-classify (invert the plan's Phase 3-first order)
+
+The plan (§6) sequences ARC 1 as Phase 3 (substrate) → 4 (Tauri bridge) →
+5 (packaging) → 6 (rebuild). That order optimizes for *shipping a theme
+ecosystem*. The operator's near-term goal is narrower + more urgent: a
+**clean enforced separation** so ongoing platform/theme work doesn't
+re-couple.
+
+**Decision:** front-load enforcement. Slice 1 = lint + fix the live
+platform↛theme leak (green today). Slice 2+ = drain the 48-file
+`components/` grab-bag into the right layers, tightening the lint as it
+shrinks. Phase 4 (typed Tauri bridge) drains raw `invoke()`. The plan's
+Phase 3/5/6 (substrate / packaging / rebuild) — which are about *enabling
+other themes*, not decoupling Retroverse — come after, unchanged.
+
+**Why:** you can't draw an enforceable line while 48 files sit on neither
+side of it, and that grab-bag is exactly where features re-couple. Locking
+the already-clean edges first stops the bleeding immediately; the grab-bag
+relocation then proceeds behind a ratchet that can only tighten.
+
+### D10 — Platform components are prop-driven; the theme supplies handlers
+
+Fixing the SystemHeader leak set the pattern for every future
+platform-needs-something-from-the-theme case.
+
+**Decision:** a `platform/` component that needs an app/theme action takes
+it as an **optional prop** and the theme (a `routes/` file, which may use
+`useTheme()`) supplies it. Platform components never call `useTheme()`.
+SystemHeader's "Boot without game" now takes `onBootWithoutGame?` threaded
+LibraryPage → LibraryView → SystemHeader; the button renders only when the
+handler is wired.
+
+**Why:** keeps platform a pure, theme-agnostic foundation — a different
+theme reusing SystemHeader isn't forced to provide a Retroverse-shaped
+context, just the handlers it cares about (or none).

@@ -265,3 +265,35 @@ Each session that touches this feature appends a 3-line entry:
   theming work when resumed: Phase 3 — palette JSON extraction +
   asset resolver generalization + 5 nav primitives + toy second
   theme.
+
+## 2026-06-09 — Boundary enforcement Slice 1 (lint + first fix)
+
+Operator's explicit goal: a **clear, enforced** platform/theme separation
+"so we can add to the platform or theme without accidentally wiring them
+back together with new features or fixes." Reframed the remaining ARC-1
+decoupling work around enforcement-first (DECISIONS D8/D9/D10), inverting
+the plan's Phase-3-first order. A code audit found the structure isn't yet
+clean enough to draw the full line — `components/` is a 48-file grab-bag
+mixing engine/platform/theme — so this slice locks the already-clean edges
+and tracks the rest. Branch `feat/theming-boundary-enforcement`.
+
+- **Shipped:** ESLint boundary linter stood up (frontend had none).
+  `frontend/eslint.config.mjs` — boundary-ONLY (no style rules), flat
+  config, `import/no-restricted-paths` zones enforcing **platform↛routes**
+  + **platform↛engine** (the platform foundation never depends on anything
+  above it). `npm run lint` script added. Fixed the one live violation: the
+  bootless feature's `SystemHeader → useTheme` reverse leak — SystemHeader
+  now takes `onBootWithoutGame?` as a prop, threaded LibraryPage →
+  LibraryView → SystemHeader (D10 prop-driven pattern). Lint + typecheck
+  both green. Full layer contract + the deferred edges documented in
+  [SURFACES.md](SURFACES.md) §"Layer boundary contract".
+- **Almost:** Slice 1 complete + green; awaiting an operator playtest that
+  the "Boot without game" button still works (behavior unchanged — pure
+  refactor of where the handler comes from).
+- **Next (Slice 2):** drain the `components/` grab-bag (48 files) into
+  `engine/` vs `platform/` vs theme, batch by batch, tightening the lint as
+  it shrinks — first targets: relocate Settings content
+  (`PerSystemSettingsBody`/`SystemHealthPage`/`SettingsSections`) into
+  `engine/` to close the `engine↛routes` edge, and move `SystemCoresStrip`
+  into `platform/components/` to close `platform↛components`. Then Phase 4
+  (typed `platform/api/` Tauri bridge) corrals raw `invoke()`.
