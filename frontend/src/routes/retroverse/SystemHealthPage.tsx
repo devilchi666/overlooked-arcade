@@ -32,6 +32,8 @@ import {
 } from "../../components/SettingsSections";
 import SystemReadinessChecklist from "../../components/import-wizard/SystemReadinessChecklist";
 import { activeJobs } from "@oa/platform/lib/backgroundJobs";
+import { useMedia } from "@oa/platform/library/media";
+import type { GameGroupInfo } from "@oa/platform/library/types";
 import { useTheme } from "./context";
 
 export type HealthTabId = "overview" | "bios" | "cores" | "storage" | "jobs";
@@ -167,6 +169,8 @@ const OverviewBody: Component<OverviewProps> = (props) => {
         </div>
       </section>
 
+      <CollectionHealthSection />
+
       <section id="oa-health-readiness-detail" style="scroll-margin-top: 12px">
         <h2 class="mb-3 text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Per-system readiness
@@ -187,6 +191,131 @@ const OverviewBody: Component<OverviewProps> = (props) => {
         </Show>
       </section>
     </div>
+  );
+};
+
+// --- Collection Health (VL Phase B Slice 4) --------------------------------
+
+/// Three preservation/curation rollups over the virtual library:
+/// verified dumps, cover coverage, metadata coverage. All computed
+/// client-side from the identity-backed groups (Phase E) + MediaDb —
+/// no backend command needed. The "tracking incentive" of VL Phase B:
+/// the numbers tick up as the operator cleans bad dumps + sources art.
+const CollectionHealthSection: Component = (): JSX.Element => {
+  const ctx = useTheme();
+  const media = useMedia();
+
+  const stats = createMemo(() => {
+    // Dedupe variant→group map down to unique identities.
+    const uniq = new Map<string, GameGroupInfo>();
+    for (const g of ctx.library.groupsByVariantId().values()) {
+      uniq.set(g.identityId ?? g.defaultVariantId, g);
+    }
+    const identities = [...uniq.values()];
+    let withCover = 0;
+    let withMeta = 0;
+    let verifiedDumps = 0;
+    let badDumps = 0;
+    let totalDumps = 0;
+    for (const g of identities) {
+      if (g.year || g.genre || g.developer || g.publisher) withMeta++;
+      if (media.coverUrl(g.systemId, g.defaultVariantId)) withCover++;
+      for (const v of g.variants) {
+        totalDumps++;
+        if (v.dumpStatus === "verified") verifiedDumps++;
+        else if (v.dumpStatus === "bad-dump" || v.dumpStatus === "over-dump") badDumps++;
+      }
+    }
+    return {
+      total: identities.length,
+      withCover,
+      withMeta,
+      verifiedDumps,
+      badDumps,
+      totalDumps,
+    };
+  });
+
+  const pct = (n: number, d: number): number => (d === 0 ? 0 : Math.round((n / d) * 100));
+  const coverageStatus = (p: number, total: number): RollupStatus =>
+    total === 0 ? "neutral" : p >= 80 ? "good" : p >= 40 ? "warn" : "bad";
+
+  function jumpToDetails(): void {
+    const el = document.getElementById("oa-health-readiness-detail");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  return (
+    <section>
+      <h2 class="mb-3 text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+        Collection health
+      </h2>
+      <div class="flex flex-col gap-2">
+        {/* Verified dumps. "unknown"-status dumps (No-Intro names with no
+            GoodTools [!] marker) are NOT penalized — only actual bad /
+            over dumps drop the status, since those are the actionable
+            cleanup target. */}
+        <StatusRollupCard
+          status={
+            stats().totalDumps === 0
+              ? "neutral"
+              : stats().badDumps === 0
+                ? "good"
+                : stats().badDumps <= 3
+                  ? "warn"
+                  : "bad"
+          }
+          title="Verified dumps"
+          primary={
+            stats().totalDumps === 0
+              ? "No games in library yet"
+              : `${stats().verifiedDumps}/${stats().totalDumps} dumps verified (${pct(stats().verifiedDumps, stats().totalDumps)}%)`
+          }
+          detail={
+            stats().badDumps > 0
+              ? `${stats().badDumps} bad / over-dump${stats().badDumps === 1 ? "" : "s"} to replace`
+              : undefined
+          }
+          ctaLabel={stats().total > 0 ? "Per-system" : undefined}
+          ctaArrow="↓"
+          onClick={stats().total > 0 ? jumpToDetails : undefined}
+        />
+        <StatusRollupCard
+          status={coverageStatus(pct(stats().withCover, stats().total), stats().total)}
+          title="Cover art"
+          primary={
+            stats().total === 0
+              ? "No games in library yet"
+              : `${stats().withCover}/${stats().total} games with covers (${pct(stats().withCover, stats().total)}%)`
+          }
+          detail={
+            stats().total > 0 && stats().withCover < stats().total
+              ? `${stats().total - stats().withCover} missing — Sync media in Settings to fetch`
+              : undefined
+          }
+          ctaLabel={stats().total > 0 ? "Per-system" : undefined}
+          ctaArrow="↓"
+          onClick={stats().total > 0 ? jumpToDetails : undefined}
+        />
+        <StatusRollupCard
+          status={coverageStatus(pct(stats().withMeta, stats().total), stats().total)}
+          title="Metadata"
+          primary={
+            stats().total === 0
+              ? "No games in library yet"
+              : `${stats().withMeta}/${stats().total} games with metadata (${pct(stats().withMeta, stats().total)}%)`
+          }
+          detail={
+            stats().total > 0 && stats().withMeta < stats().total
+              ? `${stats().total - stats().withMeta} missing year / genre / developer / publisher`
+              : undefined
+          }
+          ctaLabel={stats().total > 0 ? "Per-system" : undefined}
+          ctaArrow="↓"
+          onClick={stats().total > 0 ? jumpToDetails : undefined}
+        />
+      </div>
+    </section>
   );
 };
 
