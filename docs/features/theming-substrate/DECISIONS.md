@@ -205,3 +205,36 @@ handler is wired.
 **Why:** keeps platform a pure, theme-agnostic foundation — a different
 theme reusing SystemHeader isn't forced to provide a Retroverse-shaped
 context, just the handlers it cares about (or none).
+
+### D11 — Store-context split: `usePlatform()` for stores, `useTheme()` for theme
+
+The `ThemeContext` (`routes/retroverse/context`) bundled the platform STORES
+(library / customCollections / layout / views / settings) + shared selection
+state (searchQuery / focusedEntry / currentView) together with theme/gameplay
+handlers. That forced **any** component needing a store — including
+engine-surface components like `SettingsPanel` — to import the theme context,
+inverting the layer boundary (engine/platform ↛ theme). It's the structural
+blocker behind the `engine↛routes` edge and the bulk of the `components/`
+grab-bag drain (most grab-bag files read a store via `useTheme()`).
+
+**Decision (2026-06-09, Slice 2 batch 2):** introduce a platform-level
+`PlatformProvider` + `usePlatform()` (`platform/platformContext.tsx`)
+exposing the stores + shared state — theme-agnostic. App.tsx provides BOTH
+`PlatformProvider` and `ThemeProvider` from the **same store instances**, so:
+- Theme code (`routes/`) keeps using `useTheme().settings` etc. — untouched.
+- Engine + platform code uses `usePlatform()` — never the theme context.
+
+Migration is incremental + low-risk (both contexts live off one set of
+instances, no behavior change). First migrated: `engine/SettingsPanel`
+(was the one engine file using `useTheme()` for `ctx.settings`).
+
+**How to apply:** when relocating a grab-bag/theme component into
+engine/platform, switch its `useTheme()` store reads to `usePlatform()`.
+Theme-only gameplay handlers stay on `useTheme()`. Eventually `ThemeContext`
+sheds its store fields (reads them from `usePlatform()`) once no theme code
+reads stores through it — but that cleanup isn't required for the boundary.
+
+**Why a second provider, not just props:** the stores are read by dozens of
+components at many tree depths; prop-drilling five stores everywhere is the
+churn this split exists to avoid. Handlers (few, app-specific) stay
+prop/`useTheme`-driven per [D10]; data (pervasive, stable) gets a context.

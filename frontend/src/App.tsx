@@ -73,6 +73,7 @@ import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimatio
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import RetroverseShell from "./layout/retroverse/RetroverseShell";
 import { ThemeProvider } from "./routes/retroverse/context";
+import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
 import {
   engineSurfaceOpen,
@@ -1505,6 +1506,21 @@ const App: Component = () => {
           unmounted so wgpu emulator pixels paint into the WebView's
           transparent background; Esc / Ctrl+W toggle libraryVisible
           back, gameMode goes false, the shell re-renders. */}
+      <PlatformProvider
+        value={{
+          library,
+          customCollections,
+          layout,
+          views: viewsStore,
+          settings,
+          searchQuery,
+          setSearchQuery,
+          focusedEntry,
+          setFocusedEntry,
+          currentView,
+          setCurrentView,
+        }}
+      >
       <ThemeProvider
         value={{
           library,
@@ -1851,6 +1867,7 @@ const App: Component = () => {
           the legacy Shell — Retroverse pages use page-prefixed group
           ids (e.g. "library-LEFT") so the legacy switch's default ()
           arm was always firing anyway. */}
+      </PlatformProvider>
       </GameInfoBadgesProvider>
       </PlatformMediaProvider>
     </MediaProvider>

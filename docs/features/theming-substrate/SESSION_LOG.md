@@ -331,3 +331,30 @@ and tracks the rest. Branch `feat/theming-boundary-enforcement`.
   also unblocks the bulk of the remaining grab-bag drain (any
   ctx-store-reading component can then move out of theme). Then Phase 4
   (typed `platform/api/`).
+
+## 2026-06-09 — Slice 2 batch 2: store-context split (the keystone)
+
+- **Shipped (DECISIONS D11):** `platform/platformContext.tsx` —
+  `PlatformProvider` + `usePlatform()` exposing the platform stores
+  (library / customCollections / layout / views / settings) + shared state
+  (searchQuery / focusedEntry / currentView), theme-agnostic. App.tsx now
+  wraps the tree in `<PlatformProvider>` (around ThemeProvider + the engine
+  surface + trailing modals) from the SAME store instances ThemeProvider
+  uses — so theme code's `useTheme().settings` is untouched while engine/
+  platform code can read stores without importing the theme context.
+  First consumer migrated: `engine/SettingsPanel` (`useTheme()` →
+  `usePlatform()`; it read only `ctx.settings`). That engine file no longer
+  imports `routes/retroverse/context`. lint + typecheck green.
+- **Almost:** the keystone is in, but `engine↛routes` isn't enforced YET —
+  SettingsPanel still imports its CONTENT (`PerSystemSettingsBody` +
+  `SystemHealthPage` from routes/, `SettingsSections` from components/).
+  Those relocate next.
+- **Next (Slice 2 batch 3):** relocate the Settings content into `engine/`,
+  migrating each file's store reads to `usePlatform()`:
+  `PerSystemSettingsBody` (0 useTheme — trivial), `SystemHealthPage`
+  (1 × ctx.library), `SettingsSections` (stores + 5 app-action handlers —
+  the handlers either come as props from the engine surface or call
+  platform/dialogs setters directly). Then add + enforce the `engine↛routes`
+  lint zone. After that, the rest of the grab-bag drains the same way
+  (usePlatform unblocks every ctx-store reader), then Phase 4 (typed
+  `platform/api/`).

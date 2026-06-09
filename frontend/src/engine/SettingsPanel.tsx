@@ -8,20 +8,17 @@
 // Settings is engine-rendered, not theme-rendered. Every theme summons
 // this same panel through the EngineManagerSurface takeover.
 //
-// Phase 1 keeps the consumed shape identical:
-//   - Still pulls `settings` from useTheme() — the engine surface
-//     is mounted inside ThemeProvider in App.tsx in ARC 1 (only
-//     one theme), so the context is always available. Phase 2 splits
-//     `settings` (and library / customCollections / layout / views) into
-//     a Platform context the engine surface consumes directly; no
-//     ctx.settings change needed inside child components when that
-//     happens.
-//   - Still imports PerSystemSettingsBody + SystemHealthPage from
-//     routes/retroverse/. Those also consume useTheme() today;
-//     they migrate to platform/ in Phase 2 alongside everything else.
+// Store access (boundary, 2026-06-09): pulls `settings` from
+// `usePlatform()` — the theme-agnostic platform store layer — NOT
+// `useTheme()`. An engine component must not import the theme context
+// (engine ↛ routes). The store-context split (DECISIONS D11) added
+// `usePlatform()` for exactly this.
 //
-// The "lift" is the file path + the engine-vs-theme territory
-// declaration, not a behavior or import-graph change.
+// STILL OPEN (next boundary batch): this panel imports its CONTENT —
+// PerSystemSettingsBody + SystemHealthPage (routes/) + SettingsSections
+// (components/) — which keeps the `engine ↛ routes` lint zone red. Those
+// content files relocate into engine/ next (migrating their own store
+// reads to usePlatform), after which the zone is enforced.
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import { HintRegion } from "../nav/HintBar";
@@ -44,7 +41,7 @@ import PerSystemSettingsBody from "../routes/retroverse/PerSystemSettingsBody";
 import SystemHealthPage from "../routes/retroverse/SystemHealthPage";
 import { useDomQueryFocusGroup } from "../nav/focus";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { useTheme } from "../routes/retroverse/context";
+import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
 
@@ -229,7 +226,7 @@ type Props = {
 };
 
 const SettingsPanel: Component<Props> = (props) => {
-  const ctx = useTheme();
+  const ctx = usePlatform();
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
     props.initialCategory ?? "display",
   );
