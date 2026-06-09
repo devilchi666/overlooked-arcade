@@ -12,6 +12,15 @@ export type ScalingMode =
 
 export type WindowMode = "windowed" | "borderless" | "fullscreen";
 export type ShellMode = "two-window" | "single-window";
+/// Virtual-library presentation mode (VL Phase B). `casual` (default)
+/// renders one tile per game identity — the canonical variant, no
+/// region/revision noise. `preservation` surfaces every variant of a
+/// multi-variant identity explicitly (variant ribbon on the tile +
+/// variant-first GameDetailPanel). The backend already returns variants
+/// per group (Phase E); this pref only changes how the frontend renders
+/// them, so it lives in the localStorage settings store like the other
+/// presentation prefs.
+export type LibraryMode = "casual" | "preservation";
 /// Shader preset name. Slice A added the first four built-ins; slice C
 /// replaced the hardcoded enum with a TOML registry (built-in .toml files
 /// + user files in `<exe_dir>/shaders/presets/`), so the type is `string`
@@ -72,6 +81,13 @@ const SCALING_OPTIONS: readonly ScalingMode[] = [
 const WINDOW_OPTIONS: readonly WindowMode[] = ["windowed", "borderless", "fullscreen"];
 
 const SHELL_OPTIONS: readonly ShellMode[] = ["two-window", "single-window"];
+
+export const LIBRARY_MODE_OPTIONS: readonly LibraryMode[] = ["casual", "preservation"];
+
+// VL Phase B — default Casual: a fresh operator sees a clean, de-duped
+// library (one tile per game). Preservation mode is the opt-in power-user
+// view that exposes every regional / revision / hack variant.
+const DEFAULT_LIBRARY_MODE: LibraryMode = "casual";
 
 // `"system-default"` is a sentinel the App's launch path expands via
 // `resolveShaderPreset(value, systemId)` (themes/registry.ts) to the
@@ -167,6 +183,7 @@ type Persisted = {
   experimentalRetroverseUi: boolean;
   profileDisplayName: string;
   profileAvatar: string;
+  libraryMode: LibraryMode;
 };
 
 /// Library folder row as returned by the Rust `list_folders` Tauri command.
@@ -188,6 +205,10 @@ function isScalingMode(v: unknown): v is ScalingMode {
 
 function isWindowMode(v: unknown): v is WindowMode {
   return typeof v === "string" && (WINDOW_OPTIONS as readonly string[]).includes(v);
+}
+
+function isLibraryMode(v: unknown): v is LibraryMode {
+  return typeof v === "string" && (LIBRARY_MODE_OPTIONS as readonly string[]).includes(v);
 }
 
 function isShaderPreset(v: unknown): v is ShaderPreset {
@@ -240,6 +261,7 @@ function load(): Persisted {
     experimentalRetroverseUi: DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
     profileDisplayName: DEFAULT_PROFILE_DISPLAY_NAME,
     profileAvatar: DEFAULT_PROFILE_AVATAR,
+    libraryMode: DEFAULT_LIBRARY_MODE,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -316,6 +338,7 @@ function load(): Persisted {
         typeof parsed.profileAvatar === "string"
           ? parsed.profileAvatar
           : DEFAULT_PROFILE_AVATAR,
+      libraryMode: isLibraryMode(parsed.libraryMode) ? parsed.libraryMode : DEFAULT_LIBRARY_MODE,
     };
   } catch {
     return fallback;
@@ -434,6 +457,8 @@ export function createSettingsStore() {
     createSignal<string>(initial.profileDisplayName);
   const [profileAvatar, setProfileAvatar] =
     createSignal<string>(initial.profileAvatar);
+  const [libraryMode, setLibraryMode] =
+    createSignal<LibraryMode>(initial.libraryMode);
   // Shell mode preference is file-backed on the Rust side (appDataDir/shell.json),
   // not localStorage — Rust reads it at startup before the WebView exists.
   // We hydrate from the Tauri command on init; setter writes through immediately.
@@ -468,6 +493,7 @@ export function createSettingsStore() {
       experimentalRetroverseUi: experimentalRetroverseUi(),
       profileDisplayName: profileDisplayName(),
       profileAvatar: profileAvatar(),
+      libraryMode: libraryMode(),
     });
   });
 
@@ -587,6 +613,7 @@ export function createSettingsStore() {
     experimentalRetroverseUi, setExperimentalRetroverseUi,
     profileDisplayName, setProfileDisplayName,
     profileAvatar, setProfileAvatar,
+    libraryMode, setLibraryMode,
   };
 }
 
@@ -600,6 +627,11 @@ export const SCALING_MODE_LABELS: Record<ScalingMode, string> = {
   "integer-2x": "2× integer",
   "integer-3x": "3× integer",
   "integer-4x": "4× integer",
+};
+
+export const LIBRARY_MODE_LABELS: Record<LibraryMode, string> = {
+  casual: "Casual",
+  preservation: "Preservation",
 };
 
 export const WINDOW_MODE_LABELS: Record<WindowMode, string> = {

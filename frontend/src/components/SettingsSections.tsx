@@ -39,11 +39,14 @@ import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import { useTheme } from "../routes/retroverse/context";
 import SettingRow from "@oa/platform/components/SettingRow";
 import {
+  LIBRARY_MODE_LABELS,
+  LIBRARY_MODE_OPTIONS,
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
   WINDOW_MODE_LABELS,
   WINDOW_OPTIONS,
   type AudioDeviceInfo,
+  type LibraryMode,
   type MonitorInfo,
   type ScalingMode,
   type SettingsStore,
@@ -107,6 +110,10 @@ export const DisplayBaseSettings: Component<{ settings: SettingsStore }> = (prop
     value: m,
     label: WINDOW_MODE_LABELS[m],
   }));
+  const libraryModeOptions = LIBRARY_MODE_OPTIONS.map((m) => ({
+    value: m,
+    label: LIBRARY_MODE_LABELS[m],
+  }));
   const monitorOptions = createMemo(() => [
     { value: "current", label: "Current monitor" },
     ...(monitors() ?? []).map((m) => ({
@@ -155,6 +162,23 @@ export const DisplayBaseSettings: Component<{ settings: SettingsStore }> = (prop
             onChange: (v) =>
               props.settings.setMonitorIndex(v === "current" ? null : Number(v)),
           }}
+        />
+      </SettingsCard>
+
+      <SettingsCard
+        title="Library presentation"
+        description="How the library grid treats games that exist in multiple versions (regions, revisions, hacks, translations). Casual collapses each game to a single canonical tile; Preservation surfaces every variant explicitly for archival browsing."
+      >
+        <SettingRow
+          label="Mode"
+          inherited={null}
+          overridden={false}
+          select={{
+            value: props.settings.libraryMode(),
+            options: libraryModeOptions,
+            onChange: (v) => props.settings.setLibraryMode(v as LibraryMode),
+          }}
+          description="Casual — one tile per game, the canonical version launches on click (right-click → Run version for a specific variant). Preservation — multi-variant games show a region/revision ribbon and the Variants tab becomes the primary view."
         />
       </SettingsCard>
 
