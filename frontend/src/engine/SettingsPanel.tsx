@@ -37,8 +37,8 @@ import {
   ShadersSettings,
   ThemesSettings,
 } from "../components/SettingsSections";
-import PerSystemSettingsBody from "../routes/retroverse/PerSystemSettingsBody";
-import SystemHealthPage from "../routes/retroverse/SystemHealthPage";
+import PerSystemSettingsBody from "./PerSystemSettingsBody";
+import SystemHealthPage from "./SystemHealthPage";
 import { useDomQueryFocusGroup } from "../nav/focus";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";

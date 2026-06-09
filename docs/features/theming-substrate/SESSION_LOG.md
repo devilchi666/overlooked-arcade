@@ -358,3 +358,27 @@ and tracks the rest. Branch `feat/theming-boundary-enforcement`.
   lint zone. After that, the rest of the grab-bag drains the same way
   (usePlatform unblocks every ctx-store reader), then Phase 4 (typed
   `platform/api/`).
+
+## 2026-06-09 — Slice 2 batch 3: close engine↛routes (4th enforced zone)
+
+- **Shipped:** relocated the engine surface's Settings *content* out of
+  `routes/retroverse/` into `engine/` — `PerSystemSettingsBody`,
+  `PerSystemInfoSection`, `SystemHealthPage` (all confirmed engine-only
+  content, not Retroverse router pages). `SystemHealthPage`'s
+  `useTheme().library` → `usePlatform()`; `SettingsPanel` imports the trio
+  from `./` now. Their remaining cross-layer imports are `components/`
+  (SettingsSections / SystemDialogs / SystemReadinessChecklist) — a
+  separate, not-yet-enforced edge — NOT routes/, so `engine↛routes` is
+  clean. Added + enforced the `engine/** ↛ routes/**` lint zone.
+  **Four zones now enforced + green:** platform↛routes, platform↛engine,
+  platform↛components, engine↛routes. lint + typecheck silent.
+- **Almost:** engine surface is now theme-free; the engine↛components edge
+  remains (the engine-manager surfaces still in the grab-bag).
+- **Next:** continue the grab-bag drain — relocate the engine-manager
+  surfaces (`SettingsSections`, `CoresPage`, `LibraryManagerPage`,
+  `ImportWizard`, `DebugLogDialog`, `SystemDialogs`, the dialogs cluster…)
+  into `engine/`, migrating each `useTheme()` store read to `usePlatform()`
+  and resolving SettingsSections' 5 app-action handlers (props from the
+  engine surface, or direct platform/dialogs setters). Then add the
+  `engine↛components` + classify-the-rest zones. Finally Phase 4 (typed
+  `platform/api/` Tauri bridge corrals the 157 raw invoke() calls).

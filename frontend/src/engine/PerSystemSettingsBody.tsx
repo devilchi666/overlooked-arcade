@@ -21,7 +21,7 @@ import {
 import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
-} from "../../components/SystemDialogs";
+} from "../components/SystemDialogs";
 import PerSystemInfoSection from "./PerSystemInfoSection";
 import type { CoreEntry, MonitorInfo, SettingsStore } from "@oa/platform/settings/store";
 

@@ -173,19 +173,25 @@ invariants that hold cleanly today, via `import/no-restricted-paths` zones:
   `SystemDialogSection`) out of the grab-bag dialog files into
   `platform/dialogs.ts` (platform owns dialog state; the components import
   them back). Platform is now pure of theme, engine, AND the grab-bag.
+- ✅ **`engine/**` ↛ `routes/**`** (engine must not import theme) — added in
+  Slice 2 batch 3 (2026-06-09). Closing it required the **store-context
+  split** (`usePlatform()`, DECISIONS D11) so engine components read stores
+  without the theme context, then relocating the engine surface's Settings
+  *content* — `PerSystemSettingsBody`, `PerSystemInfoSection`,
+  `SystemHealthPage` — out of `routes/retroverse/` into `engine/` (migrating
+  `SystemHealthPage`'s `useTheme().library` → `usePlatform()`). The engine
+  surface (`SettingsPanel` + content) no longer touches theme code.
 
 ### Known-violating edges deferred to later slices (NOT yet enforced)
 
 Tracked here so they're not forgotten; each becomes a new zone/rule as its
 batch lands, and `npm run lint` stays green until then.
 
-- ⬜ **`engine/**` ↛ `routes/**`** — `engine/SettingsPanel.tsx` imports its
-  Settings *content* from `routes/retroverse/{PerSystemSettingsBody,
-  SystemHealthPage,context}` + `components/SettingsSections`. Phase 1 moved
-  the *mounting* into the engine takeover but left the content in theme/
-  grab-bag locations. **Fix (Slice 2): relocate that Settings content into
-  `engine/`**, then enforce this zone.
-- ⬜ **The `components/` grab-bag (~46 files)** is unclassified — a mix of
+- ⬜ **`engine/**` ↛ `components/**`** — the relocated engine content still
+  imports `SettingsSections` / `SystemDialogs` / `SystemReadinessChecklist`
+  from the `components/` grab-bag. Closes as those engine-manager surfaces
+  drain into `engine/` (next batches). Not yet enforced.
+- ⬜ **The `components/` grab-bag (~43 files)** is unclassified — a mix of
   engine-manager surfaces (→ `engine/`), shared platform UI (→ `platform/`),
   and theme menus (→ theme). Until each file is on the right side of the
   line the grab-bag is exempt. **Slice 2+ drains it batch by batch**,

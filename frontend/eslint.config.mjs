@@ -81,6 +81,14 @@ export default [
                 "grab-bag. If a component is platform UI, move it into " +
                 "platform/components/ (Slice 2 grab-bag drain).",
             },
+            {
+              target: "./src/engine",
+              from: "./src/routes",
+              message:
+                "Boundary: engine/ must not import theme code (routes/). The engine " +
+                "surface owns its content — relocate it into engine/ and read stores " +
+                "via usePlatform(), not useTheme().",
+            },
           ],
         },
       ],
