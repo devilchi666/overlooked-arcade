@@ -23,13 +23,13 @@ import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount,
 import VirtualLibraryGrid from "@oa/platform/components/VirtualLibraryGrid";
 import { confirm } from "@oa/platform/lib/confirm";
 import GameDetailPanel from "./GameDetailPanel";
-import { HintRegion } from "../../nav/HintBar";
+import { HintRegion } from "@oa/platform/nav";
 import {
   activateFocusGroup,
   activeFocusGroupId,
   groupsVersion,
   useDomQueryFocusGroup,
-} from "../../nav/focus";
+} from "@oa/platform/nav";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
 import { useTheme } from "./context";
@@ -367,12 +367,12 @@ const CollectionsPage: Component = () => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Play",
-          b: "Back",
-          x: "Search",
-          y: "Favorite",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Play",
+          Back: "Back",
+          Secondary: "Search",
+          Tertiary: "Favorite",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
 

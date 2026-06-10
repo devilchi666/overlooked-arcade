@@ -1,9 +1,9 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import type { LibraryStore } from "@oa/platform/library/store";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 export type MoveTarget = {
   /// The container's node id in the active view (e.g. "container:handheld").
@@ -194,8 +194,8 @@ const SystemContextMenu: Component<Props> = (props) => {
             data-system={props.systemId!}
           >
             <HintRegion hints={{
-              a: "Activate",
-              b: menuView() === "move-category" ? "Back" : "Close",
+              Confirm: "Activate",
+              Back: menuView() === "move-category" ? "Back" : "Close",
             }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">

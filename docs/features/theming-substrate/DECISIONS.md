@@ -494,3 +494,124 @@ OA-wide via a `platform/api/` wrapper. The remap UI lives in the OA-wide
 Input/Controls settings surface; design for conflict validation (no Confirm==Back
 deadlock), directional (D-pad/stick) remap, keyboard parity, a guaranteed
 always-reachable escape hatch, and the "Reset to defaults" affordance.
+
+---
+
+### D19 — Per-system theming is a Retroverse feature, NOT a substrate contract (vision correction)
+
+**Decision (2026-06-10, design conversation):** the "each console is its own
+place" per-system identity — TG-16 orange/cream, Vectrex phosphor green, VB
+red-on-black, per-system SFX/backgrounds/boot (the shipped Per-System UI
+Stage 1) — is a feature **of the Retroverse theme specifically**. It is **not**
+a cross-cutting axis every theme must honor, and the substrate must **not**
+elevate it to a platform-mandatory contract. The substrate's whole purpose is
+**swappable whole-shells, BigBox-style** (Retroverse / Wheel / Cabinet / …),
+each free to treat per-system identity however it likes — heavily, lightly, or
+not at all.
+
+**Why:** the operator corrected an assumption the plan had quietly baked in
+(it treated per-system theming as substrate-level — see plan §6 Phase 3's
+palette pillar framing). The original idea was always swappable shells like
+BigBox; per-system "worlds" were only ever Retroverse's take. Conflating the
+two over-constrains every other theme and misdirects ARC-1 investment.
+
+**How to apply:**
+- **Per-system DATA stays platform-provided** (`palette.json`, accent, era art
+  are *factual* — TG-16 simply *is* orange/cream). **Consuming** it is a theme's
+  choice. The asset resolver + palette injection remain useful platform plumbing
+  any theme MAY opt into.
+- **The token contract ([D-tokens, Phase 3]) is theme-first.** The whole-shell's
+  look is the primary token surface; per-system tokens are an **optional
+  sub-cascade** a theme opts into, not the center of gravity.
+- **Cascade precedence ([plan §6 Phase 3 #5]) stops being a conflict.** It's not
+  "theme vs per-system fighting" — it's "a theme optionally consumes per-system
+  data, and may override it." The outer-layer cascade (active-theme/<system> →
+  active-theme/_shared → per-system-UI registry → engine `_baseline`) still
+  holds; it's just low-stakes plumbing now.
+- Don't write any platform code that *requires* a theme to render per-system
+  identity. A system-agnostic theme (one visual language across all systems) is
+  a first-class valid theme.
+
+---
+
+### D20 — Kiosk/cabinet capabilities are PLATFORM features (engine-owned, theme-opt-in), deferred — but two seams reserved in ARC 1
+
+**Decision (2026-06-10, design conversation):** attract mode, CRT/shader UI
+chrome, and multi-monitor surfaces (marquee / manuals / second-controls) are
+**platform capabilities a shell toggles on/off**, engine-owned and theme-opt-in
+via the manifest's `required_engine_capabilities` field — **not** features each
+theme implements. They are **out of scope for a good while** (ARC 2-3). Of that
+list, only the seams that would be expensive to retrofit are reserved in ARC 1;
+everything else waits.
+
+**Why:** the operator framed these correctly as platform settings/features that
+ride above any shell. The manifest already anticipated this (the
+`required_engine_capabilities` field exists in the plan). Deferring the features
+is cheap; deferring the *seams* for multi-surface would not be.
+
+**How to apply — what gets plumbed now vs later:**
+- **CRT / shaders → nothing now.** Shaders are isolated in the render layer
+  (the CrtLite/preset pipeline). The "UI-chrome shader any shell opts into" is
+  ARC 2. Only discipline required: themes never own the render pipeline directly.
+- **Attract mode → no new code, just framing.** Attract = "platform preempts the
+  theme's surface when idle, then resumes it" — the *same* lifecycle as the
+  engine takeover (F12 fullscreen) we already build in Phase 1. **Seam reserved:**
+  write the theme-host lifecycle as a *general* "platform can preempt + restore
+  the theme" pattern, not an F12-special-case. Attract then slots in for free.
+- **Multi-monitor (marquee / manuals / second-controls) → seam reserved.** The
+  only genuinely invasive retrofit. **Seam:** the manifest declares **named
+  surfaces** a theme provides layouts for; ARC 1 supports exactly one — `main`.
+  The theme entry-component contract is written surface-aware ("render surface
+  X") rather than single-surface-hardcoded. When marquee/manual/control-panel
+  surfaces land, existing themes just declare more. Manifest field + one line in
+  the SDK contract — near-free now, expensive later.
+- Everything in this list stays a **platform setting** (engine renders the
+  capability; theme opts in via manifest), consistent with the three-tier
+  settings split.
+
+---
+
+### D21 — Nav verb layer: implementation shape (Phase 3 S1)
+
+**Decision (2026-06-10, `feat/theming-nav-foundation`):** the build choices made
+turning D18 into code, locked with operator sign-off before writing.
+
+1. **The raw `NavEvent` bus (`gamepad.ts`) stays raw — verb resolution happens in
+   the consumer, not the producer.** `gamepad.ts` keeps emitting physical
+   button/direction events on `onNavEvent`, because **non-focus consumers depend
+   on raw buttons**: the engine-summon chord (`engineSurface.ts`, Select+Start),
+   the boot-animation skip (`SystemBootAnimation`, any-input), and RetroverseShell's
+   global L1/R1 tab cycling. `focus.ts` resolves button→verb at dispatch time via
+   `navBindings`; the keyboard path resolves key→verb in its own listener. Moving
+   resolution into the producer would have broken those raw consumers.
+   *Constraint for future work:* don't make `gamepad.ts` emit verbs — add a verb
+   layer above it instead.
+
+2. **Focus-group callback names are kept (`onActivate`/`onCancel`/`onSecondary`/
+   `onTertiary`/`onStart`/`onShoulderL`/`onShoulderR`), mapped from verbs in
+   `dispatchVerb`.** Renaming them to verb names (`onConfirm`/…) would churn ~15
+   consumer files for zero behavior gain; the verb-nativeness lives in the routing
+   layer + the HintBar + the NEW primitives (which DO expose verb-named props).
+   The callback names are an internal mapping detail documented at the dispatch site.
+
+3. **A/B swap is a resolve-time overlay, not a stored binding.** `setSwapAB` flips
+   a signal; `resolveButtonVerb`/`buttonForVerb` swap A↔B at lookup. This keeps the
+   swap orthogonal to (future) remapped bindings and avoids a dual-write between the
+   existing `controllerNavSwapAB` setting and `nav_bindings.json` — the setting
+   stays the single persisted source and is re-applied via the App.tsx effect.
+
+4. **`nav_bindings.json` is an opaque blob to the backend.** The Rust commands
+   round-trip a `serde_json::Value` verbatim; the binding shape + validation live
+   in TS (`navBindings.ts`'s `normalize`). Mirrors the `audio.json` pattern; keeps
+   the backend dumb and the contract frontend-owned.
+
+5. **Keyboard scope = arrow-key directional nav only in S1** (source `"dpad"`, so
+   per-source `onDirection` handlers treat it like the pad). Confirm works natively
+   on focusable buttons; Enter/Back/Esc keyboard verbs wait for the remap follow-on,
+   which must audit native-control + existing-global-handler (F12/Ctrl-B/in-game
+   Esc) coexistence. The `keyboard` channel exists in the schema now so the
+   follow-on is additive.
+
+**Why record this:** the producer-stays-raw constraint (1) and the swap-as-overlay
+choice (3) are the two things a later contributor could most easily undo by
+"cleaning up," reintroducing the exact coupling/dual-write this avoided.

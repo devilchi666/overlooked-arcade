@@ -509,24 +509,38 @@ destructive-action guards silently never fired). **The foundation is now clean
 on BOTH backend-contract channels (commands + events) — ready to build Phase 3
 on top.**
 
-**Next theming work — ARC 1 Phase 3 (theme substrate: layout + palette + assets,
-~5 weeks).** Design refined 2026-06-10 — see
-[PLANS/theming-substrate.md](PLANS/theming-substrate.md) §"Phase 3" + DECISIONS
-**D18**. Three pillars: (1) palette substrate (`palette.json` per system + CSS-var
-injection), (2) theme-aware asset resolver, (3) **5 nav primitives** (`grid`/
-`wheel`/`list`/`carousel`/`custom`) in `platform/nav/`. **Nav is now a first-class
-verb-based, user-remappable model** (D18): the primitives + HintBar consume
-semantic verbs (`Confirm`/`Back`/directional/`NextSection`…), an input→verb
-indirection layer (`navBindings`, OA-wide) is built in Phase 3, and the existing
-`src/nav/` focus/gamepad/HintBar framework relocates into `platform/nav/`.
-Suggested slice order: (S1) relocate `src/nav/` → `platform/nav/` + verb layer +
-`list`/`grid` primitives; (S2) `wheel`/`carousel`/`custom`; (S3) palette
-substrate; (S4) asset resolver; (S5) toy `themes/bare/` + Settings → Appearance
-switcher (the acceptance gate). **Follow-on slice (after the toy-theme gate): the
-nav-remap Settings UI** in the OA-wide Input/Controls surface — gamepad + keyboard
-rebinding to verbs, conflict validation, an always-reachable escape hatch, and a
-**"Reset to defaults" button** (restore the baseline nav map = the operator-locked
-controller-nav spec). Theme-swap = restart in ARC 1 (no live hot-swap yet).
+**Next theming work — ARC 1 Phase 3, resequenced skeleton-first (2026-06-10).**
+Design conversation locked three refinements — see
+[PLANS/theming-substrate.md](PLANS/theming-substrate.md) §13 (addendum) +
+DECISIONS **D18/D19/D20**:
+- **D19** — per-system theming is a Retroverse feature, NOT a substrate contract.
+  The substrate's job is **swappable whole-shells** (BigBox-style); per-system
+  data stays platform-provided but *consuming* it is each theme's choice. Palette
+  pillar is theme-first; per-system tokens are an optional sub-cascade.
+- **D20** — kiosk/cabinet capabilities (attract, CRT/shader chrome, multi-monitor
+  marquee/manuals/second-controls) are **platform features, engine-owned +
+  theme-opt-in via manifest, deferred to ARC 2-3.** Two cheap seams reserved now:
+  (a) theme-host lifecycle written as a general "platform preempts + restores the
+  theme" pattern (attract later for free); (b) manifest declares named
+  **surfaces**, ARC 1 honoring exactly one (`main`). CRT/shaders need nothing now.
+- **Skeleton-first resequence** — pull the vertical slice forward: stand up TWO
+  switchable whole-shells early (Retroverse + a rough **Wheel**), then deepen the
+  substrate underneath a working swap. ARC boundaries unchanged.
+
+**Revised slice order** (full detail in plan §13.3): **S1** nav foundation (lock
+verb vocab; relocate `src/nav/` → `platform/nav/`; input→verb `navBindings`
+OA-wide + `platform/api/` wrapper; `list`/`grid` primitives verb-native +
+declarative props) → **S2** walking skeleton (minimal restart-based theme switch +
+Retroverse-as-default-theme + rough Wheel; **swap gate — the dream becomes
+visible**) → **S3** token layer (design-token contract + a11y/motion baseline +
+engine-territory token isolation; write `THEME_CONTRACT.md`) → **S4** versioned
+manifest + load-time validator + CI fixture (`bare` theme = fixture) → **S5**
+substrate depth (palette JSON + scoped CSS-var injection, asset resolver +
+`ui-sound` category, HintBar glyph-set seam, per-theme settings namespace,
+`wheel`/`carousel`/`custom` primitives). **Follow-on (after S2):** nav-remap
+Settings UI — gamepad + keyboard rebind to verbs, conflict validation,
+always-reachable escape hatch, **"Reset to defaults"** = operator-locked nav spec.
+**S1 is the immediate next code.** Theme-swap = restart in ARC 1 (no hot-swap yet).
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

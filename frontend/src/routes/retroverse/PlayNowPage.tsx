@@ -22,8 +22,8 @@ import { createMemo, createSignal, For, Match, Show, Switch, type Component } fr
 import { useMedia } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
 import GameDetailPanel from "./GameDetailPanel";
-import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { HintRegion } from "@oa/platform/nav";
+import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useTheme } from "./context";
 
@@ -614,12 +614,12 @@ const PlayNowPage: Component = () => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Play",
-          b: "Back",
-          x: "Surprise me",
-          y: "Reroll hero",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Play",
+          Back: "Back",
+          Secondary: "Surprise me",
+          Tertiary: "Reroll hero",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
 

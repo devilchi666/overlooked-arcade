@@ -2664,6 +2664,8 @@ fn main() {
             list_audio_devices,
             get_audio_device_pref,
             set_audio_device_pref,
+            get_nav_bindings,
+            set_nav_bindings,
             set_ui_intercepting,
             set_game_focus,
             get_game_focus,
@@ -11261,6 +11263,45 @@ fn set_audio_device_pref(name: Option<String>, state: tauri::State<'_, AppState>
     tx.send(EmuCommand::SetAudioDevice(name.clone()))
         .map_err(|e| format!("emu thread closed: {e}"))?;
     log::info!("oa-shell: set_audio_device_pref -> {:?}", name);
+    Ok(())
+}
+
+/// Read the OA-wide nav bindings (input→verb map) from
+/// `appDataDir/nav_bindings.json`. The document is opaque to the backend — the
+/// shape lives in the frontend (platform/nav/navBindings.ts); we round-trip it
+/// verbatim. `None` = no file yet / malformed (frontend falls back to defaults).
+fn read_nav_bindings(app_data_dir: &Path) -> Option<serde_json::Value> {
+    let path = app_data_dir.join("nav_bindings.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_nav_bindings(
+    app_data_dir: &Path,
+    bindings: &serde_json::Value,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(app_data_dir)?;
+    let path = app_data_dir.join("nav_bindings.json");
+    let body = serde_json::to_string_pretty(bindings)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&path, body)
+}
+
+/// Return the persisted nav bindings (`None` = use defaults).
+#[tauri::command]
+fn get_nav_bindings(state: tauri::State<'_, AppState>) -> Option<serde_json::Value> {
+    read_nav_bindings(&state.app_data_dir)
+}
+
+/// Persist the OA-wide nav bindings document. Written by the remap Settings UI
+/// (the Phase-3 follow-on); the document shape is owned + validated frontend-side.
+#[tauri::command]
+fn set_nav_bindings(
+    bindings: serde_json::Value,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    write_nav_bindings(&state.app_data_dir, &bindings)
+        .map_err(|e| format!("write nav_bindings.json: {e}"))?;
     Ok(())
 }
 

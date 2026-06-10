@@ -177,8 +177,28 @@ spanned every system but was filed under whichever core happened to be active.
         so destructive actions ran unconfirmed. Replaced all 13 confirm + 3 alert
         sites with an in-app awaitable `confirm()` (`platform/lib/confirm.ts` +
         `ConfirmHost`, themeable/controller-navigable via the Dialog primitive).
-      - Next theming work is the *enable-other-themes* track (Phase 3 nav
-        primitives → Phase 5 packaging → Phase 6 Retroverse-as-theme → ARCs 2-3).
+      - **Phase 3 design locked 2026-06-10** (design conversation, no code yet):
+        DECISIONS **D19** (per-system theming is Retroverse-only, NOT a substrate
+        contract — the substrate's job is swappable whole-shells) + **D20**
+        (kiosk/cabinet capabilities — attract / CRT-shaders / multi-monitor — are
+        deferred platform features, with two cheap seams reserved: general
+        preempt/restore theme lifecycle + named manifest `surfaces`). **ARC-1
+        execution resequenced skeleton-first** (plan §13.3): S1 nav foundation →
+        S2 walking skeleton (Retroverse + rough Wheel switchable — the swap gate)
+        → S3 token layer → S4 manifest + validator → S5 substrate depth.
+        Follow-on after S2: nav-remap Settings UI.
+      - **Phase 3 S1 — nav foundation ✅ shipped + merged 2026-06-10
+        (`feat/theming-nav-foundation`; operator playtested).** Verb-native
+        nav layer: `src/nav/` relocated to `platform/nav/` (24 importers repointed
+        to `@oa/platform/nav`; closes the Phase-2 residual wrong-direction edges) +
+        verb vocabulary (`verbs.ts`) + OA-wide input→verb `navBindings`
+        (`nav_bindings.json` persistence via `platform/api/navBindingsApi` + Rust
+        `get/set_nav_bindings`) + `focus.ts`/`HintBar` dispatch/render by **verb**
+        (A/B swap is now a binding overlay) + glyph-set seam (`glyphs.ts`) +
+        declarative `list`/`grid` primitives + arrow-key keyboard nav + new
+        `platform/nav ↛ platform/components` lint zone. DECISIONS **D21**. 822
+        oa-shell tests pass; typecheck + lint green. **S2 (walking skeleton) is
+        next.**
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

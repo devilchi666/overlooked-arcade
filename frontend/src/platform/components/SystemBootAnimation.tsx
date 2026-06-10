@@ -30,7 +30,7 @@ import type { SystemId } from "@oa/platform/themes/registry";
 import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { isBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { prefersReducedMotion } from "@oa/platform/lib/reducedMotion";
-import { onNavEvent } from "../../nav/gamepad";
+import { onNavEvent } from "@oa/platform/nav";
 import { dispatchUiSound } from "@oa/platform/lib/audio";
 
 type Props = {

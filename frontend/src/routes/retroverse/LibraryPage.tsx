@@ -25,13 +25,13 @@ import { createEffect, createMemo, Show, type Component } from "solid-js";
 import LeftSidebar from "@oa/platform/components/LeftSidebar";
 import LibraryView from "@oa/platform/components/LibraryView";
 import GameDetailPanel from "./GameDetailPanel";
-import { HintRegion } from "../../nav/HintBar";
+import { HintRegion } from "@oa/platform/nav";
 import {
   activateFocusGroup,
   activeFocusGroupId,
   groupsVersion,
   useDomQueryFocusGroup,
-} from "../../nav/focus";
+} from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
 import { useTheme } from "./context";
@@ -192,12 +192,12 @@ const LibraryPage: Component = () => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Play",
-          b: "Back",
-          x: "Search",
-          y: "Filters",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Play",
+          Back: "Back",
+          Secondary: "Search",
+          Tertiary: "Filters",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
       {/* Left: system filter sidebar — wrapped in the page-level

@@ -13,7 +13,7 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import LibraryTile from "./LibraryTile";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
-import { useFocusGroup } from "../../nav/focus";
+import { useFocusGroup } from "@oa/platform/nav";
 import { isPerSystemUiEnabled, playSystemUiSound } from "@oa/platform/themes/systemUiSound";
 import { DEFAULT_TILE_ASPECT, systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { uiConfigFor, type UITileShape } from "@oa/platform/themes/systemUIConfigs";

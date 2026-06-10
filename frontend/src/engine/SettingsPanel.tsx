@@ -21,7 +21,7 @@
 // reads to usePlatform), after which the zone is enforced.
 
 import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
-import { HintRegion } from "../nav/HintBar";
+import { HintRegion } from "@oa/platform/nav";
 import {
   AboutSettings,
   AudioSettings,
@@ -39,7 +39,7 @@ import {
 } from "./SettingsSections";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
-import { useDomQueryFocusGroup } from "../nav/focus";
+import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";
 
@@ -286,12 +286,12 @@ const SettingsPanel: Component<Props> = (props) => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Select",
-          b: "Back",
-          x: "Search",
-          y: "Reset",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Select",
+          Back: "Back",
+          Secondary: "Search",
+          Tertiary: "Reset",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
 

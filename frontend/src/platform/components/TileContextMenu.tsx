@@ -4,9 +4,9 @@ import type { LibraryStore } from "@oa/platform/library/store";
 import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
 import type { RomEntry, VariantInfo } from "@oa/platform/library/types";
 import { useMedia } from "@oa/platform/library/media";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 type Props = {
   entry: RomEntry | null;
@@ -566,9 +566,9 @@ const TileContextMenu: Component<Props> = (props) => {
             data-system={props.entry!.systemId}
           >
             <HintRegion hints={{
-              a: menuView() === "add-to-collection" ? "Toggle" : "Activate",
-              b: menuView() === "add-to-collection" ? "Back" : "Close",
-              x: "Pin/Unpin",
+              Confirm: menuView() === "add-to-collection" ? "Toggle" : "Activate",
+              Back: menuView() === "add-to-collection" ? "Back" : "Close",
+              Secondary: "Pin/Unpin",
             }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">{props.entry!.title}</p>

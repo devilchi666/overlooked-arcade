@@ -564,3 +564,114 @@ Per-phase acceptance gates above. End of arc:
   behaviors + WGSL shaders + Theme Studio). Kiosk-as-mode
   capabilities (attract / multi-monitor / 5-bus mixer) become
   substrate features any theme opts into.
+
+---
+
+## 13. Addendum (2026-06-10) — vision corrections + skeleton-first resequence
+
+A design conversation before Phase 3 surfaced three things that refine
+(not replace) the plan above. Decisions live in
+[features/theming-substrate/DECISIONS.md](../features/theming-substrate/DECISIONS.md)
+D19–D20; the forward-looking scope calls are captured here.
+
+### 13.1 The two vision corrections
+
+1. **Per-system theming is a Retroverse feature, not a substrate contract
+   (D19).** The substrate's purpose is **swappable whole-shells** (BigBox-style);
+   per-system "worlds" are Retroverse's take, not a platform-mandatory axis.
+   Per-system data stays platform-provided; *consuming* it is each theme's choice.
+   The Phase 3 palette pillar is therefore **theme-first** — per-system tokens are
+   an optional sub-cascade, and the §6 "cascade precedence" question (theme vs
+   per-system) drops from a thorny decision to low-stakes plumbing (theme composes
+   over per-system; outer-layer cascade as written).
+2. **Kiosk/cabinet capabilities are platform features, deferred (D20).** Attract,
+   CRT/shader chrome, multi-monitor (marquee / manuals / second-controls) are
+   engine-owned platform toggles a shell opts into via the manifest's
+   `required_engine_capabilities` field — out of scope for a good while (ARC 2-3).
+   **Two cheap seams reserved in ARC 1** so they don't become expensive
+   retrofits: (a) the theme-host lifecycle is written as a *general* "platform can
+   preempt + restore the theme" pattern (not an F12-special-case), so attract
+   slots in later for free; (b) the manifest declares **named surfaces** a theme
+   provides layouts for, ARC 1 supporting exactly one (`main`), so multi-monitor
+   surfaces are additive later instead of a rewrite. CRT/shaders need nothing now.
+
+### 13.2 Forward-looking scope calls (decided this conversation)
+
+Each judged by "how expensive to retrofit *after* themes bind to the surface?"
+Audience = "both — me now, creators later" → contracts built creator-grade now.
+
+| # | Item | Call |
+| --- | --- | --- |
+| 1 | **Design-token contract** — documented full set a theme may override (palette / spacing / radii / fonts / motion); engine territory consumes a **separate, non-overridable** token set so a theme can't wreck Settings (D2 guarantee). | **Build now** — this IS pillar 1 done right. |
+| 2 | **Versioned theme manifest from theme #1** (`schema_version` + `oa_version` range + `capabilities[]` + `surfaces[]` + metadata). | **Build now (light).** |
+| 3 | **A11y + motion baseline as tokens** — `prefers-reduced-motion` gate, focus-visible ring token consumed by the nav primitives, contrast-checked default palette. | **Build now** (folds into #1; not a full WCAG audit). |
+| 4 | **Controller-glyph abstraction** — HintBar renders glyphs via a `glyphSet` indirection (verb → glyph), one default set shipped. | **Seam now** — defer auto-detect + Xbox/PS/Switch picker. |
+| 5 | **Theme vs per-system precedence** — per D19, theme composes over per-system. | **Decide now** (decided; resolver already has the cascade shape). |
+| 6 | **Audio as a resolver category** — `ui-sound` category + a verb→sound hook in the new primitives (engine defaults). | **Seam now.** |
+| 7 | **Theme contract validator + CI test** — manifest parses, required tokens present, declared nav primitive + surfaces exist. The `bare` theme becomes its fixture. | **Build now (light)** — the load-time validator + one fixture. |
+| 8 | **DSL-friendly primitive APIs** — primitives take declarative config objects (orientation/density/focus/easing/data-source), minimal imperative escape hatches, so a future serializable DSL (ARC 2/3) can target them. | **Seam now** (pure discipline, zero extra code). |
+| 9 | **Per-theme settings namespace** — reserve a namespaced slice of the settings store for theme-owned prefs (collision-free). One toggle in `bare` proves it. | **Seam now.** |
+| 10 | **Loose-folder hot-reload for dev** | **Defer** — Vite HMR already hot-reloads the in-bundle toy theme; the real watcher is Phase 5. |
+
+Net: "build now" collapses to **two coherent workstreams** — the token layer
+(#1+#3, with engine-scoping) and the manifest+validator pair (#2+#7) — plus a
+handful of cheap seams (#4/#6/#8/#9) and one decision (#5). It does **not**
+balloon Phase 3; it makes pillar 1 thorough and stamps three contracts while
+we're in the right files. New consolidated artifact: **`THEME_CONTRACT.md`**
+(token set + verb vocabulary + manifest schema + resolver categories + surfaces)
+— the theme-facing peer of SURFACES.md, and what the validator checks against.
+
+### 13.3 Skeleton-first resequence ("pull the vertical slice forward")
+
+The plan (§6) saves the proof for Phase 6 (Retroverse-as-theme + Wheel). The
+operator chose to **pull a vertical slice forward**: stand up *two switchable
+whole-shells* as early as possible — even rough, even on a partial substrate —
+then deepen each substrate layer *underneath* a thing that already visibly works
+(a walking skeleton / tracer bullet), instead of a 22-26-week plumbing march
+before the first swap. ARC boundaries are unchanged (the operator did **not**
+fold ARC 2-3 magic into ARC 1); only the *order within ARC 1* changes.
+
+The early milestone borrows thin slices from three plan phases at once:
+- **Phase 3** — verb-native nav layer + `list`/`grid` primitives + token
+  injection (Slice 1, as planned).
+- **Phase 5** — just enough active-theme machinery to flip between two themes at
+  restart (build-time bundled; no `.oatheme` zips — D6 holds).
+- **Phase 6** — Retroverse wrapped as the default theme + **Wheel pulled
+  forward** as the second shell (iconic BigBox coverflow — proves a *different
+  IA*, not a reskin, the moment it boots).
+
+**Honest caveat:** ARC-1 Wheel is layout + palette + distinct typography/feel —
+genuinely a different shell, but the *cinematic* layer (attract, CRT ceremony,
+shaders) is still ARC 2-3. The vertical slice proves **swappability + distinct
+identity early**; wow-polish lands later.
+
+**Revised ARC-1 slice order** (supersedes §6's phase-sequential order for
+execution; the §6 phase *content* is unchanged, just reordered + interleaved):
+
+- **S1 — Nav foundation.** Lock the verb vocabulary (start: `Confirm`, `Back`,
+  `Up`/`Down`/`Left`/`Right`, `NextSection`/`PrevSection`, `OpenQuickSettings`,
+  `Menu`; reserved `Search`/`Favorite`/`Page`). Relocate `src/nav/` →
+  `platform/nav/`. Build the physical-input→verb indirection (`navBindings`,
+  OA-wide) + `platform/api/` wrapper. Ship `list` + `grid` primitives **verb-
+  native + declarative-props (#8)**. Defaults = the operator-locked controller-nav
+  spec.
+- **S2 — Walking skeleton (the vertical slice).** Minimal active-theme switch
+  (restart-based) + Retroverse wrapped as default theme + a rough **Wheel** second
+  shell. Acceptance: switch Retroverse ⇄ Wheel from Settings → Appearance, both
+  browse + launch. **This is where the dream first becomes visible.**
+- **S3 — Token layer.** The design-token contract (#1) + a11y/motion baseline
+  (#3) + engine-territory token isolation. Wheel + Retroverse re-skin through
+  tokens. Write `THEME_CONTRACT.md`.
+- **S4 — Manifest + validator.** Versioned `theme.toml` (#2) with `capabilities[]`
+  + `surfaces[]` (single `main` surface honored) + the load-time validator + CI
+  fixture (#7); `bare` theme as the fixture.
+- **S5 — Substrate depth.** Palette substrate (`palette.json` per system + scoped
+  CSS-var injection), generalized asset resolver (theme cascade, **+ `ui-sound`
+  category #6**), glyph-set seam in HintBar (#4), per-theme settings namespace
+  (#9), remaining `wheel`/`carousel`/`custom` primitives.
+- **Follow-on (after S2's swap gate):** the nav-remap Settings UI (gamepad +
+  keyboard rebinding to verbs, conflict validation, always-reachable escape
+  hatch, **"Reset to defaults"** = baseline nav map) per D18.
+
+S1 is the immediate next code. S2 is the morale/de-risk milestone. S3-S5 harden
+beneath a working swap.

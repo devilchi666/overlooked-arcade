@@ -28,7 +28,9 @@ import { popBack } from "./back";
 /// read return values.
 export type IndexSink = (next: number) => void;
 import type { NavDirection, NavDirectionEvent, NavEvent } from "./types";
-import { onNavEvent } from "./gamepad";
+import { isNavEnabled, onNavEvent } from "./gamepad";
+import { isSwapAB, navBindings, resolveButtonVerb, resolveKeyVerb } from "./navBindings";
+import { isDirectionVerb, type NavVerb } from "./verbs";
 
 export type FocusOrientation = "vertical" | "horizontal" | "grid";
 
@@ -168,18 +170,6 @@ function createManager(): Manager {
 
 const manager = createManager();
 
-const [swapABSig, setSwapABSig] = createSignal(false);
-
-/// When true, A and B button events swap before dispatch — Nintendo-
-/// convention layout (B = confirm, A = back). Settings calls this when
-/// the operator flips the swap toggle. Reactive accessor exposed for
-/// the hint bar (renames glyph labels) + any consumer that wants to
-/// adapt copy ("Press A" vs "Press B").
-export function setSwapAB(on: boolean): void {
-  setSwapABSig(on);
-}
-export const isSwapAB: Accessor<boolean> = swapABSig;
-
 // Diagnostic flag — defaults OFF for production. Flip via
 // `window.__oaFocusDebug = true` in DevTools to log every NavEvent
 // routing decision (event arrival, dpad transfer, walk / no-op, etc.).
@@ -193,72 +183,131 @@ function focusLog(...args: unknown[]): void {
   if (FOCUS_DEBUG()) console.log("[oa-focus]", ...args);
 }
 
-// Global event subscription — once, at module load. Routes every
+// Resolve the currently-active group's handle, or null. Both the gamepad bus
+// and the keyboard path route through this.
+function activeHandle(): FocusGroupHandle | null {
+  const id = manager.activeGroupId();
+  if (id === null) return null;
+  return manager.groups.get(id) ?? null;
+}
+
+// Global gamepad subscription — once, at module load. Routes every raw
 // NavEvent to whichever group is active. No-op if no group is active.
 onNavEvent((event) => {
-  const id = manager.activeGroupId();
-  if (id === null) {
-    focusLog("event dropped — no active group", event);
-    return;
-  }
-  const handle = manager.groups.get(id);
+  const handle = activeHandle();
   if (!handle) {
-    focusLog("event dropped — active group not in map", id, event);
+    focusLog("event dropped — no active/registered group", event);
     return;
   }
-  focusLog("event", { id, event });
+  focusLog("event", { id: handle.options.id, event });
   routeEvent(handle, event);
 });
+
+// Keyboard nav path — verb-native, sharing the gamepad enable gate. S1 wires
+// the directional verbs (arrow keys → region/within movement); Confirm already
+// works natively on focusable buttons (Enter/Space), so Enter/Back/Esc keyboard
+// verbs stay out of the default map until the remap follow-on audits
+// native-control + existing-handler coexistence (DECISIONS D18). The generic
+// resolve-via-bindings path below already supports them the moment they're
+// bound. Gated to leave editable fields + global chords (Ctrl/Meta/Alt) alone.
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (!isNavEnabled()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    if (
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      target?.isContentEditable
+    ) {
+      return;
+    }
+    const verb = resolveKeyVerb(e.key, navBindings());
+    if (verb === null) return;
+    const handle = activeHandle();
+    if (!handle) return;
+    e.preventDefault();
+    if (isDirectionVerb(verb)) {
+      // Keyboard arrows take D-pad semantics (transfer between regions at
+      // edges, walk within) — the remote/keyboard expectation. Source "dpad"
+      // so per-source onDirection handlers treat them identically to the pad.
+      const event: NavDirectionEvent = {
+        kind: "direction",
+        direction: verb.toLowerCase() as NavDirection,
+        phase: "down",
+        source: "dpad",
+        gamepadIndex: -1,
+      };
+      applyDirection(handle, event);
+    } else {
+      dispatchVerb(handle, verb);
+    }
+  });
+}
 
 function routeEvent(handle: FocusGroupHandle, event: NavEvent): void {
   if (event.kind === "button") {
     if (event.phase !== "down") return;
-    const idx = handle.options.focusedIndex();
-    // Nintendo-layout swap: rename A→B and B→A before semantic dispatch.
-    const swap = swapABSig();
-    const button = swap && (event.button === "a" || event.button === "b")
-      ? (event.button === "a" ? "b" : "a")
-      : event.button;
-    switch (button) {
-      case "a":
-        handle.options.onActivate?.(idx);
-        return;
-      case "b":
-        // Global back-stack consumes first; the active group's onCancel
-        // is the fallback when no overlay / menu is open.
-        if (popBack()) return;
-        handle.options.onCancel?.();
-        return;
-      case "x":
-        handle.options.onSecondary?.(idx);
-        return;
-      case "y":
-        handle.options.onTertiary?.(idx);
-        return;
-      case "start":
-        handle.options.onStart?.();
-        return;
-      case "l1":
-        // Shoulder bumpers are EXPLICIT-OPT-IN now. The previous
-        // neighbours-based fallback collided with the new DPad =
-        // region-transfer model: DPad LEFT/RIGHT now does what L1/R1
-        // used to do for legacy sidebar↔grid jumps. L1/R1 is reserved
-        // for top-bar tab cycling (RetroverseShell intercepts
-        // globally) and for menus that want shoulder-cycle behaviour
-        // (MenuBar.cycleMenu, GameInfoModal.cycleTab — both wired via
-        // onShoulderL/R explicitly).
-        handle.options.onShoulderL?.();
-        return;
-      case "r1":
-        handle.options.onShoulderR?.();
-        return;
-      default:
-        return;
-    }
+    // Resolve the raw button to its verb through the OA-wide bindings (+ the
+    // A/B swap overlay). The A/B swap is no longer a special case here — it's
+    // just a binding the resolver applies (DECISIONS D18).
+    const verb = resolveButtonVerb(event.button, navBindings(), isSwapAB());
+    if (verb === null) return;
+    dispatchVerb(handle, verb);
+    return;
   }
   // Direction events: react on down + repeat, ignore up.
   if (event.phase === "up") return;
   applyDirection(handle, event);
+}
+
+/// Dispatch a resolved verb to the active group's semantic callbacks. The
+/// focus-group callback names predate the verb vocabulary (onActivate is the
+/// Confirm verb, onCancel the Back verb, onStart the Menu verb,
+/// onShoulderL/R the Prev/NextSection verbs); they're kept stable so existing
+/// consumers don't churn — the verb-nativeness lives in this routing layer +
+/// the HintBar. Directional verbs are handled by applyDirection, not here.
+function dispatchVerb(handle: FocusGroupHandle, verb: NavVerb): void {
+  const o = handle.options;
+  const idx = o.focusedIndex();
+  switch (verb) {
+    case "Confirm":
+      o.onActivate?.(idx);
+      return;
+    case "Back":
+      // Global back-stack consumes first; the active group's onCancel is the
+      // fallback when no overlay / menu is open.
+      if (popBack()) return;
+      o.onCancel?.();
+      return;
+    case "Secondary":
+      o.onSecondary?.(idx);
+      return;
+    case "Tertiary":
+      o.onTertiary?.(idx);
+      return;
+    case "Menu":
+      o.onStart?.();
+      return;
+    case "PrevSection":
+      // L1 role. Explicit-opt-in: the previous neighbours-based fallback
+      // collided with DPad = region-transfer (DPad LEFT/RIGHT now does the
+      // legacy sidebar↔grid jump). PrevSection/NextSection are reserved for
+      // top-bar tab cycling (RetroverseShell intercepts globally) and menus
+      // that wire onShoulderL/R explicitly (MenuBar.cycleMenu,
+      // GameInfoModal.cycleTab).
+      o.onShoulderL?.();
+      return;
+    case "NextSection":
+      o.onShoulderR?.();
+      return;
+    // OpenQuickSettings + the reserved verbs (Search/Favorite/Page) have no
+    // focus-group action in S1.
+    default:
+      return;
+  }
 }
 
 function applyDirection(handle: FocusGroupHandle, event: NavDirectionEvent): void {

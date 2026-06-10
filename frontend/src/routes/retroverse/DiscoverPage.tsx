@@ -15,13 +15,13 @@
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "@oa/platform/components/VirtualLibraryGrid";
 import GameDetailPanel from "./GameDetailPanel";
-import { HintRegion } from "../../nav/HintBar";
+import { HintRegion } from "@oa/platform/nav";
 import {
   activateFocusGroup,
   activeFocusGroupId,
   groupsVersion,
   useDomQueryFocusGroup,
-} from "../../nav/focus";
+} from "@oa/platform/nav";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import { useMedia, type GameMetadata } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
@@ -255,12 +255,12 @@ const DiscoverPage: Component = () => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Open",
-          b: "Back",
-          x: "Search",
-          y: "Save for later",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Open",
+          Back: "Back",
+          Secondary: "Search",
+          Tertiary: "Save for later",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
 

@@ -2,9 +2,9 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import * as coresApi from "@oa/platform/api/coresApi";
 import type { LibraryStore } from "@oa/platform/library/store";
 import type { RomEntry } from "@oa/platform/library/types";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 type CoreEntry = {
   fileName: string;
@@ -134,7 +134,7 @@ const CorePickerMenu: Component<Props> = (props) => {
             style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
             onClick={(e) => e.stopPropagation()}
           >
-            <HintRegion hints={{ a: "Pick", b: "Close" }} />
+            <HintRegion hints={{ Confirm: "Pick", Back: "Close" }} />
             <div class="border-b border-white/5 px-3 py-2">
               <p class="truncate text-xs font-medium text-(--color-oa-ink)">{props.entry!.title}</p>
               <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">Run with core</p>
