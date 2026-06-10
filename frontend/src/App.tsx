@@ -7,6 +7,8 @@ import * as coresApi from "@oa/platform/api/coresApi";
 import * as inputApi from "@oa/platform/api/inputApi";
 import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import * as rewindTasApi from "@oa/platform/api/rewindTasApi";
+import * as cheatsApi from "@oa/platform/api/cheatsApi";
+import * as milestonesApi from "@oa/platform/api/milestonesApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -1106,7 +1108,7 @@ const App: Component = () => {
       // thread's runtime evaluator. Soft failure — recording the
       // milestones in SQLite is the source of truth; the live
       // evaluator just doesn't fire toasts until a re-launch.
-      void invoke<number>("arm_milestones", { gameId: entry.id })
+      void milestonesApi.armMilestones(entry.id)
         .then((n) => {
           if (n > 0) console.log(`[oa-launch] armed ${n} milestone(s)`);
         })
@@ -1128,7 +1130,7 @@ const App: Component = () => {
       // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
       // story as milestones (SQLite is source of truth; emu-thread
       // runtime is the live evaluator that runs on next launch otherwise).
-      void invoke<number>("arm_cheats", { gameId: entry.id })
+      void cheatsApi.armCheats(entry.id)
         .then((n) => {
           if (n > 0) console.log(`[oa-launch] armed ${n} cheat(s)`);
         })

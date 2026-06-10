@@ -12,6 +12,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import * as rewindTasApi from "@oa/platform/api/rewindTasApi";
+import * as captureApi from "@oa/platform/api/captureApi";
+import { readMemoryRegion } from "@oa/platform/api/cheatsApi";
 import { getVideoState, type VideoState } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import type { RomEntry } from "@oa/platform/library/types";
@@ -383,11 +385,7 @@ const QuickSettings: Component<Props> = (props) => {
     const v = view();
     if (v === "memory" && props.open) {
       const fetchMemory = () => {
-        void invoke<MemoryRegionInfo>("read_memory_region", {
-          region: memoryRegion(),
-          offset: memoryOffset(),
-          length: MEMORY_WINDOW_BYTES,
-        })
+        void readMemoryRegion(memoryRegion(), memoryOffset(), MEMORY_WINDOW_BYTES)
           .then((info) => setMemoryView(info ?? null))
           .catch(() => setMemoryView(null));
       };
@@ -586,7 +584,7 @@ const QuickSettings: Component<Props> = (props) => {
       .catch(() => {});
     const entry = props.entry;
     if (entry) {
-      void invoke<VideoClipEntry[]>("list_video_clips", { romPath: entry.filePath })
+      void captureApi.listVideoClips(entry.filePath)
         .then((list) => setVideoClips(list ?? []))
         .catch((e) => {
           console.warn("[oa-quick] list_video_clips failed:", e);
@@ -606,7 +604,7 @@ const QuickSettings: Component<Props> = (props) => {
     const entry = props.entry;
     if (!entry) return;
     try {
-      const list = await invoke<VideoClipEntry[]>("list_video_clips", { romPath: entry.filePath });
+      const list = await captureApi.listVideoClips(entry.filePath);
       setVideoClips(list ?? []);
     } catch (e) {
       console.warn("[oa-quick] refresh clips failed:", e);
@@ -615,7 +613,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function startVideoCapture() {
     try {
-      await invoke("start_video_capture", { displayName: videoCaptureName().trim() });
+      await captureApi.startVideoCapture(videoCaptureName().trim());
       setVideoCaptureName("");
       await refreshVideoState();
     } catch (e) {
@@ -625,7 +623,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function stopVideoCapture(discard: boolean) {
     try {
-      await invoke("stop_video_capture", { discard });
+      await captureApi.stopVideoCapture(discard);
       await refreshVideoState();
       await refreshClipsList();
     } catch (e) {
@@ -635,7 +633,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function deleteVideoClip(clipDir: string) {
     try {
-      await invoke("delete_video_clip", { clipDir });
+      await captureApi.deleteVideoClip(clipDir);
       await refreshClipsList();
     } catch (e) {
       console.warn("[oa-quick] delete_video_clip failed:", e);
@@ -644,7 +642,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function openVideoClipFolder(clipDir: string) {
     try {
-      await invoke("open_video_clip_folder", { clipDir });
+      await captureApi.openVideoClipFolder(clipDir);
     } catch (e) {
       console.warn("[oa-quick] open_video_clip_folder failed:", e);
     }
@@ -664,7 +662,7 @@ const QuickSettings: Component<Props> = (props) => {
     setConvertingClip(clipDir);
     setConversionResult(null);
     try {
-      const out = await invoke<string>("convert_video_clip_to_webm", { clipDir });
+      const out = await captureApi.convertVideoClipToWebm(clipDir);
       setConversionResult({ clipDir, ok: true, message: out });
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);

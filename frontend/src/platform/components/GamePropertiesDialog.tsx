@@ -16,7 +16,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { pickPatchFile } from "@oa/platform/api/cheatsApi";
 import * as coresApi from "@oa/platform/api/coresApi";
 import { getGameOverrides, setGameOverrides } from "@oa/platform/api/settingsApi";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
@@ -222,7 +222,7 @@ const GamePropertiesDialog: Component<Props> = (props) => {
                     onClick={async (ev) => {
                       ev.currentTarget.blur();
                       try {
-                        const picked = await invoke<string | null>("pick_patch_file");
+                        const picked = await pickPatchFile();
                         if (picked) void patch({ patchPath: picked });
                       } catch (err) {
                         console.warn("[oa-properties] pick_patch_file failed:", err);
