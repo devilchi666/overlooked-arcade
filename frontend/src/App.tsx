@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import * as settingsApi from "@oa/platform/api/settingsApi";
+import * as libraryApi from "@oa/platform/api/libraryApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -570,7 +571,7 @@ const App: Component = () => {
     // overrides apply through the existing cascade in handleLaunch.
     if (cfg.matchedEntryId) {
       try {
-        entry = await invoke<RomEntry | null>("get_game", { id: cfg.matchedEntryId });
+        entry = await libraryApi.getGame(cfg.matchedEntryId);
       } catch (e) {
         console.warn("[oa-direct-launch] get_game failed, falling back to synthesized entry:", e);
       }
@@ -840,7 +841,7 @@ const App: Component = () => {
     // ImportWizard uses on its Step 1; keeps the quick-add path from
     // polluting the library with a directory that has nothing in it.
     try {
-      const empty = await invoke<boolean>("directory_is_empty", { path: picked });
+      const empty = await libraryApi.directoryIsEmpty(picked);
       if (empty) {
         setStatus(`${picked} is empty — nothing to import.`);
         return;
@@ -1240,7 +1241,7 @@ const App: Component = () => {
   createEffect(() => {
     const folders = settings.libraryFolders();
     const extensions = allSupportedExtensions();
-    invoke("set_watched_folders", { folders, extensions }).catch((e) =>
+    libraryApi.setWatchedFolders(folders, extensions).catch((e) =>
       console.warn("[oa-watch] set_watched_folders failed:", e),
     );
   });
@@ -1277,9 +1278,7 @@ const App: Component = () => {
       return;
     }
     try {
-      const id = await invoke<string | null>("find_game_id_by_path", {
-        path: event.payload.path,
-      });
+      const id = await libraryApi.findGameIdByPath(event.payload.path);
       if (id) {
         await library.remove(id);
         console.log("[oa-watch] auto-removed from library:", event.payload.path, "->", id);

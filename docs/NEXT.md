@@ -406,7 +406,7 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slice 1 ✅ / Slice 2 next)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-2 ✅ / Slice 3 next)
 
 **Queued 2026-06-09.** Plan:
 [docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
@@ -443,10 +443,22 @@ the typed wrapper corrects it. typecheck + lint green; every migrated command
 string greps to only `settingsApi.ts`. The lint rule turns on later (Slice 6,
 when the count hits zero). Module map + the 6-slice order are in the plan.
 
-**Slice 2 (next) — `libraryApi` + `collectionsApi` + `viewsApi`** — the
-store-heavy core (`library/store.ts`, `customCollections.ts`, `ingest.ts`,
-`views/store.ts` + the `get/set_layout` calls left in `layout/state.ts`,
-App.tsx library paths). ~55 sites. Same convention as Slice 1.
+**Slice 2 — `libraryApi` + `collectionsApi` + `viewsApi` ✅ SHIPPED on the
+same branch (2026-06-09; awaiting operator playtest + merge).** 37 wrappers
+across 3 modules; migrated 8 files (`library/store.ts`, `customCollections.ts`,
+`views/store.ts`, `layout/state.ts`'s leftover get/set_layout, `settings/store.ts`
+folder commands, App.tsx library paths, ImportWizard folder commands,
+routes/GameDetailPanel). Same generic-getter pattern (D14) for the two more
+shape-divergent commands (`list_folders`/`add_folder` → LibraryFolderRow vs
+Folder; `get_layout` → LayoutPrefs vs `{systemOrder}`). `ingest.ts` deliberately
+left untouched (its commands belong to jobs/cores/media slices, not
+library/collections/views — assign-by-concern). typecheck + lint green; every
+migrated command greps to only its api module. See SESSION_LOG 2026-06-09.
+
+**Slice 3 (next) — `mediaApi`** — art/metadata sync + game-info + mame + hashes
+(`media.tsx`, `platformMedia.tsx`, `gameInfo.ts`, MediaSettings, ImportWizard
+art paths, and `ingest.ts`'s mame trio `lookup_mame_game` / `lookup_mame_title`
+/ `set_game_mame_metadata`). ~45 sites. Same convention.
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

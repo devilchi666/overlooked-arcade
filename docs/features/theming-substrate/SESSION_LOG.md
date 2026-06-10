@@ -107,3 +107,48 @@ Each session that touches this feature appends a 3-line entry:
   store-heavy core: library/store, customCollections, ingest, views/store +
   the `get/set_layout` calls left in layout/state, App.tsx library paths;
   ~55 sites). Same convention.
+
+---
+
+## 2026-06-09 — Phase 4 Slice 2: `libraryApi` + `collectionsApi` + `viewsApi`
+
+- **Shipped:** Three more `platform/api/` modules on the same branch
+  (`feat/theming-platform-api-settings` — the branch holds the whole Phase 4
+  arc, one-branch-per-arc). **libraryApi** (games / folders / groups /
+  migration — 26 wrappers), **collectionsApi** (7 wrappers), **viewsApi**
+  (4 wrappers: get/set_views + get/set_layout). Migrated **8 files**:
+  `library/store.ts` (13 commands — `invoke` import fully removed),
+  `customCollections.ts` (7 — removed), `views/store.ts` (4 — removed),
+  `layout/state.ts` (the get/set_layout left from Slice 1 — `invoke` now gone
+  there too), `settings/store.ts` (5 folder commands; `invoke` stays for the
+  Slice-5 `set_rewind_config`), App.tsx (get_game / directory_is_empty /
+  set_watched_folders / find_game_id_by_path via `import * as libraryApi`),
+  ImportWizard (6 folder commands), routes/GameDetailPanel
+  (update_game_core_override — confirms routes->platform/api is allowed).
+  Named imports throughout (no collisions this slice); namespace alias only in
+  App.tsx (consistency with its settingsApi alias). typecheck + lint green;
+  every migrated command string greps to ONLY its api module (zero leaks —
+  cleaner than Slice 1, no stray labels/comments).
+- **Two judgment calls:**
+  - *Same generic-getter pattern (D14) for two more shape-divergent commands.*
+    `list_folders` / `add_folder` return `LibraryFolderRow` in the settings
+    store but the richer `Folder` in the import wizard; `get_layout` returns
+    `LayoutPrefs` in layout/state but a narrow `{ systemOrder }` in views/store.
+    Wrappers are generic with a canonical default (`listFolders<T = LibraryFolderRow>`,
+    `getLayout<T = LayoutPrefs>`), each call site keeps its view via the type arg.
+  - *`ingest.ts` left untouched* despite the plan's Slice-2 file list. Its
+    commands are `start_background_scan` (jobsApi/Slice 6), `list_cores`
+    (coresApi/Slice 4), and the mame trio `lookup_mame_game` /
+    `lookup_mame_title` / `set_game_mame_metadata` (mediaApi/Slice 3) — none
+    belong to library/collections/views. Assign-by-concern wins over the file
+    list (same discipline as Slice 1's `set_rewind_config` etc.).
+- **Almost:** behavior-preserving throughout (no AnalogBindingsSection-style
+  latent bug surfaced this slice — all arg names were already consistent across
+  call sites). Awaiting operator smoke-test: library load + add/remove a folder
+  (Import Wizard + Settings -> Library) + scan, tile favorite/completed toggles,
+  per-game core override from GameDetailPanel, custom collections
+  (create/rename/delete/add/remove), sidebar Views editor (create/reorder/move),
+  delete-game + clear-for-system. Slices 1+2 are now a playtestable chunk.
+- **Next:** Slice 3 — `mediaApi` (art/metadata sync + game-info + mame + hashes;
+  media.tsx, platformMedia, gameInfo, MediaSettings, ImportWizard art paths,
+  and ingest.ts's mame trio). ~45 sites.

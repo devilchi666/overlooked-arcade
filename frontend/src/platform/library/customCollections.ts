@@ -14,7 +14,15 @@
 // "Add to collection ▸" submenu needs that on every render).
 
 import { createStore, produce } from "solid-js/store";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  addToCustomCollection,
+  createCustomCollection,
+  deleteCustomCollection,
+  listCollectionMembers,
+  listCustomCollections,
+  removeFromCustomCollection,
+  renameCustomCollection,
+} from "@oa/platform/api/collectionsApi";
 import type { RomId } from "./types";
 
 /// Mirrors `library_db::CustomCollectionRow` (camelCase).
@@ -55,7 +63,7 @@ export function createCustomCollectionsStore() {
   /// again to refresh (operator imports a content pack later, etc.).
   async function refresh(): Promise<void> {
     try {
-      const rows = await invoke<CustomCollection[]>("list_custom_collections");
+      const rows = await listCustomCollections();
       setState(
         produce((s) => {
           s.collections = rows;
@@ -75,7 +83,7 @@ export function createCustomCollectionsStore() {
   async function ensureMembers(collectionId: string, force = false): Promise<void> {
     if (!force && state.members[collectionId] !== undefined) return;
     try {
-      const ids = await invoke<RomId[]>("list_collection_members", { collectionId });
+      const ids = await listCollectionMembers(collectionId);
       setState(
         produce((s) => {
           s.members[collectionId] = new Set(ids);
@@ -95,7 +103,7 @@ export function createCustomCollectionsStore() {
 
   async function createCollection(name: string): Promise<string | null> {
     try {
-      const id = await invoke<string>("create_custom_collection", { name });
+      const id = await createCustomCollection(name);
       // Refresh the list rather than splice locally — sort_order is
       // computed server-side and we want it correct.
       await refresh();
@@ -118,7 +126,7 @@ export function createCustomCollectionsStore() {
       (list) => list.map((c) => (c.id === id ? { ...c, name } : c)),
     );
     try {
-      await invoke("rename_custom_collection", { id, name });
+      await renameCustomCollection(id, name);
     } catch (e) {
       console.warn("[oa-collections] rename_custom_collection failed:", e);
       if (prev !== undefined) {
@@ -141,7 +149,7 @@ export function createCustomCollectionsStore() {
       }),
     );
     try {
-      await invoke("delete_custom_collection", { id });
+      await deleteCustomCollection(id);
     } catch (e) {
       console.warn("[oa-collections] delete_custom_collection failed:", e);
       setState(
@@ -169,7 +177,7 @@ export function createCustomCollectionsStore() {
       }),
     );
     try {
-      await invoke("add_to_custom_collection", { collectionId, romId });
+      await addToCustomCollection(collectionId, romId);
     } catch (e) {
       console.warn("[oa-collections] add_to_custom_collection failed:", e);
       setState(
@@ -195,7 +203,7 @@ export function createCustomCollectionsStore() {
       }),
     );
     try {
-      await invoke("remove_from_custom_collection", { collectionId, romId });
+      await removeFromCustomCollection(collectionId, romId);
     } catch (e) {
       console.warn("[oa-collections] remove_from_custom_collection failed:", e);
       setState(

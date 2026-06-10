@@ -5,7 +5,7 @@
 // a hydration gate). Per SIDEBAR_TIER_PLAN.md §2.3 + §2.6.
 
 import { batch, createEffect, createMemo, createSignal, onMount } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { getLayout, getViews, setViews } from "@oa/platform/api/viewsApi";
 
 import {
   buildDefaultFormFactorView,
@@ -52,7 +52,7 @@ export function createViewsStore() {
   onMount(async () => {
     let next: ViewsConfig | null = null;
     try {
-      next = await invoke<ViewsConfig | null>("get_views");
+      next = await getViews();
     } catch (e) {
       console.warn("[oa-views] get_views failed:", e);
     }
@@ -66,7 +66,7 @@ export function createViewsStore() {
       // No file yet — decide migration path based on legacy systemOrder.
       let legacyOrder: string[] = [];
       try {
-        const layout = await invoke<LayoutLite>("get_layout");
+        const layout = await getLayout<LayoutLite>();
         if (Array.isArray(layout.systemOrder)) legacyOrder = layout.systemOrder;
       } catch (e) {
         console.warn("[oa-views] get_layout failed during migration:", e);
@@ -92,7 +92,7 @@ export function createViewsStore() {
       }
       setConfig(seeded);
       try {
-        await invoke("set_views", { config: seeded });
+        await setViews(seeded);
       } catch (e) {
         console.warn("[oa-views] initial set_views failed:", e);
       }
@@ -106,7 +106,7 @@ export function createViewsStore() {
   createEffect(() => {
     if (!hydrated()) return;
     const snapshot = config();
-    invoke("set_views", { config: snapshot }).catch((e) =>
+    setViews(snapshot).catch((e) =>
       console.warn("[oa-views] set_views failed:", e),
     );
   });

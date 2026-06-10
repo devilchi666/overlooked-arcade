@@ -1,6 +1,13 @@
 import { createEffect, createSignal } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import * as settingsApi from "@oa/platform/api/settingsApi";
+import {
+  addFolder,
+  listFolders,
+  migrateFoldersFromLocalStorage,
+  removeFolder,
+  reorderFolders,
+} from "@oa/platform/api/libraryApi";
 
 export type ScalingMode =
   | "pixel-perfect"
@@ -347,7 +354,7 @@ export function createSettingsStore() {
 
   async function refreshLibraryFolders(): Promise<void> {
     try {
-      const rows = await invoke<LibraryFolderRow[]>("list_folders", { includeRules: false });
+      const rows = await listFolders<LibraryFolderRow>(false);
       setLibraryFolderRows(rows);
     } catch (e) {
       console.warn("[oa-settings] list_folders failed:", e);
@@ -356,7 +363,7 @@ export function createSettingsStore() {
 
   async function addLibraryFolderPath(path: string): Promise<void> {
     try {
-      await invoke<LibraryFolderRow>("add_folder", {
+      await addFolder({
         path,
         scanSubfolders: true,
         subfoldersAreSystems: false,
@@ -372,7 +379,7 @@ export function createSettingsStore() {
 
   async function removeLibraryFolderById(id: string): Promise<void> {
     try {
-      await invoke("remove_folder", { id });
+      await removeFolder(id);
     } catch (e) {
       console.warn("[oa-settings] remove_folder failed:", e);
     }
@@ -381,7 +388,7 @@ export function createSettingsStore() {
 
   async function reorderLibraryFolderIds(orderedIds: string[]): Promise<void> {
     try {
-      await invoke("reorder_folders", { orderedIds });
+      await reorderFolders(orderedIds);
     } catch (e) {
       console.warn("[oa-settings] reorder_folders failed:", e);
     }
@@ -397,9 +404,7 @@ export function createSettingsStore() {
   void (async () => {
     if (legacy.length > 0) {
       try {
-        const inserted = await invoke<number>("migrate_folders_from_local_storage", {
-          paths: legacy,
-        });
+        const inserted = await migrateFoldersFromLocalStorage(legacy);
         if (inserted > 0) {
           console.info(`[oa-settings] migrated ${inserted} library folder(s) to SQLite`);
         }

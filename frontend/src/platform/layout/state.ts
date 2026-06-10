@@ -7,8 +7,8 @@
 // initial values into the WebView at startup via window.__OA_INITIAL_LAYOUT.
 
 import { createEffect, createSignal, onMount } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as settingsApi from "@oa/platform/api/settingsApi";
+import { getLayout, setLayout } from "@oa/platform/api/viewsApi";
 
 export type PresentationMode = "desktop" | "theater" | "cabinet";
 
@@ -171,7 +171,7 @@ export function createLayoutStore() {
       console.warn("LayoutStore: get_kiosk_mode failed:", e);
     }
     try {
-      const prefs = await invoke<LayoutPrefs>("get_layout");
+      const prefs = await getLayout();
       setLeftSidebarWidth(clamp(prefs.leftSidebarWidth, 200, 360));
       setLeftSidebarCollapsed(prefs.leftSidebarCollapsed === true);
       setRightSidebarWidth(clamp(prefs.rightSidebarWidth, 240, 440));
@@ -225,7 +225,7 @@ export function createLayoutStore() {
       autoHideEmptySystems: autoHideEmptySystems(),
       libraryTileSize: libraryTileSize(),
     };
-    invoke("set_layout", { prefs }).catch((e) =>
+    setLayout(prefs).catch((e) =>
       console.warn("LayoutStore: set_layout failed:", e),
     );
   });
