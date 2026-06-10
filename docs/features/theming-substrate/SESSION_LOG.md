@@ -54,10 +54,10 @@ Each session that touches this feature appends a 3-line entry:
   get/set_system_info* (systemApi/Slice 6, systemInfo.ts), get/set_library_prefs
   (LibraryManagerPage). Their `invoke` imports stayed (verified each file still
   has a live raw call — no Slice-2-style unused-import trap).
-- **Almost:** behavior-preserving pure pass-throughs — awaiting operator
-  smoke-test (cover art + manual cover, platform-media slots, sync media/
-  metadata, Identify ROMs / resolve hashes, game-info overrides + badges, MAME
-  title resolution, per-system backgrounds) before merge to main.
+- **Merged:** ✅ operator playtested (cover art + manual cover, platform-media
+  slots, sync media/metadata, Identify ROMs / resolve hashes, game-info
+  overrides + badges, MAME title resolution, per-system backgrounds) + merged
+  to main 2026-06-09 (merge `f5657c2`). Behavior-preserving throughout.
 - **Next:** Slice 4 — `coresApi` + `inputApi` (cores/bios/core-options +
   bindings/analog; CoresPage, CoreOptionsPanel, SystemBindingsEditor,
   AnalogBindingsSection, ImportWizard core paths). ~45 sites.
