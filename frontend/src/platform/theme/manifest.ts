@@ -24,6 +24,14 @@ export type ThemeContextSlot =
  * relocate it. */
 export type ReservedCorner = "top-right";
 
+/** Named surfaces a theme provides a layout for (DECISIONS D20b seam).
+ * ARC 1 honors exactly one — `main`, the primary single-monitor shell.
+ * Multi-monitor surfaces (marquee / manual / control-panel) widen this
+ * union in a later arc; existing themes just declare more entries, no
+ * rewrite. The theme entry component is handed the surface it should
+ * render via `ThemeEntryProps.surface` (platform/theme/types.ts). */
+export type ThemeSurface = "main";
+
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */
   id: string;
@@ -58,4 +66,8 @@ export type ThemeManifest = {
   /** Corner reserved for the engine summon icon — the one piece of
    * engine-owned chrome every theme must leave room for. */
   reserves_corner: ReservedCorner;
+  /** Named surfaces the theme renders (DECISIONS D20b). ARC 1 themes
+   * declare `["main"]`; the field exists now so multi-monitor surfaces
+   * are an additive declaration later, not a contract rewrite. */
+  surfaces: ThemeSurface[];
 };

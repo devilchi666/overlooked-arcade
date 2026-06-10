@@ -81,7 +81,14 @@ import { setSwapAB } from "@oa/platform/nav";
 import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
-import RetroverseShell from "./layout/retroverse/RetroverseShell";
+import { Dynamic } from "solid-js/web";
+import { BUILTIN_THEMES } from "./themes";
+import {
+  registerThemes,
+  initActiveTheme,
+  activeTheme,
+  activeThemeResolved,
+} from "@oa/platform/theme/registry";
 import { ThemeProvider } from "./routes/retroverse/context";
 import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
@@ -137,6 +144,18 @@ type DirectLaunchConfig = {
 };
 
 const App: Component = () => {
+  // Theming Substrate ARC 1 Phase 3 S2 — inject the build-time theme list
+  // into the platform-owned active-theme registry. Done synchronously in the
+  // body (not onMount) so the Settings → Themes picker has the list on first
+  // render. platform/ can't import themes/ itself (platform ↛ theme), so App
+  // is the injection point (same pattern as registerLibraryAdmin). The boot
+  // seed of the persisted active id happens in onMount below.
+  registerThemes(BUILTIN_THEMES);
+  // Seed the active theme id from LibraryPrefs (read at boot, before the
+  // theme mounts). `activeThemeResolved()` gates the theme render below so we
+  // paint the persisted theme on first frame rather than flashing the default.
+  onMount(() => void initActiveTheme());
+
   // Fire `get_direct_launch_config` once at mount; both the library store
   // (to decide whether to bootstrap) and the resource below (to drive UI
   // chrome hiding + auto-launch) subscribe to the same promise.
@@ -1578,7 +1597,28 @@ const App: Component = () => {
         }}
       >
         <Show when={!(isDirectLaunch() || gameMode())}>
-          <RetroverseShell />
+          {/* Theming Substrate ARC 1 Phase 3 S2 — render the ACTIVE theme's
+              entry instead of hardcoding RetroverseShell. The registry
+              resolves the persisted theme (Retroverse default / CoverFlow) once
+              the boot seed lands; switching themes in Settings → Themes
+              persists + restarts the app (D5). Surface is "main" — the one
+              ARC 1 honors (D20b). Gated on activeThemeResolved() so we don't
+              flash the default before the persisted choice loads. */}
+          <Show when={activeThemeResolved() && activeTheme()} keyed>
+            {(theme) => (
+              // `isolate` (isolation: isolate) gives the active theme its OWN
+              // stacking context, so a theme's internal z-indexes (e.g. the
+              // CoverFlow's cards) can never paint OVER engine-territory
+              // chrome — the engine surface (fixed z-60), platform modals
+              // (z-70), and the jobs bar (z-65) are all later siblings in the
+              // ROOT stacking context and stay above this isolated theme. The
+              // substrate guarantee that engine territory always overlays the
+              // theme, independent of theme-internal z-index.
+              <div class="h-full w-full isolate">
+                <Dynamic component={theme.entry} surface="main" />
+              </div>
+            )}
+          </Show>
         </Show>
         {/* Engine surface — fullscreen takeover hosting Settings + the
             surfaces enumerated in docs/features/theming-substrate/SURFACES.md.

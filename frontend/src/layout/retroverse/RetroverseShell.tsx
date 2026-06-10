@@ -25,14 +25,14 @@ import {
   type RetroverseRoute,
 } from "../../routing/currentRoute";
 import { onNavEvent } from "@oa/platform/nav";
-import { useTheme } from "../../routes/retroverse/context";
+import { useTheme, themePreempted } from "../../routes/retroverse/context";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import DiscoverPage from "../../routes/retroverse/DiscoverPage";
 import HomePage from "../../routes/retroverse/HomePage";
 import LibraryPage from "../../routes/retroverse/LibraryPage";
 import PlayNowPage from "../../routes/retroverse/PlayNowPage";
-import EngineSummonIcon from "../../engine/EngineSummonIcon";
-import { engineSurfaceOpen, openEngineSurface } from "../../platform/engineSurface";
+import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
+import { openEngineSurface } from "../../platform/engineSurface";
 
 const ROUTE_LABELS: Record<RetroverseRoute, string> = {
   home: "HOME",
@@ -56,15 +56,16 @@ const RetroverseShell: Component = () => {
   // explicit flag check needed here — flag flip OFF unmounts this
   // component and cleans the listener up.
   //
-  // Theming Substrate ARC 1 Phase 1: gate on engineSurfaceOpen() —
-  // when the engine surface is open, the engine owns gamepad input;
-  // RetroverseShell's tab-cycler should be inert so the operator's
-  // L1/R1 inside Settings doesn't accidentally walk Retroverse tabs
-  // underneath the takeover.
+  // Theming Substrate ARC 1: gate on themePreempted() — when the platform
+  // has preempted the active theme (today: the engine surface takeover;
+  // ARC 2-3: attract mode reuses the same signal), the engine owns gamepad
+  // input, so RetroverseShell's tab-cycler must be inert. Using the general
+  // preempt predicate (D20a) instead of engineSurfaceOpen() directly is the
+  // seam that lets attract mode slot in without touching this file.
   onMount(() => {
     const dispose = onNavEvent((event) => {
       if (event.kind !== "button" || event.phase !== "down") return;
-      if (engineSurfaceOpen()) return;
+      if (themePreempted()) return;
       if (event.button === "l1") cycleRouteBackward();
       else if (event.button === "r1") cycleRouteForward();
     });

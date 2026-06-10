@@ -111,6 +111,16 @@ pub struct LibraryPrefs {
     /// limitations" subsection.
     #[serde(default)]
     pub cpu_tier_override: Option<crate::cpu_tier::CpuTier>,
+    /// Theming Substrate ARC 1 Phase 3 S2 (walking skeleton) — the
+    /// active whole-shell theme id (e.g. "retroverse", "wheel").
+    /// `None` = the built-in default (Retroverse). Lives here, on the
+    /// OA-wide install-level prefs bag, because it's read at boot
+    /// BEFORE any theme mounts (App.tsx picks which theme component to
+    /// render from it) and switching it triggers an app restart (D5).
+    /// serde-default keeps prefs files written before this field
+    /// shipped migrating cleanly.
+    #[serde(default)]
+    pub active_theme_id: Option<String>,
 }
 
 impl Default for LibraryPrefs {
@@ -121,6 +131,7 @@ impl Default for LibraryPrefs {
             disc_track_strictness: DiscTrackStrictness::default(),
             disc_track_experimental_enabled: false,
             cpu_tier_override: None,
+            active_theme_id: None,
         }
     }
 }
@@ -208,6 +219,7 @@ mod tests {
             disc_track_strictness: DiscTrackStrictness::Threshold80,
             disc_track_experimental_enabled: true,
             cpu_tier_override: Some(crate::cpu_tier::CpuTier::High),
+            active_theme_id: Some("wheel".to_string()),
         };
         write_library_prefs(&tmp, &prefs).expect("write");
         assert_eq!(read_library_prefs(&tmp), prefs);

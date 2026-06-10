@@ -11,8 +11,21 @@
 //   - platform/** ↛ routes/**     (platform must not import theme)
 //   - platform/** ↛ engine/**     (platform must not import engine)
 //   - platform/** ↛ components/** (platform must not import the grab-bag)
+//   - platform/** ↛ themes/**     (platform must not import a theme package)
 //   - engine/**   ↛ routes/**     (engine must not import theme)
 //   - engine/**   ↛ components/** (engine must not import the grab-bag)
+//   - engine/**   ↛ themes/**     (engine must not import a theme package)
+//
+// PLUS the theme-PACKAGE layer (Theming ARC 1 Phase 3 S2 — themes/<id>/ are
+// whole-shell theme packages; they consume ONLY platform):
+//   - themes/**   ↛ engine/**     (a theme can't reach into the engine surface)
+//   - themes/**   ↛ routes/**     (except themes/retroverse — the thin wrapper)
+//   - themes/**   ↛ layout/**     (except themes/retroverse — points at the
+//                                  existing RetroverseShell during S2; the full
+//                                  move into themes/retroverse/ is Phase 6)
+//   - themes/**   ↛ components/**  (drained grab-bag ratchet)
+// Cross-theme imports (wheel ↛ retroverse) are wrong too but not path-zoneable
+// here (same dir); kept by convention + review until a theme actually tempts it.
 //
 // PLUS the API boundary (Phase 4, the typed Tauri bridge — Slice 6 closer,
 // 2026-06-10; events added in Phase 4.5, 2026-06-10):
@@ -90,6 +103,15 @@ export default [
                 "platform/components/ (Slice 2 grab-bag drain).",
             },
             {
+              target: "./src/platform",
+              from: "./src/themes",
+              message:
+                "Boundary: platform/ must not import a theme package (themes/). " +
+                "Platform owns the active-theme MACHINERY (platform/theme/registry); " +
+                "App.tsx injects the concrete theme list via registerThemes(). " +
+                "Platform stays ignorant of which themes exist.",
+            },
+            {
               target: "./src/engine",
               from: "./src/routes",
               message:
@@ -127,6 +149,51 @@ export default [
                 "Boundary: platform/nav must stay a generic leaf — it must not " +
                 "import platform/components (app-specific shared UI). Keep the nav " +
                 "primitives theme-agnostic; compose them from the theme/components.",
+            },
+            {
+              target: "./src/engine",
+              from: "./src/themes",
+              message:
+                "Boundary: engine/ must not import a theme package (themes/). The " +
+                "engine surface is theme-agnostic; to drive theming, use the " +
+                "platform registry (@oa/platform/theme/registry), not a theme.",
+            },
+            {
+              // Theming ARC 1 Phase 3 S2 — theme packages consume ONLY platform.
+              target: "./src/themes",
+              from: "./src/engine",
+              message:
+                "Boundary: a theme (themes/) must not import engine/. Engine chrome " +
+                "a theme needs to mount (e.g. EngineSummonIcon) lives in " +
+                "platform/components/; reach the engine surface via platform " +
+                "(openEngineSurface), never by importing engine/.",
+            },
+            {
+              target: "./src/themes",
+              from: "./src/routes",
+              except: ["./retroverse"],
+              message:
+                "Boundary: a theme (themes/) must not import routes/. The only " +
+                "exception is themes/retroverse — the S2 thin wrapper that points " +
+                "at the existing Retroverse implementation. New themes are " +
+                "platform-only; the Retroverse file move is Phase 6.",
+            },
+            {
+              target: "./src/themes",
+              from: "./src/layout",
+              except: ["./retroverse"],
+              message:
+                "Boundary: a theme (themes/) must not import layout/. The only " +
+                "exception is themes/retroverse — the S2 thin wrapper rendering " +
+                "layout/retroverse/RetroverseShell. New themes build their own " +
+                "layout from platform primitives (@oa/platform/nav).",
+            },
+            {
+              target: "./src/themes",
+              from: "./src/components",
+              message:
+                "Boundary: a theme (themes/) must not import the drained " +
+                "components/ grab-bag. Shared UI lives in platform/components/.",
             },
           ],
         },

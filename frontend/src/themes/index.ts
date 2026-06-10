@@ -1,0 +1,22 @@
+// Built-in theme registry (the concrete theme list).
+//
+// Theming Substrate ARC 1 Phase 3 S2. This is the ONE place that knows the
+// concrete set of bundled themes. It lives in themes/ (theme-layer) — NOT in
+// platform/ — because platform must never import a theme (platform ↛ theme).
+// App.tsx imports this list and injects it into the platform-owned registry
+// via `registerThemes(BUILTIN_THEMES)` at boot, so platform owns the switch
+// machinery while staying ignorant of which themes exist (the same
+// inversion-avoiding pattern as platform/libraryAdmin + engineSurface, D13).
+//
+// ORDER MATTERS: the first entry is the default theme (used when no
+// active-theme preference is stored). Retroverse stays first — it's the
+// dogfood default.
+//
+// Build-time bundled only in ARC 1 (DECISIONS D6) — no .oatheme zips / runtime
+// dynamic import. Adding a theme = add its package object here.
+
+import type { ThemePackage } from "@oa/platform/theme/types";
+import { retroverse } from "./retroverse";
+import { coverflow } from "./coverflow";
+
+export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow];
