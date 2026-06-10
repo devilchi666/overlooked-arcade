@@ -144,9 +144,9 @@ spanned every system but was filed under whichever core happened to be active.
         GameDialogs cheats/milestones). typecheck + lint green; frontend
         only. 56 command strings each grep to only their api module. See
         SESSION_LOG 2026-06-10.
-      - **Slice 6 (THE CLOSER)** ✅ SHIPPED on
-        `feat/theming-platform-api-jobs-system-shell` (2026-06-10) —
-        **awaiting operator playtest + merge.** `jobsApi` (18) + `systemApi`
+      - **Slice 6 (THE CLOSER)** ✅ merged 2026-06-10
+        (`feat/theming-platform-api-jobs-system-shell`; operator playtested).
+        `jobsApi` (18) + `systemApi`
         (9) + `shellApi` (19) + straggler folds (libraryApi prefs/unidentified,
         mediaApi clear-metadata); ~90 sites / 21 files. systemInfo.ts D15
         move+re-export; logic modules (backgroundJobs/audio/dataDir/logbridge)

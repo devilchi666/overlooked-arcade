@@ -482,9 +482,9 @@ GameDialogs fully drained of raw invoke; namespace imports where wrapper names
 shadow local handlers. typecheck + lint green; 56 command strings each grep to
 only their api module. See SESSION_LOG 2026-06-10.
 
-**Slice 6 — the closer — `jobsApi` + `systemApi` + `shellApi` ✅ SHIPPED on
-`feat/theming-platform-api-jobs-system-shell` (2026-06-10; awaiting operator
-playtest + merge).** 18 + 9 + 19 wrappers + straggler folds (libraryApi prefs /
+**Slice 6 — the closer — `jobsApi` + `systemApi` + `shellApi` ✅ MERGED to main
+2026-06-10** (`feat/theming-platform-api-jobs-system-shell`; operator
+playtested). 18 + 9 + 19 wrappers + straggler folds (libraryApi prefs /
 unidentified, mediaApi clear-metadata); ~90 sites / 21 files. systemInfo.ts D15
 move+re-export; logic modules route through wrappers. **Turned ON the
 `no-restricted-imports` rule banning raw `invoke` outside `platform/api/`**
