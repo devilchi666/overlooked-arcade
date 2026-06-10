@@ -227,9 +227,9 @@ spanned every system but was filed under whichever core happened to be active.
         oa-shell tests pass; typecheck + lint green. DECISIONS **D22**. Playtest
         round-1 fixes rode along (z-index isolation, focus-claim, windowing,
         mouse/scroll). The nav-remap Settings UI stays the separate D18 follow-on.
-      - **Phase 3 S3 — token layer (design-token contract) ⏳ shipped on
-        `feat/theming-token-layer`, awaiting playtest + merge (2026-06-10,
-        DECISIONS D23).** Preceded by a **BigBox research round** (operator asked
+      - **Phase 3 S3 — token layer (design-token contract) ✅ shipped + merged
+        2026-06-10 (operator playtested; `feat/theming-token-layer`, merge
+        `340c3fe`, DECISIONS D23).** Preceded by a **BigBox research round** (operator asked
         to align on what BigBox themes actually do before S3 — the cinematic/motion
         axis = animation engine / transitions / video snaps / attract / Theme
         Creator = **ARC 2-3**, not the token layer; operator kept S3 static).
