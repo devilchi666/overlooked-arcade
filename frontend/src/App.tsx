@@ -2,6 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, Match, onCleanu
 import { invoke } from "@tauri-apps/api/core";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 import * as libraryApi from "@oa/platform/api/libraryApi";
+import * as mediaApi from "@oa/platform/api/mediaApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -1368,7 +1369,7 @@ const App: Component = () => {
     // Step 1: per-system resolve, awaited sequentially.
     for (const id of systemIds) {
       try {
-        await invoke("resolve_rom_hashes_for_system", { systemId: id });
+        await mediaApi.resolveRomHashesForSystem(id);
       } catch (e) {
         console.warn(`[oa-ingest] auto-identify ${id} failed:`, e);
         // Continue with the next system + still fire the syncs below.
@@ -1393,10 +1394,10 @@ const App: Component = () => {
         filePath: e.filePath,
         systemId: e.systemId,
       }));
-      void invoke("sync_media_for_system", { systemId: id, entries: payload }).catch(
+      void mediaApi.syncMediaForSystem(id, payload).catch(
         (e) => console.warn(`[oa-ingest] sync_media ${id} failed:`, e),
       );
-      void invoke("sync_metadata_for_system", { systemId: id, entries: payload }).catch(
+      void mediaApi.syncMetadataForSystem(id, payload).catch(
         (e) => console.warn(`[oa-ingest] sync_metadata ${id} failed:`, e),
       );
     }

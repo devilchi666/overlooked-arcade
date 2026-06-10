@@ -12,7 +12,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { importArtPack } from "@oa/platform/api/mediaApi";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Dialog } from "@oa/platform/components/Dialog";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -95,7 +95,7 @@ export const ImportArtPackDialog: Component<Props> = (props) => {
     setBusy("analyzing");
     setErrMsg("");
     try {
-      const r = await invoke<ImportReport>("import_art_pack", {
+      const r = await importArtPack({
         sourceDir: dir,
         systemIdOverride: systemOverride() || null,
         dryRun: true,
@@ -115,7 +115,7 @@ export const ImportArtPackDialog: Component<Props> = (props) => {
     setBusy("importing");
     setErrMsg("");
     try {
-      const r = await invoke<ImportReport>("import_art_pack", {
+      const r = await importArtPack({
         sourceDir: dir,
         systemIdOverride: systemOverride() || null,
         dryRun: false,

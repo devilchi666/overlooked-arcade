@@ -28,6 +28,7 @@ import {
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getDataDir } from "@oa/platform/lib/dataDir";
+import * as mediaApi from "@oa/platform/api/mediaApi";
 import type { SystemId } from "@oa/platform/themes/registry";
 
 export type MediaSourceKind = "manual" | "libretroThumbnails";
@@ -330,7 +331,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       return;
     }
     try {
-      const next = await invoke<MediaIndex>("get_media_index");
+      const next = await mediaApi.getMediaIndex();
       upsertOne(romId, next[romId]);
     } catch (e) {
       console.warn("MediaProvider: refresh failed:", e);
@@ -361,7 +362,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       console.warn("MediaProvider: listen('oa://media-updated') failed:", e);
     }
     try {
-      const initial = await invoke<MediaIndex>("get_media_index");
+      const initial = await mediaApi.getMediaIndex();
       const map = new Map(Object.entries(initial));
       console.log("[oa-media] hydrated MediaIndex with", map.size, "entries:", [...map.keys()]);
       // Merge instead of replace — the listener was installed first
@@ -390,7 +391,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       console.warn("MediaProvider: get_region_priority failed:", e);
     }
     try {
-      const kinds = await invoke<string[]>("get_media_kinds_to_fetch");
+      const kinds = await mediaApi.getMediaKindsToFetch();
       if (Array.isArray(kinds)) {
         // Filter to libretro-thumbnails-served kinds only (the only ones
         // sync actually fetches). Accept both new kebab-case names and
@@ -449,7 +450,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     kindsToFetch,
     async setKindsToFetch(kinds) {
       try {
-        await invoke("set_media_kinds_to_fetch", { kinds });
+        await mediaApi.setMediaKindsToFetch(kinds);
         setKindsToFetchInternal(kinds);
       } catch (e) {
         console.warn("setKindsToFetch failed:", e);
@@ -458,7 +459,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     },
     async refreshAll() {
       try {
-        const next = await invoke<MediaIndex>("get_media_index");
+        const next = await mediaApi.getMediaIndex();
         const map = new Map(Object.entries(next));
         console.log("[oa-media] refreshAll → MediaIndex now has", map.size, "entries:", [...map.keys()]);
         setIndex(map);
@@ -476,7 +477,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       }
     },
     async setManualCover(romId, systemId, sourcePath, kind) {
-      await invoke("set_manual_cover", { romId, systemId, sourcePath, kind });
+      await mediaApi.setManualCover(romId, systemId, sourcePath, kind);
       await refresh(romId);
     },
     async setSelectedVariant(romId, kind, idx) {
@@ -484,22 +485,22 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       await refresh(romId);
     },
     async clearMedia(romId) {
-      await invoke("clear_media", { romId });
+      await mediaApi.clearMedia(romId);
       await refresh(romId);
     },
     async syncSystem(systemId, entries) {
-      await invoke("sync_media_for_system", { systemId, entries });
+      await mediaApi.syncMediaForSystem(systemId, entries);
       try {
-        const next = await invoke<MediaIndex>("get_media_index");
+        const next = await mediaApi.getMediaIndex();
         setIndex(new Map(Object.entries(next)));
       } catch (e) {
         console.warn("syncSystem post-hydrate failed:", e);
       }
     },
     async syncMetadata(systemId, entries) {
-      await invoke("sync_metadata_for_system", { systemId, entries });
+      await mediaApi.syncMetadataForSystem(systemId, entries);
       try {
-        const next = await invoke<MediaIndex>("get_media_index");
+        const next = await mediaApi.getMediaIndex();
         setIndex(new Map(Object.entries(next)));
       } catch (e) {
         console.warn("syncMetadata post-hydrate failed:", e);

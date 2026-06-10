@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { lookupMameGame, lookupMameTitle, setGameMameMetadata } from "@oa/platform/api/mediaApi";
 import type { LibraryStore } from "./store";
 import type { RomEntry } from "./types";
 
@@ -219,29 +220,6 @@ export function titleFromFileName(name: string): string {
   return base.replace(/_+/g, " ").trim();
 }
 
-/// Legacy (v11) MAME.dat-backed lookup row. Used as a 2nd-tier
-/// fallback when the new bundled-listxml `lookup_mame_game` returns
-/// null (e.g. operator's install pre-dates Phase 1b's bundled slim
-/// but they previously ran `sync_mame_titles`).
-type LegacyMameTitleLookup = {
-  romSet: string;
-  title: string;
-  year?: string | null;
-  developer?: string | null;
-};
-
-/// v2 listxml-backed lookup row. Returned by the new
-/// `lookup_mame_game` Tauri command (Phase 2). Merged L1+L3 record;
-/// the frontend never sees raw L3 overrides on this path.
-type MergedMameGame = {
-  name: string;
-  description: string;
-  year?: string | null;
-  manufacturer?: string | null;
-  cloneof?: string | null;
-  hasLocalEdits: boolean;
-};
-
 /// Patch the `title` field on every MAME entry in `entries` with the
 /// canonical title from the listxml-backed `mame_games` catalog (or
 /// the legacy MAME.dat-backed `mame_titles` as a fallback). When a
@@ -269,7 +247,7 @@ async function resolveMameTitles(entries: RomEntry[]): Promise<void> {
     let year: number | null = null;
     let publisher: string | null = null;
     try {
-      const hit = await invoke<MergedMameGame | null>("lookup_mame_game", { romSet: stem });
+      const hit = await lookupMameGame(stem);
       if (hit && hit.description) {
         title = hit.description;
         // MAME emits years as strings ("1981", "19??", "202?"); only
@@ -296,7 +274,7 @@ async function resolveMameTitles(entries: RomEntry[]): Promise<void> {
     // path is what wins).
     if (title === null) {
       try {
-        const hit = await invoke<LegacyMameTitleLookup | null>("lookup_mame_title", { romSet: stem });
+        const hit = await lookupMameTitle(stem);
         if (hit && hit.title) {
           title = hit.title;
           if (hit.year) {
@@ -318,11 +296,7 @@ async function resolveMameTitles(entries: RomEntry[]): Promise<void> {
       // don't carry year.
       if (year !== null || publisher !== null) {
         try {
-          await invoke("set_game_mame_metadata", {
-            romId: entry.id,
-            year,
-            publisher,
-          });
+          await setGameMameMetadata(entry.id, year, publisher);
         } catch (e) {
           // Soft fail — title patch already landed; missing metadata
           // just means GameDetailPanel shows "—" for year/publisher.

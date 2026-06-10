@@ -9,6 +9,16 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  syncMediaForSystem,
+  syncMetadataForSystem,
+  syncRomHashesForSystem,
+  resolveRomHashesForSystem,
+  getOnlySyncIdentified,
+  setOnlySyncIdentified,
+  mediaStorageStats,
+  openMediaFolder,
+} from "@oa/platform/api/mediaApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import {
   closestCenter,
@@ -422,7 +432,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
       [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: "starting…" },
     }));
     try {
-      await invoke("sync_media_for_system", { systemId, entries });
+      await syncMediaForSystem(systemId, entries);
       // Belt-and-braces full re-hydrate. The per-ROM oa://media-updated
       // events should have already populated the MediaContext, but a fresh
       // pull guards against missed events (subscription timing / handler
@@ -528,7 +538,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
   async function startHashSync(systemId: SystemId) {
     setHashSyncing((p) => ({ ...p, [systemId]: true }));
     try {
-      await invoke("sync_rom_hashes_for_system", { systemId });
+      await syncRomHashesForSystem(systemId);
     } catch (e) {
       console.warn("sync_rom_hashes_for_system failed:", e);
     } finally {
@@ -545,14 +555,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // writes through.
   const [onlySyncIdentified, setOnlySyncIdentifiedLocal] = createSignal<boolean>(true);
   onMount(() => {
-    void invoke<boolean>("get_only_sync_identified")
+    void getOnlySyncIdentified()
       .then((v) => setOnlySyncIdentifiedLocal(v))
       .catch((e) => console.warn("get_only_sync_identified failed:", e));
   });
   async function setOnlySyncIdentifiedPref(v: boolean) {
     setOnlySyncIdentifiedLocal(v);
     try {
-      await invoke("set_only_sync_identified", { enabled: v });
+      await setOnlySyncIdentified(v);
     } catch (e) {
       console.warn("set_only_sync_identified failed:", e);
     }
@@ -565,7 +575,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
       [systemId]: { systemId, done: 0, total: 0, currentTitle: "", lastAction: "starting…" },
     }));
     try {
-      await invoke("resolve_rom_hashes_for_system", { systemId });
+      await resolveRomHashesForSystem(systemId);
       // The completed library should reflect canonical titles now —
       // pull a fresh entries list so the UI updates.
       await props.library.refresh();
@@ -621,7 +631,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
       [systemId]: { systemId, done: 0, total: entries.length, currentRomTitle: "", lastAction: "starting…" },
     }));
     try {
-      await invoke("sync_metadata_for_system", { systemId, entries });
+      await syncMetadataForSystem(systemId, entries);
       await media.refreshAll();
     } catch (e) {
       console.warn("sync_metadata_for_system failed:", e);
@@ -833,7 +843,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
   const [storageStats, { refetch: refetchStorage }] = createResource(
     async (): Promise<MediaStorageStats | null> => {
       try {
-        return await invoke<MediaStorageStats>("media_storage_stats");
+        return await mediaStorageStats();
       } catch (e) {
         console.warn("media_storage_stats failed:", e);
         return null;
@@ -926,7 +936,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
                     type="button"
                     onClick={(e) => {
                       e.currentTarget.blur();
-                      void invoke("open_media_folder");
+                      void openMediaFolder();
                     }}
                     class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
                   >

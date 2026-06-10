@@ -7,6 +7,61 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-09 — Phase 4 Slice 3: `mediaApi` (art / metadata / game-info / mame / hashes)
+
+- **Shipped:** Created `frontend/src/platform/api/mediaApi.ts` (28 typed
+  wrappers, one named export per command, command string lives only here) on a
+  **fresh branch off main** (`feat/theming-platform-api-media` — Slices 1-2
+  already merged in `a5997e3`, so this arc gets its own branch per operator
+  instruction). Migrated the art/metadata cluster across **11 files**:
+  `media.tsx` (7 commands via `import * as mediaApi` — its store methods
+  `setManualCover`/`clearMedia` shadow wrapper names), `platformMedia.tsx`
+  (get_platform_media_index), `PlatformMediaDialog.tsx` (get/set/clear platform
+  media), `SystemBackground.tsx` (resolve_background_asset),
+  `ImportArtPackDialog.tsx` (import_art_pack), `LibraryManagerPage.tsx` (8:
+  sync media/metadata/hashes + only_sync_identified + storage_stats +
+  open_folder), `App.tsx` (resolve + sync media/metadata via the existing
+  `import * as mediaApi` alias), `ImportWizard.tsx` (resolve + sync media/
+  metadata), `ingest.ts` (the mame trio lookup_mame_game/title +
+  set_game_mame_metadata, deferred here from Slice 2), `gameInfo.ts` +
+  `systemInfo.ts` (see judgment call). typecheck + lint green; every one of the
+  28 command strings greps to **only** `mediaApi.ts`.
+- **Three judgment calls:**
+  - *Existing typed-binding modules → move + re-export.* `gameInfo.ts` (6
+    game-info wrappers) and `systemInfo.ts` (`refreshMameSystemInfo`) were
+    already thin typed binding modules predating `platform/api/`. Rather than
+    double-wrap (delegate) or repoint their 3+1 consumers, the functions MOVE
+    into `mediaApi.ts` (their proper home) and the domain modules **re-export**
+    them for backward compat — the command string ends up in exactly one place,
+    consumers' import paths are untouched, and the shared TYPES (MergedGameInfo
+    / GameInfoOverride / MameRefreshReport / …) stay in the domain module,
+    pulled into mediaApi via `import type` (erased — no runtime cycle). New
+    decision **D15**.
+  - *Generic getter only where shapes diverge (D14).* `get_platform_media_index`
+    is read in two files with two local `PlatformMediaIndex` views →
+    `getPlatformMediaIndex<T = PlatformMediaIndex>()` with a canonical default
+    in mediaApi. Single-call-site getters returned concrete contract types
+    (`MediaStorageStats`, `ArtPackImportReport`, `MediaIndex`); the callers'
+    local copies are structurally identical so they kept them (assignable) —
+    zero churn, no forced repoint.
+  - *`set_game_mame_metadata` confirmed mediaApi.* It writes MediaDb
+    `GameMetadata` (year/publisher) as the store half of the MAME
+    resolve-and-store ingest flow → metadata concern, mediaApi. Slice 2's
+    grouping holds.
+- **Scope discipline:** left raw (other slices, same files) —
+  get/set_region_priority + set_selected_variant (emulatorApi/Slice 5, media.tsx),
+  start_background_scan + list_cores (jobsApi/coresApi, ingest.ts),
+  get/set_system_info* (systemApi/Slice 6, systemInfo.ts), get/set_library_prefs
+  (LibraryManagerPage). Their `invoke` imports stayed (verified each file still
+  has a live raw call — no Slice-2-style unused-import trap).
+- **Almost:** behavior-preserving pure pass-throughs — awaiting operator
+  smoke-test (cover art + manual cover, platform-media slots, sync media/
+  metadata, Identify ROMs / resolve hashes, game-info overrides + badges, MAME
+  title resolution, per-system backgrounds) before merge to main.
+- **Next:** Slice 4 — `coresApi` + `inputApi` (cores/bios/core-options +
+  bindings/analog; CoresPage, CoreOptionsPanel, SystemBindingsEditor,
+  AnalogBindingsSection, ImportWizard core paths). ~45 sites.
+
 ## 2026-06-09 — Grab-bag drain: components/ emptied, engine↛components enforced
 
 - **Shipped:** drained the entire `src/components/` grab-bag (38 top-level +
