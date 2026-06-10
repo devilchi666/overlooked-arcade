@@ -17,6 +17,7 @@
 import { createSignal, type Accessor } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
+import { downloadCore } from "@oa/platform/api/coresApi";
 import { listen } from "@tauri-apps/api/event";
 import { playAudio } from "./audio";
 
@@ -318,8 +319,8 @@ export async function cancelAllJobs(): Promise<void> {
   }
 }
 
-/// Phase 3b duplicate-trigger helper. Wraps `invoke('download_core',
-/// ...)` with a check_duplicate_job pre-flight: when an existing
+/// Phase 3b duplicate-trigger helper. Wraps `coresApi.downloadCore`
+/// with a check_duplicate_job pre-flight: when an existing
 /// core_download for the same `base` is active, prompts the operator
 /// to either restart it (cancel + retry) or wait for the current one
 /// to finish. Returns null when the operator chose to wait (so the
@@ -357,5 +358,5 @@ export async function downloadCoreWithDuplicateCheck(
     // the cancel-cleanup contract.
     await new Promise((r) => setTimeout(r, 250));
   }
-  return invoke<string>("download_core", { base, parentJobId });
+  return downloadCore(base, parentJobId);
 }

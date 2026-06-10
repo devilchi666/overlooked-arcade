@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { downloadCoreWithDuplicateCheck } from "@oa/platform/lib/backgroundJobs";
+import * as coresApi from "@oa/platform/api/coresApi";
 import type { CoreEntry } from "@oa/platform/settings/store";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
@@ -106,7 +107,7 @@ function humanModified(unixMs: number): string {
 const CoresPage: Component<Props> = (props) => {
   const [cores, { refetch }] = createResource(async (): Promise<CoreEntry[]> => {
     try {
-      return await invoke<CoreEntry[]>("list_cores");
+      return await coresApi.listCores();
     } catch (e) {
       console.warn("list_cores failed:", e);
       return [];
@@ -120,7 +121,7 @@ const CoresPage: Component<Props> = (props) => {
     const result: Record<string, string | null> = {};
     for (const id of systemIds) {
       try {
-        const v = await invoke<string | null>("get_core_pref", { systemId: id });
+        const v = await coresApi.getCorePref(id);
         result[id] = v ?? null;
       } catch (e) {
         console.warn(`get_core_pref(${id}) failed:`, e);
@@ -139,7 +140,7 @@ const CoresPage: Component<Props> = (props) => {
   const [catalogTick, setCatalogTick] = createSignal(0);
   const [catalog] = createResource(catalogTick, async (): Promise<AvailableCore[]> => {
     try {
-      return await invoke<AvailableCore[]>("available_cores");
+      return await coresApi.availableCores<AvailableCore>();
     } catch (e) {
       console.warn("available_cores failed:", e);
       return [];
@@ -332,7 +333,7 @@ const CoresPage: Component<Props> = (props) => {
     setBusy("install");
     setStatus(`Validating ${picked}…`);
     try {
-      await invoke<string>("install_core_from_path", { path: picked });
+      await coresApi.installCoreFromPath(picked);
       setStatus(`Added ${picked.split(/[/\\]/).pop()} to cores folder.`);
       refetch();
     } catch (e) {
@@ -350,12 +351,12 @@ const CoresPage: Component<Props> = (props) => {
     setBusy(c.fileName);
     setStatus(`Removing ${label}…`);
     try {
-      await invoke("remove_installed_core", { fileName: c.fileName });
+      await coresApi.removeInstalledCore(c.fileName);
       // Clear any per-system prefs that still point at this file so the
       // UI doesn't show a stale "default for X" chip after refetch.
       for (const id of systemsUsingCore(c.fileName)) {
         try {
-          await invoke("set_core_pref", { systemId: id, fileName: null });
+          await coresApi.setCorePref(id, null);
         } catch (e) {
           console.warn(`clearing core_pref(${id}) after remove failed:`, e);
         }
@@ -373,7 +374,7 @@ const CoresPage: Component<Props> = (props) => {
   async function handleSetDefault(systemId: string, fileName: string | null) {
     setBusy(`pref-${systemId}`);
     try {
-      await invoke("set_core_pref", { systemId, fileName });
+      await coresApi.setCorePref(systemId, fileName);
       setPrefsTick((n) => n + 1);
     } catch (e) {
       setStatus(`Set default failed: ${String(e)}`);

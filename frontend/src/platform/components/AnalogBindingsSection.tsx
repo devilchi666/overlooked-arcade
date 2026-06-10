@@ -8,6 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as inputApi from "@oa/platform/api/inputApi";
 import { getGameOverrides, getSystemSettings } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import { eventCodeToRustKey, formatKey } from "../../systems/keymap";
@@ -93,7 +94,7 @@ const AnalogBindingsSection: Component<Props> = (props) => {
     () => props.systemId,
     async (id): Promise<AnalogSticksInfo | null> => {
       try {
-        return await invoke<AnalogSticksInfo>("analog_sticks_for_system", { systemId: id });
+        return await inputApi.analogSticksForSystem(id);
       } catch (e) {
         console.warn("analog_sticks_for_system failed:", e);
         return null;
@@ -156,17 +157,9 @@ const AnalogBindingsSection: Component<Props> = (props) => {
     // Persist + push.
     try {
       if (props.mode === "game" && props.gameId) {
-        await invoke("set_analog_routing_for_game", {
-          gameId: props.gameId,
-          port,
-          routing,
-        });
+        await inputApi.setAnalogRoutingForGame(props.gameId, port, routing);
       } else {
-        await invoke("set_analog_routing", {
-          systemId: props.systemId,
-          port,
-          routing,
-        });
+        await inputApi.setAnalogRouting(props.systemId, port, routing);
       }
       setError(null);
     } catch (e) {

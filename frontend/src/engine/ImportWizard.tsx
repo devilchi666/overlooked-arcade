@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { invoke } from "@tauri-apps/api/core";
+import { listCores } from "@oa/platform/api/coresApi";
 import {
   addFolder,
   directoryIsEmpty,
@@ -491,7 +492,7 @@ const ImportWizard: Component<Props> = (props) => {
     // soft — we just fall back to the registry+rule union.
     try {
       type CoreEntry = { validExtensions: string };
-      const cores = await invoke<CoreEntry[]>("list_cores");
+      const cores = await listCores<CoreEntry>();
       for (const c of cores) {
         for (const e of (c.validExtensions ?? "").split("|")) {
           const norm = e.trim().toLowerCase().replace(/^\./, "");

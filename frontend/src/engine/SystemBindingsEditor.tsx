@@ -9,6 +9,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as inputApi from "@oa/platform/api/inputApi";
 import {
   eventCodeToRustKey,
   firstPressedGamepadIndex,
@@ -75,7 +76,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
     () => props.systemId,
     async (systemId): Promise<boolean> => {
       try {
-        return await invoke<boolean>("system_has_light_gun", { systemId });
+        return await inputApi.systemHasLightGun(systemId);
       } catch (e) {
         console.warn("system_has_light_gun failed:", e);
         return false;
@@ -98,9 +99,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
     () => props.systemId,
     async (systemId): Promise<readonly InputDescriptor[]> => {
       try {
-        return await invoke<InputDescriptor[]>("get_input_descriptors", {
-          systemId,
-        });
+        return await inputApi.getInputDescriptors(systemId);
       } catch (e) {
         console.warn("get_input_descriptors failed:", e);
         return [];
@@ -123,7 +122,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
     () => ({ id: props.systemId, _: refreshKey() }),
     async (input): Promise<ButtonBinding[] | null> => {
       try {
-        return await invoke<ButtonBinding[]>("get_bindings", { systemId: input.id });
+        return await inputApi.getBindings<ButtonBinding>(input.id);
       } catch (e) {
         console.warn("get_bindings failed:", e);
         return null;
@@ -150,12 +149,12 @@ const SystemBindingsEditor: Component<Props> = (props) => {
 
   async function applyBinding(button: string, kind: CaptureKind, value: string | null) {
     try {
-      const updated = await invoke<ButtonBinding[]>("set_binding", {
-        systemId: props.systemId,
+      const updated = await inputApi.setBinding<ButtonBinding>(
+        props.systemId,
         button,
         kind,
         value,
-      });
+      );
       setError(null);
       setRefreshKey((k) => k + 1);
       return updated;
@@ -169,7 +168,7 @@ const SystemBindingsEditor: Component<Props> = (props) => {
 
   async function handleReset() {
     try {
-      await invoke("reset_bindings", { systemId: props.systemId });
+      await inputApi.resetBindings(props.systemId);
       setError(null);
       setRefreshKey((k) => k + 1);
     } catch (e) {

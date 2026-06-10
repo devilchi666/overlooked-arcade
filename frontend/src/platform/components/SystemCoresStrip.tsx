@@ -16,7 +16,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import type { SystemId } from "@oa/platform/themes/registry";
 import {
@@ -37,7 +37,7 @@ const SystemCoresStrip: Component<Props> = (props) => {
   const [tick, setTick] = createSignal(0);
   const [catalog] = createResource(tick, async (): Promise<AvailableCore[]> => {
     try {
-      return await invoke<AvailableCore[]>("available_cores");
+      return await coresApi.availableCores<AvailableCore>();
     } catch (e) {
       console.warn("[oa-cores-strip] available_cores failed:", e);
       return [];
@@ -76,7 +76,7 @@ const SystemCoresStrip: Component<Props> = (props) => {
     if (busy() === key) return;
     setBusy(key);
     try {
-      await invoke("download_core", { base: c.base });
+      await coresApi.downloadCore(c.base);
       refresh();
     } catch (e) {
       console.warn("[oa-cores-strip] download_core failed:", e);

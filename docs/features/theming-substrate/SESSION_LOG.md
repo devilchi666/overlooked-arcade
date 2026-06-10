@@ -7,6 +7,59 @@ Each session that touches this feature appends a 3-line entry:
 
 ---
 
+## 2026-06-10 — Phase 4 Slice 4: `coresApi` + `inputApi` (cores / bios / core-options + bindings / analog)
+
+- **Shipped:** Two new `platform/api/` modules on a **fresh branch off main**
+  (`feat/theming-platform-api-cores-input` — Slices 1-3 already merged, so this
+  arc gets its own branch per operator instruction). **coresApi** (18 wrappers:
+  installed-core inventory + buildbot catalog/download/install/remove + per-system
+  default-core pref + RetroArch-parity core-options table + BIOS inventory/install)
+  and **inputApi** (11 wrappers: button bindings + input descriptors + controller
+  devices + analog routing + light-gun flag). Migrated **~50 call sites across 18
+  files**: CoresPage, CoreOptionsPanel, perSystemSections, PerSystemSettingsBody,
+  CorePickerMenu, SystemDialogs, GamePropertiesDialog, SystemCoresStrip,
+  MissingCoreBulkPrompt, BiosResolutionDetail, SystemReadinessChecklist,
+  SystemHealthPage, SettingsSections, ImportWizard, ingest.ts, backgroundJobs.ts
+  (cores side); SystemBindingsEditor, KeypadReference, GenesisPadReference,
+  AnalogBindingsSection, GameDialogs, App.tsx (input side). typecheck + lint
+  green; every one of the 29 command strings greps to **only** its api module.
+- **Three judgment calls:**
+  - *The `platform↛components` boundary forces canonical types into the api
+    layer (new decision D16).* Several backend-contract types were defined
+    component-locally (AvailableCore in CatalogCoreCard, CoreOptionsSnapshot in
+    CoreOptionsPanel, etc.). The api module **cannot import them** (the enforced
+    six-zone lint forbids platform→components), so the canonical shapes are
+    defined IN coresApi/inputApi and the (one) consumer imports them back
+    (components→platform/api is allowed). Where a shape is single-consumer the
+    local def is deleted and re-homed (CoreOptionsSnapshot/CoreOption,
+    InstallResult, CoreRecommendation re-used structurally, InputDescriptor,
+    ControllerDeviceDescriptor, AnalogSticksInfo, ButtonBinding canonical).
+  - *Generic getters (D14) for the shape-divergent multi-consumer reads.*
+    `listCores`, `availableCores`, `getBiosStatus`, `getBindings`, `setBinding`
+    are each read with 2-3 different local views (e.g. CoreEntry full vs the
+    `{ validExtensions }` one-field view in ImportWizard; ButtonBinding with vs
+    without `libretroId`; BiosStatusResponse rich-entries vs `{ slug, status,
+    label }` rollup). Wrappers are generic with a canonical default; call sites
+    keep their exact local view via the type arg — zero type churn.
+  - *The analog-routing `routing` blob stays generic on `R`.* `setAnalogRouting`
+    / `setAnalogRoutingForGame` forward an opaque `AnalogPortRouting` whose type
+    family lives in AnalogBindingsSection; rather than relocate the whole
+    AnalogStickPrefs/AnalogPortRouting/AnalogRoutingPrefs cluster (and bump into
+    the same platform↛components wall), the wrappers take `routing: R` and infer
+    it at the call site. No `any`, no boundary violation.
+- **One behavior touch:** GameDialogs' `get_controller_devices` resource now
+  guards `!src.systemId` (was reachable as `string | null`; the typed wrapper
+  takes `string`). Equivalent — the guard already required `entryId`, which
+  tracks the same entry's systemId; null never reached the backend in practice.
+  Everything else is a pure pass-through.
+- **Almost:** nothing left in scope for this slice — all 29 commands migrated.
+- **Next:** Slice 5 — the in-game / gameplay cluster (`emulatorApi` +
+  `rewindTasApi` + `cheatsApi` + `milestonesApi` + `captureApi`): launch.ts,
+  QuickSettings gameplay controls, GameDialogs cheats/milestones, SaveSlotsModal,
+  ScreenshotGalleryDialog. ~70 sites — may split into two PRs. Then Slice 6
+  (jobs/system/shell + turn on the `no raw invoke() outside platform/api/` lint
+  rule — the ratchet closes).
+
 ## 2026-06-09 — Phase 4 Slice 3: `mediaApi` (art / metadata / game-info / mame / hashes)
 
 - **Shipped:** Created `frontend/src/platform/api/mediaApi.ts` (28 typed

@@ -392,3 +392,35 @@ module and re-export from the domain module; leave commands that belong to a
 *different* slice defined-in-place (e.g. systemInfo's six `get/set_system_info*`
 stay raw until Slice 6, so systemInfo.ts keeps its `invoke` import and just
 re-exports the one mame command).
+
+---
+
+### D16 — Component-local backend-contract types re-home INTO `platform/api/`, never the reverse (Phase 4 Slice 4)
+
+**Decision:** when a Phase-4 wrapper needs a backend-contract type that today
+lives component-local (e.g. `AvailableCore` in `CatalogCoreCard`,
+`CoreOptionsSnapshot` in `CoreOptionsPanel`, `InstallResult` /
+`ControllerDeviceDescriptor` / `AnalogSticksInfo` in their one consumer), the
+canonical type is **defined in the api module** and the consumer imports it
+back — the type never gets imported by the api module from a component file.
+
+**Why:** the enforced six-zone boundary lint forbids `platform→components`
+imports, and `platform/api/` is under `platform/`. So an api module physically
+cannot `import type { AvailableCore } from "../components/CatalogCoreCard"` —
+that's a lint error. The dependency must point the other way
+(`components→platform/api`, which is allowed and already how components reach
+the rest of platform). This is the boundary expressing itself at the type
+level: backend-contract shapes belong to the api layer, not to whichever
+component happened to declare them first. D14 already said "the api layer owns
+the backend-contract type" — D16 is the corollary that makes it mechanically
+forced rather than stylistic.
+
+**How to apply:** (1) single-consumer shape → delete the local def, define it in
+the api module, `import type` it back into the consumer. (2) Multi-consumer
+shape-divergent → generic wrapper with a canonical default defined in the api
+module (D14); each call site keeps its local view via the type arg, so the
+local defs stay (they're genuinely different views, not duplicates). (3) A type
+family too heavy to relocate AND only needed as an opaque forwarded blob (the
+analog `routing` cluster) → make the wrapper **generic on that param** (`routing:
+R`) so the caller's type flows through without the api module ever naming it.
+Never reach for `any` to dodge the boundary.

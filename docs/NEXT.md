@@ -406,7 +406,7 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-2 ✅ / Slice 3 next)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-4 ✅ / Slice 5 next)
 
 **Queued 2026-06-09.** Plan:
 [docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
@@ -455,10 +455,28 @@ left untouched (its commands belong to jobs/cores/media slices, not
 library/collections/views — assign-by-concern). typecheck + lint green; every
 migrated command greps to only its api module. See SESSION_LOG 2026-06-09.
 
-**Slice 3 (next) — `mediaApi`** — art/metadata sync + game-info + mame + hashes
-(`media.tsx`, `platformMedia.tsx`, `gameInfo.ts`, MediaSettings, ImportWizard
-art paths, and `ingest.ts`'s mame trio `lookup_mame_game` / `lookup_mame_title`
-/ `set_game_mame_metadata`). ~45 sites. Same convention.
+**Slices 1-2 ✅ MERGED to main 2026-06-09** (merge `a5997e3`; operator
+playtested).
+
+**Slice 3 — `mediaApi` ✅ MERGED to main 2026-06-09** (merge `f5657c2`; operator
+playtested). 28 wrappers / 11 files across art/metadata sync + game-info + mame
++ hashes. DECISIONS D15 (typed-binding modules move + re-export).
+
+**Slice 4 — `coresApi` + `inputApi` ✅ SHIPPED on
+`feat/theming-platform-api-cores-input` (2026-06-10; awaiting operator playtest
++ merge).** 29 wrappers / ~50 call sites / 18 files: installed cores + buildbot
+catalog + core-options + BIOS (coresApi, 18); bindings + input descriptors +
+controller devices + analog routing + light-gun (inputApi, 11). DECISIONS D16 —
+the `platform↛components` boundary forces component-local backend-contract types
+to re-home INTO the api layer (the api module can't import from a component);
+the analog `routing` blob stays a generic `R` param to avoid relocating the
+prefs cluster. typecheck + lint green; frontend-only. See SESSION_LOG 2026-06-10.
+
+**Slice 5 (next) — the in-game / gameplay cluster** (`emulatorApi` +
+`rewindTasApi` + `cheatsApi` + `milestonesApi` + `captureApi`): launch.ts,
+QuickSettings gameplay controls, GameDialogs cheats/milestones, SaveSlotsModal,
+ScreenshotGalleryDialog. ~70 sites — may split into two PRs. Then Slice 6
+(jobs/system/shell + turn on the invoke-ban lint rule — the ratchet closes).
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

@@ -10,6 +10,7 @@
 
 import { createEffect, createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { getSystemSettings, setSystemSettings, setBloomAmount } from "@oa/platform/api/settingsApi";
 import {
   SCALING_MODE_LABELS,
@@ -441,7 +442,7 @@ export const PerSystemDefaultCoreSection: Component<DefaultCoreProps> = (props) 
   createEffect(() => {
     const sysId = props.systemId();
     if (!props.active() || !sysId) return;
-    void invoke<string | null>("get_core_pref", { systemId: sysId })
+    void coresApi.getCorePref(sysId)
       .then((v) => setCorePref(v ?? null))
       .catch((e) => console.warn("get_core_pref failed:", e));
   });
@@ -450,7 +451,7 @@ export const PerSystemDefaultCoreSection: Component<DefaultCoreProps> = (props) 
     if (!sysId) return;
     setCorePref(fileName);
     try {
-      await invoke("set_core_pref", { systemId: sysId, fileName });
+      await coresApi.setCorePref(sysId, fileName);
     } catch (e) {
       console.warn("set_core_pref failed:", e);
     }
