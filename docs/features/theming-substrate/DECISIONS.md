@@ -689,3 +689,69 @@ answers, all the recommended path) before writing.
 (8) the retroverse lint `except` are the two a later contributor could most easily
 "simplify" wrong — by importing a theme into platform, or by dropping the except and
 forcing the Retroverse file-move early (that's Phase 6, deliberately not S2).
+
+---
+
+### D23 — Token layer: scope-not-namespace + motion stays ARC 2 (Phase 3 S3)
+
+**Decision (2026-06-10, `feat/theming-token-layer`):** the build choices for the S3
+design-token contract, locked with operator sign-off (three AskUserQuestion answers,
+all recommended) + a prior research round on BigBox theming.
+
+1. **Formalize, don't reinvent.** OA already had a CSS-variable token system
+   (`index.css` `@theme` + `:root`: palette / `--font-display` / `--layout-*` /
+   `--motion-*`). S3 adds a typed `ThemeTokens` + a `TOKEN_VAR` map (key → CSS var) +
+   `themeTokensToCssVars()` (`platform/theme/tokens.ts`). The values stay CSS vars.
+
+2. **Override = scoped inline-var injection; D2 is STRUCTURAL.** A theme declares
+   `tokens?: Partial<ThemeTokens>` on its `ThemePackage`; App.tsx injects them as CSS
+   custom properties on the S2 **theme-mount wrapper** (the `isolate` div). The engine
+   surface is a *sibling* of that wrapper, not a descendant, so scoped theme tokens
+   cannot reach it — engine territory always reads the `:root` defaults. That sibling
+   scope IS the D2 "a theme can't wreck Settings" guarantee; no defensive engine
+   re-baseline needed (operator picked the minimal option). The contract rule that
+   seals it (THEME_CONTRACT.md §4): a theme styles only via its `tokens` + its own
+   scoped classes, and **never** writes a global `:root`/`<style>` token override. The
+   S4 validator enforces it.
+
+3. **Same token NAMES, different SCOPE — no namespace split.** Engine and theme both
+   read e.g. `--color-oa-bg`; the theme just overrides it locally. Splitting into
+   `--oa-engine-*` vs `--oa-theme-*` was considered and rejected — the sibling scope
+   already isolates them, and one vocabulary keeps the system legible.
+
+4. **`focusRing` formalized** as `--oa-focus-ring` (default `var(--color-system-accent)`,
+   so it stays per-system-aware via the `[data-system]` cascade; theme-overridable to a
+   fixed color). The `[data-oa-focus]` outline now consumes it.
+
+5. **A11y/motion baseline is NOT theme-overridable.** A global
+   `prefers-reduced-motion` reset (collapse `--motion-*` + the standard
+   transition/animation neutralizer) sits OUTSIDE the token contract — every theme
+   inherits it; a theme can't opt its users out of reduced motion.
+
+6. **Motion stays ARC 2 (operator decision after BigBox research).** Researched what
+   BigBox themes actually do: WPF/XAML with a full animation engine (storyboards /
+   transforms / easing / triggers), view transitions (`TransitionPresenter`), video
+   snaps as backgrounds, attract mode, startup/pause/exit themes, rich data binding to
+   all metadata + media, multiple view types, a visual Theme Creator. **Conclusion: the
+   cinematic/motion axis is the heart of ARC 2-3, NOT the token layer.** A noted insight
+   for ARC-2 planning: on our *web* stack much of that motion (slide/fade/scale/easing,
+   `<video>` backgrounds, view crossfades, a basic attract loop) is achievable
+   *declaratively* via CSS / Web Animations — it does NOT all require the ARC-2 Rhai
+   scripting engine; Rhai is for theme-*authored* custom logic, WGSL for shader chrome.
+   So ARC 2 can likely ship a declarative motion/transition layer before scripting. The
+   operator chose to keep S3 strictly static regardless; THEME_CONTRACT.md §4 documents
+   motion as a **reserved** token category so it slots in without a contract break.
+
+7. **CoverFlow re-skinned minimally** (operator picked "prove the mechanism"): a cool
+   steel-blue/cyan token set (bg/accent) vs Retroverse's warm default — same component,
+   different tokens, visibly different shell. Retroverse ships **no** tokens (pure
+   `:root`).
+
+**New artifact:** [THEME_CONTRACT.md](THEME_CONTRACT.md) — the theme-facing peer of
+SURFACES.md (token set + verb vocab + manifest schema + surfaces + the reserved-motion
+note + what the S4 validator checks).
+
+**Why record this:** (2) the structural-D2 / no-global-override rule and (6) the
+motion-is-ARC-2 boundary are the two a later contributor could most easily erode — by
+"helpfully" letting a theme ship global CSS, or by sneaking animation into the token
+layer because the web stack makes it easy.

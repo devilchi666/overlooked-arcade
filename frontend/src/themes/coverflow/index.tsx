@@ -328,4 +328,19 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
 export const coverflow: ThemePackage = {
   manifest: COVERFLOW_MANIFEST,
   entry: CoverFlowEntry,
+  // S3 token override (minimal-but-distinct, to prove the mechanism): a cool
+  // steel-blue / cyan "cinematic" identity vs Retroverse's warm default. These
+  // are injected scoped to the theme-mount wrapper (App.tsx), so swapping to
+  // CoverFlow visibly recolours the shell chrome (background + brand accent)
+  // with ZERO code change — same component, different tokens. Per-system card
+  // accents still come from the [data-system] cascade (D19): CoverFlow stays
+  // system-agnostic in layout while consuming per-system colour on the covers.
+  tokens: {
+    bgDeep: "oklch(0.09 0.02 255)",
+    bg: "oklch(0.14 0.025 255)",
+    accent: "oklch(0.80 0.13 225)",
+    accentSoft: "oklch(0.91 0.05 225)",
+    accentGlow: "oklch(0.80 0.13 225 / 0.35)",
+    focusRing: "oklch(0.80 0.13 225)",
+  },
 };

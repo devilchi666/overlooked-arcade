@@ -226,9 +226,27 @@ spanned every system but was filed under whichever core happened to be active.
         category. 6 new lint zones (incl. `themes↛engine` probe-verified). 822
         oa-shell tests pass; typecheck + lint green. DECISIONS **D22**. Playtest
         round-1 fixes rode along (z-index isolation, focus-claim, windowing,
-        mouse/scroll). **Next: S3 — token layer** (`THEME_CONTRACT.md` + design
-        tokens + a11y/motion baseline + engine-territory token isolation). The
-        nav-remap Settings UI stays the separate D18 follow-on.
+        mouse/scroll). The nav-remap Settings UI stays the separate D18 follow-on.
+      - **Phase 3 S3 — token layer (design-token contract) ⏳ shipped on
+        `feat/theming-token-layer`, awaiting playtest + merge (2026-06-10,
+        DECISIONS D23).** Preceded by a **BigBox research round** (operator asked
+        to align on what BigBox themes actually do before S3 — the cinematic/motion
+        axis = animation engine / transitions / video snaps / attract / Theme
+        Creator = **ARC 2-3**, not the token layer; operator kept S3 static).
+        Shipped: a typed **`ThemeTokens`** contract (`platform/theme/tokens.ts`)
+        **formalizing the existing** `index.css` CSS-var system (palette /
+        typography / geometry; **motion reserved** for ARC 2); `ThemePackage.tokens`
+        **scoped-injected** on the S2 theme-mount wrapper so engine territory always
+        reads `:root` (the **D2 guarantee is structural** — sibling-scope, no
+        namespace split); an a11y **`prefers-reduced-motion`** baseline +
+        **`--oa-focus-ring`** token (NOT theme-overridable); **CoverFlow re-skinned**
+        via a cool token set (same code, different tokens = different shell);
+        Retroverse ships no tokens. New doc **`THEME_CONTRACT.md`** (theme-facing
+        peer of SURFACES.md). typecheck + lint green; frontend-only. **Acceptance
+        gate (operator):** CoverFlow reads cooler/cyan while Settings looks identical
+        under both themes (D2); reduce-motion stills the UI. **After merge: S4 —
+        versioned manifest + validator** (`bare` theme fixture). Remap Settings UI
+        stays the D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

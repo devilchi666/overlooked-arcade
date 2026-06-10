@@ -227,9 +227,16 @@
      respects --oa-focus-anim-ms (settings-driven; default 120ms; 0 disables). */
   :root {
     --oa-focus-anim-ms: 120ms;
+    /* S3 token (--oa-focus-ring): the focus-visible ring color the nav
+       primitives consume. Defaults to the accent — so the per-system
+       [data-system] cascade re-tints it (focused TG-16 tile = orange ring)
+       because the inner var() resolves in the focused element's context. A
+       theme may override --oa-focus-ring via its tokens to pin a fixed ring
+       color regardless of system. See platform/theme/tokens.ts (focusRing). */
+    --oa-focus-ring: var(--color-system-accent);
   }
   [data-oa-focus="true"] {
-    outline: 2px solid var(--color-system-accent, var(--color-oa-ink));
+    outline: 2px solid var(--oa-focus-ring, var(--color-system-accent, var(--color-oa-ink)));
     outline-offset: 2px;
     border-radius: 8px;
     transition:
@@ -347,5 +354,33 @@
       animation: none !important;
       transform: scaleY(0.7);
     }
+  }
+}
+
+/* A11y / motion baseline — Theming Substrate ARC 1 Phase 3 S3 (scope-call #3).
+   Honors the OS "reduce motion" preference GLOBALLY: collapse the shared
+   motion-duration tokens (so anything reading var(--motion-*) / the focus-ring
+   timing goes instant) AND neutralize transitions/animations app-wide via the
+   widely-used reduced-motion reset. The nav primitives' easing seams
+   (data-oa-easing) and the CoverFlow track slide collapse with this too —
+   correct: motion-sensitive users get a still UI. This is the accessibility
+   floor EVERY theme inherits; it is NOT theme-overridable (it sits outside the
+   token contract on purpose). Lives outside @layer so its !important reset wins
+   the cascade regardless of layer order. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0ms;
+    --motion-fast: 0ms;
+    --motion-medium: 0ms;
+    --motion-slow: 0ms;
+    --oa-focus-anim-ms: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
