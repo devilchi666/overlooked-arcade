@@ -33,6 +33,7 @@ import RegionPicker from "./platform/components/RegionPicker";
 import TileContextMenu from "./platform/components/TileContextMenu";
 import NewCollectionDialog from "./platform/components/NewCollectionDialog";
 import ToastStack from "./platform/components/ToastStack";
+import ConfirmHost from "./platform/components/ConfirmHost";
 import { type SidebarView } from "@oa/platform/layout/types";
 import { createViewsStore } from "@oa/platform/views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -1873,6 +1874,7 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      <ConfirmHost />
       <BackgroundJobsBar />
       <ResumePromptDialog />
       <HintBar />

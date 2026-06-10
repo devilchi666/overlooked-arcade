@@ -4,6 +4,7 @@ import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { downloadCoreWithDuplicateCheck } from "@oa/platform/lib/backgroundJobs";
 import * as coresApi from "@oa/platform/api/coresApi";
+import { confirm } from "@oa/platform/lib/confirm";
 import type { CoreEntry } from "@oa/platform/settings/store";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
@@ -345,7 +346,7 @@ const CoresPage: Component<Props> = (props) => {
 
   async function handleRemove(c: CoreEntry) {
     const label = c.libraryName || c.fileName;
-    if (!window.confirm(`Remove ${label} from the cores folder?\n\nThe .dll file will be deleted from <exe_dir>/cores/. Any system or game pointing at this core will fall back to auto-detect on next launch.`)) {
+    if (!(await confirm(`Remove ${label} from the cores folder?\n\nThe .dll file will be deleted from <exe_dir>/cores/. Any system or game pointing at this core will fall back to auto-detect on next launch.`, { title: "Remove core", confirmLabel: "Remove", danger: true }))) {
       return;
     }
     setBusy(c.fileName);

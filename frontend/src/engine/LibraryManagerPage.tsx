@@ -9,6 +9,8 @@ import {
   type Component,
 } from "solid-js";
 import * as libraryApi from "@oa/platform/api/libraryApi";
+import { confirm } from "@oa/platform/lib/confirm";
+import { pushToast } from "@oa/platform/lib/toast";
 import {
   syncMediaForSystem,
   syncMetadataForSystem,
@@ -666,12 +668,13 @@ const LibraryManagerPage: Component<Props> = (props) => {
       return;
     }
     if (
-      !window.confirm(
+      !(await confirm(
         `Clear metadata (genre / developer / publisher / year / players) for ${count} ${name} game(s)?\n\n` +
           `Cover art, snapshots, and title screens will NOT be touched. ` +
           `Use this after the 2026-05-21 metadata-routing fix to scrub stale cross-system data; ` +
           `re-run "Sync metadata" afterwards to repopulate against the correct upstream catalog.`,
-      )
+        { title: "Clear metadata", confirmLabel: "Clear metadata", danger: true },
+      ))
     ) {
       return;
     }
@@ -1486,11 +1489,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                       e.currentTarget.value = "";
                       if (!id) return;
                       const theme = systemThemes[id];
-                      if (!window.confirm(
+                      if (!(await confirm(
                         `Remove all ${theme.displayName} games from the library? Files on disk are NOT touched.`,
-                      )) return;
+                        { title: "Remove system games", confirmLabel: "Remove", danger: true },
+                      ))) return;
                       const n = await props.library.clearForSystem(id);
-                      window.alert(`Removed ${n} game${n === 1 ? "" : "s"} from ${theme.displayName}.`);
+                      pushToast("success", `Removed ${n} game${n === 1 ? "" : "s"} from ${theme.displayName}.`);
                     }}
                   >
                     <option value="" disabled>(pick a system)</option>
@@ -1511,11 +1515,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                     type="button"
                     onClick={async (e) => {
                       e.currentTarget.blur();
-                      if (!window.confirm(
+                      if (!(await confirm(
                         "Reset the entire library? Every game row will be removed from the database. Files on disk are NOT deleted.",
-                      )) return;
+                        { title: "Reset library", confirmLabel: "Reset library", danger: true },
+                      ))) return;
                       await props.library.clear();
-                      window.alert("Library reset. Re-scan a folder to rebuild.");
+                      pushToast("success", "Library reset. Re-scan a folder to rebuild.");
                     }}
                     class="mt-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs uppercase tracking-wider text-red-300 transition hover:bg-red-500/20"
                   >

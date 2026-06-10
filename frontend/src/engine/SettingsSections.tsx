@@ -35,6 +35,7 @@ import {
 } from "@oa/platform/api/shellApi";
 import * as jobsApi from "@oa/platform/api/jobsApi";
 import { detectCpuTier, getSystemStatus } from "@oa/platform/api/systemApi";
+import { confirm } from "@oa/platform/lib/confirm";
 import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
@@ -1818,8 +1819,9 @@ export const BackgroundJobsSettings: Component = () => {
             class="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-rose-200 transition hover:border-rose-400/60 hover:bg-rose-500/20"
             onClick={async (e) => {
               e.currentTarget.blur();
-              const ok = window.confirm(
+              const ok = await confirm(
                 "Clear all background-job history rows? Active rows (pending/running/paused) are preserved.",
+                { title: "Clear job history", confirmLabel: "Clear history", danger: true },
               );
               if (!ok) return;
               try {
