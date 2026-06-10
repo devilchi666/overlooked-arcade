@@ -64,6 +64,46 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
   (`THEME_CONTRACT.md` + design tokens + a11y/motion baseline + engine-territory token
   isolation), per plan §13.3.
 
+## 2026-06-10 — Phase 3 S3: token layer (design-token contract) — ⏳ awaiting playtest
+
+> Branch `feat/theming-token-layer`. Preceded by a **BigBox research round** (operator
+> asked us to get on the same page on what BigBox themes actually do before S3):
+> confirmed the cinematic/motion axis (animation engine, transitions, video snaps,
+> attract, Theme Creator) is the heart of **ARC 2-3**, not the token layer. Operator
+> chose to keep **S3 strictly static**. Three S3 design forks signed off (all
+> recommended) before code.
+
+- **Shipped** (the static token contract per plan §13.3 S3 + scope-calls #1/#3):
+  - **Token contract** (`platform/theme/tokens.ts`): typed `ThemeTokens`
+    (palette / typography / geometry) + `TOKEN_VAR` map (key → CSS var) +
+    `themeTokensToCssVars()`. **Formalizes the EXISTING** `index.css` CSS-variable
+    system — does not reinvent it. Motion (`--motion-*`) is deliberately **reserved**
+    (documented, not a theme axis yet — ARC 2).
+  - **Override mechanism**: `ThemePackage` gains `tokens?: Partial<ThemeTokens>`;
+    App.tsx injects them as CSS custom properties **scoped to the S2 theme-mount
+    wrapper** (the `isolate` div). The engine surface is a *sibling* of that wrapper →
+    scoped tokens can't reach it → **engine territory always reads `:root` (the D2
+    guarantee, structural)**. Same token NAMES, different SCOPE — no namespace split.
+  - **A11y/motion baseline** (NOT theme-overridable): a global
+    `prefers-reduced-motion` reset collapsing `--motion-*` + neutralizing
+    transitions/animations app-wide; `focusRing` formalized as `--oa-focus-ring`
+    (default = accent, per-system-aware, theme-overridable) and consumed by the
+    `[data-oa-focus]` ring.
+  - **CoverFlow re-skinned through tokens** (minimal-but-distinct): a cool
+    steel-blue/cyan token set vs Retroverse's warm default — same component, visibly
+    different shell, ZERO code change. Retroverse ships no tokens (pure `:root`).
+  - **`THEME_CONTRACT.md`** written — the theme-facing peer of SURFACES.md (token set +
+    engine-reserved guarantee + verb vocab + manifest schema + surfaces + reserved-motion
+    note + what the S4 validator checks).
+- **Verified:** `npm run typecheck` + `npm run lint` green. Frontend-only (no Rust) —
+  822 oa-shell tests unaffected. **Decision D23** recorded.
+- **Almost:** nothing in S3 scope left.
+- **Next (operator):** **playtest** — swap Retroverse ⇄ CoverFlow and confirm CoverFlow
+  now reads cooler/cyan while **Settings looks identical under both** (the D2 guarantee);
+  optionally toggle OS "reduce motion" and confirm the UI stills. Then merge. **After
+  merge: S4 — versioned manifest + validator** (the `bare` theme fixture; the load-time
+  validator that checks a theme against THEME_CONTRACT.md).
+
 ### S2 playtest round 1 (2026-06-10) — fixes + rename
 
 - **Operator playtested; swap gate WORKS** (Retroverse ⇄ CoverFlow, browse + launch

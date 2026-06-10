@@ -17,6 +17,7 @@
 
 import type { Component } from "solid-js";
 import type { ThemeManifest, ThemeSurface } from "./manifest";
+import type { ThemeTokens } from "./tokens";
 
 // ThemeSurface is defined in manifest.ts (a manifest concept — the
 // `surfaces` field lists them) and re-exported here so theme entry code can
@@ -40,4 +41,10 @@ export type ThemePackage = {
   manifest: ThemeManifest;
   /// The theme's root component, mounted by App.tsx for the active theme.
   entry: ThemeEntry;
+  /// Design-token overrides (S3). Injected by App.tsx as CSS custom
+  /// properties SCOPED to the theme-mount wrapper, so they restyle this
+  /// theme without touching engine territory (D2). Omit (or partial) to
+  /// inherit the `:root` defaults — the default theme (Retroverse) ships
+  /// none. See platform/theme/tokens.ts + docs THEME_CONTRACT.md.
+  tokens?: Partial<ThemeTokens>;
 };

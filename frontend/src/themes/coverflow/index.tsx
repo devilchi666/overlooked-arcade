@@ -42,7 +42,11 @@ import type { ThemeManifest } from "@oa/platform/theme/manifest";
 // look). WINDOW = how many cards either side of focus are kept in the DOM.
 const CARD_W = 210;
 const PITCH = 168;
+// Cards kept in the DOM each side of focus (render window).
 const WINDOW = 8;
+// Covers warmed into the browser cache each side of focus (preload buffer,
+// wider than the render window) so fast scrolling hits cache, not a fetch.
+const PRELOAD = 24;
 
 const COVERFLOW_MANIFEST: ThemeManifest = {
   id: "coverflow",
@@ -148,6 +152,31 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);
 
+  // Image-preload buffer for smooth FAST scroll. We only render ±WINDOW cards
+  // as DOM (above), but we WARM the covers a wider ±PRELOAD range into the
+  // browser cache via off-DOM Image() loads. So when a card later mounts as we
+  // scroll, its <img src> is a cache hit (no placeholder flash). Deduped by URL
+  // — each cover fetches exactly once; the Set holds only short strings, and we
+  // keep no reference to the Image objects so the browser's own resource cache
+  // governs decoded-image memory (and eviction). The fetch is incremental:
+  // each focus step only warms the few URLs newly entering the ±PRELOAD range.
+  const prefetched = new Set<string>();
+  createEffect(() => {
+    const list = games();
+    if (list.length === 0) return;
+    const f = focusedIndex();
+    const lo = Math.max(0, f - PRELOAD);
+    const hi = Math.min(list.length - 1, f + PRELOAD);
+    for (let i = lo; i <= hi; i++) {
+      const src = coverFor(list[i]!);
+      if (!src || prefetched.has(src)) continue;
+      prefetched.add(src);
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src; // warms the cache; no DOM, no retained reference
+    }
+  });
+
   const sysShortName = (entry: RomEntry): string =>
     systemThemes[entry.systemId]?.shortName ?? entry.systemId;
 
@@ -232,9 +261,14 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
                 const offset = (): number => absIndex() - focusedIndex();
                 const isFocused = (): boolean => offset() === 0;
                 return (
+                  // NO data-system here: CoverFlow is system-agnostic (D19).
+                  // It deliberately does NOT consume the per-system accent
+                  // cascade — every card uses the THEME's own accent (the
+                  // cyan token), so the shell reads as one cohesive identity
+                  // instead of a rainbow of per-system colours. (Per-system
+                  // "worlds" are Retroverse's take, not the substrate's.)
                   <div
                     class="oa-cf-card"
-                    data-system={entry.systemId}
                     style={{
                       left: `${absIndex() * PITCH}px`,
                       transform: `translateY(-50%) scale(${isFocused() ? 1 : 0.78})`,
@@ -263,13 +297,24 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
                       <Show
                         when={coverFor(entry)}
                         fallback={
+                          // Missing-art placeholder — SUBTLE on purpose so the
+                          // many art-less games in a big library read as quiet
+                          // dark slots, not loud colour blocks. A faint
+                          // theme-accent haze (the translucent glow token) over
+                          // the deep surface gives just enough identity. The
+                          // title sits on top so an art-less card is still
+                          // identifiable at the centre.
                           <div
-                            class="absolute inset-0"
+                            class="absolute inset-0 flex items-end p-3"
                             style={{
                               background:
-                                "radial-gradient(circle at 30% 25%, var(--color-system-glow), transparent 60%), linear-gradient(135deg, var(--color-system-accent) 0%, var(--color-oa-bg-deep) 100%)",
+                                "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
                             }}
-                          />
+                          >
+                            <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
+                              {entry.title}
+                            </span>
+                          </div>
                         }
                       >
                         {(src) => (
@@ -298,10 +343,10 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
           fallback={<p class="text-sm text-(--color-oa-ink-dim)">—</p>}
         >
           {(g) => (
-            <div
-              class="flex items-end justify-between gap-6"
-              data-system={g().systemId}
-            >
+            // No data-system: the focused game's system NAME is shown as text
+            // (info), but its colour stays the theme accent — CoverFlow's
+            // uniform identity (D19), not the per-system tint.
+            <div class="flex items-end justify-between gap-6">
               <div class="min-w-0">
                 <p class="text-[0.6rem] uppercase tracking-[0.5em] text-(--color-system-accent)">
                   {sysShortName(g())}
@@ -328,4 +373,24 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
 export const coverflow: ThemePackage = {
   manifest: COVERFLOW_MANIFEST,
   entry: CoverFlowEntry,
+  // S3 token override (minimal-but-distinct, to prove the mechanism): a cool
+  // steel-blue / cyan "cinematic" identity vs Retroverse's warm default. These
+  // are injected scoped to the theme-mount wrapper (App.tsx), so swapping to
+  // CoverFlow visibly recolours the shell chrome (background + brand accent)
+  // with ZERO code change — same component, different tokens. Per-system card
+  // accents still come from the [data-system] cascade (D19): CoverFlow stays
+  // system-agnostic in layout while consuming per-system colour on the covers.
+  tokens: {
+    // Cinematic-dark but perceptibly COOL (vs Retroverse's warm-purple
+    // default) — kept at a readable lightness with extra chroma so the hue
+    // actually reads instead of looking pure black.
+    bgDeep: "oklch(0.12 0.035 250)",
+    bg: "oklch(0.16 0.04 250)",
+    accent: "oklch(0.80 0.13 225)",
+    accentSoft: "oklch(0.91 0.05 225)",
+    // Glow stays fairly translucent — it's the faint haze on the subtle
+    // missing-art placeholder; too strong and the art-less cards shout.
+    accentGlow: "oklch(0.80 0.13 225 / 0.22)",
+    focusRing: "oklch(0.80 0.13 225)",
+  },
 };

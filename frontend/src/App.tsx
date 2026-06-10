@@ -89,6 +89,7 @@ import {
   activeTheme,
   activeThemeResolved,
 } from "@oa/platform/theme/registry";
+import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
 import { ThemeProvider } from "./routes/retroverse/context";
 import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
@@ -1614,7 +1615,15 @@ const App: Component = () => {
               // ROOT stacking context and stay above this isolated theme. The
               // substrate guarantee that engine territory always overlays the
               // theme, independent of theme-internal z-index.
-              <div class="h-full w-full isolate">
+              //
+              // S3 token layer: the active theme's design-token overrides are
+              // injected here as CSS custom properties SCOPED to this wrapper.
+              // Because the engine surface is a SIBLING (rendered after this
+              // Show), the overrides cascade into the theme only — engine
+              // territory keeps the :root defaults (the D2 guarantee). The
+              // default theme (Retroverse) ships no tokens → empty style →
+              // pure :root.
+              <div class="h-full w-full isolate" style={themeTokensToCssVars(theme.tokens)}>
                 <Dynamic component={theme.entry} surface="main" />
               </div>
             )}
