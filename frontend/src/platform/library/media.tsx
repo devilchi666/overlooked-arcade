@@ -27,7 +27,8 @@ import {
 } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getRegionPriority, setRegionPriority, setSelectedVariant } from "@oa/platform/api/emulatorApi";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 import * as mediaApi from "@oa/platform/api/mediaApi";
 import type { SystemId } from "@oa/platform/themes/registry";
@@ -355,7 +356,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     // a fast sync started moments after app launch) aren't dropped between
     // hydrate-await and listen-await.
     try {
-      unlistenUpdate = await listen<MediaUpdatedEvent>("oa://media-updated", (ev) => {
+      unlistenUpdate = await listenTo<MediaUpdatedEvent>(OA_EVENTS.mediaUpdated, (ev) => {
         console.log("[oa-media] event for", ev.payload.romId, "media:", ev.payload.media);
         void refresh(ev.payload.romId, ev.payload.media);
       });

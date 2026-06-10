@@ -35,7 +35,8 @@ import {
 } from "@oa/platform/api/shellApi";
 import * as jobsApi from "@oa/platform/api/jobsApi";
 import { detectCpuTier, getSystemStatus } from "@oa/platform/api/systemApi";
-import { emit } from "@tauri-apps/api/event";
+import { confirm } from "@oa/platform/lib/confirm";
+import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   refreshMameSystemInfo,
@@ -1441,7 +1442,7 @@ const MameRefreshCard: Component = () => {
       const missing = report.missingSystems.length;
       const histNote = report.historyPresent ? "" : " (no history.xml found — descriptions not refreshed)";
       const missNote = missing > 0 ? ` ${missing} OA system${missing === 1 ? "" : "s"} not covered by this MAME release.` : "";
-      await emit("oa://toast", {
+      await emitEvent(OA_EVENTS.toast, {
         level: "success",
         message: `Refreshed ${report.systemsRefreshed} systems from MAME ${report.mameVersion}.${missNote}${histNote}`,
       });
@@ -1453,7 +1454,7 @@ const MameRefreshCard: Component = () => {
       // erroring. Operators don't always have it on PATH.
       const looksLikeNotFound = /not found|No such|not.*detected/i.test(msg);
       if (looksLikeNotFound && !customMamePath) {
-        await emit("oa://toast", {
+        await emitEvent(OA_EVENTS.toast, {
           level: "warning",
           message:
             "MAME not found at the canonical path. Pick your MAME folder.",
@@ -1468,7 +1469,7 @@ const MameRefreshCard: Component = () => {
           await refresh(picked);
         }
       } else {
-        await emit("oa://toast", {
+        await emitEvent(OA_EVENTS.toast, {
           level: "error",
           message: `Refresh failed: ${msg}`,
         });
@@ -1818,8 +1819,9 @@ export const BackgroundJobsSettings: Component = () => {
             class="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-rose-200 transition hover:border-rose-400/60 hover:bg-rose-500/20"
             onClick={async (e) => {
               e.currentTarget.blur();
-              const ok = window.confirm(
+              const ok = await confirm(
                 "Clear all background-job history rows? Active rows (pending/running/paused) are preserved.",
+                { title: "Clear job history", confirmLabel: "Clear history", danger: true },
               );
               if (!ok) return;
               try {

@@ -1,4 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open } from "@tauri-apps/plugin-dialog";
 import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { listCores } from "@oa/platform/api/coresApi";
@@ -88,15 +89,15 @@ export async function runBackgroundScan(
     const result = await new Promise<ScannedRom[]>(async (resolve, reject) => {
       let jobId = -1;
       try {
-        progressUnlisten = await listen<ScanProgress>(
-          "oa://library-scan-progress",
+        progressUnlisten = await listenTo<ScanProgress>(
+          OA_EVENTS.libraryScanProgress,
           (event) => {
             if (event.payload.jobId !== jobId) return;
             onProgress?.(event.payload);
           },
         );
-        completeUnlisten = await listen<ScanCompletePayload>(
-          "oa://library-scan-complete",
+        completeUnlisten = await listenTo<ScanCompletePayload>(
+          OA_EVENTS.libraryScanComplete,
           (event) => {
             if (event.payload.jobId !== jobId) return;
             if (event.payload.errorMessage) {

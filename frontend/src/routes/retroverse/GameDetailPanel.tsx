@@ -27,7 +27,7 @@ import {
 } from "@oa/platform/library/gameInfo";
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 import { updateGameCoreOverride } from "@oa/platform/api/libraryApi";
-import { emit } from "@tauri-apps/api/event";
+import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { useTheme } from "./context";
 
 type Props = {
@@ -188,14 +188,14 @@ const GameDetailPanel: Component<Props> = (props) => {
       setMergedRefreshKey((k: number) => k + 1);
       // 4. Inline confirmation toast — surfaces via the existing
       // oa://toast channel so the per-system theming carries through.
-      await emit("oa://toast", {
+      await emitEvent(OA_EVENTS.toast, {
         level: "success",
         message: `Best emulator applied — ${recommended} will be used on next launch.`,
         system: entry.systemId,
       });
     } catch (err) {
       console.warn("[GameDetailPanel] Apply best emulator failed:", err);
-      await emit("oa://toast", {
+      await emitEvent(OA_EVENTS.toast, {
         level: "error",
         message: "Apply best emulator failed — see debug log for details.",
         system: entry.systemId,

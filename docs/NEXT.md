@@ -493,7 +493,36 @@ move+re-export; logic modules route through wrappers. **Turned ON the
 **✅ PHASE 4 COMPLETE** — 14 typed `platform/api/` modules; the decoupling track
 is closed at the file level (six boundary zones) AND the API level (the invoke
 ban). A feature physically cannot re-couple platform/theme without ESLint
-stopping the commit. Next theming work is the *enable-other-themes* track.
+stopping the commit.
+
+**Phase 4.5 — the EVENT corral ✅ SHIPPED on `feat/theming-platform-api-events`
+(2026-06-10; awaiting operator playtest + merge).** Closed the symmetric
+coupling the post-Phase-4 audit flagged: Tauri event names. New
+`platform/api/eventsApi.ts` (`OA_EVENTS` registry + `listenScoped`/`listenTo`/
+`emitEvent`); ~30 sites / 16 files migrated (incl. a theme file emitting
+`oa://toast` raw); a second `no-restricted-imports` entry bans raw `listen`/
+`emit`/`once` outside `platform/api/` (probe-verified). Decision D17. **The
+foundation is now clean on BOTH backend-contract channels (commands + events) —
+ready to build Phase 3 on top.**
+
+**Next theming work — ARC 1 Phase 3 (theme substrate: layout + palette + assets,
+~5 weeks).** Design refined 2026-06-10 — see
+[PLANS/theming-substrate.md](PLANS/theming-substrate.md) §"Phase 3" + DECISIONS
+**D18**. Three pillars: (1) palette substrate (`palette.json` per system + CSS-var
+injection), (2) theme-aware asset resolver, (3) **5 nav primitives** (`grid`/
+`wheel`/`list`/`carousel`/`custom`) in `platform/nav/`. **Nav is now a first-class
+verb-based, user-remappable model** (D18): the primitives + HintBar consume
+semantic verbs (`Confirm`/`Back`/directional/`NextSection`…), an input→verb
+indirection layer (`navBindings`, OA-wide) is built in Phase 3, and the existing
+`src/nav/` focus/gamepad/HintBar framework relocates into `platform/nav/`.
+Suggested slice order: (S1) relocate `src/nav/` → `platform/nav/` + verb layer +
+`list`/`grid` primitives; (S2) `wheel`/`carousel`/`custom`; (S3) palette
+substrate; (S4) asset resolver; (S5) toy `themes/bare/` + Settings → Appearance
+switcher (the acceptance gate). **Follow-on slice (after the toy-theme gate): the
+nav-remap Settings UI** in the OA-wide Input/Controls surface — gamepad + keyboard
+rebinding to verbs, conflict validation, an always-reachable escape hatch, and a
+**"Reset to defaults" button** (restore the baseline nav map = the operator-locked
+controller-nav spec). Theme-swap = restart in ARC 1 (no live hot-swap yet).
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

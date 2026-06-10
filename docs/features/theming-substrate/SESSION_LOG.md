@@ -8,6 +8,35 @@ grab-bag drain live there; live file keeps Slices 3-5 + the drain).
 
 ---
 
+## 2026-06-10 — Phase 4.5: the EVENT corral (sibling to the invoke ban)
+
+- **Shipped:** Closed the one coupling the Phase 4 audit surfaced as still-open —
+  Tauri **event names**. New `platform/api/eventsApi.ts` is the sole module
+  allowed to touch `@tauri-apps/api/event`: it owns `OA_EVENTS` (a 23-entry
+  registry of every `oa://…` channel — the single source of truth for event-name
+  strings), the moved `listenScoped` (auto-cleanup), `listenTo` (manual
+  lifecycle), and `emitEvent`. `platform/lib/eventListener` now just re-exports
+  `listenScoped` for back-compat. Migrated **~30 listen/emit/listenScoped sites
+  across 16 files** (App.tsx, backgroundJobs, audio, media, platformMedia,
+  ingest, ToastStack, toast, CoresPage, SystemCoresStrip, GameDialogs,
+  LibraryManagerPage, SystemReadinessChecklist, ImportWizard, MissingCoreBulkPrompt,
+  PlatformMediaDialog) + the theme file that emitted `oa://toast` directly
+  (`routes/retroverse/GameDetailPanel`). Every `oa://…` string now lives ONLY in
+  `OA_EVENTS` (grep-verified: 0 outside eventsApi).
+- **The ratchet:** extended the existing `no-restricted-imports` rule with a
+  second entry banning `listen` / `emit` / `once` from `@tauri-apps/api/event`
+  outside `platform/api/**` (type-only imports like `type UnlistenFn` stay
+  allowed). Probe-verified it fires. typecheck + lint green.
+- **Decision D17** — events are a backend-contract surface like commands; corral
+  them the same way. Payloads stay generic on `<T>` (call site declares its view).
+- **Merged:** ⏳ awaiting operator playtest + merge. Smoke surface: toasts fire,
+  background-jobs bar updates, library scan/sync progress, media/platform-media
+  live refresh, core-download progress, milestone toast, game-focus toggle,
+  rom-unloaded/external-session quit paths.
+- **Next:** the foundation is now clean on BOTH backend-contract channels
+  (commands + events). Theming work resumes the *enable-other-themes* track —
+  ARC 1 Phase 3 (shared nav primitives) first.
+
 ## 2026-06-10 — Phase 4 Slice 6 (THE CLOSER): jobs/system/shell + invoke-ban lint rule → **Phase 4 COMPLETE**
 
 - **Shipped:** The final three `platform/api/` modules + the ratchet that closes

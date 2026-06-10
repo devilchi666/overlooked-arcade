@@ -33,6 +33,7 @@ import RegionPicker from "./platform/components/RegionPicker";
 import TileContextMenu from "./platform/components/TileContextMenu";
 import NewCollectionDialog from "./platform/components/NewCollectionDialog";
 import ToastStack from "./platform/components/ToastStack";
+import ConfirmHost from "./platform/components/ConfirmHost";
 import { type SidebarView } from "@oa/platform/layout/types";
 import { createViewsStore } from "@oa/platform/views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -59,8 +60,7 @@ import {
   type IngestResult,
   type ScanProgress,
 } from "@oa/platform/library/ingest";
-import { listen } from "@tauri-apps/api/event";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenTo, listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { allSupportedExtensions, resolveShaderPreset, systemForExtension, systemThemes } from "@oa/platform/themes/registry";
 import { launchRom, bootWithoutGame, type LaunchResult } from "@oa/platform/library/launch";
 import { MediaProvider } from "@oa/platform/library/media";
@@ -265,7 +265,7 @@ const App: Component = () => {
   onMount(() => {
     void shellApi.getGameFocus().then((on) => setGameFocusSignal(on));
     let unlisten: (() => void) | undefined;
-    void listen<boolean>("oa://game-focus-changed", (e) => {
+    void listenTo<boolean>(OA_EVENTS.gameFocusChanged, (e) => {
       setGameFocusSignal(!!e.payload);
     }).then((u) => { unlisten = u; });
     onCleanup(() => unlisten?.());
@@ -518,7 +518,7 @@ const App: Component = () => {
   // In direct-launch mode there's no library to return to — quit the process.
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    void listen("oa://rom-unloaded", () => {
+    void listenTo(OA_EVENTS.romUnloaded, () => {
       if (!isDirectLaunch()) return;
       console.log("[oa-direct-launch] ROM unloaded → quitting process");
       void shellApi.quitApp();
@@ -536,7 +536,7 @@ const App: Component = () => {
   // library hidden and no affordance to get back.
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    void listen("oa://external-session-ended", () => {
+    void listenTo(OA_EVENTS.externalSessionEnded, () => {
       if (isDirectLaunch()) {
         // Same posture as rom-unloaded: nothing to return to.
         console.log("[oa-direct-launch] external session ended → quitting process");
@@ -637,7 +637,7 @@ const App: Component = () => {
   // without any frontend action.
   onMount(() => {
     void loadShaderPresets();
-    const unlisten = listen<ShaderPresetEntry[]>("oa://shader-presets-changed", (e) => {
+    const unlisten = listenTo<ShaderPresetEntry[]>(OA_EVENTS.shaderPresetsChanged, (e) => {
       applyShaderPresetsUpdate(e.payload);
     });
     onCleanup(() => {
@@ -742,7 +742,7 @@ const App: Component = () => {
   // we silently no-op.
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    void listen("oa://request-quick-settings", () => {
+    void listenTo(OA_EVENTS.requestQuickSettings, () => {
       if (!gameRunning()) return;
       if (quickSettingsOpen()) return;
       setQuickSettingsOpen(true);
@@ -759,7 +759,7 @@ const App: Component = () => {
   // tab re-fetches on every re-open which is plenty.
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    void listen<{ id: number; name: string; triggeredAtUnixMs: number }>("oa://milestone-triggered", (e) => {
+    void listenTo<{ id: number; name: string; triggeredAtUnixMs: number }>(OA_EVENTS.milestoneTriggered, (e) => {
       console.log("[oa-milestone] triggered:", e.payload);
     }).then((un) => (unlisten = un));
     onCleanup(() => unlisten?.());
@@ -1259,7 +1259,7 @@ const App: Component = () => {
     fileName: string;
     extension: string;
     archiveInnerPath?: string;
-  }>("oa://library-watch-found", async (event) => {
+  }>(OA_EVENTS.libraryWatchFound, async (event) => {
     const r = event.payload;
     const systemId = systemForExtension(r.extension);
     if (!systemId) return;
@@ -1273,7 +1273,7 @@ const App: Component = () => {
       ...(r.archiveInnerPath ? { archiveInnerPath: r.archiveInnerPath } : {}),
     }]);
   });
-  listenScoped<{ path: string }>("oa://library-watch-removed", async (event) => {
+  listenScoped<{ path: string }>(OA_EVENTS.libraryWatchRemoved, async (event) => {
     // Soft policy by default: keep the entry (user might be moving
     // the file). Settings → Library → "Auto-remove on file delete"
     // flips this to a hard policy where the matching DB row gets
@@ -1874,6 +1874,7 @@ const App: Component = () => {
         onClose={() => setHelpDialog(null)}
       />
       <ToastStack />
+      <ConfirmHost />
       <BackgroundJobsBar />
       <ResumePromptDialog />
       <HintBar />

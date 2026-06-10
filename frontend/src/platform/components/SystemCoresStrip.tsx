@@ -17,7 +17,7 @@ import {
   type Component,
 } from "solid-js";
 import * as coresApi from "@oa/platform/api/coresApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import type { SystemId } from "@oa/platform/themes/registry";
 import {
   CatalogCoreCard,
@@ -51,7 +51,7 @@ const SystemCoresStrip: Component<Props> = (props) => {
   const [progress, setProgress] = createSignal<Record<string, DownloadProgress>>({});
   const [busy, setBusy] = createSignal<string | null>(null);
 
-  listenScoped<DownloadProgress>("oa://core-download-progress", (e) => {
+  listenScoped<DownloadProgress>(OA_EVENTS.coreDownloadProgress, (e) => {
     setProgress((m) => ({ ...m, [e.payload.fileName]: e.payload }));
     if (e.payload.phase === "done" || e.payload.phase === "error") {
       refresh();

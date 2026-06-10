@@ -19,7 +19,8 @@ import {
   syncMetadataForSystem,
   resolveRomHashesForSystem,
 } from "@oa/platform/api/mediaApi";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   romIdFromPath,
@@ -614,8 +615,8 @@ const ImportWizard: Component<Props> = (props) => {
     try {
       progressUnlistenDone = false;
       completeUnlistenDone = false;
-      progressUnlisten = await listen<ScanProgress>(
-        "oa://library-scan-progress",
+      progressUnlisten = await listenTo<ScanProgress>(
+        OA_EVENTS.libraryScanProgress,
         (event) => {
           if (!pendingJobs.has(event.payload.jobId)) return;
           setScanProgress(event.payload);
@@ -624,7 +625,7 @@ const ImportWizard: Component<Props> = (props) => {
           );
         },
       );
-      completeUnlisten = await listen<{
+      completeUnlisten = await listenTo<{
         jobId: number;
         folder: string;
         matches: number;
@@ -632,7 +633,7 @@ const ImportWizard: Component<Props> = (props) => {
         cancelled: boolean;
         errorMessage?: string;
         rows: ScannedRom[];
-      }>("oa://library-scan-complete", (event) => {
+      }>(OA_EVENTS.libraryScanComplete, (event) => {
         if (!pendingJobs.has(event.payload.jobId)) {
           // Race fix: jobId hasn't been registerJob()'d yet because the
           // backend scan finished faster than `await invoke()` could

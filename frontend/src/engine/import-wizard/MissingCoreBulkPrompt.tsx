@@ -10,7 +10,8 @@ import {
   type Component,
 } from "solid-js";
 import * as coresApi from "@oa/platform/api/coresApi";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
 // Phase 1B Slice 4 — Bulk-install missing cores modal.
@@ -156,8 +157,8 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
     }
     void (async () => {
       try {
-        unlistenProgress = await listen<CoreDownloadProgress>(
-          "oa://core-download-progress",
+        unlistenProgress = await listenTo<CoreDownloadProgress>(
+          OA_EVENTS.coreDownloadProgress,
           (event) => {
             const payload = event.payload;
             setRows((prev) =>

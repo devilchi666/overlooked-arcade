@@ -424,3 +424,73 @@ family too heavy to relocate AND only needed as an opaque forwarded blob (the
 analog `routing` cluster) → make the wrapper **generic on that param** (`routing:
 R`) so the caller's type flows through without the api module ever naming it.
 Never reach for `any` to dodge the boundary.
+
+---
+
+### D17 — Tauri events are a second backend-contract surface; corral them like invoke (Phase 4.5)
+
+**Decision:** raw `listen` / `emit` / `once` from `@tauri-apps/api/event` are
+banned outside `platform/api/`, exactly like raw `invoke`. The one allowed
+module is `platform/api/eventsApi.ts`, which owns: an `OA_EVENTS` const registry
+(every `oa://…` channel string, keyed camelCase — the single source of truth for
+event names), the moved `listenScoped` (auto-cleanup), `listenTo` (manual
+lifecycle, returns the UnlistenFn), and `emitEvent`. `platform/lib/eventListener`
+re-exports `listenScoped` for back-compat so existing import paths don't churn.
+
+**Why:** the invoke ban closed command-name coupling but left the symmetric
+hole — a theme could still hard-wire to an event-name string (and one did:
+`routes/retroverse/GameDetailPanel` emitted `"oa://toast"` directly). Event names
+are a backend contract just like command names; a theme binding to one is the
+same coupling. Closing it makes "platform and theme can't be re-coupled" true on
+both channels, not just invoke.
+
+**How to apply:** subscribe via `listenScoped(OA_EVENTS.x, handler)` (scoped) or
+`listenTo(OA_EVENTS.x, handler)` (manual unlisten); publish via
+`emitEvent(OA_EVENTS.x, payload)`. Payloads stay generic on `<T>` (each call site
+declares the shape it reads — same convention as the invoke wrappers' generic
+getters; no per-event payload types forced). **Type-only** imports from
+`@tauri-apps/api/event` (`type UnlistenFn`, `type EventCallback`) stay allowed —
+only the three value imports are restricted. The `src/platform/api/**` override
+that exempts the invoke ban covers this rule too (same `no-restricted-imports`).
+
+---
+
+### D18 — Nav is verb-based + user-remappable; button meanings are a per-user contract, not per-theme (Phase 3 principle)
+
+**Decision:** frontend navigation is modeled as a fixed vocabulary of semantic
+verbs (`Confirm`, `Back`, `Up`/`Down`/`Left`/`Right`, `NextSection`/`PrevSection`,
+`OpenQuickSettings`, `Menu`, room for `Search`/`Favorite`/`Page`). The 5 Phase-3
+nav primitives AND the HintBar consume **verbs**, never raw buttons. A
+physical-input→verb indirection layer (a `navBindings` config, OA-wide tier) is
+built in Phase 3 so input is **user-remappable in Settings** (gamepad + keyboard).
+The remap Settings UI is a follow-on slice after the toy-theme gate, and MUST
+ship a "Reset to defaults" button. Defaults = the existing operator-locked
+controller-nav spec.
+
+**Why:**
+- *Two separate binding layers, don't conflate them.* Gameplay bindings
+  (physical pad → emulated console inputs) are already user-remappable
+  (`SystemBindingsEditor`, per-system, shipped). This decision is about the
+  SHELL-nav layer, which was hardcoded.
+- *Verbs, not motions.* Some movement is structural ("cycle tab" is meaningless
+  in a tab-less theme; "move left" only means something inside a layout). Remap
+  the stable verbs; let layout-specific motion stay abstract.
+- *Per-USER, not per-theme — that's the key.* Earlier in the arc we worried that
+  letting THEMES remap button meanings would fragment muscle memory across
+  themes. Per-user remapping is the opposite: one config applied identically to
+  every theme → full user control AND cross-theme consistency. So the two goals
+  stop fighting. Themes restyle hints + choose layouts; they never redefine
+  `Back`. (Refines the 2026-05 operator-locked nav spec: that spec becomes the
+  *default* map, and the system gains user remapping on top — not a contradiction.)
+- *Accessibility is the headline win* — rebind for reachability/preference;
+  keyboard parity required, not gamepad-only.
+- *The HintBar falls out for free* — once it renders glyphs from the current
+  input→verb map, remapping updates every on-screen hint automatically (this also
+  settles the "how buttons look" theming question: hints are data-driven).
+
+**How to apply:** build the primitives verb-native from day one (retrofitting the
+indirection after they're written is far more expensive). Persist `navBindings`
+OA-wide via a `platform/api/` wrapper. The remap UI lives in the OA-wide
+Input/Controls settings surface; design for conflict validation (no Confirm==Back
+deadlock), directional (D-pad/stick) remap, keyboard parity, a guaranteed
+always-reachable escape hatch, and the "Reset to defaults" affordance.

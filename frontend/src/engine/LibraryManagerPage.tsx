@@ -9,6 +9,8 @@ import {
   type Component,
 } from "solid-js";
 import * as libraryApi from "@oa/platform/api/libraryApi";
+import { confirm } from "@oa/platform/lib/confirm";
+import { pushToast } from "@oa/platform/lib/toast";
 import {
   syncMediaForSystem,
   syncMetadataForSystem,
@@ -20,7 +22,7 @@ import {
   openMediaFolder,
   clearMetadataForSystem,
 } from "@oa/platform/api/mediaApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import {
   closestCenter,
   createSortable,
@@ -370,10 +372,10 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // bakes in onCleanup; all four listen() Promises fire in adjacent
   // microticks so there's no sequential-await window where a
   // sync-complete event could slip through.
-  listenScoped<SyncProgressPayload>("oa://library-sync", (ev) => {
+  listenScoped<SyncProgressPayload>(OA_EVENTS.librarySync, (ev) => {
     setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
+  listenScoped<SyncSummaryPayload>(OA_EVENTS.librarySyncComplete, (ev) => {
     setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
     // Surface the final tally as the "last progress" line.
     setSyncProgress((prev) => ({
@@ -387,10 +389,10 @@ const LibraryManagerPage: Component<Props> = (props) => {
       },
     }));
   });
-  listenScoped<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
+  listenScoped<SyncProgressPayload>(OA_EVENTS.libraryMetadataSync, (ev) => {
     setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
+  listenScoped<MetadataSyncSummaryPayload>(OA_EVENTS.libraryMetadataSyncComplete, (ev) => {
     setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
     setMetaProgress((prev) => ({
       ...prev,
@@ -524,14 +526,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
     );
   }
 
-  listenScoped<HashSyncSummaryPayload>("oa://rom-hashes-synced", (ev) => {
+  listenScoped<HashSyncSummaryPayload>(OA_EVENTS.romHashesSynced, (ev) => {
     setHashSyncSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
     setHashSyncing((p) => ({ ...p, [ev.payload.systemId]: false }));
   });
-  listenScoped<HashResolveProgressPayload>("oa://rom-hash-resolve-progress", (ev) => {
+  listenScoped<HashResolveProgressPayload>(OA_EVENTS.romHashResolveProgress, (ev) => {
     setHashResolveProgress((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<HashResolveSummaryPayload>("oa://rom-hash-resolve-complete", (ev) => {
+  listenScoped<HashResolveSummaryPayload>(OA_EVENTS.romHashResolveComplete, (ev) => {
     setHashResolveSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
     setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
   });
@@ -666,12 +668,13 @@ const LibraryManagerPage: Component<Props> = (props) => {
       return;
     }
     if (
-      !window.confirm(
+      !(await confirm(
         `Clear metadata (genre / developer / publisher / year / players) for ${count} ${name} game(s)?\n\n` +
           `Cover art, snapshots, and title screens will NOT be touched. ` +
           `Use this after the 2026-05-21 metadata-routing fix to scrub stale cross-system data; ` +
           `re-run "Sync metadata" afterwards to repopulate against the correct upstream catalog.`,
-      )
+        { title: "Clear metadata", confirmLabel: "Clear metadata", danger: true },
+      ))
     ) {
       return;
     }
@@ -1486,11 +1489,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                       e.currentTarget.value = "";
                       if (!id) return;
                       const theme = systemThemes[id];
-                      if (!window.confirm(
+                      if (!(await confirm(
                         `Remove all ${theme.displayName} games from the library? Files on disk are NOT touched.`,
-                      )) return;
+                        { title: "Remove system games", confirmLabel: "Remove", danger: true },
+                      ))) return;
                       const n = await props.library.clearForSystem(id);
-                      window.alert(`Removed ${n} game${n === 1 ? "" : "s"} from ${theme.displayName}.`);
+                      pushToast("success", `Removed ${n} game${n === 1 ? "" : "s"} from ${theme.displayName}.`);
                     }}
                   >
                     <option value="" disabled>(pick a system)</option>
@@ -1511,11 +1515,12 @@ const LibraryManagerPage: Component<Props> = (props) => {
                     type="button"
                     onClick={async (e) => {
                       e.currentTarget.blur();
-                      if (!window.confirm(
+                      if (!(await confirm(
                         "Reset the entire library? Every game row will be removed from the database. Files on disk are NOT deleted.",
-                      )) return;
+                        { title: "Reset library", confirmLabel: "Reset library", danger: true },
+                      ))) return;
                       await props.library.clear();
-                      window.alert("Library reset. Re-scan a folder to rebuild.");
+                      pushToast("success", "Library reset. Re-scan a folder to rebuild.");
                     }}
                     class="mt-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs uppercase tracking-wider text-red-300 transition hover:bg-red-500/20"
                   >

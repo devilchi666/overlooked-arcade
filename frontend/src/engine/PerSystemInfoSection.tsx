@@ -31,6 +31,7 @@ import {
   type Component,
 } from "solid-js";
 import type { SystemId } from "@oa/platform/themes/registry";
+import { confirm } from "@oa/platform/lib/confirm";
 import {
   EMPTY_SYSTEM_INFO_OVERRIDE,
   getSystemInfo,
@@ -401,7 +402,7 @@ const PerSystemInfoSection: Component<Props> = (props) => {
   const handleReset = async () => {
     const sid = props.systemId();
     if (!sid) return;
-    if (!confirm("Reset every System Info override for this system?")) return;
+    if (!(await confirm("Reset every System Info override for this system?", { title: "Reset System Info", confirmLabel: "Reset", danger: true }))) return;
     setError(null);
     setSaving(true);
     try {

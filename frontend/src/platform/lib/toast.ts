@@ -1,4 +1,4 @@
-import { emit } from "@tauri-apps/api/event";
+import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
 
 // Frontend toast push helpers. Mirror the Rust ToastPayload shape consumed
 // by ToastStack.tsx via the `oa://toast` channel.
@@ -11,7 +11,7 @@ import { emit } from "@tauri-apps/api/event";
 export type ToastLevel = "info" | "success" | "warn" | "error";
 
 export function pushToast(level: ToastLevel, message: string, system?: string): void {
-  void emit("oa://toast", { level, message, system }).catch((e) => {
+  void emitEvent(OA_EVENTS.toast, { level, message, system }).catch((e) => {
     console.warn("[oa-toast] emit failed:", e);
   });
 }

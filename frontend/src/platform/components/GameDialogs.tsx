@@ -22,6 +22,8 @@ import {
 import { getControllerDevices } from "@oa/platform/api/inputApi";
 import * as cheatsApi from "@oa/platform/api/cheatsApi";
 import * as milestonesApi from "@oa/platform/api/milestonesApi";
+import { confirm } from "@oa/platform/lib/confirm";
+import { pushToast } from "@oa/platform/lib/toast";
 import {
   getGameOverrides,
   setGameOverrides,
@@ -29,7 +31,7 @@ import {
   listMonitors,
   setBloomAmount,
 } from "@oa/platform/api/settingsApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import {
@@ -1212,7 +1214,7 @@ export const MilestonesDialog: Component<{
   });
 
   // Live refresh on milestone trigger.
-  listenScoped("oa://milestone-triggered", () => {
+  listenScoped(OA_EVENTS.milestoneTriggered, () => {
     if (props.open && props.entry) void refresh();
   });
 
@@ -1538,7 +1540,7 @@ export const CheatsDialog: Component<{
   }
 
   async function remove(id: number) {
-    if (!window.confirm("Delete this cheat?")) return;
+    if (!(await confirm("Delete this cheat?", { title: "Delete cheat", confirmLabel: "Delete", danger: true }))) return;
     try {
       await cheatsApi.deleteCheat(id);
       await refresh();
@@ -1558,7 +1560,8 @@ export const CheatsDialog: Component<{
       setSearchActive(true);
     } catch (e) {
       console.warn("[oa-cheat-search] start failed:", e);
-      window.alert(
+      pushToast(
+        "error",
         `Couldn't start search: ${typeof e === "string" ? e : (e as Error)?.message}`,
       );
     } finally {

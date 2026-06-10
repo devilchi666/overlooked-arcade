@@ -278,17 +278,62 @@ The theme-level extension surface. No scripting or shaders yet.
 - `customComponent` escape hatch becomes the `custom` nav
   primitive's general form.
 
+**Nav input model — semantic verbs, user-remappable (first-class
+principle, locked this arc; DECISIONS D18):**
+
+- **Nav is verb-based, not button-based.** Navigation is a fixed
+  vocabulary of abstract verbs: `Confirm`, `Back`, `Up`/`Down`/
+  `Left`/`Right`, `NextSection`/`PrevSection` (the L1/R1 role —
+  binds to whatever top-level structure the active theme exposes),
+  `OpenQuickSettings`, `Menu` (+ room for `Search`/`Favorite`/
+  `Page`). The 5 primitives AND the HintBar consume **verbs**, never
+  raw buttons. So the HintBar renders glyphs from the *current*
+  input→verb map (remap Confirm → Ⓧ and every hint updates for free).
+- **A physical-input → verb indirection layer is established in this
+  phase**, even before the remap UI ships, because retrofitting it
+  after the primitives are written is far more painful than building
+  the primitives verb-native from day one. The gamepad/keyboard layer
+  translates raw input → verbs through a `navBindings` config.
+- **User-remappable, OA-wide tier** (not per-theme, not per-game —
+  one config in appData applied identically across all themes, so
+  full user control AND muscle-memory consistency; per the three-tier
+  settings split). Button *meanings* are a **per-user contract, NOT a
+  per-theme** knob — themes restyle hints + pick layouts but never
+  redefine `Back`. Default bindings = the existing operator-locked
+  controller-nav spec (so out-of-the-box behavior is unchanged;
+  remapping is opt-in). Refines, doesn't contradict, the 2026-05
+  operator-locked nav spec: that spec becomes the *default* map.
+- **Accessibility is the headline win** (rebind for reachability /
+  preference; keyboard parity, not gamepad-only).
+- **The remap Settings UI is a FOLLOW-ON SLICE**, sequenced *after*
+  the toy-theme acceptance gate (the verb layer + default bindings
+  alone prove the substrate; the Settings screen is then a small
+  addition on top). It lives in the **OA-wide Input/Controls settings
+  surface** and MUST include a **"Reset to defaults" button** (restore
+  the baseline nav map). Design for: conflict validation (block
+  Confirm==Back deadlocks), directional (D-pad/stick) remap, keyboard
+  parity, and a guaranteed always-reachable escape hatch (a core
+  keyboard binding that can't be fully unbound) so a user can't map
+  themselves into a corner.
+
 **Critical files:**
 - `config/systems/<id>/palette.json` (45 new files; one-time
   generation)
 - `frontend/src/themes/systems.css` (becomes generated)
 - `apps/oa-shell/src/system_ui_assets.rs`
-- `frontend/src/platform/nav/` (new — 5 nav primitives)
+- `frontend/src/platform/nav/` (new — 5 nav primitives + the existing
+  `src/nav/` focus/gamepad/HintBar/back framework relocated here, so
+  the whole nav layer is one platform-owned, theme-shareable unit)
+- `frontend/src/platform/nav/navBindings.ts` + `platform/api/` wrapper
+  (new — the input→verb map; persisted OA-wide)
 
 **Acceptance gate:** A toy second theme (`themes/bare/`) — sidebar
 + list-nav primitive + neutral palette — switchable from Settings
-→ Appearance, renders a working library. Doesn't need to be
-pretty; proves the substrate supports more than Retroverse's IA.
+→ Appearance, renders a working library, **navigable end-to-end via
+the semantic verbs** (default bindings). Doesn't need to be pretty;
+proves the substrate supports more than Retroverse's IA. The remap
+Settings UI + "Reset to defaults" is a separate slice gated after
+this.
 
 ### Phase 4 — Tauri bridge hardening (~3 weeks)
 

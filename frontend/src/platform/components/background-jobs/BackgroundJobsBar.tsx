@@ -45,6 +45,7 @@ import {
   type JobSnapshot,
   type JobState,
 } from "@oa/platform/lib/backgroundJobs";
+import { confirm } from "@oa/platform/lib/confirm";
 import RecentActivityPanel from "./RecentActivityPanel";
 
 const MAX_VISIBLE_ROWS = 3;
@@ -173,8 +174,9 @@ const BackgroundJobsBar: Component = () => {
   // "Both confirm before applying when 3+ jobs are active."
   const handlePauseAll = async () => {
     if (jobCount() >= 3) {
-      const ok = window.confirm(
+      const ok = await confirm(
         `Pause all ${jobCount()} running background jobs?`,
+        { title: "Pause all jobs", confirmLabel: "Pause all" },
       );
       if (!ok) return;
     }
@@ -182,16 +184,18 @@ const BackgroundJobsBar: Component = () => {
   };
   const handleCancelAll = async () => {
     if (jobCount() >= 3) {
-      const ok = window.confirm(
+      const ok = await confirm(
         `Cancel all ${jobCount()} running background jobs? Their progress will be discarded per each operation's cancel-cleanup policy.`,
+        { title: "Cancel all jobs", confirmLabel: "Cancel all", danger: true },
       );
       if (!ok) return;
     } else if (jobCount() >= 1) {
       // Single + double cancels still confirm because cancel is
       // destructive (drops the .partial for core_download, discards
       // partial scan rows for folder_scan, etc.).
-      const ok = window.confirm(
+      const ok = await confirm(
         `Cancel ${jobCount() === 1 ? "the running background job" : `all ${jobCount()} running background jobs`}?`,
+        { title: "Cancel jobs", confirmLabel: "Cancel jobs", danger: true },
       );
       if (!ok) return;
     }
@@ -199,7 +203,11 @@ const BackgroundJobsBar: Component = () => {
   };
 
   const handleSingleCancel = async (job: JobSnapshot) => {
-    const ok = window.confirm(`Cancel "${job.label}"?`);
+    const ok = await confirm(`Cancel "${job.label}"?`, {
+      title: "Cancel job",
+      confirmLabel: "Cancel job",
+      danger: true,
+    });
     if (!ok) return;
     await cancelJob(job.id);
   };
@@ -216,7 +224,7 @@ const BackgroundJobsBar: Component = () => {
   return (
     <Show when={visible()}>
       <div
-        class="oa-bg-jobs-bar pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex justify-center px-4 pb-[60px]"
+        class="oa-bg-jobs-bar pointer-events-none fixed inset-x-0 bottom-0 z-[65] flex justify-center px-4 pb-[60px]"
         onMouseMove={() => {
           if (expanded()) armCollapseTimer();
         }}

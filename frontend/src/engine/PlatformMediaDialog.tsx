@@ -20,7 +20,8 @@ import {
   type JSX,
 } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   getPlatformMediaIndex,
@@ -137,8 +138,8 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
       console.warn("[oa-platform-media] getDataDir failed:", e);
     }
     try {
-      unlisten = await listen<{ systemId: string; slot: string; media: PlatformMedia }>(
-        "oa://platform-media-updated",
+      unlisten = await listenTo<{ systemId: string; slot: string; media: PlatformMedia }>(
+        OA_EVENTS.platformMediaUpdated,
         (ev) => {
           setIndex((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload.media }));
         },

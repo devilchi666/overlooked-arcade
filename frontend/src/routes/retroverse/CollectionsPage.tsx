@@ -21,6 +21,7 @@
 
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import VirtualLibraryGrid from "@oa/platform/components/VirtualLibraryGrid";
+import { confirm } from "@oa/platform/lib/confirm";
 import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "../../nav/HintBar";
 import {
@@ -322,8 +323,9 @@ const CollectionsPage: Component = () => {
 
   async function handleDelete(target: { collectionId: string; currentName: string }) {
     closeRowContext();
-    const ok = window.confirm(
+    const ok = await confirm(
       `Delete \"${target.currentName}\"? Games stay in your library; the collection and its membership list are removed.`,
+      { title: "Delete collection", confirmLabel: "Delete", danger: true },
     );
     if (!ok) return;
     // If the deleted collection is currently the active list, fall
