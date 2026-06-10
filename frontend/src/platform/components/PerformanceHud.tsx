@@ -15,7 +15,7 @@
 //      starving the audio thread.
 
 import { createEffect, createSignal, onCleanup, onMount, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { getPerfStats } from "@oa/platform/api/systemApi";
 
 type Props = {
   visible: boolean;
@@ -68,7 +68,7 @@ export const PerformanceHud: Component<Props> = (props) => {
   function startEmuPoll() {
     if (emuPollId !== undefined) return;
     const fetch = () => {
-      void invoke<PerfStats>("get_perf_stats")
+      void getPerfStats<PerfStats>()
         .then((s) => setEmu(s ?? null))
         .catch(() => {});
     };

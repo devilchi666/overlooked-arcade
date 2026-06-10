@@ -16,8 +16,9 @@
 
 import { createSignal, type Accessor } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import { invoke } from "@tauri-apps/api/core";
+import * as jobsApi from "@oa/platform/api/jobsApi";
 import { downloadCore } from "@oa/platform/api/coresApi";
+import { resolveCompletionChime } from "@oa/platform/api/shellApi";
 import { listen } from "@tauri-apps/api/event";
 import { playAudio } from "./audio";
 
@@ -107,7 +108,7 @@ export const jobPrefs: Accessor<JobPrefs> = jobPrefsSig;
 /// this for free, but the explicit refresh keeps the API simple).
 export async function refreshJobPrefs(): Promise<void> {
   try {
-    const p = await invoke<JobPrefs>("get_job_prefs");
+    const p = await jobsApi.getJobPrefs<JobPrefs>();
     setJobPrefsSig(p);
   } catch (e) {
     console.warn("[oa-jobs] refresh job prefs failed:", e);
@@ -234,7 +235,7 @@ function applyEvent(evt: JobEvent): void {
 async function maybePlayCompletionChime(): Promise<void> {
   if (!jobPrefsSig().soundOnCompletion) return;
   try {
-    const path = await invoke<string | null>("resolve_completion_chime");
+    const path = await resolveCompletionChime();
     if (path) {
       await playAudio("ui-sounds", path, false);
     }
@@ -258,7 +259,7 @@ void listen<JobEvent>("oa://job-event", (event) => {
   console.warn("[oa-jobs] listen oa://job-event failed:", e);
 });
 
-void invoke<JobSnapshot[]>("list_active_jobs")
+void jobsApi.listActiveJobs()
   .then((rows) => {
     setStore("items", rows);
     hydrated = true;
@@ -281,7 +282,7 @@ void invoke<JobSnapshot[]>("list_active_jobs")
 
 export async function pauseJob(jobId: number): Promise<void> {
   try {
-    await invoke<boolean>("pause_job", { jobId });
+    await jobsApi.pauseJob(jobId);
   } catch (e) {
     console.warn(`[oa-jobs] pause_job(${jobId}) failed:`, e);
   }
@@ -289,7 +290,7 @@ export async function pauseJob(jobId: number): Promise<void> {
 
 export async function resumeJob(jobId: number): Promise<void> {
   try {
-    await invoke<boolean>("resume_job", { jobId });
+    await jobsApi.resumeJob(jobId);
   } catch (e) {
     console.warn(`[oa-jobs] resume_job(${jobId}) failed:`, e);
   }
@@ -297,7 +298,7 @@ export async function resumeJob(jobId: number): Promise<void> {
 
 export async function cancelJob(jobId: number): Promise<void> {
   try {
-    await invoke<boolean>("cancel_job", { jobId });
+    await jobsApi.cancelJob(jobId);
   } catch (e) {
     console.warn(`[oa-jobs] cancel_job(${jobId}) failed:`, e);
   }
@@ -305,7 +306,7 @@ export async function cancelJob(jobId: number): Promise<void> {
 
 export async function pauseAllJobs(paused: boolean): Promise<void> {
   try {
-    await invoke<number>("pause_all_jobs", { paused });
+    await jobsApi.pauseAllJobs(paused);
   } catch (e) {
     console.warn(`[oa-jobs] pause_all_jobs(${paused}) failed:`, e);
   }
@@ -313,7 +314,7 @@ export async function pauseAllJobs(paused: boolean): Promise<void> {
 
 export async function cancelAllJobs(): Promise<void> {
   try {
-    await invoke<number>("cancel_all_jobs");
+    await jobsApi.cancelAllJobs();
   } catch (e) {
     console.warn("[oa-jobs] cancel_all_jobs failed:", e);
   }
@@ -338,10 +339,7 @@ export async function downloadCoreWithDuplicateCheck(
 ): Promise<string | null> {
   let existing: JobSnapshot | null = null;
   try {
-    existing = await invoke<JobSnapshot | null>("check_duplicate_job", {
-      kind: "core_download",
-      targetId: base,
-    });
+    existing = await jobsApi.checkDuplicateJob("core_download", base);
   } catch (e) {
     console.warn("[oa-jobs] check_duplicate_job failed:", e);
     // Fall through to the invoke — the duplicate check is best-effort.

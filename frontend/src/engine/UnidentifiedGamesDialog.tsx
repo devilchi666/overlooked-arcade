@@ -13,7 +13,8 @@
 // "Identify ROMs" via the footer button.
 
 import { createMemo, createResource, For, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listUnidentifiedGames } from "@oa/platform/api/libraryApi";
+import { revealGameFileInFolder } from "@oa/platform/api/shellApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -57,9 +58,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
     async (id): Promise<UnidentifiedGameRow[]> => {
       if (!id) return [];
       try {
-        return await invoke<UnidentifiedGameRow[]>("list_unidentified_games", {
-          systemId: id,
-        });
+        return await listUnidentifiedGames<UnidentifiedGameRow>(id);
       } catch (e) {
         reportInvokeError("list_unidentified_games", e);
         return [];
@@ -86,7 +85,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
   });
 
   function onShowInFolder(filePath: string) {
-    void invoke("reveal_game_file_in_folder", { filePath }).catch((e) =>
+    void revealGameFileInFolder(filePath).catch((e) =>
       reportInvokeError("reveal_game_file_in_folder", e),
     );
   }

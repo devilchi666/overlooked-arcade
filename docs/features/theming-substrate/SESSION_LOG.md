@@ -8,6 +8,64 @@ grab-bag drain live there; live file keeps Slices 3-5 + the drain).
 
 ---
 
+## 2026-06-10 — Phase 4 Slice 6 (THE CLOSER): jobs/system/shell + invoke-ban lint rule → **Phase 4 COMPLETE**
+
+- **Shipped:** The final three `platform/api/` modules + the ratchet that closes
+  the whole decoupling track. On `feat/theming-platform-api-jobs-system-shell`:
+  **jobsApi** (18 — active/recent lists, per-job + bulk pause/resume/cancel,
+  history clear, duplicate pre-flight, resume prefs + the two job-toggle prefs,
+  test job, library/directory scan kick-off + cancel), **systemApi** (9 — the
+  System Info v1 L3-override CRUD moved here from systemInfo.ts per D15 +
+  status/cpu-tier/perf), **shellApi** (19 — quit, data dir, ui-intercept, the
+  log bridge + ring + reveal, reveal-in-folder, game-focus + toggle,
+  direct-launch config, ScummVM detection CLI, the sound/music resolvers). Plus
+  stragglers folded into existing modules (libraryApi `getLibraryPrefs` /
+  `setLibraryPrefs` / `listUnidentifiedGames`; mediaApi `clearMetadataForSystem`).
+  **~90 call sites across 21 files** migrated; **every non-`platform/api/` file
+  is now free of the raw `invoke` import** (verified: 0).
+- **The ratchet:** added `no-restricted-imports` to `frontend/eslint.config.mjs`
+  banning the `@tauri-apps/api/core` `invoke` import everywhere **except**
+  `src/platform/api/**` (a second flat-config block re-allows it there;
+  `convertFileSrc` from the same module stays allowed). Probe-verified the rule
+  fires on a planted raw-invoke import. `npm run lint` + `npm run typecheck`
+  both green.
+- **Notable migrations:**
+  - *systemInfo.ts → D15 move + re-export.* It was a pure typed-binding module;
+    its six System Info wrappers moved into systemApi and it now re-exports them
+    (+ the existing mame re-export). Its shared TYPES stay put, pulled into
+    systemApi via `import type`. Zero consumer churn.
+  - *Logic modules keep their behavior, route through wrappers.* backgroundJobs.ts
+    (store + dedup + event handling), audio.ts (cascade + cache), dataDir.ts
+    (cached promise), logbridge.ts (the console bridge) are NOT pure
+    pass-throughs (D15 caveat) — they keep their logic and call the thin
+    jobsApi/shellApi wrappers internally. backgroundJobs uses `import * as jobsApi`
+    so its own exported `pauseJob`/`cancelJob`/… don't collide with the wrappers.
+  - *Circular-but-safe.* jobsApi pulls `JobSnapshot`/`JobPrefs` from
+    backgroundJobs via `import type` (erased); backgroundJobs imports jobsApi
+    values. No runtime cycle.
+  - *Census grew under the lint pressure.* The closer surfaced commands no
+    earlier slice's census caught (`get_direct_launch_config`, `get_game_focus`,
+    `get/set_game_focus_toggle`, `set_job_always_show_bar`/`_sound_on_completion`,
+    `clear_metadata_for_system`, `list_unidentified_games`,
+    `start_background_directory_scan`) — all now wrapped. The lint rule is what
+    guarantees none were missed.
+- **Phase 4 totals:** 14 `platform/api/<domain>Api.ts` modules; the command-name
+  string for every backend command lives in exactly one file. Decisions D14
+  (generic getters) / D15 (typed-binding move + re-export) / D16
+  (platform↛components forces types into the api layer) all applied throughout.
+- **Merged:** ⏳ awaiting operator playtest + merge. Broad smoke surface (this
+  slice touches host/jobs/system plumbing across the whole app): boot, library
+  scan + import wizard, background-jobs bar (pause/cancel/resume + history),
+  Settings (game-focus chord capture, perf tier, job prefs toggles, test job,
+  storage health), Debug Log dialog, ScummVM detect dialog, per-system info edit,
+  performance HUD, quit. If boot + a scan + the jobs bar work, the risky parts
+  are covered.
+- **Next:** **Phase 4 is DONE — the platform/theme decoupling track is closed**
+  (file boundary: six lint zones; API boundary: the invoke ban). Theming work
+  now shifts to the *enable-other-themes* track: ARC 1 Phase 3 (shared nav
+  primitives) → Phase 5 (`.oatheme` packaging) → Phase 6 (rebuild Retroverse as
+  a theme on the SDK) → ARCs 2-3 (Rhai behaviors + WGSL shaders + Theme Studio).
+
 ## 2026-06-10 — Phase 4 Slice 5: the in-game / gameplay cluster (5 modules, 2 PRs on one branch)
 
 - **Shipped:** Five `platform/api/` modules on `feat/theming-platform-api-gameplay`,

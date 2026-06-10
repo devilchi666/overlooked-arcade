@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { listCores } from "@oa/platform/api/coresApi";
+import { startBackgroundScan } from "@oa/platform/api/jobsApi";
 import { lookupMameGame, lookupMameTitle, setGameMameMetadata } from "@oa/platform/api/mediaApi";
 import type { LibraryStore } from "./store";
 import type { RomEntry } from "./types";
@@ -108,7 +108,7 @@ export async function runBackgroundScan(
             }
           },
         );
-        jobId = await invoke<number>("start_background_scan", {
+        jobId = await startBackgroundScan({
           folder,
           extensions,
           extensionToSystem: extensionToSystemObj,

@@ -14,15 +14,19 @@
 //   - engine/**   ↛ routes/**     (engine must not import theme)
 //   - engine/**   ↛ components/** (engine must not import the grab-bag)
 //
+// PLUS the API boundary (Phase 4, the typed Tauri bridge — Slice 6 closer,
+// 2026-06-10):
+//   - raw invoke() banned outside platform/api/  (no-restricted-imports)
+// Every component/engine/theme module reaches the backend ONLY through a typed
+// wrapper in platform/api/<domain>Api; the command-name string lives in exactly
+// one place. The src/platform/api/** override at the bottom re-allows raw
+// invoke() there (it IS the bridge).
+//
 // The src/components/ grab-bag is now fully DRAINED (theming-grabbag-drain,
 // 2026-06-09): every file relocated to engine/ (manager surfaces) or
 // platform/components/ (shared per-game / in-game UI), and src/components/
 // removed. The two components/** zones above are ratchets that keep anything
 // from landing back in an unclassified grab-bag.
-//
-// Still deferred (NOT yet enforced — tracked in SURFACES.md):
-//   - raw invoke() outside platform/api/ (Phase 4 — the typed Tauri bridge)
-// Becomes a new rule here when that batch lands.
 
 import tseslint from "typescript-eslint";
 import importPlugin from "eslint-plugin-import";
@@ -112,6 +116,29 @@ export default [
           ],
         },
       ],
+      // API boundary (Phase 4): raw invoke() is corralled into platform/api/.
+      // Everything else imports a typed wrapper from @oa/platform/api/<domain>Api
+      // instead. The src/platform/api/** override below re-allows it there.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@tauri-apps/api/core",
+              importNames: ["invoke"],
+              message:
+                "Raw invoke() is corralled into platform/api/. Import a typed " +
+                "wrapper from @oa/platform/api/<domain>Api instead, or add one " +
+                "there. (convertFileSrc from the same module is still allowed.)",
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // The typed Tauri bridge IS the one place raw invoke() lives.
+    files: ["src/platform/api/**/*.{ts,tsx}"],
+    rules: { "no-restricted-imports": "off" },
   },
 ];

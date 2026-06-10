@@ -9,13 +9,13 @@
 // Cached: the dir doesn't change during a session, so we invoke once and
 // every caller shares the same Promise.
 
-import { invoke } from "@tauri-apps/api/core";
+import { getOaDataDir } from "@oa/platform/api/shellApi";
 
 let cached: Promise<string> | undefined;
 
 export function getDataDir(): Promise<string> {
   if (cached === undefined) {
-    cached = invoke<string>("get_oa_data_dir").catch((e) => {
+    cached = getOaDataDir().catch((e) => {
       // Reset cache on failure so the next call retries — useful during
       // dev when the backend restarts mid-session.
       cached = undefined;

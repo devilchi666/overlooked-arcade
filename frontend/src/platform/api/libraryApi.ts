@@ -157,6 +157,26 @@ export function directoryIsEmpty(path: string): Promise<boolean> {
   return invoke<boolean>("directory_is_empty", { path });
 }
 
+// --- Library prefs ------------------------------------------------------
+
+/// Read the LibraryPrefs blob (sort / disc-track-experimental / perf tier /
+/// view defaults). Generic (D14): each call site reads its own partial view.
+export function getLibraryPrefs<T>(): Promise<T> {
+  return invoke<T>("get_library_prefs");
+}
+
+/// Persist the LibraryPrefs blob. `prefs` is forwarded verbatim (callers build
+/// their own next-state object).
+export function setLibraryPrefs<P>(prefs: P): Promise<void> {
+  return invoke("set_library_prefs", { prefs });
+}
+
+/// The unidentified-games rows for a system (Library Manager audit dialog).
+/// Generic (D14): the caller owns the `UnidentifiedGameRow` shape.
+export function listUnidentifiedGames<T>(systemId: string): Promise<T[]> {
+  return invoke<T[]>("list_unidentified_games", { systemId });
+}
+
 // --- One-shot localStorage → SQLite migrations --------------------------
 
 /// Migrate legacy localStorage library entries into SQLite; returns count.

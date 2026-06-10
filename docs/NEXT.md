@@ -406,7 +406,7 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-5 ✅ / Slice 6 next — the closer)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge ✅ COMPLETE (all 6 slices)
 
 **Queued 2026-06-09.** Plan:
 [docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
@@ -482,12 +482,18 @@ GameDialogs fully drained of raw invoke; namespace imports where wrapper names
 shadow local handlers. typecheck + lint green; 56 command strings each grep to
 only their api module. See SESSION_LOG 2026-06-10.
 
-**Slice 6 (next — the closer) — `jobsApi` + `systemApi` + `shellApi`** (~85
-sites: backgroundJobs.ts, background-jobs/*, SystemHealthPage, systemInfo.ts,
-App.tsx shell paths, logbridge.ts, scummvm, sounds) **+ turn on the `no raw
-invoke() outside platform/api/` ESLint rule.** That rule flipping green closes
-the entire Phase 4 decoupling track — file boundary (six zones) + API boundary
-both locked. After this, the *enable-other-themes* track resumes.
+**Slice 6 — the closer — `jobsApi` + `systemApi` + `shellApi` ✅ SHIPPED on
+`feat/theming-platform-api-jobs-system-shell` (2026-06-10; awaiting operator
+playtest + merge).** 18 + 9 + 19 wrappers + straggler folds (libraryApi prefs /
+unidentified, mediaApi clear-metadata); ~90 sites / 21 files. systemInfo.ts D15
+move+re-export; logic modules route through wrappers. **Turned ON the
+`no-restricted-imports` rule banning raw `invoke` outside `platform/api/`**
+(probe-verified); every non-api file is invoke-free. typecheck + lint green.
+
+**✅ PHASE 4 COMPLETE** — 14 typed `platform/api/` modules; the decoupling track
+is closed at the file level (six boundary zones) AND the API level (the invoke
+ban). A feature physically cannot re-couple platform/theme without ESLint
+stopping the commit. Next theming work is the *enable-other-themes* track.
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

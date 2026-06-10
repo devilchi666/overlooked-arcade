@@ -1,8 +1,12 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
-import { invoke } from "@tauri-apps/api/core";
 import { listCores } from "@oa/platform/api/coresApi";
+import {
+  startBackgroundScan,
+  startBackgroundDirectoryScan,
+  cancelBackgroundScan,
+} from "@oa/platform/api/jobsApi";
 import {
   addFolder,
   directoryIsEmpty,
@@ -655,7 +659,7 @@ const ImportWizard: Component<Props> = (props) => {
       // so the Rust smart-classification stage knows which system to
       // hash each row against.
       const extensionToSystem = Object.fromEntries(ruleMap());
-      const extJobId = await invoke<number>("start_background_scan", {
+      const extJobId = await startBackgroundScan({
         folder: f,
         extensions,
         extensionToSystem,
@@ -666,10 +670,7 @@ const ImportWizard: Component<Props> = (props) => {
       setScanJobId(extJobId);
       // Kick off any directory-mode scans alongside.
       for (const sysId of dirModeSystems) {
-        const dirJobId = await invoke<number>("start_background_directory_scan", {
-          folder: f,
-          systemId: sysId,
-        });
+        const dirJobId = await startBackgroundDirectoryScan(f, sysId);
         registerJob(dirJobId);
       }
     } catch (e) {
@@ -683,7 +684,7 @@ const ImportWizard: Component<Props> = (props) => {
     const jid = scanJobId();
     if (jid === null) return;
     try {
-      await invoke("cancel_background_scan", { jobId: jid });
+      await cancelBackgroundScan(jid);
     } catch (e) {
       console.warn("[oa-wizard] cancel_background_scan failed:", e);
     }

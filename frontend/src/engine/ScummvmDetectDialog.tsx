@@ -5,7 +5,12 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  findScummvmCli,
+  detectScummvmDirectories,
+  runScummvmCliDetect,
+  writeScummvmDescriptors,
+} from "@oa/platform/api/shellApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import { Dialog } from "@oa/platform/components/Dialog";
 
@@ -101,7 +106,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
     if (!cliLookupDone()) {
       void (async () => {
         try {
-          const path = await invoke<string | null>("find_scummvm_cli");
+          const path = await findScummvmCli();
           if (path) setCliPath(path);
         } catch (e) {
           console.warn("[oa-scummvm-detect] find_scummvm_cli failed:", e);
@@ -155,9 +160,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
       // table detector. This gives us the canonical "what subdirs
       // exist" list + their existing-descriptor flags. In table mode
       // it's the ONLY pass; in CLI mode we layer CLI matches on top.
-      let rows = await invoke<DetectionResult[]>("detect_scummvm_directories", {
-        parentDir,
-      });
+      let rows = await detectScummvmDirectories<DetectionResult>(parentDir);
 
       // Step 2 — in CLI mode, layer in matches from a standalone
       // ScummVM install. CLI's gameid-based detection covers the
@@ -174,10 +177,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
           return;
         }
         try {
-          const cliRows = await invoke<CliDetectionRow[]>("run_scummvm_cli_detect", {
-            scummvmPath: exe,
-            parentDir,
-          });
+          const cliRows = await runScummvmCliDetect<CliDetectionRow>(exe, parentDir);
           rows = mergeCliRows(rows, cliRows);
         } catch (e) {
           setError(`ScummVM CLI failed: ${e}`);
@@ -301,7 +301,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
         setWriting(false);
         return;
       }
-      const written = await invoke<number>("write_scummvm_descriptors", { writes });
+      const written = await writeScummvmDescriptors(writes);
       setLastWriteSummary(
         `Wrote ${written} of ${writes.length} descriptor${writes.length === 1 ? "" : "s"}. Re-scan your library to see the new games.`,
       );

@@ -8,8 +8,8 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as inputApi from "@oa/platform/api/inputApi";
+import { setUiIntercepting } from "@oa/platform/api/shellApi";
 import {
   eventCodeToRustKey,
   firstPressedGamepadIndex,
@@ -138,13 +138,13 @@ const SystemBindingsEditor: Component<Props> = (props) => {
   // also fire the hotkey on the running game underneath.
   createEffect(() => {
     const c = capture();
-    invoke("set_ui_intercepting", { intercepting: c !== null }).catch((e) =>
+    setUiIntercepting(c !== null).catch((e) =>
       console.warn("set_ui_intercepting failed:", e),
     );
   });
   onCleanup(() => {
     // Belt-and-braces: release the intercept if the component unmounts mid-capture.
-    invoke("set_ui_intercepting", { intercepting: false }).catch(() => {});
+    setUiIntercepting(false).catch(() => {});
   });
 
   async function applyBinding(button: string, kind: CaptureKind, value: string | null) {

@@ -12,7 +12,7 @@
 // (no log spam when the Tauri runtime isn't ready yet during early
 // SolidJS hydration).
 
-import { invoke } from "@tauri-apps/api/core";
+import { logFromFrontend } from "@oa/platform/api/shellApi";
 
 type Level = "error" | "warn" | "info" | "debug" | "trace";
 
@@ -58,11 +58,7 @@ function ship(level: Level, args: unknown[]): void {
   // Fire-and-forget. If Tauri isn't ready yet (very early frontend
   // boot) the catch swallows the InvalidArgs error; the originals
   // already printed to DevTools, so nothing is lost.
-  void invoke("log_from_frontend", {
-    level,
-    target,
-    message: body,
-  }).catch(() => {});
+  void logFromFrontend(level, target, body).catch(() => {});
 }
 
 let installed = false;

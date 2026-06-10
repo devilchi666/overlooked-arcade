@@ -11,13 +11,21 @@
 // field-typed precedence (L3 > L2 > L1) and the result is what
 // `getSystemInfo` returns.
 
-import { invoke } from "@tauri-apps/api/core";
-
-// Theming Phase 4 Slice 3: `refresh_mame_system_info` belongs to the media
-// domain (MAME catalog), so its typed wrapper lives in platform/api/mediaApi
-// and is re-exported here for existing consumers. The other system-info
-// commands below stay raw until Slice 6 (systemApi).
+// Theming Phase 4: the Tauri command wrappers for this domain now live in
+// platform/api/ and are re-exported here so existing consumers' import paths
+// are untouched. `refresh_mame_system_info` is the media domain (mediaApi,
+// Slice 3, D15); the six system-info commands moved to systemApi (Slice 6,
+// D15). The shared TYPES still live in this module (below), pulled into
+// systemApi via `import type`.
 export { refreshMameSystemInfo } from "@oa/platform/api/mediaApi";
+export {
+  getSystemInfo,
+  getSystemInfoOverride,
+  getSystemInfoCurated,
+  setSystemInfoOverride,
+  deleteSystemInfoOverride,
+  resetSystemInfoToDefault,
+} from "@oa/platform/api/systemApi";
 
 /// One operator-facing peripheral row, rendered in SUPPORTED
 /// PERIPHERALS as `glyph name`. Matches the Rust `Peripheral` struct
@@ -161,67 +169,6 @@ export type SystemInfoCurated = {
   blurb?: string;
   sidebarSubline?: string;
 };
-
-/// Resolve the merged System Info record for one system. Always
-/// returns a record — even when L1/L2/L3 are all absent, the merged
-/// shape is a systemId-stamped struct with every field undefined,
-/// which the panel renders as "—" rows.
-export async function getSystemInfo(args: {
-  systemId: string;
-}): Promise<MergedSystemInfo> {
-  return invoke<MergedSystemInfo>("get_system_info", args);
-}
-
-/// Read just the operator's raw L3 overrides for one system (without
-/// merging in L1+L2). Drives the per-system Settings drill-in form,
-/// where each field shows its CURRENT override value alongside a
-/// "(L1)" / "(curated)" / "(edited)" provenance hint.
-export async function getSystemInfoOverride(args: {
-  systemId: string;
-}): Promise<SystemInfoOverride> {
-  return invoke<SystemInfoOverride>("get_system_info_override", args);
-}
-
-/// Read just the L2 curated record (no merge). Returns `null` when
-/// no `docs/cores/<id>/system-info.yaml` shipped for the system.
-/// Phase 4 edit UI calls this alongside `getSystemInfo` +
-/// `getSystemInfoOverride` to compute provenance badges:
-/// `override` field set → "edited"; otherwise `curated` field set →
-/// "curated"; otherwise no badge (L1 baseline or nothing at all).
-export async function getSystemInfoCurated(args: {
-  systemId: string;
-}): Promise<SystemInfoCurated | null> {
-  return invoke<SystemInfoCurated | null>("get_system_info_curated", args);
-}
-
-/// UPSERT (or DELETE if every field is empty) the operator's L3
-/// overrides for one system. Replace semantics — the backend does
-/// not merge the incoming payload with any existing row.
-export async function setSystemInfoOverride(args: {
-  systemId: string;
-  overrideRecord: SystemInfoOverride;
-}): Promise<void> {
-  return invoke("set_system_info_override", args);
-}
-
-/// Convenience: blank one operator override. Equivalent to
-/// `setSystemInfoOverride(systemId, EMPTY_SYSTEM_INFO_OVERRIDE)` but
-/// reads more explicitly at call sites.
-export async function deleteSystemInfoOverride(args: {
-  systemId: string;
-}): Promise<void> {
-  return invoke("delete_system_info_override", args);
-}
-
-/// Alias for `deleteSystemInfoOverride` with a more explicit verb.
-/// The per-system Settings drill-in's "Reset all overrides for this
-/// system" affordance uses this name to make the destructive intent
-/// obvious to the operator.
-export async function resetSystemInfoToDefault(args: {
-  systemId: string;
-}): Promise<void> {
-  return invoke("reset_system_info_to_default", args);
-}
 
 /// Result of the SETTINGS → Storage → "Refresh MAME system info"
 /// action. Frontend renders this as a toast message; `missingSystems`

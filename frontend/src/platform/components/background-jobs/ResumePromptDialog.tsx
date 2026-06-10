@@ -19,7 +19,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { resumeOneInterruptedJob } from "@oa/platform/api/jobsApi";
 import {
   cancelJob,
   dismissResumePrompt,
@@ -67,7 +67,7 @@ export const ResumePromptDialog: Component = () => {
     if (!snap || busy()) return;
     setBusy(true);
     try {
-      await invoke<boolean>("resume_one_interrupted_job", { jobId: snap.id });
+      await resumeOneInterruptedJob(snap.id);
     } catch (e) {
       console.warn("[oa-jobs] resume_one_interrupted_job failed:", e);
     } finally {

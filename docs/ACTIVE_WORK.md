@@ -144,13 +144,22 @@ spanned every system but was filed under whichever core happened to be active.
         GameDialogs cheats/milestones). typecheck + lint green; frontend
         only. 56 command strings each grep to only their api module. See
         SESSION_LOG 2026-06-10.
-      - **NEXT: Slice 6** — `jobsApi` + `systemApi` + `shellApi` (~85
-        sites: backgroundJobs.ts, background-jobs/*, SystemHealthPage,
-        systemInfo.ts, App.tsx shell paths, logbridge.ts, scummvm, sounds)
-        **+ turn on the `no raw invoke() outside platform/api/` ESLint
-        rule.** That rule flipping green closes the entire Phase 4
-        decoupling track. Supersedes the "ESLint boundary rule deferred to
-        Phase 4" note below.
+      - **Slice 6 (THE CLOSER)** ✅ SHIPPED on
+        `feat/theming-platform-api-jobs-system-shell` (2026-06-10) —
+        **awaiting operator playtest + merge.** `jobsApi` (18) + `systemApi`
+        (9) + `shellApi` (19) + straggler folds (libraryApi prefs/unidentified,
+        mediaApi clear-metadata); ~90 sites / 21 files. systemInfo.ts D15
+        move+re-export; logic modules (backgroundJobs/audio/dataDir/logbridge)
+        route through wrappers. **Turned ON the `no-restricted-imports` rule
+        banning raw `invoke` outside `platform/api/`** (probe-verified it
+        fires); every non-api file is now invoke-free. typecheck + lint green.
+      - **✅ PHASE 4 COMPLETE (2026-06-10).** 14 typed `platform/api/` modules;
+        the platform/theme decoupling track is closed at BOTH the file level
+        (six boundary lint zones) and the API level (the invoke ban). A new
+        feature physically cannot re-couple the layers without ESLint stopping
+        the commit. Next theming work is the *enable-other-themes* track
+        (Phase 3 nav primitives → Phase 5 packaging → Phase 6 Retroverse-as-
+        theme → ARCs 2-3).
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
