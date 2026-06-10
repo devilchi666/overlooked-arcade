@@ -530,17 +530,21 @@ DECISIONS **D18/D19/D20**:
 **Revised slice order** (full detail in plan §13.3): **S1** nav foundation (lock
 verb vocab; relocate `src/nav/` → `platform/nav/`; input→verb `navBindings`
 OA-wide + `platform/api/` wrapper; `list`/`grid` primitives verb-native +
-declarative props) → **S2** walking skeleton (minimal restart-based theme switch +
-Retroverse-as-default-theme + rough Wheel; **swap gate — the dream becomes
-visible**) → **S3** token layer (design-token contract + a11y/motion baseline +
-engine-territory token isolation; write `THEME_CONTRACT.md`) → **S4** versioned
-manifest + load-time validator + CI fixture (`bare` theme = fixture) → **S5**
-substrate depth (palette JSON + scoped CSS-var injection, asset resolver +
-`ui-sound` category, HintBar glyph-set seam, per-theme settings namespace,
-`wheel`/`carousel`/`custom` primitives). **Follow-on (after S2):** nav-remap
-Settings UI — gamepad + keyboard rebind to verbs, conflict validation,
-always-reachable escape hatch, **"Reset to defaults"** = operator-locked nav spec.
-**S1 is the immediate next code.** Theme-swap = restart in ARC 1 (no hot-swap yet).
+declarative props) **✅ shipped + merged 2026-06-10 (DECISIONS D21)** → **S2**
+walking skeleton (minimal restart-based theme switch + Retroverse-as-default-theme
++ rough Wheel; **swap gate — the dream becomes visible**) → **S3** token layer
+(design-token contract + a11y/motion baseline + engine-territory token isolation;
+write `THEME_CONTRACT.md`) → **S4** versioned manifest + load-time validator + CI
+fixture (`bare` theme = fixture) → **S5** substrate depth (palette JSON + scoped
+CSS-var injection, asset resolver + `ui-sound` category, HintBar glyph-set seam,
+per-theme settings namespace, `wheel`/`carousel`/`custom` primitives).
+**Follow-on (after S2):** nav-remap Settings UI — gamepad + keyboard rebind to
+verbs, conflict validation, always-reachable escape hatch, **"Reset to defaults"**
+= operator-locked nav spec.
+**S2 (walking skeleton) is the immediate next code.** Theme-swap = restart in ARC 1
+(no hot-swap yet). S1 delivered the nav layer S2's themes consume:
+`@oa/platform/nav` (verbs, `navBindings`, `list`/`grid` primitives, verb-native
+HintBar).
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are
