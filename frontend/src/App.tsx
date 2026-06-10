@@ -1605,7 +1605,19 @@ const App: Component = () => {
               ARC 1 honors (D20b). Gated on activeThemeResolved() so we don't
               flash the default before the persisted choice loads. */}
           <Show when={activeThemeResolved() && activeTheme()} keyed>
-            {(theme) => <Dynamic component={theme.entry} surface="main" />}
+            {(theme) => (
+              // `isolate` (isolation: isolate) gives the active theme its OWN
+              // stacking context, so a theme's internal z-indexes (e.g. the
+              // Wheel's coverflow cards) can never paint OVER engine-territory
+              // chrome — the engine surface (fixed z-60), platform modals
+              // (z-70), and the jobs bar (z-65) are all later siblings in the
+              // ROOT stacking context and stay above this isolated theme. The
+              // substrate guarantee that engine territory always overlays the
+              // theme, independent of theme-internal z-index.
+              <div class="h-full w-full isolate">
+                <Dynamic component={theme.entry} surface="main" />
+              </div>
+            )}
           </Show>
         </Show>
         {/* Engine surface — fullscreen takeover hosting Settings + the

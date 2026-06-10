@@ -3,27 +3,30 @@
 //
 // Theming Substrate ARC 1 Phase 3 S2 (the walking skeleton / swap gate,
 // docs/PLANS/theming-substrate.md §13.3). Where Retroverse is a tabbed
-// 3-pane launcher, the Wheel is a full-bleed horizontal COVERFLOW: one
-// centred, scaled focused cover with neighbours fanning out, a metadata
-// strip below, Left/Right to browse, Confirm to launch.
+// 3-pane launcher, the Wheel is a full-bleed horizontal COVERFLOW: a centred,
+// scaled focused cover with neighbours fanning out on a sliding track, a
+// metadata strip below, Left/Right to browse, Confirm to launch.
 //
 // HONEST CAVEAT (S2): this is layout + a distinct feel only. The CINEMATIC
 // layer — attract mode, CRT ceremony, launch shaders, per-shell sound — is
-// ARC 2-3 (DECISIONS D20). The Wheel's job here is to prove swappability +
-// distinct identity early, not to be the finished article.
+// ARC 2-3 (DECISIONS D20). The Wheel proves swappability + distinct identity
+// early, not the finished article.
 //
-// BOUNDARY: a theme consumes ONLY the platform layer. This file imports from
-// @oa/platform/* (stores via usePlatform, host services via useTheme, the
-// ListNav primitive + verbs, media, the per-system registry) and the engine
-// summon icon (now a platform component) — never engine/, routes/, or
-// another theme. System-AGNOSTIC by choice (DECISIONS D19): the Wheel treats
-// every system identically; per-system identity is Retroverse's take, not a
-// substrate requirement.
+// Nav: built directly on `useFocusGroup` (the lower-level platform nav hook),
+// NOT the ListNav primitive — a coverflow over a multi-thousand-game library
+// needs windowed rendering, exactly like VirtualLibraryGrid uses the hook +
+// its own virtualization rather than ListNav (which renders every row). Only
+// a ±WINDOW slice of cards is in the DOM; the track slides via CSS transform.
+//
+// BOUNDARY: a theme consumes ONLY platform — usePlatform stores, the host
+// services (useTheme), the nav hook, media, the per-system registry, and the
+// platform-homed EngineSummonIcon. Never engine/, routes/, or another theme.
+// System-AGNOSTIC by choice (DECISIONS D19).
 
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
-import { ListNav } from "@oa/platform/nav";
+import { useFocusGroup, HintRegion } from "@oa/platform/nav";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes } from "@oa/platform/themes/registry";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
@@ -31,15 +34,11 @@ import type { RomEntry } from "@oa/platform/library/types";
 import type { ThemeEntry, ThemePackage } from "@oa/platform/theme/types";
 import type { ThemeManifest } from "@oa/platform/theme/manifest";
 
-// Layout constants — fixed card footprint + how far apart neighbours fan.
-// PITCH < CARD_W so covers overlap slightly (the coverflow look). WINDOW
-// bounds how many cards either side of the focused one actually render their
-// cover (keeps a large library from mounting thousands of <img>s — far cards
-// collapse to an empty node; the focus indices stay intact because ListNav
-// still iterates the full list).
+// Card footprint + spacing. PITCH < CARD_W so covers overlap (the coverflow
+// look). WINDOW = how many cards either side of focus are kept in the DOM.
 const CARD_W = 210;
 const PITCH = 168;
-const WINDOW = 7;
+const WINDOW = 8;
 
 const WHEEL_MANIFEST: ThemeManifest = {
   id: "wheel",
@@ -62,9 +61,11 @@ const WheelEntry: ThemeEntry = (_props) => {
   const host = useTheme();
   const media = useMedia();
 
-  // The browse list: every real (non-seed) game, deduped to one cover per
-  // identity (so multi-disc / multi-region variants don't each get a card),
-  // sorted by title. Rough + system-agnostic (D19) — no per-system grouping.
+  // Browse list: every real (non-seed) game, deduped to one cover per identity
+  // (multi-disc / multi-region variants collapse), sorted by title. The
+  // returned RomEntry refs are stable across renders (same game = same object
+  // from the store), so the windowed <For> below reconciles instead of
+  // remounting as the window slides.
   const games = createMemo<RomEntry[]>(() => {
     const seen = new Set<string>();
     const out: RomEntry[] = [];
@@ -79,27 +80,66 @@ const WheelEntry: ThemeEntry = (_props) => {
     return out;
   });
 
-  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const [focusedIndexRaw, setFocusedIndexRaw] = createSignal(0);
+  const focusedIndex = focusedIndexRaw;
+  const setFocusedIndex = (n: number): void => {
+    const len = games().length;
+    if (len === 0) return;
+    setFocusedIndexRaw(Math.max(0, Math.min(len - 1, n)));
+  };
 
-  // Clamp focus when the list shrinks/grows so we never point past the end.
+  // Clamp focus when the list shrinks.
   createEffect(() => {
     const n = games().length;
-    if (n === 0) return;
-    if (focusedIndex() > n - 1) setFocusedIndex(n - 1);
+    if (n > 0 && focusedIndex() > n - 1) setFocusedIndexRaw(n - 1);
   });
 
-  // Mirror the focused cover into the platform's shared selection state so
-  // the rest of OA (engine surface, future right-pane widgets) knows the
-  // pick — same contract Retroverse's grid feeds via setFocusedEntry.
+  // Mirror the focused cover into the platform's shared selection state (same
+  // contract Retroverse's grid feeds via setFocusedEntry).
   createEffect(() => {
-    const g = games()[focusedIndex()] ?? null;
-    platform.setFocusedEntry(g);
+    platform.setFocusedEntry(games()[focusedIndex()] ?? null);
+  });
+
+  const group = useFocusGroup({
+    id: "wheel-coverflow",
+    orientation: "horizontal",
+    itemCount: () => games().length,
+    focusedIndex,
+    setFocusedIndex,
+    onActivate: (i) => {
+      const g = games()[i];
+      if (g) void host.onLaunch(g);
+    },
+    onSecondary: (i) => {
+      const g = games()[i];
+      if (g) host.onShowInfo(g);
+    },
+  });
+
+  // Force-claim once the list is populated. useFocusGroup auto-claims on mount
+  // only when nothing is already active; the Wheel mounts LATE (gated on the
+  // async active-theme seed), so a stray earlier group could hold the active
+  // slot. Claiming when games first appear makes the Wheel reliably own input.
+  let claimed = false;
+  createEffect(() => {
+    if (!claimed && games().length > 0) {
+      claimed = true;
+      group.activate();
+    }
+  });
+
+  // Windowed slice — only ±WINDOW cards around focus exist in the DOM. The
+  // slice holds stable RomEntry refs so <For> reuses staying cards; the track
+  // (not the cards) slides as focus moves.
+  const lo = createMemo(() => Math.max(0, focusedIndex() - WINDOW));
+  const visibleEntries = createMemo(() => {
+    const list = games();
+    const hi = Math.min(list.length - 1, focusedIndex() + WINDOW);
+    return list.slice(lo(), hi + 1);
   });
 
   const focusedGame = () => games()[focusedIndex()] ?? null;
 
-  // Cover resolution mirrors LibraryTile: prefer the identity-key art, fall
-  // back to the per-file key. Reactive via the MediaContext store.
   const coverFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);
@@ -107,30 +147,38 @@ const WheelEntry: ThemeEntry = (_props) => {
   const sysShortName = (entry: RomEntry): string =>
     systemThemes[entry.systemId]?.shortName ?? entry.systemId;
 
+  // Mouse wheel = browse (nice for a coverflow, and usable even if controller
+  // nav is toggled off). Click handling is per-card below.
+  const onWheelScroll = (e: WheelEvent): void => {
+    e.preventDefault();
+    setFocusedIndex(focusedIndex() + (e.deltaY > 0 ? 1 : -1));
+    group.activate();
+  };
+
+  // Track transform centres the focused card: shift the track so the focused
+  // card's centre sits at the container's horizontal centre (50%).
+  const trackTransform = (): string =>
+    `translateX(calc(50% - ${focusedIndex() * PITCH + CARD_W / 2}px))`;
+
   return (
     <div class="relative grid h-full w-full grid-rows-[64px_minmax(0,1fr)_auto] overflow-hidden bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
-      {/* Scoped coverflow CSS. Each .oa-list-nav-item is stacked at the track
-          centre; the per-card transform (offset fan + scale) lives inline on
-          the card so it animates on focus change without touching any
-          ListNav-owned element's style. */}
       <style>{`
-        .oa-wheel-track { position: relative; height: 100%; width: 100%; }
-        .oa-wheel-track > .oa-list-nav-item {
-          position: absolute; top: 50%; left: 50%;
-          outline: none;
+        .oa-wheel-track {
+          position: absolute; inset: 0;
+          transition: transform 260ms cubic-bezier(.22,.61,.36,1);
+          will-change: transform;
         }
         .oa-wheel-card {
-          position: absolute; top: 0; left: 0;
+          position: absolute; top: 50%;
           width: ${CARD_W}px;
-          transition: transform 280ms cubic-bezier(.22,.61,.36,1), opacity 280ms ease;
+          transition: transform 260ms cubic-bezier(.22,.61,.36,1), opacity 260ms ease;
           will-change: transform, opacity;
-          transform-origin: center center;
         }
       `}</style>
 
-      {/* Top bar — Wheel brand + the engine summon icon (D3: the theme
-          reserves the top-right slot for it; it's the always-available path
-          back to Settings → Appearance to switch themes). */}
+      {/* Top bar — Wheel brand + the engine summon icon (D3: theme reserves
+          the top-right slot; the always-available path back to Settings →
+          Themes to switch shells). */}
       <header class="z-10 flex items-center justify-between border-b border-white/5 bg-(--color-oa-bg-deep)/95 px-6 backdrop-blur">
         <div class="flex items-center gap-2">
           <span class="text-lg text-(--color-system-accent)">◎</span>
@@ -161,61 +209,55 @@ const WheelEntry: ThemeEntry = (_props) => {
           </div>
         }
       >
-        <div class="relative min-h-0">
-          <ListNav
-            id="wheel-coverflow"
-            class="oa-wheel-track"
-            orientation="horizontal"
-            items={games}
-            focusedIndex={focusedIndex}
-            setFocusedIndex={setFocusedIndex}
-            focusProminence="scale"
-            easing="emphasized"
+        <div
+          class="relative min-h-0 overflow-hidden"
+          onWheel={onWheelScroll}
+        >
+          <HintRegion
             hints={{
               dpad: "Browse",
               stick: "Browse",
               Confirm: "Launch",
               Secondary: "Game info",
             }}
-            onConfirm={(_i, item) => void host.onLaunch(item)}
-            onSecondary={(_i, item) => host.onShowInfo(item)}
-          >
-            {(item, ctx) => {
-              const offset = (): number => ctx.index - focusedIndex();
-              const near = (): boolean => Math.abs(offset()) <= WINDOW;
-              // Fan the cards out from centre; focused card sits dead-centre
-              // at full scale + opacity, neighbours recede + dim.
-              const transform = (): string => {
-                const o = offset();
-                const scale = ctx.focused() ? 1 : 0.74;
-                return `translate(-50%, -50%) translateX(${o * PITCH}px) scale(${scale})`;
-              };
-              const opacity = (): number => {
-                const a = Math.abs(offset());
-                if (a === 0) return 1;
-                return Math.max(0.25, 1 - a * 0.16);
-              };
-              return (
-                <Show when={near()}>
+          />
+          <div class="oa-wheel-track" style={{ transform: trackTransform() }}>
+            <For each={visibleEntries()}>
+              {(entry, i) => {
+                const absIndex = (): number => lo() + i();
+                const offset = (): number => absIndex() - focusedIndex();
+                const isFocused = (): boolean => offset() === 0;
+                return (
                   <div
                     class="oa-wheel-card"
-                    data-system={item.systemId}
+                    data-system={entry.systemId}
                     style={{
-                      transform: transform(),
-                      opacity: opacity(),
+                      left: `${absIndex() * PITCH}px`,
+                      transform: `translateY(-50%) scale(${isFocused() ? 1 : 0.78})`,
+                      opacity: String(Math.max(0.25, 1 - Math.abs(offset()) * 0.16)),
                       "z-index": String(100 - Math.abs(offset())),
+                    }}
+                    onClick={() => {
+                      // Click a side cover → centre it; click the centred
+                      // cover → launch. Keeps the Wheel mouse-usable even
+                      // without controller nav.
+                      if (isFocused()) void host.onLaunch(entry);
+                      else {
+                        setFocusedIndex(absIndex());
+                        group.activate();
+                      }
                     }}
                   >
                     <div
                       class="relative aspect-[3/4] w-full overflow-hidden rounded-xl border bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
                       classList={{
                         "border-(--color-system-accent) ring-2 ring-(--color-system-accent)/60":
-                          ctx.focused(),
-                        "border-white/10": !ctx.focused(),
+                          isFocused(),
+                        "border-white/10": !isFocused(),
                       }}
                     >
                       <Show
-                        when={coverFor(item)}
+                        when={coverFor(entry)}
                         fallback={
                           <div
                             class="absolute inset-0"
@@ -229,7 +271,7 @@ const WheelEntry: ThemeEntry = (_props) => {
                         {(src) => (
                           <img
                             src={src()}
-                            alt={item.title}
+                            alt={entry.title}
                             class="absolute inset-0 h-full w-full object-contain"
                             loading="lazy"
                             decoding="async"
@@ -238,10 +280,10 @@ const WheelEntry: ThemeEntry = (_props) => {
                       </Show>
                     </div>
                   </div>
-                </Show>
-              );
-            }}
-          </ListNav>
+                );
+              }}
+            </For>
+          </div>
         </div>
       </Show>
 
