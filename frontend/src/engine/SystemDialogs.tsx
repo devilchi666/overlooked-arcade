@@ -9,7 +9,7 @@
 // (no section prop). Both consume the same section components.
 
 import { createResource, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listCores } from "@oa/platform/api/coresApi";
 import { listMonitors } from "@oa/platform/api/settingsApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 import type {
@@ -91,7 +91,7 @@ export const SystemSettingsDialog: Component<SystemSettingsDialogProps> = (props
     async (cond): Promise<CoreEntry[]> => {
       if (!cond) return [];
       try {
-        return await invoke<CoreEntry[]>("list_cores");
+        return await listCores();
       } catch {
         return [];
       }

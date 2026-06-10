@@ -10,6 +10,7 @@
 
 import { createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { listMonitors } from "@oa/platform/api/settingsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
@@ -71,7 +72,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
   const [cores] = createResource(active, async (on): Promise<CoreEntry[]> => {
     if (!on) return [];
     try {
-      return await invoke<CoreEntry[]>("list_cores");
+      return await coresApi.listCores();
     } catch {
       return [];
     }

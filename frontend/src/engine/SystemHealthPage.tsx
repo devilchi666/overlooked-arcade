@@ -23,6 +23,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   BackgroundJobsSettings,
@@ -265,7 +266,7 @@ type CoreEntry = {
 const CoresRollupCard: Component<{ onOpen: () => void }> = (props) => {
   const [cores] = createResource(async () => {
     try {
-      return await invoke<CoreEntry[]>("list_cores");
+      return await coresApi.listCores<CoreEntry>();
     } catch (e) {
       console.warn("[oa-health] list_cores failed:", e);
       return [] as CoreEntry[];
@@ -315,7 +316,7 @@ type BiosStatusResponse = {
 const BiosRollupCard: Component<{ onOpen: () => void }> = (props) => {
   const [bios] = createResource(async () => {
     try {
-      return await invoke<BiosStatusResponse>("get_bios_status");
+      return await coresApi.getBiosStatus<BiosStatusResponse>();
     } catch (e) {
       console.warn("[oa-health] get_bios_status failed:", e);
       return null;
@@ -390,21 +391,21 @@ const ReadinessRollupCard: Component<{
   // fetch on tab visit).
   const [cores] = createResource(async () => {
     try {
-      return await invoke<CoreEntry[]>("list_cores");
+      return await coresApi.listCores<CoreEntry>();
     } catch {
       return [] as CoreEntry[];
     }
   });
   const [available] = createResource(async () => {
     try {
-      return await invoke<AvailableCore[]>("available_cores");
+      return await coresApi.availableCores<AvailableCore>();
     } catch {
       return [] as AvailableCore[];
     }
   });
   const [bios] = createResource(async () => {
     try {
-      return await invoke<BiosStatusResponse>("get_bios_status");
+      return await coresApi.getBiosStatus<BiosStatusResponse>();
     } catch {
       return null;
     }

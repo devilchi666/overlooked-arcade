@@ -17,6 +17,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { getGameOverrides, setGameOverrides } from "@oa/platform/api/settingsApi";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
@@ -51,13 +52,13 @@ const GamePropertiesDialog: Component<Props> = (props) => {
         setOverrides({});
       }
       try {
-        const list = await invoke<CoreEntry[]>("list_cores");
+        const list = await coresApi.listCores<CoreEntry>();
         setCores(list ?? []);
       } catch {
         setCores([]);
       }
       try {
-        const v = await invoke<string | null>("get_core_pref", { systemId: e.systemId });
+        const v = await coresApi.getCorePref(e.systemId);
         setSystemCorePref(v ?? null);
       } catch {
         setSystemCorePref(null);

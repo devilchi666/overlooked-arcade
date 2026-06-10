@@ -1,38 +1,6 @@
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
-
-type CoreOptionValue = {
-  value: string;
-  label: string | null;
-};
-
-type CoreOption = {
-  key: string;
-  desc: string;
-  info: string | null;
-  categoryKey: string | null;
-  defaultValue: string;
-  values: CoreOptionValue[];
-};
-
-type CoreOptionCategory = {
-  key: string;
-  desc: string;
-  info: string | null;
-};
-
-type CoreOptionsSnapshot = {
-  schema: CoreOption[];
-  categories: CoreOptionCategory[];
-  systemValues: Record<string, string>;
-  gameValues: Record<string, string>;
-  /// Option keys the core wants hidden — libretro
-  /// SET_CORE_OPTIONS_DISPLAY parity. Filtered out at render time so
-  /// the user only sees options that actually apply given the current
-  /// configuration (e.g. "Lightgun crosshair color" disappears when
-  /// "Lightgun" is off). Cores without dynamic visibility return [].
-  hiddenKeys: string[];
-};
+import * as coresApi from "@oa/platform/api/coresApi";
+import type { CoreOption } from "@oa/platform/api/coresApi";
 
 type Props = {
   systemId: string;
@@ -59,10 +27,7 @@ const CoreOptionsPanel: Component<Props> = (props) => {
   const [snapshot, { refetch }] = createResource(
     () => ({ sys: props.systemId, game: props.gameId }),
     async (k) => {
-      return await invoke<CoreOptionsSnapshot>("list_core_options", {
-        systemId: k.sys,
-        gameId: k.game,
-      });
+      return await coresApi.listCoreOptions(k.sys, k.game);
     },
   );
   const [filter, setFilter] = createSignal("");
@@ -100,17 +65,9 @@ const CoreOptionsPanel: Component<Props> = (props) => {
   async function setValue(opt: CoreOption, value: string | null) {
     try {
       if (props.gameId) {
-        await invoke("set_game_core_option", {
-          gameId: props.gameId,
-          key: opt.key,
-          value,
-        });
+        await coresApi.setGameCoreOption(props.gameId, opt.key, value);
       } else {
-        await invoke("set_system_core_option", {
-          systemId: props.systemId,
-          key: opt.key,
-          value,
-        });
+        await coresApi.setSystemCoreOption(props.systemId, opt.key, value);
       }
       await refetch();
     } catch (e) {

@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import type { LibraryStore } from "@oa/platform/library/store";
 import type { RomEntry } from "@oa/platform/library/types";
 import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
@@ -31,7 +31,7 @@ const CorePickerMenu: Component<Props> = (props) => {
     () => (props.entry ? props.entry.id : null),
     async () => {
       try {
-        return await invoke<CoreEntry[]>("list_cores");
+        return await coresApi.listCores<CoreEntry>();
       } catch {
         return [];
       }

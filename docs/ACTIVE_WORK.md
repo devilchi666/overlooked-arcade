@@ -118,12 +118,28 @@ spanned every system but was filed under whichever core happened to be active.
         assign-by-concern not by file). Surfaced + fixed one latent bug
         (AnalogBindingsSection `get_game_overrides` arg name). Also rolled
         the theming SESSION_LOG to `SESSION_LOG_ARCHIVE.md` (487→109 lines).
-      - **NEXT: Slice 3 (`mediaApi`)** — art/metadata sync + game-info +
-        mame + hashes (~45 sites; includes `ingest.ts`'s mame trio).
-        Queued in NEXT.md HIGH band. Then Slice 4 (cores+input),
-        Slice 5 (gameplay cluster), Slice 6 (jobs/system/shell + turn on
-        the lint rule). Supersedes the "ESLint boundary rule deferred to
-        Phase 4" note below.
+      - **Slice 3 (`mediaApi`)** ✅ merged 2026-06-09 (merge `f5657c2`;
+        operator playtested). 28 wrappers across art/metadata sync +
+        game-info + mame + hashes (11 files). DECISIONS **D15**
+        (typed-binding modules move + re-export).
+      - **Slice 4 (`coresApi` + `inputApi`)** ✅ SHIPPED on
+        `feat/theming-platform-api-cores-input` (2026-06-10) — **awaiting
+        operator playtest + merge.** 29 wrappers / ~50 call sites / 18
+        files: installed cores + buildbot catalog + core-options + BIOS
+        (coresApi), bindings + input descriptors + controller devices +
+        analog routing + light-gun (inputApi). DECISIONS **D16** (the
+        `platform↛components` boundary forces component-local
+        backend-contract types to re-home INTO the api layer; generic
+        `routing: R` blob for the analog cluster). typecheck + lint green;
+        frontend-only (no Rust). One behavior touch: GameDialogs
+        `get_controller_devices` now guards `!systemId` (was reachable as
+        null; equivalent).
+      - **NEXT: Slice 5** — the in-game / gameplay cluster (`emulatorApi` +
+        `rewindTasApi` + `cheatsApi` + `milestonesApi` + `captureApi`;
+        ~70 sites, may split into two PRs). Then Slice 6 (jobs/system/shell
+        + turn on the `no raw invoke() outside platform/api/` lint rule —
+        the ratchet closes). Supersedes the "ESLint boundary rule deferred
+        to Phase 4" note below.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

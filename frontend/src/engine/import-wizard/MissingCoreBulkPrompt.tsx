@@ -9,7 +9,7 @@ import {
   type Accessor,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
@@ -91,7 +91,7 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
   // while the fetch is in flight.
   const [catalog] = createResource(async () => {
     try {
-      return await invoke<AvailableCore[]>("available_cores");
+      return await coresApi.availableCores<AvailableCore>();
     } catch (e) {
       console.warn("[oa-missing-core] available_cores failed:", e);
       return [] as AvailableCore[];
@@ -215,9 +215,7 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
     // isn't managed; the downloads still proceed but without a parent.
     let parentJobId: number | undefined;
     try {
-      const id = await invoke<number>("start_bulk_core_install", {
-        n: targets.length,
-      });
+      const id = await coresApi.startBulkCoreInstall(targets.length);
       if (id > 0) parentJobId = id;
     } catch (e) {
       // Soft-fail — downloads still proceed individually without a
@@ -231,10 +229,7 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
         const cur = t.candidates[t.selectedIdx];
         if (!cur) return;
         try {
-          await invoke<string>("download_core", {
-            base: cur.base,
-            parentJobId,
-          });
+          await coresApi.downloadCore(cur.base, parentJobId);
           // Final `phase: "done"` event already updates the row.
         } catch (e) {
           setRow(t.systemId, {

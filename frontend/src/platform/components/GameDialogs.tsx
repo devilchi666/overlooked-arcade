@@ -20,6 +20,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getControllerDevices } from "@oa/platform/api/inputApi";
 import {
   getGameOverrides,
   setGameOverrides,
@@ -732,14 +733,12 @@ export const GameInputDialog: Component<{
   const [coreDevices] = createResource(
     devicesSource,
     async (src): Promise<ControllerDeviceDescriptor[][]> => {
-      if (!src.open || !src.entryId) return [[], [], [], [], []];
+      if (!src.open || !src.entryId || !src.systemId) return [[], [], [], [], []];
+      const systemId = src.systemId;
       try {
         return await Promise.all(
           [0, 1, 2, 3, 4].map((port) =>
-            invoke<ControllerDeviceDescriptor[]>("get_controller_devices", {
-              port,
-              systemId: src.systemId,
-            }),
+            getControllerDevices(systemId, port),
           ),
         );
       } catch (e) {

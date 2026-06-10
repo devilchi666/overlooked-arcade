@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { allSupportedExtensions, systemForExtension, systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { listCores } from "@oa/platform/api/coresApi";
 import { lookupMameGame, lookupMameTitle, setGameMameMetadata } from "@oa/platform/api/mediaApi";
 import type { LibraryStore } from "./store";
 import type { RomEntry } from "./types";
@@ -151,7 +152,7 @@ async function resolveScannableExtensions(): Promise<{ extensions: string[]; cor
   // core's valid_extensions overlap — pick the first match. Falls back to
   // tg16 (today's only system) if nothing matches but a core handles it.
   try {
-    const cores = await invoke<CoreEntry[]>("list_cores");
+    const cores = await listCores<CoreEntry>();
     const knownSystemIds = Object.keys(systemThemes) as SystemId[];
     for (const c of cores) {
       const coreExts = (c.validExtensions ?? "")

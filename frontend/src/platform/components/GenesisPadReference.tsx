@@ -20,7 +20,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { getBindings } from "@oa/platform/api/inputApi";
 import type { SystemId } from "@oa/platform/themes/registry";
 
 type ButtonBinding = {
@@ -79,7 +79,7 @@ const GenesisPadReference: Component<Props> = (props) => {
     () => props.systemId,
     async (id) => {
       try {
-        return await invoke<ButtonBinding[]>("get_bindings", { systemId: id });
+        return await getBindings<ButtonBinding>(id);
       } catch (e) {
         console.warn("[oa-genesis-pad-ref] get_bindings failed:", e);
         return null;

@@ -1,5 +1,5 @@
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { installBiosFile } from "@oa/platform/api/coresApi";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import type { SystemId } from "@oa/platform/themes/registry";
 import { biosHintFor } from "./biosHints";
@@ -39,12 +39,6 @@ export type BiosResolutionDetailProps = {
   /// Called after a successful install so the parent can refetch BIOS
   /// status + re-render. Parent owns the resource fetch lifecycle.
   onInstalled: () => void;
-};
-
-type InstallResult = {
-  status: "ok" | "unknownHash";
-  sha1: string;
-  destination: string;
 };
 
 type FileBadgeStyle = { ring: string; bg: string; text: string; label: string };
@@ -113,11 +107,7 @@ const BiosResolutionDetail: Component<BiosResolutionDetailProps> = (props) => {
         // Operator cancelled.
         return;
       }
-      const result = await invoke<InstallResult>("install_bios_file", {
-        sourcePath: picked,
-        targetFilename: file.expectedName,
-        systemId: props.systemId,
-      });
+      const result = await installBiosFile(picked, file.expectedName, props.systemId);
       console.log(
         `[oa-bios] installed ${file.expectedName} → ${result.destination} (${result.status}, sha1 ${result.sha1})`,
       );

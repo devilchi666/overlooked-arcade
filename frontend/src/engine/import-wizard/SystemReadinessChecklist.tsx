@@ -11,7 +11,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as coresApi from "@oa/platform/api/coresApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import MissingCoreBulkPrompt from "./MissingCoreBulkPrompt";
@@ -224,7 +224,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   //                                     the bulk-install modal also uses.
   const [cores, { refetch: refetchCores }] = createResource(async () => {
     try {
-      return await invoke<CoreEntry[]>("list_cores");
+      return await coresApi.listCores<CoreEntry>();
     } catch (e) {
       console.warn("[oa-readiness] list_cores failed:", e);
       return [] as CoreEntry[];
@@ -233,7 +233,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
 
   const [available, { refetch: refetchAvailable }] = createResource(async () => {
     try {
-      return await invoke<AvailableCore[]>("available_cores");
+      return await coresApi.availableCores<AvailableCore>();
     } catch (e) {
       console.warn("[oa-readiness] available_cores failed:", e);
       return [] as AvailableCore[];
@@ -242,7 +242,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
 
   const [bios, { refetch: refetchBios }] = createResource(async () => {
     try {
-      return await invoke<BiosStatusResponse>("get_bios_status");
+      return await coresApi.getBiosStatus<BiosStatusResponse>();
     } catch (e) {
       console.warn("[oa-readiness] get_bios_status failed:", e);
       return { systemDir: "", entries: [] as BiosStatusEntry[] };
@@ -277,7 +277,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
       // Parallel — the Tauri command is a cheap fs read.
       const results = await Promise.allSettled(
         systems.map((sid) =>
-          invoke<boolean>("has_core_options_schema", { systemId: sid }).catch(() => false),
+          coresApi.hasCoreOptionsSchema(sid).catch(() => false),
         ),
       );
       results.forEach((r, i) => {
@@ -312,7 +312,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
       const next = new Map<SystemId, CoreRecommendation>();
       const results = await Promise.allSettled(
         systems.map((sid) =>
-          invoke<CoreRecommendation>("recommended_core_for_system", { systemId: sid }),
+          coresApi.recommendedCoreForSystem(sid),
         ),
       );
       results.forEach((r, i) => {
@@ -355,7 +355,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
         const next = new Map<SystemId, boolean>();
         const results = await Promise.allSettled(
           systems.map((sid) =>
-            invoke<boolean>("has_core_options_schema", { systemId: sid }).catch(() => false),
+            coresApi.hasCoreOptionsSchema(sid).catch(() => false),
           ),
         );
         results.forEach((r, i) => {
@@ -412,7 +412,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
 
   async function openBiosFolder() {
     try {
-      await invoke("open_bios_folder");
+      await coresApi.openBiosFolder();
     } catch (e) {
       console.warn("[oa-readiness] open_bios_folder failed:", e);
     }

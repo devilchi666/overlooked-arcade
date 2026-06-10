@@ -26,6 +26,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getBiosStatus } from "@oa/platform/api/coresApi";
 import { listMonitors, listAudioDevices } from "@oa/platform/api/settingsApi";
 import { emit } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
@@ -1058,7 +1059,7 @@ const BIOS_PILL_STYLES: Record<BiosEntryStatus, { ring: string; bg: string; text
 
 export const BiosSettings: Component = () => {
   const [status, { refetch }] = createResource(async () => {
-    return await invoke<BiosStatusResponse>("get_bios_status");
+    return await getBiosStatus<BiosStatusResponse>();
   });
 
   const counts = createMemo(() => {

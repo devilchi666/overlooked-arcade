@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 import * as libraryApi from "@oa/platform/api/libraryApi";
 import * as mediaApi from "@oa/platform/api/mediaApi";
+import * as coresApi from "@oa/platform/api/coresApi";
+import * as inputApi from "@oa/platform/api/inputApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -1055,7 +1057,7 @@ const App: Component = () => {
       // LoadRom handler already applied per-system defaults; this overlays
       // any per-game values on top. No-op if the core hasn't registered
       // any options yet (first launch ever for this system).
-      await invoke("apply_game_core_options", { gameId: entry.id }).catch((e) =>
+      await coresApi.applyGameCoreOptions(entry.id).catch((e) =>
         console.warn("[oa-launch] apply_game_core_options failed:", e),
       );
       await Promise.all([
@@ -1110,7 +1112,7 @@ const App: Component = () => {
       // Phase 2.5 — resolve per-game → per-system analog routing for
       // all 5 ports and push to the emu thread. Soft failure: at worst
       // the game uses per-system-only routing until restart.
-      void invoke<void>("arm_analog_routing", { gameId: entry.id })
+      void inputApi.armAnalogRouting(entry.id)
         .catch((e) => console.warn("[oa-launch] arm_analog_routing failed:", e));
       // Shared analog input infra — resolve per-game libretro device
       // type (Mouse / Light Gun / Paddle / etc.) and dispatch to the
@@ -1119,7 +1121,7 @@ const App: Component = () => {
       // we're already inside the launch-completed branch so the
       // ordering is correct. Soft failure: at worst the game runs
       // with the default JOYPAD device.
-      void invoke<void>("arm_libretro_device", { gameId: entry.id })
+      void inputApi.armLibretroDevice(entry.id)
         .catch((e) => console.warn("[oa-launch] arm_libretro_device failed:", e));
       // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
       // story as milestones (SQLite is source of truth; emu-thread
