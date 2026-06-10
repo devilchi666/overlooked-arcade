@@ -472,9 +472,9 @@ to re-home INTO the api layer (the api module can't import from a component);
 the analog `routing` blob stays a generic `R` param to avoid relocating the
 prefs cluster. typecheck + lint green; frontend-only. See SESSION_LOG 2026-06-10.
 
-**Slice 5 — the in-game / gameplay cluster ✅ SHIPPED on
-`feat/theming-platform-api-gameplay` (2026-06-10; awaiting operator playtest +
-merge).** Five modules / ~75 call sites / ~14 files, landed as the planned
+**Slice 5 — the in-game / gameplay cluster ✅ MERGED to main 2026-06-10**
+(`feat/theming-platform-api-gameplay`; operator playtested). Five modules /
+~75 call sites / ~14 files, landed as the planned
 two-PR split on one branch: PR A = `emulatorApi` (17) + `rewindTasApi` (15);
 PR B = `cheatsApi` (12) + `milestonesApi` (6) + `captureApi` (9). launch.ts
 stays a rich helper but routes its internal invokes through emulatorApi;

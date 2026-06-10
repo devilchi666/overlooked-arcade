@@ -133,9 +133,8 @@ spanned every system but was filed under whichever core happened to be active.
         frontend-only (no Rust). One behavior touch: GameDialogs
         `get_controller_devices` now guards `!systemId` (was reachable as
         null; equivalent).
-      - **Slice 5 (gameplay cluster)** ✅ SHIPPED on
-        `feat/theming-platform-api-gameplay` (2026-06-10) — **awaiting
-        operator playtest + merge.** Five modules / ~75 call sites / ~14
+      - **Slice 5 (gameplay cluster)** ✅ merged 2026-06-10
+        (`feat/theming-platform-api-gameplay`). Five modules / ~75 call sites / ~14
         files, landed as two commits (the planned two-PR split on one
         branch): **PR A** = `emulatorApi` (17) + `rewindTasApi` (15);
         **PR B** = `cheatsApi` (12) + `milestonesApi` (6) + `captureApi`
