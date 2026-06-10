@@ -42,7 +42,11 @@ import type { ThemeManifest } from "@oa/platform/theme/manifest";
 // look). WINDOW = how many cards either side of focus are kept in the DOM.
 const CARD_W = 210;
 const PITCH = 168;
+// Cards kept in the DOM each side of focus (render window).
 const WINDOW = 8;
+// Covers warmed into the browser cache each side of focus (preload buffer,
+// wider than the render window) so fast scrolling hits cache, not a fetch.
+const PRELOAD = 24;
 
 const COVERFLOW_MANIFEST: ThemeManifest = {
   id: "coverflow",
@@ -147,6 +151,31 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
   const coverFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);
+
+  // Image-preload buffer for smooth FAST scroll. We only render ±WINDOW cards
+  // as DOM (above), but we WARM the covers a wider ±PRELOAD range into the
+  // browser cache via off-DOM Image() loads. So when a card later mounts as we
+  // scroll, its <img src> is a cache hit (no placeholder flash). Deduped by URL
+  // — each cover fetches exactly once; the Set holds only short strings, and we
+  // keep no reference to the Image objects so the browser's own resource cache
+  // governs decoded-image memory (and eviction). The fetch is incremental:
+  // each focus step only warms the few URLs newly entering the ±PRELOAD range.
+  const prefetched = new Set<string>();
+  createEffect(() => {
+    const list = games();
+    if (list.length === 0) return;
+    const f = focusedIndex();
+    const lo = Math.max(0, f - PRELOAD);
+    const hi = Math.min(list.length - 1, f + PRELOAD);
+    for (let i = lo; i <= hi; i++) {
+      const src = coverFor(list[i]!);
+      if (!src || prefetched.has(src)) continue;
+      prefetched.add(src);
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src; // warms the cache; no DOM, no retained reference
+    }
+  });
 
   const sysShortName = (entry: RomEntry): string =>
     systemThemes[entry.systemId]?.shortName ?? entry.systemId;
