@@ -232,9 +232,14 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
                 const offset = (): number => absIndex() - focusedIndex();
                 const isFocused = (): boolean => offset() === 0;
                 return (
+                  // NO data-system here: CoverFlow is system-agnostic (D19).
+                  // It deliberately does NOT consume the per-system accent
+                  // cascade — every card uses the THEME's own accent (the
+                  // cyan token), so the shell reads as one cohesive identity
+                  // instead of a rainbow of per-system colours. (Per-system
+                  // "worlds" are Retroverse's take, not the substrate's.)
                   <div
                     class="oa-cf-card"
-                    data-system={entry.systemId}
                     style={{
                       left: `${absIndex() * PITCH}px`,
                       transform: `translateY(-50%) scale(${isFocused() ? 1 : 0.78})`,
@@ -263,13 +268,24 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
                       <Show
                         when={coverFor(entry)}
                         fallback={
+                          // Missing-art placeholder — SUBTLE on purpose so the
+                          // many art-less games in a big library read as quiet
+                          // dark slots, not loud colour blocks. A faint
+                          // theme-accent haze (the translucent glow token) over
+                          // the deep surface gives just enough identity. The
+                          // title sits on top so an art-less card is still
+                          // identifiable at the centre.
                           <div
-                            class="absolute inset-0"
+                            class="absolute inset-0 flex items-end p-3"
                             style={{
                               background:
-                                "radial-gradient(circle at 30% 25%, var(--color-system-glow), transparent 60%), linear-gradient(135deg, var(--color-system-accent) 0%, var(--color-oa-bg-deep) 100%)",
+                                "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
                             }}
-                          />
+                          >
+                            <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
+                              {entry.title}
+                            </span>
+                          </div>
                         }
                       >
                         {(src) => (
@@ -298,10 +314,10 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
           fallback={<p class="text-sm text-(--color-oa-ink-dim)">—</p>}
         >
           {(g) => (
-            <div
-              class="flex items-end justify-between gap-6"
-              data-system={g().systemId}
-            >
+            // No data-system: the focused game's system NAME is shown as text
+            // (info), but its colour stays the theme accent — CoverFlow's
+            // uniform identity (D19), not the per-system tint.
+            <div class="flex items-end justify-between gap-6">
               <div class="min-w-0">
                 <p class="text-[0.6rem] uppercase tracking-[0.5em] text-(--color-system-accent)">
                   {sysShortName(g())}
@@ -336,11 +352,16 @@ export const coverflow: ThemePackage = {
   // accents still come from the [data-system] cascade (D19): CoverFlow stays
   // system-agnostic in layout while consuming per-system colour on the covers.
   tokens: {
-    bgDeep: "oklch(0.09 0.02 255)",
-    bg: "oklch(0.14 0.025 255)",
+    // Cinematic-dark but perceptibly COOL (vs Retroverse's warm-purple
+    // default) — kept at a readable lightness with extra chroma so the hue
+    // actually reads instead of looking pure black.
+    bgDeep: "oklch(0.12 0.035 250)",
+    bg: "oklch(0.16 0.04 250)",
     accent: "oklch(0.80 0.13 225)",
     accentSoft: "oklch(0.91 0.05 225)",
-    accentGlow: "oklch(0.80 0.13 225 / 0.35)",
+    // Glow stays fairly translucent — it's the faint haze on the subtle
+    // missing-art placeholder; too strong and the art-less cards shout.
+    accentGlow: "oklch(0.80 0.13 225 / 0.22)",
     focusRing: "oklch(0.80 0.13 225)",
   },
 };
