@@ -122,9 +122,8 @@ spanned every system but was filed under whichever core happened to be active.
         operator playtested). 28 wrappers across art/metadata sync +
         game-info + mame + hashes (11 files). DECISIONS **D15**
         (typed-binding modules move + re-export).
-      - **Slice 4 (`coresApi` + `inputApi`)** ✅ SHIPPED on
-        `feat/theming-platform-api-cores-input` (2026-06-10) — **awaiting
-        operator playtest + merge.** 29 wrappers / ~50 call sites / 18
+      - **Slice 4 (`coresApi` + `inputApi`)** ✅ merged 2026-06-10
+        (`feat/theming-platform-api-cores-input`). 29 wrappers / ~50 call sites / 18
         files: installed cores + buildbot catalog + core-options + BIOS
         (coresApi), bindings + input descriptors + controller devices +
         analog routing + light-gun (inputApi). DECISIONS **D16** (the

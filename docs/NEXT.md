@@ -462,9 +462,9 @@ playtested).
 playtested). 28 wrappers / 11 files across art/metadata sync + game-info + mame
 + hashes. DECISIONS D15 (typed-binding modules move + re-export).
 
-**Slice 4 — `coresApi` + `inputApi` ✅ SHIPPED on
-`feat/theming-platform-api-cores-input` (2026-06-10; awaiting operator playtest
-+ merge).** 29 wrappers / ~50 call sites / 18 files: installed cores + buildbot
+**Slice 4 — `coresApi` + `inputApi` ✅ MERGED to main 2026-06-10**
+(`feat/theming-platform-api-cores-input`; operator playtested). 29 wrappers /
+~50 call sites / 18 files: installed cores + buildbot
 catalog + core-options + BIOS (coresApi, 18); bindings + input descriptors +
 controller devices + analog routing + light-gun (inputApi, 11). DECISIONS D16 —
 the `platform↛components` boundary forces component-local backend-contract types
