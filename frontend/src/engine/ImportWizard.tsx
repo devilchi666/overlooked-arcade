@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
-import { useBackHandler } from "../nav/back";
+import { captureFocusReturn, useDomQueryFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
 import { listCores } from "@oa/platform/api/coresApi";
 import {
   startBackgroundScan,

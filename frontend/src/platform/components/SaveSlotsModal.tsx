@@ -2,9 +2,9 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import { listSaveSlots, deleteSaveSlot } from "@oa/platform/api/rewindTasApi";
 import { launchRom } from "@oa/platform/library/launch";
 import type { RomEntry } from "@oa/platform/library/types";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 type SaveSlot = {
   slot: number;
@@ -119,7 +119,7 @@ const SaveSlotsModal: Component<Props> = (props) => {
             if (e.currentTarget === e.target) props.onClose();
           }}
         >
-          <HintRegion hints={{ a: "Launch slot", b: "Close", x: "Delete slot" }} />
+          <HintRegion hints={{ Confirm: "Launch slot", Back: "Close", Secondary: "Delete slot" }} />
           <div
             class="w-full max-w-3xl rounded-lg border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
             data-system={entry().systemId}

@@ -18,9 +18,9 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { useBackHandler } from "../../nav/back";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { HintRegion } from "../../nav/HintBar";
+import { useBackHandler } from "@oa/platform/nav";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
@@ -108,7 +108,7 @@ export const Dialog: Component<Props> = (props) => {
   return (
     <Show when={props.open}>
       <DialogBackHandler onClose={props.onClose} />
-      <HintRegion hints={{ b: "Close" }} />
+      <HintRegion hints={{ Back: "Close" }} />
       <div
         // z-[70]: platform-owned modal dialogs render ABOVE the engine
         // manager takeover (EngineManagerSurface, z-[60]) — Settings →

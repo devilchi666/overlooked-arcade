@@ -17,7 +17,7 @@
 // docs/PLANS/theming-substrate.md §6 Phase 1.
 
 import { createSignal, type Accessor } from "solid-js";
-import { onNavEvent } from "../nav/gamepad";
+import { onNavEvent } from "@oa/platform/nav";
 
 const [openSig, setOpenSig] = createSignal(false);
 

@@ -12,7 +12,7 @@ import type { EntryGroup } from "@oa/platform/library/filter";
 import { useMedia } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes } from "@oa/platform/themes/registry";
-import { useFocusGroup } from "../../nav/focus";
+import { useFocusGroup } from "@oa/platform/nav";
 
 type Props = {
   groups: EntryGroup[];

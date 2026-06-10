@@ -57,6 +57,13 @@ export function setNavEnabled(on: boolean): void {
   inputEnabled = on;
 }
 
+/// Current enable state. The keyboard nav path in `./focus` reads this so
+/// gamepad + keyboard share one gate (the shell nav layer is suppressed while
+/// a game is running / a non-navigable surface is up).
+export function isNavEnabled(): boolean {
+  return inputEnabled;
+}
+
 type ButtonState = { pressedAt: number; lastRepeatAt: number };
 type StickState = {
   direction: NavDirection | null;

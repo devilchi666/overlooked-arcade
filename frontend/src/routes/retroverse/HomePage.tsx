@@ -40,8 +40,8 @@ import { useMedia } from "@oa/platform/library/media";
 import { usePlatformMedia } from "@oa/platform/library/platformMedia";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { RomEntry } from "@oa/platform/library/types";
-import { HintRegion } from "../../nav/HintBar";
-import { useDomQueryFocusGroup } from "../../nav/focus";
+import { HintRegion } from "@oa/platform/nav";
+import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
 import { getSystemInfo, type MergedSystemInfo } from "@oa/platform/library/systemInfo";
@@ -460,13 +460,13 @@ const HomePage: Component = () => {
         hints={{
           dpad: "Switch region",
           stick: "Navigate",
-          a: "Select",
-          b: "Back",
-          x: "Search",
-          y: "Filters",
-          start: "Options",
-          l1: "Prev tab",
-          r1: "Next tab",
+          Confirm: "Select",
+          Back: "Back",
+          Secondary: "Search",
+          Tertiary: "Filters",
+          Menu: "Options",
+          PrevSection: "Prev tab",
+          NextSection: "Next tab",
         }}
       />
 

@@ -7,24 +7,32 @@
 // child region naturally takes precedence over its parent; an opened
 // dialog's region overrides the underlying screen.
 //
+// VERB-NATIVE (DECISIONS D18): hints are keyed by semantic VERB
+// (`confirm` / `back` / `secondary` / …), not by physical button. The bar
+// resolves each verb → its currently-bound button (via navBindings, swap-aware)
+// → a glyph from the active GlyphSet. So remapping an input — or flipping the
+// A/B swap — re-paints every on-screen hint automatically, for free. The two
+// directional descriptors (`dpad` / `stick`) carry fixed glyphs (direction
+// remapping is identity in S1).
+//
 // Auto-hidden when no gamepad has been seen this session. Reappears
 // on first connect; the connect itself prompts the operator that the
 // pad is wired up.
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type Component, type JSX } from "solid-js";
-import type { NavButton } from "./types";
 import { hasSeenGamepad } from "./gamepad";
-import { isSwapAB } from "./focus";
+import { isSwapAB, navBindings } from "./navBindings";
+import { DEFAULT_GLYPH_SET, verbGlyph } from "./glyphs";
+import type { NavVerb } from "./verbs";
 import { nowPlaying } from "@oa/platform/lib/audio";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 
-/// Pseudo-glyphs surfaced in the hint bar that don't correspond to
-/// a single NavButton — the DPad and the left stick each get a slot
-/// so pages can describe their navigation model ("DPad switch region",
-/// "Stick navigate") alongside the face-button glyphs.
-export type HintGlyph = NavButton | "dpad" | "stick";
+/// A hint is keyed by the semantic verb it describes, plus the two directional
+/// descriptors (`dpad` / `stick`) that let a page narrate its movement model
+/// ("DPad switch region", "Stick navigate") alongside the action verbs.
+export type HintKey = NavVerb | "dpad" | "stick";
 
-export type Hints = Partial<Record<HintGlyph, string>>;
+export type Hints = Partial<Record<HintKey, string>>;
 
 type StackEntry = { id: number; hints: Hints };
 
@@ -60,41 +68,30 @@ export const HintRegion: Component<{ hints: Hints | Accessor<Hints>; children?: 
 };
 
 /// Order glyphs appear in the bar. Reads left-to-right: navigation
-/// glyphs first (DPad + stick describing how to move), then A/B/X/Y,
-/// then shoulder + start.
-const HINT_ORDER: HintGlyph[] = [
+/// descriptors first (DPad + stick describing how to move), then the
+/// focused-item action verbs, then the structural / global verbs.
+const HINT_ORDER: HintKey[] = [
   "dpad",
   "stick",
-  "a",
-  "b",
-  "x",
-  "y",
-  "l1",
-  "r1",
-  "start",
-  "select",
+  "Confirm",
+  "Back",
+  "Secondary",
+  "Tertiary",
+  "PrevSection",
+  "NextSection",
+  "Menu",
+  "OpenQuickSettings",
 ];
 
-/// Display label for the glyph. Xbox-style — Y top, A bottom, X left,
-/// B right. Operators on Nintendo-convention layouts can swap labels
-/// via Slice E's A/B swap setting (Phase 0 baseline keeps Xbox glyphs).
-const HINT_GLYPH: Record<HintGlyph, string> = {
-  dpad: "✥",
-  stick: "○",
-  a: "A",
-  b: "B",
-  x: "X",
-  y: "Y",
-  l1: "LB",
-  r1: "RB",
-  l2: "LT",
-  r2: "RT",
-  start: "≡",
-  select: "▢",
-  l3: "L3",
-  r3: "R3",
-  home: "⌂",
-};
+/// Resolve a hint key to the glyph to paint. Directional descriptors are fixed;
+/// verbs resolve through the current bindings (swap-aware) so the glyph tracks
+/// remaps. Returns null when no glyph applies (e.g. an unbound reserved verb) —
+/// the bar omits that entry.
+function glyphForKey(key: HintKey, swap: boolean): string | null {
+  if (key === "dpad") return DEFAULT_GLYPH_SET.dpad;
+  if (key === "stick") return DEFAULT_GLYPH_SET.stick;
+  return verbGlyph(key, navBindings(), swap);
+}
 
 export const HintBar: Component = () => {
   const currentHints = createMemo<Hints>(() => {
@@ -102,13 +99,15 @@ export const HintBar: Component = () => {
     return s.length === 0 ? {} : s[s.length - 1].hints;
   });
   const visibleEntries = createMemo(() => {
-    let hints = currentHints();
-    // Nintendo-layout swap: render the A glyph next to the B label and
-    // vice versa so the operator sees which physical button confirms.
-    if (isSwapAB() && (hints.a !== undefined || hints.b !== undefined)) {
-      hints = { ...hints, a: hints.b, b: hints.a };
-    }
-    return HINT_ORDER.filter((b) => hints[b]).map((b) => ({ button: b, label: hints[b]! }));
+    const hints = currentHints();
+    const swap = isSwapAB();
+    return HINT_ORDER.flatMap((key) => {
+      const label = hints[key];
+      if (label === undefined) return [];
+      const glyph = glyphForKey(key, swap);
+      if (glyph === null) return [];
+      return [{ key, glyph, label }];
+    });
   });
   /// Now-playing label sourced from the platform-music bus signal.
   /// Empty string when nothing is playing → the chip stays hidden.
@@ -159,7 +158,7 @@ export const HintBar: Component = () => {
               {(entry) => (
                 <div class="oa-hint-entry flex items-center gap-2">
                   <span class="oa-hint-glyph inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/15 px-1 text-[0.65rem] font-bold text-(--color-oa-ink)">
-                    {HINT_GLYPH[entry.button]}
+                    {entry.glyph}
                   </span>
                   <span class="oa-hint-label text-(--color-oa-ink-dim)">{entry.label}</span>
                 </div>

@@ -24,7 +24,7 @@ import {
   RETROVERSE_ROUTES,
   type RetroverseRoute,
 } from "../../routing/currentRoute";
-import { onNavEvent } from "../../nav/gamepad";
+import { onNavEvent } from "@oa/platform/nav";
 import { useTheme } from "../../routes/retroverse/context";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import DiscoverPage from "../../routes/retroverse/DiscoverPage";

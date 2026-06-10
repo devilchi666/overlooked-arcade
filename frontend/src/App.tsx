@@ -72,12 +72,12 @@ import type { RomEntry } from "@oa/platform/library/types";
 import { createSettingsStore } from "@oa/platform/settings/store";
 import { loadShaderPresets, applyShaderPresetsUpdate, type ShaderPresetEntry } from "@oa/platform/settings/shader_presets";
 import type { SystemId } from "@oa/platform/themes/registry";
-import { setNavEnabled, startGamepadInput, stopGamepadInput } from "./nav/gamepad";
-import { HintBar } from "./nav/HintBar";
+import { loadNavBindings, setNavEnabled, startGamepadInput, stopGamepadInput } from "@oa/platform/nav";
+import { HintBar } from "@oa/platform/nav";
 import { registerLibraryAdmin } from "@oa/platform/libraryAdmin";
 import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJobsBar";
 import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
-import { setSwapAB } from "./nav/focus";
+import { setSwapAB } from "@oa/platform/nav";
 import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
@@ -278,6 +278,10 @@ const App: Component = () => {
   // window focus, so the two never overlap).
   onMount(() => {
     startGamepadInput();
+    // Load the OA-wide nav bindings (input→verb map) — falls back to the
+    // operator-locked defaults if none persisted. Fire-and-forget; defaults
+    // are already live so there's no gate on this resolving.
+    void loadNavBindings();
     onCleanup(() => stopGamepadInput());
   });
 

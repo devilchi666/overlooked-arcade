@@ -115,6 +115,19 @@ export default [
                 "lives in platform/components/, engine surfaces in engine/. Don't " +
                 "re-create an unclassified src/components/ bucket.",
             },
+            {
+              // Theming ARC 1 S1 (nav foundation): the nav layer is the lowest
+              // platform leaf — raw input → verbs → focus + primitives. It must
+              // stay theme-agnostic and self-contained, so it must not reach UP
+              // into platform/components (the app-specific shared UI). The
+              // primitives are generic; a theme composes them, not the reverse.
+              target: "./src/platform/nav",
+              from: "./src/platform/components",
+              message:
+                "Boundary: platform/nav must stay a generic leaf — it must not " +
+                "import platform/components (app-specific shared UI). Keep the nav " +
+                "primitives theme-agnostic; compose them from the theme/components.",
+            },
           ],
         },
       ],

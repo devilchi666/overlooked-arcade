@@ -8,6 +8,100 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
 
 ---
 
+## 2026-06-10 — Phase 3 S1: nav foundation (verb-native nav layer) — shipped, awaiting playtest
+
+- **Shipped** on `feat/theming-nav-foundation` (all four S1 scope items + the
+  two recommendations the operator approved — persistence-real + HintBar verb
+  re-key + arrow-key keyboard):
+  - **Relocated `src/nav/` → `platform/nav/`** (git mv: types/gamepad/back/
+    focus/HintBar) + new modules; all **24 importers repointed to
+    `@oa/platform/nav`** (one barrel `index.ts`). This **closes the Phase-2
+    residual wrong-direction edges** (`platform/components/* → ../../nav/*`):
+    those imports are now intra-platform. New ratchet lint zone
+    **`platform/nav ↛ platform/components`** keeps the nav layer a generic leaf.
+  - **Verb vocabulary** (`verbs.ts`): `Confirm`/`Back`/`Secondary`/`Tertiary` +
+    directional `Up`/`Down`/`Left`/`Right` + `PrevSection`/`NextSection`/`Menu` +
+    reserved-unbound `OpenQuickSettings`/`Search`/`Favorite`/`Page`. (Operator
+    sign-off added `Secondary`/`Tertiary` to the plan's headline set — they're
+    the X/Y focused-item roles the focus framework already dispatches.)
+  - **Input→verb indirection** (`navBindings.ts`): OA-wide `NavBindings`
+    (gamepad + keyboard channels) + `DEFAULT_BINDINGS` = the operator-locked
+    controller-nav spec verbatim. Persisted in appData (`nav_bindings.json`) via
+    new `platform/api/navBindingsApi.ts` + Rust `get/set_nav_bindings`
+    (opaque-JSON blob, mirrors `audio.json`). `resolveButtonVerb` /
+    `resolveKeyVerb` / `buttonForVerb` resolvers.
+  - **A/B swap collapsed into a binding** — the old `swapAB` special-case is gone
+    from `focus.ts`/`HintBar`; it's now a resolve-time overlay in `navBindings`
+    (`setSwapAB`/`isSwapAB` moved there). `focus.ts` `routeEvent` resolves
+    button→verb then dispatches by verb (`dispatchVerb`); focus-group callback
+    names (onActivate/onCancel/…) kept stable so the ~15 consumers don't churn.
+  - **HintBar is verb-native**: `Hints` re-keyed from physical buttons to verbs
+    (`{ Confirm, Back, Secondary, … }` + `dpad`/`stick` descriptors) across **17
+    call sites**; glyphs resolve **verb → currently-bound button → glyph** via
+    the glyph-set seam (`glyphs.ts`, scope-call #4). Remap / swap re-paints every
+    hint for free.
+  - **`list` + `grid` primitives** (`primitives/`) — verb-native, declarative
+    props (`density`/`focusProminence`/`easing`/data-source/neighbours, surfaced
+    as `data-oa-*` seams for the S3 token layer; scope-call #8). Additive — they
+    do **not** replace the bespoke VirtualLibraryGrid/LeftSidebar focus usage;
+    they're the surface S2's Wheel/Retroverse skeletons consume.
+  - **Keyboard**: arrow keys → directional nav at the focus layer (gated:
+    nav-enabled, non-editable target, no Ctrl/Meta/Alt). Confirm already works
+    natively on focusable buttons; Enter/Back/Esc keyboard verbs deferred to the
+    remap follow-on (need a native-control coexistence audit). Schema carries
+    both channels now.
+- **Verified:** `npm run typecheck` + `npm run lint` green; `cargo test -p
+  oa-shell` = **822 passed**. NOT yet operator-playtested.
+- **Decision D21** recorded (focus-group callback names kept; gamepad bus stays
+  raw-event so the engine-summon chord + boot-skip are untouched; keyboard arrows
+  emit source "dpad").
+- **Behavior to watch in playtest:** arrow-key nav is newly live in the shell —
+  arrows now move the active focus group (instead of scrolling) when focus isn't
+  in an editable field. Everything else should feel identical (defaults = the
+  locked spec).
+- **Almost:** the remap Settings UI (the verb-rebinding surface) — deliberately
+  the follow-on **after** the S2 swap gate, per D18.
+- **Next:** **S2 — walking skeleton:** minimal active-theme switch (restart) +
+  Retroverse wrapped as default theme + a rough **Wheel** second shell;
+  switchable from Settings → Appearance, both browse + launch. The morale/
+  de-risk milestone.
+
+## 2026-06-10 — Phase 3 design conversation: two vision corrections + skeleton-first resequence (no code)
+
+- **Shipped (design only):** locked the Phase 3 shape before any code. Three
+  outcomes, recorded as DECISIONS **D19** + **D20** and plan **§13**:
+  - **D19 — per-system theming is a Retroverse feature, NOT a substrate
+    contract.** Operator correction: the substrate's whole job is **swappable
+    whole-shells** (BigBox-style), not a per-system-identity mandate. Per-system
+    data stays platform-provided; *consuming* it is each theme's choice. Palette
+    pillar becomes theme-first; the §6 "theme vs per-system precedence" question
+    drops from thorny to low-stakes plumbing.
+  - **D20 — kiosk/cabinet capabilities are deferred platform features.** Attract,
+    CRT/shader chrome, multi-monitor (marquee/manuals/second-controls) are
+    engine-owned platform toggles a shell opts into via the manifest
+    `required_engine_capabilities` field — out of scope until ARC 2-3. **Two cheap
+    seams reserved in ARC 1:** (a) theme-host lifecycle written as a *general*
+    "platform preempts + restores the theme" pattern (so attract slots in free —
+    same lifecycle as the F12 engine takeover), (b) manifest declares named
+    **surfaces**, ARC 1 honoring exactly one (`main`). CRT/shaders need nothing.
+  - **Skeleton-first resequence** of ARC-1 execution (ARC boundaries unchanged):
+    pull the vertical slice forward — S1 nav foundation → **S2 walking skeleton**
+    (Retroverse + rough **Wheel** switchable, the morale/de-risk swap gate) → S3
+    token layer (+ `THEME_CONTRACT.md`) → S4 versioned manifest + validator → S5
+    substrate depth. Replaces §6's save-the-proof-for-Phase-6 order.
+  - Forward-looking scope calls table (plan §13.2): build-now = token layer
+    (#1+#3, engine-scoped) + manifest/validator (#2+#7); seam-now = glyph (#4),
+    audio category (#6), declarative props (#8), settings namespace (#9);
+    decide-now = precedence (#5, done via D19); defer = hot-reload (#10).
+- **Almost:** nothing — design only. No code, no branch.
+- **Next:** **S1 — nav foundation.** Lock the verb vocabulary (start set:
+  `Confirm`/`Back`/directional/`NextSection`/`PrevSection`/`OpenQuickSettings`/
+  `Menu`; reserved `Search`/`Favorite`/`Page`), relocate `src/nav/` (back/focus/
+  gamepad/HintBar/types) → `platform/nav/`, build the input→verb `navBindings`
+  layer (OA-wide tier + `platform/api/` wrapper), ship `list`/`grid` primitives
+  verb-native with declarative-config props. Defaults = operator-locked
+  controller-nav spec.
+
 ## 2026-06-10 — Phase 4.5: the EVENT corral (sibling to the invoke ban)
 
 - **Shipped:** Closed the one coupling the Phase 4 audit surfaced as still-open —

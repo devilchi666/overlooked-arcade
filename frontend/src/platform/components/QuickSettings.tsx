@@ -20,9 +20,9 @@ import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
 import type { SettingsStore } from "@oa/platform/settings/store";
-import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 // Phase 2.8 slice B (Quick Settings overlay) + Phase 4 slice B (rewind
 // scrubbing). Triggered by Escape during gameplay. Two-mode card:
@@ -850,7 +850,7 @@ const DiscPanel: Component<DiscPanelProps> = (props) => {
   };
   return (
     <div ref={rootRef} class="flex flex-col gap-3 p-4">
-      <HintRegion hints={{ a: "Insert", b: "Back" }} />
+      <HintRegion hints={{ Confirm: "Insert", Back: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>Disc control</span>
         <span>
@@ -1010,7 +1010,7 @@ const RewindScrubber: Component<ScrubberProps> = (props) => {
 
   return (
     <div class="flex flex-col gap-3 p-4">
-      <HintRegion hints={{ a: "Resume", b: "Cancel" }} />
+      <HintRegion hints={{ Confirm: "Resume", Back: "Cancel" }} />
       <div class="flex items-baseline justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {props.scrubPosition === 0 ? "Live edge" : `-${positionSeconds().toFixed(2)}s`}
@@ -1183,7 +1183,7 @@ const TasPanel: Component<TasPanelProps> = (props) => {
 
   return (
     <div ref={rootRef} class="flex flex-col gap-3 p-4">
-      <HintRegion hints={{ a: "Activate", b: "Back" }} />
+      <HintRegion hints={{ Confirm: "Activate", Back: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {mode() === "idle" && "TAS"}
@@ -1378,7 +1378,7 @@ const VideoPanel: Component<VideoPanelProps> = (props) => {
 
   return (
     <div ref={rootRef} class="flex flex-col gap-3 p-4">
-      <HintRegion hints={{ a: "Activate", b: "Back" }} />
+      <HintRegion hints={{ Confirm: "Activate", Back: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>
           {capturing()
@@ -1616,7 +1616,7 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
 
   return (
     <div ref={rootRef} class="flex flex-col gap-3 p-4">
-      <HintRegion hints={{ a: "Activate", b: "Back" }} />
+      <HintRegion hints={{ Confirm: "Activate", Back: "Back" }} />
       <div class="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
         <span>Memory inspector</span>
         <span>{props.info?.available ? `${props.info.totalSize.toLocaleString()} bytes` : "—"}</span>
@@ -1950,7 +1950,7 @@ const ActionsPanel: Component<{
   onCleanup(restoreFocus);
   return (
     <div class="flex flex-col gap-1.5 p-3">
-      <HintRegion hints={{ a: "Activate", b: "Resume" }} />
+      <HintRegion hints={{ Confirm: "Activate", Back: "Resume" }} />
       <For each={actions()}>
         {(action, index) => (
           <ActionRow

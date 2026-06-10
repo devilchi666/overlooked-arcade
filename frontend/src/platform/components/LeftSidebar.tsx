@@ -21,7 +21,7 @@ import {
   type LeafFocusBinding,
   type SidebarTreeContext,
 } from "./SidebarTreeNode";
-import { useFocusGroup } from "../../nav/focus";
+import { useFocusGroup } from "@oa/platform/nav";
 import { createSignal } from "solid-js";
 import SidebarMigrationBanner from "./SidebarMigrationBanner";
 

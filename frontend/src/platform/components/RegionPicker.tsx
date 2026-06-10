@@ -4,9 +4,9 @@ import { getDataDir } from "@oa/platform/lib/dataDir";
 import type { RomEntry } from "@oa/platform/library/types";
 import { useMedia } from "@oa/platform/library/media";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "@oa/platform/themes/registry";
-import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
-import { useBackHandler } from "../../nav/back";
-import { HintRegion } from "../../nav/HintBar";
+import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { useBackHandler } from "@oa/platform/nav";
+import { HintRegion } from "@oa/platform/nav";
 
 type Props = {
   entry: RomEntry | null;
@@ -95,7 +95,7 @@ const RegionPicker: Component<Props> = (props) => {
         onCleanup(restoreFocus);
         return null;
       })()}
-      <HintRegion hints={{ a: "Pick", b: "Close" }} />
+      <HintRegion hints={{ Confirm: "Pick", Back: "Close" }} />
       <div
         class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
         onClick={(e) => {
