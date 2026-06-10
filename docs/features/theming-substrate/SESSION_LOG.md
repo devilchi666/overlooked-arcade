@@ -8,7 +8,7 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
 
 ---
 
-## 2026-06-10 — Phase 3 S2: walking skeleton (Retroverse ⇄ Wheel swap gate) — ⏳ awaiting playtest
+## 2026-06-10 — Phase 3 S2: walking skeleton (Retroverse ⇄ CoverFlow swap gate) — ✅ shipped + merged
 
 > **The morale/de-risk milestone — the dream first becomes visible.** Branch
 > `feat/theming-walking-skeleton`. Four S2 design decisions signed off

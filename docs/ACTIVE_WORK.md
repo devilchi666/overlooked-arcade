@@ -199,10 +199,10 @@ spanned every system but was filed under whichever core happened to be active.
         `platform/nav ↛ platform/components` lint zone. DECISIONS **D21**. 822
         oa-shell tests pass; typecheck + lint green. **S2 (walking skeleton) is
         next.**
-      - **Phase 3 S2 — walking skeleton (Retroverse ⇄ Wheel swap gate) ⏳
-        shipped on `feat/theming-walking-skeleton`, awaiting operator playtest +
-        merge (2026-06-10).** The morale/de-risk milestone — two switchable
-        whole-shells. Four design decisions signed off before code (all the
+      - **Phase 3 S2 — walking skeleton (Retroverse ⇄ CoverFlow swap gate) ✅
+        shipped + merged 2026-06-10 (operator playtested;
+        `feat/theming-walking-skeleton`, merge `1fbec3e`).** The morale/de-risk
+        milestone — two switchable whole-shells. Four design decisions signed off before code (all the
         recommended path). Shipped: a minimal **Theme SDK contract**
         (`platform/theme/{types,host,registry}` — a theme = `{manifest, entry}`,
         the entry a surface-aware `Component<{surface:"main"}>` consuming only
@@ -214,18 +214,21 @@ spanned every system but was filed under whichever core happened to be active.
         persisted on **`LibraryPrefs.active_theme_id`**; **restart** via a new Rust
         `restart_app` (Tauri `AppHandle::restart()`, no plugin); **Retroverse** as
         the default theme (thin wrapper → existing `RetroverseShell`); a rough
-        **Wheel** 2nd shell (full-bleed horizontal coverflow, system-agnostic per
-        D19, on the S1 `ListNav` primitive — honest caveat: layout/feel only, the
-        cinematic layer is ARC 2-3); `EngineSummonIcon` **re-homed** to
-        `platform/components/` (D12) so both themes mount it; `themePreempted()`
-        (the general D20a preempt/restore seam); a `surfaces` manifest field (D20b);
+        **CoverFlow** 2nd shell (full-bleed horizontal coverflow, system-agnostic
+        per D19, on `useFocusGroup` + a windowed sliding track — renamed from
+        "Wheel" per operator; a true radial Wheel is the S5 `wheel` primitive;
+        honest caveat: layout/feel only, the cinematic layer is ARC 2-3);
+        `EngineSummonIcon` **re-homed** to `platform/components/` (D12) so both
+        themes mount it; `themePreempted()` (the general D20a preempt/restore
+        seam); a `surfaces` manifest field (D20b); the active-theme mount isolated
+        in its own stacking context (engine territory always overlays the theme);
         the **Appearance picker** filled into the existing OA-wide Themes Settings
         category. 6 new lint zones (incl. `themes↛engine` probe-verified). 822
-        oa-shell tests pass; typecheck + lint green. DECISIONS **D22**.
-        **Acceptance gate (operator):** switch Retroverse ⇄ Wheel from Settings →
-        Themes, app restarts, both browse + launch. **After merge: S3 — token
-        layer** (`THEME_CONTRACT.md` + design tokens + a11y/motion). The nav-remap
-        Settings UI stays the separate D18 follow-on.
+        oa-shell tests pass; typecheck + lint green. DECISIONS **D22**. Playtest
+        round-1 fixes rode along (z-index isolation, focus-claim, windowing,
+        mouse/scroll). **Next: S3 — token layer** (`THEME_CONTRACT.md` + design
+        tokens + a11y/motion baseline + engine-territory token isolation). The
+        nav-remap Settings UI stays the separate D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
