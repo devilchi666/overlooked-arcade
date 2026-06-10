@@ -8,7 +8,9 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
 
 ---
 
-## 2026-06-10 — Phase 3 S1: nav foundation (verb-native nav layer) — shipped, awaiting playtest
+## 2026-06-10 — Phase 3 S1: nav foundation (verb-native nav layer) — ✅ shipped + merged
+
+> **Merged to main 2026-06-10** — operator playtested ("working as expected").
 
 - **Shipped** on `feat/theming-nav-foundation` (all four S1 scope items + the
   two recommendations the operator approved — persistence-real + HintBar verb
@@ -51,7 +53,7 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
     remap follow-on (need a native-control coexistence audit). Schema carries
     both channels now.
 - **Verified:** `npm run typecheck` + `npm run lint` green; `cargo test -p
-  oa-shell` = **822 passed**. NOT yet operator-playtested.
+  oa-shell` = **822 passed**. Operator playtested + merged to main 2026-06-10.
 - **Decision D21** recorded (focus-group callback names kept; gamepad bus stays
   raw-event so the engine-summon chord + boot-skip are untouched; keyboard arrows
   emit source "dpad").

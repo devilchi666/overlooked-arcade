@@ -187,8 +187,8 @@ spanned every system but was filed under whichever core happened to be active.
         S2 walking skeleton (Retroverse + rough Wheel switchable — the swap gate)
         → S3 token layer → S4 manifest + validator → S5 substrate depth.
         Follow-on after S2: nav-remap Settings UI.
-      - **Phase 3 S1 — nav foundation ✅ shipped 2026-06-10
-        (`feat/theming-nav-foundation`; awaiting operator playtest).** Verb-native
+      - **Phase 3 S1 — nav foundation ✅ shipped + merged 2026-06-10
+        (`feat/theming-nav-foundation`; operator playtested).** Verb-native
         nav layer: `src/nav/` relocated to `platform/nav/` (24 importers repointed
         to `@oa/platform/nav`; closes the Phase-2 residual wrong-direction edges) +
         verb vocabulary (`verbs.ts`) + OA-wide input→verb `navBindings`
