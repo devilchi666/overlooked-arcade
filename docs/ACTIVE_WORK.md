@@ -100,15 +100,30 @@ spanned every system but was filed under whichever core happened to be active.
       platform; library-admin handlers → registry not props. Plan +
       log: **[PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md)**,
       theming-substrate SESSION_LOG 2026-06-09.
-    - **NEXT (queued): Phase 4 — typed `platform/api/` Tauri bridge.**
-      The last platform/theme decoupling step: corral **351 raw
-      `invoke()` calls / 54 files / 222 command names** behind typed
-      `platform/api/<domain>Api.ts` wrappers + a `no raw invoke()
-      outside platform/api/` lint rule. Plan + 6-slice order:
-      **[PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md)**;
-      **Slice 1 (`settingsApi` + the wrapper convention) is queued in
-      NEXT.md HIGH band.** Supersedes the "ESLint boundary rule deferred
-      to Phase 4" note below (and the stale "157 calls" estimate).
+    - **Phase 4 — typed `platform/api/` Tauri bridge — IN FLIGHT
+      (Slices 1-2 ✅ merged 2026-06-09, merge `a5997e3`; operator
+      playtested).** The last platform/theme decoupling step: corral the
+      raw `invoke()` calls (351 / 54 files / 222 command names at the
+      start) behind typed `platform/api/<domain>Api.ts` wrappers + a
+      `no raw invoke() outside platform/api/` lint rule (the rule turns on
+      in the final slice). Plan + 6-slice order:
+      **[PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md)**.
+      - **Slice 1 (`settingsApi`)** + **Slice 2 (`libraryApi` +
+        `collectionsApi` + `viewsApi`)** shipped on
+        `feat/theming-platform-api-settings` (one-branch-per-arc) and
+        merged together: **4 modules, 65 typed wrappers, ~95 call sites**
+        across display/audio/settings + library/folders/groups/collections/
+        views. Convention locked in DECISIONS **D14** (generic getters for
+        shape-divergent commands; api layer owns the backend-contract type;
+        assign-by-concern not by file). Surfaced + fixed one latent bug
+        (AnalogBindingsSection `get_game_overrides` arg name). Also rolled
+        the theming SESSION_LOG to `SESSION_LOG_ARCHIVE.md` (487→109 lines).
+      - **NEXT: Slice 3 (`mediaApi`)** — art/metadata sync + game-info +
+        mame + hashes (~45 sites; includes `ingest.ts`'s mame trio).
+        Queued in NEXT.md HIGH band. Then Slice 4 (cores+input),
+        Slice 5 (gameplay cluster), Slice 6 (jobs/system/shell + turn on
+        the lint rule). Supersedes the "ESLint boundary rule deferred to
+        Phase 4" note below.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

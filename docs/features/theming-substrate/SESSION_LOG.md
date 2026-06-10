@@ -98,11 +98,9 @@ Each session that touches this feature appends a 3-line entry:
     analog routing fell back to empty `{ ports: [] }`. The typed wrapper sends
     the correct `{ id }`, fixing it. Flagged to operator (the one place this
     slice changes runtime behavior; everything else is a pure pass-through).
-- **Almost:** behavior-preserving everywhere except the AnalogBindingsSection
-  bug fix above — awaiting operator smoke-test (QuickSettings during a game:
-  window mode / scaling / shader / audio device / volume; per-game Display +
-  Shaders + Audio dialogs; Settings → Display / Audio / Shaders; per-system
-  drill-in) before merge to main.
+- **Merged:** ✅ operator playtested + merged to main 2026-06-09 (merge
+  `a5997e3`, together with Slice 2). Behavior-preserving everywhere except the
+  AnalogBindingsSection bug fix above.
 - **Next:** Slice 2 — `libraryApi` + `collectionsApi` + `viewsApi` (the
   store-heavy core: library/store, customCollections, ingest, views/store +
   the `get/set_layout` calls left in layout/state, App.tsx library paths;
@@ -142,13 +140,10 @@ Each session that touches this feature appends a 3-line entry:
     `lookup_mame_title` / `set_game_mame_metadata` (mediaApi/Slice 3) — none
     belong to library/collections/views. Assign-by-concern wins over the file
     list (same discipline as Slice 1's `set_rewind_config` etc.).
-- **Almost:** behavior-preserving throughout (no AnalogBindingsSection-style
-  latent bug surfaced this slice — all arg names were already consistent across
-  call sites). Awaiting operator smoke-test: library load + add/remove a folder
-  (Import Wizard + Settings -> Library) + scan, tile favorite/completed toggles,
-  per-game core override from GameDetailPanel, custom collections
-  (create/rename/delete/add/remove), sidebar Views editor (create/reorder/move),
-  delete-game + clear-for-system. Slices 1+2 are now a playtestable chunk.
+- **Merged:** ✅ operator playtested + merged to main 2026-06-09 (merge
+  `a5997e3`, together with Slice 1). Behavior-preserving throughout (no
+  AnalogBindingsSection-style latent bug surfaced this slice — all arg names
+  were already consistent across call sites).
 - **Next:** Slice 3 — `mediaApi` (art/metadata sync + game-info + mame + hashes;
   media.tsx, platformMedia, gameInfo, MediaSettings, ImportWizard art paths,
   and ingest.ts's mame trio). ~45 sites.
