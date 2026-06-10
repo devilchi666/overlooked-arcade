@@ -22,9 +22,10 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getDataDir } from "@oa/platform/lib/dataDir";
+import { getPlatformMediaIndex } from "@oa/platform/api/mediaApi";
 
 type MediaVariant = {
   source: { kind: string };
@@ -89,7 +90,7 @@ export const PlatformMediaProvider: Component<{ children: JSX.Element }> = (prop
       console.warn("[oa-platform-media] listen failed:", e);
     }
     try {
-      const initial = await invoke<PlatformMediaIndex>("get_platform_media_index");
+      const initial = await getPlatformMediaIndex<PlatformMediaIndex>();
       // Merge instead of replace — events that arrived between
       // listener-install and hydrate already populated `prev`; newer
       // wins.

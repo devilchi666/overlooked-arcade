@@ -345,3 +345,50 @@ until then (the lint rule is off until Slice 6).
 canonical default for any command with divergent call-site views; concrete
 typed params otherwise; contract types exported from the api module; migrate
 strictly the slice's own commands.
+
+### D15 — Existing typed-binding modules MOVE to `platform/api/` + re-export for compat
+
+Phase 4 Slice 3 (2026-06-09, `feat/theming-platform-api-media`) hit a case
+Slices 1-2 didn't: two files — `platform/library/gameInfo.ts` and
+`platform/library/systemInfo.ts` — were **already** thin typed `invoke()`
+wrapper modules (one exported function per command + the domain types),
+predating the `platform/api/` concept. Slices 1-2 only ever migrated *inline*
+`invoke()` call sites inside store/component files; here the call site IS a
+typed wrapper whose name (`getGameInfo`, `refreshMameSystemInfo`) collides 1:1
+with the wrapper mediaApi would expose.
+
+**Decision:** the wrapper functions **move** into the api module (their proper
+long-term home — the command string lands there, satisfying the one-place
+rule), and the original domain module **re-exports** them
+(`export { getGameInfo, … } from "@oa/platform/api/mediaApi"`). The shared
+domain TYPES (`MergedGameInfo`, `GameInfoOverride`, `MameRefreshReport`,
+`LibraryEntryForBadges`, …) stay in the domain module; mediaApi pulls them in
+via `import type` (erased at runtime, so the value re-export one way + the
+type import the other way is **not** a runtime cycle).
+
+**Why move-and-re-export, not delegate or repoint:**
+- *Delegating* (keep `gameInfo.getGameInfo` defined, have it call
+  `mediaApi.getGameInfo`) double-wraps an identical signature for zero benefit —
+  two definitions of the same thin pass-through.
+- *Repointing every consumer* (import the function from mediaApi, the types
+  from the domain module) splits each consumer's single import into two and
+  churns 3+ unrelated files per migrated module.
+- Re-export gives exactly one definition (in the api module, the discoverable
+  surface), keeps consumers' import paths working unchanged, and keeps the
+  types co-located with their domain. New code can import the function from
+  either path; the lint rule (Slice 6) bans raw `invoke`, not non-api import
+  sources, so the re-export is permanently fine.
+
+**Distinction from D14's store-method case:** Slice 1-2 store files
+(`library/store.ts`, `customCollections.ts`) kept their functions and swapped
+`invoke(...)` → `api.xxx(...)` inside because those functions carry real logic
+(signal updates, dedup, post-hydrate) — they're not pure pass-throughs. D15
+covers the *pure typed-binding* file whose function adds nothing over the
+wrapper; that one moves wholesale.
+
+**How to apply:** when a later slice's command lives in a pre-existing thin
+typed-binding module (vs. an inline call site), move the wrapper to the api
+module and re-export from the domain module; leave commands that belong to a
+*different* slice defined-in-place (e.g. systemInfo's six `get/set_system_info*`
+stay raw until Slice 6, so systemInfo.ts keeps its `invoke` import and just
+re-exports the one mame command).

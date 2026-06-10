@@ -13,6 +13,12 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+// Theming Phase 4 Slice 3: `refresh_mame_system_info` belongs to the media
+// domain (MAME catalog), so its typed wrapper lives in platform/api/mediaApi
+// and is re-exported here for existing consumers. The other system-info
+// commands below stay raw until Slice 6 (systemApi).
+export { refreshMameSystemInfo } from "@oa/platform/api/mediaApi";
+
 /// One operator-facing peripheral row, rendered in SUPPORTED
 /// PERIPHERALS as `glyph name`. Matches the Rust `Peripheral` struct
 /// (snake_case serde — both fields are lowercase so no rename happens).
@@ -238,17 +244,3 @@ export type MameRefreshReport = {
   /// for transparency ("Refreshed from C:\Emulators\MAME\mame.exe").
   mamePath: string;
 };
-
-/// Re-import the L1 (MAME baseline) layer from the operator's local
-/// MAME install. `mamePath` (optional) overrides auto-detection — pass
-/// the path returned by the folder-picker when canonical paths fail.
-/// May be the binary itself OR a folder containing `mame.exe` / `mame`.
-///
-/// L2 (curated YAML) + L3 (operator overrides) are NEVER touched —
-/// only the L1 table gets replaced. Per-install operator edits and
-/// shipped curated content both survive the refresh.
-export async function refreshMameSystemInfo(args: {
-  mamePath?: string;
-}): Promise<MameRefreshReport> {
-  return invoke<MameRefreshReport>("refresh_mame_system_info", args);
-}

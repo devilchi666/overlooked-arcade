@@ -9,6 +9,11 @@ import {
   setFolderRules,
   updateFolder,
 } from "@oa/platform/api/libraryApi";
+import {
+  syncMediaForSystem,
+  syncMetadataForSystem,
+  resolveRomHashesForSystem,
+} from "@oa/platform/api/mediaApi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
@@ -763,7 +768,7 @@ const ImportWizard: Component<Props> = (props) => {
         const touchedSystems = Array.from(new Set(entries.map((e) => e.systemId))) as SystemId[];
         for (const systemId of touchedSystems) {
           try {
-            await invoke("resolve_rom_hashes_for_system", { systemId });
+            await resolveRomHashesForSystem(systemId);
           } catch (err) {
             console.warn(`[oa-wizard] auto-identify ${systemId} failed:`, err);
             // Best-effort: even if one system's resolve fails we still
@@ -797,18 +802,12 @@ const ImportWizard: Component<Props> = (props) => {
             systemId: e.systemId,
           }));
           if (syncCovers() || syncSnaps() || syncTitles()) {
-            void invoke("sync_media_for_system", {
-              systemId,
-              entries: syncEntries,
-            }).catch((err) =>
+            void syncMediaForSystem(systemId, syncEntries).catch((err) =>
               console.warn(`[oa-wizard] sync_media_for_system(${systemId}) failed:`, err),
             );
           }
           if (syncMetadata()) {
-            void invoke("sync_metadata_for_system", {
-              systemId,
-              entries: syncEntries,
-            }).catch((err) =>
+            void syncMetadataForSystem(systemId, syncEntries).catch((err) =>
               console.warn(`[oa-wizard] sync_metadata_for_system(${systemId}) failed:`, err),
             );
           }

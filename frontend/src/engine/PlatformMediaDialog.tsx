@@ -19,9 +19,14 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import {
+  getPlatformMediaIndex,
+  setPlatformMedia,
+  clearPlatformMedia,
+} from "@oa/platform/api/mediaApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { getDataDir } from "@oa/platform/lib/dataDir";
@@ -147,7 +152,7 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
 
   async function refreshIndex() {
     try {
-      const next = await invoke<PlatformMediaIndex>("get_platform_media_index");
+      const next = await getPlatformMediaIndex<PlatformMediaIndex>();
       setIndex(next);
     } catch (e) {
       console.warn("[oa-platform-media] hydrate failed:", e);
@@ -190,11 +195,7 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
       });
       if (typeof sel !== "string" || !sel) return;
       setBusy({ slot, op: "set" });
-      await invoke("set_platform_media", {
-        systemId: systemId(),
-        slot,
-        sourcePath: sel,
-      });
+      await setPlatformMedia(systemId(), slot, sel);
       // Listener will update the index; we don't need to refetch.
     } catch (e) {
       console.warn("[oa-platform-media] set failed:", e);
@@ -208,7 +209,7 @@ export const PlatformMediaDialog: Component<Props> = (props) => {
     setErrMsg("");
     setBusy({ slot, op: "clear" });
     try {
-      await invoke("clear_platform_media", { systemId: systemId(), slot });
+      await clearPlatformMedia(systemId(), slot);
     } catch (e) {
       console.warn("[oa-platform-media] clear failed:", e);
       setErrMsg(String(e));

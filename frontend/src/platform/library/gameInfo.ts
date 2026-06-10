@@ -2,8 +2,20 @@
 //
 // Rust side: apps/oa-shell/src/game_info.rs (data model + merge layer)
 // and apps/oa-shell/src/main.rs (the Tauri command handlers).
+//
+// Theming Phase 4 Slice 3: the typed command wrappers now live in
+// platform/api/mediaApi.ts (the game-info cluster of the media domain) and
+// are re-exported here so existing consumers keep their import path. This
+// module retains the shared types + the empty-override default.
 
-import { invoke } from "@tauri-apps/api/core";
+export {
+  getGameInfo,
+  getGameInfoOverride,
+  setGameInfoOverride,
+  deleteGameInfoOverride,
+  listGameInfoOverridden,
+  listGameInfoBadges,
+} from "@oa/platform/api/mediaApi";
 
 /// Severity scale matching the Rust BugSeverity enum, serialized as
 /// lowercase strings.
@@ -82,57 +94,6 @@ export const EMPTY_GAME_INFO_OVERRIDE: GameInfoOverride = {
   appliedControls: false,
 };
 
-/// Read the merged Game Info record for one game. Returns `null`
-/// when neither the file layer nor the operator's overrides have
-/// any content — UI hides the new panel sections entirely.
-export async function getGameInfo(args: {
-  systemId: string;
-  romId: string;
-  romHash?: string;
-  romTitle?: string;
-}): Promise<MergedGameInfo | null> {
-  return invoke<MergedGameInfo | null>("get_game_info", args);
-}
-
-/// Read just the operator's local override for one game (not the
-/// merged record). Returns `EMPTY_GAME_INFO_OVERRIDE` when no override
-/// row exists. Used by the GameInfoModal Game Info tab's editor form
-/// — the form binds to override fields specifically so it can
-/// distinguish "operator set this" from "fall back to file value."
-export async function getGameInfoOverride(args: {
-  systemId: string;
-  romId: string;
-}): Promise<GameInfoOverride> {
-  return invoke<GameInfoOverride>("get_game_info_override", args);
-}
-
-/// UPSERT the operator's local overrides for one game. Passing
-/// `EMPTY_GAME_INFO_OVERRIDE` deletes the row.
-export async function setGameInfoOverride(args: {
-  systemId: string;
-  romId: string;
-  overrideRecord: GameInfoOverride;
-}): Promise<void> {
-  return invoke("set_game_info_override", args);
-}
-
-/// Convenience: blank the operator's local overrides. Equivalent
-/// to setGameInfoOverride with EMPTY_GAME_INFO_OVERRIDE but reads
-/// more explicitly at call sites.
-export async function deleteGameInfoOverride(args: {
-  systemId: string;
-  romId: string;
-}): Promise<void> {
-  return invoke("delete_game_info_override", args);
-}
-
-/// Returns `[system_id, rom_id]` tuples for every game with at least
-/// one operator override. Cached once per library refresh + consumed
-/// by the tile-badge `✎` indicator.
-export async function listGameInfoOverridden(): Promise<Array<[string, string]>> {
-  return invoke("list_game_info_overridden");
-}
-
 /// Reduced shape the tile-badge UI consumes — bug count + max severity
 /// for the `⚠ N` overlay, plus the local-edits flag for the `✎` mark.
 export type GameInfoBadge = {
@@ -151,13 +112,3 @@ export type LibraryEntryForBadges = {
   title: string;
   sha1?: string;
 };
-
-/// Bulk-compute tile-badge data for `entries`. Only entries with at
-/// least one bug OR a local override appear in the result — callers
-/// build a Map keyed by `${systemId}:${romId}` and treat missing
-/// entries as "no badge."
-export async function listGameInfoBadges(
-  entries: LibraryEntryForBadges[],
-): Promise<GameInfoBadge[]> {
-  return invoke("list_game_info_badges", { entries });
-}
