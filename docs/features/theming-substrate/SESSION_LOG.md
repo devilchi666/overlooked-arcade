@@ -8,6 +8,62 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
 
 ---
 
+## 2026-06-10 — Phase 3 S2: walking skeleton (Retroverse ⇄ Wheel swap gate) — ⏳ awaiting playtest
+
+> **The morale/de-risk milestone — the dream first becomes visible.** Branch
+> `feat/theming-walking-skeleton`. Four S2 design decisions signed off
+> (AskUserQuestion, all the recommended path) before any code.
+
+- **Shipped** (all 5 S2 scope items + the two D20 seams + the boundary ratchet):
+  - **Theme SDK contract** (`platform/theme/types.ts`): a theme = `{ manifest, entry }`;
+    the entry is `Component<{ surface: "main" }>` (surface-aware, D20b) consuming ONLY
+    platform (usePlatform stores + the host context + `@oa/platform/nav` + `@oa/platform/api`).
+  - **Host context → platform** (`platform/theme/host.tsx`): `ThemeContextValue` /
+    `ThemeProvider` / `useTheme` moved out of `routes/retroverse/context.tsx` (now a
+    re-export shim — D15-style, ~11 importers unchanged) so EVERY theme consumes the
+    same launch/saves/info/favorite host services. Adds `themePreempted()` — the
+    general D20a preempt/restore seam (= `engineSurfaceOpen()` today; attract reuses it).
+  - **Active-theme registry** (`platform/theme/registry.ts`): platform owns the
+    `activeThemeId` signal + boot seed + picker list + `setActiveTheme` (persist→restart);
+    App injects the concrete `BUILTIN_THEMES` via `registerThemes()` (platform ↛ themes,
+    so App is the injection point — D13 pattern). Persisted on
+    `LibraryPrefs.active_theme_id` (boot-loaded). App.tsx renders the active theme via
+    `<Dynamic component={activeTheme().entry} surface="main"/>` (was hardcoded
+    `<RetroverseShell/>`), gated on `activeThemeResolved()` (no default flash).
+  - **Restart**: new Rust `restart_app` command via Tauri 2 `AppHandle::restart()`
+    (no new plugin; mirrors `quit_app` cleanup) + `shellApi.restartApp()`.
+  - **Retroverse = thin wrapper** (`themes/retroverse/index.tsx` → existing
+    `RetroverseShell`; layout/routes stay put, full move is Phase 6). Default theme.
+  - **Wheel = rough 2nd shell** (`themes/wheel/index.tsx`): full-bleed horizontal
+    **coverflow** — centred scaled focused cover, neighbours fanning + dimming, metadata
+    strip + Launch button below, Left/Right browse, Confirm launch, Game-info on
+    Secondary. System-AGNOSTIC by choice (D19). Built on the S1 `ListNav` primitive
+    (horizontal, controlled index) + `usePlatform` + `useMedia` covers. Honest caveat
+    baked into the code + picker: layout/feel only — attract/CRT/ceremony is ARC 2-3.
+  - **`EngineSummonIcon` re-homed** `engine/` → `platform/components/` (D12 — a leaf
+    themes must mount belongs to the lowest consuming layer); both themes mount it, the
+    operator's always-available path back to Settings → Themes. RetroverseShell's L1/R1
+    gate switched to `themePreempted()`.
+  - **Appearance picker**: filled in the existing OA-wide **Themes** Settings category
+    (`ThemesSettings` in `engine/SettingsSections.tsx`) — lists registered themes,
+    Switch button → in-app confirm → persist + restart. Stale Legacy-Shell card removed.
+  - **`surfaces` field** added to `ThemeManifest` (D20b); **6 new lint zones**
+    (platform↛themes, engine↛themes, themes↛{engine,routes(except retroverse),
+    layout(except retroverse),components}); `themes↛engine` probe-verified to fire.
+- **Verified:** `npm run typecheck` + `npm run lint` green; `cargo test -p oa-shell`
+  = **822 passed** (incl. the `library_prefs` round-trip now carrying `active_theme_id`).
+- **Decision D22** recorded (the 9-point implementation shape + the two
+  most-easily-undone constraints: platform-owns-machinery/App-injects, and the
+  retroverse lint `except`).
+- **Almost:** nothing in S2 scope left. The nav-remap Settings UI is still the
+  separate follow-on (after this gate, per D18).
+- **Next (operator):** **playtest the swap gate** — boot (lands on Retroverse),
+  browse + launch; F12 → Settings → Themes → Switch to Wheel → confirm → app restarts
+  into the Wheel coverflow → browse + launch a game → switch back to Retroverse →
+  indistinguishable from before. Then merge. **After merge: S3 — token layer**
+  (`THEME_CONTRACT.md` + design tokens + a11y/motion baseline + engine-territory token
+  isolation), per plan §13.3.
+
 ## 2026-06-10 — Phase 3 S1: nav foundation (verb-native nav layer) — ✅ shipped + merged
 
 > **Merged to main 2026-06-10** — operator playtested ("working as expected").

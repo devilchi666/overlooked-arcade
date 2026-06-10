@@ -2697,6 +2697,7 @@ fn main() {
             get_core_pref,
             set_core_pref,
             quit_app,
+            restart_app,
             get_system_status,
             get_bios_status,
             unload_rom,
@@ -11340,6 +11341,31 @@ fn graceful_exit(app: &tauri::AppHandle, code: i32) {
 fn quit_app(app: tauri::AppHandle) {
     log::info!("oa-shell: quit_app command — exiting");
     graceful_exit(&app, 0);
+}
+
+/// Theming Substrate ARC 1 Phase 3 S2 — relaunch the app. Wired to the
+/// Settings → Appearance theme picker: switching the active whole-shell
+/// theme requires a restart in ARC 1 (DECISIONS D5 — hot-swap is ARC 3),
+/// because tearing down + remounting a theme's gamepad/audio/focus state
+/// cleanly is non-trivial and a full process relaunch gets it for free.
+/// Runs the same temp-sweep + session-persist cleanup as `graceful_exit`
+/// before handing off to Tauri's built-in restart (no extra plugin).
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    log::info!("oa-shell: restart_app command — relaunching");
+    // Mirror graceful_exit's pre-shutdown cleanup so a restart is as
+    // clean as a quit. In practice no game is running when this fires
+    // (the operator is inside the engine surface), but be safe.
+    if let Some(state) = app.try_state::<AppState>() {
+        let temp_root = state.app_data_dir.join("temp");
+        archive::sweep_temp(&temp_root);
+        if let Some(db) = app.try_state::<library_db::LibraryDb>() {
+            close_active_session(&state.active_session, &db);
+        }
+    }
+    // Tauri 2's AppHandle::restart terminates the current process and
+    // spawns a fresh instance; it never returns.
+    app.restart();
 }
 
 /// Retroverse-UI Phase C2 — Snapshot of host system load for the HOME tab's

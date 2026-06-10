@@ -23,6 +23,14 @@ export function quitApp(): Promise<void> {
   return invoke("quit_app");
 }
 
+/// Relaunch the application. Theming Substrate ARC 1 — switching the active
+/// whole-shell theme requires a restart in ARC 1 (DECISIONS D5). The backend
+/// runs the same cleanup as quit, then Tauri spawns a fresh process; the
+/// returned Promise never resolves (the webview is torn down first).
+export function restartApp(): Promise<void> {
+  return invoke("restart_app");
+}
+
 /// The resolved OA data dir (portable `<exe_dir>/settings/` or AppData).
 export function getOaDataDir(): Promise<string> {
   return invoke<string>("get_oa_data_dir");

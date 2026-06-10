@@ -37,6 +37,11 @@ import * as jobsApi from "@oa/platform/api/jobsApi";
 import { detectCpuTier, getSystemStatus } from "@oa/platform/api/systemApi";
 import { confirm } from "@oa/platform/lib/confirm";
 import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
+import {
+  availableThemes,
+  activeThemeId,
+  setActiveTheme,
+} from "@oa/platform/theme/registry";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   refreshMameSystemInfo,
@@ -1531,51 +1536,93 @@ const MameRefreshCard: Component = () => {
 
 // --- Themes ------------------------------------------------------------
 
+/// Short blurb per built-in theme for the Appearance picker. Keyed by
+/// manifest id; unknown ids fall back to a generic line. (S2 — the manifest
+/// doesn't carry a description field yet; the versioned manifest in S4 may
+/// add one, at which point this map retires.)
+const THEME_BLURBS: Record<string, string> = {
+  retroverse:
+    "The default shell — a top-toolbar IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER) with per-system theming.",
+  wheel:
+    "A full-bleed horizontal coverflow. Rough pilot (ARC 1): layout + feel only — the cinematic layer (attract / CRT / launch ceremony) lands in a later arc.",
+};
+
+/// Settings → Themes — the active-theme picker (Theming Substrate ARC 1
+/// Phase 3 S2, the walking-skeleton swap gate). Lists the build-time themes
+/// the platform registry knows about; switching persists the choice into
+/// LibraryPrefs and RESTARTS the app (DECISIONS D5 — no hot-swap in ARC 1).
 export const ThemesSettings: Component = () => {
+  // Effective active id: the stored preference, or the first registered
+  // theme (the default) when nothing is stored yet.
+  const effectiveActiveId = (): string | undefined =>
+    activeThemeId() ?? availableThemes()[0]?.id;
+
+  const onSwitch = async (id: string, name: string): Promise<void> => {
+    const ok = await confirm(
+      `Switch the OA shell to "${name}"? OA will restart to apply the change.`,
+      { confirmLabel: "Switch + restart", cancelLabel: "Cancel" },
+    );
+    if (!ok) return;
+    // setActiveTheme persists then relaunches; it does not resolve past the
+    // restart, so there's nothing to await after.
+    await setActiveTheme(id);
+  };
+
   return (
     <div class="flex flex-col gap-4">
-      <SettingsCard title="Default theme">
+      <SettingsCard title="Shell theme">
         <div class="space-y-3">
-          <div class="flex items-center justify-between rounded-lg border border-(--color-system-accent)/40 bg-(--color-system-accent)/[0.08] px-4 py-3">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-(--color-oa-ink)">
-                Retroverse
-              </p>
-              <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
-                The current top-toolbar IA — HOME / LIBRARY /
-                COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS.
-                Experimental.
-              </p>
-            </div>
-            <span class="rounded border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-emerald-300">
-              Active
-            </span>
-          </div>
-          <div class="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 opacity-50">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-(--color-oa-ink)">
-                Legacy Shell
-              </p>
-              <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
-                Sidebar-driven layout. Available by toggling
-                Settings → Experimental → Retroverse UI off.
-              </p>
-            </div>
-            <span class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-              Switch via flag
-            </span>
-          </div>
+          <For each={availableThemes()}>
+            {(theme) => {
+              const isActive = (): boolean => effectiveActiveId() === theme.id;
+              return (
+                <div
+                  class="flex items-center justify-between rounded-lg border px-4 py-3"
+                  classList={{
+                    "border-(--color-system-accent)/40 bg-(--color-system-accent)/[0.08]":
+                      isActive(),
+                    "border-white/10 bg-white/[0.02]": !isActive(),
+                  }}
+                >
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-(--color-oa-ink)">
+                      {theme.name}
+                    </p>
+                    <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+                      {THEME_BLURBS[theme.id] ?? "A whole-shell OA theme."}
+                    </p>
+                  </div>
+                  <Show
+                    when={!isActive()}
+                    fallback={
+                      <span class="shrink-0 rounded border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[0.55rem] uppercase tracking-widest text-emerald-300">
+                        Active
+                      </span>
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void onSwitch(theme.id, theme.name)}
+                      class="shrink-0 rounded-md border border-(--color-system-accent)/50 bg-(--color-system-accent)/15 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-widest text-(--color-oa-ink) transition hover:bg-(--color-system-accent)/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                    >
+                      Switch
+                    </button>
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
         </div>
       </SettingsCard>
 
-      <SettingsCard title="Future themes">
+      <SettingsCard title="About theme switching">
         <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
-          Additional themes (Heroic-style / Kiosk cabinet) plus
-          community theme packs land once the content-packs
-          infrastructure ships (see Phase C6 in the rollout plan).
-          Until then, this category lists the two built-in shells
-          and lets the operator know to use the Experimental
-          toggle to switch between them.
+          Switching the shell theme restarts OA to apply the change cleanly
+          (hot-swap is a later arc). Themes are bundled with this build;
+          loadable theme packages land in a future arc. The engine surface
+          you're in right now (Settings / Library Manager / Import / System
+          Health) looks the same under every theme — only the browsing shell
+          changes.
         </p>
       </SettingsCard>
     </div>

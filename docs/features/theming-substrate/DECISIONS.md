@@ -615,3 +615,77 @@ turning D18 into code, locked with operator sign-off before writing.
 **Why record this:** the producer-stays-raw constraint (1) and the swap-as-overlay
 choice (3) are the two things a later contributor could most easily undo by
 "cleaning up," reintroducing the exact coupling/dual-write this avoided.
+
+---
+
+### D22 — Walking-skeleton implementation shape (Phase 3 S2)
+
+**Decision (2026-06-10, `feat/theming-walking-skeleton`):** the build choices made
+turning the S2 design into code, locked with operator sign-off (four AskUserQuestion
+answers, all the recommended path) before writing.
+
+1. **The theme host context is a platform SDK contract — relocated, move+re-export.**
+   `ThemeContextValue` / `ThemeProvider` / `useTheme` moved
+   `routes/retroverse/context.tsx` → `platform/theme/host.tsx`; the old path
+   re-exports for back-compat (D15-style, ~11 Retroverse importers unchanged). A
+   theme can't import another theme (`routes/retroverse/` is Retroverse's private
+   tree), so the *host services every theme needs* (launch / saves / info /
+   favorites…) must live in platform. App.tsx stays the provider that wires real
+   behaviour in. Stores still come via `usePlatform()` (D11); the host context
+   carries the app-specific **handlers**.
+
+2. **Platform owns the active-theme MACHINERY; App INJECTS the concrete themes.**
+   `platform/theme/registry.ts` owns the `activeThemeId` signal, the boot seed, the
+   picker's `{id,name}` list, and `setActiveTheme` (persist→restart). It does NOT
+   import any concrete theme — `platform ↛ themes` is forbidden. The concrete list
+   lives in `themes/index.ts` (`BUILTIN_THEMES`, first = default = Retroverse); App
+   calls `registerThemes(BUILTIN_THEMES)` at boot. Same inversion-avoiding pattern as
+   `platform/libraryAdmin.ts` + `platform/engineSurface.ts` (D13). *Constraint:* never
+   make platform import a theme — inject from App.
+
+3. **`activeThemeId` persists on `LibraryPrefs.active_theme_id`** (serde-default
+   `Option<String>`), the OA-wide install-level prefs bag read at boot before any
+   theme mounts. Switch = read-merge-write that one field (preserving the struct's
+   non-defaulted fields) then restart. App gates the theme mount on
+   `activeThemeResolved()` so first paint shows the persisted theme, no default flash.
+
+4. **Restart = a new `restart_app` Rust command via Tauri 2 `AppHandle::restart()`** —
+   no new plugin/dependency; mirrors `quit_app`'s temp-sweep + session-persist cleanup
+   before relaunch. D5 (swap requires restart) realized here.
+
+5. **`EngineSummonIcon` re-homed `engine/` → `platform/components/` (applies D12).**
+   It's a leaf THEMES must mount (plan D3) but a theme can't import `engine/`; it
+   depends only on `platform/engineSurface`, so the lowest consuming layer (platform)
+   is its home. Both themes mount it; neither crosses the boundary.
+
+6. **`themePreempted()` is the general preempt/restore seam (D20a).** Lives in
+   `platform/theme/host.tsx` = `engineSurfaceOpen()` today; RetroverseShell's L1/R1
+   tab-cycle gate switched from `engineSurfaceOpen()` to `themePreempted()`. Attract
+   mode (ARC 2-3) reuses the same predicate with no theme-side change. *Constraint:*
+   new preemptors (attract) OR the signal feeding it; don't re-hardcode
+   `engineSurfaceOpen()` in theme code.
+
+7. **`surfaces` field added to `ThemeManifest` + `ThemeEntryProps.surface` (D20b
+   seam).** The entry is surface-aware from theme #1; ARC 1 honors exactly `"main"`.
+   Multi-monitor surfaces widen the union later — additive, not a rewrite.
+
+8. **Retroverse is a THIN wrapper (S2 sign-off).** `themes/retroverse/index.tsx`
+   renders the existing `<RetroverseShell />`; `layout/retroverse/` +
+   `routes/retroverse/` stay put (full move is Phase 6). The eslint `themes ↛ routes`
+   and `themes ↛ layout` zones carry an `except: ['./retroverse']` to allow exactly
+   that pointer; every OTHER theme (Wheel) is platform-only.
+
+9. **The Wheel is system-AGNOSTIC by choice (D19).** A flat coverflow over the whole
+   library, one cover per identity, no per-system grouping — proving per-system
+   identity is Retroverse's take, not a substrate requirement. Built on the `ListNav`
+   primitive (horizontal, controlled index) + `usePlatform` stores + `useMedia`
+   covers; the cinematic layer (attract/CRT/ceremony) is honestly deferred to ARC 2-3.
+
+**New lint zones (all green, `themes↛engine` probe-verified):** `platform↛themes`,
+`engine↛themes`, `themes↛engine`, `themes↛routes` (except retroverse),
+`themes↛layout` (except retroverse), `themes↛components`.
+
+**Why record this:** items (2) the platform-owns-machinery/App-injects inversion and
+(8) the retroverse lint `except` are the two a later contributor could most easily
+"simplify" wrong — by importing a theme into platform, or by dropping the except and
+forcing the Retroverse file-move early (that's Phase 6, deliberately not S2).
