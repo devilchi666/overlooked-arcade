@@ -495,15 +495,19 @@ is closed at the file level (six boundary zones) AND the API level (the invoke
 ban). A feature physically cannot re-couple platform/theme without ESLint
 stopping the commit.
 
-**Phase 4.5 — the EVENT corral ✅ SHIPPED on `feat/theming-platform-api-events`
-(2026-06-10; awaiting operator playtest + merge).** Closed the symmetric
+**Phase 4.5 — the EVENT corral ✅ MERGED to main 2026-06-10**
+(`feat/theming-platform-api-events`; operator playtested). Closed the symmetric
 coupling the post-Phase-4 audit flagged: Tauri event names. New
 `platform/api/eventsApi.ts` (`OA_EVENTS` registry + `listenScoped`/`listenTo`/
 `emitEvent`); ~30 sites / 16 files migrated (incl. a theme file emitting
 `oa://toast` raw); a second `no-restricted-imports` entry bans raw `listen`/
-`emit`/`once` outside `platform/api/` (probe-verified). Decision D17. **The
-foundation is now clean on BOTH backend-contract channels (commands + events) —
-ready to build Phase 3 on top.**
+`emit`/`once` outside `platform/api/` (probe-verified). Decision D17.
+**Rode along (playtest fixes, operator-confirmed):** jobs-bar z-index
+(55 → 65, was hidden behind the engine surface) + an in-app `confirm()`
+replacing native `window.confirm`/`alert` (Tauri-2 ACL + async-bypass bug —
+destructive-action guards silently never fired). **The foundation is now clean
+on BOTH backend-contract channels (commands + events) — ready to build Phase 3
+on top.**
 
 **Next theming work — ARC 1 Phase 3 (theme substrate: layout + palette + assets,
 ~5 weeks).** Design refined 2026-06-10 — see

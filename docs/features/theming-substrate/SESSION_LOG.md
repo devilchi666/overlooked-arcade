@@ -29,10 +29,22 @@ grab-bag drain live there; live file keeps Slices 3-5 + the drain).
   allowed). Probe-verified it fires. typecheck + lint green.
 - **Decision D17** — events are a backend-contract surface like commands; corral
   them the same way. Payloads stay generic on `<T>` (call site declares its view).
-- **Merged:** ⏳ awaiting operator playtest + merge. Smoke surface: toasts fire,
-  background-jobs bar updates, library scan/sync progress, media/platform-media
-  live refresh, core-download progress, milestone toast, game-focus toggle,
-  rom-unloaded/external-session quit paths.
+- **Merged:** ✅ operator playtested + merged to main 2026-06-10.
+- **Two playtest fixes rode along on the same branch (operator-confirmed):**
+  - *Jobs bar invisible.* The persistent BackgroundJobsBar rendered at z-55,
+    *behind* the opaque engine surface (z-60) — and jobs are spawned from inside
+    that surface (Settings/Cores/Import), so it was hidden exactly when needed.
+    Lifted to z-65 (above the engine takeover, below platform modals at z-70).
+    NOT a Phase-4 regression — pre-existing since the Phase-1 engine-surface
+    split; the jobs store + events were fine (verified).
+  - *Native confirm/alert broken under Tauri 2.* `window.confirm` is intercepted
+    + ACL-gated AND async (returns a Promise), but all 13 call sites treated it
+    as a sync boolean (`if (!window.confirm(x))`) — a Promise is truthy, so the
+    guard NEVER fired and destructive actions ran unconfirmed. Replaced all 13
+    confirm + 3 alert sites with an in-app awaitable `confirm()`
+    (`platform/lib/confirm.ts` + `ConfirmHost`, rendered via the Dialog
+    primitive: z-70, themeable, controller-navigable). Zero native dialogs left.
+    Follows the May-2026 "move off native dialogs" precedent.
 - **Next:** the foundation is now clean on BOTH backend-contract channels
   (commands + events). Theming work resumes the *enable-other-themes* track —
   ARC 1 Phase 3 (shared nav primitives) first.

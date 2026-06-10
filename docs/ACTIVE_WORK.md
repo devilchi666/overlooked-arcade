@@ -158,18 +158,27 @@ spanned every system but was filed under whichever core happened to be active.
         (six boundary lint zones) and the API level (the invoke ban). A new
         feature physically cannot re-couple the layers without ESLint stopping
         the commit.
-      - **Phase 4.5 — the EVENT corral** ✅ SHIPPED on
-        `feat/theming-platform-api-events` (2026-06-10) — **awaiting operator
-        playtest + merge.** Closed the symmetric coupling the Phase 4 audit
-        flagged: Tauri event names. New `platform/api/eventsApi.ts` (`OA_EVENTS`
-        registry + `listenScoped`/`listenTo`/`emitEvent`); ~30 sites / 16 files
-        migrated (incl. a theme file that emitted `oa://toast` raw); a second
-        `no-restricted-imports` entry bans raw `listen`/`emit`/`once` outside
-        `platform/api/` (probe-verified). Every `oa://…` string now lives only in
-        `OA_EVENTS`. DECISIONS **D17**. **The foundation is now clean on BOTH
-        backend-contract channels (commands + events).** Next theming work is the
-        *enable-other-themes* track (Phase 3 nav primitives → Phase 5 packaging →
-        Phase 6 Retroverse-as-theme → ARCs 2-3).
+      - **Phase 4.5 — the EVENT corral** ✅ merged 2026-06-10
+        (`feat/theming-platform-api-events`; operator playtested). Closed the
+        symmetric coupling the Phase 4 audit flagged: Tauri event names. New
+        `platform/api/eventsApi.ts` (`OA_EVENTS` registry + `listenScoped`/
+        `listenTo`/`emitEvent`); ~30 sites / 16 files migrated (incl. a theme
+        file that emitted `oa://toast` raw); a second `no-restricted-imports`
+        entry bans raw `listen`/`emit`/`once` outside `platform/api/`
+        (probe-verified). Every `oa://…` string now lives only in `OA_EVENTS`.
+        DECISIONS **D17**. **The foundation is now clean on BOTH backend-contract
+        channels (commands + events).**
+      - **Two playtest fixes rode along (merged 2026-06-10, operator
+        confirmed):** (1) the persistent BackgroundJobsBar was rendering at z-55
+        *behind* the opaque engine surface (z-60) — invisible exactly where jobs
+        are spawned (Settings/Cores/Import); lifted to z-65. (2) Native
+        `window.confirm`/`alert` were both ACL-gated AND async-but-treated-as-sync
+        under Tauri 2 — every `if (!window.confirm())` guard silently never fired,
+        so destructive actions ran unconfirmed. Replaced all 13 confirm + 3 alert
+        sites with an in-app awaitable `confirm()` (`platform/lib/confirm.ts` +
+        `ConfirmHost`, themeable/controller-navigable via the Dialog primitive).
+      - Next theming work is the *enable-other-themes* track (Phase 3 nav
+        primitives → Phase 5 packaging → Phase 6 Retroverse-as-theme → ARCs 2-3).
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
