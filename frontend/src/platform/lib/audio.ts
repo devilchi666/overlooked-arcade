@@ -13,7 +13,7 @@
 // UI; never throws on missing files.
 
 import { createSignal, type Accessor } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { resolvePlatformMusic, resolveUiSound } from "@oa/platform/api/shellApi";
 import { listen } from "@tauri-apps/api/event";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 
@@ -116,10 +116,7 @@ export async function dispatchPlatformMusic(
   gameId: string | null,
 ): Promise<void> {
   try {
-    const path = await invoke<string | null>("resolve_platform_music", {
-      systemId,
-      gameId,
-    });
+    const path = await resolvePlatformMusic(systemId, gameId);
     if (path) {
       await playAudio("platform-music", path, true);
       setNowPlayingSig({ systemId, gameId });
@@ -141,10 +138,7 @@ export async function dispatchUiSound(
   event: UiSoundEvent,
 ): Promise<void> {
   try {
-    const path = await invoke<string | null>("resolve_ui_sound", {
-      systemId,
-      event,
-    });
+    const path = await resolveUiSound(systemId, event);
     if (path) {
       await playAudio("ui-sounds", path, false);
     }

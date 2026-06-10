@@ -25,9 +25,16 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { getBiosStatus } from "@oa/platform/api/coresApi";
 import { listMonitors, listAudioDevices } from "@oa/platform/api/settingsApi";
+import * as libraryApi from "@oa/platform/api/libraryApi";
+import {
+  getGameFocusToggle,
+  setGameFocusToggle,
+  setUiIntercepting,
+} from "@oa/platform/api/shellApi";
+import * as jobsApi from "@oa/platform/api/jobsApi";
+import { detectCpuTier, getSystemStatus } from "@oa/platform/api/systemApi";
 import { emit } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
@@ -239,7 +246,7 @@ const GameFocusToggleCard: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
 
   onMount(() => {
-    void invoke<string>("get_game_focus_toggle").then(setChord).catch(() => {});
+    void getGameFocusToggle().then(setChord).catch(() => {});
   });
 
   const pretty = (c: string) =>
@@ -256,12 +263,12 @@ const GameFocusToggleCard: Component = () => {
     keyUpHandler = null;
     held = new Set();
     // Release the input gate we took while capturing.
-    void invoke("set_ui_intercepting", { intercepting: false }).catch(() => {});
+    void setUiIntercepting(false).catch(() => {});
     setCapturing(false);
   };
 
   const save = (c: string) => {
-    void invoke<string>("set_game_focus_toggle", { chord: c })
+    void setGameFocusToggle(c)
       .then((normalized) => {
         setChord(normalized);
         setError(null);
@@ -275,7 +282,7 @@ const GameFocusToggleCard: Component = () => {
     setCapturing(true);
     // Gate gameplay/hotkey input while we listen so stray keys don't fire
     // hotkeys or leak to the core during capture.
-    void invoke("set_ui_intercepting", { intercepting: true }).catch(() => {});
+    void setUiIntercepting(true).catch(() => {});
     keyDownHandler = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -413,7 +420,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
   // Default false matches the Rust default after the 2026-06-03 pivot.
   const [libraryPrefs, setLibraryPrefs] = createSignal<LibraryPrefsLike | null>(null);
   onMount(() => {
-    invoke<LibraryPrefsLike>("get_library_prefs")
+    libraryApi.getLibraryPrefs<LibraryPrefsLike>()
       .then((p) => setLibraryPrefs(p))
       .catch((e) => console.warn("get_library_prefs failed:", e));
   });
@@ -423,7 +430,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
     const next = { ...current, discTrackExperimentalEnabled: v };
     setLibraryPrefs(next);
     try {
-      await invoke("set_library_prefs", { prefs: next });
+      await libraryApi.setLibraryPrefs(next);
     } catch (e) {
       console.warn("set_library_prefs failed:", e);
     }
@@ -498,7 +505,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
                 class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink) transition hover:border-(--color-system-accent) hover:bg-(--color-system-accent)/25"
                 onClick={(e) => {
                   e.currentTarget.blur();
-                  void invoke("spawn_test_job", { durationSecs: 30 }).catch((err) => {
+                  void jobsApi.spawnTestJob(30).catch((err) => {
                     console.warn("[oa-jobs] spawn_test_job failed:", err);
                   });
                 }}
@@ -510,7 +517,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
                 class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:border-white/20 hover:text-(--color-oa-ink)"
                 onClick={(e) => {
                   e.currentTarget.blur();
-                  void invoke("spawn_test_job", { durationSecs: 10 }).catch((err) => {
+                  void jobsApi.spawnTestJob(10).catch((err) => {
                     console.warn("[oa-jobs] spawn_test_job failed:", err);
                   });
                 }}
@@ -667,8 +674,8 @@ export const PerformanceSettings: Component<{ settings: SettingsStore }> = (_pro
   async function refresh() {
     try {
       const [s, p] = await Promise.all([
-        invoke<CpuTierSnapshot>("detect_cpu_tier"),
-        invoke<PerfPrefsLike>("get_library_prefs"),
+        detectCpuTier<CpuTierSnapshot>(),
+        libraryApi.getLibraryPrefs<PerfPrefsLike>(),
       ]);
       setSnapshot(s);
       setPrefs(p);
@@ -688,7 +695,7 @@ export const PerformanceSettings: Component<{ settings: SettingsStore }> = (_pro
     };
     setPrefs(next);
     try {
-      await invoke("set_library_prefs", { prefs: next });
+      await libraryApi.setLibraryPrefs(next);
       await refresh();
     } catch (e) {
       console.warn("set_library_prefs failed:", e);
@@ -1317,7 +1324,7 @@ export const StorageSettings: Component = () => {
   });
   const [storageInfo] = createResource(async () => {
     try {
-      return await invoke<StorageSystemStatus>("get_system_status");
+      return await getSystemStatus<StorageSystemStatus>();
     } catch {
       return null;
     }
@@ -1643,7 +1650,7 @@ export const BackgroundJobsSettings: Component = () => {
 
   const refreshPrefs = async () => {
     try {
-      const p = await invoke<JobPrefsShape>("get_job_prefs");
+      const p = await jobsApi.getJobPrefs<JobPrefsShape>();
       setPrefs(p);
     } catch (e) {
       console.warn("[bg-jobs-settings] get_job_prefs failed:", e);
@@ -1651,7 +1658,7 @@ export const BackgroundJobsSettings: Component = () => {
   };
   const refreshHistory = async () => {
     try {
-      const rows = await invoke<unknown[]>("list_recent_jobs", { limit: 100 });
+      const rows = await jobsApi.listRecentJobs<unknown>(100);
       setHistoryCount(rows.length);
     } catch (e) {
       console.warn("[bg-jobs-settings] list_recent_jobs failed:", e);
@@ -1664,10 +1671,7 @@ export const BackgroundJobsSettings: Component = () => {
 
   const togglePromptForKind = async (kindId: string, prompt: boolean) => {
     try {
-      const updated = await invoke<JobPrefsShape>("set_job_resume_prompt", {
-        kind: kindId,
-        prompt,
-      });
+      const updated = await jobsApi.setJobResumePrompt<JobPrefsShape>(kindId, prompt);
       setPrefs(updated);
     } catch (e) {
       console.warn(`[bg-jobs-settings] set_job_resume_prompt(${kindId}) failed:`, e);
@@ -1718,9 +1722,8 @@ export const BackgroundJobsSettings: Component = () => {
               checked={prefs().alwaysShowBar}
               onChange={async (e) => {
                 try {
-                  const updated = await invoke<JobPrefsShape>(
-                    "set_job_always_show_bar",
-                    { enabled: e.currentTarget.checked },
+                  const updated = await jobsApi.setJobAlwaysShowBar<JobPrefsShape>(
+                    e.currentTarget.checked,
                   );
                   setPrefs(updated);
                   // Sync the module-level live signal so the bar
@@ -1749,9 +1752,8 @@ export const BackgroundJobsSettings: Component = () => {
               checked={prefs().soundOnCompletion}
               onChange={async (e) => {
                 try {
-                  const updated = await invoke<JobPrefsShape>(
-                    "set_job_sound_on_completion",
-                    { enabled: e.currentTarget.checked },
+                  const updated = await jobsApi.setJobSoundOnCompletion<JobPrefsShape>(
+                    e.currentTarget.checked,
                   );
                   setPrefs(updated);
                   await refreshJobPrefs();
@@ -1821,7 +1823,7 @@ export const BackgroundJobsSettings: Component = () => {
               );
               if (!ok) return;
               try {
-                await invoke<number>("clear_job_history");
+                await jobsApi.clearJobHistory();
                 await refreshHistory();
                 setClearStatus("History cleared.");
                 window.setTimeout(() => setClearStatus(""), 3000);

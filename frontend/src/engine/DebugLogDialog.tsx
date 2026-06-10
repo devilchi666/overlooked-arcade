@@ -10,7 +10,7 @@
 // into a chat so I can `Read` the on-disk session log directly.
 
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { getRecentLogs, getLogFilePath, revealLogsFolder } from "@oa/platform/api/shellApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 
 type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
@@ -66,7 +66,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
   function startPoll() {
     if (pollId !== undefined) return;
     const fetch = () => {
-      void invoke<LogEntry[]>("get_recent_logs", { limit: 2000 })
+      void getRecentLogs<LogEntry>(2000)
         .then((rows) => setEntries(rows ?? []))
         .catch(() => {});
     };
@@ -84,7 +84,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
   createEffect(() => {
     if (props.open) {
       startPoll();
-      void invoke<string | null>("get_log_file_path")
+      void getLogFilePath()
         .then((p) => setLogFilePath(p ?? null))
         .catch(() => setLogFilePath(null));
     } else {
@@ -136,7 +136,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
 
   async function openFolder() {
     try {
-      await invoke("reveal_logs_folder");
+      await revealLogsFolder();
     } catch (e) {
       console.warn("[oa-debug-log] reveal failed:", e);
     }

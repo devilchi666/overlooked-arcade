@@ -18,7 +18,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listRecentJobs } from "@oa/platform/api/jobsApi";
 import { activeJobs, type JobSnapshot, type JobState } from "@oa/platform/lib/backgroundJobs";
 
 type Tab = "active" | "completed" | "failed" | "cancelled";
@@ -108,9 +108,7 @@ export const RecentActivityPanel: Component<{
   const refresh = async () => {
     setLoading(true);
     try {
-      const all = await invoke<JobSnapshot[]>("list_recent_jobs", {
-        limit: 100,
-      });
+      const all = await listRecentJobs<JobSnapshot>(100);
       setCompleted(all.filter((j) => j.state === "completed"));
       setFailed(all.filter((j) => j.state === "failed"));
       setCancelled(all.filter((j) => j.state === "cancelled"));

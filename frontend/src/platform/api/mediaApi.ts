@@ -167,6 +167,18 @@ export function openMediaFolder(): Promise<void> {
   return invoke("open_media_folder");
 }
 
+/// Result of clearing per-system metadata (`clear_metadata_for_system`).
+export type MetadataClearResult = {
+  systemId: string;
+  scanned: number;
+  cleared: number;
+};
+
+/// Wipe enriched metadata for every game in a system (Library Manager).
+export function clearMetadataForSystem(systemId: string): Promise<MetadataClearResult> {
+  return invoke<MetadataClearResult>("clear_metadata_for_system", { systemId });
+}
+
 /// Resolve a per-system background asset of `kind` ("default" | "animated")
 /// to an absolute path, or `null` when no file exists.
 export function resolveBackgroundAsset(systemId: string, kind: string): Promise<string | null> {

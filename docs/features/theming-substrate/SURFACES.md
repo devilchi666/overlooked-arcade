@@ -197,22 +197,27 @@ invariants that hold cleanly today, via `import/no-restricted-paths` zones:
   **Six zones enforced + green:** platform↛{routes,engine,components},
   engine↛{routes,components}, routes↛components.
 
-### Known-violating edges deferred to later slices (NOT yet enforced)
+### Known-violating edges deferred to later slices
 
-Tracked here so they're not forgotten; each becomes a new zone/rule as its
-batch lands, and `npm run lint` stays green until then.
+All enforced — nothing deferred.
 
-- ⬜ **Raw `invoke()` outside `platform/api/`** (157 calls / 37 files) —
-  themes/components bind directly to backend command names. **Phase 4** adds
-  `platform/api/{library,settings,media,…}Api.ts` typed wrappers + an ESLint
-  rule banning raw `invoke()` elsewhere.
+- ✅ **Raw `invoke()` outside `platform/api/`** — ENFORCED 2026-06-10 (Phase 4
+  Slice 6, the closer). All ~351 raw calls (the census grew to 14 typed
+  `platform/api/<domain>Api.ts` modules — settings/library/collections/views/
+  media/cores/input/emulator/rewindTas/cheats/milestones/capture/jobs/system/
+  shell) are behind typed wrappers; `no-restricted-imports` bans the
+  `@tauri-apps/api/core` `invoke` import everywhere except `src/platform/api/**`
+  (`convertFileSrc` from the same module stays allowed). Probe-verified the rule
+  fires. The command-name string for every backend command now lives in exactly
+  one file.
 
-### The endpoint
+### The endpoint — REACHED 2026-06-10
 
 Every file in exactly one layer; the lint makes a cross-layer import a build
-failure; `invoke()` corralled into `platform/api/`. At that point platform
-and theme **physically cannot** be re-coupled by a new feature without
-ESLint stopping the commit.
+failure; `invoke()` is corralled into `platform/api/`. Platform and theme
+**physically cannot** be re-coupled by a new feature without ESLint stopping
+the commit — at both the file level (six boundary zones) and the API level
+(the invoke ban). **The Phase 4 decoupling track is done.**
 
 ---
 

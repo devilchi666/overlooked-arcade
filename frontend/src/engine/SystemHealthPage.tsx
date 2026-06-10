@@ -22,8 +22,9 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as coresApi from "@oa/platform/api/coresApi";
+import { getJobPrefs } from "@oa/platform/api/jobsApi";
+import { getSystemStatus } from "@oa/platform/api/systemApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   BackgroundJobsSettings,
@@ -521,7 +522,7 @@ type JobPrefsShape = {
 const JobsRollupCard: Component<{ onOpen: () => void }> = (props) => {
   const [prefs] = createResource(async () => {
     try {
-      return await invoke<JobPrefsShape>("get_job_prefs");
+      return await getJobPrefs<JobPrefsShape>();
     } catch {
       return null;
     }
@@ -584,7 +585,7 @@ function formatBytes(bytes: number): string {
 const StorageRollupCard: Component<{ onOpen: () => void }> = (props) => {
   const [info] = createResource(async () => {
     try {
-      return await invoke<StorageSystemStatus>("get_system_status");
+      return await getSystemStatus<StorageSystemStatus>();
     } catch (e) {
       console.warn("[oa-health] get_system_status failed:", e);
       return null;

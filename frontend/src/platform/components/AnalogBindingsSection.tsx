@@ -7,8 +7,8 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as inputApi from "@oa/platform/api/inputApi";
+import { setUiIntercepting } from "@oa/platform/api/shellApi";
 import { getGameOverrides, getSystemSettings } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import { eventCodeToRustKey, formatKey } from "../../systems/keymap";
@@ -136,14 +136,14 @@ const AnalogBindingsSection: Component<Props> = (props) => {
   const [capture, setCapture] = createSignal<string | null>(null);
   createEffect(() => {
     const c = capture();
-    void invoke("set_ui_intercepting", { intercepting: c !== null }).catch((e) =>
+    void setUiIntercepting(c !== null).catch((e) =>
       reportInvokeError("set_ui_intercepting", e),
     );
   });
   onCleanup(() => {
     // Cleanup on unmount — log only; if we already navigated away there's
     // no toast surface to bother the operator with.
-    void invoke("set_ui_intercepting", { intercepting: false }).catch((e) =>
+    void setUiIntercepting(false).catch((e) =>
       console.warn("[analog] set_ui_intercepting(false) on unmount failed:", e),
     );
   });

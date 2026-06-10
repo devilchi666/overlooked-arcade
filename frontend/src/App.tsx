@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as shellApi from "@oa/platform/api/shellApi";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 import * as libraryApi from "@oa/platform/api/libraryApi";
 import * as mediaApi from "@oa/platform/api/mediaApi";
@@ -140,9 +140,7 @@ const App: Component = () => {
   // Fire `get_direct_launch_config` once at mount; both the library store
   // (to decide whether to bootstrap) and the resource below (to drive UI
   // chrome hiding + auto-launch) subscribe to the same promise.
-  const directLaunchPromise: Promise<DirectLaunchConfig | null> = invoke<DirectLaunchConfig | null>(
-    "get_direct_launch_config",
-  ).catch((e) => {
+  const directLaunchPromise: Promise<DirectLaunchConfig | null> = shellApi.getDirectLaunchConfig<DirectLaunchConfig>().catch((e) => {
     console.warn("[oa-direct-launch] get_direct_launch_config failed:", e);
     return null;
   });
@@ -265,7 +263,7 @@ const App: Component = () => {
   // owns the hotkey).
   const [gameFocus, setGameFocusSignal] = createSignal(false);
   onMount(() => {
-    void invoke<boolean>("get_game_focus").then((on) => setGameFocusSignal(on));
+    void shellApi.getGameFocus().then((on) => setGameFocusSignal(on));
     let unlisten: (() => void) | undefined;
     void listen<boolean>("oa://game-focus-changed", (e) => {
       setGameFocusSignal(!!e.payload);
@@ -523,7 +521,7 @@ const App: Component = () => {
     void listen("oa://rom-unloaded", () => {
       if (!isDirectLaunch()) return;
       console.log("[oa-direct-launch] ROM unloaded → quitting process");
-      void invoke("quit_app");
+      void shellApi.quitApp();
     }).then((un) => { unlisten = un; });
     onCleanup(() => unlisten?.());
   });
@@ -542,7 +540,7 @@ const App: Component = () => {
       if (isDirectLaunch()) {
         // Same posture as rom-unloaded: nothing to return to.
         console.log("[oa-direct-launch] external session ended → quitting process");
-        void invoke("quit_app");
+        void shellApi.quitApp();
         return;
       }
       console.log("[oa-launch] external session ended → returning to library");
@@ -1569,7 +1567,7 @@ const App: Component = () => {
           onOpenRenameCollection: (collectionId, currentName) =>
             setCollectionDialogMode({ kind: "rename", collectionId, currentName }),
           gameFocus,
-          onQuit: () => void invoke("quit_app"),
+          onQuit: () => void shellApi.quitApp(),
           onOpenDebugLog: () => setHelpDialog("debug-log"),
           onOpenKeyboardShortcuts: () => setHelpDialog("shortcuts"),
           onOpenImportWizard: () => setWizardOpen(true),

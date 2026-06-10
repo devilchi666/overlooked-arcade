@@ -9,7 +9,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { setUiIntercepting } from "@oa/platform/api/shellApi";
 import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import * as rewindTasApi from "@oa/platform/api/rewindTasApi";
 import * as captureApi from "@oa/platform/api/captureApi";
@@ -313,7 +313,7 @@ const QuickSettings: Component<Props> = (props) => {
   // when the overlay closes, so a re-open doesn't land in rewind by accident.
   createEffect(() => {
     if (props.open) {
-      void invoke("set_ui_intercepting", { intercepting: true }).catch((e) =>
+      void setUiIntercepting(true).catch((e) =>
         reportInvokeError("set_ui_intercepting", e),
       );
       // Hydrate ring stats + TAS state so the action-row hints reflect
@@ -347,7 +347,7 @@ const QuickSettings: Component<Props> = (props) => {
         firstBtn?.focus();
       });
     } else {
-      void invoke("set_ui_intercepting", { intercepting: false }).catch((e) =>
+      void setUiIntercepting(false).catch((e) =>
         reportInvokeError("set_ui_intercepting", e),
       );
       // If we got closed while in rewind view (overlay close path that

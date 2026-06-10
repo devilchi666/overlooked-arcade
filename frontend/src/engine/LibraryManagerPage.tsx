@@ -8,7 +8,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as libraryApi from "@oa/platform/api/libraryApi";
 import {
   syncMediaForSystem,
   syncMetadataForSystem,
@@ -18,6 +18,7 @@ import {
   setOnlySyncIdentified,
   mediaStorageStats,
   openMediaFolder,
+  clearMetadataForSystem,
 } from "@oa/platform/api/mediaApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import {
@@ -284,14 +285,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
     revisionPriority: "newest",
   });
   onMount(() => {
-    invoke<LibraryPrefs>("get_library_prefs")
+    libraryApi.getLibraryPrefs<LibraryPrefs>()
       .then((p) => setLibraryPrefs(p))
       .catch((e) => console.warn("get_library_prefs failed:", e));
   });
   async function persistLibraryPrefs(next: LibraryPrefs) {
     setLibraryPrefs(next);
     try {
-      await invoke("set_library_prefs", { prefs: next });
+      await libraryApi.setLibraryPrefs(next);
       // Re-rank tiles so the change is visible immediately.
       await props.library.refreshGroups();
     } catch (e) {
@@ -677,10 +678,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
     setMetaClearing((prev) => ({ ...prev, [systemId]: true }));
     setMetaClearStatus((prev) => ({ ...prev, [systemId]: "clearing…" }));
     try {
-      const result = await invoke<{ systemId: string; scanned: number; cleared: number }>(
-        "clear_metadata_for_system",
-        { systemId },
-      );
+      const result = await clearMetadataForSystem(systemId);
       await media.refreshAll();
       setMetaClearStatus((prev) => ({
         ...prev,
