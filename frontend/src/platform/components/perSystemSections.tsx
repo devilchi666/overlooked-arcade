@@ -9,8 +9,8 @@
 // decisions.
 
 import { createEffect, createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as coresApi from "@oa/platform/api/coresApi";
+import { getRewindState } from "@oa/platform/api/rewindTasApi";
 import { getSystemSettings, setSystemSettings, setBloomAmount } from "@oa/platform/api/settingsApi";
 import {
   SCALING_MODE_LABELS,
@@ -648,7 +648,7 @@ export const RewindLiveStats: Component<{ open: boolean }> = (props) => {
 
   async function poll() {
     try {
-      const s = await invoke<RewindState>("get_rewind_state");
+      const s = await getRewindState<RewindState>();
       setState(s);
     } catch (e) {
       console.warn("[oa-rewind-stats] get_rewind_state failed:", e);

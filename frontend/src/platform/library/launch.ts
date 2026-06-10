@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import { pushToast } from "@oa/platform/lib/toast";
 import type { RomEntry } from "./types";
 
@@ -35,7 +35,7 @@ export async function launchRom(
   };
   console.log("[oa-launch] invoke launch_rom args:", args);
   try {
-    await invoke("launch_rom", args);
+    await emulatorApi.launchRom(args);
     console.log("[oa-launch] launch_rom returned OK");
     return { kind: "launched", entry, slot };
   } catch (e) {
@@ -51,7 +51,7 @@ export async function launchRom(
 /// is the source of truth; this is a thin pass-through.
 export async function systemSupportsBootless(systemId: string): Promise<boolean> {
   try {
-    return await invoke<boolean>("system_supports_bootless", { systemId });
+    return await emulatorApi.systemSupportsBootless(systemId);
   } catch (e) {
     console.warn("[oa-launch] system_supports_bootless threw:", e);
     return false;
@@ -66,7 +66,7 @@ export async function systemSupportsBootless(systemId: string): Promise<boolean>
 export async function bootWithoutGame(systemId: string): Promise<boolean> {
   console.log("[oa-launch] invoke boot_without_game:", systemId);
   try {
-    await invoke("boot_without_game", { systemId });
+    await emulatorApi.bootWithoutGame(systemId);
     console.log("[oa-launch] boot_without_game returned OK");
     return true;
   } catch (e) {

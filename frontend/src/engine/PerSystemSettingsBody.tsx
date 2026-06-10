@@ -9,8 +9,8 @@
 // systemId-tracked source.
 
 import { createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import * as coresApi from "@oa/platform/api/coresApi";
+import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import { listMonitors } from "@oa/platform/api/settingsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
@@ -89,7 +89,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
   const [launcherProfiles] = createResource(active, async (on): Promise<EmulatorProfileInfo[]> => {
     if (!on) return [];
     try {
-      return await invoke<EmulatorProfileInfo[]>("list_emulator_profiles");
+      return await emulatorApi.listEmulatorProfiles<EmulatorProfileInfo>();
     } catch {
       return [];
     }
@@ -100,7 +100,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
     async ([sysId]): Promise<string | null> => {
       if (!sysId) return null;
       try {
-        return (await invoke<string | null>("get_launcher_pref", { systemId: sysId })) ?? null;
+        return (await emulatorApi.getLauncherPref(sysId)) ?? null;
       } catch {
         return null;
       }
@@ -115,7 +115,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
     const sysId = props.systemId();
     if (!sysId) return;
     try {
-      await invoke("set_launcher_pref", { systemId: sysId, profileId });
+      await emulatorApi.setLauncherPref(sysId, profileId);
       setLauncherTick((n) => n + 1);
     } catch (e) {
       console.warn("[per-system] set_launcher_pref failed:", e);

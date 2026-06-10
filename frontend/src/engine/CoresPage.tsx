@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as emulatorApi from "@oa/platform/api/emulatorApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { downloadCoreWithDuplicateCheck } from "@oa/platform/lib/backgroundJobs";
@@ -391,7 +391,7 @@ const CoresPage: Component<Props> = (props) => {
   const [profilesTick, setProfilesTick] = createSignal(0);
   const [profiles] = createResource(profilesTick, async (): Promise<EmulatorProfileInfo[]> => {
     try {
-      return await invoke<EmulatorProfileInfo[]>("list_emulator_profiles");
+      return await emulatorApi.listEmulatorProfiles<EmulatorProfileInfo>();
     } catch (e) {
       console.warn("list_emulator_profiles failed:", e);
       return [];
@@ -406,7 +406,7 @@ const CoresPage: Component<Props> = (props) => {
       for (const p of profs ?? []) for (const s of p.supportedSystems) systems.add(s);
       for (const id of systems) {
         try {
-          result[id] = (await invoke<string | null>("get_launcher_pref", { systemId: id })) ?? null;
+          result[id] = (await emulatorApi.getLauncherPref(id)) ?? null;
         } catch (e) {
           console.warn(`get_launcher_pref(${id}) failed:`, e);
           result[id] = null;
@@ -444,7 +444,7 @@ const CoresPage: Component<Props> = (props) => {
     if (!picked || Array.isArray(picked)) return;
     setBusy(`emu-${p.id}`);
     try {
-      await invoke("set_emulator_binary_path", { profileId: p.id, path: picked });
+      await emulatorApi.setEmulatorBinaryPath(p.id, picked);
       setStatus(`${p.displayName} binary path set.`);
       setProfilesTick((n) => n + 1);
     } catch (e) {
@@ -457,7 +457,7 @@ const CoresPage: Component<Props> = (props) => {
   async function handleClearEmulatorBinary(p: EmulatorProfileInfo) {
     setBusy(`emu-${p.id}`);
     try {
-      await invoke("set_emulator_binary_path", { profileId: p.id, path: null });
+      await emulatorApi.setEmulatorBinaryPath(p.id, null);
       setStatus(`${p.displayName} binary path cleared.`);
       setProfilesTick((n) => n + 1);
     } catch (e) {
@@ -470,7 +470,7 @@ const CoresPage: Component<Props> = (props) => {
   async function handleSetLauncherPref(systemId: string, profileId: string | null) {
     setBusy(`launcher-${systemId}`);
     try {
-      await invoke("set_launcher_pref", { systemId, profileId });
+      await emulatorApi.setLauncherPref(systemId, profileId);
       setLauncherTick((n) => n + 1);
     } catch (e) {
       setStatus(`Set default launcher failed: ${String(e)}`);

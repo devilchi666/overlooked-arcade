@@ -23,7 +23,8 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { listSaveSlots, deleteSaveSlot } from "@oa/platform/api/rewindTasApi";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 import { launchRom } from "@oa/platform/library/launch";
 import { useMedia, type MediaVariant } from "@oa/platform/library/media";
@@ -142,7 +143,7 @@ const GameInfoModal: Component<Props> = (props) => {
     async (input): Promise<SaveSlot[]> => {
       if (!input) return [];
       try {
-        return await invoke<SaveSlot[]>("list_save_slots", { romPath: input.path });
+        return await listSaveSlots<SaveSlot>(input.path);
       } catch (e) {
         console.warn("GameInfoModal: list_save_slots failed:", e);
         return [];
@@ -357,7 +358,7 @@ const GameInfoModal: Component<Props> = (props) => {
     const entry = props.entry;
     if (!entry) return;
     try {
-      await invoke("delete_save_slot", { romPath: entry.filePath, slot });
+      await deleteSaveSlot(entry.filePath, slot);
       setSlotsRefreshKey((k) => k + 1);
     } catch (e) {
       console.warn("GameInfoModal: delete_save_slot failed:", e);

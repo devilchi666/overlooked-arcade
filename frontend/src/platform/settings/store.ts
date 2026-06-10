@@ -1,5 +1,5 @@
 import { createEffect, createSignal } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { setRewindConfig } from "@oa/platform/api/rewindTasApi";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 import {
   addFolder,
@@ -529,7 +529,7 @@ export function createSettingsStore() {
     const enabled = rewindEnabled();
     const captureIntervalFrames = rewindCaptureIntervalFrames();
     const maxMegabytes = rewindBufferMegabytes();
-    invoke("set_rewind_config", { enabled, captureIntervalFrames, maxMegabytes }).catch((e) =>
+    setRewindConfig({ enabled, captureIntervalFrames, maxMegabytes }).catch((e) =>
       console.warn("set_rewind_config failed:", e),
     );
   });
