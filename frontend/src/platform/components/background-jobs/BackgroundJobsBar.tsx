@@ -216,7 +216,7 @@ const BackgroundJobsBar: Component = () => {
   return (
     <Show when={visible()}>
       <div
-        class="oa-bg-jobs-bar pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex justify-center px-4 pb-[60px]"
+        class="oa-bg-jobs-bar pointer-events-none fixed inset-x-0 bottom-0 z-[65] flex justify-center px-4 pb-[60px]"
         onMouseMove={() => {
           if (expanded()) armCollapseTimer();
         }}
