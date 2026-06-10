@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listSaveSlots, deleteSaveSlot } from "@oa/platform/api/rewindTasApi";
 import { launchRom } from "@oa/platform/library/launch";
 import type { RomEntry } from "@oa/platform/library/types";
 import { captureFocusReturn, useFocusGroup } from "../../nav/focus";
@@ -41,14 +41,14 @@ const SaveSlotsModal: Component<Props> = (props) => {
     () => (props.entry ? { path: props.entry.filePath, _: refreshKey() } : null),
     async (input): Promise<SaveSlot[]> => {
       if (!input) return [];
-      return invoke<SaveSlot[]>("list_save_slots", { romPath: input.path });
+      return listSaveSlots<SaveSlot>(input.path);
     },
   );
 
   async function handleDelete(slot: number) {
     if (!props.entry) return;
     try {
-      await invoke("delete_save_slot", { romPath: props.entry.filePath, slot });
+      await deleteSaveSlot(props.entry.filePath, slot);
       setRefreshKey((k) => k + 1);
       void refetch();
     } catch (e) {

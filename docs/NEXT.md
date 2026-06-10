@@ -406,7 +406,7 @@ edit `main.rs`'s `LoadRom` handler — let C3 land first) and **before
 Theming ARC 2 (WGSL)**. Vulkan-first per operator (DX12/GL contexts
 added later only if needed). ~est. 1-2 sessions for M1.
 
-### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-4 ✅ / Slice 5 next)
+### Theming Substrate — Phase 4: typed `platform/api/` Tauri bridge (Slices 1-5 ✅ / Slice 6 next — the closer)
 
 **Queued 2026-06-09.** Plan:
 [docs/PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md).
@@ -472,11 +472,22 @@ to re-home INTO the api layer (the api module can't import from a component);
 the analog `routing` blob stays a generic `R` param to avoid relocating the
 prefs cluster. typecheck + lint green; frontend-only. See SESSION_LOG 2026-06-10.
 
-**Slice 5 (next) — the in-game / gameplay cluster** (`emulatorApi` +
-`rewindTasApi` + `cheatsApi` + `milestonesApi` + `captureApi`): launch.ts,
-QuickSettings gameplay controls, GameDialogs cheats/milestones, SaveSlotsModal,
-ScreenshotGalleryDialog. ~70 sites — may split into two PRs. Then Slice 6
-(jobs/system/shell + turn on the invoke-ban lint rule — the ratchet closes).
+**Slice 5 — the in-game / gameplay cluster ✅ SHIPPED on
+`feat/theming-platform-api-gameplay` (2026-06-10; awaiting operator playtest +
+merge).** Five modules / ~75 call sites / ~14 files, landed as the planned
+two-PR split on one branch: PR A = `emulatorApi` (17) + `rewindTasApi` (15);
+PR B = `cheatsApi` (12) + `milestonesApi` (6) + `captureApi` (9). launch.ts
+stays a rich helper but routes its internal invokes through emulatorApi;
+GameDialogs fully drained of raw invoke; namespace imports where wrapper names
+shadow local handlers. typecheck + lint green; 56 command strings each grep to
+only their api module. See SESSION_LOG 2026-06-10.
+
+**Slice 6 (next — the closer) — `jobsApi` + `systemApi` + `shellApi`** (~85
+sites: backgroundJobs.ts, background-jobs/*, SystemHealthPage, systemInfo.ts,
+App.tsx shell paths, logbridge.ts, scummvm, sounds) **+ turn on the `no raw
+invoke() outside platform/api/` ESLint rule.** That rule flipping green closes
+the entire Phase 4 decoupling track — file boundary (six zones) + API boundary
+both locked. After this, the *enable-other-themes* track resumes.
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

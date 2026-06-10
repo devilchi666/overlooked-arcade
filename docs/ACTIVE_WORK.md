@@ -133,12 +133,25 @@ spanned every system but was filed under whichever core happened to be active.
         frontend-only (no Rust). One behavior touch: GameDialogs
         `get_controller_devices` now guards `!systemId` (was reachable as
         null; equivalent).
-      - **NEXT: Slice 5** — the in-game / gameplay cluster (`emulatorApi` +
-        `rewindTasApi` + `cheatsApi` + `milestonesApi` + `captureApi`;
-        ~70 sites, may split into two PRs). Then Slice 6 (jobs/system/shell
-        + turn on the `no raw invoke() outside platform/api/` lint rule —
-        the ratchet closes). Supersedes the "ESLint boundary rule deferred
-        to Phase 4" note below.
+      - **Slice 5 (gameplay cluster)** ✅ SHIPPED on
+        `feat/theming-platform-api-gameplay` (2026-06-10) — **awaiting
+        operator playtest + merge.** Five modules / ~75 call sites / ~14
+        files, landed as two commits (the planned two-PR split on one
+        branch): **PR A** = `emulatorApi` (17) + `rewindTasApi` (15);
+        **PR B** = `cheatsApi` (12) + `milestonesApi` (6) + `captureApi`
+        (9). launch.ts stays a rich helper but routes through emulatorApi;
+        GameDialogs fully drained of raw invoke; namespace imports where
+        wrapper names shadow local handlers (QuickSettings TAS/video,
+        GameDialogs cheats/milestones). typecheck + lint green; frontend
+        only. 56 command strings each grep to only their api module. See
+        SESSION_LOG 2026-06-10.
+      - **NEXT: Slice 6** — `jobsApi` + `systemApi` + `shellApi` (~85
+        sites: backgroundJobs.ts, background-jobs/*, SystemHealthPage,
+        systemInfo.ts, App.tsx shell paths, logbridge.ts, scummvm, sounds)
+        **+ turn on the `no raw invoke() outside platform/api/` ESLint
+        rule.** That rule flipping green closes the entire Phase 4
+        decoupling track. Supersedes the "ESLint boundary rule deferred to
+        Phase 4" note below.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

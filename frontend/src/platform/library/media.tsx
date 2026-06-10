@@ -25,7 +25,8 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { getRegionPriority, setRegionPriority, setSelectedVariant } from "@oa/platform/api/emulatorApi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 import * as mediaApi from "@oa/platform/api/mediaApi";
@@ -383,7 +384,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       console.warn("MediaProvider: initial hydrate failed:", e);
     }
     try {
-      const priority = await invoke<string[]>("get_region_priority");
+      const priority = await getRegionPriority();
       if (Array.isArray(priority) && priority.length > 0) {
         setRegionPriorityInternal(priority);
       }
@@ -469,7 +470,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
     },
     async setRegionPriority(regions) {
       try {
-        await invoke("set_region_priority", { regions });
+        await setRegionPriority(regions);
         setRegionPriorityInternal(regions);
       } catch (e) {
         console.warn("setRegionPriority failed:", e);
@@ -481,7 +482,7 @@ export const MediaProvider: Component<{ children: JSX.Element }> = (props) => {
       await refresh(romId);
     },
     async setSelectedVariant(romId, kind, idx) {
-      await invoke("set_selected_variant", { romId, kind, index: idx });
+      await setSelectedVariant(romId, kind, idx);
       await refresh(romId);
     },
     async clearMedia(romId) {

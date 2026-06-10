@@ -5,6 +5,10 @@ import * as libraryApi from "@oa/platform/api/libraryApi";
 import * as mediaApi from "@oa/platform/api/mediaApi";
 import * as coresApi from "@oa/platform/api/coresApi";
 import * as inputApi from "@oa/platform/api/inputApi";
+import * as emulatorApi from "@oa/platform/api/emulatorApi";
+import * as rewindTasApi from "@oa/platform/api/rewindTasApi";
+import * as cheatsApi from "@oa/platform/api/cheatsApi";
+import * as milestonesApi from "@oa/platform/api/milestonesApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -616,7 +620,7 @@ const App: Component = () => {
       );
     }
     if (cfg.tasReplay) {
-      void invoke("start_tas_replay", { filePath: cfg.tasReplay }).catch((e) =>
+      void rewindTasApi.startTasReplay(cfg.tasReplay).catch((e) =>
         console.warn("[oa-direct-launch] --tas-replay start_tas_replay failed:", e),
       );
     }
@@ -1067,7 +1071,7 @@ const App: Component = () => {
         settingsApi.setWindowMode(effective.windowMode, effective.monitor).catch((e) =>
           console.warn("[oa-launch] set_window_mode failed:", e),
         ),
-        invoke("set_rewind_config", {
+        rewindTasApi.setRewindConfig({
           enabled: effective.rewindEnabled,
           captureIntervalFrames: effective.rewindCaptureIntervalFrames,
           maxMegabytes: effective.rewindBufferMegabytes,
@@ -1104,7 +1108,7 @@ const App: Component = () => {
       // thread's runtime evaluator. Soft failure — recording the
       // milestones in SQLite is the source of truth; the live
       // evaluator just doesn't fire toasts until a re-launch.
-      void invoke<number>("arm_milestones", { gameId: entry.id })
+      void milestonesApi.armMilestones(entry.id)
         .then((n) => {
           if (n > 0) console.log(`[oa-launch] armed ${n} milestone(s)`);
         })
@@ -1126,7 +1130,7 @@ const App: Component = () => {
       // RetroArch parity slice 5 — arm per-game cheats. Same soft-failure
       // story as milestones (SQLite is source of truth; emu-thread
       // runtime is the live evaluator that runs on next launch otherwise).
-      void invoke<number>("arm_cheats", { gameId: entry.id })
+      void cheatsApi.armCheats(entry.id)
         .then((n) => {
           if (n > 0) console.log(`[oa-launch] armed ${n} cheat(s)`);
         })
@@ -1176,7 +1180,7 @@ const App: Component = () => {
       ["set_shader_preset", settingsApi.setShaderPreset(settings.shaderPreset())],
       ["set_scaling_mode", settingsApi.setScalingMode(settings.scalingMode())],
       ["set_window_mode", settingsApi.setWindowMode(settings.windowMode(), settings.monitorIndex())],
-      ["set_rewind_config", invoke("set_rewind_config", {
+      ["set_rewind_config", rewindTasApi.setRewindConfig({
         enabled: settings.rewindEnabled(),
         captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
         maxMegabytes: settings.rewindBufferMegabytes(),
@@ -1199,7 +1203,7 @@ const App: Component = () => {
     if (!gameRunning()) return;
     const title = currentRomTitle();
     try {
-      await invoke("unload_rom", { title });
+      await emulatorApi.unloadRom(title);
       setGameRunning(false);
       setCurrentRomTitle(null);
       setRunningEntry(null);

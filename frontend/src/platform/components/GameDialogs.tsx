@@ -19,8 +19,9 @@ import {
   type Accessor,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import { getControllerDevices } from "@oa/platform/api/inputApi";
+import * as cheatsApi from "@oa/platform/api/cheatsApi";
+import * as milestonesApi from "@oa/platform/api/milestonesApi";
 import {
   getGameOverrides,
   setGameOverrides,
@@ -1196,7 +1197,7 @@ export const MilestonesDialog: Component<{
     const e = props.entry;
     if (!e) return;
     try {
-      const ms = await invoke<Milestone[]>("list_milestones", { gameId: e.id });
+      const ms = await milestonesApi.listMilestones(e.id);
       setMilestones(ms ?? []);
     } catch (err) {
       console.warn("[oa-milestones-dialog] list failed:", err);
@@ -1220,9 +1221,9 @@ export const MilestonesDialog: Component<{
     if (!e) return;
     try {
       if (m.id == null) {
-        await invoke<number>("add_milestone", { milestone: { ...m, gameId: e.id } });
+        await milestonesApi.addMilestone({ ...m, gameId: e.id });
       } else {
-        await invoke("update_milestone", { milestone: m });
+        await milestonesApi.updateMilestone(m);
       }
       setDraft(null);
       await refresh();
@@ -1233,7 +1234,7 @@ export const MilestonesDialog: Component<{
 
   async function remove(id: number) {
     try {
-      await invoke("delete_milestone", { id });
+      await milestonesApi.deleteMilestone(id);
       await refresh();
     } catch (err) {
       console.warn("[oa-milestones-dialog] delete failed:", err);
@@ -1242,7 +1243,7 @@ export const MilestonesDialog: Component<{
 
   async function resetProgress(id: number) {
     try {
-      await invoke("reset_milestone_progress", { id });
+      await milestonesApi.resetMilestoneProgress(id);
       await refresh();
     } catch (err) {
       console.warn("[oa-milestones-dialog] reset_progress failed:", err);
@@ -1446,7 +1447,7 @@ export const CheatsDialog: Component<{
       return;
     }
     try {
-      const list = await invoke<Cheat[]>("list_cheats", { gameId: gameId() });
+      const list = await cheatsApi.listCheats(gameId());
       setCheats(list);
     } catch (e) {
       console.warn("[oa-cheats-dialog] list failed:", e);
@@ -1462,9 +1463,7 @@ export const CheatsDialog: Component<{
       return;
     }
     try {
-      const formats = await invoke<CheatFormat[]>("list_cheat_formats", {
-        systemId: sysId,
-      });
+      const formats = await cheatsApi.listCheatFormats(sysId);
       setCheatFormats(formats);
     } catch (e) {
       console.warn("[oa-cheats-dialog] list_cheat_formats failed:", e);
@@ -1509,7 +1508,7 @@ export const CheatsDialog: Component<{
 
   async function rearm() {
     try {
-      await invoke<number>("arm_cheats", { gameId: gameId() });
+      await cheatsApi.armCheats(gameId());
     } catch (e) {
       console.warn("[oa-cheats-dialog] arm failed:", e);
     }
@@ -1517,8 +1516,8 @@ export const CheatsDialog: Component<{
 
   async function save(c: Cheat) {
     try {
-      if (c.id) await invoke("update_cheat", { cheat: c });
-      else await invoke<number>("add_cheat", { cheat: c });
+      if (c.id) await cheatsApi.updateCheat(c);
+      else await cheatsApi.addCheat(c);
       setDraft(null);
       await refresh();
       await rearm();
@@ -1530,7 +1529,7 @@ export const CheatsDialog: Component<{
   async function toggle(c: Cheat) {
     const next = { ...c, enabled: !c.enabled };
     try {
-      await invoke("update_cheat", { cheat: next });
+      await cheatsApi.updateCheat(next);
       await refresh();
       await rearm();
     } catch (e) {
@@ -1541,7 +1540,7 @@ export const CheatsDialog: Component<{
   async function remove(id: number) {
     if (!window.confirm("Delete this cheat?")) return;
     try {
-      await invoke("delete_cheat", { id });
+      await cheatsApi.deleteCheat(id);
       await refresh();
       await rearm();
     } catch (e) {
@@ -1554,9 +1553,7 @@ export const CheatsDialog: Component<{
   async function startSearch() {
     setSearchPending(true);
     try {
-      const summary = await invoke<CheatSearchSummary>("start_cheat_search", {
-        region: searchRegion(),
-      });
+      const summary = await cheatsApi.startCheatSearch(searchRegion());
       setSearchSummary(summary);
       setSearchActive(true);
     } catch (e) {
@@ -1571,7 +1568,7 @@ export const CheatsDialog: Component<{
   async function runFilter(filter: CheatSearchFilter) {
     setSearchPending(true);
     try {
-      const summary = await invoke<CheatSearchSummary>("filter_cheat_search", { filter });
+      const summary = await cheatsApi.filterCheatSearch(filter);
       setSearchSummary(summary);
     } catch (e) {
       console.warn("[oa-cheat-search] filter failed:", e);
@@ -1581,7 +1578,7 @@ export const CheatsDialog: Component<{
   }
   async function peek() {
     try {
-      const summary = await invoke<CheatSearchSummary>("peek_cheat_search");
+      const summary = await cheatsApi.peekCheatSearch();
       setSearchSummary(summary);
     } catch (e) {
       console.warn("[oa-cheat-search] peek failed:", e);
@@ -1589,7 +1586,7 @@ export const CheatsDialog: Component<{
   }
   async function endSearch() {
     try {
-      await invoke("end_cheat_search");
+      await cheatsApi.endCheatSearch();
     } catch (e) {
       console.warn("[oa-cheat-search] end failed:", e);
     }

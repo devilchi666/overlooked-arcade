@@ -382,3 +382,97 @@ and tracks the rest. Branch `feat/theming-boundary-enforcement`.
   engine surface, or direct platform/dialogs setters). Then add the
   `engine↛components` + classify-the-rest zones. Finally Phase 4 (typed
   `platform/api/` Tauri bridge corrals the 157 raw invoke() calls).
+
+---
+
+## 2026-06-09 — Phase 4 Slice 1: `settingsApi` (typed Tauri bridge)
+
+- **Shipped:** Created `frontend/src/platform/api/settingsApi.ts` — the first
+  `platform/api/<domain>Api.ts` module (28 typed wrappers, one named export per
+  command, command string lives only here) — and migrated the
+  video-display / audio / system-settings / per-game-overrides / shell-mode +
+  kiosk + presentation-mode cluster across **13 files** on
+  `feat/theming-platform-api-settings` (off main): App.tsx (launch AV-override
+  push + revert-to-defaults + direct-launch fullscreen + shell-mode hydrate),
+  `settings/store.ts`, `lib/audio.ts`, `layout/state.ts`, `shader_presets.ts`,
+  QuickSettings, GameDialogs, GamePropertiesDialog, perSystemSections,
+  AnalogBindingsSection, SettingsSections, SystemDialogs, PerSystemSettingsBody.
+  Import style: named imports where no collision; `import * as settingsApi`
+  namespace alias in the four files whose local signal setters / exports shadow
+  the wrapper names (App.tsx, settings/store, audio, layout/state). `VideoState`
+  (the `get_video_state` return) lifted into the api module as its canonical
+  home; QuickSettings imports it now. typecheck + lint green; every migrated
+  command string greps to **only** `settingsApi.ts` (the sole other matches are
+  one index.css doc comment — updated — and 6 diagnostic label strings in
+  App.tsx's revert array, which are `[label, promise]` tuples, not `invoke()`
+  bindings). The Slice 6 lint rule is NOT on yet (per plan).
+- **Three judgment calls:**
+  - *Shape-divergent getters stay generic.* `get_game_overrides` /
+    `get_system_settings` are typed differently at each call site (each file
+    declares only the fields it reads — `SysSettings` / `GameOver` /
+    `PerSystemOverrides` / `{analogRouting?}` / the GameDialogs supersets).
+    Rather than force one canonical type (which would over/under-constrain
+    callers), the wrappers are `getGameOverrides<T = GameOverrides>(id)` /
+    `getSystemSettings<T = SystemSettings>(systemId)` — every call site keeps
+    its exact local view via the type arg, zero type churn, no `any`. Canonical
+    `GameOverrides` / `SystemSettings` / `OverscanCropPrefs` / `VideoState`
+    defined + exported in the api module as the backend-contract home.
+  - *Views/layout stay out of Slice 1.* `layout/state.ts` calls both the
+    presentation/kiosk commands (settingsApi) and `get/set_layout` (viewsApi,
+    Slice 2) — but they're **separate call sites**, not entangled, so only the
+    presentation/kiosk trio migrated; `get/set_layout` left raw for Slice 2.
+  - *Surfaced + fixed a latent bug.* AnalogBindingsSection's `get_game_overrides`
+    passed `{ gameId }`, but the backend command's arg is `id` — so the call
+    silently errored (caught + logged "analog prefs fetch failed") and per-game
+    analog routing fell back to empty `{ ports: [] }`. The typed wrapper sends
+    the correct `{ id }`, fixing it. Flagged to operator (the one place this
+    slice changes runtime behavior; everything else is a pure pass-through).
+- **Merged:** ✅ operator playtested + merged to main 2026-06-09 (merge
+  `a5997e3`, together with Slice 2). Behavior-preserving everywhere except the
+  AnalogBindingsSection bug fix above.
+- **Next:** Slice 2 — `libraryApi` + `collectionsApi` + `viewsApi` (the
+  store-heavy core: library/store, customCollections, ingest, views/store +
+  the `get/set_layout` calls left in layout/state, App.tsx library paths;
+  ~55 sites). Same convention.
+
+---
+
+## 2026-06-09 — Phase 4 Slice 2: `libraryApi` + `collectionsApi` + `viewsApi`
+
+- **Shipped:** Three more `platform/api/` modules on the same branch
+  (`feat/theming-platform-api-settings` — the branch holds the whole Phase 4
+  arc, one-branch-per-arc). **libraryApi** (games / folders / groups /
+  migration — 26 wrappers), **collectionsApi** (7 wrappers), **viewsApi**
+  (4 wrappers: get/set_views + get/set_layout). Migrated **8 files**:
+  `library/store.ts` (13 commands — `invoke` import fully removed),
+  `customCollections.ts` (7 — removed), `views/store.ts` (4 — removed),
+  `layout/state.ts` (the get/set_layout left from Slice 1 — `invoke` now gone
+  there too), `settings/store.ts` (5 folder commands; `invoke` stays for the
+  Slice-5 `set_rewind_config`), App.tsx (get_game / directory_is_empty /
+  set_watched_folders / find_game_id_by_path via `import * as libraryApi`),
+  ImportWizard (6 folder commands), routes/GameDetailPanel
+  (update_game_core_override — confirms routes->platform/api is allowed).
+  Named imports throughout (no collisions this slice); namespace alias only in
+  App.tsx (consistency with its settingsApi alias). typecheck + lint green;
+  every migrated command string greps to ONLY its api module (zero leaks —
+  cleaner than Slice 1, no stray labels/comments).
+- **Two judgment calls:**
+  - *Same generic-getter pattern (D14) for two more shape-divergent commands.*
+    `list_folders` / `add_folder` return `LibraryFolderRow` in the settings
+    store but the richer `Folder` in the import wizard; `get_layout` returns
+    `LayoutPrefs` in layout/state but a narrow `{ systemOrder }` in views/store.
+    Wrappers are generic with a canonical default (`listFolders<T = LibraryFolderRow>`,
+    `getLayout<T = LayoutPrefs>`), each call site keeps its view via the type arg.
+  - *`ingest.ts` left untouched* despite the plan's Slice-2 file list. Its
+    commands are `start_background_scan` (jobsApi/Slice 6), `list_cores`
+    (coresApi/Slice 4), and the mame trio `lookup_mame_game` /
+    `lookup_mame_title` / `set_game_mame_metadata` (mediaApi/Slice 3) — none
+    belong to library/collections/views. Assign-by-concern wins over the file
+    list (same discipline as Slice 1's `set_rewind_config` etc.).
+- **Merged:** ✅ operator playtested + merged to main 2026-06-09 (merge
+  `a5997e3`, together with Slice 1). Behavior-preserving throughout (no
+  AnalogBindingsSection-style latent bug surfaced this slice — all arg names
+  were already consistent across call sites).
+- **Next:** Slice 3 — `mediaApi` (art/metadata sync + game-info + mame + hashes;
+  media.tsx, platformMedia, gameInfo, MediaSettings, ImportWizard art paths,
+  and ingest.ts's mame trio). ~45 sites.

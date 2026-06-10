@@ -17,7 +17,7 @@ import {
   Show,
   type Component,
 } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { listDiscSetMembers } from "@oa/platform/api/emulatorApi";
 import type { RomEntry } from "@oa/platform/library/types";
 
 type Props = {
@@ -49,7 +49,7 @@ const DiscPickerDialog: Component<Props> = (props) => {
       setLoadError("Tile has no discSetId");
       return;
     }
-    invoke<RomEntry[]>("list_disc_set_members", { discSetId: setId })
+    listDiscSetMembers(setId)
       .then((m) => setMembers(m))
       .catch((e) => {
         console.warn("DiscPickerDialog: list_disc_set_members failed:", e);

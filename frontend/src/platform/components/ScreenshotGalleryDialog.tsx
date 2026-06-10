@@ -4,7 +4,8 @@
 // only see by opening the appData folder; now they have a UI.
 
 import { createResource, For, Show, type Component } from "solid-js";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { listScreenshots, deleteScreenshot, openScreenshotFolder } from "@oa/platform/api/captureApi";
 import { Dialog } from "@oa/platform/components/Dialog";
 import type { RomEntry } from "@oa/platform/library/types";
 
@@ -52,7 +53,7 @@ export const ScreenshotGalleryDialog: Component<Props> = (props) => {
     async (src): Promise<ScreenshotEntry[]> => {
       if (!src.open || !src.romPath) return [];
       try {
-        return await invoke<ScreenshotEntry[]>("list_screenshots", { romPath: src.romPath });
+        return await listScreenshots(src.romPath);
       } catch (e) {
         console.warn("[oa-screenshots] list_screenshots failed:", e);
         return [];
@@ -62,7 +63,7 @@ export const ScreenshotGalleryDialog: Component<Props> = (props) => {
 
   async function deleteOne(path: string) {
     try {
-      await invoke("delete_screenshot", { path });
+      await deleteScreenshot(path);
       void refetch();
     } catch (e) {
       console.warn("[oa-screenshots] delete failed:", e);
@@ -73,7 +74,7 @@ export const ScreenshotGalleryDialog: Component<Props> = (props) => {
     const romPath = props.entry?.filePath;
     if (!romPath) return;
     try {
-      await invoke("open_screenshot_folder", { romPath });
+      await openScreenshotFolder(romPath);
     } catch (e) {
       console.warn("[oa-screenshots] open folder failed:", e);
     }

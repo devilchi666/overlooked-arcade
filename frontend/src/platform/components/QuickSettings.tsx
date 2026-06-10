@@ -10,6 +10,10 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as emulatorApi from "@oa/platform/api/emulatorApi";
+import * as rewindTasApi from "@oa/platform/api/rewindTasApi";
+import * as captureApi from "@oa/platform/api/captureApi";
+import { readMemoryRegion } from "@oa/platform/api/cheatsApi";
 import { getVideoState, type VideoState } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import type { RomEntry } from "@oa/platform/library/types";
@@ -256,7 +260,7 @@ const QuickSettings: Component<Props> = (props) => {
   const [launcherInfo, setLauncherInfo] = createSignal<ActiveLauncherInfo>(LIBRETRO_LAUNCHER_INFO);
   async function refreshDiscState() {
     try {
-      const s = await invoke<DiscInfo | null>("get_disc_state");
+      const s = await emulatorApi.getDiscState();
       setDiscInfo(s);
     } catch (e) {
       console.warn("[oa-quick] get_disc_state failed:", e);
@@ -269,9 +273,9 @@ const QuickSettings: Component<Props> = (props) => {
     if (discSwapping()) return;
     setDiscSwapping(true);
     try {
-      await invoke("set_disc_eject", { ejected: true });
-      await invoke("set_disc_image", { index });
-      await invoke("set_disc_eject", { ejected: false });
+      await emulatorApi.setDiscEject(true);
+      await emulatorApi.setDiscImage(index);
+      await emulatorApi.setDiscEject(false);
       await refreshDiscState();
     } catch (e) {
       console.warn("[oa-quick] swapToDisc failed:", e);
@@ -292,7 +296,7 @@ const QuickSettings: Component<Props> = (props) => {
           // Cancel restores history; close overlay too. Esc-cleanup is
           // fire-and-forget — if the backend rejects, the overlay is
           // already closing so a toast would be confusing.
-          void invoke("end_rewind_scrub", { commit: false }).catch((e) =>
+          void rewindTasApi.endRewindScrub(false).catch((e) =>
             console.warn("[quick-settings] end_rewind_scrub on esc failed:", e),
           );
           setView("actions");
@@ -314,10 +318,10 @@ const QuickSettings: Component<Props> = (props) => {
       );
       // Hydrate ring stats + TAS state so the action-row hints reflect
       // current Rust-side state. Both are non-blocking.
-      void invoke<RewindState>("get_rewind_state")
+      void rewindTasApi.getRewindState<RewindState>()
         .then((s) => setRewindState(s ?? null))
         .catch(() => setRewindState(null));
-      void invoke<TasState>("get_tas_state")
+      void rewindTasApi.getTasState()
         .then((s) => setTasState(s ?? null))
         .catch(() => setTasState(null));
       void getVideoState()
@@ -327,7 +331,7 @@ const QuickSettings: Component<Props> = (props) => {
       // action rows gate correctly. Falls back to the full libretro set
       // on error (fail-open: never hide a capability the in-process path
       // actually has).
-      void invoke<ActiveLauncherInfo>("get_active_launcher_capabilities")
+      void emulatorApi.getActiveLauncherCapabilities()
         .then((info) => setLauncherInfo(info ?? LIBRETRO_LAUNCHER_INFO))
         .catch(() => setLauncherInfo(LIBRETRO_LAUNCHER_INFO));
       void refreshDiscState();
@@ -350,7 +354,7 @@ const QuickSettings: Component<Props> = (props) => {
       // doesn't go through Esc), cancel the scrub server-side. Safe to
       // call when not scrubbing — the Rust side ignores the message.
       if (view() === "rewind") {
-        void invoke("end_rewind_scrub", { commit: false }).catch((e) =>
+        void rewindTasApi.endRewindScrub(false).catch((e) =>
           console.warn("[quick-settings] end_rewind_scrub on close failed:", e),
         );
       }
@@ -381,11 +385,7 @@ const QuickSettings: Component<Props> = (props) => {
     const v = view();
     if (v === "memory" && props.open) {
       const fetchMemory = () => {
-        void invoke<MemoryRegionInfo>("read_memory_region", {
-          region: memoryRegion(),
-          offset: memoryOffset(),
-          length: MEMORY_WINDOW_BYTES,
-        })
+        void readMemoryRegion(memoryRegion(), memoryOffset(), MEMORY_WINDOW_BYTES)
           .then((info) => setMemoryView(info ?? null))
           .catch(() => setMemoryView(null));
       };
@@ -408,7 +408,7 @@ const QuickSettings: Component<Props> = (props) => {
     if (v === "tas" && props.open) {
       if (tasPollId === undefined) {
         tasPollId = window.setInterval(() => {
-          void invoke<TasState>("get_tas_state")
+          void rewindTasApi.getTasState()
             .then((s) => setTasState(s ?? null))
             .catch(() => {});
         }, 250);
@@ -464,7 +464,7 @@ const QuickSettings: Component<Props> = (props) => {
   async function enterRewindView() {
     if (!rewindAvailable()) return;
     try {
-      await invoke("start_rewind_scrub");
+      await rewindTasApi.startRewindScrub();
       setScrubPosition(0);
       setView("rewind");
     } catch (e) {
@@ -474,7 +474,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function commitRewind() {
     try {
-      await invoke("end_rewind_scrub", { commit: true });
+      await rewindTasApi.endRewindScrub(true);
     } catch (e) {
       console.warn("[oa-quick] commit failed:", e);
     }
@@ -484,7 +484,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function cancelRewind() {
     try {
-      await invoke("end_rewind_scrub", { commit: false });
+      await rewindTasApi.endRewindScrub(false);
     } catch (e) {
       console.warn("[oa-quick] cancel failed:", e);
     }
@@ -496,12 +496,12 @@ const QuickSettings: Component<Props> = (props) => {
   async function enterTasView() {
     setView("tas");
     // Hydrate recordings list + tas state on view entry.
-    void invoke<TasState>("get_tas_state")
+    void rewindTasApi.getTasState()
       .then((s) => setTasState(s ?? null))
       .catch(() => {});
     const entry = props.entry;
     if (entry) {
-      void invoke<TasListEntry[]>("list_tas_recordings", { romPath: entry.filePath })
+      void rewindTasApi.listTasRecordings(entry.filePath)
         .then((list) => setTasRecordings(list ?? []))
         .catch((e) => {
           console.warn("[oa-quick] list_tas_recordings failed:", e);
@@ -512,7 +512,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function refreshTasState() {
     try {
-      const s = await invoke<TasState>("get_tas_state");
+      const s = await rewindTasApi.getTasState();
       setTasState(s ?? null);
     } catch {}
   }
@@ -521,7 +521,7 @@ const QuickSettings: Component<Props> = (props) => {
     const entry = props.entry;
     if (!entry) return;
     try {
-      const list = await invoke<TasListEntry[]>("list_tas_recordings", { romPath: entry.filePath });
+      const list = await rewindTasApi.listTasRecordings(entry.filePath);
       setTasRecordings(list ?? []);
     } catch (e) {
       console.warn("[oa-quick] refresh recordings failed:", e);
@@ -530,7 +530,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function startTasRecording() {
     try {
-      await invoke("start_tas_recording", { displayName: tasRecordingName().trim() });
+      await rewindTasApi.startTasRecording(tasRecordingName().trim());
       setTasRecordingName("");
       await refreshTasState();
     } catch (e) {
@@ -540,7 +540,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function stopTasRecording(discard: boolean) {
     try {
-      await invoke("stop_tas_recording", { discard });
+      await rewindTasApi.stopTasRecording(discard);
       await refreshTasState();
       await refreshRecordingsList();
     } catch (e) {
@@ -550,7 +550,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function startTasReplay(filePath: string) {
     try {
-      await invoke("start_tas_replay", { filePath });
+      await rewindTasApi.startTasReplay(filePath);
       await refreshTasState();
     } catch (e) {
       console.warn("[oa-quick] start_tas_replay failed:", e);
@@ -559,7 +559,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function stopTasReplay() {
     try {
-      await invoke("stop_tas_replay");
+      await rewindTasApi.stopTasReplay();
       await refreshTasState();
     } catch (e) {
       console.warn("[oa-quick] stop_tas_replay failed:", e);
@@ -568,7 +568,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function deleteTasRecording(filePath: string) {
     try {
-      await invoke("delete_tas_recording", { filePath });
+      await rewindTasApi.deleteTasRecording(filePath);
       await refreshRecordingsList();
     } catch (e) {
       console.warn("[oa-quick] delete_tas_recording failed:", e);
@@ -584,7 +584,7 @@ const QuickSettings: Component<Props> = (props) => {
       .catch(() => {});
     const entry = props.entry;
     if (entry) {
-      void invoke<VideoClipEntry[]>("list_video_clips", { romPath: entry.filePath })
+      void captureApi.listVideoClips(entry.filePath)
         .then((list) => setVideoClips(list ?? []))
         .catch((e) => {
           console.warn("[oa-quick] list_video_clips failed:", e);
@@ -604,7 +604,7 @@ const QuickSettings: Component<Props> = (props) => {
     const entry = props.entry;
     if (!entry) return;
     try {
-      const list = await invoke<VideoClipEntry[]>("list_video_clips", { romPath: entry.filePath });
+      const list = await captureApi.listVideoClips(entry.filePath);
       setVideoClips(list ?? []);
     } catch (e) {
       console.warn("[oa-quick] refresh clips failed:", e);
@@ -613,7 +613,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function startVideoCapture() {
     try {
-      await invoke("start_video_capture", { displayName: videoCaptureName().trim() });
+      await captureApi.startVideoCapture(videoCaptureName().trim());
       setVideoCaptureName("");
       await refreshVideoState();
     } catch (e) {
@@ -623,7 +623,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function stopVideoCapture(discard: boolean) {
     try {
-      await invoke("stop_video_capture", { discard });
+      await captureApi.stopVideoCapture(discard);
       await refreshVideoState();
       await refreshClipsList();
     } catch (e) {
@@ -633,7 +633,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function deleteVideoClip(clipDir: string) {
     try {
-      await invoke("delete_video_clip", { clipDir });
+      await captureApi.deleteVideoClip(clipDir);
       await refreshClipsList();
     } catch (e) {
       console.warn("[oa-quick] delete_video_clip failed:", e);
@@ -642,7 +642,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function openVideoClipFolder(clipDir: string) {
     try {
-      await invoke("open_video_clip_folder", { clipDir });
+      await captureApi.openVideoClipFolder(clipDir);
     } catch (e) {
       console.warn("[oa-quick] open_video_clip_folder failed:", e);
     }
@@ -662,7 +662,7 @@ const QuickSettings: Component<Props> = (props) => {
     setConvertingClip(clipDir);
     setConversionResult(null);
     try {
-      const out = await invoke<string>("convert_video_clip_to_webm", { clipDir });
+      const out = await captureApi.convertVideoClipToWebm(clipDir);
       setConversionResult({ clipDir, ok: true, message: out });
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
@@ -743,7 +743,7 @@ const QuickSettings: Component<Props> = (props) => {
                 const clamped = Math.max(0, Math.min(max, pos));
                 setScrubPosition(clamped);
                 // Per-frame drag — keep console-only to avoid toast spam.
-                void invoke("set_rewind_scrub_position", { stepsBack: clamped }).catch((e) =>
+                void rewindTasApi.setRewindScrubPosition(clamped).catch((e) =>
                   console.warn("[quick-settings] set_rewind_scrub_position failed:", e),
                 );
               }}
