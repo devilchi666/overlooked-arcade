@@ -15,12 +15,14 @@
 //   - engine/**   ↛ components/** (engine must not import the grab-bag)
 //
 // PLUS the API boundary (Phase 4, the typed Tauri bridge — Slice 6 closer,
-// 2026-06-10):
-//   - raw invoke() banned outside platform/api/  (no-restricted-imports)
+// 2026-06-10; events added in Phase 4.5, 2026-06-10):
+//   - raw invoke() banned outside platform/api/                 (no-restricted-imports)
+//   - raw listen()/emit()/once() banned outside platform/api/   (no-restricted-imports)
 // Every component/engine/theme module reaches the backend ONLY through a typed
-// wrapper in platform/api/<domain>Api; the command-name string lives in exactly
-// one place. The src/platform/api/** override at the bottom re-allows raw
-// invoke() there (it IS the bridge).
+// wrapper in platform/api/<domain>Api; backend command names AND event names
+// each live in exactly one place (the api modules / eventsApi's OA_EVENTS
+// registry). The src/platform/api/** override at the bottom re-allows the raw
+// Tauri APIs there (it IS the bridge).
 //
 // The src/components/ grab-bag is now fully DRAINED (theming-grabbag-drain,
 // 2026-06-09): every file relocated to engine/ (manager surfaces) or
@@ -130,6 +132,15 @@ export default [
                 "Raw invoke() is corralled into platform/api/. Import a typed " +
                 "wrapper from @oa/platform/api/<domain>Api instead, or add one " +
                 "there. (convertFileSrc from the same module is still allowed.)",
+            },
+            {
+              name: "@tauri-apps/api/event",
+              importNames: ["listen", "emit", "once"],
+              message:
+                "Raw Tauri events are corralled into platform/api/eventsApi. Use " +
+                "listenScoped / listenTo / emitEvent + an OA_EVENTS.* channel " +
+                "from @oa/platform/api/eventsApi instead. (Type-only imports like " +
+                "`type UnlistenFn` from this module are still allowed.)",
             },
           ],
         },

@@ -14,7 +14,7 @@
 
 import { createSignal, type Accessor } from "solid-js";
 import { resolvePlatformMusic, resolveUiSound } from "@oa/platform/api/shellApi";
-import { listen } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import * as settingsApi from "@oa/platform/api/settingsApi";
 
 export type AudioBus = "platform-music" | "ui-sounds" | "ceremony" | "snap-audio";
@@ -51,7 +51,7 @@ type PlaybackFailedPayload = {
 // The listen() call is fire-and-forget — it returns an unlisten
 // function but we want this for the entire app lifetime. Errors are
 // non-fatal: the chip just degrades to dispatch-tracking-only.
-void listen<PlaybackFailedPayload>("oa://audio-playback-failed", (event) => {
+void listenTo<PlaybackFailedPayload>(OA_EVENTS.audioPlaybackFailed, (event) => {
   if (event.payload.bus === "platform-music") {
     setNowPlayingSig(null);
   }

@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, type Component } from "solid-js";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 
 // Mirror of the Rust ToastPayload struct in oa-shell/src/main.rs. `system`
 // is optional — when present it picks up that system's CSS cascade colors
@@ -65,7 +65,7 @@ const ToastStack: Component = () => {
     timers.set(id, handle);
   };
 
-  listenScoped<ToastPayload>("oa://toast", (e) => push(e.payload));
+  listenScoped<ToastPayload>(OA_EVENTS.toast, (e) => push(e.payload));
 
   onCleanup(() => {
     timers.forEach((h) => window.clearTimeout(h));

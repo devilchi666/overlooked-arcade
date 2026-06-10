@@ -19,7 +19,7 @@ import { createStore, produce } from "solid-js/store";
 import * as jobsApi from "@oa/platform/api/jobsApi";
 import { downloadCore } from "@oa/platform/api/coresApi";
 import { resolveCompletionChime } from "@oa/platform/api/shellApi";
-import { listen } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { playAudio } from "./audio";
 
 /// Mirrors `apps/oa-shell/src/job_registry.rs::JobState` serialized
@@ -249,7 +249,7 @@ async function maybePlayCompletionChime(): Promise<void> {
 
 // Set up the listener BEFORE invoking hydrate so a Created that
 // fires between listen + invoke is captured by `pendingEvents`.
-void listen<JobEvent>("oa://job-event", (event) => {
+void listenTo<JobEvent>(OA_EVENTS.jobEvent, (event) => {
   if (!hydrated) {
     pendingEvents.push(event.payload);
     return;

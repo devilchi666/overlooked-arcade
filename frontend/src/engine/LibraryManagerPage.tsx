@@ -20,7 +20,7 @@ import {
   openMediaFolder,
   clearMetadataForSystem,
 } from "@oa/platform/api/mediaApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import {
   closestCenter,
   createSortable,
@@ -370,10 +370,10 @@ const LibraryManagerPage: Component<Props> = (props) => {
   // bakes in onCleanup; all four listen() Promises fire in adjacent
   // microticks so there's no sequential-await window where a
   // sync-complete event could slip through.
-  listenScoped<SyncProgressPayload>("oa://library-sync", (ev) => {
+  listenScoped<SyncProgressPayload>(OA_EVENTS.librarySync, (ev) => {
     setSyncProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<SyncSummaryPayload>("oa://library-sync-complete", (ev) => {
+  listenScoped<SyncSummaryPayload>(OA_EVENTS.librarySyncComplete, (ev) => {
     setSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
     // Surface the final tally as the "last progress" line.
     setSyncProgress((prev) => ({
@@ -387,10 +387,10 @@ const LibraryManagerPage: Component<Props> = (props) => {
       },
     }));
   });
-  listenScoped<SyncProgressPayload>("oa://library-metadata-sync", (ev) => {
+  listenScoped<SyncProgressPayload>(OA_EVENTS.libraryMetadataSync, (ev) => {
     setMetaProgress((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<MetadataSyncSummaryPayload>("oa://library-metadata-sync-complete", (ev) => {
+  listenScoped<MetadataSyncSummaryPayload>(OA_EVENTS.libraryMetadataSyncComplete, (ev) => {
     setMetaSyncing((prev) => ({ ...prev, [ev.payload.systemId]: false }));
     setMetaProgress((prev) => ({
       ...prev,
@@ -524,14 +524,14 @@ const LibraryManagerPage: Component<Props> = (props) => {
     );
   }
 
-  listenScoped<HashSyncSummaryPayload>("oa://rom-hashes-synced", (ev) => {
+  listenScoped<HashSyncSummaryPayload>(OA_EVENTS.romHashesSynced, (ev) => {
     setHashSyncSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
     setHashSyncing((p) => ({ ...p, [ev.payload.systemId]: false }));
   });
-  listenScoped<HashResolveProgressPayload>("oa://rom-hash-resolve-progress", (ev) => {
+  listenScoped<HashResolveProgressPayload>(OA_EVENTS.romHashResolveProgress, (ev) => {
     setHashResolveProgress((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
   });
-  listenScoped<HashResolveSummaryPayload>("oa://rom-hash-resolve-complete", (ev) => {
+  listenScoped<HashResolveSummaryPayload>(OA_EVENTS.romHashResolveComplete, (ev) => {
     setHashResolveSummary((p) => ({ ...p, [ev.payload.systemId]: ev.payload }));
     setHashResolving((p) => ({ ...p, [ev.payload.systemId]: false }));
   });

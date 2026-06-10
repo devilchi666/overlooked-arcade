@@ -157,9 +157,19 @@ spanned every system but was filed under whichever core happened to be active.
         the platform/theme decoupling track is closed at BOTH the file level
         (six boundary lint zones) and the API level (the invoke ban). A new
         feature physically cannot re-couple the layers without ESLint stopping
-        the commit. Next theming work is the *enable-other-themes* track
-        (Phase 3 nav primitives → Phase 5 packaging → Phase 6 Retroverse-as-
-        theme → ARCs 2-3).
+        the commit.
+      - **Phase 4.5 — the EVENT corral** ✅ SHIPPED on
+        `feat/theming-platform-api-events` (2026-06-10) — **awaiting operator
+        playtest + merge.** Closed the symmetric coupling the Phase 4 audit
+        flagged: Tauri event names. New `platform/api/eventsApi.ts` (`OA_EVENTS`
+        registry + `listenScoped`/`listenTo`/`emitEvent`); ~30 sites / 16 files
+        migrated (incl. a theme file that emitted `oa://toast` raw); a second
+        `no-restricted-imports` entry bans raw `listen`/`emit`/`once` outside
+        `platform/api/` (probe-verified). Every `oa://…` string now lives only in
+        `OA_EVENTS`. DECISIONS **D17**. **The foundation is now clean on BOTH
+        backend-contract channels (commands + events).** Next theming work is the
+        *enable-other-themes* track (Phase 3 nav primitives → Phase 5 packaging →
+        Phase 6 Retroverse-as-theme → ARCs 2-3).
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

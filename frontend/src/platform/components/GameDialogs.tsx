@@ -29,7 +29,7 @@ import {
   listMonitors,
   setBloomAmount,
 } from "@oa/platform/api/settingsApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import {
@@ -1212,7 +1212,7 @@ export const MilestonesDialog: Component<{
   });
 
   // Live refresh on milestone trigger.
-  listenScoped("oa://milestone-triggered", () => {
+  listenScoped(OA_EVENTS.milestoneTriggered, () => {
     if (props.open && props.entry) void refresh();
   });
 

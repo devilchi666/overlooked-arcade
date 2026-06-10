@@ -493,7 +493,18 @@ move+re-export; logic modules route through wrappers. **Turned ON the
 **✅ PHASE 4 COMPLETE** — 14 typed `platform/api/` modules; the decoupling track
 is closed at the file level (six boundary zones) AND the API level (the invoke
 ban). A feature physically cannot re-couple platform/theme without ESLint
-stopping the commit. Next theming work is the *enable-other-themes* track.
+stopping the commit.
+
+**Phase 4.5 — the EVENT corral ✅ SHIPPED on `feat/theming-platform-api-events`
+(2026-06-10; awaiting operator playtest + merge).** Closed the symmetric
+coupling the post-Phase-4 audit flagged: Tauri event names. New
+`platform/api/eventsApi.ts` (`OA_EVENTS` registry + `listenScoped`/`listenTo`/
+`emitEvent`); ~30 sites / 16 files migrated (incl. a theme file emitting
+`oa://toast` raw); a second `no-restricted-imports` entry bans raw `listen`/
+`emit`/`once` outside `platform/api/` (probe-verified). Decision D17. **The
+foundation is now clean on BOTH backend-contract channels (commands + events) —
+ready to build Phase 3 on top.** Next theming work is the *enable-other-themes*
+track (Phase 3 shared nav primitives first).
 
 > Earlier theming arcs (Phase 1 engine/theme surface separation, Phase 2
 > platform extraction, the boundary-enforcement track, the grab-bag drain) are

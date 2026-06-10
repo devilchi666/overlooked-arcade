@@ -12,7 +12,7 @@ import {
   type JSX,
 } from "solid-js";
 import * as coresApi from "@oa/platform/api/coresApi";
-import { listenScoped } from "@oa/platform/lib/eventListener";
+import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import MissingCoreBulkPrompt from "./MissingCoreBulkPrompt";
 import BiosResolutionDetail, { type BiosFile } from "./BiosResolutionDetail";
@@ -329,7 +329,7 @@ const SystemReadinessChecklist: Component<SystemReadinessChecklistProps> = (prop
   // the primary pill state, the `cores` extension-overlap drives
   // the no-catalog-entry fallback.
   listenScoped<{ fileName: string; phase: string }>(
-    "oa://core-download-progress",
+    OA_EVENTS.coreDownloadProgress,
     (event) => {
       if (event.payload.phase === "done") {
         void refetchCores();

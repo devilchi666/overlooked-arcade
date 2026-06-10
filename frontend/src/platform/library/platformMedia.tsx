@@ -23,7 +23,8 @@ import {
   type JSX,
 } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { getDataDir } from "@oa/platform/lib/dataDir";
 import { getPlatformMediaIndex } from "@oa/platform/api/mediaApi";
 
@@ -80,8 +81,8 @@ export const PlatformMediaProvider: Component<{ children: JSX.Element }> = (prop
     // Install listener BEFORE hydrate so any update fired during
     // hydration doesn't get dropped between await points.
     try {
-      unlisten = await listen<{ systemId: string; slot: string; media: PlatformMedia }>(
-        "oa://platform-media-updated",
+      unlisten = await listenTo<{ systemId: string; slot: string; media: PlatformMedia }>(
+        OA_EVENTS.platformMediaUpdated,
         (ev) => {
           setIndex((prev) => ({ ...prev, [ev.payload.systemId]: ev.payload.media }));
         },

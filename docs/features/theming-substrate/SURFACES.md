@@ -211,13 +211,22 @@ All enforced — nothing deferred.
   fires. The command-name string for every backend command now lives in exactly
   one file.
 
+- ✅ **Raw Tauri events (`listen`/`emit`/`once`) outside `platform/api/`** —
+  ENFORCED 2026-06-10 (Phase 4.5, sibling to the invoke ban). All ~30 sites route
+  through `platform/api/eventsApi` (the `OA_EVENTS` registry +
+  `listenScoped`/`listenTo`/`emitEvent`); every `oa://…` channel string lives in
+  one place; `no-restricted-imports` bans the raw event value-imports everywhere
+  except `src/platform/api/**` (type-only imports stay allowed). Probe-verified.
+  See DECISIONS D17.
+
 ### The endpoint — REACHED 2026-06-10
 
 Every file in exactly one layer; the lint makes a cross-layer import a build
-failure; `invoke()` is corralled into `platform/api/`. Platform and theme
+failure; **both** backend-contract surfaces — `invoke()` command names AND
+Tauri event names — are corralled into `platform/api/`. Platform and theme
 **physically cannot** be re-coupled by a new feature without ESLint stopping
-the commit — at both the file level (six boundary zones) and the API level
-(the invoke ban). **The Phase 4 decoupling track is done.**
+the commit — at the file level (six boundary zones) and the API level (the
+invoke ban + the event ban). **The decoupling track is done.**
 
 ---
 
