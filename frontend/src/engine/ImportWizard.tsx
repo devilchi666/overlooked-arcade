@@ -2,6 +2,13 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import { captureFocusReturn, useDomQueryFocusGroup } from "../nav/focus";
 import { useBackHandler } from "../nav/back";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  addFolder,
+  directoryIsEmpty,
+  listFolders,
+  setFolderRules,
+  updateFolder,
+} from "@oa/platform/api/libraryApi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
@@ -241,7 +248,7 @@ const ImportWizard: Component<Props> = (props) => {
     if (!props.open) return;
     void (async () => {
       try {
-        const folders = await invoke<Folder[]>("list_folders", { includeRules: true });
+        const folders = await listFolders<Folder>(true);
         setTrackedFolders(folders);
       } catch (e) {
         console.warn("[oa-wizard] list_folders failed:", e);
@@ -277,7 +284,7 @@ const ImportWizard: Component<Props> = (props) => {
     setFolderCheckError(null);
     void (async () => {
       try {
-        const empty = await invoke<boolean>("directory_is_empty", { path: f });
+        const empty = await directoryIsEmpty(f);
         // Race guard: only apply if the user hasn't picked a different
         // folder while the IPC was in flight.
         if (folder() !== f) return;
@@ -694,26 +701,20 @@ const ImportWizard: Component<Props> = (props) => {
       // 1) Upsert the folder + replace its rules.
       let folderRow = existingFolder();
       if (folderRow) {
-        await invoke("update_folder", {
-          id: folderRow.id,
-          fields: {
-            scanSubfolders: scanSubfolders(),
-            subfoldersAreSystems: subfoldersAreSystems(),
-            watchEnabled: watchEnabled(),
-            lastScannedAt: Date.now(),
-          },
+        await updateFolder(folderRow.id, {
+          scanSubfolders: scanSubfolders(),
+          subfoldersAreSystems: subfoldersAreSystems(),
+          watchEnabled: watchEnabled(),
+          lastScannedAt: Date.now(),
         });
       } else {
-        folderRow = await invoke<Folder>("add_folder", {
+        folderRow = await addFolder<Folder>({
           path: f,
           scanSubfolders: scanSubfolders(),
           subfoldersAreSystems: subfoldersAreSystems(),
           watchEnabled: watchEnabled(),
         });
-        await invoke("update_folder", {
-          id: folderRow.id,
-          fields: { lastScannedAt: Date.now() },
-        });
+        await updateFolder(folderRow.id, { lastScannedAt: Date.now() });
       }
       // Replace rules — empty array clears any prior rules so users can
       // remove everything in the editor and get a clean slate.
@@ -724,10 +725,7 @@ const ImportWizard: Component<Props> = (props) => {
           matchPattern: r.pattern,
           systemId: r.systemId,
         }));
-      await invoke("set_folder_rules", {
-        folderId: folderRow.id,
-        rules: rulesPayload,
-      });
+      await setFolderRules(folderRow.id, rulesPayload);
 
       // 2) Add games. Reuse the existing library store path so the seed-row
       // drop + cache-refresh side effects fire correctly. Slice 2: source

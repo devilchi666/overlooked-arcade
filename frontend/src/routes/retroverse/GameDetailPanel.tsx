@@ -26,7 +26,7 @@ import {
   type BugSeverity,
 } from "@oa/platform/library/gameInfo";
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
-import { invoke } from "@tauri-apps/api/core";
+import { updateGameCoreOverride } from "@oa/platform/api/libraryApi";
 import { emit } from "@tauri-apps/api/event";
 import { useTheme } from "./context";
 
@@ -168,10 +168,7 @@ const GameDetailPanel: Component<Props> = (props) => {
       // 1. Per-game core override write — operator's next launch uses
       // the recommended core. This is the same path the per-game
       // settings drawer uses.
-      await invoke("update_game_core_override", {
-        id: entry.id,
-        value: recommended,
-      });
+      await updateGameCoreOverride(entry.id, recommended);
       // 2. Read current override, set the provenance flag, write back.
       // Preserves any other operator edits — we mutate only the flag.
       const ov = await getGameInfoOverride({

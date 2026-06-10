@@ -1,5 +1,13 @@
 import { createEffect, createSignal } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as settingsApi from "@oa/platform/api/settingsApi";
+import {
+  addFolder,
+  listFolders,
+  migrateFoldersFromLocalStorage,
+  removeFolder,
+  reorderFolders,
+} from "@oa/platform/api/libraryApi";
 
 export type ScalingMode =
   | "pixel-perfect"
@@ -346,7 +354,7 @@ export function createSettingsStore() {
 
   async function refreshLibraryFolders(): Promise<void> {
     try {
-      const rows = await invoke<LibraryFolderRow[]>("list_folders", { includeRules: false });
+      const rows = await listFolders<LibraryFolderRow>(false);
       setLibraryFolderRows(rows);
     } catch (e) {
       console.warn("[oa-settings] list_folders failed:", e);
@@ -355,7 +363,7 @@ export function createSettingsStore() {
 
   async function addLibraryFolderPath(path: string): Promise<void> {
     try {
-      await invoke<LibraryFolderRow>("add_folder", {
+      await addFolder({
         path,
         scanSubfolders: true,
         subfoldersAreSystems: false,
@@ -371,7 +379,7 @@ export function createSettingsStore() {
 
   async function removeLibraryFolderById(id: string): Promise<void> {
     try {
-      await invoke("remove_folder", { id });
+      await removeFolder(id);
     } catch (e) {
       console.warn("[oa-settings] remove_folder failed:", e);
     }
@@ -380,7 +388,7 @@ export function createSettingsStore() {
 
   async function reorderLibraryFolderIds(orderedIds: string[]): Promise<void> {
     try {
-      await invoke("reorder_folders", { orderedIds });
+      await reorderFolders(orderedIds);
     } catch (e) {
       console.warn("[oa-settings] reorder_folders failed:", e);
     }
@@ -396,9 +404,7 @@ export function createSettingsStore() {
   void (async () => {
     if (legacy.length > 0) {
       try {
-        const inserted = await invoke<number>("migrate_folders_from_local_storage", {
-          paths: legacy,
-        });
+        const inserted = await migrateFoldersFromLocalStorage(legacy);
         if (inserted > 0) {
           console.info(`[oa-settings] migrated ${inserted} library folder(s) to SQLite`);
         }
@@ -483,7 +489,7 @@ export function createSettingsStore() {
   // Per-system / per-game overrides re-push on launch via App.handleLaunch.
   createEffect(() => {
     const amount = bloomAmount();
-    invoke("set_bloom_amount", { amount }).catch((e) =>
+    settingsApi.setBloomAmount(amount).catch((e) =>
       console.warn("set_bloom_amount failed:", e),
     );
   });
@@ -491,14 +497,14 @@ export function createSettingsStore() {
   // thread clamps to 0..=5; UI honors the same range.
   createEffect(() => {
     const frames = runAheadFrames();
-    invoke("set_run_ahead", { frames }).catch((e) =>
+    settingsApi.setRunAhead(frames).catch((e) =>
       console.warn("set_run_ahead failed:", e),
     );
   });
 
   createEffect(() => {
     const mode = scalingMode();
-    invoke("set_scaling_mode", { mode }).catch((e) =>
+    settingsApi.setScalingMode(mode).catch((e) =>
       console.warn("set_scaling_mode failed:", e),
     );
   });
@@ -506,14 +512,14 @@ export function createSettingsStore() {
   // Per-game / per-system overrides re-push on launch via App.handleLaunch.
   createEffect(() => {
     const preset = shaderPreset();
-    invoke("set_shader_preset", { preset }).catch((e) =>
+    settingsApi.setShaderPreset(preset).catch((e) =>
       console.warn("set_shader_preset failed:", e),
     );
   });
   createEffect(() => {
     const mode = windowMode();
     const idx = monitorIndex();
-    invoke("set_window_mode", { mode, monitorIndex: idx }).catch((e) =>
+    settingsApi.setWindowMode(mode, idx).catch((e) =>
       console.warn("set_window_mode failed:", e),
     );
   });
@@ -529,32 +535,32 @@ export function createSettingsStore() {
   });
 
   // Hydrate shellModePref from the file on init.
-  invoke<string>("get_shell_mode_pref")
+  settingsApi.getShellModePref()
     .then((v) => {
       if (v === "single-window" || v === "two-window") setShellModePrefLocal(v);
     })
     .catch((e) => console.warn("get_shell_mode_pref failed:", e));
   // Hydrate activeShellMode from the Rust-side runtime state.
-  invoke<string>("get_shell_mode")
+  settingsApi.getShellMode()
     .then((v) => {
       if (v === "single-window" || v === "two-window") setActiveShellMode(v);
     })
     .catch((e) => console.warn("get_shell_mode failed:", e));
   // Hydrate the audio device pref so the picker reflects the persisted choice.
-  invoke<string | null>("get_audio_device_pref")
+  settingsApi.getAudioDevicePref()
     .then((v) => setAudioDeviceLocal(v ?? null))
     .catch((e) => console.warn("get_audio_device_pref failed:", e));
 
   function setShellModePref(mode: ShellMode): void {
     setShellModePrefLocal(mode);
-    invoke("set_shell_mode_pref", { mode }).catch((e) =>
+    settingsApi.setShellModePref(mode).catch((e) =>
       console.warn("set_shell_mode_pref failed:", e),
     );
   }
 
   function setAudioDevice(name: string | null): void {
     setAudioDeviceLocal(name);
-    invoke("set_audio_device_pref", { name }).catch((e) =>
+    settingsApi.setAudioDevicePref(name).catch((e) =>
       console.warn("set_audio_device_pref failed:", e),
     );
   }

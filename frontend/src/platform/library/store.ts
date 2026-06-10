@@ -14,7 +14,21 @@
 
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  addGames,
+  clearGameGroupDefault,
+  deleteAllGames,
+  deleteGame,
+  deleteGamesForSystem,
+  dropSeedGames,
+  listGameGroups,
+  listGames,
+  migrateLibraryFromLocalStorage,
+  setGameGroupDefault,
+  updateGameCompleted,
+  updateGameCoreOverride,
+  updateGameFavorite,
+} from "@oa/platform/api/libraryApi";
 import type { GameGroupInfo, LibraryState, RomEntry, RomId } from "./types";
 import type { SystemId } from "@oa/platform/themes/registry";
 
@@ -96,7 +110,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
 
   async function refreshGroups(): Promise<void> {
     try {
-      const groups = await invoke<GameGroupInfo[]>("list_game_groups");
+      const groups = await listGameGroups();
       const map = new Map<RomId, GameGroupInfo>();
       for (const g of groups) {
         for (const v of g.variants) {
@@ -134,9 +148,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
       const realOnly = legacy.filter((e) => !e.seed && !e.filePath.startsWith("<seed"));
       if (realOnly.length > 0) {
         try {
-          const added = await invoke<number>("migrate_library_from_local_storage", {
-            entries: realOnly,
-          });
+          const added = await migrateLibraryFromLocalStorage(realOnly);
           console.log(`[oa-library] migrated ${added} entries from localStorage`);
         } catch (e) {
           console.warn("[oa-library] migration failed:", e);
@@ -150,7 +162,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     // Step 2: hydrate from Rust.
     let games: RomEntry[] = [];
     try {
-      games = await invoke<RomEntry[]>("list_games");
+      games = await listGames();
     } catch (e) {
       console.warn("[oa-library] list_games failed:", e);
     }
@@ -160,8 +172,8 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     // real add via add_games → drop_seed_games.
     if (games.length === 0) {
       try {
-        await invoke<number>("add_games", { entries: SEED_ENTRIES });
-        games = await invoke<RomEntry[]>("list_games");
+        await addGames(SEED_ENTRIES);
+        games = await listGames();
       } catch (e) {
         console.warn("[oa-library] seed insert failed:", e);
       }
@@ -182,7 +194,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     /// (e.g. the rom_hashes resolve flow rewriting canonical titles).
     async refresh(): Promise<void> {
       try {
-        const fresh = await invoke<RomEntry[]>("list_games");
+        const fresh = await listGames();
         setState("entries", fresh);
         await refreshGroups();
       } catch (e) {
@@ -197,7 +209,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
       preferredGameId: RomId,
     ): Promise<void> {
       try {
-        await invoke("set_game_group_default", { systemId, baseTitle, preferredGameId });
+        await setGameGroupDefault(systemId, baseTitle, preferredGameId);
         await refreshGroups();
       } catch (e) {
         console.warn("[oa-library] set_game_group_default failed:", e);
@@ -205,7 +217,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     },
     async clearGroupDefault(systemId: SystemId, baseTitle: string): Promise<void> {
       try {
-        await invoke("clear_game_group_default", { systemId, baseTitle });
+        await clearGameGroupDefault(systemId, baseTitle);
         await refreshGroups();
       } catch (e) {
         console.warn("[oa-library] clear_game_group_default failed:", e);
@@ -217,7 +229,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     async addScannedRoms(entries: RomEntry[]): Promise<number> {
       let added = 0;
       try {
-        added = await invoke<number>("add_games", { entries });
+        added = await addGames(entries);
       } catch (e) {
         console.warn("[oa-library] add_games failed:", e);
         return 0;
@@ -227,7 +239,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
         const hadSeed = state.entries.some((e) => e.seed);
         if (hadSeed) {
           try {
-            await invoke<number>("drop_seed_games");
+            await dropSeedGames();
           } catch (e) {
             console.warn("[oa-library] drop_seed_games failed:", e);
           }
@@ -235,7 +247,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
       }
       // Refresh from authoritative source.
       try {
-        const fresh = await invoke<RomEntry[]>("list_games");
+        const fresh = await listGames();
         setState("entries", fresh);
         await refreshGroups();
       } catch (e) {
@@ -245,7 +257,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     },
     async remove(id: RomId): Promise<void> {
       try {
-        await invoke("delete_game", { id });
+        await deleteGame(id);
         setState("entries", (prev) => prev.filter((e) => e.id !== id));
       } catch (e) {
         console.warn("[oa-library] delete_game failed:", e);
@@ -256,7 +268,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     async setCoreOverride(id: RomId, value: string | null): Promise<void> {
       const normalized = value && value.length > 0 ? value : null;
       try {
-        await invoke("update_game_core_override", { id, value: normalized });
+        await updateGameCoreOverride(id, normalized);
         setState("entries", (prev) =>
           prev.map((e) => (e.id === id ? { ...e, coreOverride: normalized ?? undefined } : e)),
         );
@@ -274,7 +286,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
         prev.map((e) => (e.id === id ? { ...e, favorite: value } : e)),
       );
       try {
-        await invoke("update_game_favorite", { id, value });
+        await updateGameFavorite(id, value);
       } catch (e) {
         console.warn("[oa-library] update_game_favorite failed:", e);
         // Revert local state on Rust-side failure so UI matches DB.
@@ -290,7 +302,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
         prev.map((e) => (e.id === id ? { ...e, completed: value } : e)),
       );
       try {
-        await invoke("update_game_completed", { id, value });
+        await updateGameCompleted(id, value);
       } catch (e) {
         console.warn("[oa-library] update_game_completed failed:", e);
         setState("entries", (prev) =>
@@ -303,7 +315,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
       // method previously did, and atomic. The setting page's "Reset
       // entire library" action calls this AFTER its own confirm() dialog.
       try {
-        await invoke<number>("delete_all_games");
+        await deleteAllGames();
       } catch (e) {
         console.warn("[oa-library] delete_all_games failed:", e);
       }
@@ -315,7 +327,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     async clearForSystem(systemId: string): Promise<number> {
       let n = 0;
       try {
-        n = await invoke<number>("delete_games_for_system", { systemId });
+        n = await deleteGamesForSystem(systemId);
       } catch (e) {
         console.warn(`[oa-library] delete_games_for_system(${systemId}) failed:`, e);
         return 0;
@@ -328,7 +340,7 @@ export function createLibraryStore(options: CreateLibraryStoreOptions = {}) {
     /// the auto-remove watcher event).
     async reload(): Promise<void> {
       try {
-        const fresh = await invoke<RomEntry[]>("list_games");
+        const fresh = await listGames();
         setState("entries", fresh);
         await refreshGroups();
       } catch (e) {

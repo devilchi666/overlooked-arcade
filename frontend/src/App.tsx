@@ -1,5 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import * as settingsApi from "@oa/platform/api/settingsApi";
+import * as libraryApi from "@oa/platform/api/libraryApi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import CorePickerMenu from "./platform/components/CorePickerMenu";
@@ -486,7 +488,7 @@ const App: Component = () => {
 
   onMount(async () => {
     try {
-      const mode = (await invoke<string>("get_shell_mode")) as ShellMode;
+      const mode = (await settingsApi.getShellMode()) as ShellMode;
       document.body.dataset.shell = mode;
       setShellMode(mode);
     } catch (e) {
@@ -569,7 +571,7 @@ const App: Component = () => {
     // overrides apply through the existing cascade in handleLaunch.
     if (cfg.matchedEntryId) {
       try {
-        entry = await invoke<RomEntry | null>("get_game", { id: cfg.matchedEntryId });
+        entry = await libraryApi.getGame(cfg.matchedEntryId);
       } catch (e) {
         console.warn("[oa-direct-launch] get_game failed, falling back to synthesized entry:", e);
       }
@@ -606,7 +608,7 @@ const App: Component = () => {
     // After the launch cascade settles, apply CLI-only overrides that
     // sit on top of per-game / per-system / OA-wide settings.
     if (cfg.fullscreen) {
-      void invoke("set_window_mode", { mode: "fullscreen", monitorIndex: null }).catch((e) =>
+      void settingsApi.setWindowMode("fullscreen", null).catch((e) =>
         console.warn("[oa-direct-launch] --fullscreen set_window_mode failed:", e),
       );
     }
@@ -839,7 +841,7 @@ const App: Component = () => {
     // ImportWizard uses on its Step 1; keeps the quick-add path from
     // polluting the library with a directory that has nothing in it.
     try {
-      const empty = await invoke<boolean>("directory_is_empty", { path: picked });
+      const empty = await libraryApi.directoryIsEmpty(picked);
       if (empty) {
         setStatus(`${picked} is empty — nothing to import.`);
         return;
@@ -981,8 +983,8 @@ const App: Component = () => {
         regionOverride?: string | null;
       };
       const [sys, game] = await Promise.all([
-        invoke<SysSettings>("get_system_settings", { systemId: entry.systemId }).catch(() => ({} as SysSettings)),
-        invoke<GameOver>("get_game_overrides", { id: entry.id }).catch(() => ({} as GameOver)),
+        settingsApi.getSystemSettings<SysSettings>(entry.systemId).catch(() => ({} as SysSettings)),
+        settingsApi.getGameOverrides<GameOver>(entry.id).catch(() => ({} as GameOver)),
       ]);
       const effective = {
         // Per-system shaderPreset chain (Phase 3 slice C polish): per-game
@@ -1041,10 +1043,10 @@ const App: Component = () => {
       // bloom_amount; the override has to land AFTER so it wins. Awaiting
       // shader preset before queuing the override keeps the EmuCommand
       // channel ordered the way the emu loop sees it.
-      await invoke("set_shader_preset", { preset: effective.shaderPreset }).catch((e) =>
+      await settingsApi.setShaderPreset(effective.shaderPreset).catch((e) =>
         console.warn("[oa-launch] set_shader_preset failed:", e),
       );
-      await invoke("set_bloom_amount", { amount: effective.bloomAmount }).catch((e) =>
+      await settingsApi.setBloomAmount(effective.bloomAmount).catch((e) =>
         console.warn("[oa-launch] set_bloom_amount failed:", e),
       );
       // RetroArch-parity slice — push the merged per-system + per-game
@@ -1056,10 +1058,10 @@ const App: Component = () => {
         console.warn("[oa-launch] apply_game_core_options failed:", e),
       );
       await Promise.all([
-        invoke("set_scaling_mode", { mode: effective.scaling }).catch((e) =>
+        settingsApi.setScalingMode(effective.scaling).catch((e) =>
           console.warn("[oa-launch] set_scaling_mode failed:", e),
         ),
-        invoke("set_window_mode", { mode: effective.windowMode, monitorIndex: effective.monitor }).catch((e) =>
+        settingsApi.setWindowMode(effective.windowMode, effective.monitor).catch((e) =>
           console.warn("[oa-launch] set_window_mode failed:", e),
         ),
         invoke("set_rewind_config", {
@@ -1067,10 +1069,10 @@ const App: Component = () => {
           captureIntervalFrames: effective.rewindCaptureIntervalFrames,
           maxMegabytes: effective.rewindBufferMegabytes,
         }).catch((e) => console.warn("[oa-launch] set_rewind_config failed:", e)),
-        invoke("set_display_aspect_override", { aspect: effective.displayAspectOverride }).catch((e) =>
+        settingsApi.setDisplayAspectOverride(effective.displayAspectOverride).catch((e) =>
           console.warn("[oa-launch] set_display_aspect_override failed:", e),
         ),
-        invoke("set_overscan_crop", {
+        settingsApi.setOverscanCrop({
           top:    effective.overscanCropOverride?.top    ?? 0,
           bottom: effective.overscanCropOverride?.bottom ?? 0,
           left:   effective.overscanCropOverride?.left   ?? 0,
@@ -1081,7 +1083,7 @@ const App: Component = () => {
         // above). If null, leave whatever set_shader_preset uploaded
         // alone — the preset's TOML default stays active.
         effective.bezelImagePath
-          ? invoke("set_bezel_image_override", { path: effective.bezelImagePath }).catch((e) =>
+          ? settingsApi.setBezelImageOverride(effective.bezelImagePath).catch((e) =>
               console.warn("[oa-launch] set_bezel_image_override failed:", e),
             )
           : Promise.resolve(),
@@ -1168,17 +1170,17 @@ const App: Component = () => {
   // session, so both ends revert.
   function revertRendererToDefaults(): void {
     const reverts: Array<[string, Promise<unknown>]> = [
-      ["set_shader_preset", invoke("set_shader_preset", { preset: settings.shaderPreset() })],
-      ["set_scaling_mode", invoke("set_scaling_mode", { mode: settings.scalingMode() })],
-      ["set_window_mode", invoke("set_window_mode", { mode: settings.windowMode(), monitorIndex: settings.monitorIndex() })],
+      ["set_shader_preset", settingsApi.setShaderPreset(settings.shaderPreset())],
+      ["set_scaling_mode", settingsApi.setScalingMode(settings.scalingMode())],
+      ["set_window_mode", settingsApi.setWindowMode(settings.windowMode(), settings.monitorIndex())],
       ["set_rewind_config", invoke("set_rewind_config", {
         enabled: settings.rewindEnabled(),
         captureIntervalFrames: settings.rewindCaptureIntervalFrames(),
         maxMegabytes: settings.rewindBufferMegabytes(),
       })],
-      ["set_display_aspect_override", invoke("set_display_aspect_override", { aspect: null })],
-      ["set_overscan_crop", invoke("set_overscan_crop", { top: 0, bottom: 0, left: 0, right: 0 })],
-      ["clear_bezel_image_override", invoke("clear_bezel_image_override")],
+      ["set_display_aspect_override", settingsApi.setDisplayAspectOverride(null)],
+      ["set_overscan_crop", settingsApi.setOverscanCrop({ top: 0, bottom: 0, left: 0, right: 0 })],
+      ["clear_bezel_image_override", settingsApi.clearBezelImageOverride()],
     ];
     void Promise.allSettled(reverts.map(([, p]) => p)).then((results) => {
       const failures = results
@@ -1239,7 +1241,7 @@ const App: Component = () => {
   createEffect(() => {
     const folders = settings.libraryFolders();
     const extensions = allSupportedExtensions();
-    invoke("set_watched_folders", { folders, extensions }).catch((e) =>
+    libraryApi.setWatchedFolders(folders, extensions).catch((e) =>
       console.warn("[oa-watch] set_watched_folders failed:", e),
     );
   });
@@ -1276,9 +1278,7 @@ const App: Component = () => {
       return;
     }
     try {
-      const id = await invoke<string | null>("find_game_id_by_path", {
-        path: event.payload.path,
-      });
+      const id = await libraryApi.findGameIdByPath(event.payload.path);
       if (id) {
         await library.remove(id);
         console.log("[oa-watch] auto-removed from library:", event.payload.path, "->", id);

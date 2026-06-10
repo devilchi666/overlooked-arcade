@@ -15,6 +15,7 @@
 import { createSignal, type Accessor } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import * as settingsApi from "@oa/platform/api/settingsApi";
 
 export type AudioBus = "platform-music" | "ui-sounds" | "ceremony" | "snap-audio";
 
@@ -83,7 +84,7 @@ export type UiSoundEvent =
 /// Replaces whatever was on the bus at the time.
 export async function playAudio(bus: AudioBus, path: string, looped = false): Promise<void> {
   try {
-    await invoke("play_audio", { bus, path, looped });
+    await settingsApi.playAudio(bus, path, looped);
   } catch (e) {
     console.warn("[oa-audio] play failed:", e);
   }
@@ -91,7 +92,7 @@ export async function playAudio(bus: AudioBus, path: string, looped = false): Pr
 
 export async function stopAudio(bus: AudioBus): Promise<void> {
   try {
-    await invoke("stop_audio", { bus });
+    await settingsApi.stopAudio(bus);
   } catch (e) {
     console.warn("[oa-audio] stop failed:", e);
   }
@@ -100,7 +101,7 @@ export async function stopAudio(bus: AudioBus): Promise<void> {
 
 export async function setAudioVolume(bus: AudioBus, gain: number): Promise<void> {
   try {
-    await invoke("set_audio_volume", { bus, gain });
+    await settingsApi.setAudioVolume(bus, gain);
   } catch (e) {
     console.warn("[oa-audio] set volume failed:", e);
   }

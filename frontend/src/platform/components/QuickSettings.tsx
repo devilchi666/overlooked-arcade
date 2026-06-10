@@ -10,6 +10,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getVideoState, type VideoState } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -132,14 +133,8 @@ type TasListEntry = {
   durationSeconds: number;
 };
 
-// Phase 4 slice D — video capture state.
-type VideoState = {
-  capturing: boolean;
-  frameCount: number;
-  droppedFrameCount: number;
-  displayName: string;
-  clipDir: string;
-};
+// Phase 4 slice D — video capture state. `VideoState` (the `get_video_state`
+// return) now lives in platform/api/settingsApi.
 
 type VideoClipEntry = {
   clipDir: string;
@@ -325,7 +320,7 @@ const QuickSettings: Component<Props> = (props) => {
       void invoke<TasState>("get_tas_state")
         .then((s) => setTasState(s ?? null))
         .catch(() => setTasState(null));
-      void invoke<VideoState>("get_video_state")
+      void getVideoState()
         .then((s) => setVideoState(s ?? null))
         .catch(() => setVideoState(null));
       // VL Phase C3 — refresh the active launcher's capabilities so the
@@ -429,7 +424,7 @@ const QuickSettings: Component<Props> = (props) => {
     if (v === "video" && props.open) {
       if (videoPollId === undefined) {
         videoPollId = window.setInterval(() => {
-          void invoke<VideoState>("get_video_state")
+          void getVideoState()
             .then((s) => setVideoState(s ?? null))
             .catch(() => {});
         }, 250);
@@ -584,7 +579,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function enterVideoView() {
     setView("video");
-    void invoke<VideoState>("get_video_state")
+    void getVideoState()
       .then((s) => setVideoState(s ?? null))
       .catch(() => {});
     const entry = props.entry;
@@ -600,7 +595,7 @@ const QuickSettings: Component<Props> = (props) => {
 
   async function refreshVideoState() {
     try {
-      const s = await invoke<VideoState>("get_video_state");
+      const s = await getVideoState();
       setVideoState(s ?? null);
     } catch {}
   }

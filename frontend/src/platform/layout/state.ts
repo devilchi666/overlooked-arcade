@@ -7,7 +7,8 @@
 // initial values into the WebView at startup via window.__OA_INITIAL_LAYOUT.
 
 import { createEffect, createSignal, onMount } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import * as settingsApi from "@oa/platform/api/settingsApi";
+import { getLayout, setLayout } from "@oa/platform/api/viewsApi";
 
 export type PresentationMode = "desktop" | "theater" | "cabinet";
 
@@ -153,7 +154,7 @@ export function createLayoutStore() {
 
   onMount(async () => {
     try {
-      const mode = await invoke<string>("get_presentation_mode");
+      const mode = await settingsApi.getPresentationMode();
       if (isPresentationMode(mode)) setPresentationMode(mode);
     } catch (e) {
       console.warn("LayoutStore: get_presentation_mode failed:", e);
@@ -164,13 +165,13 @@ export function createLayoutStore() {
     // back to presentation.json. The operator's on-disk preference stays
     // intact for the next library-mode launch.
     try {
-      const kiosk = await invoke<boolean>("get_kiosk_mode");
+      const kiosk = await settingsApi.getKioskMode();
       if (kiosk) setPresentationMode("cabinet");
     } catch (e) {
       console.warn("LayoutStore: get_kiosk_mode failed:", e);
     }
     try {
-      const prefs = await invoke<LayoutPrefs>("get_layout");
+      const prefs = await getLayout();
       setLeftSidebarWidth(clamp(prefs.leftSidebarWidth, 200, 360));
       setLeftSidebarCollapsed(prefs.leftSidebarCollapsed === true);
       setRightSidebarWidth(clamp(prefs.rightSidebarWidth, 240, 440));
@@ -224,7 +225,7 @@ export function createLayoutStore() {
       autoHideEmptySystems: autoHideEmptySystems(),
       libraryTileSize: libraryTileSize(),
     };
-    invoke("set_layout", { prefs }).catch((e) =>
+    setLayout(prefs).catch((e) =>
       console.warn("LayoutStore: set_layout failed:", e),
     );
   });
@@ -232,7 +233,7 @@ export function createLayoutStore() {
   createEffect(() => {
     if (!hydrated()) return;
     const mode = presentationMode();
-    invoke("set_presentation_mode", { mode }).catch((e) =>
+    settingsApi.setPresentationMode(mode).catch((e) =>
       console.warn("LayoutStore: set_presentation_mode failed:", e),
     );
   });

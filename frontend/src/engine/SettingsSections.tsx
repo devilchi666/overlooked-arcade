@@ -26,6 +26,7 @@ import {
   type JSX,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listMonitors, listAudioDevices } from "@oa/platform/api/settingsApi";
 import { emit } from "@tauri-apps/api/event";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
@@ -95,7 +96,7 @@ const SettingsCard: Component<{
 export const DisplayBaseSettings: Component<{ settings: SettingsStore }> = (props) => {
   const [monitors] = createResource(async (): Promise<MonitorInfo[]> => {
     try {
-      return await invoke<MonitorInfo[]>("list_monitors");
+      return await listMonitors();
     } catch {
       return [];
     }
@@ -528,7 +529,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
 export const AudioSettings: Component<{ settings: SettingsStore }> = (props) => {
   const [audioDevices] = createResource(async (): Promise<AudioDeviceInfo[]> => {
     try {
-      return await invoke<AudioDeviceInfo[]>("list_audio_devices");
+      return await listAudioDevices();
     } catch {
       return [];
     }

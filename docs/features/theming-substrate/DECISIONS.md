@@ -294,3 +294,54 @@ nothing the registry doesn't, with more churn. The registry states the real
 ownership: App owns the behaviour, engine merely triggers it. D10 still
 governs genuine theme→platform handlers; D13 carves out App-scoped action
 singletons that cross into engine.
+
+### D14 — `platform/api/` wrapper convention (Phase 4): generic getters for shape-divergent commands; api layer owns the backend-contract type
+
+Phase 4 Slice 1 (2026-06-09, `feat/theming-platform-api-settings`) created the
+first typed Tauri-bridge module, `platform/api/settingsApi.ts`. Two patterns
+locked here apply to every later slice.
+
+**Generic getters where call sites disagree on the return shape.** Several
+commands (`get_game_overrides`, `get_system_settings`) are read by multiple
+files that each declare only the fields they touch — `App.tsx`'s `GameOver`,
+`GameDialogs`'s 19-field `GameOverrides`, `perSystemSections`'s
+`PerSystemOverrides`, `AnalogBindingsSection`'s `{ analogRouting? }`. These are
+deliberate **partial views** of one backend struct, not duplicates to unify.
+Forcing one canonical return type would over-constrain the fuller callers and
+under-type the narrow ones.
+
+**Decision:** shape-divergent getters are generic with a canonical default —
+`getGameOverrides<T = GameOverrides>(id)` / `getSystemSettings<T = SystemSettings>(systemId)`.
+Every existing call site already passed an explicit `invoke<LocalType>(...)`,
+so migration is mechanical (`invoke<T>("cmd", args)` → `wrapper<T>(args)`) with
+zero type churn and no `any`. The canonical default types (`GameOverrides`,
+`SystemSettings`, `OverscanCropPrefs`, `VideoState`) are **defined + exported
+in the api module** — the api layer is the proper home for backend-contract
+shapes, and new code gets a real default. Setters that take a cleaned payload
+accept `Record<string, unknown>` (matching the call sites' generic carry-through
+that lets unknown Rust-struct fields round-trip).
+
+**Why not import the component types instead:** `settingsApi` is under
+`platform/`, so the `platform ↛ components` lint zone forbids it importing
+`GameOverrides` from `platform/components/GameDialogs`. The contract type must
+live in the api (or a lower) layer regardless.
+
+**Import style:** named imports by default (tree-shakeable, greppable); a
+`import * as settingsApi` namespace alias only where a file's local signal
+setters / exports shadow the wrapper names (`setScalingMode`, `setWindowMode`,
+`playAudio`, `setPresentationMode`, …). The namespace form is still
+named-export-based and statically analyzable.
+
+**Scope discipline (also a precedent):** assign a command to its module by
+**concern, not by caller**, and don't migrate a command from another slice's
+module just because it sits in a file you're touching — `set_rewind_config`,
+`apply_game_core_options`, `arm_*` and `get/set_layout` were left as raw
+`invoke()` in mid-migration files because they belong to `rewindTasApi` /
+`coresApi` / `inputApi` / `viewsApi`. A module is "done" only when its command
+strings grep to only its api file; a file can legitimately straddle slices
+until then (the lint rule is off until Slice 6).
+
+**How to apply:** later slices follow the same shape — generic getter +
+canonical default for any command with divergent call-site views; concrete
+typed params otherwise; contract types exported from the api module; migrate
+strictly the slice's own commands.

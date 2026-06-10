@@ -10,6 +10,7 @@
 
 import { createResource, createSignal, For, Show, type Accessor, type Component } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listMonitors } from "@oa/platform/api/settingsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import {
   PerSystemDefaultCoreSection,
@@ -62,7 +63,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
   const [monitors] = createResource(active, async (on): Promise<MonitorInfo[]> => {
     if (!on) return [];
     try {
-      return await invoke<MonitorInfo[]>("list_monitors");
+      return await listMonitors();
     } catch {
       return [];
     }

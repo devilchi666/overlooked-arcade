@@ -17,6 +17,7 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { getGameOverrides, setGameOverrides } from "@oa/platform/api/settingsApi";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
 import { type CoreEntry, type SettingsStore } from "@oa/platform/settings/store";
@@ -43,7 +44,7 @@ const GamePropertiesDialog: Component<Props> = (props) => {
     if (!props.open || !e) return;
     void (async () => {
       try {
-        const got = await invoke<GameOverrides>("get_game_overrides", { id: e.id });
+        const got = await getGameOverrides<GameOverrides>(e.id);
         setOverrides(got ?? {});
       } catch (err) {
         console.warn("[oa-properties] get_game_overrides failed:", err);
@@ -79,7 +80,7 @@ const GamePropertiesDialog: Component<Props> = (props) => {
     }
     setOverrides(cleaned);
     try {
-      await invoke("set_game_overrides", { id: e.id, overrides: cleaned });
+      await setGameOverrides(e.id, cleaned);
     } catch (err) {
       console.warn("[oa-properties] set_game_overrides failed:", err);
     }

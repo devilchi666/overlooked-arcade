@@ -20,6 +20,13 @@ import {
   type Component,
 } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  getGameOverrides,
+  setGameOverrides,
+  getSystemSettings,
+  listMonitors,
+  setBloomAmount,
+} from "@oa/platform/api/settingsApi";
 import { listenScoped } from "@oa/platform/lib/eventListener";
 import { Dialog, DialogSection } from "@oa/platform/components/Dialog";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
@@ -131,16 +138,14 @@ function useGameOverrides(
     if (!open() || !e) return;
     void (async () => {
       try {
-        const got = await invoke<GameOverrides>("get_game_overrides", { id: e.id });
+        const got = await getGameOverrides<GameOverrides>(e.id);
         setOverrides(got ?? {});
       } catch (err) {
         console.warn("[oa-game-dialog] get_game_overrides failed:", err);
         setOverrides({});
       }
       try {
-        const sys = await invoke<SystemSettings>("get_system_settings", {
-          systemId: e.systemId,
-        });
+        const sys = await getSystemSettings<SystemSettings>(e.systemId);
         setSystemSettings(sys ?? {});
       } catch (err) {
         console.warn("[oa-game-dialog] get_system_settings failed:", err);
@@ -180,7 +185,7 @@ function useGameOverrides(
     }
     setOverrides(cleaned as GameOverrides);
     try {
-      await invoke("set_game_overrides", { id: e.id, overrides: cleaned });
+      await setGameOverrides(e.id, cleaned);
     } catch (err) {
       console.warn("[oa-game-dialog] set_game_overrides failed:", err);
     }
@@ -216,7 +221,7 @@ export const GameDisplayDialog: Component<{
 
   createEffect(() => {
     if (!props.open) return;
-    void invoke<MonitorInfo[]>("list_monitors")
+    void listMonitors()
       .then((m) => setMonitors(m ?? []))
       .catch(() => setMonitors([]));
   });
@@ -584,7 +589,7 @@ export const GameShadersDialog: Component<{
               onInput: (v) => {
                 void patch({ bloomAmount: v });
                 // Per-drag-frame — keep console-only to avoid toast spam.
-                void invoke("set_bloom_amount", { amount: v }).catch((e) =>
+                void setBloomAmount(v).catch((e) =>
                   console.warn("[game-dialogs] set_bloom_amount failed:", e),
                 );
               },
