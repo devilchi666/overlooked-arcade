@@ -1543,7 +1543,7 @@ const MameRefreshCard: Component = () => {
 const THEME_BLURBS: Record<string, string> = {
   retroverse:
     "The default shell — a top-toolbar IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER) with per-system theming.",
-  wheel:
+  coverflow:
     "A full-bleed horizontal coverflow. Rough pilot (ARC 1): layout + feel only — the cinematic layer (attract / CRT / launch ceremony) lands in a later arc.",
 };
 

@@ -17,6 +17,6 @@
 
 import type { ThemePackage } from "@oa/platform/theme/types";
 import { retroverse } from "./retroverse";
-import { wheel } from "./wheel";
+import { coverflow } from "./coverflow";
 
-export const BUILTIN_THEMES: ThemePackage[] = [retroverse, wheel];
+export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow];

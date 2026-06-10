@@ -1,15 +1,19 @@
-// Wheel — the second whole-shell theme (the rough pilot proving a DIFFERENT
-// IA, not a reskin).
+// CoverFlow — the second whole-shell theme (the rough pilot proving a
+// DIFFERENT IA, not a reskin).
 //
 // Theming Substrate ARC 1 Phase 3 S2 (the walking skeleton / swap gate,
 // docs/PLANS/theming-substrate.md §13.3). Where Retroverse is a tabbed
-// 3-pane launcher, the Wheel is a full-bleed horizontal COVERFLOW: a centred,
+// 3-pane launcher, CoverFlow is a full-bleed horizontal coverflow: a centred,
 // scaled focused cover with neighbours fanning out on a sliding track, a
 // metadata strip below, Left/Right to browse, Confirm to launch.
 //
+// (Renamed from "Wheel" → "CoverFlow" 2026-06-10 per operator: what this
+// proves is a coverflow IA; a true radial/arc Wheel is the separate `wheel`
+// nav primitive, parked for S5.)
+//
 // HONEST CAVEAT (S2): this is layout + a distinct feel only. The CINEMATIC
 // layer — attract mode, CRT ceremony, launch shaders, per-shell sound — is
-// ARC 2-3 (DECISIONS D20). The Wheel proves swappability + distinct identity
+// ARC 2-3 (DECISIONS D20). CoverFlow proves swappability + distinct identity
 // early, not the finished article.
 //
 // Nav: built directly on `useFocusGroup` (the lower-level platform nav hook),
@@ -40,14 +44,14 @@ const CARD_W = 210;
 const PITCH = 168;
 const WINDOW = 8;
 
-const WHEEL_MANIFEST: ThemeManifest = {
-  id: "wheel",
-  name: "Wheel",
+const COVERFLOW_MANIFEST: ThemeManifest = {
+  id: "coverflow",
+  name: "CoverFlow",
   version: "0.1.0",
   schema_version: 1,
   oa_version: "^0.x",
   entry: "./index.tsx",
-  entry_export: "wheel",
+  entry_export: "coverflow",
   default_route: "library",
   routes: ["library"],
   context_slots: ["library", "settings"],
@@ -56,7 +60,7 @@ const WHEEL_MANIFEST: ThemeManifest = {
   surfaces: ["main"],
 };
 
-const WheelEntry: ThemeEntry = (_props) => {
+const CoverFlowEntry: ThemeEntry = (_props) => {
   const platform = usePlatform();
   const host = useTheme();
   const media = useMedia();
@@ -101,7 +105,7 @@ const WheelEntry: ThemeEntry = (_props) => {
   });
 
   const group = useFocusGroup({
-    id: "wheel-coverflow",
+    id: "coverflow",
     orientation: "horizontal",
     itemCount: () => games().length,
     focusedIndex,
@@ -117,9 +121,9 @@ const WheelEntry: ThemeEntry = (_props) => {
   });
 
   // Force-claim once the list is populated. useFocusGroup auto-claims on mount
-  // only when nothing is already active; the Wheel mounts LATE (gated on the
+  // only when nothing is already active; this theme mounts LATE (gated on the
   // async active-theme seed), so a stray earlier group could hold the active
-  // slot. Claiming when games first appear makes the Wheel reliably own input.
+  // slot. Claiming when games first appear makes CoverFlow reliably own input.
   let claimed = false;
   createEffect(() => {
     if (!claimed && games().length > 0) {
@@ -163,12 +167,12 @@ const WheelEntry: ThemeEntry = (_props) => {
   return (
     <div class="relative grid h-full w-full grid-rows-[64px_minmax(0,1fr)_auto] overflow-hidden bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
       <style>{`
-        .oa-wheel-track {
+        .oa-cf-track {
           position: absolute; inset: 0;
           transition: transform 260ms cubic-bezier(.22,.61,.36,1);
           will-change: transform;
         }
-        .oa-wheel-card {
+        .oa-cf-card {
           position: absolute; top: 50%;
           width: ${CARD_W}px;
           transition: transform 260ms cubic-bezier(.22,.61,.36,1), opacity 260ms ease;
@@ -176,16 +180,16 @@ const WheelEntry: ThemeEntry = (_props) => {
         }
       `}</style>
 
-      {/* Top bar — Wheel brand + the engine summon icon (D3: theme reserves
-          the top-right slot; the always-available path back to Settings →
-          Themes to switch shells). */}
+      {/* Top bar — CoverFlow brand + the engine summon icon (D3: theme
+          reserves the top-right slot; the always-available path back to
+          Settings → Themes to switch shells). */}
       <header class="z-10 flex items-center justify-between border-b border-white/5 bg-(--color-oa-bg-deep)/95 px-6 backdrop-blur">
         <div class="flex items-center gap-2">
           <span class="text-lg text-(--color-system-accent)">◎</span>
           <div class="leading-tight">
-            <p class="text-sm font-semibold uppercase tracking-[0.3em]">Wheel</p>
+            <p class="text-sm font-semibold uppercase tracking-[0.3em]">CoverFlow</p>
             <p class="text-[0.55rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-              Coverflow · {games().length} games
+              {games().length} games
             </p>
           </div>
         </div>
@@ -203,7 +207,7 @@ const WheelEntry: ThemeEntry = (_props) => {
               </p>
               <p class="mt-3 max-w-md text-sm text-(--color-oa-ink-dim)">
                 Open Settings (⚙ top-right · F12 · Select+Start) → Library to
-                add a folder, then come back to the Wheel.
+                add a folder, then come back to CoverFlow.
               </p>
             </div>
           </div>
@@ -221,7 +225,7 @@ const WheelEntry: ThemeEntry = (_props) => {
               Secondary: "Game info",
             }}
           />
-          <div class="oa-wheel-track" style={{ transform: trackTransform() }}>
+          <div class="oa-cf-track" style={{ transform: trackTransform() }}>
             <For each={visibleEntries()}>
               {(entry, i) => {
                 const absIndex = (): number => lo() + i();
@@ -229,7 +233,7 @@ const WheelEntry: ThemeEntry = (_props) => {
                 const isFocused = (): boolean => offset() === 0;
                 return (
                   <div
-                    class="oa-wheel-card"
+                    class="oa-cf-card"
                     data-system={entry.systemId}
                     style={{
                       left: `${absIndex() * PITCH}px`,
@@ -239,7 +243,7 @@ const WheelEntry: ThemeEntry = (_props) => {
                     }}
                     onClick={() => {
                       // Click a side cover → centre it; click the centred
-                      // cover → launch. Keeps the Wheel mouse-usable even
+                      // cover → launch. Keeps CoverFlow mouse-usable even
                       // without controller nav.
                       if (isFocused()) void host.onLaunch(entry);
                       else {
@@ -321,7 +325,7 @@ const WheelEntry: ThemeEntry = (_props) => {
   );
 };
 
-export const wheel: ThemePackage = {
-  manifest: WHEEL_MANIFEST,
-  entry: WheelEntry,
+export const coverflow: ThemePackage = {
+  manifest: COVERFLOW_MANIFEST,
+  entry: CoverFlowEntry,
 };

@@ -5,7 +5,7 @@
 // ThemeContext in Theming Substrate ARC 1 Phase 2 Slice C because the shape
 // was already theme-generic, and RELOCATED here (routes/retroverse/context.tsx
 // → platform/theme/host.tsx) in Phase 3 S2 (the walking skeleton). The move
-// is what makes it a real SDK contract: a second theme (Wheel) needs the same
+// is what makes it a real SDK contract: a second theme (CoverFlow) needs the same
 // launch / saves / info / favorite host services Retroverse does, and a theme
 // can't import from routes/retroverse/ (theme ↛ theme). So the host services
 // belong in platform, where any theme may reach them. App.tsx stays the
@@ -148,7 +148,7 @@ export function useTheme(): ThemeContextValue {
 
 /// DECISIONS D20(a) seam — the GENERAL "platform has preempted the active
 /// theme's surface" predicate. A theme makes its global input handlers
-/// (e.g. Wheel's coverflow nav, Retroverse's L1/R1 tab cycling) inert while
+/// (e.g. CoverFlow's coverflow nav, Retroverse's L1/R1 tab cycling) inert while
 /// this is true, instead of each shell checking `engineSurfaceOpen()`
 /// directly. Today the engine takeover (F12 / Settings / Select+Start) is
 /// the one preemptor; attract mode (ARC 2-3) reuses this exact signal with

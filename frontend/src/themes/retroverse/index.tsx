@@ -7,7 +7,7 @@
 // INTO themes/retroverse/ is Phase 6 proper — S2's job is only to prove the
 // swap gate, not to relocate ~20 files.
 //
-// The wrapper imports from layout/retroverse (a layer the Wheel theme may
+// The wrapper imports from layout/retroverse (a layer the CoverFlow theme may
 // NOT touch). That's the one deliberate exception encoded in the eslint
 // `themes ↛ routes` zone (it `except`s this folder) — Retroverse-the-theme
 // is defined as a pointer at the existing routes during S2.

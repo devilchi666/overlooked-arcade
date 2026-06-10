@@ -64,6 +64,27 @@ archive; live file keeps Phase 4 Slices 4-6 + Phase 4.5).
   (`THEME_CONTRACT.md` + design tokens + a11y/motion baseline + engine-territory token
   isolation), per plan §13.3.
 
+### S2 playtest round 1 (2026-06-10) — fixes + rename
+
+- **Operator playtested; swap gate WORKS** (Retroverse ⇄ CoverFlow, browse + launch
+  both). Three bugs found + fixed on the same branch, then re-confirmed working:
+  - *Covers painted over the Settings surface* (z-index). The theme mount in App.tsx
+    is now wrapped in an `isolation: isolate` stacking context — a theme's internal
+    z-indexes can never escape above engine territory / platform modals. Substrate
+    guarantee, applies to every theme.
+  - *Controls did nothing.* The theme mounts late (async pref seed, behind a Show), so
+    its `ListNav` focus group never claimed the active slot. Rebuilt the coverflow on
+    `useFocusGroup` **directly** with an explicit `group.activate()` once games load.
+  - *Perf:* `ListNav` rendered all 8541 game nodes (no virtualization). Windowed to ±8
+    cards on a sliding CSS track, reconciled by stable RomEntry refs. Also added mouse
+    click-to-centre + wheel-scroll so it's usable without controller nav.
+- **Renamed the second theme `Wheel` → `CoverFlow`** (id `wheel` → `coverflow`, dir
+  `themes/wheel/` → `themes/coverflow/`) per operator: what S2 ships is a coverflow
+  IA; a true radial/arc **Wheel** is the separate `wheel` nav primitive, parked for S5.
+  *Migration note:* a pref persisted as `activeThemeId:"wheel"` is now unknown → the
+  registry falls back to the default (Retroverse) on next boot; re-pick CoverFlow once.
+- typecheck + lint green throughout; 822 oa-shell tests unaffected (frontend-only).
+
 ## 2026-06-10 — Phase 3 S1: nav foundation (verb-native nav layer) — ✅ shipped + merged
 
 > **Merged to main 2026-06-10** — operator playtested ("working as expected").

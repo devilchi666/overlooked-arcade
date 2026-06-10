@@ -1599,7 +1599,7 @@ const App: Component = () => {
         <Show when={!(isDirectLaunch() || gameMode())}>
           {/* Theming Substrate ARC 1 Phase 3 S2 — render the ACTIVE theme's
               entry instead of hardcoding RetroverseShell. The registry
-              resolves the persisted theme (Retroverse default / Wheel) once
+              resolves the persisted theme (Retroverse default / CoverFlow) once
               the boot seed lands; switching themes in Settings → Themes
               persists + restarts the app (D5). Surface is "main" — the one
               ARC 1 honors (D20b). Gated on activeThemeResolved() so we don't
@@ -1608,7 +1608,7 @@ const App: Component = () => {
             {(theme) => (
               // `isolate` (isolation: isolate) gives the active theme its OWN
               // stacking context, so a theme's internal z-indexes (e.g. the
-              // Wheel's coverflow cards) can never paint OVER engine-territory
+              // CoverFlow's cards) can never paint OVER engine-territory
               // chrome — the engine surface (fixed z-60), platform modals
               // (z-70), and the jobs bar (z-65) are all later siblings in the
               // ROOT stacking context and stay above this isolated theme. The
