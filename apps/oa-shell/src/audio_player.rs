@@ -438,24 +438,30 @@ pub fn resolve_platform_music(
 ///
 /// Resolution order:
 /// 1. Operator override in `SystemSettings.ui_sound_<event>` (per-system
-///    file path written through the per-system audio overrides UI).
-/// 2. Per-system bundled asset at
+///    file path written through the per-system audio overrides UI). This
+///    stays the top tier — an explicit per-system file the user wired is
+///    the most specific intent, so it beats a theme's sound.
+/// 2. **Active-theme tier (S5.1)** at
+///    `<exe_dir>/assets/themes/<themeId>/system-ui/{<systemId>,_baseline}/sounds/…`.
+/// 3. Per-system bundled asset at
 ///    `<exe_dir>/assets/system-ui/<systemId>/sounds/<event>.<ext>` for
 ///    `ext` in `[ogg, opus, wav, mp3, flac, m4a]` (matching the
 ///    formats rodio's `symphonia-all` feature decodes).
-/// 3. Universal baseline at
+/// 4. Universal baseline at
 ///    `<exe_dir>/assets/system-ui/_baseline/sounds/<event>.<ext>` so
 ///    every system gets at least a soft click even before a per-system
 ///    asset bank exists.
-/// 4. None — frontend treats null as "skip the dispatch silently."
+/// 5. None — frontend treats null as "skip the dispatch silently."
 ///
 /// Per-System Custom UI Stage 1 Slice 2 introduced the bundled-asset
-/// tiers (2 + 3); tier 1 has shipped since the 2026-05-24 media-taxonomy
-/// wave. Slice 2's content work drops a CC0 click into the `_baseline`
-/// dir; pilot slices 6/7/8 add the system-specific banks.
+/// tiers (3 + 4); tier 1 has shipped since the 2026-05-24 media-taxonomy
+/// wave. Theming Substrate S5.1 inserted the theme tier (2) above the
+/// platform bundles via the shared [`crate::system_ui_assets::candidate_asset_bases`]
+/// cascade.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn resolve_ui_sound(
+    themeId: Option<String>,
     systemId: String,
     event: String,
     app_data_dir: tauri::State<'_, crate::AppDataDir>,
@@ -483,8 +489,10 @@ pub fn resolve_ui_sound(
         return Ok(Some(p.to_string_lossy().to_string()));
     }
     let assets_dir = resolve_assets_dir();
-    Ok(find_bundled_ui_sound_in_dir(&assets_dir, &systemId, &event)
-        .map(|pb| pb.to_string_lossy().to_string()))
+    Ok(
+        find_bundled_ui_sound_in_dir(&assets_dir, themeId.as_deref(), &systemId, &event)
+            .map(|pb| pb.to_string_lossy().to_string()),
+    )
 }
 
 /// Locate the `<exe_dir>/assets` directory the same way
@@ -520,21 +528,28 @@ pub fn resolve_completion_chime() -> Option<String> {
     None
 }
 
-/// Pure resolver — given an assets dir, system slug, and event name,
-/// return the first bundled UI sound file that exists. Checks the
-/// per-system directory first, then the `_baseline` fallback. Returns
-/// None if no candidate exists. Parameterized on `assets_dir` so unit
-/// tests can drop a tempdir's contents in and verify the cascade.
-fn find_bundled_ui_sound_in_dir(assets_dir: &Path, system_id: &str, event: &str) -> Option<PathBuf> {
+/// Pure resolver — given an assets dir, optional active theme id, system
+/// slug, and event name, return the first bundled UI sound file that
+/// exists, walking the S5.1 theme→platform cascade (shared with the
+/// background resolver via [`crate::system_ui_assets::candidate_asset_bases`]).
+/// Returns None if no candidate exists. Parameterized on `assets_dir` so
+/// unit tests can drop a tempdir's contents in and verify the cascade.
+fn find_bundled_ui_sound_in_dir(
+    assets_dir: &Path,
+    theme_id: Option<&str>,
+    system_id: &str,
+    event: &str,
+) -> Option<PathBuf> {
     // Defensive — refuse to do disk I/O with traversal-y inputs. Event
     // names come from the resolver's match arm above (closed set) so
     // they're safe; the system slug is operator-influenced via
-    // SystemId, so reject anything with path separators.
-    if system_id.contains('/') || system_id.contains('\\') || system_id == ".." {
+    // SystemId, so reject anything with path separators (the theme id is
+    // guarded inside candidate_asset_bases).
+    if !crate::system_ui_assets::asset_slug_is_safe(system_id) {
         return None;
     }
-    for slug in [system_id, "_baseline"] {
-        let base = assets_dir.join("system-ui").join(slug).join("sounds");
+    for base in crate::system_ui_assets::candidate_asset_bases(assets_dir, theme_id, system_id, "sounds")
+    {
         for ext in BUNDLED_UI_SOUND_EXTS {
             let p = base.join(format!("{event}.{ext}"));
             if p.is_file() {
@@ -623,13 +638,34 @@ mod tests {
         p
     }
 
+    /// Drop a theme-tier UI-sound override (S5.1) under
+    /// `themes/<theme>/system-ui/<slug>/sounds/`.
+    fn drop_theme_sound(
+        assets_dir: &Path,
+        theme: &str,
+        system_slug: &str,
+        event: &str,
+        ext: &str,
+    ) -> PathBuf {
+        let dir = assets_dir
+            .join("themes")
+            .join(theme)
+            .join("system-ui")
+            .join(system_slug)
+            .join("sounds");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("{event}.{ext}"));
+        std::fs::write(&p, b"fake-audio").unwrap();
+        p
+    }
+
     #[test]
     fn bundled_resolver_finds_per_system_first() {
         let tmp = tempdir_for("per-system-wins");
         let per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
         let _baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
     }
 
@@ -638,14 +674,14 @@ mod tests {
         let tmp = tempdir_for("baseline-fallback");
         let baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(baseline.as_path()));
     }
 
     #[test]
     fn bundled_resolver_returns_none_when_nothing_on_disk() {
         let tmp = tempdir_for("empty");
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
         assert!(resolved.is_none());
     }
 
@@ -659,7 +695,7 @@ mod tests {
         let ogg = drop_sound(&tmp, "nes", "navigate", "ogg");
         let _wav = drop_sound(&tmp, "nes", "navigate", "wav");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(ogg.as_path()));
     }
 
@@ -667,7 +703,7 @@ mod tests {
     fn bundled_resolver_walks_extension_list_when_ogg_missing() {
         let tmp = tempdir_for("ext-walk");
         let wav = drop_sound(&tmp, "_baseline", "click", "wav");
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, "nes", "click");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "click");
         assert_eq!(resolved.as_deref(), Some(wav.as_path()));
     }
 
@@ -681,8 +717,59 @@ mod tests {
         drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
         for evil in ["../nes", "..\\nes", "..", "nes/../etc", "nes\\..\\etc"] {
-            let resolved = find_bundled_ui_sound_in_dir(&tmp, evil, "navigate");
+            let resolved = find_bundled_ui_sound_in_dir(&tmp, None, evil, "navigate");
             assert!(resolved.is_none(), "expected None for slug {evil:?}, got {resolved:?}");
+        }
+    }
+
+    // --- S5.1: theme-tier cascade ------------------------------------
+
+    #[test]
+    fn theme_tier_sound_overrides_per_system() {
+        let tmp = tempdir_for("theme-wins");
+        let theme = drop_theme_sound(&tmp, "coverflow", "nes", "navigate", "ogg");
+        let _per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
+        let _baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(theme.as_path()));
+    }
+
+    #[test]
+    fn theme_baseline_sound_applies_when_no_theme_per_system() {
+        // System-agnostic theme (D19): one theme-wide cue under the
+        // theme's `_baseline` beats the platform per-system asset.
+        let tmp = tempdir_for("theme-baseline");
+        let theme_wide = drop_theme_sound(&tmp, "coverflow", "_baseline", "navigate", "ogg");
+        let _per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(theme_wide.as_path()));
+    }
+
+    #[test]
+    fn theme_tier_sound_falls_through_to_platform() {
+        let tmp = tempdir_for("theme-fallthrough");
+        let per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
+
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
+    }
+
+    #[test]
+    fn theme_tier_sound_rejects_path_traversal_in_theme_id() {
+        // An unsafe theme id skips the theme tier; the platform tiers
+        // still resolve (never refuse the whole resolve over a bad id).
+        let tmp = tempdir_for("theme-traversal");
+        let baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
+
+        for evil in ["../x", "..\\x", "..", "a/b"] {
+            let resolved = find_bundled_ui_sound_in_dir(&tmp, Some(evil), "nes", "navigate");
+            assert_eq!(
+                resolved.as_deref(),
+                Some(baseline.as_path()),
+                "unsafe theme id {evil:?} should skip the theme tier, not the whole resolve",
+            );
         }
     }
 }

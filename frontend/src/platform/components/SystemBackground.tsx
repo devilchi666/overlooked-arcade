@@ -26,6 +26,7 @@ import {
 } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveBackgroundAsset } from "@oa/platform/api/mediaApi";
+import { activeThemeId } from "@oa/platform/theme/registry";
 import type { SystemId } from "@oa/platform/themes/registry";
 import { uiConfigFor } from "@oa/platform/themes/systemUIConfigs";
 import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
@@ -53,7 +54,11 @@ async function resolveBackgroundUrl(
   kind: BackgroundKind,
 ): Promise<ResolvedBackground | null> {
   try {
-    const primary = await resolveBackgroundAsset(systemId, kind);
+    // S5.1: the active theme's id is ambient — its background bank (incl.
+    // a theme-wide `_baseline`) is checked before the platform per-system
+    // asset, so a theme can supply its own backdrop without per-call wiring.
+    const themeId = activeThemeId();
+    const primary = await resolveBackgroundAsset(themeId, systemId, kind);
     if (primary) return { kind, url: convertFileSrc(primary) };
     // Forgiveness fallback: if the system is configured for `animated`
     // but no animated asset exists, walk the static cascade so a
@@ -62,7 +67,7 @@ async function resolveBackgroundUrl(
     // works" for casual testing; pilot slices (6-8) will populate the
     // configured kinds properly.
     if (kind === "animated") {
-      const fallback = await resolveBackgroundAsset(systemId, "default");
+      const fallback = await resolveBackgroundAsset(themeId, systemId, "default");
       if (fallback) return { kind: "default", url: convertFileSrc(fallback) };
     }
     return null;

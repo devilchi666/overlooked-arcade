@@ -36,17 +36,23 @@ const ANIMATED_EXTS: &[&str] = &["webm", "mp4"];
 /// no candidate file exists on disk — frontend falls back to the
 /// CSS accent-color gradient.
 ///
-/// Resolution order matches Slice 2's per-system SFX cascade:
-///   1. `<exe_dir>/assets/system-ui/<systemId>/backgrounds/<basename>.<ext>`
-///   2. `<exe_dir>/assets/system-ui/_baseline/backgrounds/<basename>.<ext>`
-///   3. None
+/// Theming Substrate ARC 1 Phase 3 S5.1 added the **theme tier** on top
+/// of the original per-system → `_baseline` cascade. Resolution order
+/// (see [`candidate_asset_bases`] for the shared shape):
+///   1. `<exe_dir>/assets/themes/<themeId>/system-ui/<systemId>/backgrounds/…`
+///   2. `<exe_dir>/assets/themes/<themeId>/system-ui/_baseline/backgrounds/…`
+///   3. `<exe_dir>/assets/system-ui/<systemId>/backgrounds/…`
+///   4. `<exe_dir>/assets/system-ui/_baseline/backgrounds/…`
+///   5. None
 ///
-/// `kind` must be one of: `"default"` (static image) or `"animated"`
-/// (looping video). Unknown values return an error so the frontend
-/// catches typos.
+/// `themeId` is the active theme's id (`None` = no theme tier, the
+/// pre-S5.1 behavior). `kind` must be one of: `"default"` (static image)
+/// or `"animated"` (looping video). Unknown kinds return an error so the
+/// frontend catches typos.
 #[tauri::command]
 #[allow(non_snake_case)]
 pub fn resolve_background_asset(
+    themeId: Option<String>,
     systemId: String,
     kind: String,
 ) -> Result<Option<String>, String> {
@@ -57,8 +63,10 @@ pub fn resolve_background_asset(
     };
     let basename = kind.as_str(); // file basename matches kind name
     let assets_dir = resolve_assets_dir();
-    Ok(find_bundled_background_in_dir(&assets_dir, &systemId, basename, exts)
-        .map(|pb| pb.to_string_lossy().to_string()))
+    Ok(
+        find_bundled_background_in_dir(&assets_dir, themeId.as_deref(), &systemId, basename, exts)
+            .map(|pb| pb.to_string_lossy().to_string()),
+    )
 }
 
 /// Locate the `<exe_dir>/assets` directory the same way
@@ -74,24 +82,65 @@ fn resolve_assets_dir() -> PathBuf {
         .join("assets")
 }
 
-/// Pure resolver — given an assets dir, system slug, basename
-/// (`"default"` / `"animated"`), and the extension priority list,
-/// return the first matching file under
-/// `system-ui/<slug>/backgrounds/`, falling back to
-/// `system-ui/_baseline/backgrounds/`. Returns None if no candidate
-/// exists. Parameterized on `assets_dir` so unit tests can drop a
-/// tempdir's contents in and verify the cascade.
+/// True when a slug (theme id / system id) is safe to use as a path
+/// component — no separators or parent-dir traversal. Shared by the
+/// background + ui-sound resolvers (audio_player.rs) so both apply the
+/// same guard to operator-influenced ids before any `std::fs` join.
+pub(crate) fn asset_slug_is_safe(slug: &str) -> bool {
+    !(slug.contains('/') || slug.contains('\\') || slug == "..")
+}
+
+/// Ordered candidate base directories for a per-system asset `category`
+/// (`"backgrounds"` / `"sounds"`), implementing the S5.1 theme→platform
+/// cascade. For each *scope* we check the per-system dir then the
+/// scope's own `_baseline`, so a system-agnostic theme (D19) can ship a
+/// single theme-wide asset under its `_baseline` instead of per-system
+/// copies:
+///   1. `themes/<theme>/system-ui/<system>/<category>/`   (theme, per-system)
+///   2. `themes/<theme>/system-ui/_baseline/<category>/`  (theme, theme-wide)
+///   3. `system-ui/<system>/<category>/`                  (platform, per-system)
+///   4. `system-ui/_baseline/<category>/`                 (platform, baseline)
+///
+/// The theme tiers are skipped when `theme_id` is `None` or unsafe
+/// (the platform tiers always apply). `system_id` MUST be pre-validated
+/// safe by the caller — it's joined into every base unconditionally.
+pub(crate) fn candidate_asset_bases(
+    assets_dir: &Path,
+    theme_id: Option<&str>,
+    system_id: &str,
+    category: &str,
+) -> Vec<PathBuf> {
+    let mut bases = Vec::with_capacity(4);
+    if let Some(tid) = theme_id {
+        if asset_slug_is_safe(tid) {
+            let theme_root = assets_dir.join("themes").join(tid).join("system-ui");
+            bases.push(theme_root.join(system_id).join(category));
+            bases.push(theme_root.join("_baseline").join(category));
+        }
+    }
+    let sys_root = assets_dir.join("system-ui");
+    bases.push(sys_root.join(system_id).join(category));
+    bases.push(sys_root.join("_baseline").join(category));
+    bases
+}
+
+/// Pure resolver — given an assets dir, optional active theme id, system
+/// slug, basename (`"default"` / `"animated"`), and the extension
+/// priority list, return the first matching file walking the S5.1
+/// theme→platform cascade ([`candidate_asset_bases`]). Returns None if no
+/// candidate exists. Parameterized on `assets_dir` so unit tests can drop
+/// a tempdir's contents in and verify the cascade.
 fn find_bundled_background_in_dir(
     assets_dir: &Path,
+    theme_id: Option<&str>,
     system_id: &str,
     basename: &str,
     exts: &[&str],
 ) -> Option<PathBuf> {
-    if system_id.contains('/') || system_id.contains('\\') || system_id == ".." {
+    if !asset_slug_is_safe(system_id) {
         return None;
     }
-    for slug in [system_id, "_baseline"] {
-        let base = assets_dir.join("system-ui").join(slug).join("backgrounds");
+    for base in candidate_asset_bases(assets_dir, theme_id, system_id, "backgrounds") {
         for ext in exts {
             let p = base.join(format!("{basename}.{ext}"));
             if p.is_file() {
@@ -121,13 +170,34 @@ mod tests {
         p
     }
 
+    /// Drop a theme-tier background override (S5.1) under
+    /// `themes/<theme>/system-ui/<slug>/backgrounds/`.
+    fn drop_theme_bg(
+        assets_dir: &Path,
+        theme: &str,
+        system_slug: &str,
+        basename: &str,
+        ext: &str,
+    ) -> PathBuf {
+        let dir = assets_dir
+            .join("themes")
+            .join(theme)
+            .join("system-ui")
+            .join(system_slug)
+            .join("backgrounds");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("{basename}.{ext}"));
+        std::fs::write(&p, b"fake-asset").unwrap();
+        p
+    }
+
     #[test]
     fn bundled_resolver_finds_per_system_first() {
         let tmp = tempdir_for("per-system-wins");
         let per_system = drop_bg(&tmp, "nes", "default", "png");
         let _baseline = drop_bg(&tmp, "_baseline", "default", "png");
 
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
     }
 
@@ -136,14 +206,14 @@ mod tests {
         let tmp = tempdir_for("baseline-fallback");
         let baseline = drop_bg(&tmp, "_baseline", "default", "png");
 
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert_eq!(resolved.as_deref(), Some(baseline.as_path()));
     }
 
     #[test]
     fn bundled_resolver_returns_none_when_nothing_on_disk() {
         let tmp = tempdir_for("empty");
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert!(resolved.is_none());
     }
 
@@ -156,7 +226,7 @@ mod tests {
         let png = drop_bg(&tmp, "nes", "default", "png");
         let _jpg = drop_bg(&tmp, "nes", "default", "jpg");
 
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert_eq!(resolved.as_deref(), Some(png.as_path()));
     }
 
@@ -166,7 +236,7 @@ mod tests {
         // find it past the first two extension misses.
         let tmp = tempdir_for("ext-walk-static");
         let webp = drop_bg(&tmp, "_baseline", "default", "webp");
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert_eq!(resolved.as_deref(), Some(webp.as_path()));
     }
 
@@ -174,7 +244,7 @@ mod tests {
     fn bundled_resolver_finds_animated_webm() {
         let tmp = tempdir_for("animated-webm");
         let webm = drop_bg(&tmp, "nes", "animated", "webm");
-        let resolved = find_bundled_background_in_dir(&tmp, "nes", "animated", ANIMATED_EXTS);
+        let resolved = find_bundled_background_in_dir(&tmp, None, "nes", "animated", ANIMATED_EXTS);
         assert_eq!(resolved.as_deref(), Some(webm.as_path()));
     }
 
@@ -184,7 +254,7 @@ mod tests {
         drop_bg(&tmp, "_baseline", "default", "png");
 
         for evil in ["../nes", "..\\nes", "..", "nes/../etc", "nes\\..\\etc"] {
-            let resolved = find_bundled_background_in_dir(&tmp, evil, "default", STATIC_EXTS);
+            let resolved = find_bundled_background_in_dir(&tmp, None, evil, "default", STATIC_EXTS);
             assert!(resolved.is_none(), "expected None for slug {evil:?}, got {resolved:?}");
         }
     }
@@ -197,11 +267,71 @@ mod tests {
         let tmp = tempdir_for("no-cross");
         drop_bg(&tmp, "nes", "default", "png");
 
-        let static_resolved = find_bundled_background_in_dir(&tmp, "nes", "default", STATIC_EXTS);
+        let static_resolved =
+            find_bundled_background_in_dir(&tmp, None, "nes", "default", STATIC_EXTS);
         assert!(static_resolved.is_some());
 
         let animated_resolved =
-            find_bundled_background_in_dir(&tmp, "nes", "animated", ANIMATED_EXTS);
+            find_bundled_background_in_dir(&tmp, None, "nes", "animated", ANIMATED_EXTS);
         assert!(animated_resolved.is_none());
+    }
+
+    // --- S5.1: theme-tier cascade ------------------------------------
+
+    #[test]
+    fn theme_tier_overrides_per_system() {
+        // A theme's per-system override beats the platform per-system
+        // asset (and the baseline).
+        let tmp = tempdir_for("theme-wins");
+        let theme = drop_theme_bg(&tmp, "coverflow", "nes", "default", "png");
+        let _per_system = drop_bg(&tmp, "nes", "default", "png");
+        let _baseline = drop_bg(&tmp, "_baseline", "default", "png");
+
+        let resolved =
+            find_bundled_background_in_dir(&tmp, Some("coverflow"), "nes", "default", STATIC_EXTS);
+        assert_eq!(resolved.as_deref(), Some(theme.as_path()));
+    }
+
+    #[test]
+    fn theme_baseline_applies_when_no_theme_per_system() {
+        // A system-agnostic theme (D19) ships one theme-wide asset under
+        // its own `_baseline`; it wins over the platform per-system asset.
+        let tmp = tempdir_for("theme-baseline");
+        let theme_wide = drop_theme_bg(&tmp, "coverflow", "_baseline", "default", "png");
+        let _per_system = drop_bg(&tmp, "nes", "default", "png");
+
+        let resolved =
+            find_bundled_background_in_dir(&tmp, Some("coverflow"), "nes", "default", STATIC_EXTS);
+        assert_eq!(resolved.as_deref(), Some(theme_wide.as_path()));
+    }
+
+    #[test]
+    fn theme_tier_falls_through_to_platform() {
+        // No theme override → the platform per-system asset still
+        // resolves (the theme tier is purely additive).
+        let tmp = tempdir_for("theme-fallthrough");
+        let per_system = drop_bg(&tmp, "nes", "default", "png");
+
+        let resolved =
+            find_bundled_background_in_dir(&tmp, Some("coverflow"), "nes", "default", STATIC_EXTS);
+        assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
+    }
+
+    #[test]
+    fn theme_tier_rejects_path_traversal_in_theme_id() {
+        // An unsafe theme id skips the theme tier but the platform tiers
+        // still apply (never refuse the whole resolve over a bad theme id).
+        let tmp = tempdir_for("theme-traversal");
+        let baseline = drop_bg(&tmp, "_baseline", "default", "png");
+
+        for evil in ["../x", "..\\x", "..", "a/b"] {
+            let resolved =
+                find_bundled_background_in_dir(&tmp, Some(evil), "nes", "default", STATIC_EXTS);
+            assert_eq!(
+                resolved.as_deref(),
+                Some(baseline.as_path()),
+                "unsafe theme id {evil:?} should skip the theme tier, not the whole resolve",
+            );
+        }
     }
 }
