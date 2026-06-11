@@ -1,5 +1,7 @@
 @import "tailwindcss";
-@import "./themes/systems.css";
+/* Per-system `[data-system]` accent palettes (formerly ./themes/systems.css)
+   are now the typed single source `platform/themes/systemPalettes.ts`, injected
+   at boot by `ensureSystemPaletteBaseline()` in index.tsx (S5.2). */
 
 @theme {
   --color-oa-bg: oklch(0.18 0.02 280);
@@ -178,7 +180,7 @@
   }
 
   /* Toast card. Left border picks up the active system's accent (via the
-     [data-system="..."] cascade in themes/systems.css) so a TG-16 toast feels
+     [data-system="..."] baseline in systemPalettes.ts) so a TG-16 toast feels
      orange-edged. The leading glyph carries the level color (success green,
      warn amber, error red) — system identity + outcome read at a glance
      without two competing color systems. */

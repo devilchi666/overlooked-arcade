@@ -876,3 +876,56 @@ cascade). The S5 design forks were signed off via AskUserQuestion before code.
 ambient-vs-threaded are the two a later contributor could most easily undo — by relocating
 theme assets into the not-yet-existent themes/ loader folder, or by threading `themeId`
 through every `playSystemUiSound` / background call instead of resolving it once.
+
+---
+
+### D26 — Palette substrate: typed single-source map + runtime-derived baseline + scoped `perSystemTokens` (Phase 3 S5.2)
+
+**Decision (2026-06-11, `feat/theming-s5-2-palette-substrate`):** build choices for the
+palette substrate, with operator sign-off on the data-home fork (AskUserQuestion) before code.
+
+1. **Per-system palette lives as a typed TS map, NOT `config/systems/<id>/palette.json` +
+   a build step.** `platform/themes/systemPalettes.ts` is the single source of truth
+   (`SYSTEM_PALETTES: Record<SystemId, SystemPalette>`); the plan's literal §6 wording
+   (`palette.json` + a `systems.generated.css` generator) was **rejected** because per-system
+   palette is **frontend-only data with no Rust reader** — a `config/*.json` + cross-language
+   generator would add a generated file that can drift, for zero benefit. The typed map is
+   greppable, validator-readable, Theme-Studio-round-trippable, and `Record<SystemId,…>`
+   enforces a palette per system at compile time (the parity the old `systems.css` comment
+   asked for by hand). *Constraint:* don't "promote" this to `config/*.json` unless Rust
+   actually needs to read per-system palette.
+
+2. **`systems.css` retired; the baseline `[data-system]` CSS is DERIVED from the map at boot.**
+   `ensureSystemPaletteBaseline()` injects a `<style id="oa-system-palettes-baseline">` into
+   `document.head` from `index.tsx` **before first render** (no flash) — the runtime
+   equivalent of the deleted `@import "./themes/systems.css"`. Idempotent + DOM-guarded so it's
+   a no-op in non-DOM (test) contexts; it is **never** called at module-load (only the explicit
+   entry call), so importing the module has no side effect. The baseline is injected
+   **globally** (engine + theme both read `[data-system]`), exactly as `systems.css` was.
+   `glow` is **derived** (accent at 0.35 alpha — the invariant every baseline followed); only
+   `accent` + `soft` are authored per system.
+
+3. **The per-theme override (`perSystemTokens`) is a SCOPED `<style>`, not inline vars.** A
+   per-system override must target *descendant* `[data-system]` elements, which an inline
+   `style=` on the mount cannot do (inline vars apply to the element, not its descendants'
+   attribute selectors). So App.tsx renders `<style>` of
+   `.oa-theme-mount [data-system="<id>"]{…}` inside the theme mount. Specificity (class +
+   attribute = 0,2,0) beats the global baseline (0,1,0) **inside** the mount; engine territory
+   is a **sibling** of the mount, never matched — the same structural D2 guarantee the S3 token
+   scope uses. This is a *scoped* `<style>`, NOT the D24-forbidden *global* `:root`/`<style>`
+   override — the prefix is what makes it legal. *Constraint:* keep the `.oa-theme-mount`
+   prefix; an unprefixed `[data-system]` rule from a theme WOULD leak to engine territory.
+
+4. **No clean ARC-1 live consumer for the override seam — by design, not omission.** The only
+   theme that renders `data-system` is Retroverse (the default, which we don't recolor);
+   CoverFlow + bare are system-agnostic (D19). So the override seam ships **test-proven + wired
+   + documented but unconsumed** — the same "ready capability awaiting a consumer" shape as
+   S5.1's background tier. The **baseline extraction** is S5.2's live/visible deliverable
+   (accents must be byte-identical after retiring `systems.css`). A visible override demo waits
+   for a per-system-consuming non-default theme (or an explicit operator-chosen demo home).
+
+**Why record this:** (1) the typed-map-not-config-json home and (3) the scoped-`<style>`
+mechanism (incl. *why* inline vars can't do it, and the `.oa-theme-mount` prefix being
+load-bearing for D2) are the two a later contributor could most easily get wrong — by
+"consolidating" palette into `config/*.json`, or by dropping the scope prefix and leaking a
+theme's per-system override into engine territory.

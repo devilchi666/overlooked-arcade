@@ -18,6 +18,7 @@
 import type { Component } from "solid-js";
 import type { ThemeManifest, ThemeSurface } from "./manifest";
 import type { ThemeTokens } from "./tokens";
+import type { PerSystemTokens } from "@oa/platform/themes/systemPalettes";
 
 // ThemeSurface is defined in manifest.ts (a manifest concept — the
 // `surfaces` field lists them) and re-exported here so theme entry code can
@@ -47,4 +48,12 @@ export type ThemePackage = {
   /// inherit the `:root` defaults — the default theme (Retroverse) ships
   /// none. See platform/theme/tokens.ts + docs THEME_CONTRACT.md.
   tokens?: Partial<ThemeTokens>;
+  /// Per-system palette overrides (S5.2) — D19's optional sub-cascade. A
+  /// theme MAY recolor specific systems' accent vars; App.tsx injects them as
+  /// `<scope> [data-system="<id>"]{…}` rules SCOPED to the theme-mount wrapper,
+  /// so they override the global baseline INSIDE this theme while engine
+  /// territory (a sibling of the mount) keeps the baseline (D2). Omit to
+  /// inherit the platform per-system palette wholesale (a system-agnostic theme
+  /// ships none). See platform/themes/systemPalettes.ts.
+  perSystemTokens?: PerSystemTokens;
 };

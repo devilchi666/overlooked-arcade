@@ -9,6 +9,52 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 S5.2: palette substrate (typed map + override seam) — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-s5-2-palette-substrate`. Second S5 micro-slice. Extracts the
+> 46 per-system palettes from hand-authored CSS to a typed single-source map +
+> derives the baseline at boot + adds the per-theme override seam. DECISIONS **D26**.
+> Palette data-home: **typed TS map**, NOT `config/*.json` + a build step (operator
+> AskUserQuestion call — per-system palette is frontend-only data with no Rust reader).
+
+- **Shipped** (plan §13.3 S5 item 1, refined):
+  - **`platform/themes/systemPalettes.ts`** — typed `SystemPalette` (`accent`/`soft`/`glow`)
+    + `SYSTEM_PALETTES: Record<SystemId, SystemPalette>` (all 46 systems; `glow` derived as
+    accent@0.35α — the invariant; one-line identity notes, full hue rationale in git
+    history) + `PALETTE_VAR` (key→CSS var, peer of `TOKEN_VAR`). **The single source of
+    truth** — `Record<SystemId,…>` forces a palette per system (the parity guarantee the old
+    `systems.css` comment asked for by hand).
+  - **`systems.css` RETIRED** (deleted; `@import` removed from `index.css`). The global
+    `[data-system]` baseline CSS is now **derived from the map at boot** —
+    `ensureSystemPaletteBaseline()` injects a `<style id="oa-system-palettes-baseline">`
+    into `document.head` in `index.tsx` **before first render** (no flash; runtime
+    equivalent of the static import). Idempotent + DOM-guarded (no-op in tests).
+  - **Per-theme override seam** (`ThemePackage.perSystemTokens?: PerSystemTokens` — D19's
+    optional sub-cascade): App.tsx renders a `<style>` of `perSystemOverrideCss(".oa-theme-mount", …)`
+    INSIDE the theme mount (now classed `oa-theme-mount`). Rule shape
+    `.oa-theme-mount [data-system="<id>"]{…}` — higher specificity than the global baseline →
+    wins inside the theme; engine territory (a SIBLING of the mount) keeps the baseline (the
+    structural D2 guarantee, same as the S3 token scope). A system-agnostic theme ships none.
+  - **Validator extended** (D24): `perSystemTokens` system ids ∈ `SystemId`, sub-keys ∈
+    `SystemPalette`, values non-empty (`UNKNOWN_SYSTEM_ID` / `UNKNOWN_PALETTE_KEY` /
+    `EMPTY_PALETTE_VALUE`). THEME_CONTRACT.md §4 + §6 updated (the `systems.css` reference
+    in §4 was stale — now points at `systemPalettes.ts`).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 37 passed**
+  (25 + 4 new perSystemTokens validator cases + 8 new `systemPalettes.test.ts` —
+  baseline-CSS shape, scoped-override specificity/partial/empty, systemThemes parity, glow
+  invariant); `npm run build` green (CSS bundle −7 kB; the baseline left the static bundle).
+  Frontend-only — Rust untouched (830 oa-shell tests hold).
+- **Almost / honest gap:** the **baseline extraction is the live, visible deliverable**
+  (per-system accents must look identical after retiring `systems.css` — the playtest). The
+  **override seam is test-proven but has no clean ARC-1 live consumer:** the only theme that
+  renders `data-system` is **Retroverse (the default we shouldn't recolor)**; CoverFlow + bare
+  are **system-agnostic by design** (D19). So a visible override demo has nowhere to live
+  without distorting a shipping theme — same "ready-but-unconsumed capability" shape as S5.1's
+  background tier. **Operator choice offered** (where, if anywhere, to ship a visible demo).
+- **Next:** **operator playtest S5.2** — confirm per-system colors (Retroverse tiles, Settings
+  per-system drill-in, system-edged toasts) are **identical** to before (baseline parity), and
+  decide the override-demo placement. Then merge. **After: S5.3 — glyph-set seam.**
+
 ## 2026-06-10 — Phase 3 S5.1: resolver theme tier — ✅ shipped + merged (merge `783da2e`)
 
 > Branch `feat/theming-s5-1-resolver-theme-tier`. First of **five S5 micro-slices**

@@ -35,6 +35,11 @@ import {
   SUPPORTED_SCHEMA_VERSIONS,
   type ThemeSurface,
 } from "./manifest";
+import {
+  PALETTE_VAR,
+  SYSTEM_PALETTES,
+  type SystemPalette,
+} from "@oa/platform/themes/systemPalettes";
 
 /// Surfaces the shell honors today. ARC 1 = exactly `main` (D20b). The named
 /// surfaces seam widens this when multi-monitor lands; a theme declaring a
@@ -60,6 +65,9 @@ export type ThemeIssueCode =
   | "UNADVERTISED_CAPABILITY" // a required capability ∉ ENGINE_CAPABILITIES
   | "UNKNOWN_TOKEN_KEY" // a tokens key ∉ ThemeTokens (TOKEN_VAR)
   | "EMPTY_TOKEN_VALUE" // a tokens value is empty / blank
+  | "UNKNOWN_SYSTEM_ID" // a perSystemTokens key ∉ SystemId (SYSTEM_PALETTES)
+  | "UNKNOWN_PALETTE_KEY" // a perSystemTokens sub-key ∉ SystemPalette (PALETTE_VAR)
+  | "EMPTY_PALETTE_VALUE" // a perSystemTokens value is empty / blank
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES"; // default_route ∉ routes
@@ -220,6 +228,43 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
           field: `tokens.${key}`,
           message: `tokens.${key} must be a non-empty CSS value string (omit the key to inherit the :root default)`,
         });
+      }
+    }
+  }
+
+  // --- perSystemTokens (S5.2): system ids ∈ SystemId, sub-keys ∈ SystemPalette,
+  //     values non-empty. Same data-half rule as tokens: a theme can only set
+  //     known palette vars on known systems, so even a hostile value injects a
+  //     known, mount-scoped CSS var rather than escaping the theme. ---
+  if (pkg.perSystemTokens != null) {
+    for (const systemId of Object.keys(pkg.perSystemTokens)) {
+      if (!(systemId in SYSTEM_PALETTES)) {
+        errors.push({
+          code: "UNKNOWN_SYSTEM_ID",
+          field: `perSystemTokens.${systemId}`,
+          message: `perSystemTokens.${systemId} is not a known system id (see SystemId / SYSTEM_PALETTES)`,
+        });
+        continue;
+      }
+      const pal = pkg.perSystemTokens[systemId as keyof typeof pkg.perSystemTokens];
+      if (pal == null) continue;
+      for (const paletteKey of Object.keys(pal)) {
+        if (!(paletteKey in PALETTE_VAR)) {
+          errors.push({
+            code: "UNKNOWN_PALETTE_KEY",
+            field: `perSystemTokens.${systemId}.${paletteKey}`,
+            message: `perSystemTokens.${systemId}.${paletteKey} is not a palette key (accent / soft / glow)`,
+          });
+          continue;
+        }
+        const value = pal[paletteKey as keyof SystemPalette];
+        if (value != null && !isNonEmptyString(value)) {
+          errors.push({
+            code: "EMPTY_PALETTE_VALUE",
+            field: `perSystemTokens.${systemId}.${paletteKey}`,
+            message: `perSystemTokens.${systemId}.${paletteKey} must be a non-empty CSS value string (omit the key to inherit the baseline)`,
+          });
+        }
       }
     }
   }
