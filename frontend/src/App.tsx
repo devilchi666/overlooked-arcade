@@ -91,7 +91,7 @@ import {
 } from "@oa/platform/theme/registry";
 import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
-import { ThemeProvider } from "./routes/retroverse/context";
+import { ThemeProvider } from "@oa/platform/theme/host";
 import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
 import {
@@ -100,14 +100,6 @@ import {
   wireEngineSummonChord,
 } from "./platform/engineSurface";
 import * as platformDialogs from "./platform/dialogs";
-import {
-  currentRoute as currentRetroverseRoute,
-  setCurrentRoute as setRetroverseRoute,
-  cycleRouteForward as cycleRetroverseRouteForward,
-  cycleRouteBackward as cycleRetroverseRouteBackward,
-  RETROVERSE_ROUTES,
-  type RetroverseRoute,
-} from "./routing/currentRoute";
 
 type Busy = "idle" | "scanning" | "launching";
 
@@ -385,40 +377,6 @@ const App: Component = () => {
   // omitted falls back to the default. Reactive so a (future, ARC-3 hot-swap)
   // theme change repaints hints; in ARC 1 it just fires once at boot.
   createEffect(() => setActiveGlyphSetId(activeTheme()?.manifest.glyph_set));
-
-  // Retroverse UI rollout Phase A Slice 4: install DevTools globals so
-  // the operator can exercise the route signal independent of UI
-  // consumers — Phase B's top-tab strip is the first surface that
-  // reads currentRoute(). Open DevTools (F12), then in the console:
-  //   __retroverse_debug.currentRoute()      → current route
-  //   __retroverse_debug.setRoute("home")    → jump to a specific tab
-  //   __retroverse_debug.cycleForward()      → next tab (wraps)
-  //   __retroverse_debug.cycleBackward()     → prev tab (wraps)
-  //   __retroverse_debug.routes              → all 6 route values
-  // Dev-only — guarded by import.meta.env.DEV so production builds
-  // don't expose the helper.
-  onMount(() => {
-    if (import.meta.env.DEV) {
-      (window as unknown as { __retroverse_debug?: unknown }).__retroverse_debug = {
-        currentRoute: () => currentRetroverseRoute(),
-        setRoute: (r: RetroverseRoute) => {
-          setRetroverseRoute(r);
-          console.log(`[retroverse] currentRoute = ${r}`);
-        },
-        cycleForward: () => {
-          const next = cycleRetroverseRouteForward();
-          console.log(`[retroverse] currentRoute = ${next}`);
-          return next;
-        },
-        cycleBackward: () => {
-          const next = cycleRetroverseRouteBackward();
-          console.log(`[retroverse] currentRoute = ${next}`);
-          return next;
-        },
-        routes: RETROVERSE_ROUTES,
-      };
-    }
-  });
 
   // Legacy "Start button → open menu bar" handler removed alongside
   // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;

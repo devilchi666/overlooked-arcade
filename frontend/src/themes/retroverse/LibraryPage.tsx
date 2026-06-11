@@ -34,7 +34,7 @@ import {
 } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 import { setSystemContextFor, setContainerContextFor } from "../../platform/dialogs";
 
 const LibraryPage: Component = () => {

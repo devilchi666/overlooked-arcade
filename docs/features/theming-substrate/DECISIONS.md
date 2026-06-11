@@ -1093,3 +1093,52 @@ map (built in S1) — the **menu/UI** nav layer, distinct from the per-system **
 **Why record this:** (1) dropdown-not-press-to-bind (someone may "improve" it into a capture mode
 that fights the nav bus) and (2) the keyboard-as-fixed-escape-hatch (someone may make it editable
 and reintroduce the deadlock risk) are the two a later contributor could get wrong.
+
+---
+
+### D31 — Retroverse-as-theme: the move was pure relocation; nothing hoisted to platform (Phase 6)
+
+**Decision (2026-06-11, `feat/theming-retroverse-as-theme`):** the build choices for the ARC-1
+acceptance gate — moving Retroverse from the S2 thin wrapper (D22.8) into a real theme physically
+living under `themes/retroverse/`, consuming only platform, and removing the last two boundary
+exceptions.
+
+1. **The reverse-import audit found ZERO files needing to hoist to platform.** The premise of the
+   move was that any Retroverse file consumed by a *non-Retroverse* surface is shared and must go
+   to `platform/` (D12 leaf-to-lowest-layer), not into the theme. The audit (every importer of all
+   11 files, from outside the retroverse trees) found that the S2 / Phase-4 / grab-bag groundwork
+   had **already hoisted everything shared** — the host context (→ `platform/theme/host`),
+   LeftSidebar / LibraryView / VirtualLibraryGrid / EngineSummonIcon (→ `platform/components`), all
+   stores + the typed api. So Phase 6 collapsed to a **pure physical relocation** of
+   Retroverse-private files (RetroverseShell + 8 route files + `currentRoute.ts`) plus deleting one
+   shim — no platform hoist, no new platform module. That the dogfood needed *no* new sharing is
+   itself the proof the platform/theme boundary was drawn correctly in ARCs past.
+
+2. **`currentRoute.ts` is theme-private (moved INTO the theme), per plan §10.** Its only external
+   consumer was App.tsx's `__retroverse_debug` DevTools block — itself Retroverse-specific glue, not
+   a genuine platform need. So `currentRoute` moved into `themes/retroverse/` and the debug block was
+   **deleted** (obsolete: it predated Retroverse's real tab strip, which now reads the signal). App.tsx
+   ends coupled to Retroverse only through the sanctioned `registerThemes(BUILTIN_THEMES)` injection
+   edge (D22.2). A future dev-console seam belongs in **platform** (theme-agnostic, every shell gets
+   it) — queued in PARKING_LOT, not rebuilt against one theme's route model.
+
+3. **`context.tsx` was DELETED, not moved.** It was a pure S2 re-export shim of
+   `@oa/platform/theme/host` (the content already lived in platform); Phase 6 repointed its importers
+   (App.tsx + RetroverseShell + the 6 pages) directly at the platform host and removed the shim. The
+   D15 move+re-export happened in S2; Phase 6 retires the back-compat layer.
+
+4. **Both `except: ['./retroverse']` exceptions removed + probe-verified.** With the files relocated
+   and importing only platform + siblings, the `themes↛routes` and `themes↛layout` ESLint zones no
+   longer need the carve-out. A throwaway `routes/` + `layout/` import from `themes/retroverse/` was
+   confirmed to fire both `import/no-restricted-paths` errors (the old `except` would have allowed
+   exactly that), then reverted. **Every theme — Retroverse included — is now platform-only with zero
+   exceptions.** This is the ARC-1 acceptance gate: the SDK hosts the flagship with no escapes.
+
+5. **Pure refactor, "indistinguishable" bar.** Zero intended user-visible change; `git mv` preserved
+   history on all 9 files. Landed as three green sub-commits (C1 sever shim · C2 relocate + delete
+   dead code · C3 drop exceptions + probe), each passing typecheck + lint + vitest(58) + build.
+
+**Why record this:** (1) the no-hoist outcome is the load-bearing finding — a later contributor
+extending Retroverse should NOT assume theme files can be shared back into platform ad hoc (the audit
+discipline is D12); and (2) the `currentRoute` theme-private home + the deleted dev-console (someone
+may "helpfully" re-add a theme-coupled DevTools global in App.tsx — it belongs in platform).

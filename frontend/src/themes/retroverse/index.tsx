@@ -1,20 +1,17 @@
 // Retroverse — the DEFAULT whole-shell theme (the dogfood).
 //
-// Theming Substrate ARC 1 Phase 3 S2 (the walking skeleton). Per the S2
-// sign-off this is a THIN WRAPPER: it points at the existing Retroverse
-// implementation (layout/retroverse/RetroverseShell + routes/retroverse/*),
-// which stay exactly where they are. The full physical move of those files
-// INTO themes/retroverse/ is Phase 6 proper — S2's job is only to prove the
-// swap gate, not to relocate ~20 files.
-//
-// The wrapper imports from layout/retroverse (a layer the CoverFlow theme may
-// NOT touch). That's the one deliberate exception encoded in the eslint
-// `themes ↛ routes` zone (it `except`s this folder) — Retroverse-the-theme
-// is defined as a pointer at the existing routes during S2.
+// Theming Substrate ARC 1 Phase 6 (the acceptance gate). Retroverse is now a
+// REAL theme: its whole implementation — RetroverseShell + the five route
+// pages + GameDetailPanel / SystemInfoPanel + the private tab-routing signal
+// (currentRoute) — lives physically under themes/retroverse/ and consumes ONLY
+// platform (@oa/platform/*). The S2 thin-wrapper-pointing-at-layout/routes is
+// gone, and with it the two eslint `except: ['./retroverse']` boundary
+// exceptions — Retroverse proves the SDK hosts the flagship with zero
+// exceptions. This entry just declares the manifest + mounts RetroverseShell.
 
 import type { ThemeEntry, ThemePackage } from "@oa/platform/theme/types";
 import type { ThemeManifest } from "@oa/platform/theme/manifest";
-import RetroverseShell from "../../layout/retroverse/RetroverseShell";
+import RetroverseShell from "./RetroverseShell";
 
 /// Authored inline as a typed object in S2 (the manifest reader lands in
 /// Phase 5 / S4). Mirrors what Retroverse's `theme.toml` will declare.
