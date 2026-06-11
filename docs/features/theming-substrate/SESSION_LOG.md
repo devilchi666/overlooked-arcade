@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — 🔄 shipped on branch (combined playtest with S5.3)
+## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — ✅ shipped + merged (merge `895f8c0`; combined S5.3+S5.4 playtest passed)
 
 > Branch `feat/theming-s5-4-theme-settings` (off main, on top of merged S5.3 — operator
 > chose to build S5.4 on S5.3 + playtest both together, one merge). Fourth S5 micro-slice.

@@ -313,9 +313,13 @@ spanned every system but was filed under whichever core happened to be active.
         indirection made theme-choosable — `PLAYSTATION_GLYPH_SET` + `GLYPH_SETS` + the
         `activeGlyphSet()` signal (HintBar reactive); loose manifest `glyph_set` bridged from
         App; validator `UNKNOWN_GLYPH_SET` warning; `bare` ships `glyph_set:"playstation"`.
-        **Remaining S5 micro-slices:** S5.4 per-theme settings namespace (building now, on
-        top of S5.3 — combined playtest per operator) · S5.5 primitives (carousel dogfooded
-        into CoverFlow + custom + reserved wheel contract + the background-surface revival).
+        **S5.4 (per-theme settings namespace) ✅ shipped + merged 2026-06-11**
+        (`feat/theming-s5-4-theme-settings`, merge `895f8c0`, DECISIONS **D28**): collision-free
+        per-theme prefs (`themeSettings.ts` + `useThemeSettings()` auto-bound to the active
+        theme's id; localStorage; reactive); `bare`'s "Compact" toggle the live consumer;
+        THEME_CONTRACT §7. **Remaining S5 micro-slice:** S5.5 primitives (carousel dogfooded
+        into CoverFlow + custom + reserved wheel contract + #6 verb→sound hook +
+        background-surface revival) — the LAST S5 slice, closes the Phase-3 substrate-depth arc.
         Remap Settings UI = D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
