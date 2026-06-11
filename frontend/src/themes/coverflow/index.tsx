@@ -7,45 +7,45 @@
 // scaled focused cover with neighbours fanning out on a sliding track, a
 // metadata strip below, Left/Right to browse, Confirm to launch.
 //
-// (Renamed from "Wheel" → "CoverFlow" 2026-06-10 per operator: what this
-// proves is a coverflow IA; a true radial/arc Wheel is the separate `wheel`
-// nav primitive, parked for S5.)
+// S5.5: CoverFlow now consumes the `CarouselNav` PRIMITIVE instead of its own
+// hand-rolled windowed track — the primitive owns the windowing / track shift /
+// per-card layout / focus / wheel-browse / click-to-centre, and CoverFlow keeps
+// only the theme-specific parts (the cover content, the preload buffer, the
+// metadata footer, the shared-selection mirror). It also mounts `ThemeBackground`
+// (the revived S5.1 background tier) and wires `onNavSound` (the #6 nav-sound
+// hook) — so a theme built on the primitive gets browse SFX for free.
 //
-// HONEST CAVEAT (S2): this is layout + a distinct feel only. The CINEMATIC
-// layer — attract mode, CRT ceremony, launch shaders, per-shell sound — is
-// ARC 2-3 (DECISIONS D20). CoverFlow proves swappability + distinct identity
-// early, not the finished article.
+// (Renamed from "Wheel" → "CoverFlow" 2026-06-10 per operator: what this proves
+// is a coverflow IA; a true radial/arc Wheel is the reserved `WheelNav` contract,
+// deferred until a wheel-using theme lands.)
 //
-// Nav: built directly on `useFocusGroup` (the lower-level platform nav hook),
-// NOT the ListNav primitive — a coverflow over a multi-thousand-game library
-// needs windowed rendering, exactly like VirtualLibraryGrid uses the hook +
-// its own virtualization rather than ListNav (which renders every row). Only
-// a ±WINDOW slice of cards is in the DOM; the track slides via CSS transform.
+// HONEST CAVEAT (S2): this is layout + a distinct feel only. The CINEMATIC layer
+// — attract mode, CRT ceremony, launch shaders — is ARC 2-3 (DECISIONS D20).
 //
 // BOUNDARY: a theme consumes ONLY platform — usePlatform stores, the host
-// services (useTheme), the nav hook, media, the per-system registry, and the
-// platform-homed EngineSummonIcon. Never engine/, routes/, or another theme.
-// System-AGNOSTIC by choice (DECISIONS D19).
+// services (useTheme), the nav primitives, media, the per-system registry, and
+// the platform-homed leaves (EngineSummonIcon / ThemeBackground). Never engine/,
+// routes/, or another theme. System-AGNOSTIC by choice (DECISIONS D19).
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
-import { useFocusGroup, HintRegion } from "@oa/platform/nav";
+import { CarouselNav } from "@oa/platform/nav";
+import { navSoundDispatcher } from "@oa/platform/themes/systemUiSound";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes } from "@oa/platform/themes/registry";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
+import ThemeBackground from "@oa/platform/components/ThemeBackground";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { ThemeEntry, ThemePackage } from "@oa/platform/theme/types";
 import type { ThemeManifest } from "@oa/platform/theme/manifest";
 
 // Card footprint + spacing. PITCH < CARD_W so covers overlap (the coverflow
-// look). WINDOW = how many cards either side of focus are kept in the DOM.
+// look). WINDOW = how many cards either side of focus the primitive keeps in the
+// DOM. PRELOAD = a wider cover-warming range (theme-level optimisation).
 const CARD_W = 210;
 const PITCH = 168;
-// Cards kept in the DOM each side of focus (render window).
 const WINDOW = 8;
-// Covers warmed into the browser cache each side of focus (preload buffer,
-// wider than the render window) so fast scrolling hits cache, not a fetch.
 const PRELOAD = 24;
 
 const COVERFLOW_MANIFEST: ThemeManifest = {
@@ -70,10 +70,8 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
   const media = useMedia();
 
   // Browse list: every real (non-seed) game, deduped to one cover per identity
-  // (multi-disc / multi-region variants collapse), sorted by title. The
-  // returned RomEntry refs are stable across renders (same game = same object
-  // from the store), so the windowed <For> below reconciles instead of
-  // remounting as the window slides.
+  // (multi-disc / multi-region variants collapse), sorted by title. Stable
+  // RomEntry refs so the primitive's windowed <For> reconciles.
   const games = createMemo<RomEntry[]>(() => {
     const seen = new Set<string>();
     const out: RomEntry[] = [];
@@ -88,8 +86,7 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
     return out;
   });
 
-  const [focusedIndexRaw, setFocusedIndexRaw] = createSignal(0);
-  const focusedIndex = focusedIndexRaw;
+  const [focusedIndex, setFocusedIndexRaw] = createSignal(0);
   const setFocusedIndex = (n: number): void => {
     const len = games().length;
     if (len === 0) return;
@@ -108,58 +105,16 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
     platform.setFocusedEntry(games()[focusedIndex()] ?? null);
   });
 
-  const group = useFocusGroup({
-    id: "coverflow",
-    orientation: "horizontal",
-    itemCount: () => games().length,
-    focusedIndex,
-    setFocusedIndex,
-    onActivate: (i) => {
-      const g = games()[i];
-      if (g) void host.onLaunch(g);
-    },
-    onSecondary: (i) => {
-      const g = games()[i];
-      if (g) host.onShowInfo(g);
-    },
-  });
-
-  // Force-claim once the list is populated. useFocusGroup auto-claims on mount
-  // only when nothing is already active; this theme mounts LATE (gated on the
-  // async active-theme seed), so a stray earlier group could hold the active
-  // slot. Claiming when games first appear makes CoverFlow reliably own input.
-  let claimed = false;
-  createEffect(() => {
-    if (!claimed && games().length > 0) {
-      claimed = true;
-      group.activate();
-    }
-  });
-
-  // Windowed slice — only ±WINDOW cards around focus exist in the DOM. The
-  // slice holds stable RomEntry refs so <For> reuses staying cards; the track
-  // (not the cards) slides as focus moves.
-  const lo = createMemo(() => Math.max(0, focusedIndex() - WINDOW));
-  const visibleEntries = createMemo(() => {
-    const list = games();
-    const hi = Math.min(list.length - 1, focusedIndex() + WINDOW);
-    return list.slice(lo(), hi + 1);
-  });
-
-  const focusedGame = () => games()[focusedIndex()] ?? null;
+  const focusedGame = (): RomEntry | null => games()[focusedIndex()] ?? null;
 
   const coverFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);
 
-  // Image-preload buffer for smooth FAST scroll. We only render ±WINDOW cards
-  // as DOM (above), but we WARM the covers a wider ±PRELOAD range into the
-  // browser cache via off-DOM Image() loads. So when a card later mounts as we
-  // scroll, its <img src> is a cache hit (no placeholder flash). Deduped by URL
-  // — each cover fetches exactly once; the Set holds only short strings, and we
-  // keep no reference to the Image objects so the browser's own resource cache
-  // governs decoded-image memory (and eviction). The fetch is incremental:
-  // each focus step only warms the few URLs newly entering the ±PRELOAD range.
+  // Image-preload buffer for smooth FAST scroll: warm covers a wider ±PRELOAD
+  // range than the primitive's render window into the browser cache via off-DOM
+  // Image() loads, so a card mounting as we scroll is a cache hit (no flash).
+  // Deduped by URL; no retained Image refs (browser resource cache governs).
   const prefetched = new Set<string>();
   createEffect(() => {
     const list = games();
@@ -173,45 +128,16 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
       prefetched.add(src);
       const img = new Image();
       img.decoding = "async";
-      img.src = src; // warms the cache; no DOM, no retained reference
+      img.src = src;
     }
   });
 
   const sysShortName = (entry: RomEntry): string =>
     systemThemes[entry.systemId]?.shortName ?? entry.systemId;
 
-  // Mouse wheel = browse (nice for a coverflow, and usable even if controller
-  // nav is toggled off). Click handling is per-card below.
-  const onWheelScroll = (e: WheelEvent): void => {
-    e.preventDefault();
-    setFocusedIndex(focusedIndex() + (e.deltaY > 0 ? 1 : -1));
-    group.activate();
-  };
-
-  // Track transform centres the focused card: shift the track so the focused
-  // card's centre sits at the container's horizontal centre (50%).
-  const trackTransform = (): string =>
-    `translateX(calc(50% - ${focusedIndex() * PITCH + CARD_W / 2}px))`;
-
   return (
     <div class="relative grid h-full w-full grid-rows-[64px_minmax(0,1fr)_auto] overflow-hidden bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
-      <style>{`
-        .oa-cf-track {
-          position: absolute; inset: 0;
-          transition: transform 260ms cubic-bezier(.22,.61,.36,1);
-          will-change: transform;
-        }
-        .oa-cf-card {
-          position: absolute; top: 50%;
-          width: ${CARD_W}px;
-          transition: transform 260ms cubic-bezier(.22,.61,.36,1), opacity 260ms ease;
-          will-change: transform, opacity;
-        }
-      `}</style>
-
-      {/* Top bar — CoverFlow brand + the engine summon icon (D3: theme
-          reserves the top-right slot; the always-available path back to
-          Settings → Themes to switch shells). */}
+      {/* Top bar — CoverFlow brand + the engine summon icon (D3). */}
       <header class="z-10 flex items-center justify-between border-b border-white/5 bg-(--color-oa-bg-deep)/95 px-6 backdrop-blur">
         <div class="flex items-center gap-2">
           <span class="text-lg text-(--color-system-accent)">◎</span>
@@ -235,117 +161,94 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
                 No games yet
               </p>
               <p class="mt-3 max-w-md text-sm text-(--color-oa-ink-dim)">
-                Open Settings (⚙ top-right · F12 · Select+Start) → Library to
-                add a folder, then come back to CoverFlow.
+                Open Settings (⚙ top-right · F12 · Select+Start) → Library to add a
+                folder, then come back to CoverFlow.
               </p>
             </div>
           </div>
         }
       >
-        <div
-          class="relative min-h-0 overflow-hidden"
-          onWheel={onWheelScroll}
-        >
-          <HintRegion
-            hints={{
-              dpad: "Browse",
-              stick: "Browse",
-              Confirm: "Launch",
-              Secondary: "Game info",
-            }}
-          />
-          <div class="oa-cf-track" style={{ transform: trackTransform() }}>
-            <For each={visibleEntries()}>
-              {(entry, i) => {
-                const absIndex = (): number => lo() + i();
-                const offset = (): number => absIndex() - focusedIndex();
-                const isFocused = (): boolean => offset() === 0;
-                return (
-                  // NO data-system here: CoverFlow is system-agnostic (D19).
-                  // It deliberately does NOT consume the per-system accent
-                  // cascade — every card uses the THEME's own accent (the
-                  // cyan token), so the shell reads as one cohesive identity
-                  // instead of a rainbow of per-system colours. (Per-system
-                  // "worlds" are Retroverse's take, not the substrate's.)
-                  <div
-                    class="oa-cf-card"
-                    style={{
-                      left: `${absIndex() * PITCH}px`,
-                      transform: `translateY(-50%) scale(${isFocused() ? 1 : 0.78})`,
-                      opacity: String(Math.max(0.25, 1 - Math.abs(offset()) * 0.16)),
-                      "z-index": String(100 - Math.abs(offset())),
-                    }}
-                    onClick={() => {
-                      // Click a side cover → centre it; click the centred
-                      // cover → launch. Keeps CoverFlow mouse-usable even
-                      // without controller nav.
-                      if (isFocused()) void host.onLaunch(entry);
-                      else {
-                        setFocusedIndex(absIndex());
-                        group.activate();
-                      }
-                    }}
-                  >
+        <div class="relative min-h-0 overflow-hidden">
+          {/* S5.5: the revived theme-owned backdrop, consuming the S5.1 cascade.
+              Sits at z-0 BEHIND the carousel (z-10). CoverFlow ships no backdrop
+              by default → resolves the platform per-system / _baseline asset (or
+              nothing). Drop
+              assets/themes/coverflow/system-ui/_baseline/backgrounds/default.png
+              for one cohesive theme-wide backdrop. */}
+          <ThemeBackground systemId={() => focusedGame()?.systemId ?? null} opacity={0.4} />
+
+          {/* The carousel primitive owns windowing / track / focus / wheel /
+              click; CoverFlow supplies only the card content + the visual config.
+              `z-10 h-full w-full` lifts it above the z-0 backdrop and fills the
+              row (CarouselNav's root is `relative`, so no position conflict).
+              System-AGNOSTIC (D19): no data-system → every card uses the THEME's
+              own accent token, one cohesive identity (not a per-system rainbow). */}
+          <CarouselNav
+            id="coverflow"
+            class="z-10 h-full w-full"
+            items={games}
+            focusedIndex={focusedIndex}
+            setFocusedIndex={setFocusedIndex}
+            cardWidth={CARD_W}
+            pitch={PITCH}
+            window={WINDOW}
+            sideScale={0.78}
+            minOpacity={0.25}
+            opacityFalloff={0.16}
+            hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
+            onConfirm={(_i, g) => void host.onLaunch(g)}
+            onSecondary={(_i, g) => host.onShowInfo(g)}
+            onNavSound={navSoundDispatcher<RomEntry>((g) => g?.systemId)}
+          >
+            {(entry, ctx) => (
+              <div
+                class="relative aspect-[3/4] w-full overflow-hidden rounded-xl border bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
+                classList={{
+                  "border-(--color-system-accent) ring-2 ring-(--color-system-accent)/60":
+                    ctx.focused(),
+                  "border-white/10": !ctx.focused(),
+                }}
+              >
+                <Show
+                  when={coverFor(entry)}
+                  fallback={
+                    // Subtle missing-art placeholder — a faint theme-accent haze
+                    // over the deep surface + the title, so art-less cards recede.
                     <div
-                      class="relative aspect-[3/4] w-full overflow-hidden rounded-xl border bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
-                      classList={{
-                        "border-(--color-system-accent) ring-2 ring-(--color-system-accent)/60":
-                          isFocused(),
-                        "border-white/10": !isFocused(),
+                      class="absolute inset-0 flex items-end p-3"
+                      style={{
+                        background:
+                          "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
                       }}
                     >
-                      <Show
-                        when={coverFor(entry)}
-                        fallback={
-                          // Missing-art placeholder — SUBTLE on purpose so the
-                          // many art-less games in a big library read as quiet
-                          // dark slots, not loud colour blocks. A faint
-                          // theme-accent haze (the translucent glow token) over
-                          // the deep surface gives just enough identity. The
-                          // title sits on top so an art-less card is still
-                          // identifiable at the centre.
-                          <div
-                            class="absolute inset-0 flex items-end p-3"
-                            style={{
-                              background:
-                                "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
-                            }}
-                          >
-                            <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
-                              {entry.title}
-                            </span>
-                          </div>
-                        }
-                      >
-                        {(src) => (
-                          <img
-                            src={src()}
-                            alt={entry.title}
-                            class="absolute inset-0 h-full w-full object-contain"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        )}
-                      </Show>
+                      <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
+                        {entry.title}
+                      </span>
                     </div>
-                  </div>
-                );
-              }}
-            </For>
-          </div>
+                  }
+                >
+                  {(src) => (
+                    <img
+                      src={src()}
+                      alt={entry.title}
+                      class="absolute inset-0 h-full w-full object-contain"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
+                </Show>
+              </div>
+            )}
+          </CarouselNav>
         </div>
       </Show>
 
       {/* Metadata strip for the focused game. */}
       <footer class="z-10 border-t border-white/5 bg-(--color-oa-bg-deep)/95 px-8 py-5 backdrop-blur">
-        <Show
-          when={focusedGame()}
-          fallback={<p class="text-sm text-(--color-oa-ink-dim)">—</p>}
-        >
+        <Show when={focusedGame()} fallback={<p class="text-sm text-(--color-oa-ink-dim)">—</p>}>
           {(g) => (
-            // No data-system: the focused game's system NAME is shown as text
-            // (info), but its colour stays the theme accent — CoverFlow's
-            // uniform identity (D19), not the per-system tint.
+            // No data-system: the system NAME shows as text, but its colour stays
+            // the theme accent — CoverFlow's uniform identity (D19).
             <div class="flex items-end justify-between gap-6">
               <div class="min-w-0">
                 <p class="text-[0.6rem] uppercase tracking-[0.5em] text-(--color-system-accent)">
@@ -374,22 +277,15 @@ export const coverflow: ThemePackage = {
   manifest: COVERFLOW_MANIFEST,
   entry: CoverFlowEntry,
   // S3 token override (minimal-but-distinct, to prove the mechanism): a cool
-  // steel-blue / cyan "cinematic" identity vs Retroverse's warm default. These
-  // are injected scoped to the theme-mount wrapper (App.tsx), so swapping to
-  // CoverFlow visibly recolours the shell chrome (background + brand accent)
-  // with ZERO code change — same component, different tokens. Per-system card
-  // accents still come from the [data-system] cascade (D19): CoverFlow stays
-  // system-agnostic in layout while consuming per-system colour on the covers.
+  // steel-blue / cyan "cinematic" identity vs Retroverse's warm default. Injected
+  // scoped to the theme-mount wrapper (App.tsx), so swapping to CoverFlow visibly
+  // recolours the shell chrome with ZERO code change — same component, different
+  // tokens.
   tokens: {
-    // Cinematic-dark but perceptibly COOL (vs Retroverse's warm-purple
-    // default) — kept at a readable lightness with extra chroma so the hue
-    // actually reads instead of looking pure black.
     bgDeep: "oklch(0.12 0.035 250)",
     bg: "oklch(0.16 0.04 250)",
     accent: "oklch(0.80 0.13 225)",
     accentSoft: "oklch(0.91 0.05 225)",
-    // Glow stays fairly translucent — it's the faint haze on the subtle
-    // missing-art placeholder; too strong and the art-less cards shout.
     accentGlow: "oklch(0.80 0.13 225 / 0.22)",
     focusRing: "oklch(0.80 0.13 225)",
   },

@@ -8,9 +8,10 @@
 // Wheel/Retroverse skeletons consume for tile grids; VirtualLibraryGrid keeps
 // its bespoke virtualized useFocusGroup usage.
 
-import { createSignal, For, type Accessor, type Component } from "solid-js";
+import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavPrimitiveBaseProps } from "./types";
 
 export type GridNavProps<T> = NavPrimitiveBaseProps<T> & {
@@ -40,10 +41,33 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
     setFocusedIndex,
     neighbours: props.neighbours,
     autoClaim: props.autoActivate,
-    onActivate: (i) => props.onConfirm?.(i, itemsArr()[i]),
-    onCancel: () => props.onBack?.(),
-    onSecondary: (i) => props.onSecondary?.(i, itemsArr()[i]),
+    onActivate: (i) => {
+      props.onConfirm?.(i, itemsArr()[i]);
+      props.onNavSound?.("confirm", itemsArr()[i]);
+    },
+    onCancel: () => {
+      props.onBack?.();
+      props.onNavSound?.("back", undefined);
+    },
+    onSecondary: (i) => {
+      props.onSecondary?.(i, itemsArr()[i]);
+      props.onNavSound?.("secondary", itemsArr()[i]);
+    },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
+  });
+
+  // Claim the active slot once items appear (late-mounting whole-shell grid).
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
+
+  // Nav-sound on focus move (scope-call #6) — see ListNav for the tracking note.
+  let firstSettle = true;
+  createEffect(() => {
+    const idx = focusedIndex();
+    if (firstSettle) {
+      firstSettle = false;
+      return;
+    }
+    props.onNavSound?.("move", untrack(() => itemsArr()[idx]));
   });
 
   return (
@@ -61,10 +85,19 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
       <For each={itemsArr()}>
         {(item, i) => {
           const focused: Accessor<boolean> = () => group.isActive() && focusedIndex() === i();
+          let el: HTMLDivElement | undefined;
+          // Keep the focused cell in view as nav moves (framework-focused, not
+          // native — so no browser scroll-into-view; see ListNav).
+          createEffect(() => {
+            if (focused() && el) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+          });
           return (
             <div
               class="oa-grid-nav-item"
-              ref={(el) => group.bind(i(), el)}
+              ref={(node) => {
+                el = node;
+                group.bind(i(), node);
+              }}
               tabindex={-1}
               data-oa-focus={focused() ? "true" : undefined}
               data-oa-focus-active={focused() ? "true" : undefined}
@@ -72,6 +105,7 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
                 group.activate();
                 setFocusedIndex(i());
                 props.onConfirm?.(i(), item);
+                props.onNavSound?.("confirm", item);
               }}
             >
               {props.children(item, { index: i(), focused })}

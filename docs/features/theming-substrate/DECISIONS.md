@@ -1007,3 +1007,50 @@ namespace (scope-call #9).
 later contributor could undo — by "promoting" theme prefs into `LibraryPrefs` (needless Rust
 coupling), or by letting `get`/`set` take an explicit themeId (which would break the
 collision-free guarantee — a theme could then read another's slice).
+
+---
+
+### D29 — Primitives slice: carousel-dogfood, reserved-not-stubbed wheel, nav-sound as a callback, background revival (Phase 3 S5.5)
+
+**Decision (2026-06-11, `feat/theming-s5-5-primitives`):** build choices for the arc-closing
+primitives slice.
+
+1. **CarouselNav GENERALIZES CoverFlow, then CoverFlow is dogfooded onto it.** The primitive
+   owns the windowing / track shift / per-card layout / focus / wheel / click-to-centre — and
+   the **late-claim** (claim once items first appear) moved IN from CoverFlow's hand-rolled
+   force-claim, since "whole-shell surface mounts after the async theme seed" is a general
+   primitive concern, not a CoverFlow quirk. CoverFlow keeps only theme-specific parts (cover
+   content render-prop, preload buffer, footer, shared-selection mirror). Dogfooding (not just
+   shipping the primitive beside the bespoke code) is what proves the primitive is actually
+   sufficient — and deletes the duplicate windowing. *Constraint:* keep CoverFlow ON the
+   primitive; if it needs something the primitive lacks, extend the primitive, don't fork back.
+
+2. **WheelNav is RESERVED (typed contract + stub), NOT implemented.** The radial layout has no
+   ARC-1 consumer; shipping a half-built radial render would be dead code with geometry bugs no
+   theme exercises (the *code-exists-isn't-live* trap). The expensive-to-retrofit part is the
+   prop CONTRACT (a future DSL / Theme Studio target it), so S5.5 ships that + a stub that
+   renders nothing and warns once. The impl lands when a wheel-using theme does. Same call shape
+   as S5.1's background tier and S5.2's override seam: stamp the contract, defer the body.
+
+3. **`onNavSound` is a CALLBACK on the primitives; the dispatcher lives in `platform/themes`.**
+   The primitives emit a coarse `NavSoundEvent` and the theme maps it — the nav layer never
+   imports the per-system audio machinery (keeps nav a generic leaf, like D27's glyph bridge).
+   The engine default `navSoundDispatcher` is in `platform/themes/systemUiSound` (where the
+   gating + per-system resolver already live) and is generic on the item type via a `systemIdOf`
+   selector, so nav never needs to know an item carries a system. Focus-move sounds fire from a
+   `createEffect` tracking ONLY `focusedIndex` (items read `untrack`ed) so a data change doesn't
+   ring a spurious move.
+
+4. **The dead `SystemBackground` is REPLACED by a generic `ThemeBackground`, not revived in
+   place.** `SystemBackground` was Retroverse-era (accent gradient + `perSystemUiEnabled` gate +
+   per-system focus) and was dropped 2026-05-31 for competing with Retroverse's chrome. Reviving
+   it as-is would reintroduce that. Instead S5.5 deletes it (zero importers) and ships
+   `ThemeBackground` — a theme-opt-in surface (a theme that mounts it WANTS it → no master-toggle
+   gate; the backdrop is the theme's own image → no accent gradient) consuming the **S5.1
+   background resolver tier**. This gives S5.1's background half its first live consumer
+   (CoverFlow mounts it). *Constraint:* a theme that doesn't want a backdrop simply doesn't mount
+   it — don't re-add a global mount.
+
+**Why record this:** (1) keep-CoverFlow-on-the-primitive and (2) wheel-reserved-not-half-built
+are the two a later contributor could erode — by forking CoverFlow's layout back off the
+primitive "to tweak it," or by fleshing out WheelNav before a consumer exists (dead radial code).

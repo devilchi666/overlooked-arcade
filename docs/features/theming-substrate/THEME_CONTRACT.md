@@ -66,8 +66,34 @@ Button→verb mapping is an **OA-wide per-user** config (`navBindings`,
 `nav_bindings.json`) — a theme **restyles hints + picks layouts but never
 redefines a verb's meaning** (that's a per-user contract). The HintBar renders
 glyphs from the current input→verb map, so a remap repaints every hint for
-free. Consume the `list`/`grid` primitives (`@oa/platform/nav`) or
-`useFocusGroup` directly; both are verb-native.
+free.
+
+**Nav primitives (`@oa/platform/nav`).** Verb-native, declarative-config focusable
+surfaces — pick the one matching your IA, or drop to `useFocusGroup` directly:
+
+- **`ListNav`** — vertical / horizontal list (every item rendered).
+- **`GridNav`** — column grid (Big-Picture semantics).
+- **`CarouselNav`** (S5.5) — windowed horizontal coverflow / filmstrip: a centred
+  focused card, neighbours scaling + dimming on a sliding track, only a ±`window`
+  slice in the DOM (scales to huge libraries). CoverFlow is built on it.
+- **`CustomNav`** (S5.5) — the escape hatch: you draw arbitrary markup, the
+  primitive hands you a focus API (`{ items, focusedIndex, isActive, activate,
+  bind }`) so your custom layout still gets verb nav + hints.
+- **`WheelNav`** (S5.5) — RESERVED: the typed contract for a radial wheel; the
+  layout is not yet implemented (renders nothing + warns). Use `CarouselNav` today.
+
+All take the shared declarative props (`density` / `focusProminence` / `easing` /
+`neighbours` / verb callbacks) and an optional **`onNavSound`** hook (S5.5,
+scope-call #6): the primitive emits coarse `NavSoundEvent`s (`move`/`confirm`/
+`back`/`secondary`) and you map them to per-system UI sounds — wire the engine
+default with `onNavSound={navSoundDispatcher((item) => item?.systemId)}`
+(`@oa/platform/themes/systemUiSound`).
+
+**Background surface.** `<ThemeBackground systemId={…} />`
+(`@oa/platform/components`) paints a full-bleed backdrop resolved through the
+S5.1 theme→platform asset cascade (drop
+`assets/themes/<id>/system-ui/_baseline/backgrounds/default.png` for a theme-wide
+backdrop). Opt-in — a theme mounts it where it wants one.
 
 **Controller-glyph set (S5.3).** The verb→glyph lookup goes through a swappable
 `GlyphSet`. A theme picks one via the manifest `glyph_set` field — `"xbox"`

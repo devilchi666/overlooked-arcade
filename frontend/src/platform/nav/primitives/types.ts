@@ -29,6 +29,11 @@ export type NavItemContext = {
   focused: Accessor<boolean>;
 };
 
+/// Semantic nav-sound events a primitive emits via `onNavSound` (scope-call #6,
+/// "seam now"). Coarser than the full verb set on purpose — these are the cues a
+/// browse surface makes noise for; the theme maps them to its `UiSoundEvent`s.
+export type NavSoundEvent = "move" | "confirm" | "back" | "secondary";
+
 /// Config common to every nav primitive. `T` is the item type; the primitive is
 /// data-source-driven (`items`) + render-prop-driven (`children`), so it owns no
 /// item-specific markup.
@@ -64,4 +69,12 @@ export type NavPrimitiveBaseProps<T> = {
   onBack?: () => void;
   onSecondary?: (index: number, item: T) => void;
   onTertiary?: (index: number, item: T) => void;
+
+  /** Nav-sound hook (scope-call #6, engine-default-able): the primitive emits a
+   * coarse `NavSoundEvent` on focus move / confirm / back / secondary with the
+   * relevant item, and the theme maps it to a `UiSoundEvent` (e.g. via
+   * `navSoundDispatcher` in platform/themes/systemUiSound). Omit for a silent
+   * primitive. Kept a callback (not a built-in dispatch) so the nav layer stays
+   * decoupled from the per-system audio machinery. */
+  onNavSound?: (event: NavSoundEvent, item: T | undefined) => void;
 };

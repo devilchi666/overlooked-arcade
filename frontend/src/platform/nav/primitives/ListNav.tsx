@@ -11,9 +11,10 @@
 // …) keep their own useFocusGroup usage. This is the theme-facing primitive the
 // S2 walking-skeleton themes (Retroverse / Wheel) consume.
 
-import { createSignal, For, type Accessor, type Component } from "solid-js";
+import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavPrimitiveBaseProps } from "./types";
 
 export type ListNavProps<T> = NavPrimitiveBaseProps<T> & {
@@ -40,10 +41,37 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
     setFocusedIndex,
     neighbours: props.neighbours,
     autoClaim: props.autoActivate,
-    onActivate: (i) => props.onConfirm?.(i, itemsArr()[i]),
-    onCancel: () => props.onBack?.(),
-    onSecondary: (i) => props.onSecondary?.(i, itemsArr()[i]),
+    onActivate: (i) => {
+      props.onConfirm?.(i, itemsArr()[i]);
+      props.onNavSound?.("confirm", itemsArr()[i]);
+    },
+    onCancel: () => {
+      props.onBack?.();
+      props.onNavSound?.("back", undefined);
+    },
+    onSecondary: (i) => {
+      props.onSecondary?.(i, itemsArr()[i]);
+      props.onNavSound?.("secondary", itemsArr()[i]);
+    },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
+  });
+
+  // Claim the active slot once items appear — a late-mounting whole-shell list
+  // (e.g. the `bare` theme) would otherwise never become the active group, so
+  // D-pad/arrows wouldn't move it and only a mouse click (→ launch) would work.
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
+
+  // Nav-sound on focus move (scope-call #6) — tracks ONLY focusedIndex (items
+  // read untracked so a data change doesn't fire a spurious move); skips the
+  // initial settle. No-op unless the theme wired `onNavSound`.
+  let firstSettle = true;
+  createEffect(() => {
+    const idx = focusedIndex();
+    if (firstSettle) {
+      firstSettle = false;
+      return;
+    }
+    props.onNavSound?.("move", untrack(() => itemsArr()[idx]));
   });
 
   return (
@@ -58,10 +86,21 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
       <For each={itemsArr()}>
         {(item, i) => {
           const focused: Accessor<boolean> = () => group.isActive() && focusedIndex() === i();
+          let el: HTMLDivElement | undefined;
+          // Keep the focused row in view as nav moves. The rows are tabindex=-1
+          // and focused via the framework (not native DOM focus), so the browser
+          // does no scroll-into-view — without this the selection walks off-screen
+          // in a scrollable list. `block:"nearest"` only scrolls when needed.
+          createEffect(() => {
+            if (focused() && el) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+          });
           return (
             <div
               class="oa-list-nav-item"
-              ref={(el) => group.bind(i(), el)}
+              ref={(node) => {
+                el = node;
+                group.bind(i(), node);
+              }}
               tabindex={-1}
               data-oa-focus={focused() ? "true" : undefined}
               data-oa-focus-active={focused() ? "true" : undefined}
@@ -69,6 +108,7 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
                 group.activate();
                 setFocusedIndex(i());
                 props.onConfirm?.(i(), item);
+                props.onNavSound?.("confirm", item);
               }}
             >
               {props.children(item, { index: i(), focused })}

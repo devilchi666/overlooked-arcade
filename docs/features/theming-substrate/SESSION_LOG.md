@@ -9,6 +9,70 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 S5.5: primitives (carousel/custom + reserved wheel + nav-sound + background revival) — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-s5-5-primitives`. The LAST S5 micro-slice — closes the Phase-3
+> substrate-depth arc. DECISIONS **D29**. Five parts; the CoverFlow refactor is the
+> playtest-risky one (it rewires a shipping theme onto the new primitive).
+
+- **Shipped** (plan §13.3 S5 primitives + #6 + the S5.1 background fold-in):
+  - **`CarouselNav`** (`platform/nav/primitives/CarouselNav.tsx`) — generalizes CoverFlow's
+    hand-rolled windowed coverflow: windowing (±`window`), centring track shift, per-card
+    position/scale/opacity/z-index, horizontal `useFocusGroup`, wheel-browse, click-to-centre,
+    late-claim (moved IN from CoverFlow's manual force-claim). Card content is the theme's
+    render-prop; ctx adds signed `offset`. **CoverFlow dogfooded onto it** — its bespoke track /
+    windowing / `<style>` / wheel handler deleted; it now supplies only cover content + the
+    preload buffer + the footer + the shared-selection mirror.
+  - **`CustomNav`** — the high-ceiling escape hatch: hands the theme a focus API
+    (`{ items, focusedIndex, setFocusedIndex, isActive, activate, bind }`) via a render-prop so
+    an arbitrary layout still gets verb-nav + hints. Supersedes the long-deleted
+    `customComponent` field.
+  - **`WheelNav`** — RESERVED: the typed radial-wheel prop contract + a stub that renders
+    nothing + warns once (no ARC-1 consumer → no half-built radial dead code; the contract is
+    the expensive part, deferred impl).
+  - **`onNavSound` hook (#6)** — added to `NavPrimitiveBaseProps` (coarse `NavSoundEvent`:
+    move/confirm/back/secondary); wired into ListNav/GridNav/CarouselNav (fires on the verb
+    callbacks + a focus-move effect). Engine default `navSoundDispatcher((item) => item?.systemId)`
+    lives in `platform/themes/systemUiSound` (maps event→`UiSoundEvent`, routes through the
+    existing gated per-system dispatcher). nav stays decoupled (callback, not a built-in dispatch).
+    **CoverFlow wires it** as the live consumer.
+  - **Background-surface revival (S5.1 fold-in)** — the dead `SystemBackground` (unmounted since
+    2026-05-31, zero importers) **deleted + replaced** by `ThemeBackground`
+    (`platform/components/ThemeBackground.tsx`): a generic theme-opt-in backdrop consuming the
+    **S5.1 background resolver tier** (theme→platform cascade, ambient theme id), no
+    `perSystemUiEnabled` gate, no accent gradient (the backdrop is the theme's own image) + a
+    legibility scrim. **CoverFlow mounts it** → S5.1's background tier finally has a live consumer
+    (drop `assets/themes/coverflow/system-ui/_baseline/backgrounds/default.png` → it paints).
+  - THEME_CONTRACT.md §3 expanded (the 5 primitives + `onNavSound` + `ThemeBackground`).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 51 passed**
+  (49 + WheelNav-stub + navSoundDispatcher; the focus/DOM behavior of the primitives is
+  playtest-verified — no Solid render harness is set up, matching the existing pure-test
+  approach); `npm run build` green. Frontend-only.
+- **Almost:** nothing in S5.5 scope. Deep component tests for the primitives would need a Solid
+  render harness (not set up) — noted as a possible future infra add.
+- **Playtest round 1 (2026-06-11) — two bugs found + fixed on-branch:**
+  - *CoverFlow backdrop painted ABOVE the box art.* CoverFlow passed `class="absolute inset-0"`
+    to CarouselNav whose root is already `relative` (conflicting position utilities) and the
+    `z-0` backdrop wasn't cleanly behind. Fixed: CarouselNav gets `z-10 h-full w-full` (no
+    position conflict; explicitly above the `z-0` ThemeBackground). The middle row is
+    `relative overflow-hidden`.
+  - *`bare` list couldn't move (arrows did nothing) + clicking a game launched it — so it could
+    never become the focus.* Root cause: the **late-claim was only in CarouselNav**, not
+    ListNav/GridNav. A late-mounting whole-shell list (bare mounts after the async theme seed)
+    never claimed the active focus slot, so only a mouse-click (→ launch) worked. (Latent since
+    S4 — bare's earlier playtests used the mouse.) Fixed: extracted **`useLateClaim`**
+    (`primitives/lateClaim.ts`) and applied it to **ListNav / GridNav / CarouselNav / CustomNav**
+    — every list-like primitive now claims once items appear. typecheck/lint/vitest(51)/build
+    green after the fix.
+- **Playtest round 2 (2026-06-11) — CoverFlow confirmed good; one more bare bug fixed:**
+  *the bare list moved the selection but didn't scroll, so the focused row walked off-screen.*
+  The rows are `tabindex=-1` + framework-focused (not native DOM focus) → the browser does no
+  scroll-into-view. Added a per-row effect that `scrollIntoView({ block: "nearest" })` when a row
+  becomes focused (ListNav + GridNav; CarouselNav already centres via its track transform).
+  typecheck/lint/vitest(51)/build green.
+- **Next:** **operator re-playtest** — bare: arrows/D-pad move the list AND keep the selection
+  on-screen, Confirm launches. Then merge. **That closes S5 + the Phase-3 substrate-depth arc.**
+
 ## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — ✅ shipped + merged (merge `895f8c0`; combined S5.3+S5.4 playtest passed)
 
 > Branch `feat/theming-s5-4-theme-settings` (off main, on top of merged S5.3 — operator
