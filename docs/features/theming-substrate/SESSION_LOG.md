@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-10 — Phase 3 S4: versioned manifest + load-time validator (`bare` fixture) — ✅ shipped, awaiting playtest + merge
+## 2026-06-10 — Phase 3 S4: versioned manifest + load-time validator (`bare` fixture) — ✅ shipped + merged (operator playtested)
 
 > Branch `feat/theming-manifest-validator`. Turns THEME_CONTRACT.md §6 from a
 > documented contract into a machine-checked one — the strict foundation a forgiving
@@ -49,17 +49,13 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     CSS bypass a package-object validator can't see; Phase-5/untrusted-author concern).
 - **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 25 passed**
   (2 files); `npm run build` green (bare bundled). Frontend-only — no Rust; 822 oa-shell
-  tests unaffected.
+  tests unaffected. **Merged to main `6fb0653` after operator playtest passed.**
 - **Decisions (D24):** validator = declarative-surface gate, NOT a runtime `:root`
   boundary (structural sibling-scope is); Vitest CI is the hard drift-stopper; `bare`
   ships in the picker as fixture+reference; fallback = toast+console (Phase-5 persistent
   banner deferred); schema = supported-set `{1}`.
 - **Almost:** nothing in S4 scope left.
-- **Next (operator):** **playtest** — boot lands on Retroverse; F12 → Settings → Themes
-  now lists a third option **Bare**; switch to it → restart → plain game list, browse +
-  launch + ⚙ back to Settings all work → switch back. (Optional drift check: edit a
-  built-in manifest to break a field, `npm run test` → red.) Then merge. **After merge:
-  S5 — substrate depth** (palette substrate, asset/`ui-sound` resolver, glyph-set seam,
+- **Next:** **S5 — substrate depth** (palette substrate, asset/`ui-sound` resolver, glyph-set seam,
   per-theme settings namespace, remaining `wheel`/`carousel`/`custom` primitives). The
   nav-remap Settings UI stays the separate D18 follow-on.
 

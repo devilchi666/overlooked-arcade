@@ -248,8 +248,8 @@ spanned every system but was filed under whichever core happened to be active.
         versioned manifest + validator** (`bare` theme fixture). Remap Settings UI
         stays the D18 follow-on.
       - **Phase 3 S4 — versioned manifest + load-time validator (`bare` fixture) ✅
-        shipped 2026-06-10 (`feat/theming-manifest-validator`, DECISIONS D24) —
-        awaiting operator playtest + merge.** Turns THEME_CONTRACT.md §6 from
+        shipped + merged 2026-06-10 (`feat/theming-manifest-validator`, merge `6fb0653`,
+        DECISIONS D24; operator playtested).** Turns THEME_CONTRACT.md §6 from
         documented to machine-checked. Four design forks signed off (AskUserQuestion,
         all recommended) before code. Shipped: pure **`validateTheme(pkg)`**
         (`platform/theme/validate.ts`) over the **declarative** manifest+tokens surface
