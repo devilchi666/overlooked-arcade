@@ -414,9 +414,9 @@ The dogfood test. **ARC 1 ACCEPTANCE GATE.**
 
 > **Status (2026-06-11):** The **second-pilot** half landed early — CoverFlow was
 > pulled forward in S2 (§13.3) as the rough 2nd shell, then deepened through S3-S5.
-> The **Retroverse-as-theme move** (this section's headline) is **✅ shipped on branch
-> `feat/theming-retroverse-as-theme`, awaiting operator playtest + merge** (DECISIONS
-> D31; theming SESSION_LOG 2026-06-11). The reverse-import audit found zero files needing
+> The **Retroverse-as-theme move** (this section's headline) is **✅ shipped + merged
+> 2026-06-11** (`feat/theming-retroverse-as-theme`, merge `711f337`; operator playtested —
+> indistinguishable; DECISIONS D31; theming SESSION_LOG 2026-06-11). The reverse-import audit found zero files needing
 > to hoist to platform (S2/Phase-4/grab-bag already hoisted everything shared), so the
 > move was a pure relocation of Retroverse-private files into `themes/retroverse/` + a
 > shim deletion + dropping the two `except: ['./retroverse']` ESLint exceptions

@@ -333,9 +333,9 @@ spanned every system but was filed under whichever core happened to be active.
         (`focus.ts:214`), only the editing UI is deferred. **Phase 3 is now fully closed.**
         Remaining ARC-1: original §6 Phase 5 (`.oatheme` on-disk distribution/loader) + Phase 6
         (full Retroverse-as-theme move).
-      - **Phase 6 — Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) ✅ shipped on
-        branch `feat/theming-retroverse-as-theme`, awaiting operator playtest + merge** (DECISIONS
-        **D31**). The dogfood: moved Retroverse from the S2 thin wrapper (D22.8) into a REAL theme
+      - **Phase 6 — Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) ✅ shipped +
+        merged 2026-06-11** (`feat/theming-retroverse-as-theme`, merge `711f337`, DECISIONS **D31**;
+        operator playtested — indistinguishable). The dogfood: moved Retroverse from the S2 thin wrapper (D22.8) into a REAL theme
         physically under `themes/retroverse/` (RetroverseShell + 8 route files + theme-private
         `currentRoute.ts`), consuming ONLY platform, and **removed the last two boundary exceptions**
         (`themes↛routes` + `themes↛layout` `except: ['./retroverse']`, probe-verified to fire). The
@@ -345,8 +345,8 @@ spanned every system but was filed under whichever core happened to be active.
         `@oa/platform/theme/host`), dead `StubPage.tsx`, and App.tsx's obsolete `__retroverse_debug`
         DevTools block (a platform-owned dev-console seam queued in PARKING_LOT). 3 green sub-commits
         (C1 sever shim · C2 relocate + delete dead code · C3 drop exceptions + probe);
-        typecheck+lint+vitest(58)+build green; frontend-only. **After merge: only §6 Phase 5
-        (`.oatheme` distribution/loader) remains in ARC 1.**
+        typecheck+lint+vitest(58)+build green; cargo `oa-shell` green; frontend-only. **Only §6
+        Phase 5 (`.oatheme` distribution/loader) now remains open in ARC 1.**
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

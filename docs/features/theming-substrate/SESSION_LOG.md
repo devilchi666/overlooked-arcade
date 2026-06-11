@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-11 — Phase 6: Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) — ✅ shipped on branch, awaiting operator playtest + merge
+## 2026-06-11 — Phase 6: Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) — ✅ shipped + merged (merge `711f337`; operator playtested — indistinguishable)
 
 > Branch `feat/theming-retroverse-as-theme`. The ARC-1 closer / dogfood: move Retroverse from the
 > S2 thin wrapper (D22.8) into a REAL theme physically living under `themes/retroverse/`, consuming
@@ -44,11 +44,11 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   (AskUserQuestion): the obsolete `__retroverse_debug` block → **delete** + queue a platform dev-console
   seam; `StubPage` → **delete** (dead).
 - **Almost:** nothing in Phase-6 scope left.
-- **Next:** **operator playtest** — Retroverse must be **indistinguishable** from before (boot lands on
-  Retroverse, browse / launch / F12 Settings / per-system theming / CoverFlow swap-and-back all identical).
-  Then merge to main. **This is the ARC-1 acceptance gate** — the SDK proven to host the flagship with no
-  boundary escapes. Remaining ARC-1 work after this: the original §6 **Phase 5** (`.oatheme` on-disk
-  distribution/loader).
+- **Merged to main `711f337`** after operator playtest (indistinguishable — boot / browse / launch /
+  F12 Settings / per-system theming / CoverFlow swap-and-back all confirmed identical). **This closes
+  the ARC-1 acceptance gate** — the SDK is proven to host the flagship with zero boundary escapes.
+- **Next:** the only remaining ARC-1 work is the original §6 **Phase 5** (`.oatheme` on-disk
+  distribution/loader). Operator picks when to start it.
 
 ## 2026-06-11 — Phase 3 follow-on (D18): nav-remap Settings UI (gamepad) — ✅ shipped + merged (operator playtested)
 
