@@ -9,6 +9,36 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — 🔄 shipped on branch (combined playtest with S5.3)
+
+> Branch `feat/theming-s5-4-theme-settings` (off main, on top of merged S5.3 — operator
+> chose to build S5.4 on S5.3 + playtest both together, one merge). Fourth S5 micro-slice.
+> DECISIONS **D28**.
+
+- **Shipped** (plan §13.3 S5 item #9):
+  - **`platform/theme/themeSettings.ts`** — a collision-free per-theme prefs namespace.
+    `getThemePref`/`setThemePref` over a Solid `createStore` backed by **one localStorage key**
+    (`oa.themeSettings` → `{ [themeId]: { … } }`; frontend-owned, survives the restart-based
+    swap). **`useThemeSettings()`** returns `{ get, set }` **auto-bound to the active theme's
+    id** — a theme never names an id, so it can only touch its own slice (the binding IS the
+    collision rule). `get` is reactive (createStore read).
+  - **Live consumer = `bare`** (the test bed): a header **"Compact" toggle** writes
+    `themeSettings.bare.compactRows` and the list density reacts live; persisted, so it
+    survives switching away + back. bare now demos all three S5 seams (per-system dots /
+    PS glyphs / theme pref).
+  - THEME_CONTRACT.md **§7** added (the fourth settings namespace alongside
+    OA-wide / per-system / per-game).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 49 passed**
+  (45 + 4 new `themeSettings.test.ts`: fallback, set→get round-trip, slice isolation,
+  localStorage persistence — the runner ships a partial `localStorage` stub so the persistence
+  test installs a working in-memory one); `npm run build` green. Frontend-only.
+- **Almost:** nothing in S5.4 scope.
+- **Next:** **operator playtest S5.3 + S5.4 together** — switch to `bare`: hint bar shows
+  ✕/◯/□/△ (Launch = ✕; S5.3), and the header **Compact** toggle changes row density +
+  survives a switch-away-and-back (S5.4). Switch to Retroverse → hints read **A**. Then merge
+  both. **After: S5.5 — primitives (carousel/custom + reserved wheel + background-surface
+  revival)** — the last S5 slice.
+
 ## 2026-06-11 — Phase 3 S5.3: glyph-set seam (manifest field + PS set) — ✅ shipped + merged (merge `af13cb7`; combined playtest rides with S5.4)
 
 > Branch `feat/theming-s5-3-glyph-set`. Third S5 micro-slice. The verb→glyph
