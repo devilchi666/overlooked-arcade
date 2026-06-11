@@ -19,10 +19,10 @@
 // PLUS the theme-PACKAGE layer (Theming ARC 1 Phase 3 S2 — themes/<id>/ are
 // whole-shell theme packages; they consume ONLY platform):
 //   - themes/**   ↛ engine/**     (a theme can't reach into the engine surface)
-//   - themes/**   ↛ routes/**     (except themes/retroverse — the thin wrapper)
-//   - themes/**   ↛ layout/**     (except themes/retroverse — points at the
-//                                  existing RetroverseShell during S2; the full
-//                                  move into themes/retroverse/ is Phase 6)
+//   - themes/**   ↛ routes/**     (themes are platform-only)
+//   - themes/**   ↛ layout/**     (themes build their own layout from platform
+//                                  primitives; Retroverse's shell now lives in
+//                                  themes/retroverse/ — Phase 6, no exception)
 //   - themes/**   ↛ components/**  (drained grab-bag ratchet)
 // Cross-theme imports (wheel ↛ retroverse) are wrong too but not path-zoneable
 // here (same dir); kept by convention + review until a theme actually tempts it.
@@ -171,22 +171,18 @@ export default [
             {
               target: "./src/themes",
               from: "./src/routes",
-              except: ["./retroverse"],
               message:
-                "Boundary: a theme (themes/) must not import routes/. The only " +
-                "exception is themes/retroverse — the S2 thin wrapper that points " +
-                "at the existing Retroverse implementation. New themes are " +
-                "platform-only; the Retroverse file move is Phase 6.",
+                "Boundary: a theme (themes/) must not import routes/. Every theme " +
+                "is platform-only. The Retroverse implementation now lives under " +
+                "themes/retroverse/ (Phase 6) — the S2 thin-wrapper exception is gone.",
             },
             {
               target: "./src/themes",
               from: "./src/layout",
-              except: ["./retroverse"],
               message:
-                "Boundary: a theme (themes/) must not import layout/. The only " +
-                "exception is themes/retroverse — the S2 thin wrapper rendering " +
-                "layout/retroverse/RetroverseShell. New themes build their own " +
-                "layout from platform primitives (@oa/platform/nav).",
+                "Boundary: a theme (themes/) must not import layout/. Themes build " +
+                "their own layout from platform primitives (@oa/platform/nav); " +
+                "Retroverse's shell now lives in themes/retroverse/ (Phase 6).",
             },
             {
               target: "./src/themes",
