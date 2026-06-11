@@ -86,10 +86,21 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
       <For each={itemsArr()}>
         {(item, i) => {
           const focused: Accessor<boolean> = () => group.isActive() && focusedIndex() === i();
+          let el: HTMLDivElement | undefined;
+          // Keep the focused row in view as nav moves. The rows are tabindex=-1
+          // and focused via the framework (not native DOM focus), so the browser
+          // does no scroll-into-view — without this the selection walks off-screen
+          // in a scrollable list. `block:"nearest"` only scrolls when needed.
+          createEffect(() => {
+            if (focused() && el) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+          });
           return (
             <div
               class="oa-list-nav-item"
-              ref={(el) => group.bind(i(), el)}
+              ref={(node) => {
+                el = node;
+                group.bind(i(), node);
+              }}
               tabindex={-1}
               data-oa-focus={focused() ? "true" : undefined}
               data-oa-focus-active={focused() ? "true" : undefined}
