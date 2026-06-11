@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-11 — Phase 3 S5.2: palette substrate (typed map + override seam) — 🔄 shipped on branch (awaiting operator playtest)
+## 2026-06-11 — Phase 3 S5.2: palette substrate (typed map + override seam) — ✅ shipped + merged (merge `f5b9b61`)
 
 > Branch `feat/theming-s5-2-palette-substrate`. Second S5 micro-slice. Extracts the
 > 46 per-system palettes from hand-authored CSS to a typed single-source map +

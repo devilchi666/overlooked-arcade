@@ -298,11 +298,20 @@ spanned every system but was filed under whichever core happened to be active.
         **background** consumer `SystemBackground` is unmounted since 2026-05-31 (dropped
         over a Retroverse visual conflict; zero JSX mount), so **reviving a theme-owned
         background surface folds into S5.5**; the **ui-sound** half is live (grid-nav
-        sounds). **Remaining S5 micro-slices:** S5.2 palette substrate (typed
-        `SYSTEM_PALETTES` map + `perSystemTokens` override seam) · S5.3 glyph-set
-        (manifest `glyph_set` + PS set) · S5.4 per-theme settings namespace · S5.5
-        primitives (carousel dogfooded into CoverFlow + custom + reserved wheel contract
-        + the background-surface revival). Remap Settings UI = D18 follow-on.
+        sounds). **S5.2 (palette substrate) ✅ shipped + merged 2026-06-11**
+        (`feat/theming-s5-2-palette-substrate`, merge `f5b9b61`, DECISIONS **D26**):
+        retired hand-authored `systems.css` for a typed `SYSTEM_PALETTES` single-source
+        map (`platform/themes/systemPalettes.ts`), global `[data-system]` baseline derived
+        + injected at boot (`ensureSystemPaletteBaseline`, no flash); per-theme
+        `perSystemTokens` scoped override seam (App.tsx `.oa-theme-mount [data-system]{}` —
+        D19 sub-cascade, D2 sibling-scope); validator extended; THEME_CONTRACT.md §4/§6.
+        Data-home = typed map not `config/*.json`+build-step (frontend-only data). `bare`
+        reframed as the substrate **test bed** + the seam's live consumer (per-system accent
+        dots + scoped NES→cyan/PSX→magenta demo). typecheck/lint/vitest(37)/build green;
+        frontend-only. **Remaining S5 micro-slices:** S5.3 glyph-set (manifest `glyph_set`
+        + PS set) · S5.4 per-theme settings namespace · S5.5 primitives (carousel dogfooded
+        into CoverFlow + custom + reserved wheel contract + the background-surface revival).
+        Remap Settings UI = D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
