@@ -9,6 +9,47 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 6: Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) — ✅ shipped on branch, awaiting operator playtest + merge
+
+> Branch `feat/theming-retroverse-as-theme`. The ARC-1 closer / dogfood: move Retroverse from the
+> S2 thin wrapper (D22.8) into a REAL theme physically living under `themes/retroverse/`, consuming
+> ONLY platform, and remove the last two boundary exceptions. DECISIONS **D31**. Design-first: the
+> reverse-import audit + move plan were signed off (two AskUserQuestion forks) before any code.
+
+- **The reverse-import audit (the one real snag) found ZERO files needing to hoist to platform.**
+  Every Retroverse file consumed by a non-Retroverse surface was *already* hoisted by the S2 /
+  Phase-4 / grab-bag work (host context → `platform/theme/host`; LeftSidebar / LibraryView /
+  VirtualLibraryGrid / EngineSummonIcon → `platform/components`; stores + api → platform). So Phase 6
+  collapsed to a **pure physical relocation** + one shim deletion — no platform hoist, no new module.
+  The flagship needing *no* new sharing is itself proof the boundary was drawn right in past arcs.
+- **Shipped** (three green sub-commits on one branch):
+  - **C1 — sever the context shim** (`2ff021c`): repoint every importer of `routes/retroverse/context`
+    (App.tsx `ThemeProvider`, RetroverseShell `useTheme`/`themePreempted`, the 6 route pages `useTheme`)
+    directly to `@oa/platform/theme/host`; delete the shim (its content moved to platform in S2).
+  - **C2 — relocate** (`b5c6508`): `git mv` (history preserved) RetroverseShell + the five route pages
+    + GameDetailPanel + SystemInfoPanel + `currentRoute.ts` (theme-private tab routing, §10) into
+    `themes/retroverse/`; repoint RetroverseShell's 5 page imports + the two `currentRoute` importers to
+    local `./siblings`; `index.tsx` → `./RetroverseShell` + header rewritten (no longer a thin wrapper);
+    empty `layout/retroverse/`, `routes/retroverse/`, `routing/` dirs gone. **Dead code removed:**
+    `StubPage.tsx` (zero importers since the real pages shipped) + App.tsx's `__retroverse_debug` DevTools
+    block (obsolete — predates Retroverse's real tab strip; a future dev-console seam belongs in platform,
+    queued in PARKING_LOT). App.tsx now reaches Retroverse only via the sanctioned `registerThemes()` edge.
+  - **C3 — drop the exceptions** (`7381ddd`): remove `except: ['./retroverse']` from the `themes↛routes`
+    and `themes↛layout` ESLint zones + update the header comment. **Probe-verified:** a throwaway
+    `routes/` + `layout/` import from `themes/retroverse/` fires both `import/no-restricted-paths` errors
+    (the old `except` would have allowed exactly that), then reverted. **Every theme — Retroverse included
+    — is now platform-only with zero exceptions.**
+- **Verified:** `npm run typecheck` + `npm run lint` + `npm run test` (**58 passed**) + `npm run build`
+  green at each sub-commit. Frontend-only — no Rust (cargo unaffected). Two forks signed off before code
+  (AskUserQuestion): the obsolete `__retroverse_debug` block → **delete** + queue a platform dev-console
+  seam; `StubPage` → **delete** (dead).
+- **Almost:** nothing in Phase-6 scope left.
+- **Next:** **operator playtest** — Retroverse must be **indistinguishable** from before (boot lands on
+  Retroverse, browse / launch / F12 Settings / per-system theming / CoverFlow swap-and-back all identical).
+  Then merge to main. **This is the ARC-1 acceptance gate** — the SDK proven to host the flagship with no
+  boundary escapes. Remaining ARC-1 work after this: the original §6 **Phase 5** (`.oatheme` on-disk
+  distribution/loader).
+
 ## 2026-06-11 — Phase 3 follow-on (D18): nav-remap Settings UI (gamepad) — ✅ shipped + merged (operator playtested)
 
 > Branch `feat/theming-nav-remap-settings`. The D18 follow-on after the S2 swap gate — the
