@@ -56,6 +56,15 @@ import { setHelpDialog, setWizardOpen } from "@oa/platform/dialogs";
 import { addLibraryFolder, rescanLibraryFolders } from "@oa/platform/libraryAdmin";
 import SettingRow from "@oa/platform/components/SettingRow";
 import {
+  navBindings,
+  setNavBindings,
+  rawGamepadButtonForVerb,
+  rebindGamepadVerb,
+  DEFAULT_BINDINGS,
+  type NavButton,
+  type NavVerb,
+} from "@oa/platform/nav";
+import {
   SCALING_MODE_LABELS,
   SCALING_OPTIONS,
   WINDOW_MODE_LABELS,
@@ -356,6 +365,132 @@ const GameFocusToggleCard: Component = () => {
 
 // --- Controller navigation --------------------------------------------
 
+// --- Nav button mapping (D18 remap UI) --------------------------------------
+//
+// Rebinds the SHELL-NAVIGATION verbs to physical gamepad buttons (the OA-wide
+// `navBindings` map). This is the menu/UI nav layer — NOT the per-system
+// gameplay bindings (SystemBindingsEditor maps a pad to the emulated console).
+// Edits the LIVE `navBindings` signal, so dispatch + every on-screen glyph
+// update instantly (no restart) and persist to `nav_bindings.json`.
+//
+// Scope: the gamepad ACTION/structural verbs. Directional movement stays on the
+// D-pad / left stick (not per-button remappable in S1). The keyboard arrows +
+// native Enter/Esc are the always-reachable escape hatch (D18) — they aren't
+// editable here, so a user can never strand themselves with no way to confirm.
+
+/// Action/structural verbs the gamepad map binds (directions excluded; the
+/// reserved no-consumer verbs Search/Favorite/Page omitted until they do
+/// something).
+const REMAP_VERBS: ReadonlyArray<{ verb: NavVerb; label: string; hint?: string }> = [
+  { verb: "Confirm", label: "Confirm", hint: "activate / launch" },
+  { verb: "Back", label: "Back", hint: "cancel" },
+  { verb: "Secondary", label: "Secondary", hint: "details / info" },
+  { verb: "Tertiary", label: "Tertiary" },
+  { verb: "PrevSection", label: "Previous section", hint: "cycle tabs ◄" },
+  { verb: "NextSection", label: "Next section", hint: "cycle tabs ►" },
+  { verb: "Menu", label: "Menu", hint: "context options" },
+  { verb: "OpenQuickSettings", label: "Quick settings" },
+];
+
+/// Physical buttons offered. Excludes Select (reserved for the Select+Start
+/// engine-summon chord) + stick clicks / Home (special).
+const REMAP_BUTTONS: ReadonlyArray<NavButton> = [
+  "a",
+  "b",
+  "x",
+  "y",
+  "l1",
+  "r1",
+  "l2",
+  "r2",
+  "start",
+];
+
+const REMAP_BUTTON_LABEL: Record<string, string> = {
+  a: "A",
+  b: "B",
+  x: "X",
+  y: "Y",
+  l1: "LB / L1",
+  r1: "RB / R1",
+  l2: "LT / L2",
+  r2: "RT / R2",
+  start: "Start",
+};
+
+const NavRemapCard: Component = () => {
+  // Set `verb`'s gamepad button (or unbind), with conflict resolution in the
+  // pure helper — assigning a button steals it from any verb that had it (that
+  // verb's row re-renders as Unbound). Persists + applies instantly.
+  const rebind = (verb: NavVerb, button: NavButton | null): void => {
+    void setNavBindings(rebindGamepadVerb(navBindings(), verb, button));
+  };
+
+  const currentButton = (verb: NavVerb): NavButton | null =>
+    rawGamepadButtonForVerb(navBindings(), verb);
+  const defaultButton = (verb: NavVerb): NavButton | null =>
+    rawGamepadButtonForVerb(DEFAULT_BINDINGS, verb);
+
+  const confirmUnbound = (): boolean => currentButton("Confirm") === null;
+  const backUnbound = (): boolean => currentButton("Back") === null;
+
+  return (
+    <SettingsCard
+      title="Button mapping"
+      description="Rebind how the gamepad drives the menus (not in-game controls — those are per-system, in Library Manager). Changes apply instantly. D-pad / left stick always move focus; keyboard arrows + Enter/Esc always work as a fallback."
+    >
+      <Show when={confirmUnbound() || backUnbound()}>
+        <div class="rounded-md border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-xs leading-relaxed text-amber-200/90">
+          {confirmUnbound() && backUnbound()
+            ? "Confirm and Back"
+            : confirmUnbound()
+              ? "Confirm"
+              : "Back"}{" "}
+          {confirmUnbound() && backUnbound() ? "have" : "has"} no gamepad button. The keyboard
+          (Enter / Esc) still works, but you may want to assign a button below.
+        </div>
+      </Show>
+
+      <For each={REMAP_VERBS}>
+        {(row) => {
+          const cur = (): NavButton | null => currentButton(row.verb);
+          const def = (): NavButton | null => defaultButton(row.verb);
+          return (
+            <SettingRow
+              label={row.label}
+              hint={row.hint}
+              inherited={null}
+              overridden={cur() !== def()}
+              onReset={() => rebind(row.verb, def())}
+              select={{
+                value: cur() ?? "",
+                options: [
+                  { value: "", label: "— Unbound —" },
+                  ...REMAP_BUTTONS.map((b) => ({ value: b, label: REMAP_BUTTON_LABEL[b] })),
+                ],
+                onChange: (v) => rebind(row.verb, v === "" ? null : (v as NavButton)),
+              }}
+            />
+          );
+        }}
+      </For>
+
+      <div class="flex items-center justify-between gap-4 pt-1">
+        <p class="text-xs text-(--color-oa-ink-dim)">
+          The “Swap A and B” toggle above applies on top of this mapping.
+        </p>
+        <button
+          type="button"
+          onClick={() => void setNavBindings(DEFAULT_BINDINGS)}
+          class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
+        >
+          Reset to defaults
+        </button>
+      </div>
+    </SettingsCard>
+  );
+};
+
 export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (props) => {
   return (
     <div class="flex flex-col gap-4">
@@ -402,6 +537,7 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
           description="How long the focus ring transitions when moving between elements."
         />
       </SettingsCard>
+      <NavRemapCard />
       <GameFocusToggleCard />
     </div>
   );

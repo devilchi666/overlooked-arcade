@@ -1054,3 +1054,42 @@ primitives slice.
 **Why record this:** (1) keep-CoverFlow-on-the-primitive and (2) wheel-reserved-not-half-built
 are the two a later contributor could erode — by forking CoverFlow's layout back off the
 primitive "to tweak it," or by fleshing out WheelNav before a consumer exists (dead radial code).
+
+---
+
+### D30 — Nav-remap Settings UI: dropdown-per-verb, gamepad-scoped, conflict-by-steal, keyboard escape hatch (Phase 3 D18 follow-on)
+
+**Decision (2026-06-11, `feat/theming-nav-remap-settings`):** the design of the shell-nav remap
+Settings surface (the D18 follow-on after the S2 swap gate). This edits the OA-wide `navBindings`
+map (built in S1) — the **menu/UI** nav layer, distinct from the per-system **gameplay** bindings
+(`SystemBindingsEditor`).
+
+1. **Dropdown-per-verb, NOT "press-to-bind."** Each action verb gets a `<select>` of physical
+   buttons. A press-to-bind capture mode was rejected: the gamepad is actively *driving the menu*
+   (the nav bus), so capturing a raw press would fight the very input that's navigating the
+   Settings screen. Dropdowns are robust across mouse / keyboard / controller-as-cursor and need
+   no capture-vs-dispatch arbitration. (A press-to-bind affordance could be added later as an
+   enhancement, but the dropdown is the correct accessible baseline.)
+
+2. **Scope = gamepad ACTION/structural verbs only.** Directional movement stays on the D-pad /
+   left stick (not per-button remappable in S1). The reserved no-consumer verbs (Search /
+   Favorite / Page) are omitted until they do something. The **keyboard** channel (arrows + native
+   Enter/Esc) is deliberately **not editable here** — it's the **always-reachable escape hatch**
+   D18 requires: a user can never remap themselves into a corner with no way to confirm/back.
+
+3. **Conflict resolution = button-steal, surfaced by re-render.** The map is button-keyed
+   (one button → one verb), so `rebindGamepadVerb` (pure, in `navBindings.ts`) clears the verb's
+   old button and, if the target button belonged to another verb, transfers it — that verb's row
+   re-renders as Unbound. The operator *sees* the conflict resolve. A soft warning flags Confirm/
+   Back being unbound (keyboard still covers it). No hard block — the keyboard escape hatch makes
+   a deadlock impossible.
+
+4. **Edits the LIVE signal — instant, no restart.** `setNavBindings` updates the reactive
+   `navBindings` signal (focus dispatch + HintBar glyphs repaint immediately) and persists to
+   `nav_bindings.json`. Unlike the theme swap (D5, restart), a binding change is live. Lives in
+   the existing **Controller navigation** card group (Controls), below the A/B-swap toggle (which
+   stays a separate resolve-time overlay, D21 — noted in the card so the two don't confuse).
+
+**Why record this:** (1) dropdown-not-press-to-bind (someone may "improve" it into a capture mode
+that fights the nav bus) and (2) the keyboard-as-fixed-escape-hatch (someone may make it editable
+and reintroduce the deadlock risk) are the two a later contributor could get wrong.

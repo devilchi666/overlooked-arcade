@@ -9,6 +9,37 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 follow-on (D18): nav-remap Settings UI — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-nav-remap-settings`. The D18 follow-on after the S2 swap gate — the
+> Settings surface that edits the OA-wide shell-nav `navBindings` map (built in S1). DECISIONS
+> **D30**. This is the **menu/UI** nav remap, NOT the per-system gameplay bindings.
+
+- **Shipped:**
+  - **`NavRemapCard`** in `engine/SettingsSections.tsx` — a "Button mapping" card rendered inside
+    the existing **Controller navigation** Settings category (Controls), below the A/B-swap
+    toggle. One `SettingRow` per action/structural verb (Confirm / Back / Secondary / Tertiary /
+    Previous-section / Next-section / Menu / Quick-settings) with a `select` of the remappable
+    physical buttons (A/B/X/Y/LB/RB/LT/RT/Start) + "— Unbound —". Edits the **live `navBindings`
+    signal**, so dispatch + every on-screen glyph update **instantly (no restart)** and persist to
+    `nav_bindings.json`. Per-row **Reset** (to that verb's default button) + a card-level **Reset
+    to defaults**.
+  - **Pure remap helpers** in `navBindings.ts`: `rebindGamepadVerb(bindings, verb, button)` —
+    one-button-per-verb with **conflict resolution** (assigning a button steals it from whatever
+    verb had it → that verb's row re-renders as Unbound) + `rawGamepadButtonForVerb` (no-swap
+    lookup the UI shows/edits, vs the swap-aware `buttonForVerb` the HintBar paints).
+  - **Escape-hatch + validation (D18):** the keyboard arrows + native Enter/Esc are NOT editable
+    here, so a user can never strand themselves with no way to confirm/back. A soft amber warning
+    appears when Confirm or Back has no gamepad button (still reachable via keyboard).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 58 passed**
+  (51 + 7 new `navBindings.test.ts`: raw lookup, fresh-bind, move-clears-old, conflict-steal,
+  unbind, no-mutation); `npm run build` green. Frontend-only.
+- **Next:** **operator playtest** — Settings → Controls → Controller navigation → Button mapping:
+  remap e.g. Confirm to a different button, watch hints repaint live + the binding take effect
+  immediately; verify the conflict-steal + the Reset buttons; restart and confirm it persisted.
+  Then merge. **That closes the last Phase-3 thread** (the remaining ARC-1 work is the original
+  §6 Phase 5 `.oatheme` distribution + Phase 6 full Retroverse-as-theme move).
+
 ## 2026-06-11 — Phase 3 S5.5: primitives (carousel/custom + reserved wheel + nav-sound + background revival) — ✅ shipped + merged (merge `105fad8`) — **CLOSES S5 + the Phase-3 substrate-depth arc**
 
 > Branch `feat/theming-s5-5-primitives`. The LAST S5 micro-slice — closes the Phase-3
