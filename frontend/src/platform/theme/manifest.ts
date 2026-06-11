@@ -32,6 +32,22 @@ export type ReservedCorner = "top-right";
  * render via `ThemeEntryProps.surface` (platform/theme/types.ts). */
 export type ThemeSurface = "main";
 
+/** Manifest schema revisions this OA build can load. ARC 1 ships exactly
+ * one (`1`). A theme declaring a `schema_version` outside this set is
+ * rejected by the S4 validator (`UNSUPPORTED_SCHEMA_VERSION`) and falls back
+ * to the default theme. A single set (not a min/max range) is deliberate for
+ * ARC 1 — when a breaking schema change lands, add the new revision here and,
+ * if old themes should keep loading, a migration; the validator already
+ * distinguishes "too new" (declared > max known) from "unknown" in its
+ * message. Source of truth for the current revision is the `schema_version`
+ * field doc below. */
+export const SUPPORTED_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([1]);
+
+/** The newest manifest schema revision this build understands — used only to
+ * phrase the validator's mismatch message ("targets a newer schema; update
+ * OA" vs. "unsupported schema"). */
+export const MAX_SCHEMA_VERSION = Math.max(...SUPPORTED_SCHEMA_VERSIONS);
+
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */
   id: string;

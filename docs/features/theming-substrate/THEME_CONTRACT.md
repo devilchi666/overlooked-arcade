@@ -6,7 +6,8 @@ engine vs theme territory; this doc says *what a theme may declare and
 override*, and what the substrate guarantees in return.
 
 **Status:** ARC 1. Written in Phase 3 S3 (the token layer). The S4 load-time
-validator checks a theme against this document.
+validator (`platform/theme/validate.ts`) checks a theme against this document;
+the `bare` theme (`themes/bare/`) is its canonical minimal-valid fixture.
 
 A theme is a `ThemePackage` (`frontend/src/platform/theme/types.ts`):
 
@@ -120,13 +121,39 @@ Inherited by every theme, sitting *outside* the token contract:
 - The default palette is contrast-checked; a theme overriding palette tokens is
   responsible for its own contrast.
 
-## 6. What the S4 validator will check
+## 6. What the S4 validator checks (and what it can't)
 
-- Manifest parses; required fields present; `schema_version` supported.
-- Declared `surfaces` ⊆ the surfaces the shell honors (`main` in ARC 1).
-- `required_engine_capabilities` ⊆ the engine's advertised capabilities.
-- `tokens` keys ∈ `ThemeTokens`; values are non-empty strings.
-- No global `:root` / engine-variable override escapes (the §4 rule).
+`validateTheme(pkg)` (`platform/theme/validate.ts`) is a pure function over a
+theme's **declarative surface** — its manifest + its typed `tokens` object. It
+returns structured `errors` (disqualifying → the theme is excluded from the
+picker and can't be the active shell) and `warnings` (non-fatal → loaded, but
+surfaced). It runs at registration (dev-loud) and as a Vitest CI gate over
+`BUILTIN_THEMES` + the `bare` fixture, so a built-in drifting from this contract
+**fails the build**.
 
-The `bare` theme fixture (S4) is the canonical valid-minimal theme the validator
-tests against.
+**Enforced now (data):**
+- Manifest required fields present + non-empty; `schema_version` ∈
+  `SUPPORTED_SCHEMA_VERSIONS` (`{1}` in ARC 1; the message distinguishes
+  "targets a newer schema — update OA" from "unsupported schema").
+- `surfaces` non-empty and ⊆ the surfaces the shell honors (`["main"]` in ARC 1).
+- `required_engine_capabilities` ⊆ the engine's advertised capabilities
+  (`ENGINE_CAPABILITIES` — **empty in ARC 1**, so only `[]` validates).
+- `tokens` keys ∈ `ThemeTokens` (the `TOKEN_VAR` map); values non-empty strings.
+  *This is the data half of the §4 no-override rule:* a theme can only set token
+  keys that map to known, sibling-scoped CSS vars, so even a hostile token
+  **value** can't escape the theme mount.
+- Warnings: non-directory-safe `id`; `default_route` ∉ `routes`.
+
+**Backed structurally (not by the validator):** the §4 "no global `:root` /
+engine-variable override" guarantee. The real protection is the S3
+**sibling-scope mount** (a theme's scoped tokens physically cannot reach engine
+territory) + the ESLint **layer boundary** (a theme can't import `engine/`).
+
+**Deferred (a known gap):** a theme that bypasses the token system entirely — a
+`<style>:root{…}</style>` in its JSX, a `document.head.appendChild`, or an
+imported global stylesheet — is **invisible** to a package-object validator (the
+entry is an opaque component; the validator never inspects source text or
+rendered output). Closing that needs either a fragile source-scanning lint or a
+runtime DOM guard; both are heavier than S4 and a **Phase-5 / untrusted-author**
+concern (on-disk `.oatheme`s). Built-in themes are reviewed, so the structural
+guarantee + boundary lint are sufficient for ARC 1. (DECISIONS D24.)

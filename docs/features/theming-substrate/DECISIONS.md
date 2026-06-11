@@ -755,3 +755,77 @@ note + what the S4 validator checks).
 motion-is-ARC-2 boundary are the two a later contributor could most easily erode — by
 "helpfully" letting a theme ship global CSS, or by sneaking animation into the token
 layer because the web stack makes it easy.
+
+---
+
+### D24 — Manifest validator: declarative-surface gate + Vitest CI + bare-as-fixture (Phase 3 S4)
+
+**Decision (2026-06-10, `feat/theming-manifest-validator`):** the build choices for the
+S4 versioned-manifest + load-time validator, locked with operator sign-off (four
+AskUserQuestion answers, all the recommended path) before writing.
+
+1. **The validator checks the DECLARATIVE surface only; it's a pure function.**
+   `validateTheme(pkg)` (`platform/theme/validate.ts`) reads a ThemePackage's `manifest`
+   + typed `tokens` and returns `{themeId, ok, errors, warnings}`; it never throws, never
+   touches the DOM. It covers THEME_CONTRACT.md §6's manifest / `schema_version` /
+   `surfaces` / `required_engine_capabilities` / token-key / token-value checks. The
+   token-key check (keys ∈ `TOKEN_VAR`) IS the data half of the "no engine-var override"
+   rule: a theme can only set keys mapping to known sibling-scoped CSS vars, so even a
+   hostile token VALUE can't escape the mount.
+
+2. **The "no global `:root` override" rule is NOT runtime-enforced — by choice.** A
+   theme's entry is an opaque Solid component; a `<style>:root{}`/`document.head`/global-
+   CSS-import bypass is invisible to a package-object validator. The real protection is
+   STRUCTURAL (the S3 sibling-scope mount — scoped tokens physically can't reach engine
+   territory) + the ESLint layer boundary (theme ↛ engine). Static source inspection of
+   the bypass is a deferred **Phase-5 / untrusted-author** concern; built-ins are
+   reviewed. Documented as a known gap in THEME_CONTRACT.md §6. *Constraint:* don't
+   present the validator as a security boundary against malicious global CSS — it isn't;
+   the sibling-scope is.
+
+3. **Two run sites: registration-time (dev-loud) + a Vitest CI gate (the hard one).**
+   `registerThemes()` validates each package, **excludes invalid ones from the valid
+   set** (so they can't be picked or activated), logs errors always (an operator may
+   wonder why a theme vanished; the log is captured) and warnings in DEV only. The
+   authoritative drift-stopper is the **Vitest** suite — which required standing up the
+   frontend's **first test runner** (there was none; CI was lint + build + `cargo test`,
+   and the manifests are TS objects with no Rust visibility per D6, so the gate HAD to be
+   TS). Added `vitest` + `jsdom` + `vitest.config.ts` (reuses `vite-plugin-solid` + the
+   `@oa/platform` alias) + an `npm run test` CI step. An `overrides: { vite }` pin
+   dedupes vitest's nested vite so the Solid-plugin types don't clash. *Constraint:* keep
+   one vite — drop the override and the dual-vite type error returns.
+
+4. **The validator test lives in `themes/`, not `platform/`.** Validating the REAL
+   bundled themes means importing them, and the ESLint boundary forbids `platform ↛
+   themes`. `themes/` is the one layer allowed to see both the concrete themes and the
+   platform validator, so `themes/builtin-themes.test.ts` is the correct home for the
+   cross-layer gate; the pure unit tests (crafted-invalid fixtures, no theme import) stay
+   in `platform/theme/validate.test.ts`.
+
+5. **`bare` is a REAL theme in the picker, doubling as the fixture.** `themes/bare/`
+   (added to `BUILTIN_THEMES`) is the minimal valid whole-shell — a plain ListNav of
+   games + launch-on-Confirm + the `EngineSummonIcon`, **no tokens**, ~110 LOC, system-
+   agnostic. It's operator-selectable (the north-star "low floor" made switchable +
+   dogfooded end-to-end: browse / launch / restart) AND the canonical fixture the CI gate
+   validates. One artifact, both jobs — so the lowest-floor reference can never silently
+   drift from what the validator accepts.
+
+6. **`schema_version` is a supported-SET (`{1}`), not a min/max range.** `MISSING_FIELD`
+   if absent/non-number; `UNSUPPORTED_SCHEMA_VERSION` otherwise, with the message
+   distinguishing "targets a newer schema than this build (up to N) — update OA" (declared
+   > max known) from "unsupported schema". A range + migrations waits for the first
+   breaking schema bump.
+
+7. **Fallback loudness = toast + console (ARC 1).** When the persisted `active_theme_id`
+   isn't a valid choice (renamed/removed like wheel→coverflow, or now-invalid),
+   `activeTheme()` already falls back to the default (first valid); `initActiveTheme()`
+   now ALSO raises a `warn` toast naming the fallback + pointing at Settings → Themes. The
+   Phase-5 §6 **persistent banner** is deferred to when real on-disk themes can fail in
+   the field — in ARC 1 a built-in can only fail via a CI-caught dev bug, so a sticky
+   banner would be premature. The default theme is a **CI-guaranteed-valid invariant**
+   (the Vitest gate asserts Retroverse validates), so there is always ≥1 valid theme.
+
+**Why record this:** (2) the "validator is not the `:root` boundary" framing and (3) the
+one-vite override are the two a later contributor could most easily get wrong — by adding
+a runtime CSS-scan and calling the gap closed, or by "cleaning up" the override and
+reintroducing the dual-vite type clash.
