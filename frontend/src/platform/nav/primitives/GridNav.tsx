@@ -8,7 +8,7 @@
 // Wheel/Retroverse skeletons consume for tile grids; VirtualLibraryGrid keeps
 // its bespoke virtualized useFocusGroup usage.
 
-import { createSignal, For, type Accessor, type Component } from "solid-js";
+import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
 import type { NavPrimitiveBaseProps } from "./types";
@@ -40,10 +40,30 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
     setFocusedIndex,
     neighbours: props.neighbours,
     autoClaim: props.autoActivate,
-    onActivate: (i) => props.onConfirm?.(i, itemsArr()[i]),
-    onCancel: () => props.onBack?.(),
-    onSecondary: (i) => props.onSecondary?.(i, itemsArr()[i]),
+    onActivate: (i) => {
+      props.onConfirm?.(i, itemsArr()[i]);
+      props.onNavSound?.("confirm", itemsArr()[i]);
+    },
+    onCancel: () => {
+      props.onBack?.();
+      props.onNavSound?.("back", undefined);
+    },
+    onSecondary: (i) => {
+      props.onSecondary?.(i, itemsArr()[i]);
+      props.onNavSound?.("secondary", itemsArr()[i]);
+    },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
+  });
+
+  // Nav-sound on focus move (scope-call #6) — see ListNav for the tracking note.
+  let firstSettle = true;
+  createEffect(() => {
+    const idx = focusedIndex();
+    if (firstSettle) {
+      firstSettle = false;
+      return;
+    }
+    props.onNavSound?.("move", untrack(() => itemsArr()[idx]));
   });
 
   return (
@@ -72,6 +92,7 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
                 group.activate();
                 setFocusedIndex(i());
                 props.onConfirm?.(i(), item);
+                props.onNavSound?.("confirm", item);
               }}
             >
               {props.children(item, { index: i(), focused })}

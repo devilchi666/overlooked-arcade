@@ -17,3 +17,6 @@ export * from "./HintBar";
 export * from "./primitives/types";
 export * from "./primitives/ListNav";
 export * from "./primitives/GridNav";
+export * from "./primitives/CarouselNav";
+export * from "./primitives/CustomNav";
+export * from "./primitives/WheelNav";

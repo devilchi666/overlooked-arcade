@@ -21,6 +21,7 @@
 
 import { createSignal, type Accessor } from "solid-js";
 import { dispatchUiSound, type UiSoundEvent } from "@oa/platform/lib/audio";
+import type { NavSoundEvent } from "@oa/platform/nav";
 import type { SystemId } from "./registry";
 import { uiConfigFor } from "./systemUIConfigs";
 
@@ -57,4 +58,28 @@ export function playSystemUiSound(systemId: SystemId, event: UiSoundEvent): void
   if (!enabledSig()) return;
   if (uiConfigFor(systemId).audioProfile === "none") return;
   void dispatchUiSound(systemId, event);
+}
+
+/// Maps a primitive's coarse `NavSoundEvent` to a per-system `UiSoundEvent`.
+const NAV_SOUND_EVENT: Record<NavSoundEvent, UiSoundEvent> = {
+  move: "navigate",
+  confirm: "launch",
+  back: "back",
+  secondary: "click",
+};
+
+/// Engine-default `onNavSound` handler for the nav primitives (scope-call #6). A
+/// theme wires `onNavSound={navSoundDispatcher((item) => item?.systemId)}`; the
+/// primitive's move/confirm/back/secondary events then play that item's
+/// per-system UI sound (through the master-toggle + audioProfile gating +
+/// theme→platform resolver cascade — same path as the library grid). Generic on
+/// the item type via a `systemIdOf` selector, so the nav layer never needs to
+/// know an item carries a system.
+export function navSoundDispatcher<T>(
+  systemIdOf: (item: T | undefined) => SystemId | undefined,
+): (event: NavSoundEvent, item: T | undefined) => void {
+  return (event, item) => {
+    const systemId = systemIdOf(item);
+    if (systemId) playSystemUiSound(systemId, NAV_SOUND_EVENT[event]);
+  };
 }

@@ -11,7 +11,7 @@
 // …) keep their own useFocusGroup usage. This is the theme-facing primitive the
 // S2 walking-skeleton themes (Retroverse / Wheel) consume.
 
-import { createSignal, For, type Accessor, type Component } from "solid-js";
+import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
 import type { NavPrimitiveBaseProps } from "./types";
@@ -40,10 +40,32 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
     setFocusedIndex,
     neighbours: props.neighbours,
     autoClaim: props.autoActivate,
-    onActivate: (i) => props.onConfirm?.(i, itemsArr()[i]),
-    onCancel: () => props.onBack?.(),
-    onSecondary: (i) => props.onSecondary?.(i, itemsArr()[i]),
+    onActivate: (i) => {
+      props.onConfirm?.(i, itemsArr()[i]);
+      props.onNavSound?.("confirm", itemsArr()[i]);
+    },
+    onCancel: () => {
+      props.onBack?.();
+      props.onNavSound?.("back", undefined);
+    },
+    onSecondary: (i) => {
+      props.onSecondary?.(i, itemsArr()[i]);
+      props.onNavSound?.("secondary", itemsArr()[i]);
+    },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
+  });
+
+  // Nav-sound on focus move (scope-call #6) — tracks ONLY focusedIndex (items
+  // read untracked so a data change doesn't fire a spurious move); skips the
+  // initial settle. No-op unless the theme wired `onNavSound`.
+  let firstSettle = true;
+  createEffect(() => {
+    const idx = focusedIndex();
+    if (firstSettle) {
+      firstSettle = false;
+      return;
+    }
+    props.onNavSound?.("move", untrack(() => itemsArr()[idx]));
   });
 
   return (
@@ -69,6 +91,7 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
                 group.activate();
                 setFocusedIndex(i());
                 props.onConfirm?.(i(), item);
+                props.onNavSound?.("confirm", item);
               }}
             >
               {props.children(item, { index: i(), focused })}
