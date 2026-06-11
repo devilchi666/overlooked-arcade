@@ -45,7 +45,7 @@ import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { setCurrentRoute } from "../../routing/currentRoute";
 import SystemInfoPanel from "./SystemInfoPanel";
 import { getSystemInfo, type MergedSystemInfo } from "@oa/platform/library/systemInfo";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 
 function formatHours(secs: number): string {
   if (secs <= 0) return "—";

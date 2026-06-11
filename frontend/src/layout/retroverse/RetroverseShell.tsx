@@ -25,7 +25,7 @@ import {
   type RetroverseRoute,
 } from "../../routing/currentRoute";
 import { onNavEvent } from "@oa/platform/nav";
-import { useTheme, themePreempted } from "../../routes/retroverse/context";
+import { useTheme, themePreempted } from "@oa/platform/theme/host";
 import CollectionsPage from "../../routes/retroverse/CollectionsPage";
 import DiscoverPage from "../../routes/retroverse/DiscoverPage";
 import HomePage from "../../routes/retroverse/HomePage";

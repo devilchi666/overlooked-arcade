@@ -25,7 +25,7 @@ import GameDetailPanel from "./GameDetailPanel";
 import { HintRegion } from "@oa/platform/nav";
 import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 
 // Per-system classification for the Quick / Marathon / Challenge moods.
 // We don't track session length per launch, so we use the system as a

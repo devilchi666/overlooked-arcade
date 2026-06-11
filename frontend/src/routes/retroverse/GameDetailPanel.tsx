@@ -28,7 +28,7 @@ import {
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 import { updateGameCoreOverride } from "@oa/platform/api/libraryApi";
 import { emitEvent, OA_EVENTS } from "@oa/platform/api/eventsApi";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 
 type Props = {
   entry: RomEntry;

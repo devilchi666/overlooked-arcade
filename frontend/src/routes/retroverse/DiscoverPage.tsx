@@ -25,7 +25,7 @@ import {
 import type { EntryGroup } from "@oa/platform/library/filter";
 import { useMedia, type GameMetadata } from "@oa/platform/library/media";
 import type { RomEntry } from "@oa/platform/library/types";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 
 type AxisId =
   | "featured"

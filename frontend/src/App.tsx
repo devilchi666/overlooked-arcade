@@ -91,7 +91,7 @@ import {
 } from "@oa/platform/theme/registry";
 import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
-import { ThemeProvider } from "./routes/retroverse/context";
+import { ThemeProvider } from "@oa/platform/theme/host";
 import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
 import {

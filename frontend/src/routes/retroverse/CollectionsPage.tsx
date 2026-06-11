@@ -32,7 +32,7 @@ import {
 } from "@oa/platform/nav";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
-import { useTheme } from "./context";
+import { useTheme } from "@oa/platform/theme/host";
 
 type SmartListId =
   | "favorites"
