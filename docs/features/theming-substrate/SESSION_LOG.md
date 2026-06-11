@@ -9,6 +9,48 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-10 — Phase 3 S5.1: resolver theme tier — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-s5-1-resolver-theme-tier`. First of **five S5 micro-slices**
+> (operator chose per-sub-area slicing; order = contracts first). Adds the **theme
+> tier** to the two existing per-system resolvers — generalize/connect the shipped
+> Per-System-UI machinery into the theme cascade, NOT rebuild it. DECISIONS **D25**.
+
+- **Shipped** (plan §13.3 S5 item 2 + scope-call #6 first half):
+  - **Rust — theme tier on both resolvers.** `resolve_background_asset` +
+    `resolve_ui_sound` gain a leading `themeId: Option<String>` param and now walk a
+    **theme→platform cascade** via a new shared helper
+    `system_ui_assets::candidate_asset_bases(assets_dir, theme_id, system_id, category)`
+    (both are `oa-shell` modules, so the cascade isn't duplicated). Order:
+    *(ui-sound only)* operator override → **theme/<system>** → **theme/_baseline** →
+    system/<system> → system/_baseline → null. Background uses the same minus the
+    operator-override tier. Theme overrides home at
+    **`<exe_dir>/assets/themes/<themeId>/system-ui/<systemId>/<category>/`** (operator-
+    droppable TODAY — no Phase-5 loader needed; mirrors the existing `assets/system-ui/`
+    layout). The theme **`_baseline`** tier lets a system-agnostic theme (D19) ship one
+    theme-wide backdrop/cue instead of 45 per-system copies. `asset_slug_is_safe` shared
+    + applied to both theme id (skips just the theme tier) and system id (refuses the
+    resolve).
+  - **Frontend — ambient threading, zero consumer churn.** The api wrappers
+    (`mediaApi.resolveBackgroundAsset`, `shellApi.resolveUiSound`) take `themeId` first
+    (pure typed pass-through, D14). The **dispatchers** resolve it ambiently —
+    `lib/audio.ts::dispatchUiSound` and `SystemBackground`'s `resolveBackgroundUrl`
+    read `activeThemeId()` and pass it down — so grid nav / boot animation / the
+    background component (every consumer) are **unchanged**.
+- **Verified:** `cargo test -p oa-shell` = **830 passed** (822 baseline + 8 new
+  theme-tier cascade tests, incl. theme-overrides-per-system, theme-`_baseline`-wide,
+  fall-through, and unsafe-theme-id-skips-only-the-theme-tier, for both resolvers).
+  `npm run typecheck` + `npm run lint` green; `npm run test` = 25 passed;
+  `npm run build` green.
+- **Almost:** nothing in S5.1 scope left. (The #6 verb→sound **hook in the primitives**
+  rides S5.5, where the primitives are built.)
+- **Next (operator):** **playtest S5.1.** It's invisible by default (best-effort, silent
+  on miss). To see the theme tier: with a theme active, drop e.g.
+  `…/assets/themes/coverflow/system-ui/_baseline/backgrounds/default.png` and confirm it
+  paints the CoverFlow backdrop; remove it → falls back to the platform/gradient. Then
+  merge. **After merge: S5.2 — palette substrate** (typed `SYSTEM_PALETTES` map +
+  per-theme override seam).
+
 ## 2026-06-10 — Phase 3 S4: versioned manifest + load-time validator (`bare` fixture) — ✅ shipped + merged (operator playtested)
 
 > Branch `feat/theming-manifest-validator`. Turns THEME_CONTRACT.md §6 from a

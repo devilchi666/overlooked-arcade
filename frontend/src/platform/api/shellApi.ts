@@ -116,8 +116,16 @@ export function writeScummvmDescriptors<W>(writes: W): Promise<number> {
 // --- Sounds -------------------------------------------------------------
 
 /// Resolve a per-system UI-sound event to a file path (null = no override).
-export function resolveUiSound(systemId: string, event: string): Promise<string | null> {
-  return invoke<string | null>("resolve_ui_sound", { systemId, event });
+/// `themeId` is the active theme's id (or `null`) — S5.1's theme tier checks
+/// `assets/themes/<themeId>/system-ui/…/sounds/` between the operator
+/// override and the platform per-system + `_baseline` cues. The dispatcher
+/// (`platform/lib/audio.ts`) resolves the active id ambiently.
+export function resolveUiSound(
+  themeId: string | null,
+  systemId: string,
+  event: string,
+): Promise<string | null> {
+  return invoke<string | null>("resolve_ui_sound", { themeId, systemId, event });
 }
 
 /// Resolve the platform music for a (system, optional game) pair.

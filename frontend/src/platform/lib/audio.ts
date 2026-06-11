@@ -16,6 +16,7 @@ import { createSignal, type Accessor } from "solid-js";
 import { resolvePlatformMusic, resolveUiSound } from "@oa/platform/api/shellApi";
 import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import * as settingsApi from "@oa/platform/api/settingsApi";
+import { activeThemeId } from "@oa/platform/theme/registry";
 
 export type AudioBus = "platform-music" | "ui-sounds" | "ceremony" | "snap-audio";
 
@@ -138,7 +139,10 @@ export async function dispatchUiSound(
   event: UiSoundEvent,
 ): Promise<void> {
   try {
-    const path = await resolveUiSound(systemId, event);
+    // S5.1: the active theme's id is ambient — resolved here so the many
+    // call sites (grid nav, boot animation, …) don't thread it. The Rust
+    // resolver checks the theme's sound bank before the platform cues.
+    const path = await resolveUiSound(activeThemeId(), systemId, event);
     if (path) {
       await playAudio("ui-sounds", path, false);
     }

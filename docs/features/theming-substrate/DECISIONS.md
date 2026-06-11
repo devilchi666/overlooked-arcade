@@ -829,3 +829,50 @@ AskUserQuestion answers, all the recommended path) before writing.
 one-vite override are the two a later contributor could most easily get wrong — by adding
 a runtime CSS-scan and calling the gap closed, or by "cleaning up" the override and
 reintroducing the dual-vite type clash.
+
+---
+
+### D25 — Resolver theme tier: `assets/themes/<id>/` home + 4-tier cascade + ambient themeId (Phase 3 S5.1)
+
+**Decision (2026-06-10, `feat/theming-s5-1-resolver-theme-tier`):** build choices for
+adding the theme tier to the per-system **asset** + **ui-sound** resolvers — the first of
+the five S5 micro-slices (operator chose per-sub-area slicing; this is S5.1, the resolver
+cascade). The S5 design forks were signed off via AskUserQuestion before code.
+
+1. **Theme override assets home under `<exe_dir>/assets/themes/<themeId>/system-ui/
+   <systemId>/<category>/` — NOT the Phase-5 `<exe_dir>/themes/<id>/` loader path.**
+   ARC-1 themes are JS-bundled (D6 — no on-disk theme folder yet), so homing theme
+   *asset* overrides under the existing `assets/` tree makes the theme tier
+   **operator-droppable today** without waiting on the Phase-5 loose-folder loader, and
+   mirrors the `assets/system-ui/<systemId>/<category>/` layout operators already know.
+   *Constraint:* when Phase 5 adds the loader, don't "move" these into the themes/ folder —
+   this stays the operator-override home; a bundled theme's own assets can be discovered
+   additionally.
+
+2. **A single 4-tier cascade with a theme `_baseline`, shared across both resolvers.**
+   Order: *(ui-sound only)* operator override → `theme/<system>` → `theme/_baseline` →
+   `system/<system>` → `system/_baseline` → null (background omits the operator tier).
+   The theme **`_baseline`** (theme-wide, not per-system) lets a system-agnostic theme
+   (D19) ship ONE backdrop/cue for the whole library instead of 45 per-system copies —
+   symmetric with the platform tier's per-system+`_baseline` shape. The ordered bases come
+   from one shared `candidate_asset_bases()` in `system_ui_assets.rs` (both resolvers are
+   `oa-shell` modules, so the cascade logic isn't duplicated across files); each resolver
+   supplies its own `category` + extension list.
+
+3. **Operator override stays ABOVE the theme tier (ui-sound).** An explicit per-system
+   file a user wired via the per-system audio UI is the most specific intent and beats a
+   theme's sound; the theme sits between operator-override and the platform bundles.
+
+4. **`themeId` is resolved AMBIENTLY in the dispatchers, not threaded through consumers.**
+   The api wrappers (`resolveBackgroundAsset` / `resolveUiSound`) take `themeId` explicitly
+   (pure typed pass-through, D14 convention). The dispatcher internals
+   (`lib/audio.ts::dispatchUiSound`, `SystemBackground`'s `resolveBackgroundUrl`) read
+   `activeThemeId()` and pass it down — so every *consumer* call site (grid nav, boot
+   animation, the background component) is **unchanged**. The active theme is ambient app
+   state; consumers shouldn't have to know about it. (`platform/lib` + `platform/components`
+   reading `platform/theme/registry` is intra-platform/allowed; runtime read, no init cycle.)
+
+**Why record this:** (1) the `assets/themes/` home vs the Phase-5 loader path and (4)
+ambient-vs-threaded are the two a later contributor could most easily undo — by relocating
+theme assets into the not-yet-existent themes/ loader folder, or by threading `themeId`
+through every `playSystemUiSound` / background call instead of resolving it once.

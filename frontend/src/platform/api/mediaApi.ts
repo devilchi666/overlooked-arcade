@@ -180,9 +180,17 @@ export function clearMetadataForSystem(systemId: string): Promise<MetadataClearR
 }
 
 /// Resolve a per-system background asset of `kind` ("default" | "animated")
-/// to an absolute path, or `null` when no file exists.
-export function resolveBackgroundAsset(systemId: string, kind: string): Promise<string | null> {
-  return invoke<string | null>("resolve_background_asset", { systemId, kind });
+/// to an absolute path, or `null` when no file exists. `themeId` is the
+/// active theme's id (or `null`) — S5.1's theme tier checks
+/// `assets/themes/<themeId>/system-ui/…` before the platform per-system +
+/// `_baseline` assets. Callers resolve the active id ambiently (see
+/// `SystemBackground`), so consumers don't thread it.
+export function resolveBackgroundAsset(
+  themeId: string | null,
+  systemId: string,
+  kind: string,
+): Promise<string | null> {
+  return invoke<string | null>("resolve_background_asset", { themeId, systemId, kind });
 }
 
 // --- libretro-thumbnails + metadata sync --------------------------------
