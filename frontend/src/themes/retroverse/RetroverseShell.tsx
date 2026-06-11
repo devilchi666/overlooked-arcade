@@ -23,14 +23,14 @@ import {
   cycleRouteBackward,
   RETROVERSE_ROUTES,
   type RetroverseRoute,
-} from "../../routing/currentRoute";
+} from "./currentRoute";
 import { onNavEvent } from "@oa/platform/nav";
 import { useTheme, themePreempted } from "@oa/platform/theme/host";
-import CollectionsPage from "../../routes/retroverse/CollectionsPage";
-import DiscoverPage from "../../routes/retroverse/DiscoverPage";
-import HomePage from "../../routes/retroverse/HomePage";
-import LibraryPage from "../../routes/retroverse/LibraryPage";
-import PlayNowPage from "../../routes/retroverse/PlayNowPage";
+import CollectionsPage from "./CollectionsPage";
+import DiscoverPage from "./DiscoverPage";
+import HomePage from "./HomePage";
+import LibraryPage from "./LibraryPage";
+import PlayNowPage from "./PlayNowPage";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
 import { openEngineSurface } from "../../platform/engineSurface";
 
