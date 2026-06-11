@@ -29,6 +29,11 @@
 // the HintBar paints ✕/◯/□/△ (the Launch hint reads ✕) while Retroverse keeps
 // the default Xbox A — a theme picking its controller-glyph identity in one field.
 //
+// S5.4 PER-THEME SETTINGS DEMO: the header "Compact" toggle writes a theme-owned
+// pref via `useThemeSettings()` (auto-bound to bare's id → collision-free, never
+// touches OA settings or another theme). It's localStorage-persisted, so the
+// density choice survives the restart-based theme swap.
+//
 // DUAL ROLE: themes/index.ts registers it (so the operator can switch to it and
 // see the floor end-to-end — browse + launch + restart all work), and
 // validate.test.ts validates this exact package as the "canonical minimal
@@ -38,6 +43,7 @@
 import { createMemo } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
+import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import { ListNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
@@ -75,6 +81,13 @@ const BARE_MANIFEST: ThemeManifest = {
 const BareEntry: ThemeEntry = (_props) => {
   const platform = usePlatform();
   const host = useTheme();
+  // S5.4 demo: a theme-owned pref in the collision-free per-theme namespace.
+  // `useThemeSettings()` auto-binds bare's id, so this writes `themeSettings.bare`
+  // only — never OA settings or another theme's slice. localStorage-persisted, so
+  // it survives the restart-based theme swap. `get` is reactive → the toggle
+  // repaints the list density live.
+  const settings = useThemeSettings();
+  const compact = (): boolean => settings.get<boolean>("compactRows", false);
 
   // Every real (non-seed) game, one row per identity (multi-disc / multi-region
   // collapse), sorted by title. Same dedup contract CoverFlow uses; the RomEntry
@@ -105,10 +118,22 @@ const BareEntry: ThemeEntry = (_props) => {
             {games().length} games · minimal reference theme
           </p>
         </div>
-        {/* D3 — every theme reserves the top-right slot for the engine summon
-            icon (F12 · Select+Start). The operator's always-available path back
-            to Settings → Themes to switch shells. */}
-        <EngineSummonIcon />
+        <div class="flex items-center gap-3">
+          {/* S5.4 demo — a theme-owned pref. Toggling persists to bare's slice of
+              the per-theme namespace and survives restart; the list density below
+              reacts live. */}
+          <button
+            type="button"
+            onClick={() => settings.set("compactRows", !compact())}
+            class="rounded border border-white/10 px-2.5 py-1 text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
+          >
+            {compact() ? "Compact ✓" : "Compact"}
+          </button>
+          {/* D3 — every theme reserves the top-right slot for the engine summon
+              icon (F12 · Select+Start). The operator's always-available path back
+              to Settings → Themes to switch shells. */}
+          <EngineSummonIcon />
+        </div>
       </header>
 
       <ListNav
@@ -124,10 +149,12 @@ const BareEntry: ThemeEntry = (_props) => {
           // system palette (baseline, or bare's scoped perSystemTokens override).
           <div
             data-system={entry.systemId}
-            class="flex items-center justify-between gap-4 rounded-md px-4 py-2.5"
+            class="flex items-center justify-between gap-4 rounded-md px-4"
             classList={{
               "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
               "text-(--color-oa-ink-dim)": !ctx.focused(),
+              "py-1": compact(),
+              "py-2.5": !compact(),
             }}
           >
             <div class="flex min-w-0 items-center gap-3">

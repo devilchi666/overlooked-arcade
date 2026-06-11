@@ -972,3 +972,38 @@ set; defer the picker + auto-detect."
 **Why record this:** (2) the App-bridge-not-nav-reads-theme direction and (3) warning-not-error
 are the two a later contributor could most easily undo — by coupling nav to the theme registry
 for "convenience," or by making a cosmetic mismatch disqualify a theme.
+
+---
+
+### D28 — Per-theme settings: localStorage namespace + active-id-bound accessor (Phase 3 S5.4)
+
+**Decision (2026-06-11, `feat/theming-s5-4-theme-settings`):** the per-theme settings
+namespace (scope-call #9).
+
+1. **One `localStorage` key, keyed by theme id — not Rust `LibraryPrefs`.** `oa.themeSettings`
+   → `{ [themeId]: { … } }`. Per-theme prefs are per-install/per-user, exactly like the OA
+   settings store (which is also `localStorage`), so they belong in the same frontend tier — no
+   Rust round-trip. Survives the restart-based swap (Tauri WebView localStorage persists to
+   disk). Backed by a Solid `createStore` so reads are reactive.
+
+2. **`useThemeSettings()` auto-binds the ACTIVE theme's id — that binding IS the collision
+   rule.** A theme calls `get(key, fallback)` / `set(key, value)` and **never names a theme
+   id**; the hook injects `activeTheme()?.manifest.id`. So a theme physically cannot read or
+   clobber another theme's slice (or OA settings, which live under a different key). This is a
+   **fourth** namespace alongside the locked OA-wide / per-system / per-game three-tier split —
+   distinct keyspace, collision-free by construction, no merging of tiers.
+
+3. **Persistence is best-effort (guarded), values are opaque JSON.** `load`/`persist` are
+   try/caught + `typeof localStorage` guarded, so a missing/broken store never breaks the app
+   (it degrades to in-memory). Values are generic on the caller's type arg (each theme declares
+   what it stored) — same opaque-blob convention as `nav_bindings.json`. *Test note:* the
+   Vitest runner ships only a partial `localStorage` stub, so the persistence test installs a
+   working in-memory one via `vi.stubGlobal` rather than relying on the env.
+
+4. **Live consumer = `bare`** (the test bed, per D26/D27): a header "Compact" toggle writes
+   `themeSettings.bare.compactRows` and the list density reacts + persists across a swap.
+
+**Why record this:** (1) localStorage-not-Rust and (2) the id-bound accessor are the two a
+later contributor could undo — by "promoting" theme prefs into `LibraryPrefs` (needless Rust
+coupling), or by letting `get`/`set` take an explicit themeId (which would break the
+collision-free guarantee — a theme could then read another's slice).

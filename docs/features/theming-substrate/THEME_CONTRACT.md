@@ -186,3 +186,23 @@ rendered output). Closing that needs either a fragile source-scanning lint or a
 runtime DOM guard; both are heavier than S4 and a **Phase-5 / untrusted-author**
 concern (on-disk `.oatheme`s). Built-in themes are reviewed, so the structural
 guarantee + boundary lint are sufficient for ARC 1. (DECISIONS D24.)
+
+## 7. Per-theme settings namespace (S5.4)
+
+A theme often wants its own small prefs (a density toggle, a layout choice) that
+must not collide with OA's settings or with another theme. Use
+`useThemeSettings()` (`@oa/platform/theme/themeSettings`):
+
+```ts
+const settings = useThemeSettings();
+const compact = () => settings.get<boolean>("compactRows", false); // reactive
+settings.set("compactRows", true);                                  // persisted
+```
+
+The accessor is **auto-bound to the active theme's id**, so a theme can only read
+and write **its own slice** — it never names a theme id, which *is* the
+collision-free guarantee. Storage is one frontend `localStorage` key
+(`oa.themeSettings` → `{ [themeId]: { … } }`), per-install/per-user and surviving
+the restart-based theme swap; values are opaque JSON (declare the shape via the
+`get` type arg). This is a **fourth** settings namespace alongside the
+OA-wide / per-system / per-game tiers — distinct keyspace, no overlap.
