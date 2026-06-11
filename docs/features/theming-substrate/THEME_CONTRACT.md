@@ -84,9 +84,24 @@ Each maps 1:1 to a CSS var (`bg → --color-oa-bg`, etc.). Values are CSS value
 strings (`oklch(...)`, a font stack, a length).
 
 **Per-system colour still cascades.** `accent` is the *base/fallback*; elements
-that carry a `data-system` attribute get the per-system accent from
-`themes/systems.css` (higher specificity). A theme chooses how much per-system
-identity to show (D19) — consume `data-system`, or don't.
+that carry a `data-system` attribute get the per-system accent from the global
+baseline (`platform/themes/systemPalettes.ts`, injected at boot — higher
+specificity than `:root`). A theme chooses how much per-system identity to show
+(D19) — consume `data-system`, or don't.
+
+### Per-system overrides (S5.2) — `perSystemTokens`
+
+A theme MAY recolor specific systems by declaring
+`perSystemTokens?: Partial<Record<SystemId, Partial<SystemPalette>>>` on its
+`ThemePackage` (`SystemPalette` = `{ accent, soft, glow }`). The shell injects
+these as `.oa-theme-mount [data-system="<id>"]{…}` rules **scoped to the
+theme-mount wrapper** — higher specificity than the global baseline, so the
+override wins *inside this theme* while engine territory (a sibling of the mount)
+keeps the baseline (the same structural D2 guarantee the `tokens` scope uses).
+This is D19's **optional sub-cascade**: a theme composes over the
+platform-provided per-system palette, or ignores it entirely (a system-agnostic
+theme ships none). Omit a system to inherit it wholesale; omit a key within a
+system to inherit that var. Source of truth: `platform/themes/systemPalettes.ts`.
 
 ### The contract RULE (D2 guarantee)
 
@@ -142,6 +157,10 @@ surfaced). It runs at registration (dev-loud) and as a Vitest CI gate over
   *This is the data half of the §4 no-override rule:* a theme can only set token
   keys that map to known, sibling-scoped CSS vars, so even a hostile token
   **value** can't escape the theme mount.
+- `perSystemTokens` (S5.2): system ids ∈ `SystemId` (the `SYSTEM_PALETTES` map),
+  sub-keys ∈ `SystemPalette` (`accent`/`soft`/`glow`, the `PALETTE_VAR` map),
+  values non-empty. Same data-half guarantee — a theme can only set known palette
+  vars on known systems, scoped to the mount.
 - Warnings: non-directory-safe `id`; `default_route` ∉ `routes`.
 
 **Backed structurally (not by the validator):** the §4 "no global `:root` /

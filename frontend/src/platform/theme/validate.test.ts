@@ -55,6 +55,14 @@ describe("validateTheme — valid", () => {
     const v = validateTheme(pkg({}, { tokens: { bg: "oklch(20% 0 0)", accent: "#0ff" } }));
     expect(v.ok).toBe(true);
   });
+
+  it("a valid perSystemTokens override passes", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemTokens: { nes: { accent: "#f00" }, snes: { soft: "#abc", glow: "#0001" } } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
 });
 
 describe("validateTheme — errors", () => {
@@ -112,6 +120,25 @@ describe("validateTheme — errors", () => {
   it("empty token value → EMPTY_TOKEN_VALUE", () => {
     const v = validateTheme(pkg({}, { tokens: { bg: "  " } }));
     expect(codes(v.errors)).toContain("EMPTY_TOKEN_VALUE");
+  });
+
+  it("unknown system id in perSystemTokens → UNKNOWN_SYSTEM_ID", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemTokens: { atari9000: { accent: "#f00" } } as unknown as ThemePackage["perSystemTokens"] }),
+    );
+    expect(codes(v.errors)).toContain("UNKNOWN_SYSTEM_ID");
+  });
+
+  it("unknown palette key in perSystemTokens → UNKNOWN_PALETTE_KEY", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemTokens: { nes: { bogus: "#f00" } } as unknown as ThemePackage["perSystemTokens"] }),
+    );
+    expect(codes(v.errors)).toContain("UNKNOWN_PALETTE_KEY");
+  });
+
+  it("empty palette value in perSystemTokens → EMPTY_PALETTE_VALUE", () => {
+    const v = validateTheme(pkg({}, { perSystemTokens: { nes: { accent: "  " } } }));
+    expect(codes(v.errors)).toContain("EMPTY_PALETTE_VALUE");
   });
 });
 

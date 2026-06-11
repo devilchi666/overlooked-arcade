@@ -43,7 +43,8 @@ export type SystemTheme = {
   defaultShaderPreset?: string;
 };
 
-// Add a system: extend SystemId + add to systemThemes + add [data-system="..."] block in systems.css.
+// Add a system: extend SystemId + add to systemThemes + add a palette to
+// SYSTEM_PALETTES in systemPalettes.ts (the typed `Record<SystemId, …>` forces it).
 export const systemThemes: Record<SystemId, SystemTheme> = {
   tg16: {
     id: "tg16",

@@ -3,7 +3,7 @@ import { listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
 
 // Mirror of the Rust ToastPayload struct in oa-shell/src/main.rs. `system`
 // is optional — when present it picks up that system's CSS cascade colors
-// via [data-system="<id>"] in themes/systems.css.
+// via the [data-system="<id>"] baseline (platform/themes/systemPalettes.ts).
 type ToastLevel = "info" | "success" | "warn" | "error";
 type ToastPayload = {
   level: ToastLevel;

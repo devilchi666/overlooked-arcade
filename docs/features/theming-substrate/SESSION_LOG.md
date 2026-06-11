@@ -9,6 +9,56 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 S5.2: palette substrate (typed map + override seam) — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-s5-2-palette-substrate`. Second S5 micro-slice. Extracts the
+> 46 per-system palettes from hand-authored CSS to a typed single-source map +
+> derives the baseline at boot + adds the per-theme override seam. DECISIONS **D26**.
+> Palette data-home: **typed TS map**, NOT `config/*.json` + a build step (operator
+> AskUserQuestion call — per-system palette is frontend-only data with no Rust reader).
+
+- **Shipped** (plan §13.3 S5 item 1, refined):
+  - **`platform/themes/systemPalettes.ts`** — typed `SystemPalette` (`accent`/`soft`/`glow`)
+    + `SYSTEM_PALETTES: Record<SystemId, SystemPalette>` (all 46 systems; `glow` derived as
+    accent@0.35α — the invariant; one-line identity notes, full hue rationale in git
+    history) + `PALETTE_VAR` (key→CSS var, peer of `TOKEN_VAR`). **The single source of
+    truth** — `Record<SystemId,…>` forces a palette per system (the parity guarantee the old
+    `systems.css` comment asked for by hand).
+  - **`systems.css` RETIRED** (deleted; `@import` removed from `index.css`). The global
+    `[data-system]` baseline CSS is now **derived from the map at boot** —
+    `ensureSystemPaletteBaseline()` injects a `<style id="oa-system-palettes-baseline">`
+    into `document.head` in `index.tsx` **before first render** (no flash; runtime
+    equivalent of the static import). Idempotent + DOM-guarded (no-op in tests).
+  - **Per-theme override seam** (`ThemePackage.perSystemTokens?: PerSystemTokens` — D19's
+    optional sub-cascade): App.tsx renders a `<style>` of `perSystemOverrideCss(".oa-theme-mount", …)`
+    INSIDE the theme mount (now classed `oa-theme-mount`). Rule shape
+    `.oa-theme-mount [data-system="<id>"]{…}` — higher specificity than the global baseline →
+    wins inside the theme; engine territory (a SIBLING of the mount) keeps the baseline (the
+    structural D2 guarantee, same as the S3 token scope). A system-agnostic theme ships none.
+  - **Validator extended** (D24): `perSystemTokens` system ids ∈ `SystemId`, sub-keys ∈
+    `SystemPalette`, values non-empty (`UNKNOWN_SYSTEM_ID` / `UNKNOWN_PALETTE_KEY` /
+    `EMPTY_PALETTE_VALUE`). THEME_CONTRACT.md §4 + §6 updated (the `systems.css` reference
+    in §4 was stale — now points at `systemPalettes.ts`).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 37 passed**
+  (25 + 4 new perSystemTokens validator cases + 8 new `systemPalettes.test.ts` —
+  baseline-CSS shape, scoped-override specificity/partial/empty, systemThemes parity, glow
+  invariant); `npm run build` green (CSS bundle −7 kB; the baseline left the static bundle).
+  Frontend-only — Rust untouched (830 oa-shell tests hold).
+- **Live override demo — `bare` reframed as the substrate TEST BED (operator call):** rather
+  than distort Retroverse (the default) or re-add per-system colour to the system-agnostic
+  CoverFlow, the operator chose `bare` as the consumer — "eventually we'll do a list-view theme
+  properly; bare is the test bed." So `bare` now renders a **per-system accent dot** per row
+  (`data-system` → `--color-system-accent`) AND ships a scoped `perSystemTokens` override
+  recolouring **NES → cyan** + **PSX → magenta**. In bare those rows read the demo colours; in
+  engine territory (Settings → Per-system) NES/PSX keep their baseline red/teal — the D19
+  sub-cascade + D2 sibling-scope, **visible**. `validateTheme(bare)` still passes (valid
+  perSystemTokens; `bare.tokens` stays undefined so the "no design-token overrides" fixture
+  assertion holds). All gates re-run green after the bare change.
+- **Next:** **operator playtest S5.2** — (1) **baseline parity:** per-system colours
+  (Retroverse tiles, Settings per-system drill-in, system-edged toasts) are **identical** to
+  before; (2) **override demo:** switch to `bare`, see NES rows' dots cyan + PSX dots magenta
+  while Settings keeps NES red / PSX teal. Then merge. **After: S5.3 — glyph-set seam.**
+
 ## 2026-06-10 — Phase 3 S5.1: resolver theme tier — ✅ shipped + merged (merge `783da2e`)
 
 > Branch `feat/theming-s5-1-resolver-theme-tier`. First of **five S5 micro-slices**

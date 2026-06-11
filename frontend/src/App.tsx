@@ -90,6 +90,7 @@ import {
   activeThemeResolved,
 } from "@oa/platform/theme/registry";
 import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
+import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
 import { ThemeProvider } from "./routes/retroverse/context";
 import { PlatformProvider } from "@oa/platform/platformContext";
 import EngineManagerSurface from "./engine/EngineManagerSurface";
@@ -1623,7 +1624,20 @@ const App: Component = () => {
               // territory keeps the :root defaults (the D2 guarantee). The
               // default theme (Retroverse) ships no tokens → empty style →
               // pure :root.
-              <div class="h-full w-full isolate" style={themeTokensToCssVars(theme.tokens)}>
+              <div
+                class="h-full w-full isolate oa-theme-mount"
+                style={themeTokensToCssVars(theme.tokens)}
+              >
+                {/* S5.2 — per-system palette overrides (D19's optional
+                    sub-cascade). Scoped to `.oa-theme-mount` so the override
+                    beats the global `[data-system]` baseline INSIDE this theme,
+                    while engine territory (a SIBLING of this mount, not a
+                    descendant) keeps the baseline — the same structural D2
+                    guarantee the token scope uses. A system-agnostic theme
+                    ships no perSystemTokens → this renders nothing. */}
+                <Show when={theme.perSystemTokens}>
+                  {(pst) => <style>{perSystemOverrideCss(".oa-theme-mount", pst())}</style>}
+                </Show>
                 <Dynamic component={theme.entry} surface="main" />
               </div>
             )}
