@@ -9,6 +9,60 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-10 — Phase 3 S4: versioned manifest + load-time validator (`bare` fixture) — ✅ shipped, awaiting playtest + merge
+
+> Branch `feat/theming-manifest-validator`. Turns THEME_CONTRACT.md §6 from a
+> documented contract into a machine-checked one — the strict foundation a forgiving
+> theme-creation tool (ARC 3) needs. Four S4 design forks signed off (AskUserQuestion,
+> all the recommended path) before code. DECISIONS **D24**.
+
+- **Shipped** (plan §13.3 S4 + scope-calls #2/#7):
+  - **`validateTheme(pkg)`** (`platform/theme/validate.ts`) — pure, never-throws; returns
+    `{themeId, ok, errors, warnings}`. Checks the **declarative surface** (manifest +
+    typed `tokens`): required fields, `schema_version` ∈ `SUPPORTED_SCHEMA_VERSIONS`
+    (`{1}`; "newer schema — update OA" vs "unsupported" messages), `surfaces` non-empty ⊆
+    `HONORED_SURFACES` (`["main"]`), `required_engine_capabilities` ⊆ `ENGINE_CAPABILITIES`
+    (**empty in ARC 1** → only `[]` validates), `tokens` keys ∈ `TOKEN_VAR` + values
+    non-empty. The token-key check is the data half of the §4 no-override rule. Warnings:
+    non-dir-safe `id`, `default_route` ∉ `routes`.
+  - **`SUPPORTED_SCHEMA_VERSIONS` + `MAX_SCHEMA_VERSION`** added to `manifest.ts`.
+  - **Registry gate** (`registry.ts`): `registerThemes` validates each theme, **excludes
+    invalid ones** from the valid set (picker + `activeTheme()` resolve over valid only);
+    errors logged always, warnings DEV-only. `setActiveTheme` guards on the valid set. New
+    **fallback toast** in `initActiveTheme`: a persisted id that's no longer a valid choice
+    (e.g. wheel→coverflow) falls back to the default AND raises a `warn` toast naming it.
+  - **`bare` theme** (`themes/bare/index.tsx`, added to `BUILTIN_THEMES`) — the minimal
+    valid whole-shell: a plain `ListNav` of games + launch-on-Confirm + `EngineSummonIcon`,
+    **no tokens**, system-agnostic, ~110 LOC. Operator-selectable (the "low floor" made
+    switchable) AND the validator's canonical fixture (one artifact, both jobs).
+  - **Vitest — the frontend's first test runner** (there was none; the gate had to be TS
+    since manifests are TS objects with no Rust visibility, D6). `vitest` + `jsdom` +
+    `vitest.config.ts` (reuses `vite-plugin-solid` + the `@oa/platform` alias) +
+    `npm run test` wired into CI between lint + build. An `overrides:{vite}` pin dedupes
+    vitest's nested vite (Solid-plugin type clash). Two suites: `platform/theme/
+    validate.test.ts` (15 pure unit tests — every error/warning code via crafted
+    fixtures) + `themes/builtin-themes.test.ts` (10 — every bundled theme validates clean,
+    `bare` is the minimal fixture, ids unique; lives in `themes/` because validating real
+    themes means importing them and `platform ↛ themes` is forbidden).
+  - **THEME_CONTRACT.md §6 rewritten** — enforced-now (data) vs backed-structurally
+    (sibling-scope + boundary lint) vs deferred (the `<style>:root`/`document.head`/global-
+    CSS bypass a package-object validator can't see; Phase-5/untrusted-author concern).
+- **Verified:** `npm run typecheck` + `npm run lint` green; **`npm run test` = 25 passed**
+  (2 files); `npm run build` green (bare bundled). Frontend-only — no Rust; 822 oa-shell
+  tests unaffected.
+- **Decisions (D24):** validator = declarative-surface gate, NOT a runtime `:root`
+  boundary (structural sibling-scope is); Vitest CI is the hard drift-stopper; `bare`
+  ships in the picker as fixture+reference; fallback = toast+console (Phase-5 persistent
+  banner deferred); schema = supported-set `{1}`.
+- **Almost:** nothing in S4 scope left.
+- **Next (operator):** **playtest** — boot lands on Retroverse; F12 → Settings → Themes
+  now lists a third option **Bare**; switch to it → restart → plain game list, browse +
+  launch + ⚙ back to Settings all work → switch back. (Optional drift check: edit a
+  built-in manifest to break a field, `npm run test` → red.) Then merge. **After merge:
+  S5 — substrate depth** (palette substrate, asset/`ui-sound` resolver, glyph-set seam,
+  per-theme settings namespace, remaining `wheel`/`carousel`/`custom` primitives). The
+  nav-remap Settings UI stays the separate D18 follow-on.
+
 ## 2026-06-10 — Phase 3 S2: walking skeleton (Retroverse ⇄ CoverFlow swap gate) — ✅ shipped + merged
 
 > **The morale/de-risk milestone — the dream first becomes visible.** Branch

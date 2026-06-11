@@ -25,5 +25,5 @@
       "@oa/platform/*": ["./src/platform/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "vitest.config.ts"]
 }

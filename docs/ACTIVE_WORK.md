@@ -247,6 +247,37 @@ spanned every system but was filed under whichever core happened to be active.
         under both themes (D2); reduce-motion stills the UI. **After merge: S4 —
         versioned manifest + validator** (`bare` theme fixture). Remap Settings UI
         stays the D18 follow-on.
+      - **Phase 3 S4 — versioned manifest + load-time validator (`bare` fixture) ✅
+        shipped 2026-06-10 (`feat/theming-manifest-validator`, DECISIONS D24) —
+        awaiting operator playtest + merge.** Turns THEME_CONTRACT.md §6 from
+        documented to machine-checked. Four design forks signed off (AskUserQuestion,
+        all recommended) before code. Shipped: pure **`validateTheme(pkg)`**
+        (`platform/theme/validate.ts`) over the **declarative** manifest+tokens surface
+        — required fields / `schema_version` ∈ supported-set `{1}` ("newer schema —
+        update OA" vs "unsupported" messages) / `surfaces` non-empty ⊆ `["main"]` /
+        `required_engine_capabilities` ⊆ `ENGINE_CAPABILITIES` (**empty in ARC 1** →
+        only `[]` validates) / `tokens` keys ∈ `TOKEN_VAR` + non-empty values (the data
+        half of the §4 no-override rule); warnings for non-dir-safe `id` + `default_route`
+        ∉ `routes`. **Registry gate** (`registry.ts`): validates-on-register, **excludes
+        invalid themes** from the picker + `activeTheme()`, errors logged always /
+        warnings DEV-only, + a **fallback toast** when a persisted `active_theme_id` is no
+        longer a valid choice (e.g. wheel→coverflow). **`bare` theme** (`themes/bare/`, in
+        `BUILTIN_THEMES`) — minimal valid whole-shell (ListNav of games + launch + engine
+        icon, **no tokens**, ~110 LOC, system-agnostic): operator-selectable lowest-floor
+        reference AND the validator's canonical fixture. **Vitest stood up** — the
+        frontend's **first test runner** (the gate had to be TS: manifests are TS objects
+        with no Rust visibility, D6); `vitest` + `jsdom` + `vitest.config.ts` (reuses
+        vite-plugin-solid + the `@oa/platform` alias) + `npm run test` wired into CI; an
+        `overrides:{vite}` pin dedupes vitest's nested vite. **25 tests pass** across
+        `platform/theme/validate.test.ts` (15 pure unit, every code) +
+        `themes/builtin-themes.test.ts` (10 — real themes validate clean; lives in
+        `themes/` because validating real themes means importing them and `platform ↛
+        themes` is forbidden). THEME_CONTRACT.md §6 rewritten (enforced-data /
+        structurally-backed / deferred-gap). The no-`:root` rule stays **structurally**
+        backed (sibling-scope + boundary lint), not runtime-enforced — a `<style>:root` /
+        `document.head` / global-CSS bypass is invisible to a package-object validator
+        (Phase-5/untrusted-author concern). typecheck + lint + test + build green;
+        frontend-only (822 oa-shell tests unaffected). **Next: S5 — substrate depth.**
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

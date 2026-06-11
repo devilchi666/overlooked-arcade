@@ -1,0 +1,130 @@
+// Unit tests for the theme validator (S4). Pure — no theme imports; each case
+// constructs a minimal ThemePackage and asserts the §6 rule it should trip.
+// The companion themes/builtin-themes.test.ts checks the REAL bundled themes.
+
+import { describe, it, expect } from "vitest";
+import { validateTheme, type ThemeIssueCode } from "./validate";
+import type { ThemePackage } from "./types";
+import type { ThemeManifest } from "./manifest";
+
+// A throwaway entry — the validator never touches it (it checks declarative
+// data only), so a no-op stand-in is enough.
+const noopEntry = (() => null) as unknown as ThemePackage["entry"];
+
+function manifest(over: Partial<ThemeManifest> = {}): ThemeManifest {
+  return {
+    id: "demo",
+    name: "Demo",
+    version: "1.0.0",
+    schema_version: 1,
+    oa_version: "^0.x",
+    entry: "./index.tsx",
+    entry_export: "demo",
+    default_route: "library",
+    routes: ["library"],
+    context_slots: ["library"],
+    required_engine_capabilities: [],
+    reserves_corner: "top-right",
+    surfaces: ["main"],
+    ...over,
+  };
+}
+
+function pkg(mOver: Partial<ThemeManifest> = {}, over: Partial<ThemePackage> = {}): ThemePackage {
+  return { manifest: manifest(mOver), entry: noopEntry, ...over };
+}
+
+const codes = (issues: { code: ThemeIssueCode }[]): ThemeIssueCode[] => issues.map((i) => i.code);
+
+describe("validateTheme — valid", () => {
+  it("a complete minimal manifest with no tokens passes clean", () => {
+    const v = validateTheme(pkg());
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+    expect(v.warnings).toEqual([]);
+    expect(v.themeId).toBe("demo");
+  });
+
+  it("a present token key with an undefined value inherits (no error)", () => {
+    // themeTokensToCssVars drops null/undefined → falls through to :root.
+    const v = validateTheme(pkg({}, { tokens: { bg: undefined } }));
+    expect(v.ok).toBe(true);
+  });
+
+  it("a valid token override passes", () => {
+    const v = validateTheme(pkg({}, { tokens: { bg: "oklch(20% 0 0)", accent: "#0ff" } }));
+    expect(v.ok).toBe(true);
+  });
+});
+
+describe("validateTheme — errors", () => {
+  it("missing id → MISSING_FIELD + themeId falls back to <unknown>", () => {
+    const v = validateTheme(pkg({ id: "" }));
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("MISSING_FIELD");
+    expect(v.themeId).toBe("<unknown>");
+  });
+
+  it("blank name → MISSING_FIELD", () => {
+    expect(codes(validateTheme(pkg({ name: "   " })).errors)).toContain("MISSING_FIELD");
+  });
+
+  it("non-number schema_version → MISSING_FIELD", () => {
+    const v = validateTheme(pkg({ schema_version: undefined as unknown as number }));
+    expect(codes(v.errors)).toContain("MISSING_FIELD");
+  });
+
+  it("unsupported (too-new) schema_version → UNSUPPORTED_SCHEMA_VERSION with 'newer' message", () => {
+    const v = validateTheme(pkg({ schema_version: 2 }));
+    expect(codes(v.errors)).toContain("UNSUPPORTED_SCHEMA_VERSION");
+    const issue = v.errors.find((e) => e.code === "UNSUPPORTED_SCHEMA_VERSION");
+    expect(issue?.message).toMatch(/newer/i);
+  });
+
+  it("unknown (too-old/0) schema_version → UNSUPPORTED_SCHEMA_VERSION without 'newer'", () => {
+    const v = validateTheme(pkg({ schema_version: 0 }));
+    const issue = v.errors.find((e) => e.code === "UNSUPPORTED_SCHEMA_VERSION");
+    expect(issue).toBeDefined();
+    expect(issue?.message).not.toMatch(/newer/i);
+  });
+
+  it("empty surfaces → EMPTY_SURFACES", () => {
+    expect(codes(validateTheme(pkg({ surfaces: [] })).errors)).toContain("EMPTY_SURFACES");
+  });
+
+  it("unhonored surface → UNKNOWN_SURFACE", () => {
+    const v = validateTheme(pkg({ surfaces: ["marquee"] as unknown as ThemeManifest["surfaces"] }));
+    expect(codes(v.errors)).toContain("UNKNOWN_SURFACE");
+  });
+
+  it("unadvertised required capability → UNADVERTISED_CAPABILITY", () => {
+    const v = validateTheme(pkg({ required_engine_capabilities: ["attract-mode"] }));
+    expect(codes(v.errors)).toContain("UNADVERTISED_CAPABILITY");
+  });
+
+  it("unknown token key → UNKNOWN_TOKEN_KEY", () => {
+    const v = validateTheme(
+      pkg({}, { tokens: { bogus: "x" } as unknown as ThemePackage["tokens"] }),
+    );
+    expect(codes(v.errors)).toContain("UNKNOWN_TOKEN_KEY");
+  });
+
+  it("empty token value → EMPTY_TOKEN_VALUE", () => {
+    const v = validateTheme(pkg({}, { tokens: { bg: "  " } }));
+    expect(codes(v.errors)).toContain("EMPTY_TOKEN_VALUE");
+  });
+});
+
+describe("validateTheme — warnings (non-fatal)", () => {
+  it("non-directory-safe id → INVALID_ID warning, still ok", () => {
+    const v = validateTheme(pkg({ id: "Bad Id" }));
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("INVALID_ID");
+  });
+
+  it("default_route not in routes → DEFAULT_ROUTE_NOT_IN_ROUTES warning, still ok", () => {
+    const v = validateTheme(pkg({ default_route: "nope", routes: ["library"] }));
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("DEFAULT_ROUTE_NOT_IN_ROUTES");
+  });
+});

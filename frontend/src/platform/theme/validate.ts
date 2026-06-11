@@ -1,0 +1,238 @@
+// Theme load-time validator — turns THEME_CONTRACT.md §6 from a documented
+// contract into a machine-checked one.
+//
+// Theming Substrate ARC 1 Phase 3 S4 (the versioned manifest + load-time
+// validator, docs/PLANS/theming-substrate.md §13.3 + scope-calls #2/#7).
+//
+// `validateTheme(pkg)` is a PURE function over a ThemePackage's declarative
+// surface — its manifest + its token overrides. It returns structured
+// errors/warnings; it does NOT throw and does NOT touch the DOM. Two callers:
+//   1. registry.ts at registration time (dev-loud + drives the fallback to the
+//      default theme when the persisted active theme is invalid).
+//   2. The Vitest CI gate (validate.test.ts) over BUILTIN_THEMES + the `bare`
+//      fixture, so a built-in theme drifting from the contract fails the build.
+//
+// SCOPE OF ENFORCEMENT (DECISIONS D24, THEME_CONTRACT.md §6). The validator
+// checks the DECLARATIVE surface only — the manifest fields and the typed
+// `tokens` object. That covers §6's manifest/schema/surfaces/capabilities/token
+// checks AND the data half of the "no engine-var override" rule: a theme can
+// only set token keys that map to known, sibling-scoped CSS vars (TOKEN_VAR),
+// so even a hostile token VALUE cannot escape the theme mount.
+//
+// What the validator CANNOT see: a theme's entry is an opaque Solid component.
+// A `<style>:root{…}</style>` in its JSX, a `document.head.appendChild`, or an
+// imported global stylesheet are invisible to a package-object validator. The
+// real protection against those is STRUCTURAL — the S3 sibling-scope mount (a
+// theme's scoped tokens physically cannot reach engine territory) plus the
+// ESLint layer boundary (a theme can't import engine/). Static source
+// inspection of that bypass is a deferred Phase-5 concern (untrusted on-disk
+// authors); built-in themes are reviewed. See THEME_CONTRACT.md §6.
+
+import type { ThemePackage } from "./types";
+import { TOKEN_VAR, type ThemeTokens } from "./tokens";
+import {
+  MAX_SCHEMA_VERSION,
+  SUPPORTED_SCHEMA_VERSIONS,
+  type ThemeSurface,
+} from "./manifest";
+
+/// Surfaces the shell honors today. ARC 1 = exactly `main` (D20b). The named
+/// surfaces seam widens this when multi-monitor lands; a theme declaring a
+/// surface outside this set is rejected so it can't silently no-op.
+export const HONORED_SURFACES: ReadonlySet<ThemeSurface> = new Set<ThemeSurface>(["main"]);
+
+/// Engine capabilities this build advertises. A theme's
+/// `required_engine_capabilities` must be a subset of this. ARC 1 advertises
+/// NONE — attract-mode / multi-monitor / CRT-chrome are deferred platform
+/// features (D20), so the only valid `required_engine_capabilities` value is
+/// `[]`. When a capability ships, add its id here.
+export const ENGINE_CAPABILITIES: ReadonlySet<string> = new Set<string>([]);
+
+/// Disqualifying (error) vs. non-fatal (warning) issue codes. An ERROR excludes
+/// the theme from the valid set → it can't be the active theme (fallback to the
+/// default). A WARNING loads the theme but is surfaced (dev console / toast).
+export type ThemeIssueCode =
+  // --- errors ---
+  | "MISSING_FIELD" // a required manifest field is absent or empty
+  | "UNSUPPORTED_SCHEMA_VERSION" // schema_version ∉ SUPPORTED_SCHEMA_VERSIONS
+  | "EMPTY_SURFACES" // surfaces must list at least one surface
+  | "UNKNOWN_SURFACE" // a declared surface ∉ HONORED_SURFACES
+  | "UNADVERTISED_CAPABILITY" // a required capability ∉ ENGINE_CAPABILITIES
+  | "UNKNOWN_TOKEN_KEY" // a tokens key ∉ ThemeTokens (TOKEN_VAR)
+  | "EMPTY_TOKEN_VALUE" // a tokens value is empty / blank
+  // --- warnings ---
+  | "INVALID_ID" // id is not lowercase / directory-safe
+  | "DEFAULT_ROUTE_NOT_IN_ROUTES"; // default_route ∉ routes
+
+export type ThemeIssue = {
+  code: ThemeIssueCode;
+  /** Manifest field or token key the issue concerns, when applicable. */
+  field?: string;
+  /** Human-readable explanation (dev console / surfaced text). */
+  message: string;
+};
+
+export type ThemeValidation = {
+  /** The theme's declared id (or "<unknown>" if even that is missing). */
+  themeId: string;
+  /** True when `errors` is empty — the theme may be activated. */
+  ok: boolean;
+  errors: ThemeIssue[];
+  warnings: ThemeIssue[];
+};
+
+/// Required string manifest fields that must be present + non-empty.
+const REQUIRED_STRING_FIELDS = [
+  "id",
+  "name",
+  "version",
+  "oa_version",
+  "entry",
+  "entry_export",
+  "default_route",
+  "reserves_corner",
+] as const;
+
+const ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+/// Validate a theme package against THEME_CONTRACT.md §6. Pure; never throws.
+export function validateTheme(pkg: ThemePackage): ThemeValidation {
+  const errors: ThemeIssue[] = [];
+  const warnings: ThemeIssue[] = [];
+  const m = pkg.manifest;
+  const themeId = isNonEmptyString(m?.id) ? m.id : "<unknown>";
+
+  // --- required string fields present + non-empty ---
+  for (const field of REQUIRED_STRING_FIELDS) {
+    if (!isNonEmptyString(m?.[field])) {
+      errors.push({
+        code: "MISSING_FIELD",
+        field,
+        message: `manifest.${field} is required and must be a non-empty string`,
+      });
+    }
+  }
+
+  // --- schema_version supported ---
+  if (typeof m?.schema_version !== "number") {
+    errors.push({
+      code: "MISSING_FIELD",
+      field: "schema_version",
+      message: "manifest.schema_version is required and must be a number",
+    });
+  } else if (!SUPPORTED_SCHEMA_VERSIONS.has(m.schema_version)) {
+    const tooNew = m.schema_version > MAX_SCHEMA_VERSION;
+    errors.push({
+      code: "UNSUPPORTED_SCHEMA_VERSION",
+      field: "schema_version",
+      message: tooNew
+        ? `manifest.schema_version ${m.schema_version} targets a newer manifest schema than this OA build supports (up to ${MAX_SCHEMA_VERSION}) — update OA`
+        : `manifest.schema_version ${m.schema_version} is not a supported manifest schema (supported: ${[...SUPPORTED_SCHEMA_VERSIONS].join(", ")})`,
+    });
+  }
+
+  // --- surfaces: at least one, all honored ---
+  if (!Array.isArray(m?.surfaces) || m.surfaces.length === 0) {
+    errors.push({
+      code: "EMPTY_SURFACES",
+      field: "surfaces",
+      message: "manifest.surfaces must list at least one surface (ARC 1: [\"main\"])",
+    });
+  } else {
+    for (const surface of m.surfaces) {
+      if (!HONORED_SURFACES.has(surface)) {
+        errors.push({
+          code: "UNKNOWN_SURFACE",
+          field: "surfaces",
+          message: `surface "${surface}" is not honored by this OA build (honored: ${[...HONORED_SURFACES].join(", ")})`,
+        });
+      }
+    }
+  }
+
+  // --- required_engine_capabilities ⊆ advertised ---
+  if (!Array.isArray(m?.required_engine_capabilities)) {
+    errors.push({
+      code: "MISSING_FIELD",
+      field: "required_engine_capabilities",
+      message: "manifest.required_engine_capabilities is required (use [] for a theme that runs anywhere)",
+    });
+  } else {
+    for (const cap of m.required_engine_capabilities) {
+      if (!ENGINE_CAPABILITIES.has(cap)) {
+        errors.push({
+          code: "UNADVERTISED_CAPABILITY",
+          field: "required_engine_capabilities",
+          message: `required engine capability "${cap}" is not advertised by this OA build${
+            ENGINE_CAPABILITIES.size === 0 ? " (ARC 1 advertises none)" : ""
+          }`,
+        });
+      }
+    }
+  }
+
+  // --- routes / default_route coherence (warnings) ---
+  if (!isNonEmptyString(m?.id)) {
+    // id missing is already an error above; skip the id-shape warning.
+  } else if (!ID_PATTERN.test(m.id)) {
+    warnings.push({
+      code: "INVALID_ID",
+      field: "id",
+      message: `manifest.id "${m.id}" should be lowercase + directory-safe (a-z, 0-9, "-", "_")`,
+    });
+  }
+  if (
+    isNonEmptyString(m?.default_route) &&
+    Array.isArray(m?.routes) &&
+    m.routes.length > 0 &&
+    !m.routes.includes(m.default_route)
+  ) {
+    warnings.push({
+      code: "DEFAULT_ROUTE_NOT_IN_ROUTES",
+      field: "default_route",
+      message: `manifest.default_route "${m.default_route}" is not listed in manifest.routes`,
+    });
+  }
+
+  // --- tokens: keys ∈ ThemeTokens, values non-empty ---
+  if (pkg.tokens != null) {
+    for (const key of Object.keys(pkg.tokens)) {
+      if (!(key in TOKEN_VAR)) {
+        errors.push({
+          code: "UNKNOWN_TOKEN_KEY",
+          field: `tokens.${key}`,
+          message: `tokens.${key} is not a recognized design token (see ThemeTokens / TOKEN_VAR)`,
+        });
+        continue;
+      }
+      const value = pkg.tokens[key as keyof ThemeTokens];
+      // A present key with an empty/blank value is a mistake — it would inject
+      // an empty CSS var rather than fall through to :root (omit the key for
+      // inheritance). `undefined`/`null` are fine: themeTokensToCssVars drops
+      // them, so a Partial that names a key but leaves it unset still inherits.
+      if (value != null && !isNonEmptyString(value)) {
+        errors.push({
+          code: "EMPTY_TOKEN_VALUE",
+          field: `tokens.${key}`,
+          message: `tokens.${key} must be a non-empty CSS value string (omit the key to inherit the :root default)`,
+        });
+      }
+    }
+  }
+
+  return { themeId, ok: errors.length === 0, errors, warnings };
+}
+
+/// Format a validation result as a single multi-line string for the dev
+/// console / a toast body. Returns "" when there's nothing to report.
+export function formatThemeValidation(v: ThemeValidation): string {
+  if (v.errors.length === 0 && v.warnings.length === 0) return "";
+  const lines: string[] = [];
+  for (const e of v.errors) lines.push(`  ✗ [${e.code}] ${e.message}`);
+  for (const w of v.warnings) lines.push(`  ⚠ [${w.code}] ${w.message}`);
+  return `theme "${v.themeId}":\n${lines.join("\n")}`;
+}

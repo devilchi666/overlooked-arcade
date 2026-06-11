@@ -80,6 +80,11 @@ jobs:
           # silently re-coupling. Contract:
           # docs/features/theming-substrate/SURFACES.md §"Layer boundary contract".
           npm run lint
+          # Theme-contract gate (Theming Substrate ARC 1 Phase 3 S4): the
+          # Vitest suite validates every bundled theme + the `bare` fixture
+          # against THEME_CONTRACT.md §6, so a manifest/token drift fails the
+          # build instead of silently shipping an unloadable theme.
+          npm run test
           npm run build
 
       - name: cargo build
