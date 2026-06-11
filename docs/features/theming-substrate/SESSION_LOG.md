@@ -64,9 +64,14 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     (`primitives/lateClaim.ts`) and applied it to **ListNav / GridNav / CarouselNav / CustomNav**
     — every list-like primitive now claims once items appear. typecheck/lint/vitest(51)/build
     green after the fix.
-- **Next:** **operator re-playtest** — (a) bare: arrows/D-pad move the list, Confirm launches;
-  (b) CoverFlow: backdrop sits BEHIND the covers, browse/centre/launch/wheel feel identical.
-  Then merge. **That closes S5 + the Phase-3 substrate-depth arc.**
+- **Playtest round 2 (2026-06-11) — CoverFlow confirmed good; one more bare bug fixed:**
+  *the bare list moved the selection but didn't scroll, so the focused row walked off-screen.*
+  The rows are `tabindex=-1` + framework-focused (not native DOM focus) → the browser does no
+  scroll-into-view. Added a per-row effect that `scrollIntoView({ block: "nearest" })` when a row
+  becomes focused (ListNav + GridNav; CarouselNav already centres via its track transform).
+  typecheck/lint/vitest(51)/build green.
+- **Next:** **operator re-playtest** — bare: arrows/D-pad move the list AND keep the selection
+  on-screen, Confirm launches. Then merge. **That closes S5 + the Phase-3 substrate-depth arc.**
 
 ## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — ✅ shipped + merged (merge `895f8c0`; combined S5.3+S5.4 playtest passed)
 
