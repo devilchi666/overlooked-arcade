@@ -278,6 +278,31 @@ spanned every system but was filed under whichever core happened to be active.
         `document.head` / global-CSS bypass is invisible to a package-object validator
         (Phase-5/untrusted-author concern). typecheck + lint + test + build green;
         frontend-only (822 oa-shell tests unaffected). **Next: S5 — substrate depth.**
+      - **Phase 3 S5 — substrate depth — sliced into 5 per-sub-area micro-slices**
+        (operator choice 2026-06-11; design forks signed off via AskUserQuestion;
+        order = contracts first). Plan §13.3 S5. **S5.1 (resolver theme tier) ✅
+        shipped + merged 2026-06-11** (`feat/theming-s5-1-resolver-theme-tier`, merge
+        `783da2e`, DECISIONS **D25**). Adds the active-theme tier to the two existing
+        per-system resolvers — generalize/connect the shipped Per-System-UI machinery
+        into the theme cascade, NOT rebuild it: `resolve_background_asset` +
+        `resolve_ui_sound` gain a leading `themeId` + walk a shared theme→platform
+        cascade (`system_ui_assets::candidate_asset_bases`: theme/<system> →
+        theme/_baseline → system/<system> → system/_baseline → null; ui-sound keeps
+        operator-override on top). Theme overrides home at
+        `<exe_dir>/assets/themes/<id>/system-ui/<system>/<category>/` (operator-droppable
+        now — no Phase-5 loader); a theme `_baseline` tier lets a system-agnostic theme
+        (D19) ship one library-wide asset. Frontend api wrappers take `themeId`;
+        dispatchers (`lib/audio.ts`, `SystemBackground`) resolve `activeThemeId()`
+        ambiently → zero consumer churn. **830 oa-shell tests** (+8 cascade) +
+        typecheck/lint/vitest(25)/build green. **Merged on the test basis** — the
+        **background** consumer `SystemBackground` is unmounted since 2026-05-31 (dropped
+        over a Retroverse visual conflict; zero JSX mount), so **reviving a theme-owned
+        background surface folds into S5.5**; the **ui-sound** half is live (grid-nav
+        sounds). **Remaining S5 micro-slices:** S5.2 palette substrate (typed
+        `SYSTEM_PALETTES` map + `perSystemTokens` override seam) · S5.3 glyph-set
+        (manifest `glyph_set` + PS set) · S5.4 per-theme settings namespace · S5.5
+        primitives (carousel dogfooded into CoverFlow + custom + reserved wheel contract
+        + the background-surface revival). Remap Settings UI = D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;

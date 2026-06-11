@@ -665,10 +665,34 @@ execution; the §6 phase *content* is unchanged, just reordered + interleaved):
 - **S4 — Manifest + validator.** Versioned `theme.toml` (#2) with `capabilities[]`
   + `surfaces[]` (single `main` surface honored) + the load-time validator + CI
   fixture (#7); `bare` theme as the fixture.
-- **S5 — Substrate depth.** Palette substrate (`palette.json` per system + scoped
-  CSS-var injection), generalized asset resolver (theme cascade, **+ `ui-sound`
-  category #6**), glyph-set seam in HintBar (#4), per-theme settings namespace
-  (#9), remaining `wheel`/`carousel`/`custom` primitives.
+- **S5 — Substrate depth.** Palette substrate, generalized asset resolver (theme
+  cascade, **+ `ui-sound` category #6**), glyph-set seam in HintBar (#4), per-theme
+  settings namespace (#9), remaining `wheel`/`carousel`/`custom` primitives.
+  **Sliced 2026-06-11 into 5 per-sub-area micro-slices** (operator choice; design
+  forks signed off via AskUserQuestion; order = contracts first), with three
+  refinements to the literal scope above:
+  - **S5.1 — resolver theme tier ✅ merged** (`783da2e`, DECISIONS D25). Theme tier
+    on `resolve_background_asset` + `resolve_ui_sound`; theme overrides home under
+    `<exe_dir>/assets/themes/<id>/system-ui/…` (operator-droppable now, no Phase-5
+    loader). The **background resolver tier is ready-but-unconsumed** (its consumer
+    `SystemBackground` is unmounted since 2026-05-31) → **reviving a theme-owned
+    background surface folds into S5.5**.
+  - **S5.2 — palette substrate.** Refinement (operator): the per-system palette
+    extracts to a **typed `SYSTEM_PALETTES` single-source map** with the baseline
+    `[data-system]` CSS **derived at boot** (retiring hand-authored `systems.css`),
+    NOT `config/systems/<id>/palette.json` + a build step — per-system palette is
+    frontend-only data with no Rust reader, so a typed map is the right home (avoids a
+    generated-file drift + a cross-language generator). Plus the per-theme
+    `perSystemTokens` scoped override seam (D19's optional sub-cascade) + validator
+    extension.
+  - **S5.3 — glyph-set:** manifest `glyph_set` field + a 2nd (PlayStation) built-in
+    set + `activeGlyphSet()` indirection; auto-detect/picker deferred.
+  - **S5.4 — per-theme settings namespace** (#9): `localStorage` `themeId→{}` map +
+    host-bound `useThemeSettings()` (collision rule = auto-bound active id) + one
+    proof toggle in `bare`.
+  - **S5.5 — primitives:** `carousel` (dogfooded into CoverFlow) + `custom` (escape
+    hatch) + the #6 verb→sound hook; `wheel` contract typed + reserved (no ARC-1
+    consumer); **+ revive a theme-owned background surface** (S5.1 fold-in).
 - **Follow-on (after S2's swap gate):** the nav-remap Settings UI (gamepad +
   keyboard rebinding to verbs, conflict validation, always-reachable escape
   hatch, **"Reset to defaults"** = baseline nav map) per D18.

@@ -9,12 +9,18 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-10 — Phase 3 S5.1: resolver theme tier — 🔄 shipped on branch (awaiting operator playtest)
+## 2026-06-10 — Phase 3 S5.1: resolver theme tier — ✅ shipped + merged (merge `783da2e`)
 
 > Branch `feat/theming-s5-1-resolver-theme-tier`. First of **five S5 micro-slices**
 > (operator chose per-sub-area slicing; order = contracts first). Adds the **theme
 > tier** to the two existing per-system resolvers — generalize/connect the shipped
 > Per-System-UI machinery into the theme cascade, NOT rebuild it. DECISIONS **D25**.
+> **Merged on the test basis** (830 tests + no regression) without a live visual
+> playtest, because the **background consumer `SystemBackground` is currently
+> unmounted** (dropped 2026-05-31 over a Retroverse visual conflict; `<SystemBackground`
+> appears in zero JSX). The resolver tier is correct + tested either way; **reviving a
+> theme-owned background surface folds into S5.5** (operator call). The **ui-sound** half
+> has a live consumer (grid-nav sounds) and is exercisable now.
 
 - **Shipped** (plan §13.3 S5 item 2 + scope-call #6 first half):
   - **Rust — theme tier on both resolvers.** `resolve_background_asset` +
@@ -44,12 +50,15 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   `npm run build` green.
 - **Almost:** nothing in S5.1 scope left. (The #6 verb→sound **hook in the primitives**
   rides S5.5, where the primitives are built.)
-- **Next (operator):** **playtest S5.1.** It's invisible by default (best-effort, silent
-  on miss). To see the theme tier: with a theme active, drop e.g.
-  `…/assets/themes/coverflow/system-ui/_baseline/backgrounds/default.png` and confirm it
-  paints the CoverFlow backdrop; remove it → falls back to the platform/gradient. Then
-  merge. **After merge: S5.2 — palette substrate** (typed `SYSTEM_PALETTES` map +
-  per-theme override seam).
+- **Folded into S5.5 (operator call 2026-06-11):** revive a **theme-owned background
+  surface** (the dead `SystemBackground` has no mount) so the S5.1 background resolver
+  tier gains a live consumer — a theme opts into a backdrop layer (fits the `custom`
+  primitive / a theme-opt-in background). Until then the background tier is
+  ready-but-unconsumed; the sound tier is live.
+- **Next:** **S5.2 — palette substrate** (typed `SYSTEM_PALETTES` single-source map,
+  retire `systems.css`, per-theme `perSystemTokens` scoped override seam + validator
+  extension). Then S5.3 glyph-set · S5.4 settings namespace · S5.5 primitives (+ the
+  background-surface revival).
 
 ## 2026-06-10 — Phase 3 S4: versioned manifest + load-time validator (`bare` fixture) — ✅ shipped + merged (operator playtested)
 
