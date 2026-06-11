@@ -11,6 +11,7 @@
 import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavPrimitiveBaseProps } from "./types";
 
 export type GridNavProps<T> = NavPrimitiveBaseProps<T> & {
@@ -54,6 +55,9 @@ export function GridNav<T>(props: GridNavProps<T>): ReturnType<Component> {
     },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
   });
+
+  // Claim the active slot once items appear (late-mounting whole-shell grid).
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
 
   // Nav-sound on focus move (scope-call #6) — see ListNav for the tracking note.
   let firstSettle = true;

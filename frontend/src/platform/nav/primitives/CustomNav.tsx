@@ -13,6 +13,7 @@
 import { createSignal, type Accessor, type Component, type JSX } from "solid-js";
 import { useFocusGroup, type FocusOrientation } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavPrimitiveBaseProps } from "./types";
 
 /// The focus API handed to a `custom` primitive's render-prop.
@@ -74,6 +75,10 @@ export function CustomNav<T>(props: CustomNavProps<T>): ReturnType<Component> {
     },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
   });
+
+  // Late-claim once items appear (a custom surface can also be a late-mounting
+  // whole shell). A theme that manages its own activation passes autoActivate=false.
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
 
   const api: CustomNavApi<T> = {
     items: itemsArr,

@@ -14,6 +14,7 @@
 import { createEffect, createSignal, For, untrack, type Accessor, type Component } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavPrimitiveBaseProps } from "./types";
 
 export type ListNavProps<T> = NavPrimitiveBaseProps<T> & {
@@ -54,6 +55,11 @@ export function ListNav<T>(props: ListNavProps<T>): ReturnType<Component> {
     },
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
   });
+
+  // Claim the active slot once items appear — a late-mounting whole-shell list
+  // (e.g. the `bare` theme) would otherwise never become the active group, so
+  // D-pad/arrows wouldn't move it and only a mouse click (→ launch) would work.
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
 
   // Nav-sound on focus move (scope-call #6) — tracks ONLY focusedIndex (items
   // read untracked so a data change doesn't fire a spurious move); skips the

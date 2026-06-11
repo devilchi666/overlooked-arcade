@@ -50,11 +50,23 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   approach); `npm run build` green. Frontend-only.
 - **Almost:** nothing in S5.5 scope. Deep component tests for the primitives would need a Solid
   render harness (not set up) — noted as a possible future infra add.
-- **Next:** **operator playtest** — the load-bearing check is **CoverFlow still feels identical**
-  after the carousel refactor (browse / centre / scale / launch / wheel / click-to-centre), now
-  with a backdrop (existing platform `_baseline` asset, or drop a coverflow theme one) + browse
-  SFX (drop `…/themes/coverflow/system-ui/_baseline/sounds/navigate.ogg`). Then merge. **That
-  closes S5 + the Phase-3 substrate-depth arc.**
+- **Playtest round 1 (2026-06-11) — two bugs found + fixed on-branch:**
+  - *CoverFlow backdrop painted ABOVE the box art.* CoverFlow passed `class="absolute inset-0"`
+    to CarouselNav whose root is already `relative` (conflicting position utilities) and the
+    `z-0` backdrop wasn't cleanly behind. Fixed: CarouselNav gets `z-10 h-full w-full` (no
+    position conflict; explicitly above the `z-0` ThemeBackground). The middle row is
+    `relative overflow-hidden`.
+  - *`bare` list couldn't move (arrows did nothing) + clicking a game launched it — so it could
+    never become the focus.* Root cause: the **late-claim was only in CarouselNav**, not
+    ListNav/GridNav. A late-mounting whole-shell list (bare mounts after the async theme seed)
+    never claimed the active focus slot, so only a mouse-click (→ launch) worked. (Latent since
+    S4 — bare's earlier playtests used the mouse.) Fixed: extracted **`useLateClaim`**
+    (`primitives/lateClaim.ts`) and applied it to **ListNav / GridNav / CarouselNav / CustomNav**
+    — every list-like primitive now claims once items appear. typecheck/lint/vitest(51)/build
+    green after the fix.
+- **Next:** **operator re-playtest** — (a) bare: arrows/D-pad move the list, Confirm launches;
+  (b) CoverFlow: backdrop sits BEHIND the covers, browse/centre/launch/wheel feel identical.
+  Then merge. **That closes S5 + the Phase-3 substrate-depth arc.**
 
 ## 2026-06-11 — Phase 3 S5.4: per-theme settings namespace — ✅ shipped + merged (merge `895f8c0`; combined S5.3+S5.4 playtest passed)
 

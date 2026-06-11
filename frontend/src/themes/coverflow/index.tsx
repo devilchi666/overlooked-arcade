@@ -168,21 +168,24 @@ const CoverFlowEntry: ThemeEntry = (_props) => {
           </div>
         }
       >
-        <div class="relative min-h-0">
+        <div class="relative min-h-0 overflow-hidden">
           {/* S5.5: the revived theme-owned backdrop, consuming the S5.1 cascade.
-              CoverFlow ships no backdrop by default → resolves the platform
-              per-system / _baseline asset (or nothing). Drop
+              Sits at z-0 BEHIND the carousel (z-10). CoverFlow ships no backdrop
+              by default → resolves the platform per-system / _baseline asset (or
+              nothing). Drop
               assets/themes/coverflow/system-ui/_baseline/backgrounds/default.png
               for one cohesive theme-wide backdrop. */}
           <ThemeBackground systemId={() => focusedGame()?.systemId ?? null} opacity={0.4} />
 
           {/* The carousel primitive owns windowing / track / focus / wheel /
               click; CoverFlow supplies only the card content + the visual config.
+              `z-10 h-full w-full` lifts it above the z-0 backdrop and fills the
+              row (CarouselNav's root is `relative`, so no position conflict).
               System-AGNOSTIC (D19): no data-system → every card uses the THEME's
               own accent token, one cohesive identity (not a per-system rainbow). */}
           <CarouselNav
             id="coverflow"
-            class="absolute inset-0"
+            class="z-10 h-full w-full"
             items={games}
             focusedIndex={focusedIndex}
             setFocusedIndex={setFocusedIndex}

@@ -14,6 +14,7 @@
 import { createEffect, createMemo, createSignal, For, untrack, type Accessor, type Component, type JSX } from "solid-js";
 import { useFocusGroup } from "../focus";
 import { HintRegion } from "../HintBar";
+import { useLateClaim } from "./lateClaim";
 import type { NavItemContext, NavPrimitiveBaseProps } from "./types";
 
 /// Item context for the carousel — adds the signed `offset` from the focused
@@ -85,19 +86,9 @@ export function CarouselNav<T>(props: CarouselNavProps<T>): ReturnType<Component
     onTertiary: (i) => props.onTertiary?.(i, itemsArr()[i]),
   });
 
-  // Late-claim: a carousel is often the whole-shell surface that mounts AFTER
-  // the async active-theme seed, so the on-mount auto-claim can miss (a stray
-  // earlier group may still hold the active slot). Claim once items first appear,
-  // unless the theme opted out (autoActivate === false). Generalizes the manual
-  // force-claim CoverFlow hand-rolled in S2.
-  let claimed = false;
-  createEffect(() => {
-    if (props.autoActivate === false) return;
-    if (!claimed && itemsArr().length > 0) {
-      claimed = true;
-      group.activate();
-    }
-  });
+  // Late-claim once items appear (a carousel is often a late-mounting
+  // whole-shell surface — see useLateClaim).
+  useLateClaim(group, () => itemsArr().length, props.autoActivate);
 
   // Nav-sound on focus move — track ONLY focusedIndex (read items untracked so a
   // data change doesn't fire a spurious move). Skip the initial settle.
