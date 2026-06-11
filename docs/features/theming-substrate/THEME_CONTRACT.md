@@ -45,6 +45,7 @@ Fields (`platform/theme/manifest.ts`):
 | `required_engine_capabilities` | engine capabilities the theme refuses to run without (e.g. `multi-monitor`, `attract-mode`) — **empty in ARC 1** |
 | `reserves_corner` | engine-summon-icon corner — `"top-right"` in ARC 1 |
 | `surfaces` | named surfaces the theme renders — **`["main"]` only in ARC 1** (D20b) |
+| `glyph_set` | optional — controller-glyph set the HintBar paints: `"xbox"` (default) or `"playstation"` (S5.3). Unknown / omitted falls back to `xbox` (validator WARNING, not error) |
 
 ## 2. Entry component
 
@@ -67,6 +68,13 @@ redefines a verb's meaning** (that's a per-user contract). The HintBar renders
 glyphs from the current input→verb map, so a remap repaints every hint for
 free. Consume the `list`/`grid` primitives (`@oa/platform/nav`) or
 `useFocusGroup` directly; both are verb-native.
+
+**Controller-glyph set (S5.3).** The verb→glyph lookup goes through a swappable
+`GlyphSet`. A theme picks one via the manifest `glyph_set` field — `"xbox"`
+(default: A/B/X/Y) or `"playstation"` (✕/◯/□/△). The glyph still resolves
+verb → currently-bound button → that set's glyph, so a remap *and* the set both
+repaint hints for free. (A user-facing picker + controller auto-detect are
+deferred — scope-call #4 ships the seam + one alternate set.)
 
 ## 4. Design tokens (S3) — what a theme MAY override
 
@@ -161,7 +169,9 @@ surfaced). It runs at registration (dev-loud) and as a Vitest CI gate over
   sub-keys ∈ `SystemPalette` (`accent`/`soft`/`glow`, the `PALETTE_VAR` map),
   values non-empty. Same data-half guarantee — a theme can only set known palette
   vars on known systems, scoped to the mount.
-- Warnings: non-directory-safe `id`; `default_route` ∉ `routes`.
+- Warnings: non-directory-safe `id`; `default_route` ∉ `routes`; unknown
+  `glyph_set` (∉ `GLYPH_SETS` — hints fall back to the default, so it's a warning
+  not an error: a cosmetic glyph mismatch must not disqualify a whole theme).
 
 **Backed structurally (not by the validator):** the §4 "no global `:root` /
 engine-variable override" guarantee. The real protection is the S3

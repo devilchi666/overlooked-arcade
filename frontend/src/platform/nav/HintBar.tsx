@@ -22,7 +22,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type Component, type JSX } from "solid-js";
 import { hasSeenGamepad } from "./gamepad";
 import { isSwapAB, navBindings } from "./navBindings";
-import { DEFAULT_GLYPH_SET, verbGlyph } from "./glyphs";
+import { activeGlyphSet, verbGlyph } from "./glyphs";
 import type { NavVerb } from "./verbs";
 import { nowPlaying } from "@oa/platform/lib/audio";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -88,9 +88,12 @@ const HINT_ORDER: HintKey[] = [
 /// remaps. Returns null when no glyph applies (e.g. an unbound reserved verb) —
 /// the bar omits that entry.
 function glyphForKey(key: HintKey, swap: boolean): string | null {
-  if (key === "dpad") return DEFAULT_GLYPH_SET.dpad;
-  if (key === "stick") return DEFAULT_GLYPH_SET.stick;
-  return verbGlyph(key, navBindings(), swap);
+  // Reactive: reads the active glyph set (theme-chosen via manifest glyph_set),
+  // so switching set repaints every hint — same free-update the bindings give.
+  const gs = activeGlyphSet();
+  if (key === "dpad") return gs.dpad;
+  if (key === "stick") return gs.stick;
+  return verbGlyph(key, navBindings(), swap, gs);
 }
 
 export const HintBar: Component = () => {

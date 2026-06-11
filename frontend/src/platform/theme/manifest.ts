@@ -86,4 +86,13 @@ export type ThemeManifest = {
    * declare `["main"]`; the field exists now so multi-monitor surfaces
    * are an additive declaration later, not a contract rewrite. */
   surfaces: ThemeSurface[];
+  /** Controller-glyph set the HintBar paints for this theme (S5.3,
+   * scope-call #4). One of the built-in `GlyphSetId`s ("xbox" | "playstation");
+   * omit to inherit the default ("xbox"). Kept a loose `string` here (like
+   * `routes`) so the manifest type doesn't couple to the nav layer; the S4
+   * validator checks it against the `GLYPH_SETS` registry and an unknown value
+   * is a non-fatal WARNING (hints fall back to the default — a cosmetic
+   * mismatch must not disqualify a theme). The user-facing picker + controller
+   * auto-detect are deferred. */
+  glyph_set?: string;
 };

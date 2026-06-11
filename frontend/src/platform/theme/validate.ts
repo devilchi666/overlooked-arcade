@@ -40,6 +40,7 @@ import {
   SYSTEM_PALETTES,
   type SystemPalette,
 } from "@oa/platform/themes/systemPalettes";
+import { GLYPH_SETS } from "@oa/platform/nav";
 
 /// Surfaces the shell honors today. ARC 1 = exactly `main` (D20b). The named
 /// surfaces seam widens this when multi-monitor lands; a theme declaring a
@@ -70,7 +71,8 @@ export type ThemeIssueCode =
   | "EMPTY_PALETTE_VALUE" // a perSystemTokens value is empty / blank
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
-  | "DEFAULT_ROUTE_NOT_IN_ROUTES"; // default_route ∉ routes
+  | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
+  | "UNKNOWN_GLYPH_SET"; // glyph_set ∉ GLYPH_SETS (hints fall back to default)
 
 export type ThemeIssue = {
   code: ThemeIssueCode;
@@ -203,6 +205,15 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
       code: "DEFAULT_ROUTE_NOT_IN_ROUTES",
       field: "default_route",
       message: `manifest.default_route "${m.default_route}" is not listed in manifest.routes`,
+    });
+  }
+
+  // --- glyph_set known (warning — cosmetic; hints fall back to the default) ---
+  if (isNonEmptyString(m?.glyph_set) && !(m.glyph_set in GLYPH_SETS)) {
+    warnings.push({
+      code: "UNKNOWN_GLYPH_SET",
+      field: "glyph_set",
+      message: `manifest.glyph_set "${m.glyph_set}" is not a known glyph set (${Object.keys(GLYPH_SETS).join(", ")}); the HintBar falls back to the default`,
     });
   }
 

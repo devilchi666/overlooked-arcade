@@ -63,6 +63,12 @@ describe("validateTheme — valid", () => {
     expect(v.ok).toBe(true);
     expect(v.errors).toEqual([]);
   });
+
+  it("a known glyph_set passes with no issues", () => {
+    const v = validateTheme(pkg({ glyph_set: "playstation" }));
+    expect(v.ok).toBe(true);
+    expect(v.warnings).toEqual([]);
+  });
 });
 
 describe("validateTheme — errors", () => {
@@ -153,5 +159,11 @@ describe("validateTheme — warnings (non-fatal)", () => {
     const v = validateTheme(pkg({ default_route: "nope", routes: ["library"] }));
     expect(v.ok).toBe(true);
     expect(codes(v.warnings)).toContain("DEFAULT_ROUTE_NOT_IN_ROUTES");
+  });
+
+  it("unknown glyph_set → UNKNOWN_GLYPH_SET warning, still ok (hints fall back)", () => {
+    const v = validateTheme(pkg({ glyph_set: "ps5" }));
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("UNKNOWN_GLYPH_SET");
   });
 });

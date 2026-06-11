@@ -25,6 +25,10 @@
 // territory (Settings → Per-system) those same systems keep their baseline red /
 // teal. That's the D19 optional sub-cascade + the D2 sibling-scope, visible.
 //
+// S5.3 GLYPH-SET DEMO: bare's manifest declares `glyph_set: "playstation"`, so
+// the HintBar paints ✕/◯/□/△ (the Launch hint reads ✕) while Retroverse keeps
+// the default Xbox A — a theme picking its controller-glyph identity in one field.
+//
 // DUAL ROLE: themes/index.ts registers it (so the operator can switch to it and
 // see the floor end-to-end — browse + launch + restart all work), and
 // validate.test.ts validates this exact package as the "canonical minimal
@@ -61,6 +65,11 @@ const BARE_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
+  // S5.3 test-bed demo: bare paints PlayStation glyphs (✕/◯/□/△) in the
+  // HintBar, so the Launch hint reads ✕ here while Retroverse (no glyph_set)
+  // keeps the default Xbox A. Proves a theme picks its controller-glyph
+  // identity via one manifest field. Omitting it inherits "xbox".
+  glyph_set: "playstation",
 };
 
 const BareEntry: ThemeEntry = (_props) => {
