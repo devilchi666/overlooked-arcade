@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-11 — Phase 3 S5.5: primitives (carousel/custom + reserved wheel + nav-sound + background revival) — 🔄 shipped on branch (awaiting operator playtest)
+## 2026-06-11 — Phase 3 S5.5: primitives (carousel/custom + reserved wheel + nav-sound + background revival) — ✅ shipped + merged (merge `105fad8`) — **CLOSES S5 + the Phase-3 substrate-depth arc**
 
 > Branch `feat/theming-s5-5-primitives`. The LAST S5 micro-slice — closes the Phase-3
 > substrate-depth arc. DECISIONS **D29**. Five parts; the CoverFlow refactor is the

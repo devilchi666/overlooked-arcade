@@ -317,10 +317,17 @@ spanned every system but was filed under whichever core happened to be active.
         (`feat/theming-s5-4-theme-settings`, merge `895f8c0`, DECISIONS **D28**): collision-free
         per-theme prefs (`themeSettings.ts` + `useThemeSettings()` auto-bound to the active
         theme's id; localStorage; reactive); `bare`'s "Compact" toggle the live consumer;
-        THEME_CONTRACT §7. **Remaining S5 micro-slice:** S5.5 primitives (carousel dogfooded
-        into CoverFlow + custom + reserved wheel contract + #6 verb→sound hook +
-        background-surface revival) — the LAST S5 slice, closes the Phase-3 substrate-depth arc.
-        Remap Settings UI = D18 follow-on.
+        THEME_CONTRACT §7. **S5.5 (primitives + background revival) ✅ shipped + merged
+        2026-06-11** (`feat/theming-s5-5-primitives`, merge `105fad8`, DECISIONS **D29**):
+        `CarouselNav` (CoverFlow dogfooded onto it) + `CustomNav` escape hatch + reserved
+        `WheelNav` contract + `onNavSound` hook (#6) + `ThemeBackground` (revived dead
+        `SystemBackground` → the S5.1 background tier's live consumer); shared `useLateClaim`
+        + ListNav/GridNav scroll-into-view from the 3-round playtest. vitest 51.
+        **✅ S5 COMPLETE — the Phase-3 substrate-depth arc is closed.** The remaining
+        Phase-3 follow-on is the **D18 nav-remap Settings UI** (verb rebinding + conflict
+        validation + "Reset to defaults"); after that, ARC-1's original §6 Phase 5
+        (`.oatheme` on-disk distribution/loader) + Phase 6 (full Retroverse-as-theme move)
+        remain. Operator picks next.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
