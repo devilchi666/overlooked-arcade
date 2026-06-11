@@ -323,11 +323,16 @@ spanned every system but was filed under whichever core happened to be active.
         `WheelNav` contract + `onNavSound` hook (#6) + `ThemeBackground` (revived dead
         `SystemBackground` → the S5.1 background tier's live consumer); shared `useLateClaim`
         + ListNav/GridNav scroll-into-view from the 3-round playtest. vitest 51.
-        **✅ S5 COMPLETE — the Phase-3 substrate-depth arc is closed.** The remaining
-        Phase-3 follow-on is the **D18 nav-remap Settings UI** (verb rebinding + conflict
-        validation + "Reset to defaults"); after that, ARC-1's original §6 Phase 5
-        (`.oatheme` on-disk distribution/loader) + Phase 6 (full Retroverse-as-theme move)
-        remain. Operator picks next.
+        **✅ S5 COMPLETE — the Phase-3 substrate-depth arc is closed.** **D18 nav-remap
+        Settings UI (gamepad) ✅ shipped + merged 2026-06-11** (`feat/theming-nav-remap-settings`,
+        merge `2b40e3e`, DECISIONS **D30**): `NavRemapCard` in Settings → Controls rebinds the
+        shell-nav verbs to standard-layout gamepad buttons (live/no-restart; conflict-by-steal;
+        per-row + global Reset; F12/keyboard escape hatch). The **keyboard** nav-remap UI + a
+        default keyboard map + the future **per-controller-id gameplay-binding auto-config** are
+        queued in **PARKING_LOT.md** (2026-06-11) — the keyboard dispatch infra is already wired
+        (`focus.ts:214`), only the editing UI is deferred. **Phase 3 is now fully closed.**
+        Remaining ARC-1: original §6 Phase 5 (`.oatheme` on-disk distribution/loader) + Phase 6
+        (full Retroverse-as-theme move). Operator picks next.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
