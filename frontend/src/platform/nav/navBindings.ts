@@ -141,6 +141,36 @@ export function resolveKeyVerb(key: string, bindings: NavBindings): NavVerb | nu
   return bindings.keyboard[key] ?? null;
 }
 
+/// First gamepad button mapped to `verb` in the RAW stored map (no swap
+/// overlay). The remap Settings UI shows + edits raw bindings; `buttonForVerb`
+/// (below) is the swap-aware variant the HintBar paints. Returns null when
+/// unbound.
+export function rawGamepadButtonForVerb(bindings: NavBindings, verb: NavVerb): NavButton | null {
+  for (const [btn, v] of Object.entries(bindings.gamepad)) {
+    if (v === verb) return btn as NavButton;
+  }
+  return null;
+}
+
+/// Pure: bind `verb` to gamepad `button` (or unbind when null) in a COPY of
+/// `bindings`. Enforces one-button-per-verb — it clears the verb's previous
+/// button first, and because the map is button-keyed, assigning a button that
+/// was already another verb's transfers it (that other verb becomes unbound).
+/// That's the conflict resolution the remap Settings UI surfaces. Never mutates
+/// the input.
+export function rebindGamepadVerb(
+  bindings: NavBindings,
+  verb: NavVerb,
+  button: NavButton | null,
+): NavBindings {
+  const gamepad: Partial<Record<NavButton, NavVerb>> = { ...bindings.gamepad };
+  for (const b of Object.keys(gamepad) as NavButton[]) {
+    if (gamepad[b] === verb) delete gamepad[b];
+  }
+  if (button) gamepad[button] = verb;
+  return { ...bindings, gamepad };
+}
+
 /// The physical button that currently triggers `verb` on the gamepad, with the
 /// swap overlay applied — i.e. the button whose GLYPH the HintBar should show.
 /// Returns null when no button maps to the verb. (Reverse of
