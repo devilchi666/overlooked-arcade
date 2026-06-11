@@ -934,3 +934,41 @@ mechanism (incl. *why* inline vars can't do it, and the `.oa-theme-mount` prefix
 load-bearing for D2) are the two a later contributor could most easily get wrong — by
 "consolidating" palette into `config/*.json`, or by dropping the scope prefix and leaking a
 theme's per-system override into engine territory.
+
+---
+
+### D27 — Glyph-set seam: loose manifest field + App-bridged active set + unknown-is-a-warning (Phase 3 S5.3)
+
+**Decision (2026-06-11, `feat/theming-s5-3-glyph-set`):** build choices for making the
+existing verb→glyph indirection (S1) theme-choosable. Scope-call #4 = "seam + one alternate
+set; defer the picker + auto-detect."
+
+1. **`manifest.glyph_set` is a loose `string`, not a `GlyphSetId` union.** Like `routes` and
+   `required_engine_capabilities`, the manifest stays a plain-data shape that doesn't import
+   the nav layer; the validator checks the value against the runtime `GLYPH_SETS` registry.
+   This keeps `platform/theme/manifest.ts` decoupled from `platform/nav` (the union lives in
+   `glyphs.ts`, where glyph sets belong).
+
+2. **The active glyph set is App-bridged into nav, not read by nav from the theme.** `glyphs.ts`
+   owns an `activeGlyphSet()` signal + `setActiveGlyphSetId()`; App.tsx bridges
+   `activeTheme()?.manifest.glyph_set` into it via a `createEffect` — the SAME pattern as the
+   S1 settings→nav bridges (`setSwapAB`, `setPerSystemUiEnabled`). nav stays a generic leaf
+   (it does not import the theme registry); App is the one place that knows the active theme.
+   *Constraint:* don't make `glyphs.ts`/HintBar reach into `platform/theme/registry` — bridge
+   from App. (A future user picker / controller auto-detect calls the same setter; the seam is
+   "set the active glyph set," source-agnostic.)
+
+3. **Unknown `glyph_set` is a WARNING, not an error.** An error would EXCLUDE the theme from
+   the picker (unselectable). Disqualifying a whole theme over a cosmetic hint-glyph typo is
+   disproportionate — `setActiveGlyphSetId` already falls back to xbox, so a bad value renders
+   fine (just default glyphs). Contrast `surfaces` / `required_engine_capabilities` (errors):
+   those gate whether the theme can *function*; glyph choice never does. *Constraint:* keep it
+   a warning — don't "tighten" it to an error.
+
+4. **`bare` is the live consumer** (the test bed, per D26): its manifest declares
+   `glyph_set: "playstation"`, so bare visibly paints ✕/◯/□/△ while Retroverse keeps the
+   default A. One real theme exercising the seam end-to-end, no shipping-theme distortion.
+
+**Why record this:** (2) the App-bridge-not-nav-reads-theme direction and (3) warning-not-error
+are the two a later contributor could most easily undo — by coupling nav to the theme registry
+for "convenience," or by making a cosmetic mismatch disqualify a theme.

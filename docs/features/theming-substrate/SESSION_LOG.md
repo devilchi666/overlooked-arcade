@@ -9,6 +9,38 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — Phase 3 S5.3: glyph-set seam (manifest field + PS set) — 🔄 shipped on branch (awaiting operator playtest)
+
+> Branch `feat/theming-s5-3-glyph-set`. Third S5 micro-slice. The verb→glyph
+> indirection already existed (S1 `glyphs.ts`); S5.3 makes it CHOOSABLE with a real
+> consumer. DECISIONS **D27**. Scope-call #4 = seam + one alternate set; picker deferred.
+
+- **Shipped** (plan §13.3 S5 item glyph-set #4):
+  - **`glyphs.ts`**: `PLAYSTATION_GLYPH_SET` (✕/◯/□/△ + Options ≡ / Create ⊟ / PS),
+    `GlyphSetId` (`"xbox"|"playstation"`), `GLYPH_SETS` registry, `DEFAULT_GLYPH_SET_ID`,
+    and the **`activeGlyphSet()` signal** + `setActiveGlyphSetId(id)` (unknown/undefined →
+    default). HintBar now paints via `activeGlyphSet()` (reactive — switching set repaints
+    every hint, same free-update as a remap).
+  - **Manifest `glyph_set?: string`** (loose, like `routes` — keeps the manifest type
+    decoupled from the nav layer). **App.tsx bridge** `createEffect(() =>
+    setActiveGlyphSetId(activeTheme()?.manifest.glyph_set))` — mirrors the S1 settings→nav
+    bridges (`setSwapAB`, `setPerSystemUiEnabled`). nav stays a generic leaf; App injects.
+  - **Validator**: `UNKNOWN_GLYPH_SET` — a **WARNING**, not an error (a cosmetic glyph
+    mismatch must not disqualify a whole theme; hints fall back to xbox). THEME_CONTRACT.md
+    §1/§3/§6 updated.
+  - **Live consumer = `bare`** (the test bed): its manifest declares
+    `glyph_set: "playstation"`, so bare's HintBar Launch hint reads **✕** while Retroverse
+    keeps the default **A**. bare now demos BOTH S5.2 (per-system dots) + S5.3 (PS glyphs).
+- **Verified:** `npm run typecheck` + `npm run lint` green (lint confirms `platform/theme →
+  platform/nav` is allowed); **`npm run test` = 45 passed** (37 + 2 validator glyph cases +
+  6 new `glyphs.test.ts`: set completeness, PS symbols, registry, `activeGlyphSet`
+  default/switch/fallback, verb→button→glyph per set); `npm run build` green. Frontend-only.
+- **Almost:** nothing in S5.3 scope. The user-facing **glyph picker + controller
+  auto-detect** stay deferred (scope-call #4) — the seam + the bridge make them a drop-in.
+- **Next:** **operator playtest** — switch to `bare`, confirm the hint bar shows ✕/◯/□/△
+  (Launch = ✕) and Retroverse still shows A. Then merge. **After: S5.4 — per-theme settings
+  namespace.**
+
 ## 2026-06-11 — Phase 3 S5.2: palette substrate (typed map + override seam) — ✅ shipped + merged (merge `f5b9b61`)
 
 > Branch `feat/theming-s5-2-palette-substrate`. Second S5 micro-slice. Extracts the

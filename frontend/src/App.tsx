@@ -77,7 +77,7 @@ import { HintBar } from "@oa/platform/nav";
 import { registerLibraryAdmin } from "@oa/platform/libraryAdmin";
 import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJobsBar";
 import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
-import { setSwapAB } from "@oa/platform/nav";
+import { setSwapAB, setActiveGlyphSetId } from "@oa/platform/nav";
 import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
@@ -380,6 +380,11 @@ const App: Component = () => {
   // the flag without consumers; Phase B's RetroverseShell is the
   // first surface that reads it. See docs/PLANS/retroverse-ui-rollout.md.
   createEffect(() => setRetroverseUiEnabled(settings.experimentalRetroverseUi()));
+  // Theming S5.3: bridge the active theme's manifest `glyph_set` to the HintBar
+  // glyph-set indirection. A theme picks "xbox" | "playstation"; unknown /
+  // omitted falls back to the default. Reactive so a (future, ARC-3 hot-swap)
+  // theme change repaints hints; in ARC 1 it just fires once at boot.
+  createEffect(() => setActiveGlyphSetId(activeTheme()?.manifest.glyph_set));
 
   // Retroverse UI rollout Phase A Slice 4: install DevTools globals so
   // the operator can exercise the route signal independent of UI
