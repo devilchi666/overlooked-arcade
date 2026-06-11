@@ -308,8 +308,13 @@ spanned every system but was filed under whichever core happened to be active.
         Data-home = typed map not `config/*.json`+build-step (frontend-only data). `bare`
         reframed as the substrate **test bed** + the seam's live consumer (per-system accent
         dots + scoped NES→cyan/PSX→magenta demo). typecheck/lint/vitest(37)/build green;
-        frontend-only. **Remaining S5 micro-slices:** S5.3 glyph-set (manifest `glyph_set`
-        + PS set) · S5.4 per-theme settings namespace · S5.5 primitives (carousel dogfooded
+        frontend-only. **S5.3 (glyph-set seam) ✅ shipped + merged 2026-06-11**
+        (`feat/theming-s5-3-glyph-set`, merge `af13cb7`, DECISIONS **D27**): S1 verb→glyph
+        indirection made theme-choosable — `PLAYSTATION_GLYPH_SET` + `GLYPH_SETS` + the
+        `activeGlyphSet()` signal (HintBar reactive); loose manifest `glyph_set` bridged from
+        App; validator `UNKNOWN_GLYPH_SET` warning; `bare` ships `glyph_set:"playstation"`.
+        **Remaining S5 micro-slices:** S5.4 per-theme settings namespace (building now, on
+        top of S5.3 — combined playtest per operator) · S5.5 primitives (carousel dogfooded
         into CoverFlow + custom + reserved wheel contract + the background-surface revival).
         Remap Settings UI = D18 follow-on.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge

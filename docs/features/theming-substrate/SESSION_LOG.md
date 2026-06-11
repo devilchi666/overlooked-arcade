@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-11 — Phase 3 S5.3: glyph-set seam (manifest field + PS set) — 🔄 shipped on branch (awaiting operator playtest)
+## 2026-06-11 — Phase 3 S5.3: glyph-set seam (manifest field + PS set) — ✅ shipped + merged (merge `af13cb7`; combined playtest rides with S5.4)
 
 > Branch `feat/theming-s5-3-glyph-set`. Third S5 micro-slice. The verb→glyph
 > indirection already existed (S1 `glyphs.ts`); S5.3 makes it CHOOSABLE with a real
