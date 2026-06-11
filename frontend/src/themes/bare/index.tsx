@@ -1,18 +1,29 @@
-// Bare — the minimal valid theme. The lowest-floor reference shell AND the
-// S4 validator's canonical fixture.
+// Bare — the minimal valid theme. The lowest-floor reference shell, the S4
+// validator's canonical fixture, AND the substrate TEST BED (operator framing,
+// S5.2): the eventual proper list-view theme grows from here, so new substrate
+// capabilities get their first real consumer in bare.
 //
 // Theming Substrate ARC 1 Phase 3 S4 (the versioned manifest + validator,
-// docs/PLANS/theming-substrate.md §13.3 + scope-call #7). This is the floor of
-// the north star "low floor, high ceiling": the smallest thing that is a
-// *valid, functional* whole-shell theme. If a creator can read one file to see
-// "this is all a theme MUST be," it's this one.
+// docs/PLANS/theming-substrate.md §13.3 + scope-call #7); extended in S5.2 to
+// consume the per-system palette seam. This is the floor of the north star
+// "low floor, high ceiling": the smallest thing that is a *valid, functional*
+// whole-shell theme. If a creator can read one file to see "this is all a theme
+// MUST be," it's this one.
 //
-// What it is: a plain vertical list of every game (title + system), Up/Down to
-// move, Confirm to launch, plus the engine-summon icon (D3, the always-present
-// path back to Settings). No covers, no per-system colour, no tokens, no
-// ceremony — deliberately. It consumes ONLY the platform layer (usePlatform
-// stores + the useTheme host services + the S1 `list` primitive + the
-// platform-homed EngineSummonIcon), exactly like any other theme.
+// What it is: a plain vertical list of every game (title + system) with a
+// per-system accent dot, Up/Down to move, Confirm to launch, plus the
+// engine-summon icon (D3, the always-present path back to Settings). No covers,
+// no design-token overrides, no ceremony — deliberately. It consumes ONLY the
+// platform layer (usePlatform stores + the useTheme host services + the S1
+// `list` primitive + the platform-homed EngineSummonIcon), exactly like any
+// other theme.
+//
+// S5.2 PER-SYSTEM SEAM DEMO: each row carries `data-system`, so its accent dot
+// shows that system's baseline palette colour — AND bare's `perSystemTokens`
+// (below) recolours a couple of systems to prove the override is SCOPED to this
+// theme's mount. In bare, NES dots read cyan / PSX dots read magenta; in engine
+// territory (Settings → Per-system) those same systems keep their baseline red /
+// teal. That's the D19 optional sub-cascade + the D2 sibling-scope, visible.
 //
 // DUAL ROLE: themes/index.ts registers it (so the operator can switch to it and
 // see the floor end-to-end — browse + launch + restart all work), and
@@ -100,14 +111,26 @@ const BareEntry: ThemeEntry = (_props) => {
         onSecondary={(_i, entry) => host.onShowInfo(entry)}
       >
         {(entry, ctx) => (
+          // `data-system` makes `--color-system-accent` resolve to this game's
+          // system palette (baseline, or bare's scoped perSystemTokens override).
           <div
-            class="flex items-baseline justify-between gap-4 rounded-md px-4 py-2.5"
+            data-system={entry.systemId}
+            class="flex items-center justify-between gap-4 rounded-md px-4 py-2.5"
             classList={{
               "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
               "text-(--color-oa-ink-dim)": !ctx.focused(),
             }}
           >
-            <span class="truncate text-sm">{entry.title}</span>
+            <div class="flex min-w-0 items-center gap-3">
+              {/* Per-system accent dot — the visible consumer of the S5.2
+                  palette seam (baseline colour, overridden for the demo systems). */}
+              <span
+                class="size-2 shrink-0 rounded-full"
+                style={{ "background-color": "var(--color-system-accent)" }}
+                aria-hidden="true"
+              />
+              <span class="truncate text-sm">{entry.title}</span>
+            </div>
             <span class="shrink-0 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
               {sysShort(entry)}
             </span>
@@ -121,6 +144,15 @@ const BareEntry: ThemeEntry = (_props) => {
 export const bare: ThemePackage = {
   manifest: BARE_MANIFEST,
   entry: BareEntry,
-  // No tokens — the purest floor. CoverFlow already proves the token-override
-  // path; Bare proves a theme needs none.
+  // No design `tokens` — bare doesn't restyle the global palette (CoverFlow
+  // already proves the token path). It DOES demo the S5.2 per-system seam:
+  // these scoped overrides recolour two systems' accent so the dots prove the
+  // override is theme-mount-scoped (engine territory keeps the baseline). NES
+  // baseline is red → demo cyan; PSX baseline is teal → demo magenta. Picked
+  // two systems likely to be in a test library; the value strings are valid CSS
+  // so `validateTheme(bare)` still passes (and now exercises perSystemTokens).
+  perSystemTokens: {
+    nes: { accent: "oklch(0.72 0.16 195)" },
+    psx: { accent: "oklch(0.65 0.22 340)" },
+  },
 };

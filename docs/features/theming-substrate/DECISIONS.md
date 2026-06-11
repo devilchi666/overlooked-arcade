@@ -916,13 +916,18 @@ palette substrate, with operator sign-off on the data-home fork (AskUserQuestion
    override — the prefix is what makes it legal. *Constraint:* keep the `.oa-theme-mount`
    prefix; an unprefixed `[data-system]` rule from a theme WOULD leak to engine territory.
 
-4. **No clean ARC-1 live consumer for the override seam — by design, not omission.** The only
-   theme that renders `data-system` is Retroverse (the default, which we don't recolor);
-   CoverFlow + bare are system-agnostic (D19). So the override seam ships **test-proven + wired
-   + documented but unconsumed** — the same "ready capability awaiting a consumer" shape as
-   S5.1's background tier. The **baseline extraction** is S5.2's live/visible deliverable
-   (accents must be byte-identical after retiring `systems.css`). A visible override demo waits
-   for a per-system-consuming non-default theme (or an explicit operator-chosen demo home).
+4. **`bare` is the override seam's live consumer — reframed as the substrate TEST BED
+   (operator call).** The only shipping theme that renders `data-system` is Retroverse (the
+   default, which we don't recolor); CoverFlow is system-agnostic by design (D19). Rather than
+   leave the seam unconsumed (the S5.1-background shape) OR distort a shipping theme, the
+   operator reframed `bare` from "purest minimal floor" to **test bed** — "eventually a proper
+   list-view theme grows from here; bare is where new substrate capabilities get their first
+   real consumer." So `bare` now renders a per-system accent dot (`data-system`) and ships a
+   scoped `perSystemTokens` demo (NES→cyan, PSX→magenta), making the D19 sub-cascade + D2
+   sibling-scope visible (bare shows the demo colours; engine territory keeps the baseline).
+   `bare.tokens` stays undefined, so its "no design-token overrides" fixture role is intact;
+   the demo just exercises the *separate* `perSystemTokens` field. The **baseline extraction**
+   remains S5.2's primary live deliverable (accents byte-identical after retiring `systems.css`).
 
 **Why record this:** (1) the typed-map-not-config-json home and (3) the scoped-`<style>`
 mechanism (incl. *why* inline vars can't do it, and the `.oa-theme-mount` prefix being

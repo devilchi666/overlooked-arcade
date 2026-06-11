@@ -44,16 +44,20 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   baseline-CSS shape, scoped-override specificity/partial/empty, systemThemes parity, glow
   invariant); `npm run build` green (CSS bundle −7 kB; the baseline left the static bundle).
   Frontend-only — Rust untouched (830 oa-shell tests hold).
-- **Almost / honest gap:** the **baseline extraction is the live, visible deliverable**
-  (per-system accents must look identical after retiring `systems.css` — the playtest). The
-  **override seam is test-proven but has no clean ARC-1 live consumer:** the only theme that
-  renders `data-system` is **Retroverse (the default we shouldn't recolor)**; CoverFlow + bare
-  are **system-agnostic by design** (D19). So a visible override demo has nowhere to live
-  without distorting a shipping theme — same "ready-but-unconsumed capability" shape as S5.1's
-  background tier. **Operator choice offered** (where, if anywhere, to ship a visible demo).
-- **Next:** **operator playtest S5.2** — confirm per-system colors (Retroverse tiles, Settings
-  per-system drill-in, system-edged toasts) are **identical** to before (baseline parity), and
-  decide the override-demo placement. Then merge. **After: S5.3 — glyph-set seam.**
+- **Live override demo — `bare` reframed as the substrate TEST BED (operator call):** rather
+  than distort Retroverse (the default) or re-add per-system colour to the system-agnostic
+  CoverFlow, the operator chose `bare` as the consumer — "eventually we'll do a list-view theme
+  properly; bare is the test bed." So `bare` now renders a **per-system accent dot** per row
+  (`data-system` → `--color-system-accent`) AND ships a scoped `perSystemTokens` override
+  recolouring **NES → cyan** + **PSX → magenta**. In bare those rows read the demo colours; in
+  engine territory (Settings → Per-system) NES/PSX keep their baseline red/teal — the D19
+  sub-cascade + D2 sibling-scope, **visible**. `validateTheme(bare)` still passes (valid
+  perSystemTokens; `bare.tokens` stays undefined so the "no design-token overrides" fixture
+  assertion holds). All gates re-run green after the bare change.
+- **Next:** **operator playtest S5.2** — (1) **baseline parity:** per-system colours
+  (Retroverse tiles, Settings per-system drill-in, system-edged toasts) are **identical** to
+  before; (2) **override demo:** switch to `bare`, see NES rows' dots cyan + PSX dots magenta
+  while Settings keeps NES red / PSX teal. Then merge. **After: S5.3 — glyph-set seam.**
 
 ## 2026-06-10 — Phase 3 S5.1: resolver theme tier — ✅ shipped + merged (merge `783da2e`)
 
