@@ -546,6 +546,16 @@ spanned every system but was filed under whichever core happened to be active.
     Casual / Preservation toggle; Variants tab on GameDetailPanel;
     System Health Overview gains % verified / % covers / % metadata
     rollups.
+    - ⚠️ **STRANDED-ON-BRANCH (recorded 2026-06-12):** Phase B is in fact
+      **code-complete (Slices 1–4)** on branch `feat/virtual-library-phase-b`
+      (tip `a475b29`, also on `origin`) — never merged to main. Contains new
+      `SystemHealthPage.tsx`, `GameInfoModal` Variants tab, `filter.ts`
+      preservation filters, two-mode settings toggle + library-mode pref.
+      Built ~2026-06-09, then deprioritised behind the metadata / theming /
+      controller-identity arcs. Branch is ~95 commits behind current main and
+      touches files heavily rewritten since (`GameInfoModal`, `LibraryView`,
+      settings store), so resurrecting it = a conflict-resolving merge +
+      playtest, NOT a fast-forward. Parked intentionally; do not delete.
   - **Phase C — launcher abstraction (~2–3 weeks):** `Launcher`
     lifecycle trait ABOVE the untouched `oa_core::Core`;
     `LibretroLauncher` + `ExternalProcessLauncher` impls;
@@ -758,6 +768,14 @@ spanned every system but was filed under whichever core happened to be active.
     separate to-do: NES (+ maybe others) audio clipping/clicking — filed in
     `NEXT.md` MEDIUM, independent of the HW path. See the hw-render
     SESSION_LOG cont.15/15b/15c entries.
+    - ⚠️ **STRANDED-ON-BRANCH (recorded 2026-06-12):** M3 "Half 2" was
+      actually started and **has uncommitted-to-main code** on branch
+      `feat/hw-render-m3` (tip `fd2821b`, also on `origin`): `hw_render.rs`
+      +168 (HW-render status observability + software-peer table), plus
+      `oa-libretro` core/state changes. Built ~2026-06-09, never merged; the
+      "future stretch / not started" wording above predates it. Branch is
+      ~95 commits behind main. Parked intentionally; do not delete — resurrect
+      via conflict-resolving merge + hardware validation when M3 is picked up.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
