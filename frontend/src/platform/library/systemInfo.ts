@@ -25,6 +25,7 @@ export {
   setSystemInfoOverride,
   deleteSystemInfoOverride,
   resetSystemInfoToDefault,
+  listSystemInfoOverridden,
 } from "@oa/platform/api/systemApi";
 
 /// One operator-facing peripheral row, rendered in SUPPORTED

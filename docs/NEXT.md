@@ -342,7 +342,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Metadata Curation — Wave 1 / S2 (metadata Settings category + SYSTEM editor)
+### Metadata Curation — Wave 1 / S3 (GAME editor + entity-list picker)
 
 **Planned 2026-06-11.** Full plan:
 [PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature folder
@@ -352,24 +352,33 @@ premium **Settings → "Metadata"** editor for game + system metadata on an
 
 **✅ S1 shipped 2026-06-11** (branch `feat/metadata-curation`): the
 game-factual override backend. `game_metadata_overrides` table (schema
-v23→v24), `GameMetadataOverride` struct + `apply_to_identity`, get/set/
-delete/reset_field commands, `update_identity_metadata` exposed, read-path
-merge in `list_game_groups`, 7 SQL fixture tests, `cargo test -p oa-shell`
-837 green. Backend only. See the SESSION_LOG for the field-coverage note
-(6 stored-but-not-yet-surfaced fields await S3's render surface).
+v23→v24), `GameMetadataOverride` + `apply_to_identity`, get/set/delete/
+reset_field commands, `update_identity_metadata` exposed, read-path merge in
+`list_game_groups`, 7 SQL fixture tests.
 
-**S2 scope (fastest visible win — backend already exists):** register a new
-`metadata` category in the engine Settings registry (`SettingsPanel.tsx`
-`CATEGORIES` + `Match` arm, CONTENT group) + a SYSTEM-metadata editor body
-wiring the already-shipped `get/set/delete/reset_system_info_override`
-commands. Must hit the §UX-pillar bar (live preview, provenance dots, typed
-controls, controller-navigable) — proves the premium-UX shell on a complete
-data layer. **Then S3** (game editor + searchable entity-list picker over the
-S1 backend; folds in the narrative game-info fields too). Anchors:
-`frontend/src/engine/SettingsPanel.tsx` (~`:74` CATEGORIES, ~`:429` Match),
-`SettingsSections.tsx` (body components), `frontend/src/platform/api/` (typed
-wrappers — the invoke ban routes all backend calls through here). Gating:
-ready. Estimate: Wave 1 ≈ 2–3 weeks remaining.
+**✅ S2 shipped 2026-06-12** (same branch): the `metadata` Settings category
++ premium SYSTEM editor (`MetadataSettingsBody.tsx`). Audit found the system
+override editor already existed (flat `PerSystemInfoSection` in the
+Per-system drill-in); operator chose Option A (new category + premium
+rebuild). Ships live preview hero, per-field provenance + reset (via
+`SettingRow`), optimistic debounced autosave, searchable system list +
+"Edited only" filter (new `list_system_info_overridden` command). 837 green;
+typecheck + lint silent. **GATE: awaiting operator playtest sign-off on the
+premium *feel*** (D5 exit criterion).
+
+**S3 scope:** the **GAME editor + searchable entity-list picker** (D4) over
+the S1 `game_metadata_overrides` backend, in the same `metadata` category
+(add a Systems/Games segmented switch at the body top). Typed controls matter
+more here — genre chips w/ typeahead from the library corpus, year stepper,
+rating stars, region/release-type segmented pills. Fold the narrative
+game-info fields (summary/controls/best-emu/bugs) in alongside the factual
+ones so one surface edits the whole game record. Needs new `platform/api/`
+wrappers for the S1 game-metadata commands. Also decide the
+Per-system-drill-in `PerSystemInfoSection` fate (redirect to the new editor /
+deprecate). Anchors: `frontend/src/engine/MetadataSettingsBody.tsx` (extend),
+`frontend/src/platform/api/` (new game-metadata wrappers), the S1 commands in
+`apps/oa-shell/src/main.rs`. Gating: ready (S1 backend + S2 shell both land).
+Estimate: Wave 1 ≈ 1–2 weeks remaining.
 
 ### ✅ Portability + state-storage audit — DONE 2026-06-11
 

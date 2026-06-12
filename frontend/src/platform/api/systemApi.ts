@@ -58,6 +58,13 @@ export function resetSystemInfoToDefault(args: { systemId: string }): Promise<vo
   return invoke("reset_system_info_to_default", args);
 }
 
+/// `system_id`s with at least one operator override — one query that
+/// drives the Settings → Metadata entity list's "edited" badge + the
+/// "overridden only" filter (Metadata Curation S2).
+export function listSystemInfoOverridden(): Promise<string[]> {
+  return invoke<string[]>("list_system_info_overridden");
+}
+
 // --- Status / CPU tier / perf -------------------------------------------
 
 /// The storage / system-health status rollup. Generic (D14): the two call

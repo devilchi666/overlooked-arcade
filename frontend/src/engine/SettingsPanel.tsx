@@ -38,6 +38,7 @@ import {
   ThemesSettings,
 } from "./SettingsSections";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
+import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
 import { useDomQueryFocusGroup } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
@@ -57,6 +58,7 @@ type CategoryId =
   | "themes"
   | "library"
   | "media"
+  | "metadata"
   | "system-health"
   | "profile"
   | "about"
@@ -170,6 +172,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Per-platform art slots + audio assets.",
     helpText:
       "Banner / clear-logo / console / controller / fanart / marquee / photo / wheel / background per system. Operator-supplied art always wins over synced art.",
+  },
+  {
+    id: "metadata",
+    group: "content",
+    label: "Metadata",
+    glyph: "✎",
+    description: "Curate game + system facts as an override layer.",
+    helpText:
+      "Edit the factual metadata OA shows — manufacturer / specs / hero copy per system today; game facts (year / developer / genre / …) as the editor grows. Edits store as a per-field override over the synced/baked values, so a reset always restores the source and a re-sync never clobbers your edit. Each field shows where its value came from + a one-click reset.",
   },
   {
     id: "system-health",
@@ -473,6 +484,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "media"}>
             <MediaSettings />
+          </Match>
+          <Match when={activeCategoryId() === "metadata"}>
+            <MetadataSettingsBody />
           </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />

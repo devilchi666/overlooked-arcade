@@ -2632,6 +2632,7 @@ fn main() {
             reset_mame_game_override,
             delete_system_info_override,
             reset_system_info_to_default,
+            list_system_info_overridden,
             refresh_mame_system_info,
             list_game_info_overridden,
             list_game_info_badges,
@@ -8365,6 +8366,16 @@ fn reset_system_info_to_default(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.set_system_info_override(&systemId, &system_info::SystemInfoOverride::default())
+}
+
+/// `system_id`s with at least one operator override — drives the
+/// Settings → Metadata entity list's "edited" badge + the "overridden
+/// only" filter chip in one query (Metadata Curation S2).
+#[tauri::command]
+fn list_system_info_overridden(
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<String>, String> {
+    db.list_system_info_overridden()
 }
 
 // ---------------------------------------------------------------------

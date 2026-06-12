@@ -5199,10 +5199,10 @@ impl LibraryDb {
     }
 
     /// List `system_id`s with at least one operator override — drives
-    /// the per-system Settings drill-in "edited" indicator (similar
-    /// to the `✎` badge for per-game edits).
-    // Test-covered query helper; no production caller yet.
-    #[allow(dead_code)]
+    /// the Settings → Metadata entity list's "edited" badge + the
+    /// "overridden only" filter (one query instead of N per-system
+    /// fetches). Exposed via the `list_system_info_overridden` command
+    /// (Metadata Curation S2).
     pub fn list_system_info_overridden(&self) -> Result<Vec<String>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         let mut stmt = conn

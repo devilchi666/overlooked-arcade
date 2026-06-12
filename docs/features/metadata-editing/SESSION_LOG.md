@@ -4,6 +4,56 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Wave 1 / S2: metadata Settings category + premium SYSTEM editor
+
+- **Audit finding (the plan's S2 premise was stale):** the system-info
+  override **editor already shipped** — `PerSystemInfoSection.tsx`, live
+  in Settings → Per-system drill-in → "System info" (all 21 fields,
+  provenance badges, save + reset-all, peripheral editor, wired to the
+  shipped `*_system_info_override` commands). But it's a flat
+  label:input grid — no live preview, no typed controls, no per-field
+  reset — closer to the "Windows-98 tab" D5 rejects than premium.
+  Operator chose **Option A**: register the new `metadata` category and
+  build a premium system editor there (reuse the data layer, lift the
+  UX), per-system-drill-in copy's fate decided later.
+- **Shipped:** New **`metadata` Settings category** (CONTENT group,
+  `SettingsPanel.tsx` `CategoryId` + `CATEGORIES` + `Match` arm) →
+  **`MetadataSettingsBody.tsx`** (engine). Premium system editor hitting
+  the §UX-pillar bar: (1) **live preview hero** (self-contained engine
+  render, no theme import) that updates in real time from the draft;
+  (2) **per-field provenance + one-click reset** via the existing
+  `SettingRow` (inherited curated-L2 / MAME-L1 value shown, struck
+  through when overridden, Reset chip); (3) **optimistic debounced
+  autosave** (600ms) with a quiet Saving…/Saved status + race-guarded
+  against fast system switches; (4) **search-as-you-type system list**
+  with an "Edited only" filter chip + per-system "edited" dots; (5)
+  peripheral editor + Reset-all. Backend: exposed the dormant
+  `list_system_info_overridden` (dead_code removed → registered command
+  + `systemApi.listSystemInfoOverridden` wrapper + `systemInfo`
+  re-export) so the list badges/filter take one query, not 45 fetches.
+  `cargo test -p oa-shell` 837 green; frontend `typecheck` + `lint`
+  silent (the platform/api invoke-ban holds — the body calls only API
+  wrappers).
+- **Almost / known v1 limit:** the inherited chip shows the curated (L2)
+  value reliably; for fields that exist ONLY at the MAME (L1) layer it
+  shows the baseline only while un-overridden (the merge backend exposes
+  no L1-without-L3 read). Documented in the file header. Also: the
+  Per-system drill-in still hosts the OLD flat `PerSystemInfoSection` —
+  whether to redirect it to the new editor / deprecate it is an open
+  operator call (Option A deferred that).
+- **GATE:** Wave-1 exit needs **operator playtest sign-off on the
+  premium *feel*** (live preview, typed controls, controller-nav), not
+  just function — this is the D5 gated criterion, not polish-later.
+  Please open Settings → Metadata, pick a system, and judge the feel.
+- **Next:** S3 — the **GAME editor + searchable entity-list picker**
+  over the S1 `game_metadata_overrides` backend, in the same `metadata`
+  category (add a Systems/Games segmented switch at the top of the
+  body). Typed controls matter more here (genre chips w/ typeahead, year
+  stepper, rating stars, region/release-type segmented pills). Fold the
+  narrative game-info fields (summary/controls/best-emu/bugs) in
+  alongside the factual ones. New `platform/api/` wrappers for the S1
+  game-metadata commands. Then the Per-system-drill-in redirect decision.
+
 ## 2026-06-11 — Wave 1 / S1: game-factual override backend
 
 - **Shipped:** `game_metadata_overrides` table (schema v23→v24,
