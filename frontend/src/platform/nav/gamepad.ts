@@ -18,6 +18,7 @@
 
 import { createSignal, onCleanup } from "solid-js";
 import { deriveDeviceIdentity } from "./deviceKey";
+import { resolveLayout, type ResolvedLayout } from "./controllerProfiles";
 import type { NavButton, NavDirection, NavEvent, NavPhase } from "./types";
 
 /// Web Gamepad API "standard layout" mapping. Skips the dpad slots
@@ -43,6 +44,16 @@ const DPAD_DIRS: Record<number, NavDirection> = {
   13: "down",
   14: "left",
   15: "right",
+};
+
+/// The standard-layout fallback used for pads the browser canonicalized
+/// (mapping === "standard") or pads with no curated profile. Non-standard
+/// pads with a controllers.json profile get a remapped layout instead — that
+/// is the Phase-2 normalization (see ./controllerProfiles).
+const DEFAULT_LAYOUT: ResolvedLayout = {
+  buttons: BUTTON_NAMES,
+  dpad: DPAD_DIRS,
+  hatAxis: null,
 };
 
 const INITIAL_REPEAT_MS = 400;
@@ -124,6 +135,9 @@ const listeners = new Set<Listener>();
 // identity: lets every emitted NavEvent carry the controller identity
 // alongside its volatile gamepad index.
 const padDeviceKeys = new Map<number, string>(); // padIdx -> device-key
+// padIdx -> resolved button/axis layout. Default standard layout unless a
+// controllers.json profile remaps a non-standard pad (Phase-2 normalization).
+const padLayouts = new Map<number, ResolvedLayout>(); // padIdx -> layout
 const buttonStates = new Map<string, ButtonState>(); // `${padIdx}:${btnIdx}`
 const stickStates = new Map<number, StickState>(); // padIdx -> state
 const hatStates = new Map<string, HatState>(); // `${padIdx}:${axisIdx}` -> state
@@ -173,7 +187,9 @@ export function startGamepadInput(): void {
   for (const pad of initial) {
     if (pad) {
       setSessionEverSawGamepad(true);
-      padDeviceKeys.set(pad.index, deriveDeviceIdentity(pad.id).key);
+      const key = deriveDeviceIdentity(pad.id).key;
+      padDeviceKeys.set(pad.index, key);
+      padLayouts.set(pad.index, resolveLayout(key, pad.mapping) ?? DEFAULT_LAYOUT);
       connectedPads++;
     }
   }
@@ -196,6 +212,7 @@ export function stopGamepadInput(): void {
   buttonStates.clear();
   stickStates.clear();
   padDeviceKeys.clear();
+  padLayouts.clear();
   connectedPads = 0;
 }
 
@@ -210,6 +227,8 @@ function handleConnect(e: GamepadEvent): void {
   // poller's `oa-input: identity device-key=…` line for the same pad.
   const identity = deriveDeviceIdentity(e.gamepad.id);
   padDeviceKeys.set(e.gamepad.index, identity.key);
+  const layout = resolveLayout(identity.key, e.gamepad.mapping);
+  padLayouts.set(e.gamepad.index, layout ?? DEFAULT_LAYOUT);
   console.log(
     "[oa-gamepad] connected",
     JSON.stringify({
@@ -219,6 +238,8 @@ function handleConnect(e: GamepadEvent): void {
       pid: identity.pid,
       name: identity.name,
       mapping: e.gamepad.mapping,
+      // Phase-2: did a controllers.json profile remap this (non-standard) pad?
+      profiled: layout !== null,
       buttons: e.gamepad.buttons.length,
       axes: e.gamepad.axes.length,
       index: e.gamepad.index,
@@ -237,6 +258,7 @@ function handleDisconnect(e: GamepadEvent): void {
   hatAxes.delete(e.gamepad.index);
   hatAxesDetected.delete(e.gamepad.index);
   padDeviceKeys.delete(e.gamepad.index);
+  padLayouts.delete(e.gamepad.index);
   for (const key of Array.from(buttonStates.keys())) {
     if (key.startsWith(`${e.gamepad.index}:`)) buttonStates.delete(key);
   }
@@ -254,10 +276,13 @@ function tick(now: DOMHighResTimeStamp): void {
   for (let i = 0; i < pads.length; i++) {
     const pad = pads[i];
     if (!pad) continue;
-    // Lazily backfill identity for pads that surfaced via getGamepads()
-    // without a connect event (some browsers populate the array first).
+    // Lazily backfill identity + layout for pads that surfaced via
+    // getGamepads() without a connect event (some browsers populate the
+    // array first).
     if (!padDeviceKeys.has(pad.index)) {
-      padDeviceKeys.set(pad.index, deriveDeviceIdentity(pad.id).key);
+      const key = deriveDeviceIdentity(pad.id).key;
+      padDeviceKeys.set(pad.index, key);
+      padLayouts.set(pad.index, resolveLayout(key, pad.mapping) ?? DEFAULT_LAYOUT);
     }
     detectHatAxes(pad);
     pollButtons(pad, now);
@@ -290,6 +315,10 @@ function detectHatAxes(pad: Gamepad): void {
       );
     }
   }
+  // Phase-2: honor a profile-declared HAT axis even if the idle-sentinel
+  // heuristic above didn't flag it (some pads idle their HAT at 0, in range).
+  const profileHat = padLayouts.get(pad.index)?.hatAxis;
+  if (profileHat != null) set.add(profileHat);
   if (set.size > 0) hatAxes.set(pad.index, set);
 }
 
@@ -330,12 +359,15 @@ function pollHat(pad: Gamepad, now: number): void {
 }
 
 function pollButtons(pad: Gamepad, now: number): void {
+  // Per-pad layout: standard tables for browser-canonicalized pads, or a
+  // controllers.json remap for a profiled non-standard pad (Phase-2 fix).
+  const layout = padLayouts.get(pad.index) ?? DEFAULT_LAYOUT;
   for (let i = 0; i < pad.buttons.length; i++) {
     const isPressed = pad.buttons[i]?.pressed ?? false;
     const key = `${pad.index}:${i}`;
     const prev = buttonStates.get(key);
-    const buttonName = BUTTON_NAMES[i];
-    const dpadDir = DPAD_DIRS[i];
+    const buttonName = layout.buttons[i];
+    const dpadDir = layout.dpad[i];
     // Diagnostic: log ANY button press at any index, even unmapped
     // ones, so we can spot DPad on non-standard indices. Only logs on
     // the down edge.

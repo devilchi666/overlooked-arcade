@@ -4,6 +4,37 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Phase 2 normalization infra (frontend-only; Switch Pro profile pending capture)
+
+- **Shipped:** Phase 1 validated by operator (replug-stable ports + identity
+  threading working). Phase 2 normalization **infrastructure** landed:
+  - **Two findings that shaped scope** (DECISIONS D12/D13): (1) SDL
+    `gamecontrollerdb` numbers buttons in SDL-joystick-index space, which
+    doesn't align with Web-Gamepad raw indices → the frontend DB is
+    OA-curated in Web-index space, not a raw SDL import; (2) the Rust gameplay
+    poller already normalizes via gilrs' native SDL mappings (binds by
+    canonical name in `bindings.rs`), so **Phase 2 is frontend-only** — which
+    matches the "only menus were broken" symptom.
+  - **`controllers.json`** (seed DB) + **`controllerProfiles.ts`** (resolver +
+    `CANONICAL_TO_NAV` table). `gamepad.ts` now keeps a per-pad `padLayouts`
+    map: standard-mapping pads use the default `BUTTON_NAMES` layout (no
+    regression), non-standard pads with a profile get raw-index→canonical→Nav
+    remapping. Profile-declared HAT axis seeded into the HAT detector. Connect
+    log gains a `profiled` flag.
+  - Tests: 6 new (`controllerProfiles.test.ts`); nav suite (28) + typecheck +
+    lint green. No Rust changes.
+- **Almost:** the **Switch Pro profile is UNVERIFIED** — seeded with the
+  standard Switch-Pro HID button order + HAT axis 9 as a prior, but the
+  operator's third-party wired "Faceoff" pad's real face/shoulder raw indices
+  must be captured to confirm/correct it. The infra is done; only the data row
+  is provisional.
+- **Next:** operator **press-each-button capture** on the Switch Pro (press
+  each face button + both shoulders + start/select once, in menus, and paste
+  the `[oa-gamepad] raw button N pressed` lines + the `connected` line). I map
+  physical→raw-index, correct `controllers.json`, clear `unverified`, operator
+  playtests menu nav. That closes Phase 2. Then Phase 3 (unknown-controller
+  wizard) or Phase 4 (per-system gameplay auto-config).
+
 ## 2026-06-12 — Phase 0 validated + Phase 1 identity foundation shipped
 
 - **Shipped:** Phase 0 hardware validation **PASSED** (operator, Switch Pro +

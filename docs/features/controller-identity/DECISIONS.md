@@ -106,3 +106,37 @@ normalized, semantics "just work" for any pad.
   (R5). *Limitation (documented, not fixed in v1):* the `name:` fallback is
   **not** guaranteed to agree across layers (Web `id` name ≠ OS name); D10's
   (c) covers that case.
+
+---
+
+## 2026-06-12 — Phase 2 findings + the per-layer normalization split
+
+- **D12 — `controllers.json` (frontend) is OA-curated in Web-Gamepad-index
+  space, NOT a raw SDL `gamecontrollerdb` import.** Refines (does not overturn)
+  D4. *Finding:* SDL `gamecontrollerdb` numbers buttons in SDL-joystick-index
+  space, which does NOT align 1:1 with the Web Gamepad API's raw `buttons[]` /
+  `axes[]` indices. So pasting SDL rows into the *frontend* poller would
+  mis-map. Instead the bundled `controllers.json` holds OA-curated profiles in
+  Web-index space, keyed by device-key, applied ONLY when the browser reports a
+  non-standard mapping (`mapping !== "standard"`). The Phase-3 wizard appends
+  to it; a later runtime override layer (appDataDir) will merge over the seed.
+  *Why D4 still holds:* the "thousands of pads for free" + community-interop
+  benefit is realized fully on the **Rust** side (see D13); the canonical model
+  is still the SDL/Xbox layout; only the frontend's data SOURCE differs.
+
+- **D13 — Phase 2 is frontend-only; the Rust gameplay poller already
+  normalizes.** *Finding:* gilrs (via its Windows Gaming Input backend + built-
+  in SDL mappings) already hands `oa-input` canonical `gilrs::Button` values,
+  and `apps/oa-shell/src/bindings.rs` already binds by canonical name
+  (`"South" => GamepadButton::South`). So a non-standard pad like the Switch
+  Pro is *already* canonical in-game — matching the operator's symptom that
+  only MENUS were broken. Phase 2 therefore touches only the Web-Gamepad menu
+  poller; no Rust changes. (The per-system canonical→control default maps are a
+  separate concern — Phase 4.)
+
+- **Architecture — layout vs semantics, realized.** `controllers.json` owns
+  LAYOUT (raw index → canonical). The fixed `CANONICAL_TO_NAV` table
+  (`controllerProfiles.ts`) + the existing `navBindings` verb map own
+  SEMANTICS (canonical → NavButton → verb, incl. the A/B-swap for Nintendo "B
+  confirms"). Face buttons map by POSITION (south = bottom = Confirm-default),
+  so Nintendo's physical A/B swap is a preference layer, not a layout concern.

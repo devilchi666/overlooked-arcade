@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "comment": "OA controller profiles for the MENU poller (Web Gamepad API). Controller Identity arc Phase 2. Indices are Web-Gamepad-API RAW indices (buttons[] / axes[]), NOT SDL gamecontrollerdb joystick numbers (D12). A profile is applied ONLY when the browser reports a non-standard mapping ('' rather than 'standard'); standard pads already arrive canonical. Keyed by device-key (see deviceKey.ts). Button names are CANONICAL (south/east/west/north = SDL/Xbox positions); the canonical->NavButton table lives in controllerProfiles.ts. dpad maps a direction to a raw button index; omit it when the pad reports its DPad as a HAT axis and set hatAxis instead. Phase 3's wizard appends entries here (later: a runtime override layer in appDataDir merges over this bundled seed).",
+  "profiles": [
+    {
+      "deviceKey": "vidpid:057e:2009",
+      "name": "Switch Pro Controller (wired / non-standard HID)",
+      "unverified": true,
+      "note": "Seeded from the standard Switch Pro HID button order as a prior. The operator's pad is a third-party wired 'Faceoff' Switch Pro whose DPad reports as a HAT on axis 9 (see reference_hid_hat_axis_decoding). Face/shoulder indices below are UNVERIFIED — confirm via a press-each-button capture and correct before clearing the flag.",
+      "buttons": {
+        "south": 0,
+        "east": 1,
+        "west": 2,
+        "north": 3,
+        "l1": 4,
+        "r1": 5,
+        "l2": 6,
+        "r2": 7,
+        "select": 8,
+        "start": 9,
+        "l3": 10,
+        "r3": 11,
+        "guide": 12
+      },
+      "hatAxis": 9
+    }
+  ]
+}

@@ -206,13 +206,22 @@ layers). All exit criteria met.
 - Caveat R2 documented: same-type pads share a key; connection order still
   disambiguates among them (per-unit identity is post-v1).
 
-### Phase 2 — `controllers.json` (normalization → the Switch Pro fix)
-- Bundle SDL `gamecontrollerdb` (+ an OA-overrides layer) as `controllers.json`.
-- Frontend: match VID/PID → profile → normalize raw buttons/axes → canonical
-  in `gamepad.ts` (replaces the blind `BUTTON_NAMES` standard-layout
-  assumption). **Non-standard pads (incl. the Switch Pro) start working in
-  menus here.**
-- Rust: same normalization for the gameplay poller.
+### Phase 2 — `controllers.json` (normalization → the Switch Pro fix) — INFRA LANDED 2026-06-12; Switch Pro profile pending capture
+- ✅ **Frontend normalization infra** (`controllers.json` + `controllerProfiles.ts`):
+  device-key → profile → remap raw Web indices → canonical → NavButton/NavDir
+  in `gamepad.ts`. Per-pad `padLayouts` replaces the blind global `BUTTON_NAMES`
+  lookup; standard-mapping pads keep the default layout (no regression), only
+  non-standard profiled pads are remapped. Profile-declared HAT axis seeded
+  into the HAT detector. 6 unit tests; typecheck + lint + nav suite green.
+- ⚠️ **Switch Pro profile is UNVERIFIED** (`vidpid:057e:2009`, `unverified:true`):
+  seeded from the standard Switch-Pro HID order + HAT axis 9 (from
+  `reference_hid_hat_axis_decoding`) as a prior. Needs an operator
+  press-each-button capture to confirm/correct the raw face/shoulder indices
+  before the flag clears. **This is the remaining exit-criterion + the operator
+  playtest gate** (Switch Pro nav works in menus).
+- **D12/D13 (DECISIONS):** frontend DB is OA-curated in Web-index space (NOT a
+  raw SDL import); Rust side already normalizes via gilrs, so Phase 2 is
+  frontend-only.
 - Note: foundation-first means the operator's personal Switch Pro fix lands
   *here* (Phase 2), not Phase 0 — an accepted trade for the right architecture.
 
