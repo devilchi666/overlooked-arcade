@@ -35,7 +35,11 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   commas; multi-word genres containing commas would mis-split (rare).
   (4) Picker caps at 500 rows (logged via slice, not silent) — fine until
   virtualization lands. (5) Per-system drill-in still hosts the old flat
-  `PerSystemInfoSection` (redirect/deprecate still open).
+  `PerSystemInfoSection` (redirect/deprecate still open). (6) **TODO
+  (operator, 2026-06-12):** both the Systems list and the Games picker's
+  system-filter dropdown list all ~45 registry systems regardless of whether
+  the library has any games for them — filter both to systems with ≥1 game.
+  Queued in NEXT.md close-out.
 - **GATE:** operator playtest of the **game editor feel** + the
   Systems/Games switch (D5 premium sign-off).
 - **Next:** Wave-1 close-out — fold narrative game-info in; controller-nav

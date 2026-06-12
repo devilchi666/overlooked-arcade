@@ -385,6 +385,14 @@ game tile/hero live preview + autosave. Backend exposed `get_identity`
   currently native Tab focus only.
 - **Per-system-drill-in decision** — redirect `PerSystemInfoSection` to the
   new editor or deprecate it (two system editors exist today).
+- **Hide empty systems** — the Systems list AND the Games picker's
+  system-filter dropdown both derive from the full `systemThemes` registry
+  (~45 systems), so they show systems the operator has zero games for. Filter
+  both to systems that actually have ≥1 game in the library (derive the set
+  from `list_game_groups` / a system-count query; `MetadataSettingsBody`
+  `systems` memo + `MetadataGamePane` system filter). Edge to weigh: someone
+  pre-curating a system before importing — likely fine to hide; revisit with a
+  "show all systems" toggle only if asked.
 - Optional polish: picker virtualization (currently caps at 500 rows).
 
 Then **Wave 2** (S4 undo stack, S5 merge-mode bulk edit + find-replace).
