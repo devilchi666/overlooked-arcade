@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 // install that opened the build; System Info Panel v1's v15→v16
 // inherited the same hole until the operator caught it via the bake-
 // on-launch warn-level log.)
-const SCHEMA_VERSION: i32 = 23;
+const SCHEMA_VERSION: i32 = 24;
 
 /// Per-game override bag (Phase 2.8 slice D). Lives in `games.overrides_json`
 /// as one column rather than dedicated columns because the field set is
@@ -523,7 +523,6 @@ pub struct GameIdentityRow {
 /// field is left untouched — same contract as `FolderUpdate`.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // consumed by Sub-phase 2/3's editor surface
 pub struct IdentityMetadataUpdate {
     pub year: Option<i64>,
     pub genre: Option<String>,
@@ -532,6 +531,125 @@ pub struct IdentityMetadataUpdate {
     pub players: Option<i64>,
     pub rating: Option<f64>,
     pub canonical_cover_path: Option<String>,
+}
+
+/// Layer-3 operator override for one game's FACTUAL metadata —
+/// Metadata Curation arc Wave 1 / S1. Keyed by `identity_id` (D3: the
+/// tiles + detail-hero render target). Sparse per-field: every field
+/// is `Option`, `None` means "no override, fall through to the
+/// enriched/synced identity value," `Some(value)` wins at read time
+/// over both the enriched identity column and the per-file fallback.
+///
+/// Mirrors [`crate::game_info::GameInfoOverride`] (narrative metadata)
+/// and [`crate::system_info::SystemInfoOverride`] (system facts): same
+/// sparse shape, same `is_empty()`-deletes-the-row discipline so the
+/// table never holds a default-constructed row. Stored in the SQLite
+/// `game_metadata_overrides` table.
+///
+/// Field set is the LaunchBox §4.1 `IGame` subset OA renders plus a
+/// sensible superset (research doc §4.1). The `genre` list is stored
+/// as a JSON array column the way `GameInfoOverride.controls_supported`
+/// is — `Some(vec![])` is an explicit "operator cleared the genres,"
+/// distinct from `None` ("no override").
+///
+/// PartialEq (not Eq) because `rating` is an `f64`; `is_empty()` only
+/// needs `PartialEq` against the default.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameMetadataOverride {
+    /// Canonical display title override (→ `game_identities.canonical_title`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Sort-as title (e.g. "Legend of Zelda, The"). Stored for the S3
+    /// editor; no identity column nor render surface yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_title: Option<String>,
+    /// Release year (→ `game_identities.year`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<i64>,
+    /// Developer (→ `game_identities.developer`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
+    /// Publisher (→ `game_identities.publisher`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    /// Genre list. `Some(vec)` replaces; `Some(vec![])` clears. The
+    /// read-path merge flattens this onto the single-TEXT
+    /// `game_identities.genre` column (join with ", ").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<Vec<String>>,
+    /// Player count (→ `game_identities.players`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<i64>,
+    /// Max simultaneous players. Stored for the S3 editor; no identity
+    /// column nor render surface yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_players: Option<i64>,
+    /// Region. Stored for the S3 editor; no identity column yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Personal/community star rating (→ `game_identities.rating`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f64>,
+    /// Release type (Released / DLC / Homebrew / ROM Hack / …). Stored
+    /// for the S3 editor; no identity column yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_type: Option<String>,
+    /// Series / franchise. Stored for the S3 editor; no identity
+    /// column yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series: Option<String>,
+    /// Overview / description. Stored for the S3 editor; no identity
+    /// column yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl GameMetadataOverride {
+    /// True when no field carries a meaningful edit — used to decide
+    /// whether to DELETE the override row vs UPSERT it. Compares
+    /// against `Self::default()` so a newly added field cannot silently
+    /// regress the sparseness check (same rationale as
+    /// [`crate::system_info::SystemInfoOverride::is_empty`]).
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Overlay this override onto an in-memory identity row — the
+    /// read-time merge (D2: `override → enriched identity → per-file`).
+    /// Only `Some` fields are applied; `None` leaves the enriched/synced
+    /// value untouched. Mutates the row in place; the DB columns are
+    /// never written, so the pristine source survives for reset.
+    ///
+    /// Fields with no `game_identities` column (sort_title, max_players,
+    /// region, release_type, series, description) are persisted + read
+    /// back via the override CRUD for the S3 editor, but do not flow
+    /// through this merge yet (no render surface in S1).
+    pub fn apply_to_identity(&self, row: &mut GameIdentityRow) {
+        if let Some(title) = &self.title {
+            row.canonical_title = title.clone();
+        }
+        if let Some(year) = self.year {
+            row.year = Some(year);
+        }
+        if let Some(developer) = &self.developer {
+            row.developer = Some(developer.clone());
+        }
+        if let Some(publisher) = &self.publisher {
+            row.publisher = Some(publisher.clone());
+        }
+        if let Some(genre) = &self.genre {
+            // Flatten the multi-value override onto the single-TEXT
+            // identity column. Empty vec → empty string (explicit clear).
+            row.genre = Some(genre.join(", "));
+        }
+        if let Some(players) = self.players {
+            row.players = Some(players);
+        }
+        if let Some(rating) = self.rating {
+            row.rating = Some(rating);
+        }
+    }
 }
 
 /// One canonical rom-hash entry — the source-of-truth shape pulled from
@@ -1054,6 +1172,62 @@ impl LibraryDb {
             );
         }
 
+        // v23 → v24: game_metadata_overrides — Metadata Curation arc
+        // Wave 1 / S1. Layer-3 operator edits for game-FACTUAL metadata
+        // (title / year / developer / publisher / genre / players /
+        // rating / …), keyed by `identity_id` (the tiles + detail-hero
+        // render target). Sibling of game_info_overrides (narrative
+        // metadata, keyed by rom_id) and system_info_overrides (system
+        // facts, keyed by system_id) — same sparse, is_empty()-deletes
+        // shape. The override is applied at read time over the enriched
+        // identity columns (`enrich_identity_metadata` source); a rebuild
+        // never touches the override row and the override never touches
+        // the pristine identity columns, so reset = drop the row and the
+        // enriched/synced value shines back through. See
+        // docs/PLANS/metadata-editing.md D2/D3.
+        if current < 24 {
+            Self::migrate_v23_to_v24(conn)?;
+            conn.pragma_update(None, "user_version", 24)
+                .map_err(|e| format!("set user_version=24: {e}"))?;
+            log::info!("library_db: schema migrated to v24 (game_metadata_overrides)");
+        }
+
+        Ok(())
+    }
+
+    fn migrate_v23_to_v24(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            -- L3: per-install operator overrides for game-factual
+            -- metadata, keyed by game_identities.id. Sparse — a row
+            -- exists only while at least one field carries a meaningful
+            -- edit; a default-constructed GameMetadataOverride triggers
+            -- a DELETE rather than an UPSERT. Scalar fields get columns;
+            -- `genre` is a JSON array (the override stores the full
+            -- multi-value list the way game_info_overrides stores
+            -- controls_supported). created_at / updated_at let a future
+            -- "show my edits" surface sort by recency.
+            CREATE TABLE IF NOT EXISTS game_metadata_overrides (
+                identity_id    TEXT PRIMARY KEY,
+                title          TEXT,
+                sort_title     TEXT,
+                year           INTEGER,
+                developer      TEXT,
+                publisher      TEXT,
+                genre          TEXT,
+                players        INTEGER,
+                max_players    INTEGER,
+                region         TEXT,
+                rating         REAL,
+                release_type   TEXT,
+                series         TEXT,
+                description    TEXT,
+                created_at     INTEGER NOT NULL,
+                updated_at     INTEGER NOT NULL
+            );
+            "#,
+        )
+        .map_err(|e| format!("v23→v24 migration: {e}"))?;
         Ok(())
     }
 
@@ -3764,8 +3938,10 @@ impl LibraryDb {
     /// Partial metadata update — `None` fields stay untouched (same
     /// contract as `FolderUpdate`). Rebuilds never touch these columns,
     /// so operator edits survive rescans for as long as the identity
-    /// has at least one member game.
-    #[allow(dead_code)] // consumed by Sub-phase 2/3's editor surface
+    /// has at least one member game. Exposed via the
+    /// `update_identity_metadata` Tauri command (Metadata Curation S1)
+    /// as the direct canonical-write primitive; the override layer
+    /// (`set_game_metadata_override`) is the operator-edit path.
     pub fn update_identity_metadata(
         &self,
         id: &str,
@@ -4473,6 +4649,224 @@ impl LibraryDb {
         let mut out = Vec::new();
         for r in rows {
             out.push(r.map_err(|e| format!("list_game_info_overridden row: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    // --- Game-factual metadata overrides (Metadata Curation S1) ---------
+    //
+    // Layer 3 for game-FACTUAL metadata (title / year / developer /
+    // publisher / genre / players / rating / …), keyed by `identity_id`
+    // (D3). Sibling of `game_info_overrides` (narrative, keyed by
+    // rom_id). The read path (`list_game_groups`) overlays the override
+    // onto the in-memory identity rows via
+    // `GameMetadataOverride::apply_to_identity` — the DB columns stay
+    // pristine so reset just drops the row.
+
+    /// Read the operator's factual-metadata override for one identity.
+    /// Returns the default-constructed (empty) override when no row
+    /// exists — the common "no override" path, not an error.
+    pub fn get_game_metadata_override(
+        &self,
+        identity_id: &str,
+    ) -> Result<GameMetadataOverride, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let row = conn
+            .query_row(
+                "SELECT title, sort_title, year, developer, publisher, genre,
+                        players, max_players, region, rating, release_type,
+                        series, description
+                 FROM game_metadata_overrides WHERE identity_id = ?1",
+                params![identity_id],
+                |row| {
+                    let genre_json: Option<String> = row.get(5)?;
+                    // Malformed JSON degrades to None (no override)
+                    // rather than failing the read — matches the
+                    // game_info controls_supported / system_info
+                    // peripherals robustness pattern.
+                    let genre = genre_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
+                    Ok(GameMetadataOverride {
+                        title: row.get(0)?,
+                        sort_title: row.get(1)?,
+                        year: row.get(2)?,
+                        developer: row.get(3)?,
+                        publisher: row.get(4)?,
+                        genre,
+                        players: row.get(6)?,
+                        max_players: row.get(7)?,
+                        region: row.get(8)?,
+                        rating: row.get(9)?,
+                        release_type: row.get(10)?,
+                        series: row.get(11)?,
+                        description: row.get(12)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_game_metadata_override: {e}"))?;
+        Ok(row.unwrap_or_default())
+    }
+
+    /// Upsert the operator's factual-metadata override for one identity.
+    /// A default-constructed (empty) override deletes the row so the
+    /// table stays sparse.
+    pub fn set_game_metadata_override(
+        &self,
+        identity_id: &str,
+        ov: &GameMetadataOverride,
+    ) -> Result<(), String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+
+        if ov.is_empty() {
+            conn.execute(
+                "DELETE FROM game_metadata_overrides WHERE identity_id = ?1",
+                params![identity_id],
+            )
+            .map_err(|e| format!("delete game_metadata_override: {e}"))?;
+            return Ok(());
+        }
+
+        let genre_json = ov
+            .genre
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".into()));
+        let now: i64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        conn.execute(
+            r#"
+            INSERT INTO game_metadata_overrides (
+                identity_id,
+                title, sort_title, year, developer, publisher, genre,
+                players, max_players, region, rating, release_type,
+                series, description,
+                created_at, updated_at
+            ) VALUES (
+                ?1,
+                ?2, ?3, ?4, ?5, ?6, ?7,
+                ?8, ?9, ?10, ?11, ?12,
+                ?13, ?14,
+                ?15, ?15
+            )
+            ON CONFLICT(identity_id) DO UPDATE SET
+                title        = excluded.title,
+                sort_title   = excluded.sort_title,
+                year         = excluded.year,
+                developer    = excluded.developer,
+                publisher    = excluded.publisher,
+                genre        = excluded.genre,
+                players      = excluded.players,
+                max_players  = excluded.max_players,
+                region       = excluded.region,
+                rating       = excluded.rating,
+                release_type = excluded.release_type,
+                series       = excluded.series,
+                description  = excluded.description,
+                updated_at   = excluded.updated_at
+            "#,
+            params![
+                identity_id,
+                ov.title,
+                ov.sort_title,
+                ov.year,
+                ov.developer,
+                ov.publisher,
+                genre_json,
+                ov.players,
+                ov.max_players,
+                ov.region,
+                ov.rating,
+                ov.release_type,
+                ov.series,
+                ov.description,
+                now,
+            ],
+        )
+        .map_err(|e| format!("upsert game_metadata_override: {e}"))?;
+        Ok(())
+    }
+
+    /// Clear ONE field of the operator's factual-metadata override for
+    /// one identity, sparse-deleting the row if it becomes empty. Drives
+    /// the per-field "reset this field" affordance (the editor's
+    /// provenance-dot reset). Unknown field names are a no-op error so a
+    /// frontend typo surfaces rather than silently doing nothing.
+    pub fn reset_game_metadata_field(
+        &self,
+        identity_id: &str,
+        field: &str,
+    ) -> Result<(), String> {
+        let mut ov = self.get_game_metadata_override(identity_id)?;
+        match field {
+            "title" => ov.title = None,
+            "sortTitle" | "sort_title" => ov.sort_title = None,
+            "year" => ov.year = None,
+            "developer" => ov.developer = None,
+            "publisher" => ov.publisher = None,
+            "genre" => ov.genre = None,
+            "players" => ov.players = None,
+            "maxPlayers" | "max_players" => ov.max_players = None,
+            "region" => ov.region = None,
+            "rating" => ov.rating = None,
+            "releaseType" | "release_type" => ov.release_type = None,
+            "series" => ov.series = None,
+            "description" => ov.description = None,
+            other => return Err(format!("reset_game_metadata_field: unknown field {other:?}")),
+        }
+        // set_* sparse-deletes the row when the last field is cleared.
+        self.set_game_metadata_override(identity_id, &ov)
+    }
+
+    /// Bulk load every factual-metadata override as
+    /// `(identity_id, GameMetadataOverride)` tuples — the read path
+    /// (`list_game_groups`) overlays these onto the identity map in one
+    /// pass rather than N per-identity queries.
+    pub fn list_all_game_metadata_overrides(
+        &self,
+    ) -> Result<Vec<(String, GameMetadataOverride)>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT identity_id, title, sort_title, year, developer, publisher,
+                        genre, players, max_players, region, rating, release_type,
+                        series, description
+                 FROM game_metadata_overrides",
+            )
+            .map_err(|e| format!("list_all_game_metadata_overrides prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let identity_id: String = row.get(0)?;
+                let genre_json: Option<String> = row.get(6)?;
+                let genre = genre_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
+                Ok((
+                    identity_id,
+                    GameMetadataOverride {
+                        title: row.get(1)?,
+                        sort_title: row.get(2)?,
+                        year: row.get(3)?,
+                        developer: row.get(4)?,
+                        publisher: row.get(5)?,
+                        genre,
+                        players: row.get(7)?,
+                        max_players: row.get(8)?,
+                        region: row.get(9)?,
+                        rating: row.get(10)?,
+                        release_type: row.get(11)?,
+                        series: row.get(12)?,
+                        description: row.get(13)?,
+                    },
+                ))
+            })
+            .map_err(|e| format!("list_all_game_metadata_overrides query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_all_game_metadata_overrides row: {e}"))?);
         }
         Ok(out)
     }
@@ -8889,6 +9283,229 @@ mod tests {
         // because the JSON parse failed.
         assert!(ov.controls_supported.is_none());
         assert!(ov.bugs.is_none());
+    }
+
+    // ---- Metadata Curation S1 — game_metadata_overrides DB tests ----
+
+    /// No row → get returns the default-constructed (empty) override.
+    #[test]
+    fn game_metadata_override_default_when_absent() {
+        let db = fresh_db();
+        let ov = db.get_game_metadata_override("idn-doesnotexist").expect("read");
+        assert_eq!(ov, GameMetadataOverride::default());
+        assert!(ov.is_empty());
+    }
+
+    /// Set a sparse override, read it back field-for-field (incl. the
+    /// genre JSON array), then set an empty override and confirm the row
+    /// sparse-deletes.
+    #[test]
+    fn game_metadata_override_roundtrip_and_sparse_delete() {
+        let db = fresh_db();
+        let id = "idn-castlevania";
+        let ov = GameMetadataOverride {
+            title: Some("Akumajō Dracula".to_string()),
+            year: Some(1993),
+            developer: Some("Konami".to_string()),
+            genre: Some(vec!["Action".to_string(), "Platformer".to_string()]),
+            players: Some(1),
+            rating: Some(4.5),
+            description: Some("PC Engine CD entry in the series.".to_string()),
+            ..Default::default()
+        };
+        db.set_game_metadata_override(id, &ov).expect("set");
+
+        let got = db.get_game_metadata_override(id).expect("get");
+        assert_eq!(got, ov, "round-trips every field including the genre array");
+
+        // Empty override deletes the row so the table stays sparse.
+        db.set_game_metadata_override(id, &GameMetadataOverride::default())
+            .expect("clear");
+        let after = db.get_game_metadata_override(id).expect("get after clear");
+        assert!(after.is_empty());
+        assert_eq!(
+            db.list_all_game_metadata_overrides().expect("list").len(),
+            0,
+            "row gone after empty set",
+        );
+    }
+
+    /// Upserting an existing identity replaces the row (no server-side
+    /// merge) — the second write's fields win, the first write's
+    /// now-absent fields clear.
+    #[test]
+    fn game_metadata_override_upsert_replaces_row() {
+        let db = fresh_db();
+        let id = "idn-bonk";
+        db.set_game_metadata_override(
+            id,
+            &GameMetadataOverride {
+                year: Some(1989),
+                developer: Some("Red Company".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("first set");
+        db.set_game_metadata_override(
+            id,
+            &GameMetadataOverride {
+                year: Some(1990),
+                publisher: Some("Hudson Soft".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("second set");
+
+        let got = db.get_game_metadata_override(id).expect("get");
+        assert_eq!(got.year, Some(1990), "second year wins");
+        assert_eq!(got.publisher.as_deref(), Some("Hudson Soft"));
+        assert_eq!(got.developer, None, "first developer cleared by replace");
+    }
+
+    /// `apply_to_identity` overlays the override onto an enriched
+    /// identity row: `Some` override fields win, `None` ones leave the
+    /// enriched value, and the genre array flattens onto the single-TEXT
+    /// identity column.
+    #[test]
+    fn game_metadata_override_merge_precedence_over_enriched() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Bonk's Adventure (USA)")]).expect("add");
+        let id = db.list_identities_for_system("tg16").expect("list")[0]
+            .id
+            .clone();
+        // Enriched/synced baseline (the pristine source).
+        db.update_identity_metadata(
+            &id,
+            &IdentityMetadataUpdate {
+                year: Some(1989),
+                genre: Some("Platformer".to_string()),
+                developer: Some("Red Company".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("enrich");
+
+        // Operator overrides year + genre but NOT developer.
+        db.set_game_metadata_override(
+            &id,
+            &GameMetadataOverride {
+                year: Some(1990),
+                genre: Some(vec!["Action".to_string(), "Platformer".to_string()]),
+                ..Default::default()
+            },
+        )
+        .expect("override");
+
+        let mut merged = db.get_identity(&id).expect("get").expect("present");
+        let ov = db.get_game_metadata_override(&id).expect("get override");
+        ov.apply_to_identity(&mut merged);
+
+        assert_eq!(merged.year, Some(1990), "override year wins");
+        assert_eq!(merged.genre.as_deref(), Some("Action, Platformer"), "array flattened");
+        assert_eq!(
+            merged.developer.as_deref(),
+            Some("Red Company"),
+            "no override → enriched value survives",
+        );
+    }
+
+    /// `reset_game_metadata_field` clears one field, leaves the rest, and
+    /// sparse-deletes the row when the last field goes.
+    #[test]
+    fn game_metadata_reset_field_then_sparse_delete() {
+        let db = fresh_db();
+        let id = "idn-ys";
+        db.set_game_metadata_override(
+            id,
+            &GameMetadataOverride {
+                year: Some(1989),
+                developer: Some("Falcom".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("set");
+
+        db.reset_game_metadata_field(id, "year").expect("reset year");
+        let got = db.get_game_metadata_override(id).expect("get");
+        assert_eq!(got.year, None, "year reset");
+        assert_eq!(got.developer.as_deref(), Some("Falcom"), "developer untouched");
+
+        db.reset_game_metadata_field(id, "developer").expect("reset developer");
+        assert_eq!(
+            db.list_all_game_metadata_overrides().expect("list").len(),
+            0,
+            "row sparse-deleted once the last field cleared",
+        );
+
+        // Unknown field is a surfaced error, not a silent no-op.
+        assert!(db.reset_game_metadata_field(id, "bogus").is_err());
+    }
+
+    /// A re-sync (identity rebuild via add_games + a fresh enrichment
+    /// pass) must NOT clobber an operator override: the override row is a
+    /// separate table keyed by the stable identity id, and the read-time
+    /// merge keeps winning afterwards.
+    #[test]
+    fn game_metadata_override_survives_resync() {
+        let db = fresh_db();
+        db.add_games(&[row("a", "Lords of Thunder (USA)")]).expect("add");
+        let id = db.list_identities_for_system("tg16").expect("list")[0]
+            .id
+            .clone();
+        db.set_game_metadata_override(
+            &id,
+            &GameMetadataOverride {
+                year: Some(1993),
+                publisher: Some("Hudson Soft".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("override");
+
+        // Re-sync: a new variant triggers a per-system identity rebuild,
+        // and we re-write the canonical columns the way enrichment would.
+        db.add_games(&[row("b", "Lords of Thunder (Japan)")]).expect("add more");
+        db.update_identity_metadata(
+            &id,
+            &IdentityMetadataUpdate {
+                year: Some(9999),
+                publisher: Some("WRONG".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("re-enrich identity columns");
+
+        // The override row is untouched by the rebuild + re-enrichment.
+        let ov = db.get_game_metadata_override(&id).expect("get override");
+        assert_eq!(ov.year, Some(1993), "override survived re-sync");
+        assert_eq!(ov.publisher.as_deref(), Some("Hudson Soft"));
+
+        // And the read-time merge still applies it over the (now-changed)
+        // canonical columns.
+        let mut merged = db.get_identity(&id).expect("get").expect("present");
+        ov.apply_to_identity(&mut merged);
+        assert_eq!(merged.year, Some(1993), "override still wins at read time");
+        assert_eq!(merged.publisher.as_deref(), Some("Hudson Soft"));
+    }
+
+    /// Corrupt JSON in the genre column degrades to `None` (no genre
+    /// override) rather than failing the whole read.
+    #[test]
+    fn game_metadata_override_handles_corrupt_genre_json() {
+        let db = fresh_db();
+        {
+            let conn = db.inner.lock().expect("lock");
+            conn.execute(
+                r#"INSERT INTO game_metadata_overrides
+                    (identity_id, year, genre, created_at, updated_at)
+                   VALUES ('idn-broken', 1990, 'not valid json {[', 0, 0)"#,
+                [],
+            )
+            .expect("manual insert");
+        }
+        let ov = db.get_game_metadata_override("idn-broken").expect("read");
+        assert_eq!(ov.year, Some(1990), "scalar column still read");
+        assert!(ov.genre.is_none(), "corrupt genre JSON degraded to None");
     }
 
     // ---- System Info Panel v1 — Phase 2 DB tests --------------------

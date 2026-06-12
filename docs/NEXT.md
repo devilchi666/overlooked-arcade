@@ -342,6 +342,79 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Metadata Curation — Wave 1 / S2 (metadata Settings category + SYSTEM editor)
+
+**Planned 2026-06-11.** Full plan:
+[PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature folder
+[features/metadata-editing/](features/metadata-editing/). The arc builds a
+premium **Settings → "Metadata"** editor for game + system metadata on an
+**override layer** (operator decisions D1–D5).
+
+**✅ S1 shipped 2026-06-11** (branch `feat/metadata-curation`): the
+game-factual override backend. `game_metadata_overrides` table (schema
+v23→v24), `GameMetadataOverride` struct + `apply_to_identity`, get/set/
+delete/reset_field commands, `update_identity_metadata` exposed, read-path
+merge in `list_game_groups`, 7 SQL fixture tests, `cargo test -p oa-shell`
+837 green. Backend only. See the SESSION_LOG for the field-coverage note
+(6 stored-but-not-yet-surfaced fields await S3's render surface).
+
+**S2 scope (fastest visible win — backend already exists):** register a new
+`metadata` category in the engine Settings registry (`SettingsPanel.tsx`
+`CATEGORIES` + `Match` arm, CONTENT group) + a SYSTEM-metadata editor body
+wiring the already-shipped `get/set/delete/reset_system_info_override`
+commands. Must hit the §UX-pillar bar (live preview, provenance dots, typed
+controls, controller-navigable) — proves the premium-UX shell on a complete
+data layer. **Then S3** (game editor + searchable entity-list picker over the
+S1 backend; folds in the narrative game-info fields too). Anchors:
+`frontend/src/engine/SettingsPanel.tsx` (~`:74` CATEGORIES, ~`:429` Match),
+`SettingsSections.tsx` (body components), `frontend/src/platform/api/` (typed
+wrappers — the invoke ban routes all backend calls through here). Gating:
+ready. Estimate: Wave 1 ≈ 2–3 weeks remaining.
+
+### ✅ Portability + state-storage audit — DONE 2026-06-11
+
+Read-only sweep shipped. Findings:
+[features/portable-install/STATE_STORAGE_AUDIT.md](features/portable-install/STATE_STORAGE_AUDIT.md)
+(new `portable-install/` feature folder + README created).
+
+**Verdict:** OA is **one architectural change from drive-move portability —
+the blocker is absolute paths, NOT config scatter.** Every load-bearing path
+(`games.file_path`, `game_identities.canonical_cover_path`, `folders.path`,
+per-game `patch_path`/`bezel_image_path`) is stored **absolute, never
+root-indirected**. The `folders` table already models a multi-root registry
+(`add_folder`/`list_folders`) but `games` has **no `folder_id` FK** — it's
+used as scan-targets, not a resolution indirection (the S9 gap is two-thirds
+pre-built in the schema). BIOS (convention `<exe_dir>/system/<name>`) + the
+`portable.txt` data-dir tree are already portable — the model to copy.
+
+**Part B answer: mostly DON'T consolidate into SQLite.** ~13 backend JSON
+files + SQLite already travel as one `<data_dir>` tree — scatter is cosmetic,
+not a portability problem. The only per-user state that does NOT travel is **6
+frontend `localStorage` keys** (`oa.settings.v1`, `oa.themeSettings`,
+`oa.core.*` are real; 3 are ephemeral). Keep JSON as files (hand-editable —
+low-floor/high-ceiling pillar); leave shipped descriptors with the install;
+mark `cpu-tier.json`/`emulators.json` per-install (must not travel).
+
+**NAS safety:** safe *today only by absence* — no rescan-purge sweep exists.
+Any future "scan for removed ROMs" MUST be built on the roots model (mark
+**Unavailable** on root-unreachable; only per-file-delete when the root
+resolves) or it purges a sleeping NAS. **Don't ship the sweep before the
+roots model.**
+
+**Remediation queue this surfaced (sized separately, in dependency order) —
+the "Portability remediation" arc, not yet planned:**
+1. **Roots model** — `games.root_id` FK + relative paths, resolve against the
+   existing `folders` row (schema v23→v24 + backfill). Load-bearing; do first.
+2. **Evict the 3 real localStorage keys** to the backend (pairs w/ theming S5
+   per-theme-settings namespace).
+3. Volume-GUID/label tracking + cross-OS root syntax in the root row.
+4. Removed-ROM sweep (**after #1 only**).
+5. Persistent cart hash cache `(path,size,mtime)` (disc already has it).
+6. Media-convention casing standardization (S9a dialect).
+
+Items 1–2 deliver "copy the portable folder / re-point one drive → just
+works." Feeds virtual-library **S9**.
+
 ### Libretro plumbing audit — gaps (from 2026-06-08 audit)
 
 Surfaced by the read-only libretro plumbing sweep —

@@ -2617,6 +2617,11 @@ fn main() {
             get_game_info_override,
             set_game_info_override,
             delete_game_info_override,
+            get_game_metadata_override,
+            set_game_metadata,
+            delete_game_metadata_override,
+            reset_game_metadata_field,
+            update_identity_metadata,
             get_system_info,
             get_system_info_override,
             get_system_info_curated,
@@ -8170,6 +8175,88 @@ fn list_game_info_badges(
     Ok(game_info::compute_game_info_badges(&entries, &overrides_map))
 }
 
+// ---- Game-factual metadata overrides — Metadata Curation arc S1 -------
+//
+// Layer-3 operator edits for game-FACTUAL metadata, keyed by
+// `identity_id` (D3). Round-trips the `game_metadata_overrides` row;
+// the read-time merge happens in `list_game_groups`
+// (`GameMetadataOverride::apply_to_identity`). Sibling of the
+// game-info (narrative, by rom_id) + system-info (system facts, by
+// system_id) override commands above. No edit UI in S1 — S3 builds the
+// premium editor over these.
+
+/// Read the operator's raw factual-metadata override for one identity
+/// (the editor form binds to this so it can distinguish "operator set
+/// this" (Some) from "fall through to the enriched value" (None)).
+/// Returns the default-constructed override when no row exists.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_game_metadata_override(
+    identityId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<library_db::GameMetadataOverride, String> {
+    db.get_game_metadata_override(&identityId)
+}
+
+/// Upsert (or DELETE if empty) the operator's factual-metadata override
+/// for one identity. The frontend builds the whole `GameMetadataOverride`
+/// from form state and sends it — replace semantics, no server-side
+/// merge with the existing row.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn set_game_metadata(
+    identityId: String,
+    overrideRecord: library_db::GameMetadataOverride,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_game_metadata_override(&identityId, &overrideRecord)
+}
+
+/// Clear ALL of one identity's factual-metadata overrides. Equivalent
+/// to `set_game_metadata(identityId, GameMetadataOverride::default())`
+/// — surfaced separately so the editor's "Reset all my edits" reads as
+/// one explicit action.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn delete_game_metadata_override(
+    identityId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.set_game_metadata_override(&identityId, &library_db::GameMetadataOverride::default())
+}
+
+/// Clear ONE field of an identity's factual-metadata override (the
+/// per-field provenance-dot "reset this field" affordance). The row
+/// sparse-deletes if this was the last remaining edit. `field` is the
+/// camelCase override key (e.g. "year", "sortTitle").
+#[allow(non_snake_case)]
+#[tauri::command]
+fn reset_game_metadata_field(
+    identityId: String,
+    field: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.reset_game_metadata_field(&identityId, &field)
+}
+
+/// Direct write of the canonical identity metadata columns (the
+/// `game_identities` row itself, NOT the override layer). Exposes the
+/// previously-dormant `update_identity_metadata`. The override layer
+/// (`set_game_metadata`) is the operator-edit path — it preserves the
+/// pristine enriched source so a reset can restore it. This direct
+/// writer is the enrichment-adjacent primitive (bake a value into the
+/// canonical record); S3 decides whether any UI uses it. Partial: a
+/// `None` field is left untouched.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn update_identity_metadata(
+    identityId: String,
+    update: library_db::IdentityMetadataUpdate,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<(), String> {
+    db.update_identity_metadata(&identityId, &update)
+}
+
 // ---- System Info Panel v1 — Phase 2 query + edit commands -------------
 //
 // `get_system_info` reads all three layers (L1 baked from
@@ -9651,11 +9738,23 @@ fn list_game_groups(
 
     // One query for every identity; build_groups wants an id→row map.
     use std::collections::HashMap;
-    let identities: HashMap<String, library_db::GameIdentityRow> = db
+    let mut identities: HashMap<String, library_db::GameIdentityRow> = db
         .list_identities()?
         .into_iter()
         .map(|i| (i.id.clone(), i))
         .collect();
+
+    // Metadata Curation S1 — overlay the operator's factual-metadata
+    // overrides onto the in-memory identity rows (D2 read-time merge:
+    // override → enriched identity → per-file). The DB columns stay
+    // pristine; only this in-memory map is mutated, so a reset that
+    // drops the override row falls straight back to the enriched/synced
+    // value. One bulk load + a HashMap walk — no per-identity queries.
+    for (identity_id, ov) in db.list_all_game_metadata_overrides()? {
+        if let Some(row) = identities.get_mut(&identity_id) {
+            ov.apply_to_identity(row);
+        }
+    }
 
     // Group the games by system_id first so we read per-system settings
     // once per system, not per-game. The aggregator runs once per
