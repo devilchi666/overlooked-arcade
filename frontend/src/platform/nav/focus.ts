@@ -239,6 +239,7 @@ if (typeof window !== "undefined") {
         phase: "down",
         source: "dpad",
         gamepadIndex: -1,
+        deviceKey: "keyboard",
       };
       applyDirection(handle, event);
     } else {

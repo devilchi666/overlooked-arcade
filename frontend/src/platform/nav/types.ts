@@ -34,6 +34,14 @@ export type NavButtonEvent = {
   phase: NavPhase;
   /** Web Gamepad API index of the pad that fired the event. */
   gamepadIndex: number;
+  /**
+   * Stable cross-layer controller identity (Controller Identity arc Phase 1).
+   * `vidpid:<vid>:<pid>` or `name:<slug>` (see ./deviceKey), or `"keyboard"`
+   * for keyboard-synthesized events. Available alongside `gamepadIndex` — it
+   * does NOT replace it. Nothing consumes it yet; threading it through is the
+   * Phase-1 groundwork for identity-aware routing (profiles, per-pad config).
+   */
+  deviceKey: string;
 };
 
 export type NavDirectionEvent = {
@@ -43,6 +51,8 @@ export type NavDirectionEvent = {
   /** Which physical control produced the direction. */
   source: "dpad" | "stick-left";
   gamepadIndex: number;
+  /** Stable cross-layer controller identity — see {@link NavButtonEvent.deviceKey}. */
+  deviceKey: string;
 };
 
 export type NavEvent = NavButtonEvent | NavDirectionEvent;

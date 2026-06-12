@@ -168,13 +168,13 @@ physical press
 
 ## Phases (foundation-first, D6)
 
-### Phase 0 — Identity spike (de-risk; tiny, FIRST) — CODE LANDED 2026-06-12; hardware-validation pending
+### Phase 0 — Identity spike (de-risk; tiny, FIRST) — ✅ COMPLETE 2026-06-12
 Prove the cross-layer device key before building on it.
 **Status:** parser + Rust VID/PID read + connect-time logs + unit tests
-shipped on `feat/controller-identity`; device-key spec + (a)+(c) decision
-recorded (DECISIONS D9–D11). Remaining exit-criterion = operator pastes the
-two `[oa-gamepad] connected` + `oa-input: identity device-key=` log lines for
-the Switch Pro + an XInput pad to confirm the keys match expectations.
+shipped + merged to main; device-key spec + (a)+(c) decision recorded
+(DECISIONS D9–D11). **Operator hardware validation PASSED 2026-06-12** on the
+wired Switch Pro + an XInput pad (the device-key reads correctly on both
+layers). All exit criteria met.
 - Frontend: parse `gamepad.id` → `{vid, pid, name}` → a canonical
   `device-key` string. (VID/PID regex; `gamepad.id` embeds
   `Vendor: xxxx Product: yyyy`.)
@@ -190,13 +190,21 @@ the Switch Pro + an XInput pad to confirm the keys match expectations.
 - **Output:** a documented `device-key` format + a decision on (a)/(b)/(c).
   Everything downstream depends on this.
 
-### Phase 1 — Identity foundation (both layers)
-- Define the canonical model (above) in a shared spec/type.
-- Frontend: thread `device-key` through `NavEvent` (alongside, not replacing,
-  `gamepadIndex`); persist nothing yet — just make identity available.
-- Rust: key `port_pads` assignment by `device-key` (replug-stability
-  groundwork — a reconnecting pad reclaims its prior port).
+### Phase 1 — Identity foundation (both layers) — ✅ COMPLETE 2026-06-12
+- ✅ Canonical model defined as a shared spec/type — `frontend/src/platform/
+  nav/canonical.ts` + `crates/oa-input/src/canonical.rs` (kept in sync;
+  SDL/Xbox vocabulary per D4; contract only, no normalization logic yet).
+- ✅ Frontend: `device-key` threaded through `NavEvent.deviceKey` (alongside
+  `gamepadIndex`, not replacing it) — `types.ts` + `gamepad.ts` (per-pad
+  `padDeviceKeys` map, populated on connect / initial sweep / lazily in tick);
+  keyboard-synth events carry `"keyboard"`. Persists nothing yet.
+- ✅ Rust: `port_pads` assignment keyed by `device-key` for replug stability —
+  new `port_keys: [Option<String>; 5]` reservation array + pure `choose_port`
+  (reclaim prior port → fresh unreserved → clobber stale), 6 unit tests.
+  `release_pad` keeps the reservation so a reconnecting pad reclaims its port.
 - No behavior change beyond identity availability + replug-stable ports.
+- Caveat R2 documented: same-type pads share a key; connection order still
+  disambiguates among them (per-unit identity is post-v1).
 
 ### Phase 2 — `controllers.json` (normalization → the Switch Pro fix)
 - Bundle SDL `gamecontrollerdb` (+ an OA-overrides layer) as `controllers.json`.

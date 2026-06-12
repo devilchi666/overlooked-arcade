@@ -120,6 +120,10 @@ function decodeHat(v: number): NavDirection | null {
 type Listener = (event: NavEvent) => void;
 
 const listeners = new Set<Listener>();
+// padIdx -> stable device-key (derived once from gamepad.id). Phase-1
+// identity: lets every emitted NavEvent carry the controller identity
+// alongside its volatile gamepad index.
+const padDeviceKeys = new Map<number, string>(); // padIdx -> device-key
 const buttonStates = new Map<string, ButtonState>(); // `${padIdx}:${btnIdx}`
 const stickStates = new Map<number, StickState>(); // padIdx -> state
 const hatStates = new Map<string, HatState>(); // `${padIdx}:${axisIdx}` -> state
@@ -169,6 +173,7 @@ export function startGamepadInput(): void {
   for (const pad of initial) {
     if (pad) {
       setSessionEverSawGamepad(true);
+      padDeviceKeys.set(pad.index, deriveDeviceIdentity(pad.id).key);
       connectedPads++;
     }
   }
@@ -190,6 +195,7 @@ export function stopGamepadInput(): void {
   }
   buttonStates.clear();
   stickStates.clear();
+  padDeviceKeys.clear();
   connectedPads = 0;
 }
 
@@ -203,6 +209,7 @@ function handleConnect(e: GamepadEvent): void {
   // Web `id` string so it can be cross-checked against the Rust gilrs
   // poller's `oa-input: identity device-key=…` line for the same pad.
   const identity = deriveDeviceIdentity(e.gamepad.id);
+  padDeviceKeys.set(e.gamepad.index, identity.key);
   console.log(
     "[oa-gamepad] connected",
     JSON.stringify({
@@ -229,6 +236,7 @@ function handleDisconnect(e: GamepadEvent): void {
   stickStates.delete(e.gamepad.index);
   hatAxes.delete(e.gamepad.index);
   hatAxesDetected.delete(e.gamepad.index);
+  padDeviceKeys.delete(e.gamepad.index);
   for (const key of Array.from(buttonStates.keys())) {
     if (key.startsWith(`${e.gamepad.index}:`)) buttonStates.delete(key);
   }
@@ -246,6 +254,11 @@ function tick(now: DOMHighResTimeStamp): void {
   for (let i = 0; i < pads.length; i++) {
     const pad = pads[i];
     if (!pad) continue;
+    // Lazily backfill identity for pads that surfaced via getGamepads()
+    // without a connect event (some browsers populate the array first).
+    if (!padDeviceKeys.has(pad.index)) {
+      padDeviceKeys.set(pad.index, deriveDeviceIdentity(pad.id).key);
+    }
     detectHatAxes(pad);
     pollButtons(pad, now);
     pollStick(pad, now);
@@ -424,7 +437,8 @@ export function stickToDirection(x: number, y: number): NavDirection | null {
 
 function emitButton(button: NavButton, phase: NavPhase, gamepadIndex: number): void {
   if (!inputEnabled) return;
-  const event: NavEvent = { kind: "button", button, phase, gamepadIndex };
+  const deviceKey = padDeviceKeys.get(gamepadIndex) ?? "name:unknown";
+  const event: NavEvent = { kind: "button", button, phase, gamepadIndex, deviceKey };
   for (const l of listeners) l(event);
 }
 
@@ -435,6 +449,7 @@ function emitDirection(
   gamepadIndex: number,
 ): void {
   if (!inputEnabled) return;
-  const event: NavEvent = { kind: "direction", direction, phase, source, gamepadIndex };
+  const deviceKey = padDeviceKeys.get(gamepadIndex) ?? "name:unknown";
+  const event: NavEvent = { kind: "direction", direction, phase, source, gamepadIndex, deviceKey };
   for (const l of listeners) l(event);
 }

@@ -19,7 +19,9 @@
 
 use oa_core::{InputState, PortIndex};
 
+mod canonical;
 mod device_key;
+pub use canonical::{CanonicalAxis, CanonicalButton};
 pub use device_key::device_key;
 
 pub use device_query::Keycode;
@@ -265,9 +267,16 @@ pub struct InputPoller {
     keyboard: KeyboardMapping,
     gamepad: GamepadMapping,
     gilrs: Option<Gilrs>,
-    /// Connection-order port assignment. `port_pads[i] == Some(id)` means the
-    /// pad with that gilrs id drives `PortIndex::Port{i}`.
+    /// Port assignment. `port_pads[i] == Some(id)` means the pad with that
+    /// gilrs id drives `PortIndex::Port{i}`.
     port_pads: [Option<GamepadId>; 5],
+    /// Replug-stability reservations (Controller Identity arc Phase 1). Holds
+    /// the device-key of the pad that last occupied each port; survives the
+    /// pad's disconnect so a reconnecting pad of the same type reclaims its
+    /// prior port instead of shuffling. See `assign_pad` / `choose_port`.
+    /// Caveat R2: two identical pads share a device-key, so among same-type
+    /// pads connection order still disambiguates (per-unit identity is post-v1).
+    port_keys: [Option<String>; 5],
     /// When false, `poll()` returns zeroed state regardless of input. Gilrs
     /// events are still pumped so connection state stays current.
     enabled: bool,
@@ -321,6 +330,7 @@ impl InputPoller {
             gamepad,
             gilrs,
             port_pads: [None; 5],
+            port_keys: std::array::from_fn(|_| None),
             enabled: true,
             analog_routing: [
                 AnalogRouting::default(),
@@ -804,33 +814,37 @@ impl InputPoller {
         if self.port_pads.iter().any(|p| *p == Some(id)) {
             return;
         }
-        // Phase-0 identity spike: derive the cross-layer device-key from
-        // gilrs' native VID/PID and log it alongside the SDL GUID so it can
-        // be validated against the frontend's `[oa-gamepad] connected` line
-        // for the same physical pad. Identity is logged here only — keying
-        // port assignment by device-key is Phase 1.
+        // Phase-1 identity: derive the cross-layer device-key from gilrs'
+        // native VID/PID. Used both for replug-stable port assignment (a
+        // reconnecting pad reclaims its prior port via `port_keys`) and the
+        // diagnostic line cross-checked against the frontend's
+        // `[oa-gamepad] connected` log for the same physical pad.
         let identity = self.gilrs.as_ref().and_then(|g| g.connected_gamepad(id)).map(|pad| {
             let key = device_key(pad.vendor_id(), pad.product_id(), pad.os_name());
             let uuid = pad.uuid();
             (key, pad.os_name().to_string(), pad.vendor_id(), pad.product_id(), uuid)
         });
+        // Pads with no resolvable identity (gilrs lookup failed) fall back to
+        // a per-id key so they still bind to a port deterministically.
+        let key = identity.as_ref().map(|(k, ..)| k.clone()).unwrap_or_else(|| format!("{id:?}"));
 
-        let mut assigned = None;
-        for (idx, slot) in self.port_pads.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(id);
-                assigned = Some(idx);
-                break;
-            }
-        }
-        if let Some((key, name, vid, pid, uuid)) = identity {
-            log::info!(
-                "oa-input: identity device-key={key} name={name:?} vid={vid:04x?} pid={pid:04x?} \
-                 uuid={uuid:02x?}"
-            );
-        }
+        let occupied = self.port_pads.map(|p| p.is_some());
+        let assigned = choose_port(occupied, &self.port_keys, &key);
         if let Some(idx) = assigned {
-            log::info!("oa-input: gamepad {id:?} assigned to port {idx}");
+            let reclaimed = self.port_keys[idx].as_deref() == Some(key.as_str());
+            self.port_pads[idx] = Some(id);
+            self.port_keys[idx] = Some(key.clone());
+            if let Some((k, name, vid, pid, uuid)) = &identity {
+                log::info!(
+                    "oa-input: identity device-key={k} name={name:?} vid={vid:04x?} \
+                     pid={pid:04x?} uuid={uuid:02x?}"
+                );
+            }
+            if reclaimed {
+                log::info!("oa-input: gamepad {id:?} (key={key}) reclaimed port {idx}");
+            } else {
+                log::info!("oa-input: gamepad {id:?} (key={key}) assigned to port {idx}");
+            }
         } else {
             log::warn!("oa-input: gamepad {id:?} connected but all 5 ports are taken");
         }
@@ -840,9 +854,92 @@ impl InputPoller {
         for (idx, slot) in self.port_pads.iter_mut().enumerate() {
             if *slot == Some(id) {
                 *slot = None;
+                // Keep `port_keys[idx]` as the reservation so this pad (or
+                // another of the same type) reclaims this port on reconnect.
                 log::info!("oa-input: gamepad {id:?} released from port {idx}");
             }
         }
+    }
+}
+
+/// Pick a port for a connecting pad, preferring replug stability. Pure so the
+/// reclaim policy is unit-testable without a live gilrs. Order:
+///   1. a free port already RESERVED for this device-key (reclaim) — keeps a
+///      reconnecting pad on its prior port;
+///   2. a free port with NO reservation (fresh slot) — avoids clobbering some
+///      other pad's reservation;
+///   3. any free port (clobber the oldest stale reservation) — last resort.
+/// Returns `None` only when all five ports are physically occupied.
+fn choose_port(
+    occupied: [bool; 5],
+    reservations: &[Option<String>; 5],
+    key: &str,
+) -> Option<usize> {
+    (0..5)
+        .find(|&i| !occupied[i] && reservations[i].as_deref() == Some(key))
+        .or_else(|| (0..5).find(|&i| !occupied[i] && reservations[i].is_none()))
+        .or_else(|| (0..5).find(|&i| !occupied[i]))
+}
+
+#[cfg(test)]
+mod port_assignment_tests {
+    use super::choose_port;
+
+    const NONE: Option<String> = None;
+
+    fn resv(slots: [Option<&str>; 5]) -> [Option<String>; 5] {
+        slots.map(|s| s.map(str::to_string))
+    }
+
+    #[test]
+    fn fresh_pad_takes_first_unreserved_free_port() {
+        let r = [NONE, NONE, NONE, NONE, NONE];
+        assert_eq!(choose_port([false; 5], &r, "vidpid:057e:2009"), Some(0));
+    }
+
+    #[test]
+    fn reconnecting_pad_reclaims_its_prior_port() {
+        // Port 1 reserved for the key and currently free → reclaim port 1
+        // even though port 0 is also free (replug stability).
+        let r = resv([None, Some("vidpid:057e:2009"), None, None, None]);
+        assert_eq!(choose_port([false; 5], &r, "vidpid:057e:2009"), Some(1));
+    }
+
+    #[test]
+    fn fresh_pad_skips_a_port_reserved_for_a_different_key() {
+        // Port 0 reserved for another pad (free) → a new pad prefers the
+        // unreserved port 1 rather than clobbering port 0's reservation.
+        let r = resv([Some("vidpid:045e:028e"), None, None, None, None]);
+        assert_eq!(choose_port([false; 5], &r, "vidpid:057e:2009"), Some(1));
+    }
+
+    #[test]
+    fn occupied_reserved_port_is_not_reclaimed_second_pad_gets_next() {
+        // Same-type pad already on port 0 (occupied); a second identical pad
+        // (same key) reserved on port 1 → it can't take occupied 0, lands 1.
+        let r = resv([Some("vidpid:057e:2009"), Some("vidpid:057e:2009"), None, None, None]);
+        let occupied = [true, false, false, false, false];
+        assert_eq!(choose_port(occupied, &r, "vidpid:057e:2009"), Some(1));
+    }
+
+    #[test]
+    fn clobbers_a_stale_reservation_only_when_no_unreserved_port_remains() {
+        // All free ports carry a different key's reservation → fall back to
+        // the first free one.
+        let r = resv([
+            Some("a"),
+            Some("b"),
+            Some("c"),
+            Some("d"),
+            Some("e"),
+        ]);
+        assert_eq!(choose_port([false; 5], &r, "vidpid:057e:2009"), Some(0));
+    }
+
+    #[test]
+    fn all_ports_occupied_returns_none() {
+        let r = [NONE, NONE, NONE, NONE, NONE];
+        assert_eq!(choose_port([true; 5], &r, "vidpid:057e:2009"), None);
     }
 }
 

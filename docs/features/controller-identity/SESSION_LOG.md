@@ -4,6 +4,34 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Phase 0 validated + Phase 1 identity foundation shipped
+
+- **Shipped:** Phase 0 hardware validation **PASSED** (operator, Switch Pro +
+  XInput pad — device-key reads correctly on both layers); Phase 0 closed.
+  Phase 1 landed on `feat/controller-identity` (fresh branch off the merged
+  main):
+  - **Canonical model** as a shared contract — `nav/canonical.ts` +
+    `oa-input/src/canonical.rs` (SDL/Xbox vocabulary per D4; types only, no
+    normalization yet — that's Phase 2).
+  - **Frontend identity threading** — `NavEvent` gains `deviceKey`;
+    `gamepad.ts` keeps a per-pad `padDeviceKeys` map (connect + initial sweep
+    + lazy tick backfill), every emitted event carries the key; keyboard-synth
+    events use `"keyboard"`. No persistence, no routing change yet.
+  - **Rust replug-stable ports** — new `port_keys` reservation array +
+    pure `choose_port` (reclaim prior port → fresh unreserved → clobber
+    stale); `release_pad` keeps the reservation so a reconnecting pad reclaims
+    its port instead of shuffling. R2 caveat (same-type pads) documented.
+  - Tests: 6 new Rust (`port_assignment_tests`) + existing; `oa-input` (28) +
+    `oa-shell` (837) green; frontend nav (22) + typecheck + lint clean.
+- **Almost:** nothing partial — Phase 1 is feature-complete. Replug stability
+  is unit-proven but not yet operator-playtested end-to-end (unplug P2 →
+  replug → still P2 in a real multi-pad session).
+- **Next:** **Phase 2 — `controllers.json` normalization** (bundle SDL
+  `gamecontrollerdb` + OA overrides → map raw buttons/axes onto the canonical
+  model in both pollers). **This is where the Switch Pro starts working
+  correctly in menus** — the operator's original payoff. Optional pre-step:
+  operator multi-pad replug playtest to confirm Phase 1 stability in the wild.
+
 ## 2026-06-12 — Phase 0 identity spike (code landed; hardware-validation pending)
 
 - **Shipped:** R1 resolved by reading the actual crate source — `gilrs 0.11.1`
