@@ -43,6 +43,7 @@ import {
 } from "solid-js";
 import { confirm } from "@oa/platform/lib/confirm";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import MetadataGamePane from "./MetadataGamePane";
 import {
   EMPTY_SYSTEM_INFO_OVERRIDE,
   getSystemInfo,
@@ -472,6 +473,9 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
 
   const [activeId, setActiveId] = createSignal<SystemId | null>(null);
   const [previewOpen, setPreviewOpen] = createSignal(true);
+  // Which half of the editor is showing (S3). Systems is the complete
+  // data layer; Games edits the S1 game_metadata_overrides backend.
+  const [mode, setMode] = createSignal<"systems" | "games">("systems");
 
   // Group expander open-state, seeded from the data-driven defaults.
   const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>(
@@ -699,14 +703,33 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
           <span aria-hidden="true" class="text-base">‹</span>
           Settings
         </button>
-        <div class="flex items-baseline gap-3">
-          <h1 class="text-lg font-semibold uppercase tracking-widest text-(--color-oa-ink)">
-            Metadata
-          </h1>
-          <span class="hidden text-[0.7rem] text-(--color-oa-ink-dim) md:inline">
-            Curate game + system facts as an override layer.
-          </span>
+        <h1 class="text-lg font-semibold uppercase tracking-widest text-(--color-oa-ink)">
+          Metadata
+        </h1>
+
+        {/* Systems / Games switch (S3). */}
+        <div class="flex items-center gap-0.5 rounded-lg border border-white/10 bg-black/30 p-0.5">
+          <For each={["systems", "games"] as const}>
+            {(m) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  setMode(m);
+                }}
+                class="rounded-md px-3 py-1 text-[0.7rem] font-medium capitalize transition"
+                classList={{
+                  "bg-(--color-system-accent)/25 text-(--color-oa-ink)": mode() === m,
+                  "text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)": mode() !== m,
+                }}
+                aria-pressed={mode() === m}
+              >
+                {m}
+              </button>
+            )}
+          </For>
         </div>
+
         <button
           type="button"
           onClick={(e) => {
@@ -728,7 +751,8 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
         </button>
       </header>
 
-      {/* Body — three zones. */}
+      {/* Body — three zones (Systems) or the game pane (Games). */}
+      <Show when={mode() === "systems"} fallback={<MetadataGamePane previewOpen={previewOpen} />}>
       <div class="flex min-h-0 flex-1">
         <SystemList
           systems={systems()}
@@ -747,9 +771,6 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
                   Pick a system to curate its facts. Every field falls back to a
                   default — OA's curated copy, or the bundled hardware database
                   below that — when you leave it blank.
-                </p>
-                <p class="mt-2 text-[0.7rem] text-(--color-oa-ink-dim)/70">
-                  Game-by-game editing arrives in a follow-up slice.
                 </p>
               </div>
             </div>
@@ -868,6 +889,7 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
           </div>
         </Show>
       </div>
+      </Show>
     </div>
   );
 };

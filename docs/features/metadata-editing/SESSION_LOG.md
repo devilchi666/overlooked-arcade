@@ -4,6 +4,44 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Wave 1 / S3: GAME editor + entity-list picker + typed controls
+
+- **Shipped:** The **Games** half of the metadata editor, behind a
+  **Systems/Games segmented switch** in the takeover top bar (system pane
+  untouched). New `MetadataGamePane.tsx`: a **searchable game picker**
+  (`list_game_groups`, system-filter dropdown, cover thumbs, edited dots,
+  capped at 500 rows) + a **typed editor** over the S1
+  `game_metadata_overrides` backend + a **game tile/hero live preview** +
+  optimistic debounced autosave (same race-guarded pattern as the system
+  pane). **Typed controls** (`metadataControls.tsx`, reusable): year /
+  players / max-players **NumberStepper**, **StarRating** (0–5),
+  **ChipInput** for genres with `<datalist>` typeahead from the library
+  corpus, **SegmentedPills** for region + release type, TextField (with
+  developer/publisher datalist autocomplete) + TextArea. Quiet provenance
+  reused via a shared `ProvenanceField` (Default-on-hover + per-field
+  reset), baseline = the pristine `game_identities` row. Backend: exposed
+  the dormant **`get_identity`** (provenance baseline) + added
+  **`list_game_metadata_overridden`** (picker dots/filter), both
+  registered commands; new **`platform/api/gameMetadataApi.ts`** wrappers
+  + **`platform/library/gameMetadata.ts`** types (invoke-ban preserved).
+  `cargo test -p oa-shell` **837 green**; frontend typecheck + lint
+  silent.
+- **Almost / open:** (1) the narrative game-info fields
+  (summary/controls/best-emu/bugs, keyed by rom_id) are NOT folded in yet
+  — they need the default-variant rom_id and a small section; deferred to
+  keep S3 shippable. (2) Controller-native nav within the takeover still
+  isn't wired (native focus only) — applies to both panes. (3) Genre
+  default flattens the identity's single-TEXT genre by splitting on
+  commas; multi-word genres containing commas would mis-split (rare).
+  (4) Picker caps at 500 rows (logged via slice, not silent) — fine until
+  virtualization lands. (5) Per-system drill-in still hosts the old flat
+  `PerSystemInfoSection` (redirect/deprecate still open).
+- **GATE:** operator playtest of the **game editor feel** + the
+  Systems/Games switch (D5 premium sign-off).
+- **Next:** Wave-1 close-out — fold narrative game-info in; controller-nav
+  port; Per-system-drill-in redirect decision. Then Wave 2 (undo stack,
+  merge-mode bulk edit + find-replace).
+
 ## 2026-06-12 — S2 layout rework (post-playtest: "very very busy")
 
 - **Shipped:** Reworked the metadata editor per the operator's playtest

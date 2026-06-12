@@ -3919,8 +3919,9 @@ impl LibraryDb {
         Ok(rows)
     }
 
-    /// Single identity by id. Ok(None) when absent.
-    #[allow(dead_code)] // consumed by Sub-phase 2's read-path swap
+    /// Single identity by id. Ok(None) when absent. Exposed via the
+    /// `get_identity` command (Metadata Curation S3) as the pre-override
+    /// provenance baseline the game editor's "Default" affordance reads.
     pub fn get_identity(&self, id: &str) -> Result<Option<GameIdentityRow>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
         conn.query_row(
@@ -4867,6 +4868,24 @@ impl LibraryDb {
         let mut out = Vec::new();
         for r in rows {
             out.push(r.map_err(|e| format!("list_all_game_metadata_overrides row: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// `identity_id`s with at least one factual-metadata override —
+    /// drives the Settings → Metadata game-picker "edited" dot + the
+    /// "overridden only" filter in one query (Metadata Curation S3).
+    pub fn list_game_metadata_overridden(&self) -> Result<Vec<String>, String> {
+        let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT identity_id FROM game_metadata_overrides")
+            .map_err(|e| format!("list_game_metadata_overridden prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("list_game_metadata_overridden query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_game_metadata_overridden row: {e}"))?);
         }
         Ok(out)
     }

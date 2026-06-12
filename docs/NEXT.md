@@ -342,7 +342,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Metadata Curation — Wave 1 / S3 (GAME editor + entity-list picker)
+### Metadata Curation — Wave 1 close-out (narrative + controller-nav + cleanup)
 
 **Planned 2026-06-11.** Full plan:
 [PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature folder
@@ -366,19 +366,29 @@ rebuild). Ships live preview hero, per-field provenance + reset (via
 typecheck + lint silent. **GATE: awaiting operator playtest sign-off on the
 premium *feel*** (D5 exit criterion).
 
-**S3 scope:** the **GAME editor + searchable entity-list picker** (D4) over
-the S1 `game_metadata_overrides` backend, in the same `metadata` category
-(add a Systems/Games segmented switch at the body top). Typed controls matter
-more here — genre chips w/ typeahead from the library corpus, year stepper,
-rating stars, region/release-type segmented pills. Fold the narrative
-game-info fields (summary/controls/best-emu/bugs) in alongside the factual
-ones so one surface edits the whole game record. Needs new `platform/api/`
-wrappers for the S1 game-metadata commands. Also decide the
-Per-system-drill-in `PerSystemInfoSection` fate (redirect to the new editor /
-deprecate). Anchors: `frontend/src/engine/MetadataSettingsBody.tsx` (extend),
-`frontend/src/platform/api/` (new game-metadata wrappers), the S1 commands in
-`apps/oa-shell/src/main.rs`. Gating: ready (S1 backend + S2 shell both land).
-Estimate: Wave 1 ≈ 1–2 weeks remaining.
+**✅ S3 shipped 2026-06-12** (same branch): the GAME editor + searchable
+entity-list picker (D4) over the S1 backend, behind a Systems/Games switch in
+the takeover. Typed controls (`metadataControls.tsx`: year/players steppers,
+star rating, genre chips w/ corpus typeahead, region/release-type pills) +
+game tile/hero live preview + autosave. Backend exposed `get_identity`
+(provenance baseline) + `list_game_metadata_overridden`; new
+`gameMetadataApi.ts` + `gameMetadata.ts`. 837 green; typecheck + lint silent.
+**GATE: awaiting operator playtest of the game-editor feel.**
+
+**Close-out scope (what's left in Wave 1):**
+- **Fold narrative game-info in** — the summary/controls/best-emu/bugs fields
+  (keyed by rom_id, via the default-variant) into the game editor so one
+  surface edits the whole game record. Anchors: `get/set_game_info_override`
+  commands + `GameGroupInfo.defaultVariantId`.
+- **Controller-native nav** within the metadata takeover (both panes) — port
+  the focus-group / HintRegion treatment the normal Settings pane has;
+  currently native Tab focus only.
+- **Per-system-drill-in decision** — redirect `PerSystemInfoSection` to the
+  new editor or deprecate it (two system editors exist today).
+- Optional polish: picker virtualization (currently caps at 500 rows).
+
+Then **Wave 2** (S4 undo stack, S5 merge-mode bulk edit + find-replace).
+Gating: ready. Estimate: close-out ≈ a few days; Wave 2 ≈ 1 week.
 
 ### ✅ Portability + state-storage audit — DONE 2026-06-11
 

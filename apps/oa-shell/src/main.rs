@@ -2622,6 +2622,8 @@ fn main() {
             delete_game_metadata_override,
             reset_game_metadata_field,
             update_identity_metadata,
+            get_identity,
+            list_game_metadata_overridden,
             get_system_info,
             get_system_info_override,
             get_system_info_curated,
@@ -8256,6 +8258,29 @@ fn update_identity_metadata(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.update_identity_metadata(&identityId, &update)
+}
+
+/// Read one identity's pristine (pre-override) canonical metadata — the
+/// `game_identities` row. The Settings → Metadata game editor reads this
+/// as the "Default" provenance baseline beneath the override layer
+/// (Metadata Curation S3). `null` when the id is unknown.
+#[allow(non_snake_case)]
+#[tauri::command]
+fn get_identity(
+    identityId: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Option<library_db::GameIdentityRow>, String> {
+    db.get_identity(&identityId)
+}
+
+/// `identity_id`s with at least one factual-metadata override — drives
+/// the Settings → Metadata game-picker "edited" dot + the "overridden
+/// only" filter in one query (Metadata Curation S3).
+#[tauri::command]
+fn list_game_metadata_overridden(
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<Vec<String>, String> {
+    db.list_game_metadata_overridden()
 }
 
 // ---- System Info Panel v1 — Phase 2 query + edit commands -------------
