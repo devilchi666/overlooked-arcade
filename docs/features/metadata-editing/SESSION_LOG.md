@@ -4,6 +4,37 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Wave 1 close-out (3 of 4 items)
+
+- **Shipped:** (1) **Hide empty systems** — `MetadataSettingsBody` loads
+  `list_game_groups` once, derives the systems-with-games set, filters
+  the Systems list, and passes the groups + filtered system list down to
+  `MetadataGamePane` (no double fetch; until groups resolve it shows all,
+  then filters). (2) **Narrative game-info folded in** — a "Notes &
+  guidance" section in the game editor edits summary / controls (chips) /
+  best-emulator (+ why) via the existing `get/set/delete_game_info_override`
+  commands keyed by (systemId, default-variant rom_id), with its own
+  baseline/draft + debounced autosave sharing the save-status; Reset-all
+  now clears both the factual + narrative overrides. (3) **Per-system
+  drill-in pointer** (operator chose Option A) — the drill-in's flat
+  "System info" editor is replaced by a note + "Edit in Metadata →"
+  button (`onOpenMetadata` → `selectCategory("metadata")`); the old
+  `PerSystemInfoSection.tsx` is now orphaned (left on disk, removable).
+  `cargo test` 837 green; frontend typecheck + lint silent.
+- **Deferred (item 4 — controller-native nav):** proper DPad
+  region-traversal needs `useDomQueryFocusGroup` wiring **and** extracting
+  the system pane into its own component for clean mount/unmount with the
+  mode switch — and it's untestable without controller hardware. Native
+  Tab focus works today. Held for a focused controller-playtest pass with
+  the operator in the loop rather than shipping untestable focus plumbing
+  (the focus framework has known subtle bugs). Still queued in NEXT.md.
+- **Other open:** narrative section has no file-layer provenance baseline
+  (operator-note fields, treated as override-only); structured bugs list
+  deferred; picker "edited" dot is factual-only (narrative edits don't
+  flip it); orphaned `PerSystemInfoSection.tsx` removal.
+- **Next:** the controller-nav pass (with playtest), then Wave 2 (S4 undo
+  stack, S5 merge-mode bulk edit + find-replace).
+
 ## 2026-06-12 — Wave 1 / S3: GAME editor + entity-list picker + typed controls
 
 - **Shipped:** The **Games** half of the metadata editor, behind a

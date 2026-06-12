@@ -43,6 +43,8 @@ import {
 } from "solid-js";
 import { confirm } from "@oa/platform/lib/confirm";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { listGameGroups } from "@oa/platform/api/libraryApi";
+import type { GameGroupInfo } from "@oa/platform/library/types";
 import MetadataGamePane from "./MetadataGamePane";
 import {
   EMPTY_SYSTEM_INFO_OVERRIDE,
@@ -464,9 +466,29 @@ const SystemList: Component<{
 // --- Main body -----------------------------------------------------------
 
 const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
+  // Loaded once + shared with the game pane. Drives the empty-system
+  // filter: we only list systems the library actually has games for
+  // (no point curating a system with zero games — operator call
+  // 2026-06-12). Until the groups resolve we don't filter (show all).
+  const [gameGroups] = createResource(async (): Promise<GameGroupInfo[]> => {
+    try {
+      return await listGameGroups();
+    } catch (e) {
+      console.warn("[MetadataSettingsBody] list_game_groups failed:", e);
+      return [];
+    }
+  });
+  const systemsWithGames = (): Set<string> | null => {
+    const g = gameGroups();
+    if (!g) return null; // still loading → don't filter yet
+    return new Set(g.map((x) => x.systemId));
+  };
+
   const systems = createMemo<{ id: SystemId; displayName: string }[]>(() => {
+    const withGames = systemsWithGames();
     const ids = Object.keys(systemThemes) as SystemId[];
     return ids
+      .filter((id) => withGames === null || withGames.has(id))
       .map((id) => ({ id, displayName: systemThemes[id]?.displayName ?? id }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   });
@@ -752,7 +774,16 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
       </header>
 
       {/* Body — three zones (Systems) or the game pane (Games). */}
-      <Show when={mode() === "systems"} fallback={<MetadataGamePane previewOpen={previewOpen} />}>
+      <Show
+        when={mode() === "systems"}
+        fallback={
+          <MetadataGamePane
+            previewOpen={previewOpen}
+            groups={gameGroups() ?? []}
+            systems={systems()}
+          />
+        }
+      >
       <div class="flex min-h-0 flex-1">
         <SystemList
           systems={systems()}

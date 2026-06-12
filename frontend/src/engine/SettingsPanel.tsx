@@ -514,6 +514,7 @@ const SettingsPanel: Component<Props> = (props) => {
             <PerSystemSettingsBody
               systemId={perSystemActiveId}
               settings={ctx.settings}
+              onOpenMetadata={() => selectCategory("metadata")}
             />
           </Match>
         </Switch>

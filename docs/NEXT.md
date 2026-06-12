@@ -375,28 +375,24 @@ game tile/hero live preview + autosave. Backend exposed `get_identity`
 `gameMetadataApi.ts` + `gameMetadata.ts`. 837 green; typecheck + lint silent.
 **GATE: awaiting operator playtest of the game-editor feel.**
 
-**Close-out scope (what's left in Wave 1):**
-- **Fold narrative game-info in** — the summary/controls/best-emu/bugs fields
-  (keyed by rom_id, via the default-variant) into the game editor so one
-  surface edits the whole game record. Anchors: `get/set_game_info_override`
-  commands + `GameGroupInfo.defaultVariantId`.
-- **Controller-native nav** within the metadata takeover (both panes) — port
-  the focus-group / HintRegion treatment the normal Settings pane has;
-  currently native Tab focus only.
-- **Per-system-drill-in decision** — redirect `PerSystemInfoSection` to the
-  new editor or deprecate it (two system editors exist today).
-- **Hide empty systems** — the Systems list AND the Games picker's
-  system-filter dropdown both derive from the full `systemThemes` registry
-  (~45 systems), so they show systems the operator has zero games for. Filter
-  both to systems that actually have ≥1 game in the library (derive the set
-  from `list_game_groups` / a system-count query; `MetadataSettingsBody`
-  `systems` memo + `MetadataGamePane` system filter). Edge to weigh: someone
-  pre-curating a system before importing — likely fine to hide; revisit with a
-  "show all systems" toggle only if asked.
-- Optional polish: picker virtualization (currently caps at 500 rows).
+**Close-out status (2026-06-12):** ✅ narrative game-info folded in
+(Notes & guidance section), ✅ Per-system drill-in replaced with an
+"Edit in Metadata →" pointer (operator Option A), ✅ empty systems hidden
+(Systems list + Games picker filter to systems with ≥1 game). One item
+remains:
+
+- **Controller-native nav** within the metadata takeover (both panes) —
+  the `useDomQueryFocusGroup` / HintRegion focus-group plumbing the normal
+  Settings pane has. Needs the system pane extracted into its own
+  component (clean mount/unmount with the Systems/Games switch) + **live
+  controller playtesting** — do this as a focused pass with the operator
+  testing, not blind. Native Tab focus works today.
+- Optional polish: picker virtualization (caps at 500 rows); remove the
+  now-orphaned `PerSystemInfoSection.tsx`; structured bugs editor in the
+  narrative section.
 
 Then **Wave 2** (S4 undo stack, S5 merge-mode bulk edit + find-replace).
-Gating: ready. Estimate: close-out ≈ a few days; Wave 2 ≈ 1 week.
+Gating: ready. Estimate: controller-nav pass ≈ 1 session; Wave 2 ≈ 1 week.
 
 ### ✅ Portability + state-storage audit — DONE 2026-06-11
 

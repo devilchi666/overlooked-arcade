@@ -24,7 +24,6 @@ import {
   SystemBindingsDialog,
   SystemCoreOptionsDialog,
 } from "./SystemDialogs";
-import PerSystemInfoSection from "./PerSystemInfoSection";
 import type { CoreEntry, MonitorInfo, SettingsStore } from "@oa/platform/settings/store";
 
 type Props = {
@@ -33,6 +32,10 @@ type Props = {
   /// in place rather than remounting.
   systemId: Accessor<SystemId | null>;
   settings: SettingsStore;
+  /// Open the Settings → Metadata editor (the system-facts editor now
+  /// lives there; this surface just points at it). Optional so other
+  /// callers don't have to wire it.
+  onOpenMetadata?: () => void;
 };
 
 // VL Phase C3 — subset of Rust `EmulatorProfileInfo` we need here.
@@ -234,13 +237,30 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
             </Card>
           </Show>
 
-          {/* System info — Phase 4 edit UI for the HOME tab's right
-              pane fields. Each row inherits from L2 (curated YAML) +
-              L1 (MAME) by default; typing in a row promotes the value
-              to an L3 operator override. "Reset all overrides for
-              this system" drops the entire L3 row. */}
+          {/* System info now lives in the dedicated Settings → Metadata
+              editor (full-screen, live preview, per-field provenance).
+              This card is a pointer so there's a single source of truth
+              rather than two editors for the same data. */}
           <Card title="System info">
-            <PerSystemInfoSection systemId={props.systemId} />
+            <div class="flex flex-col gap-3">
+              <p class="text-[0.75rem] leading-relaxed text-(--color-oa-ink-dim)">
+                System facts (manufacturer, specs, hero copy, peripherals) are
+                edited in the dedicated <strong>Metadata</strong> editor — a
+                full-screen surface with a live preview and per-field reset.
+              </p>
+              <Show when={props.onOpenMetadata}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    props.onOpenMetadata?.();
+                  }}
+                  class="self-start rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-[0.7rem] font-medium text-(--color-system-accent-soft) transition hover:bg-(--color-system-accent)/25"
+                >
+                  Edit in Metadata →
+                </button>
+              </Show>
+            </div>
           </Card>
 
           {/* Bindings + Core options stay as dialog launchers — those

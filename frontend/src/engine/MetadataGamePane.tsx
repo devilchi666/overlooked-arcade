@@ -28,7 +28,6 @@ import {
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { confirm } from "@oa/platform/lib/confirm";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { listGameGroups } from "@oa/platform/api/libraryApi";
 import type { GameGroupInfo } from "@oa/platform/library/types";
 import {
   deleteGameMetadataOverride,
@@ -40,6 +39,13 @@ import {
   type GameIdentityRow,
   type GameMetadataOverride,
 } from "@oa/platform/library/gameMetadata";
+import {
+  deleteGameInfoOverride,
+  EMPTY_GAME_INFO_OVERRIDE,
+  getGameInfoOverride,
+  setGameInfoOverride,
+  type GameInfoOverride,
+} from "@oa/platform/library/gameInfo";
 import {
   ChipInput,
   NumberStepper,
@@ -302,23 +308,15 @@ const GamePreview: Component<{
 
 // --- Main pane -----------------------------------------------------------
 
-const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) => {
-  const systems = createMemo<{ id: SystemId; displayName: string }[]>(() => {
-    const ids = Object.keys(systemThemes) as SystemId[];
-    return ids
-      .map((id) => ({ id, displayName: systemThemes[id]?.displayName ?? id }))
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  });
-
-  const [groups] = createResource(async (): Promise<GameGroupInfo[]> => {
-    try {
-      return await listGameGroups();
-    } catch (e) {
-      console.warn("[MetadataGamePane] list_game_groups failed:", e);
-      return [];
-    }
-  });
-  const groupList = () => groups() ?? [];
+const MetadataGamePane: Component<{
+  previewOpen: Accessor<boolean>;
+  /// Identity-backed groups (loaded once by the parent + shared with the
+  /// system pane's empty-system filter).
+  groups: GameGroupInfo[];
+  /// Systems that actually have games — the picker's filter dropdown.
+  systems: { id: SystemId; displayName: string }[];
+}> = (props) => {
+  const groupList = () => props.groups;
 
   // Typeahead corpora from the merged library metadata.
   const genreCorpus = createMemo(() => {
@@ -425,6 +423,93 @@ const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) 
     if (saveTimer) clearTimeout(saveTimer);
   });
 
+  // --- Narrative game-info (summary / controls / best emulator) ---------
+  // A parallel override layer keyed by (systemId, rom_id) — edited against
+  // the identity's default variant so one surface curates the whole game
+  // record. Shares the save-status signals with the factual layer.
+  const infoTarget = () => {
+    const g = selected();
+    return g && g.identityId ? { systemId: g.systemId, romId: g.defaultVariantId } : null;
+  };
+  const [infoBaseline, setInfoBaseline] = createSignal<GameInfoOverride>(EMPTY_GAME_INFO_OVERRIDE);
+  const [infoDraft, setInfoDraft] = createSignal<GameInfoOverride>(EMPTY_GAME_INFO_OVERRIDE);
+  const [loadedInfo] = createResource(infoTarget, async (t): Promise<GameInfoOverride> => {
+    try {
+      return await getGameInfoOverride({ systemId: t.systemId, romId: t.romId });
+    } catch (e) {
+      console.warn("[MetadataGamePane] get_game_info_override failed:", e);
+      return EMPTY_GAME_INFO_OVERRIDE;
+    }
+  });
+  createEffect(() => {
+    const o = loadedInfo();
+    if (o) {
+      setInfoBaseline({ ...o });
+      setInfoDraft({ ...o });
+    }
+  });
+  const infoDirty = () => JSON.stringify(infoDraft()) !== JSON.stringify(infoBaseline());
+
+  const persistInfoFor = async (
+    target: { systemId: string; romId: string },
+    snapshot: GameInfoOverride,
+  ) => {
+    setError(null);
+    setSaving(true);
+    try {
+      await setGameInfoOverride({
+        systemId: target.systemId,
+        romId: target.romId,
+        overrideRecord: snapshot,
+      });
+      const t = infoTarget();
+      if (t && t.systemId === target.systemId && t.romId === target.romId) {
+        setInfoBaseline({ ...snapshot });
+        setSavedAt(Date.now());
+      }
+    } catch (e) {
+      console.error("[MetadataGamePane] save game-info failed:", e);
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  let infoSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const snapshot = infoDraft();
+    void infoBaseline();
+    const t = infoTarget();
+    if (infoSaveTimer) {
+      clearTimeout(infoSaveTimer);
+      infoSaveTimer = undefined;
+    }
+    if (!t || !infoDirty()) return;
+    infoSaveTimer = setTimeout(() => {
+      void persistInfoFor(t, snapshot);
+    }, 600);
+  });
+  onCleanup(() => {
+    if (infoSaveTimer) clearTimeout(infoSaveTimer);
+  });
+
+  type InfoStrKey = "shortSummary" | "bestEmulator" | "bestEmulatorReason";
+  const setInfoStr = (key: InfoStrKey, raw: string | undefined) =>
+    setInfoDraft((prev) => {
+      const next = { ...prev };
+      if (!raw) delete next[key];
+      else next[key] = raw;
+      return next;
+    });
+  const setControls = (next: string[]) =>
+    setInfoDraft((prev) => {
+      const out = { ...prev };
+      if (next.length === 0) delete out.controlsSupported;
+      else out.controlsSupported = next;
+      return out;
+    });
+  const controlsWorking = () => infoDraft().controlsSupported ?? [];
+
   // Typed setters — `undefined` / empty clears the override field so the
   // row stays sparse (empty = inherit, matching the system pane).
   type StrKey = "title" | "sortTitle" | "developer" | "publisher" | "region" | "releaseType" | "series" | "description";
@@ -482,8 +567,12 @@ const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) 
     setSaving(true);
     try {
       await deleteGameMetadataOverride({ identityId: id });
+      const t = infoTarget();
+      if (t) await deleteGameInfoOverride({ systemId: t.systemId, romId: t.romId });
       setBaseline({ ...EMPTY_GAME_METADATA_OVERRIDE });
       setDraft({ ...EMPTY_GAME_METADATA_OVERRIDE });
+      setInfoBaseline({ ...EMPTY_GAME_INFO_OVERRIDE });
+      setInfoDraft({ ...EMPTY_GAME_INFO_OVERRIDE });
       setSavedAt(Date.now());
       void refetchOverridden();
     } catch (e) {
@@ -498,7 +587,7 @@ const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) 
     <div class="flex min-h-0 flex-1">
       <GamePicker
         groups={groupList()}
-        systems={systems()}
+        systems={props.systems}
         activeId={activeId}
         overridden={overriddenSet}
         onPick={setSelected}
@@ -553,7 +642,13 @@ const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) 
                   e.currentTarget.blur();
                   handleResetAll();
                 }}
-                disabled={saving() || (!overriddenSet().has(activeId() ?? "") && !isDirty())}
+                disabled={
+                  saving() ||
+                  (!overriddenSet().has(activeId() ?? "") &&
+                    !isDirty() &&
+                    !infoDirty() &&
+                    JSON.stringify(infoBaseline()) === JSON.stringify(EMPTY_GAME_INFO_OVERRIDE))
+                }
                 class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim) transition hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-200 disabled:opacity-40"
                 title="Drop every metadata override for this game"
               >
@@ -738,6 +833,58 @@ const MetadataGamePane: Component<{ previewOpen: Accessor<boolean> }> = (props) 
                   value={draft().description}
                   placeholder="Overview / description…"
                   onInput={(v) => setStr("description", v)}
+                />
+              </ProvenanceField>
+
+              {/* Narrative game-info — operator notes / guidance, the
+                  parallel (system_id, rom_id) override layer. */}
+              <h3 class="mt-3 px-2 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-(--color-system-accent)/80">
+                Notes &amp; guidance
+              </h3>
+              <ProvenanceField
+                label="Summary"
+                overridden={infoDraft().shortSummary !== undefined}
+                onReset={() => setInfoStr("shortSummary", undefined)}
+              >
+                <TextArea
+                  value={infoDraft().shortSummary}
+                  placeholder="A short operator note about this game…"
+                  onInput={(v) => setInfoStr("shortSummary", v)}
+                />
+              </ProvenanceField>
+              <ProvenanceField
+                label="Controls"
+                overridden={infoDraft().controlsSupported !== undefined}
+                onReset={() => setControls([])}
+              >
+                <ChipInput
+                  values={controlsWorking()}
+                  suggestions={[]}
+                  placeholder="Add a supported control…"
+                  listId="meta-controls"
+                  onChange={setControls}
+                />
+              </ProvenanceField>
+              <ProvenanceField
+                label="Best emulator"
+                overridden={infoDraft().bestEmulator !== undefined}
+                onReset={() => setInfoStr("bestEmulator", undefined)}
+              >
+                <TextField
+                  value={infoDraft().bestEmulator}
+                  placeholder="Recommended core / emulator…"
+                  onInput={(v) => setInfoStr("bestEmulator", v)}
+                />
+              </ProvenanceField>
+              <ProvenanceField
+                label="Why"
+                overridden={infoDraft().bestEmulatorReason !== undefined}
+                onReset={() => setInfoStr("bestEmulatorReason", undefined)}
+              >
+                <TextField
+                  value={infoDraft().bestEmulatorReason}
+                  placeholder="Reason for the recommendation…"
+                  onInput={(v) => setInfoStr("bestEmulatorReason", v)}
                 />
               </ProvenanceField>
             </div>
