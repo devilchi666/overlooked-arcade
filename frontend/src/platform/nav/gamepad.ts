@@ -17,6 +17,7 @@
 // directions only.
 
 import { createSignal, onCleanup } from "solid-js";
+import { deriveDeviceIdentity } from "./deviceKey";
 import type { NavButton, NavDirection, NavEvent, NavPhase } from "./types";
 
 /// Web Gamepad API "standard layout" mapping. Skips the dpad slots
@@ -198,10 +199,18 @@ function handleConnect(e: GamepadEvent): void {
   // Diagnostic: log the pad's identity + mapping + raw button / axis
   // counts on connect so we can spot non-standard layouts (DPad on
   // axes instead of buttons, etc.). Once.
+  // Phase-0 identity spike: derive the cross-layer device-key from the
+  // Web `id` string so it can be cross-checked against the Rust gilrs
+  // poller's `oa-input: identity device-key=…` line for the same pad.
+  const identity = deriveDeviceIdentity(e.gamepad.id);
   console.log(
     "[oa-gamepad] connected",
     JSON.stringify({
       id: e.gamepad.id,
+      deviceKey: identity.key,
+      vid: identity.vid,
+      pid: identity.pid,
+      name: identity.name,
       mapping: e.gamepad.mapping,
       buttons: e.gamepad.buttons.length,
       axes: e.gamepad.axes.length,

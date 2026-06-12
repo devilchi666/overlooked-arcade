@@ -63,3 +63,46 @@ button?" — per-controller, missing today) with **semantics** ("what should A
 This arc separates them: `controllers.json` owns layout; the existing
 OA-wide verb map + the new `default-maps.json` own semantics. Once layout is
 normalized, semantics "just work" for any pad.
+
+---
+
+## 2026-06-12 — Phase 0 spike findings (R1 resolved + device-key spec)
+
+- **D9 — Rust VID/PID = option (a), and it costs nothing.** R1's premise was
+  wrong: the plan assumed *"gilrs 0.11 doesn't expose a UID publicly."* It
+  does. The exact version already in our build graph — `gilrs 0.11.1` /
+  `gilrs-core 0.6.7` — exposes on the high-level `gilrs::Gamepad`:
+  `vendor_id() -> Option<u16>`, `product_id() -> Option<u16>`,
+  `uuid() -> [u8; 16]` (SDL GUID), and `os_name() -> &str`
+  (verified at `gilrs-0.11.1/src/gamepad.rs:807–840`). So **no gilrs upgrade
+  and no Windows raw-input (option b) are needed** — Rust reads VID/PID
+  natively. (b) is rejected; the GUID is kept available for Phase 5 per-unit
+  refinement but VID/PID is read directly, not parsed out of the GUID.
+  *Why it matters:* R1 was the highest-risk item gating the whole arc; it
+  collapsed to a few lines of existing API.
+
+- **D10 — Keep (c) frontend-as-identity-authority too, for the XInput gap.**
+  (a) gives Rust a self-consistent key; (c) stays the *profile-resolution*
+  authority. Reason: the Web Gamepad `id` for XInput pads on Chrome/WebView
+  is often `"Xbox 360 Controller (XInput STANDARD GAMEPAD)"` with **no
+  VID/PID** (risk R5), while gilrs *does* see the VID/PID. So for XInput pads
+  the two layers' keys can diverge. We don't try to reconcile the fallback
+  keys; instead the frontend (richest identity + owns `controllers.json`
+  matching) resolves the profile and hands Rust the normalized per-port
+  mapping at launch. **Final call: (a) + (c). (b) rejected.**
+
+- **D11 — `device-key` format (cross-layer spec).** Both layers derive the
+  same string for a VID/PID-bearing pad:
+  - VID/PID present → `vidpid:<vid>:<pid>` — each lowercase, zero-padded to
+    4 hex digits (Switch Pro = `vidpid:057e:2009`).
+  - VID/PID absent → `name:<slug>` — `slug` = lowercase, runs of
+    non-alphanumerics collapsed to a single `-`, leading/trailing `-`
+    trimmed, empty → `unknown`.
+  Implemented identically in `frontend/src/platform/nav/deviceKey.ts`
+  (`deriveDeviceIdentity`) and `crates/oa-input/src/device_key.rs`
+  (`device_key`), each with unit tests. The frontend additionally parses two
+  `id` formats — Chrome `"…Vendor: 057e Product: 2009"` and Firefox
+  `"057e-2009-<name>"` — both defended by regex with the name-slug fallback
+  (R5). *Limitation (documented, not fixed in v1):* the `name:` fallback is
+  **not** guaranteed to agree across layers (Web `id` name ≠ OS name); D10's
+  (c) covers that case.

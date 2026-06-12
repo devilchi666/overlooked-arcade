@@ -168,8 +168,13 @@ physical press
 
 ## Phases (foundation-first, D6)
 
-### Phase 0 — Identity spike (de-risk; tiny, FIRST)
+### Phase 0 — Identity spike (de-risk; tiny, FIRST) — CODE LANDED 2026-06-12; hardware-validation pending
 Prove the cross-layer device key before building on it.
+**Status:** parser + Rust VID/PID read + connect-time logs + unit tests
+shipped on `feat/controller-identity`; device-key spec + (a)+(c) decision
+recorded (DECISIONS D9–D11). Remaining exit-criterion = operator pastes the
+two `[oa-gamepad] connected` + `oa-input: identity device-key=` log lines for
+the Switch Pro + an XInput pad to confirm the keys match expectations.
 - Frontend: parse `gamepad.id` → `{vid, pid, name}` → a canonical
   `device-key` string. (VID/PID regex; `gamepad.id` embeds
   `Vendor: xxxx Product: yyyy`.)
@@ -236,9 +241,12 @@ Prove the cross-layer device key before building on it.
 
 ## Open questions / risks
 
-- **R1 (highest) — Rust VID/PID.** `gilrs` 0.11 doesn't expose a UID
-  publicly; `gilrs-core` depends on `uuid` internally. Phase 0 spike must
-  resolve (a) gilrs upgrade vs (b) platform API vs (c) frontend-authority.
+- **R1 (highest) — Rust VID/PID. RESOLVED 2026-06-12 (Phase 0 spike).** The
+  premise was wrong: `gilrs 0.11.1` (already in the build) exposes
+  `Gamepad::vendor_id()` / `product_id()` / `uuid()` / `os_name()` natively
+  (`gilrs-0.11.1/src/gamepad.rs:807–840`). Decision = **(a) + (c)**: read
+  VID/PID directly in Rust (no upgrade, no platform API), frontend stays the
+  profile-resolution authority. See feature DECISIONS D9–D11.
 - **R2 — Cross-layer pad↔port matching.** Even with VID/PID both sides, two
   identical pads (same VID/PID) can't be told apart at type-level (D2). For
   v1, connection order disambiguates same-type pads; per-unit (serial) is

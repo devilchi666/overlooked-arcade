@@ -19,6 +19,9 @@
 
 use oa_core::{InputState, PortIndex};
 
+mod device_key;
+pub use device_key::device_key;
+
 pub use device_query::Keycode;
 pub use gilrs::Button as GamepadButton;
 use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Ticks};
@@ -801,6 +804,17 @@ impl InputPoller {
         if self.port_pads.iter().any(|p| *p == Some(id)) {
             return;
         }
+        // Phase-0 identity spike: derive the cross-layer device-key from
+        // gilrs' native VID/PID and log it alongside the SDL GUID so it can
+        // be validated against the frontend's `[oa-gamepad] connected` line
+        // for the same physical pad. Identity is logged here only — keying
+        // port assignment by device-key is Phase 1.
+        let identity = self.gilrs.as_ref().and_then(|g| g.connected_gamepad(id)).map(|pad| {
+            let key = device_key(pad.vendor_id(), pad.product_id(), pad.os_name());
+            let uuid = pad.uuid();
+            (key, pad.os_name().to_string(), pad.vendor_id(), pad.product_id(), uuid)
+        });
+
         let mut assigned = None;
         for (idx, slot) in self.port_pads.iter_mut().enumerate() {
             if slot.is_none() {
@@ -808,6 +822,12 @@ impl InputPoller {
                 assigned = Some(idx);
                 break;
             }
+        }
+        if let Some((key, name, vid, pid, uuid)) = identity {
+            log::info!(
+                "oa-input: identity device-key={key} name={name:?} vid={vid:04x?} pid={pid:04x?} \
+                 uuid={uuid:02x?}"
+            );
         }
         if let Some(idx) = assigned {
             log::info!("oa-input: gamepad {id:?} assigned to port {idx}");
