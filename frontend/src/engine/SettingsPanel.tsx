@@ -241,6 +241,16 @@ const SettingsPanel: Component<Props> = (props) => {
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
     props.initialCategory ?? "display",
   );
+  // The category to return to when leaving the Metadata full-screen
+  // takeover via its back button (D6). Recorded on entry so "‹ Settings"
+  // lands you back where you came from.
+  const [prevCategory, setPrevCategory] = createSignal<CategoryId>("media");
+  const selectCategory = (id: CategoryId) => {
+    if (id === "metadata" && activeCategoryId() !== "metadata") {
+      setPrevCategory(activeCategoryId());
+    }
+    setActiveCategoryId(id);
+  };
   const [perSystemExpanded, setPerSystemExpanded] = createSignal(false);
   const [perSystemActiveId, setPerSystemActiveId] = createSignal<SystemId | null>(null);
   const activeCategory = () => {
@@ -287,6 +297,12 @@ const SettingsPanel: Component<Props> = (props) => {
   });
 
   return (
+    <Show
+      when={activeCategoryId() !== "metadata"}
+      fallback={
+        <MetadataSettingsBody onBack={() => setActiveCategoryId(prevCategory())} />
+      }
+    >
     <div
       class="grid h-full w-full"
       style={{
@@ -329,7 +345,7 @@ const SettingsPanel: Component<Props> = (props) => {
                           type="button"
                           onClick={(e) => {
                             e.currentTarget.blur();
-                            setActiveCategoryId(category.id);
+                            selectCategory(category.id);
                           }}
                           class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                           classList={{
@@ -485,9 +501,6 @@ const SettingsPanel: Component<Props> = (props) => {
           <Match when={activeCategoryId() === "media"}>
             <MediaSettings />
           </Match>
-          <Match when={activeCategoryId() === "metadata"}>
-            <MetadataSettingsBody />
-          </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />
           </Match>
@@ -506,6 +519,7 @@ const SettingsPanel: Component<Props> = (props) => {
         </Switch>
       </section>
     </div>
+    </Show>
   );
 };
 

@@ -4,6 +4,37 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — S2 layout rework (post-playtest: "very very busy")
+
+- **Shipped:** Reworked the metadata editor per the operator's playtest
+  feedback + Concept-A pick (DECISIONS D6–D9). `MetadataSettingsBody` is
+  now a **full-screen takeover** with a `‹ Settings` back button
+  (SettingsPanel renders it in place of the 3-pane grid when the
+  `metadata` category is active; `prevCategory` records where to return).
+  **Quiet provenance:** rows are clean label+value at rest, an edited
+  field carries a thin accent bar, and the "Default: <value> · Reset"
+  affordance only appears on row **hover / focus-within** (keyboard-
+  reachable) — the MAME-vs-curated distinction dropped to a hover
+  tooltip; the visible word is just "Default". **Data-driven expander
+  groups** (`FIELD_GROUPS` config): "Identity & hero" leads (open),
+  "Technical details" + "Peripherals" start collapsed with an
+  edited-count badge so hidden edits stay visible. **Collapsible preview
+  panel** toggled from the top bar. Dropped the always-on `SettingRow`
+  chips that caused the clutter. typecheck + lint silent (no backend
+  change this round).
+- **Almost / open:** controller-native nav *within* the takeover isn't
+  wired yet (relies on native Tab focus + the focus-within reveal) — the
+  HintRegion/focus-group treatment the normal Settings pane has needs
+  porting in. The Per-system drill-in still hosts the old flat
+  `PerSystemInfoSection` (redirect/deprecate still deferred to S3).
+- **GATE (still open):** operator re-playtest of the new layout for the
+  premium *feel* sign-off (D5).
+- **Next:** S3 — game editor + entity-list picker (Systems/Games switch
+  in the same takeover), typed controls (genre chips, year stepper,
+  rating stars), narrative game-info fields folded in, new
+  `platform/api/` game-metadata wrappers. Plus the controller-nav port +
+  the Per-system-drill-in redirect decision.
+
 ## 2026-06-12 — Wave 1 / S2: metadata Settings category + premium SYSTEM editor
 
 - **Audit finding (the plan's S2 premise was stale):** the system-info
