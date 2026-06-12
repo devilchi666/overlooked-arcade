@@ -126,6 +126,142 @@ Each has well-known official release endpoints, broad system coverage,
 and clean redistribution stance. Ryujinx / Suyu / Dolphin standalone
 expand after operator validates the abstraction end-to-end.
 
+### S9 — Media-on-disk: beside-the-ROM convention (Option B) + relative-path portability
+
+**Operator decision 2026-06-11** (out of the LaunchBox competitive
+research — `docs/features/guided-setup/LAUNCHBOX_RESEARCH_2026-06-11.md`
+§10 Q1). Game media (boxart, clear logo, screenshots, fanart, video
+snaps, manuals) is laid out **beside the ROMs following a
+community-standard convention** (`<rom-dir>/media/<type>/<rom-basename>`,
+ES-DE / ScreenScraper / Pegasus dialect — exact dialect TBD in S9a),
+**not** a private app-managed media tree à la LaunchBox. Rationale:
+- **Free scraper interop** — Skraper, ARRM, and ScreenScraper-based
+  tools write directly into this layout, so OA inherits best-in-class
+  third-party scraping without building it.
+- **Portability** — art travels *with* the ROMs when a user moves a
+  system folder between drives, between OSes (Windows desktop ↔ Linux
+  cabinet), or desktop → cabinet. No export / re-link step.
+- **DB-rebuild resilience** — art is resolved by convention, not a
+  stored per-id path, so a fresh DB on a new machine re-discovers all
+  art automatically.
+
+This sits *on top of* the shipped `game_identities` + MediaDb keyspace
+(Phase E, 2026-06-07): MediaDb becomes the **resolution + override +
+canonical-art** layer over a convention-discovered base, not the sole
+source of truth for where files live. OA-owned art with no on-disk
+convention home (operator-pasted, AI-generated) stays in a managed
+cache as a fallback tier — **hybrid: convention first, managed cache
+second** (mirrors the S5.1 theming asset cascade shape).
+
+**Hard constraint that falls out — a roots model, not absolute paths.**
+"Ultra-portable off SQLite" does NOT mean "everything under the program
+folder." ROMs commonly live on a separate drive, an external disk, or a
+NAS/network share. The portable design is a **library-roots model**:
+- The user registers one or more **roots** (content folders): local,
+  external, or network (`D:\ROMs`, `\\NAS\retro`, `/mnt/nas/roms`).
+- Every library entry is stored as **`(root_id, path-relative-to-root)`**,
+  never an absolute path. The DB content is fully location-independent;
+  the ONLY machine-specific state is a tiny **root → absolute-location
+  mapping** (a few rows). Re-point one root → every ROM + every piece of
+  art under it re-resolves at once. (Same shape as ES-DE `%ROMPATH%` /
+  Pegasus per-collection dir / LaunchBox per-platform Games path.)
+- **Media beside the ROM composes perfectly with NAS-hosted libraries** —
+  art lives on the NAS with the ROMs and is shared across every machine
+  that mounts it; a new cabinet just registers the root and re-discovers
+  all art by convention.
+
+Edge cases the resolver MUST handle (engineer around them — several are
+classic LaunchBox-style bugs):
+- **Root offline / NAS asleep / unmounted at launch** → mark entries
+  **Unavailable**, NEVER delete. The "scan for removed ROMs" sweep must
+  distinguish *root-unreachable* from *file-deleted* or it will purge a
+  whole NAS library because the drive was spun down.
+- **Drive-letter / mount change** → detect unreachable root, prompt
+  re-point (one click re-resolves all). On Windows, optionally track the
+  **volume GUID/label** to auto-relocate an external drive across letter
+  changes.
+- **Cross-OS root syntax** (`\\NAS\retro` ↔ `/mnt/nas/retro` ↔
+  `smb://…`) lives only in the root row, re-mappable per machine — which
+  is *why* roots are indirected rather than baked into every entry.
+- **Network hashing is slow** → hash cache keyed by `(path, size, mtime)`
+  so unchanged files aren't re-hashed each scan.
+- **Forbidden:** the SQLite DB itself on a NAS for multi-machine sharing
+  (SMB/NFS locking → corruption). Shared ROMs+media on NAS = fine; each
+  machine keeps its OWN DB (its own stats/favorites) pointing at the
+  shared roots.
+
+Action items (land with the scraping/media slice + a portability pass):
+- **Audit current path storage** (`games.cover_path`, identity
+  `canonical_cover_path`, ROM application paths, BIOS resolution): are
+  they absolute, single-relative, or already root-indirected? Migrate to
+  the `(root_id, relative)` model. *(Verify — don't assume.)* Confirm
+  whether OA already persists a multi-root concept or scans ad-hoc
+  folders.
+- Standardize media-folder **casing** on the chosen convention's exact
+  spelling (Linux cabinets are case-sensitive; Windows isn't).
+- Library DB + settings travel via the existing **portable mode**
+  (`portable.txt` marker, `features/portable-install/`); per-user-only
+  state may stay in appData when not portable. The roots table is the
+  one piece that's intentionally machine-local.
+
+**Open sub-decisions (S9a — defer to the scraping/media-management slice):**
+- Exact convention dialect (ES-DE `media/` vs Pegasus
+  `media/<type>/<game>` + `x-` keys vs ScreenScraper) — pick widest
+  tool support; consider reading more than one on import.
+- Whether OA *writes* the convention itself (own scraper) or only
+  *reads* it (delegate scraping to Skraper/ARRM) in v1. **Operator
+  leaning 2026-06-11 (LaunchBox research §10 Q4, undecided):** possibly
+  **curated lists + a custom external scraper tool, self-hosted on a
+  git repo** (the libretro-database / libretro-thumbnails model OA
+  already consumes) rather than a live multi-source scraper. Not locked.
+- Multi-region variant art (S4) composes (variants have distinct
+  rom-basenames) but confirm under the chosen dialect.
+
+### S10 — External-emulator integration: launch-and-return baseline + deep per-emulator profile control (NOT window-embedding)
+
+**Operator decision 2026-06-11** (LaunchBox research §10 Q3). How OA
+integrates external standalone emulators (the Launcher-trait / S8 pilot
+trio Cemu / RPCS3 / Lime3DS, and beyond):
+
+- **Windowing baseline = launch-and-return.** OA launches the external
+  emulator as its own process/window; on exit, control returns to OA.
+  Robust + cross-platform (roughly today's `ExternalProcessLauncher`).
+  **Borderless-fullscreen takeover** (emulator visually fills the screen
+  via a launch ceremony, no desktop flash) is the natural later *visual*
+  upgrade — same model, nicer handoff.
+- **True window embedding / reparenting is REJECTED** as a baseline.
+  Hosting a foreign emulator window inside OA's window (Win32
+  `SetParent`, X11 XEmbed) is fragile per-emulator, ~impossible on
+  Wayland/macOS, and fights OA's cross-platform pillar. (Contrast
+  libretro cores, which OA renders *truly* in-window via wgpu — that's
+  why libretro stays the primary boundary; only libretro gets real
+  in-window integration.)
+- **The depth lives in per-emulator integration profiles, not in the
+  window.** Each supported external emulator gets an OA profile (data +
+  plugin/script — emulator-definitions-as-data, report rec #6 /
+  Playnite-shaped) that lets OA **install, auto-configure, take over
+  settings, and manage save files** for that emulator — "control as much
+  of its functions as we can." A profile knows: official release
+  endpoint (S2), install layout, launch-arg template, where its config +
+  saves live, how to apply OA's controller / per-game settings into the
+  emulator's own config, and how to surface its saves in OA's save
+  handling. This is where OA decisively beats LaunchBox (auto-configures
+  only RetroArch + a fixed list; never takes over settings/saves).
+
+**Sequencing (operator triage of the §10 "general features" list,
+2026-06-11):** external-emulator integration = **priority 1**;
+**multi-user profiles** (expand OA's existing profile support) =
+**priority 2**; **cross-machine sync, stats dashboard, and netplay are
+parked.**
+
+**How / open for next pass (records the "what", not the "how"):** profile/
+manifest schema (extends `config/emulators/<id>.yaml`); the
+settings-takeover + save-file-management seam; per-system (not
+per-emulator) archive extraction + prominent bulk-capable per-game
+overrides (report rec #6); reconcile with `oa-savestate` + a save-vault
+UX (LaunchBox Save Management is the reference). Borderless takeover
+scheduled after the launch-return baseline proves out.
+
 ---
 
 ## Phases

@@ -11,6 +11,18 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Metadata Curation (Settings → "Metadata" editor)** — planned
+  2026-06-11, execution queued (starts next session at Wave 1 / S1).
+  A premium operator surface to edit game + system metadata on an
+  **override layer** (per-field reset + provenance), housed as its own
+  engine Settings category. System override backend already shipped
+  (`system_info_overrides`); the arc builds the missing game-factual
+  override half + the editor UI. Inline-in-library editing deferred.
+  Plan: [PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature
+  folder [features/metadata-editing/](features/metadata-editing/).
+  Wave 1 / S1 queued in [NEXT.md](NEXT.md) HIGH band. (Distinct stream
+  from the theming work below — engine territory, theme-free.)
+
 - **Theming Substrate (BigBox-style themes + engine/theme territory
   split)** — major multi-arc planned 2026-06-06. 3 arcs; ARC 1
   (Minimum Viable Substrate, ~22-26 weeks) in flight; ARCs 2-3

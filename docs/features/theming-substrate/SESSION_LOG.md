@@ -9,6 +9,24 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-11 — BigBox theming research + D32 (per-system layout becomes a substrate contract) — no code
+
+Research-and-decisions session. A 4-agent BigBox theme-system study →
+`BIGBOX_RESEARCH_2026-06-11.md`, then walked the §8 open questions with the
+operator.
+
+- **Shipped:** `BIGBOX_RESEARCH_2026-06-11.md` (architecture / per-platform
+  model / community loves-hates-wants / visual-editor landscape / cinematic
+  axis — fully cited). DECISIONS **D32**: per-system *layout* variation + a
+  view-type library + per-view layout primitives (mix-and-match per
+  manufacturer/system/game) + **end-user runtime override (persisted)** become
+  a first-class substrate capability **in ARC 2** — expands/supersedes D19.
+  Theme Studio (ARC 3) stays after ARC 2. Research §8 marked resolved.
+- **Almost:** n/a (decisions only; no build).
+- **Next:** an ARC-2 plan for the D32 capability (merges with the paused
+  Per-System UI Stage 2/3). ARC 1 still finishes on its Phase-5 `.oatheme`
+  loader line first.
+
 ## 2026-06-11 — Phase 6: Retroverse rebuilt as a real theme (the ARC-1 acceptance gate) — ✅ shipped + merged (merge `711f337`; operator playtested — indistinguishable)
 
 > Branch `feat/theming-retroverse-as-theme`. The ARC-1 closer / dogfood: move Retroverse from the

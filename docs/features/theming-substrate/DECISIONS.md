@@ -1142,3 +1142,69 @@ exceptions.
 extending Retroverse should NOT assume theme files can be shared back into platform ad hoc (the audit
 discipline is D12); and (2) the `currentRoute` theme-private home + the deleted dev-console (someone
 may "helpfully" re-add a theme-coupled DevTools global in App.tsx — it belongs in platform).
+
+---
+
+### D32 — Per-system LAYOUT variation + view-type library + end-user override become a substrate contract in ARC 2 (expands/supersedes D19)
+
+**Decision (operator, 2026-06-11 — out of the BigBox competitive research,
+`features/theming-substrate/BIGBOX_RESEARCH_2026-06-11.md` §3/§8).** The
+"each system gets a polished, dedicated home" pillar is promoted from
+*colors + assets* to *layout*. The theming substrate gains, **in ARC 2**, a
+first-class view/layout capability shaped like BigBox's:
+
+1. **A library of VIEW TYPES** — the distinct screens of the library journey
+   (manufacturer-browse, system-browse, game-browse, game-details, …). A
+   theme composes these and styles each.
+2. **A library of LAYOUT PRIMITIVES per view** — wheel, carousel/coverflow,
+   grid, list, custom (the S5.5 primitive set is the seed; `WheelNav` is the
+   reserved contract).
+3. **Theme-declared per-system layout.** A theme manifest declares, per view,
+   which layout to use, and **may vary it per manufacturer/system** (theme's
+   curated design: TG-16 → wheel, Lynx → grid, Vectrex → vector-glow list).
+   This is the part D19 said the substrate would NOT support — **D19 is
+   expanded:** per-system theming becomes a substrate contract, not a
+   Retroverse-only feature. (D19's *reasoning* — don't over-build per-system
+   machinery before it's needed — held correctly through ARC 1; ARC 2 is when
+   it's needed.)
+4. **End-user runtime override.** The user can override the active layout per
+   system / per view at runtime (BigBox's "pick your view"), and the choice
+   **persists**. This is the T2 "mix and match" answer + the explicit
+   operator call that overrides are user-facing, not theme-author-only.
+
+**Relationship to existing decisions:**
+- **Expands/supersedes D19** (per-system theming = Retroverse-only). Record
+  the supersession here; D19 stays in the log as the ARC-1-correct stance.
+- Builds on the shipped cascades: **S5.1** (per-system *assets*) + **S5.2**
+  (per-system *palette* via `perSystemTokens`) already resolve-by-active-
+  system; D32 extends that same "resolve by active system" plumbing up to
+  *layout/primitive* choice. Incremental seam, not a rebuild.
+- Sits under **D18** (nav verbs are a per-USER contract): a user's layout
+  override is the same philosophy applied to layout — user agency over the
+  theme's defaults, persisted per-user.
+- **T3 unchanged:** Theme Studio (ARC 3) stays sequenced after ARC 2 — you
+  need the layout/motion/shader capabilities to exist before a visual editor
+  for them is meaningful.
+
+**Why:** this is the operator's headline takeaway from the BigBox research —
+the single feature that makes "each system its own home" literally true at
+the layout level (not just recolor + reskin), and the mix-and-match richness
+that keeps people on BigBox. The competing model (theme branches on
+`SystemId` in code, no engine support) reproduces BigBox's XAML-author
+burden, which OA's declarative-first north star exists to avoid.
+
+**How to apply / open for next pass (the "how" is deliberately deferred —
+this records the "what"):**
+- Manifest schema: how a theme declares `views[].layout` + `per_system`
+  overrides (extends the `theme.toml` / `ThemeTokens` surface; validator
+  gate per S4 pattern).
+- Persistence: a per-user `(theme_id, system_id, view) → layout` override
+  store (new namespace; parallels D28 per-theme settings + the nav-bindings
+  persistence). Survives the restart swap.
+- Resolution order: theme per-system default → engine default, with the
+  user override on top (cascade shape mirrors S5.1/S5.2).
+- Reconcile with **D20** (kiosk/cabinet capabilities) and the **per-system-ui**
+  arc — per-system layout is the natural merge point for Per-System UI
+  Stage 2/3, which paused for content.
+- Scope guard: this is ARC 2 work; ARC 1 finishes on its current Phase-5
+  (`.oatheme` loader) line first.

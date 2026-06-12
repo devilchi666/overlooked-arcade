@@ -1,5 +1,27 @@
 # Guided Setup — Session Log
 
+## 2026-06-11 — LaunchBox competitive research + settings/import/library decisions (no code)
+
+Research-and-decisions session. 4 primary + 6 sub-agents studied LaunchBox
+desktop (import / emulator+controller / metadata editing / settings / pricing
+/ pain points / competitors) → `LAUNCHBOX_RESEARCH_2026-06-11.md`. Walked §10
+open questions with the operator.
+
+- **Shipped:** `LAUNCHBOX_RESEARCH_2026-06-11.md`. Decisions: media =
+  **Option B** beside-the-ROM convention + library-roots/relative-path
+  portability (virtual-library arc **S9/S9a**, incl. NAS/offline-root rules);
+  external-emulator integration = launch-and-return + deep per-emulator
+  profiles (install/auto-config/settings-takeover/saves), NOT window-embedding
+  (arc **S10**) = priority 1; multi-user profiles = priority 2; metadata-editor
+  = its own arc soon; scraping deferred (curated/self-hosted leaning);
+  cross-machine sync / stats dashboard / netplay parked. Queued the
+  **Portability + state-storage audit** (path-roots + settings→SQLite) in
+  `NEXT.md` HIGH.
+- **Almost:** n/a (decisions only; no build).
+- **Next:** run the portability/state-storage audit (the `/clear`-resume
+  task) → then plan S9 remediation + the external-emulator profile system (S10)
+  + the metadata-editor arc.
+
 ## 2026-06-01 — Phase 1B CLOSED — Slice 6: voice/tone copy pass + first-launch hero
 
 Merged to main 2026-06-01 (`--no-ff` from `feat/guided-setup-phase-1b-slice-6`,
