@@ -4,6 +4,30 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Controller nav (first pass) + BIOS items parked
+
+- **Shipped:** Controller-nav **first pass** in the Metadata takeover — a
+  `HintRegion` (Navigate / Confirm / Back hints) + one
+  `useDomQueryFocusGroup` over the whole takeover so a gamepad steps
+  through the top-bar controls + list + editor in DOM order, Back returns
+  to Settings. Deliberately the low-risk baseline (linear nav, no pane
+  refactor) so it's playtestable before investing in region-aware nav.
+  typecheck + lint silent. Also: parked the **"Hide BIOS" view filter +
+  manual "mark as BIOS"** ideas in PARKING_LOT (concluded BIOS is an
+  intrinsic auto-detected kind — `title_parse.rs::is_bios` — not a
+  Release-type value; it's library-views work, not metadata).
+- **Almost / next refinement:** region-aware nav — list ⇄ editor as
+  separate left/right focus groups (proper DPad region jumps) — needs the
+  two panes split into list/editor regions (extract the system pane into
+  its own component for clean focus-group mount/unmount). Held until the
+  operator confirms the first-pass wiring feels right on hardware, so the
+  bigger refactor isn't done blind.
+- **GATE:** operator **controller playtest** of the first-pass nav (does
+  the gamepad move focus + select? does Back exit?). Then decide whether
+  to invest in region-aware nav.
+- **Next:** region-aware controller nav (if greenlit) → Wave 2 (S4 undo
+  stack, S5 merge-mode bulk edit + find-replace).
+
 ## 2026-06-12 — Wave 1 close-out (3 of 4 items)
 
 - **Shipped:** (1) **Hide empty systems** — `MetadataSettingsBody` loads

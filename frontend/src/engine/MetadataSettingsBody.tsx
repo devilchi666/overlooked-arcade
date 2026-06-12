@@ -42,6 +42,7 @@ import {
   type Component,
 } from "solid-js";
 import { confirm } from "@oa/platform/lib/confirm";
+import { HintRegion, useDomQueryFocusGroup } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { listGameGroups } from "@oa/platform/api/libraryApi";
 import type { GameGroupInfo } from "@oa/platform/library/types";
@@ -685,6 +686,21 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
   const activeName = () =>
     systems().find((s) => s.id === activeId())?.displayName ?? activeId() ?? "";
 
+  // Controller nav (first pass, 2026-06-12): one DOM-query focus group over
+  // the whole takeover so a gamepad can step through the top-bar controls +
+  // list + editor in DOM order, with the engine's Back verb returning to
+  // Settings. Region-aware left/right nav (list ⇄ editor as separate
+  // groups) is the follow-up — it needs the two panes split into
+  // list/editor regions, which is a larger refactor; this gives a testable
+  // baseline first. Native Tab focus works regardless of this wiring.
+  let takeoverRef: HTMLElement | undefined;
+  useDomQueryFocusGroup({
+    id: "metadata-takeover",
+    containerRef: () => takeoverRef,
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+  });
+
   const SaveStatus: Component = () => (
     <span class="text-[0.7rem]">
       <Show
@@ -711,7 +727,15 @@ const MetadataSettingsBody: Component<{ onBack: () => void }> = (props) => {
   );
 
   return (
-    <div class="flex h-full w-full flex-col">
+    <div ref={(el) => (takeoverRef = el)} class="flex h-full w-full flex-col">
+      <HintRegion
+        hints={{
+          stick: "Navigate",
+          dpad: "Navigate",
+          Confirm: "Select / edit",
+          Back: "Back to Settings",
+        }}
+      />
       {/* Top bar — back + title + preview toggle (D6 / D9). */}
       <header class="flex items-center gap-4 border-b border-white/5 px-6 py-3">
         <button
