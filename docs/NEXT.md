@@ -342,6 +342,38 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Controller Identity & Auto-Config — Phase 0 (identity spike)
+
+**Planned 2026-06-12.** Full plan:
+[PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md);
+feature folder [features/controller-identity/](features/controller-identity/).
+A foundational input-infrastructure arc: give every controller a **stable
+identity (VID/PID)** and **auto-config** both shell-nav + per-system gameplay
+bindings from three shared data files (`controllers.json` layout DB,
+`systems-input.json` schema, `default-maps.json` canonical→system defaults) +
+a press-the-buttons wizard. Fixes the non-standard-pad break (wired Switch
+Pro) and the replug-shuffles-ports problem. Decisions D1–D8 locked; two
+pollers stay separate, the *config* unifies. **Operator's current priority**
+(surfaced from the Metadata controller-nav work).
+
+**Phase 0 scope (the spike — small, gates everything, R1 = highest risk):**
+prove a stable cross-layer `device-key`. (1) Frontend: parse `gamepad.id` →
+`{vid,pid,name}` → device-key (the string embeds `Vendor: xxxx Product:
+yyyy`). (2) Rust: resolve the VID/PID unknown — `gilrs` 0.11 doesn't expose a
+UID publicly; options are **(a)** upgrade gilrs for the SDL `Gamepad::uuid()`
+GUID, **(b)** a Windows raw-input API, or **(c)** frontend-as-identity-
+authority (resolve the profile in JS, hand Rust the normalized mapping
+per-port at launch). **Lean (a)+(c).** Output: a documented device-key format
++ the (a)/(b)/(c) decision, validated against the `[oa-gamepad] connected`
+log for the operator's Switch Pro + one XInput pad. Anchors:
+`frontend/src/platform/nav/gamepad.ts` (~`:201` id-logging), `crates/oa-input/
+src/lib.rs` (~`:265` `port_pads`), `crates/oa-input/Cargo.toml` (gilrs dep).
+Then **Phase 1** (identity in both layers + replug-stable ports) → **Phase 2**
+(`controllers.json` normalization = the Switch Pro fix) → wizard → gameplay
+auto-config → replug → compose with the core-side plans. Gating: ready.
+Estimate: Phase 0 ≈ 1–2 days (mostly the gilrs spike); full arc ≈ several
+weeks across phases.
+
 ### Metadata Curation — Wave 1 close-out (narrative + controller-nav + cleanup)
 
 **Planned 2026-06-11.** Full plan:

@@ -29,10 +29,12 @@ Routing table. Read this first; it points to everything else.
 
 ## Cross-cutting features (active)
 
+- [features/controller-identity/](features/controller-identity/) — Controller Identity & Auto-Config. Stable per-controller identity (VID/PID) + auto-config of shell-nav AND per-system gameplay bindings from shared data files (`controllers.json` / `systems-input.json` / `default-maps.json`) + a press-the-buttons wizard. Fixes non-standard pads (wired Switch Pro) + replug port-shuffle. Planned 2026-06-12; Phase 0 (identity spike) queued. Design at [PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md).
 - [features/dosbox-and-scummvm/](features/dosbox-and-scummvm/) — DOSBox + ScummVM onboarding plan (📐 planned, not yet implemented)
 - [features/guided-setup/](features/guided-setup/) — Guided Setup arc. Phase 1B closed 2026-06-01; Phase 2 (curated CPU-tier core selection) queued. Design at [PLANS/guided-setup.md](PLANS/guided-setup.md).
 - [features/hw-render/](features/hw-render/) — HW-render pipeline. Hosts GPU-rendered libretro cores (Dolphin, paraLLEl-N64, Beetle PSX HW, …) via the libretro HW render interface on a Vulkan-first backend abstraction. Planning locked 2026-06-07; slotted after VL Phase C3, before Theming ARC 2. Design at [PLANS/hw-render-pipeline.md](PLANS/hw-render-pipeline.md).
 - [features/kiosk-shell/](features/kiosk-shell/) — full-screen cabinet mode (design-only)
+- [features/metadata-editing/](features/metadata-editing/) — Metadata Curation. Premium engine **Settings → "Metadata"** editor for game + system metadata on an override layer (per-field reset + provenance). Planned 2026-06-11; Wave 1 / S1 queued. Design at [PLANS/metadata-editing.md](PLANS/metadata-editing.md).
 - [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI. Stage 1 code arc complete; Stages 2+3 + content pilots pending.
 - [features/retroverse-ui/](features/retroverse-ui/) — Top-toolbar tab IA. 6/6 tabs operator-facing as of 2026-05-28. Design at [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md).
 - [features/theming-substrate/](features/theming-substrate/) — Theming substrate (BigBox-style themes, engine vs theme territory inside one binary). 3-arc structure planned 2026-06-06; ARC 1 queued. Design at [PLANS/theming-substrate.md](PLANS/theming-substrate.md).
@@ -54,12 +56,14 @@ cores are currently being worked on.
 
 - [RESEARCH/](RESEARCH/) — competitor analysis, forum surveys
 - [PLANS/](PLANS/) — design docs for in-flight or queued work
+- [PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md) — **input-infrastructure arc** (2026-06-12). Stable per-controller identity (VID/PID) + auto-config of shell-nav AND per-system gameplay bindings from three shared data files + a press-the-buttons wizard; fixes non-standard pads (wired Switch Pro) + the replug port-shuffle (the RetroArch gap). Two pollers stay separate, the config unifies. Composes with dynamic-controller-info / dynamic-input-descriptors. Foundation-first; Phase 0 (identity spike) in NEXT.md HIGH band.
 - [PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md) — **major next arc** (2026-06-03, 8 phases, ~14–22 weeks). Promotes virtual-library grouping to SQLite schema + launcher-abstraction for external standalone emulators (Cemu / RPCS3 / Lime3DS). Reverses the 2026-05-16 libretro-only stance.
 - [PLANS/hw-render-pipeline.md](PLANS/hw-render-pipeline.md) — **engine arc** (2026-06-07). Implements the libretro HW render interface so GPU-rendered cores (Dolphin, paraLLEl-N64, Beetle PSX HW, Flycast, PPSSPP, Beetle Saturn HW) run in-process instead of crashing. Vulkan-first multi-backend abstraction (RetroArch video-driver model on wgpu); zero-copy shared-device end state. Slotted after VL Phase C3, before Theming ARC 2.
 - [PLANS/per-system-descriptors.md](PLANS/per-system-descriptors.md) — Slices 1+2 shipped 2026-06-02; Slice 3 (L3 content packs + L4 SQLite + JSON Schema + CI lint) queued.
 - [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md) — per-track SHA-1 for disc-shape systems. **Folds into the virtual-library arc as Slice A1.**
 - [PLANS/content-packs.md](PLANS/content-packs.md) — content-pack distribution design (unbuilt).
 - [PLANS/guided-setup.md](PLANS/guided-setup.md) — Phase 2 (curated CPU-tier core selection) queued.
+- [PLANS/metadata-editing.md](PLANS/metadata-editing.md) — **Metadata Curation arc** (2026-06-11). Premium Settings → "Metadata" editor for game + system metadata via an override layer; OA's biggest greenfield interaction win over LaunchBox (research §4). System override backend already shipped; builds the game-factual half + the editor. Wave 1 / S1 in NEXT.md HIGH band.
 - [PLANS/per-system-ui.md](PLANS/per-system-ui.md) — Stages 2+3 of the per-system UI arc.
 - [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md) — Retroverse §10 open work tracker.
 - [PLANS/theming-substrate.md](PLANS/theming-substrate.md) — 3-arc theming substrate plan (engine/theme territory split + `.oatheme` distribution; absorbs Kiosk plan's 4-layer substrate). Phases 1-2 + boundary-enforcement track + grab-bag drain shipped; Phase 4 next, then the enable-other-themes track (Phase 3/5/6 + ARC 2-3).
