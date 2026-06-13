@@ -15,6 +15,7 @@ export * from "./controllerProfiles";
 export * from "./controllerFamily";
 export * from "./back";
 export * from "./focus";
+export * from "./settingsRowNav";
 export * from "./HintBar";
 export * from "./primitives/types";
 export * from "./primitives/ListNav";

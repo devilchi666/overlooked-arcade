@@ -41,7 +41,11 @@ import { ControllersSettings } from "./ControllerTestPanel";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
-import { useDomQueryFocusGroup } from "@oa/platform/nav";
+import {
+  activateFocusGroup,
+  useDomQueryFocusGroup,
+  useSettingsRowFocusGroup,
+} from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";
 
@@ -298,13 +302,18 @@ const SettingsPanel: Component<Props> = (props) => {
     onActivate: (_i, el) => el.click(),
     neighbours: { right: CENTER_ID },
   });
-  useDomQueryFocusGroup({
+  // Center pane: the form bodies are SettingRows (select / slider / toggle) +
+  // the odd action button, not bare <button>s. useSettingsRowFocusGroup walks
+  // them by `[data-setting-row]` / `[data-setting-action]` and gives Confirm
+  // per-control behaviour (flip toggle / overlay-pick select / slider adjust
+  // mode). Sidebar hand-off (DPad LEFT → sidebar) stays wired via neighbours;
+  // B with no overlay / adjust active returns focus to the sidebar.
+  const centerNav = useSettingsRowFocusGroup({
     id: CENTER_ID,
     containerRef: () => centerRef,
-    orientation: "vertical",
     autoActivate: false,
-    onActivate: (_i, el) => el.click(),
     neighbours: { left: LEFT_ID },
+    onCancel: () => activateFocusGroup(LEFT_ID),
   });
 
   return (
@@ -533,6 +542,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
         </Switch>
       </section>
+      {/* Controller-nav select-overlay host for the center pane's SettingRows.
+          Portaled internally, so its position in the tree is just lifecycle. */}
+      {centerNav.overlay}
     </div>
     </Show>
   );

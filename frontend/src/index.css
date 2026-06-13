@@ -256,6 +256,16 @@
     outline-style: dashed;
   }
 
+  /* Slider "adjust mode" — a settings slider the operator has entered with
+     Confirm, where up/right and down/left step the value and Confirm/Back
+     exit. A solid accent ring on the live <input type=range> distinguishes
+     "I'm editing this value" from "this row is merely focused." */
+  [data-setting-adjusting="true"] {
+    outline: 2px solid var(--oa-focus-ring, var(--color-system-accent));
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
   /* Loading state for cover art — a subtle diagonal sweep across the
      gradient placeholder while the image streams in. Keeps the tile area
      visually alive; vanishes once <img onLoad> fires. */
@@ -385,4 +395,35 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Settings controller-nav row highlight (Controller-Nav Coverage Slice 1).
+   Lives OUTSIDE @layer on purpose: settings rows carry Tailwind `bg-*` /
+   `rounded-*` utilities (in @layer utilities), and the shared
+   `[data-oa-focus]` outline rule sits in @layer components — so a layered
+   highlight loses the equal-specificity tie to those utilities (see the
+   note at the data-oa-focus rule above). An unlayered rule beats every
+   layer, so the focused row reads unmistakably: a background fill (never
+   clipped by the pane's overflow, unlike a thin outline) plus the accent
+   ring. Active group = solid accent; inactive (focus parked here while
+   another region is live) = dim dashed, matching the global convention. */
+[data-setting-row][data-oa-focus="true"],
+[data-setting-action][data-oa-focus="true"] {
+  outline: 2px solid var(--oa-focus-ring, var(--color-system-accent));
+  outline-offset: -2px;
+  border-radius: 8px;
+  background-color: color-mix(
+    in oklch,
+    var(--oa-focus-ring, var(--color-system-accent)) 18%,
+    transparent
+  );
+  transition:
+    background-color var(--oa-focus-anim-ms, 120ms) ease-out,
+    outline-color var(--oa-focus-anim-ms, 120ms) ease-out;
+}
+[data-setting-row][data-oa-focus="true"]:not([data-oa-focus-active="true"]),
+[data-setting-action][data-oa-focus="true"]:not([data-oa-focus-active="true"]) {
+  outline-style: dashed;
+  outline-color: var(--color-oa-ink-dim);
+  background-color: color-mix(in oklch, var(--color-oa-ink-dim) 10%, transparent);
 }

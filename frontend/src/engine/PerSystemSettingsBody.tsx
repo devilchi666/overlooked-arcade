@@ -206,7 +206,11 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
           <Show when={supportingProfiles().length > 0}>
             <Card title="Launcher">
               <div class="flex flex-col gap-2">
-                <label class="flex flex-wrap items-center gap-3">
+                <label
+                  data-setting-row
+                  tabindex="-1"
+                  class="flex flex-wrap items-center gap-3"
+                >
                   <span class="text-sm text-(--color-oa-ink)">Default launcher</span>
                   <select
                     class="rounded border border-white/10 bg-black/40 px-2 py-1 text-sm text-(--color-oa-ink)"
@@ -251,6 +255,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
               <Show when={props.onOpenMetadata}>
                 <button
                   type="button"
+                  data-setting-action
                   onClick={(e) => {
                     e.currentTarget.blur();
                     props.onOpenMetadata?.();
@@ -313,6 +318,7 @@ const LauncherButton: Component<{
 }> = (props) => (
   <button
     type="button"
+    data-setting-action
     onClick={(e) => {
       e.currentTarget.blur();
       props.onClick();

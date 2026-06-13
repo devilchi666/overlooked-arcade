@@ -4,6 +4,38 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-13 — Slice 1: Settings category bodies (OA-wide + per-system)
+
+- **Shipped:** Controller row-nav for the Settings center pane. New reusable
+  `useSettingsRowFocusGroup` (`platform/nav/settingsRowNav.tsx`) widens the
+  already-wired `engine-settings-center` group from selector `"button"` to
+  `[data-setting-row], [data-setting-action]` and teaches Confirm (A) per
+  control type: toggle→flip, button→click, **select→overlay picker**
+  (`SettingSelectOverlay`, the proven context-menu vertical-list pattern),
+  **slider→adjust mode** (up/right +, down/left −, Confirm/Back exit). Marked
+  `SettingRow`'s root with `data-setting-row` + `tabindex=-1` (one lever lights
+  up Display/Audio/Shaders/Gameplay/Performance/Controller-nav/Per-system-UI/
+  Experimental **and** the Per-system body via `perSystemSections`); marked the
+  stray action buttons in those bodies + the per-system launcher select. Added
+  `pushBackHandler` to `back.ts` (adjust-mode B-intercept), an adjust-mode CSS
+  ring (`[data-setting-adjusting]`), and a unit test for the pure step math
+  (`nextSliderValue`). Decisions in [DECISIONS.md](DECISIONS.md). tsc clean;
+  `vitest run src/platform/nav` green (44 tests). **Operator-verified working**
+  in the real app. Follow-up fix this session: the focused-row highlight was
+  invisible — `outline-none` (Tailwind `@layer utilities`) suppressed the
+  shared `[data-oa-focus]` ring (`@layer components`); removed it and added an
+  **unlayered** row highlight (accent background fill + ring, active/inactive
+  variants) that beats the utility cascade. Operator confirms it now reads
+  clearly.
+- **Almost:** n/a — Slice 1 shipped + verified.
+- **Next:** ~~Reset via Tertiary (Y)~~ **done** — taught `useDomQueryFocusGroup`
+  to forward `onSecondary`/`onTertiary` (it silently dropped them), marked the
+  SettingRow reset button `[data-setting-reset]`, and wired Y in the hook to
+  click the focused row's reset (no-op mid-adjust / on rows with no override).
+  The panel's `Tertiary: "Reset"` hint is now live. Remaining: (b) **Metadata
+  takeover** row-upgrade + game-pane `<select>` overlay (deferred this slice);
+  (c) Slice 2 — engine dialogs (import wizard, per-game properties, Debug/Help).
+
 ## 2026-06-13 — Stream queued
 
 - **Shipped:** Nothing in code yet — stream created. Scope + prioritized gap

@@ -532,6 +532,10 @@ export type DomQueryFocusGroupOptions = {
   /// row — callers usually call `el.click()` to keep the mouse + gamepad
   /// paths identical.
   onActivate?: (index: number, el: HTMLElement) => void;
+  /// Fires when X is pressed on the focused row. `el` is its live DOM node.
+  onSecondary?: (index: number, el: HTMLElement) => void;
+  /// Fires when Y is pressed on the focused row. `el` is its live DOM node.
+  onTertiary?: (index: number, el: HTMLElement) => void;
   onCancel?: () => void;
   onShoulderL?: () => void;
   onShoulderR?: () => void;
@@ -587,6 +591,14 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
     onActivate: (i) => {
       const el = queryItems()[i];
       if (el) opts.onActivate?.(i, el);
+    },
+    onSecondary: (i) => {
+      const el = queryItems()[i];
+      if (el) opts.onSecondary?.(i, el);
+    },
+    onTertiary: (i) => {
+      const el = queryItems()[i];
+      if (el) opts.onTertiary?.(i, el);
     },
     onCancel: opts.onCancel,
     onShoulderL: opts.onShoulderL,
