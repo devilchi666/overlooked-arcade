@@ -42,6 +42,12 @@ descriptors — can't be driven by a pad. They stay native: nav can focus them
 hatch the framework already assumes; call it out in each affected dialog rather
 than pretending coverage.
 
+**Decision 2026-06-13:** the proper fix — a controller-driven on-screen
+keyboard — is **deferred to its own slice after Slice 2** (option A). See
+[OSK_PLAN.md](OSK_PLAN.md). It hooks centrally into `useSettingsRowFocusGroup`'s
+dispatch, so it retro-covers every text field once built; deferring it costs no
+rework. Slice 2 ships text fields keyboard-only.
+
 ## Per-dialog work
 
 | Dialog | Chrome | Today | Slice-2 work | Effort |
