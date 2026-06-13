@@ -4,6 +4,32 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-13 — Full SDL gamecontrollerdb mapping import
+
+- **Shipped:** Operator confirmed the label work "working perfectly"; merged the
+  whole validated arc (Phase 0→2.5 + families) to main (`6b730e5`). Then built
+  the deferred bulk import on `feat/controller-identity-dbimport`:
+  - `controllerMappings.json`: 813 Windows pads parsed from SDL
+    `gamecontrollerdb.txt` into Web-index profile shape (digital buttons +
+    button-DPads; hat-DPads left to the runtime HAT detector since the DB hat#
+    doesn't give a Web axis#). ~214 KB bundled.
+  - `resolveLayout` now layers **curated `controllers.json` → bulk SDL DB →
+    standard fallback**; new `layoutSource()` reports which layer matched.
+    `describePad` carries `profileSource`; test window shows "curated override"
+    vs "SDL gamecontrollerdb".
+  - Cross-validation: the bulk Faceoff entry exactly matched the hand-derived
+    curated one (south:1/east:2/west:0/north:3). Curated still wins (keeps the
+    explicit `hatAxis:9`).
+  - 3 new tests (bulk resolution + `layoutSource`); nav suite 39 green; tsc +
+    lint clean.
+- **Almost:** not operator-tested yet — any non-standard pad in the SDL DB
+  should now map correctly in menus with zero hand-work (verifiable in the test
+  window, which shows "SDL gamecontrollerdb" as the source).
+- **Next:** operator spot-checks a second pad if available; then this branch
+  merges. Remaining arc follow-ups (all parked): Phase 3 wizard for pads in NO
+  list, glyph icons, nav-coverage gaps, the data-file update mechanism,
+  multi-OS mapping bundles.
+
 ## 2026-06-12 — Controller label families (SDL type table ported)
 
 - **Shipped:** Operator tested the test window — all correct EXCEPT face

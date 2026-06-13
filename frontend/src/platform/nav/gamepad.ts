@@ -18,7 +18,7 @@
 
 import { createSignal, onCleanup } from "solid-js";
 import { deriveDeviceIdentity } from "./deviceKey";
-import { resolveLayout, type ResolvedLayout } from "./controllerProfiles";
+import { resolveLayout, layoutSource, type ResolvedLayout, type LayoutSource } from "./controllerProfiles";
 import { resolveFamily, type ControllerFamily } from "./controllerFamily";
 import type { NavButton, NavDirection, NavEvent, NavPhase } from "./types";
 
@@ -70,8 +70,10 @@ export type PadDiagnostic = {
   name: string;
   /** Web Gamepad mapping: "standard" (browser-canonical) or "" (raw). */
   mapping: string;
-  /** True when a controllers.json profile remapped this (non-standard) pad. */
+  /** True when a curated/bulk profile remapped this (non-standard) pad. */
   profiled: boolean;
+  /** Which layer supplied the layout: curated override, SDL DB, or none. */
+  profileSource: LayoutSource;
   /** The effective layout (profile remap, or the standard fallback). */
   layout: ResolvedLayout;
   /** Label family (Nintendo/Xbox/PlayStation/generic) for button labels. */
@@ -92,6 +94,7 @@ export function describePad(pad: Gamepad): PadDiagnostic {
     name: identity.name,
     mapping: pad.mapping,
     profiled: resolved !== null,
+    profileSource: layoutSource(identity.key, pad.mapping),
     layout: resolved ?? DEFAULT_LAYOUT,
     family: resolveFamily(identity.key, identity.name),
     buttonCount: pad.buttons.length,

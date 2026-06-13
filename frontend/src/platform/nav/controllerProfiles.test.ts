@@ -3,7 +3,7 @@
 // canonical→NavButton remap, DPad/HAT, and forward-compat skipping.
 
 import { describe, it, expect } from "vitest";
-import { resolveLayout, buildLayout } from "./controllerProfiles";
+import { resolveLayout, buildLayout, layoutSource } from "./controllerProfiles";
 
 describe("resolveLayout", () => {
   it("returns null for a standard-mapping pad (browser already canonical)", () => {
@@ -30,12 +30,35 @@ describe("resolveLayout", () => {
     expect(layout?.buttons[0]).toBe("x"); // west
     expect(layout?.buttons[3]).toBe("y"); // north
   });
+
+  it("resolves a pad from the bulk SDL gamecontrollerdb when not curated", () => {
+    // DualShock 4 (054c:05c4) has no curated override → falls through to the
+    // bundled SDL DB, which still puts south=Confirm on raw index 1.
+    const layout = resolveLayout("vidpid:054c:05c4", "");
+    expect(layout).not.toBeNull();
+    expect(layout?.buttons[1]).toBe("a"); // south
+    expect(layout?.buttons[0]).toBe("x"); // west
+  });
+});
+
+describe("layoutSource", () => {
+  it("reports the curated override winning over the bulk DB", () => {
+    expect(layoutSource("vidpid:0e6f:0184", "")).toBe("curated");
+  });
+
+  it("reports the bulk SDL DB for a non-curated known pad", () => {
+    expect(layoutSource("vidpid:054c:05c4", "")).toBe("sdl-db");
+  });
+
+  it("reports null for standard mapping or an unknown pad", () => {
+    expect(layoutSource("vidpid:0e6f:0184", "standard")).toBeNull();
+    expect(layoutSource("vidpid:dead:beef", "")).toBeNull();
+  });
 });
 
 describe("buildLayout", () => {
   it("inverts canonical→index into index→NavButton by position", () => {
     const layout = buildLayout({
-      deviceKey: "test",
       buttons: { south: 0, east: 1, west: 2, north: 3, start: 9, guide: 12 },
     });
     expect(layout.buttons).toEqual({
@@ -50,7 +73,6 @@ describe("buildLayout", () => {
 
   it("maps dpad directions to indices and passes hatAxis through", () => {
     const layout = buildLayout({
-      deviceKey: "test",
       dpad: { up: 12, down: 13, left: 14, right: 15 },
       hatAxis: 9,
     });
@@ -60,7 +82,6 @@ describe("buildLayout", () => {
 
   it("defaults hatAxis to null and skips unknown canonical names", () => {
     const layout = buildLayout({
-      deviceKey: "test",
       // "paddle1" is not a known canonical name → silently skipped at runtime
       // (forward-compat: a future DB entry won't break an older build).
       buttons: { south: 0, paddle1: 7 },

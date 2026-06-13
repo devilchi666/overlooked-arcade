@@ -128,7 +128,11 @@ const PadCard: Component<{ frame: Accessor<PadFrame> }> = (props) => {
           <dt>profile</dt>
           <dd>
             <Show when={diag().profiled} fallback={<span>none — using standard layout</span>}>
-              <span class="text-emerald-300">matched (controllers.json)</span>
+              <span class="text-emerald-300">
+                {diag().profileSource === "curated"
+                  ? "matched (curated override)"
+                  : "matched (SDL gamecontrollerdb)"}
+              </span>
             </Show>
           </dd>
           <dt>label family</dt>

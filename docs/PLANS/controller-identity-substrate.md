@@ -224,6 +224,15 @@ layers). All exit criteria met.
 - **D12/D13 (DECISIONS):** frontend DB is OA-curated in Web-index space (NOT a
   raw SDL import); Rust side already normalizes via gilrs, so Phase 2 is
   frontend-only.
+- ✅ **Full SDL gamecontrollerdb import (2026-06-13):** bundled
+  `controllerMappings.json` — 813 Windows pads parsed from `gamecontrollerdb.txt`
+  into Web-index profile shape. `resolveLayout` now layers: curated
+  `controllers.json` override → bulk SDL DB → standard fallback;
+  `layoutSource()` reports which (test window shows "curated" vs "SDL
+  gamecontrollerdb"). Hat-DPads rely on the runtime HAT detector (DB hat# ≠ Web
+  axis#). The bulk Faceoff entry exactly matched the hand-derived one
+  (cross-validation). Windows-only for now (Web raw indices are host-OS
+  specific); Mac/Linux entries bundle when those ship.
 - Note: foundation-first means the operator's personal Switch Pro fix lands
   *here* (Phase 2), not Phase 0 — an accepted trade for the right architecture.
 

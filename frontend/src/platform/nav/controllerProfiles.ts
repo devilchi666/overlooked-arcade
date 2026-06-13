@@ -15,6 +15,7 @@
 // normalizes via gilrs' native SDL mappings, so this layer is menus-only.
 
 import db from "./controllers.json";
+import mappingDb from "./controllerMappings.json";
 import type { CanonicalButton } from "./canonical";
 import type { NavButton, NavDirection } from "./types";
 
@@ -50,34 +51,67 @@ export type ResolvedLayout = {
   hatAxis: number | null;
 };
 
-type RawProfile = {
-  deviceKey: string;
-  name?: string;
-  unverified?: boolean;
+/// The raw-index layout fields shared by curated profiles and bulk DB entries.
+type LayoutSpec = {
   buttons?: Record<string, number>;
   dpad?: Record<string, number>;
   hatAxis?: number;
 };
 
+type RawProfile = LayoutSpec & {
+  deviceKey: string;
+  name?: string;
+  unverified?: boolean;
+};
+
 const PROFILES: RawProfile[] = (db.profiles ?? []) as RawProfile[];
 
+/// Bulk SDL gamecontrollerdb mappings, keyed by `vid:pid` (Web-index space,
+/// digital buttons; hat-DPads handled by the runtime HAT detector). The
+/// curated `controllers.json` overrides win over this layer.
+const BULK: Record<string, LayoutSpec> = (mappingDb.mappings ?? {}) as Record<string, LayoutSpec>;
+
+/// Where a resolved layout came from. `null` = no match (use standard layout).
+export type LayoutSource = "curated" | "sdl-db" | null;
+
+function bulkKey(deviceKey: string): string | null {
+  const m = deviceKey.match(/^vidpid:([0-9a-f]{4}):([0-9a-f]{4})$/);
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
 /// Resolve the layout for a pad. Returns `null` when the default standard
-/// layout should be used — i.e. the browser already gave a standard mapping,
-/// or no profile matches this device-key. A non-null result means "this
-/// non-standard pad has a curated remap; use it instead of BUTTON_NAMES".
+/// layout should be used — the browser already canonicalized the pad, or no
+/// curated/bulk profile matches. A non-null result is a remap to use instead
+/// of the blind standard `BUTTON_NAMES`. Lookup order: curated override
+/// (`controllers.json`) → bulk SDL DB (`controllerMappings.json`).
 export function resolveLayout(
   deviceKey: string,
   mapping: GamepadMappingType | string,
 ): ResolvedLayout | null {
   // Trust the browser when it canonicalized the pad itself.
   if (mapping === "standard") return null;
-  const profile = PROFILES.find((p) => p.deviceKey === deviceKey);
-  if (!profile) return null;
-  return buildLayout(profile);
+  const curated = PROFILES.find((p) => p.deviceKey === deviceKey);
+  if (curated) return buildLayout(curated);
+  const key = bulkKey(deviceKey);
+  if (key && BULK[key]) return buildLayout(BULK[key]);
+  return null;
 }
 
-/// Build a ResolvedLayout from a profile. Exported for tests.
-export function buildLayout(profile: RawProfile): ResolvedLayout {
+/// Which layer (if any) supplies this pad's layout — for the test window.
+export function layoutSource(
+  deviceKey: string,
+  mapping: GamepadMappingType | string,
+): LayoutSource {
+  if (mapping === "standard") return null;
+  if (PROFILES.some((p) => p.deviceKey === deviceKey)) return "curated";
+  const key = bulkKey(deviceKey);
+  if (key && BULK[key]) return "sdl-db";
+  return null;
+}
+
+/// Build a ResolvedLayout from a curated profile or a bulk DB entry. Exported
+/// for tests.
+export function buildLayout(profile: LayoutSpec): ResolvedLayout {
   const buttons: Record<number, NavButton> = {};
   for (const [canon, idx] of Object.entries(profile.buttons ?? {})) {
     const nav = CANONICAL_TO_NAV[canon as CanonicalButton];
