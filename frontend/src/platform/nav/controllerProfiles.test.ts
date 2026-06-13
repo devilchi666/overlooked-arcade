@@ -9,7 +9,7 @@ describe("resolveLayout", () => {
   it("returns null for a standard-mapping pad (browser already canonical)", () => {
     // Even a pad WITH a profile is left to the standard path when the browser
     // reports a standard mapping — the profile is a non-standard-pad fix.
-    expect(resolveLayout("vidpid:057e:2009", "standard")).toBeNull();
+    expect(resolveLayout("vidpid:0e6f:0184", "standard")).toBeNull();
   });
 
   it("returns null when no profile matches the device-key", () => {
@@ -17,14 +17,18 @@ describe("resolveLayout", () => {
     expect(resolveLayout("name:some-random-pad", "")).toBeNull();
   });
 
-  it("resolves the bundled Switch Pro profile for a non-standard mapping", () => {
-    const layout = resolveLayout("vidpid:057e:2009", "");
+  it("resolves the bundled Faceoff (PDP 0e6f:0184) profile for a non-standard mapping", () => {
+    const layout = resolveLayout("vidpid:0e6f:0184", "");
     expect(layout).not.toBeNull();
-    // Seeded HAT axis 9 (DPad-as-HAT) must survive resolution.
+    // DPad reports as a HAT on axis 9 (idle 3.286) — must survive resolution.
     expect(layout?.hatAxis).toBe(9);
-    // At least the four face buttons must be present and be NavButtons.
-    const navButtons = Object.values(layout!.buttons);
-    expect(navButtons).toEqual(expect.arrayContaining(["a", "b", "x", "y"]));
+    // SDL-derived mapping: the bottom (south) button is raw index 1 → "a"
+    // (Confirm). This is the crux of the bug fix — index 1 was previously
+    // mis-read as "b"/Back by the blind standard-layout table.
+    expect(layout?.buttons[1]).toBe("a");
+    expect(layout?.buttons[2]).toBe("b"); // east
+    expect(layout?.buttons[0]).toBe("x"); // west
+    expect(layout?.buttons[3]).toBe("y"); // north
   });
 });
 

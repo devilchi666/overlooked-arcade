@@ -213,12 +213,14 @@ layers). All exit criteria met.
   lookup; standard-mapping pads keep the default layout (no regression), only
   non-standard profiled pads are remapped. Profile-declared HAT axis seeded
   into the HAT detector. 6 unit tests; typecheck + lint + nav suite green.
-- ⚠️ **Switch Pro profile is UNVERIFIED** (`vidpid:057e:2009`, `unverified:true`):
-  seeded from the standard Switch-Pro HID order + HAT axis 9 (from
-  `reference_hid_hat_axis_decoding`) as a prior. Needs an operator
-  press-each-button capture to confirm/correct the raw face/shoulder indices
-  before the flag clears. **This is the remaining exit-criterion + the operator
-  playtest gate** (Switch Pro nav works in menus).
+- ✅ **Operator's pad profile authored from the SDL DB** (`vidpid:0e6f:0184`,
+  "Faceoff Deluxe/Premiere", a PDP clone — NOT `057e:2009` as first guessed).
+  Found via exact GUID match in SDL `gamecontrollerdb`
+  (`030000006f0e00008401000000000000`) and **cross-checked against the runtime
+  log**: the pad reports 14 buttons (SDL references up to b13) and DPad as HAT
+  axis 9 — confirming SDL button indices align with Web raw indices for this
+  pad. Bug root cause: bottom button = raw index 1, read as "b"/Back by the
+  blind table. Remaining: **operator menu playtest** to confirm.
 - **D12/D13 (DECISIONS):** frontend DB is OA-curated in Web-index space (NOT a
   raw SDL import); Rust side already normalizes via gilrs, so Phase 2 is
   frontend-only.

@@ -1,16 +1,15 @@
 {
   "version": 1,
-  "comment": "OA controller profiles for the MENU poller (Web Gamepad API). Controller Identity arc Phase 2. Indices are Web-Gamepad-API RAW indices (buttons[] / axes[]), NOT SDL gamecontrollerdb joystick numbers (D12). A profile is applied ONLY when the browser reports a non-standard mapping ('' rather than 'standard'); standard pads already arrive canonical. Keyed by device-key (see deviceKey.ts). Button names are CANONICAL (south/east/west/north = SDL/Xbox positions); the canonical->NavButton table lives in controllerProfiles.ts. dpad maps a direction to a raw button index; omit it when the pad reports its DPad as a HAT axis and set hatAxis instead. Phase 3's wizard appends entries here (later: a runtime override layer in appDataDir merges over this bundled seed).",
+  "comment": "OA controller profiles for the MENU poller (Web Gamepad API). Controller Identity arc Phase 2. Indices are Web-Gamepad-API RAW indices (buttons[] / axes[]). For pads whose SDL gamecontrollerdb button indices align with the Web raw indices (verified per-pad), entries are derived directly from SDL gamecontrollerdb. A profile is applied ONLY when the browser reports a non-standard mapping ('' rather than 'standard'); standard pads already arrive canonical. Keyed by device-key (see deviceKey.ts). Button names are CANONICAL (south/east/west/north = SDL/Xbox positions, a/b/x/y mapping lives in controllerProfiles.ts). DPad is handled by the runtime HAT detector when the pad reports it as a HAT axis; set hatAxis to seed that axis explicitly. Phase 3's wizard appends entries here; a later runtime override layer (appDataDir) will merge over this bundled seed.",
   "profiles": [
     {
-      "deviceKey": "vidpid:057e:2009",
-      "name": "Switch Pro Controller (wired / non-standard HID)",
-      "unverified": true,
-      "note": "Seeded from the standard Switch Pro HID button order as a prior. The operator's pad is a third-party wired 'Faceoff' Switch Pro whose DPad reports as a HAT on axis 9 (see reference_hid_hat_axis_decoding). Face/shoulder indices below are UNVERIFIED — confirm via a press-each-button capture and correct before clearing the flag.",
+      "deviceKey": "vidpid:0e6f:0184",
+      "name": "Faceoff Deluxe / Premiere Wired Pro Controller for Nintendo Switch (PDP 0e6f:0184)",
+      "source": "SDL gamecontrollerdb GUID 030000006f0e00008401000000000000 (Windows), cross-checked against runtime log: 14 buttons, DPad = HAT axis 9 (idle 3.286). SDL: a:b1,b:b2,x:b0,y:b3,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,back:b8,start:b9,leftstick:b10,rightstick:b11,guide:b12 (misc1:b13 has no canonical slot).",
       "buttons": {
-        "south": 0,
-        "east": 1,
-        "west": 2,
+        "west": 0,
+        "south": 1,
+        "east": 2,
         "north": 3,
         "l1": 4,
         "r1": 5,

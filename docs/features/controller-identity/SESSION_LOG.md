@@ -28,12 +28,30 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   operator's third-party wired "Faceoff" pad's real face/shoulder raw indices
   must be captured to confirm/correct it. The infra is done; only the data row
   is provisional.
-- **Next:** operator **press-each-button capture** on the Switch Pro (press
-  each face button + both shoulders + start/select once, in menus, and paste
-  the `[oa-gamepad] raw button N pressed` lines + the `connected` line). I map
-  physical→raw-index, correct `controllers.json`, clear `unverified`, operator
-  playtests menu nav. That closes Phase 2. Then Phase 3 (unknown-controller
-  wizard) or Phase 4 (per-system gameplay auto-config).
+- **Next:** operator menu playtest of the verified Faceoff profile, then the
+  full-DB-import decision (see below).
+
+## 2026-06-12 — Operator pad identified + SDL-derived profile (correcting the seed)
+
+- **Shipped:** Read the operator's runtime log directly. Their pad is **NOT
+  `057e:2009`** — it's a PDP/Faceoff clone, **`vidpid:0e6f:0184`** ("Faceoff
+  Premiere Wired Pro Controller"), `mapping:""`, 14 buttons / 10 axes, DPad =
+  HAT axis 9. Found the exact pad in SDL `gamecontrollerdb` (GUID
+  `030000006f0e00008401000000000000`) and **cross-validated SDL↔Web index
+  alignment** (14 buttons matches SDL's b0..b13; DPad-hat matches axis 9).
+  Replaced the wrong seeded entry in `controllers.json` with the SDL-derived,
+  cross-checked profile (south=raw 1 → "a"/Confirm — the fix). Tests updated;
+  typecheck + profile tests + lint green.
+- **Almost:** operator hasn't yet playtested menu nav with the corrected
+  profile (should now work end-to-end).
+- **Next (decision):** the operator's instinct — "import the standardized
+  list" — is validated. Options: (A) keep hand-curating `controllers.json`
+  per-pad (current), or (B) **bundle the full SDL `gamecontrollerdb` + a parser
+  that matches by device-key and applies it on the menu poller** (DPad still via
+  the runtime HAT detector). (B) realizes "thousands of pads for free" on the
+  menu side and is now de-risked by the per-pad alignment check. Recommend (B)
+  as the next slice; wizard (Phase 3) remains the fallback for pads no list
+  covers.
 
 ## 2026-06-12 — Phase 0 validated + Phase 1 identity foundation shipped
 
