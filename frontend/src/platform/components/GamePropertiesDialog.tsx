@@ -133,6 +133,7 @@ const GamePropertiesDialog: Component<Props> = (props) => {
       subtitle={theme()?.displayName ?? props.entry?.systemId}
       system={props.entry?.systemId}
       size="xl"
+      navigate
     >
       <Show when={props.entry}>
         {(e) => (
