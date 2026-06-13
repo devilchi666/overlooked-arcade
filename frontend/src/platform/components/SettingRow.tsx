@@ -140,7 +140,7 @@ const SettingRow: Component<Props> = (props) => {
       // the legacy SettingsDialogs.tsx callers — they don't query for the marker.
       data-setting-row
       tabindex="-1"
-      class="flex flex-wrap items-start gap-4 rounded-md border border-white/5 bg-white/[0.02] px-4 py-3 outline-none"
+      class="flex flex-wrap items-start gap-4 rounded-md border border-white/5 bg-white/[0.02] px-4 py-3"
       classList={{ "pointer-events-none opacity-50": !!props.disabled }}
     >
       <div class="flex w-48 shrink-0 flex-col gap-0.5">

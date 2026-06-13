@@ -209,7 +209,7 @@ const PerSystemSettingsBody: Component<Props> = (props) => {
                 <label
                   data-setting-row
                   tabindex="-1"
-                  class="flex flex-wrap items-center gap-3 outline-none"
+                  class="flex flex-wrap items-center gap-3"
                 >
                   <span class="text-sm text-(--color-oa-ink)">Default launcher</span>
                   <select
