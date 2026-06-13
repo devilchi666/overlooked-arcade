@@ -20,11 +20,14 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   `pushBackHandler` to `back.ts` (adjust-mode B-intercept), an adjust-mode CSS
   ring (`[data-setting-adjusting]`), and a unit test for the pure step math
   (`nextSliderValue`). Decisions in [DECISIONS.md](DECISIONS.md). tsc clean;
-  `vitest run src/platform/nav` green (44 tests).
-- **Almost:** Operator real-app verification still pending — open Settings →
-  Controllers (test window) + drive the category bodies with the PDP Faceoff
-  (`0e6f:0184`, DPad on HAT axis 9): row stepping, select overlay, slider
-  adjust-mode, sidebar ⇄ center hand-off, B-to-exit.
+  `vitest run src/platform/nav` green (44 tests). **Operator-verified working**
+  in the real app. Follow-up fix this session: the focused-row highlight was
+  invisible — `outline-none` (Tailwind `@layer utilities`) suppressed the
+  shared `[data-oa-focus]` ring (`@layer components`); removed it and added an
+  **unlayered** row highlight (accent background fill + ring, active/inactive
+  variants) that beats the utility cascade. Operator confirms it now reads
+  clearly.
+- **Almost:** n/a — Slice 1 shipped + verified.
 - **Next:** After playtest sign-off — (a) **Reset via Tertiary (Y)**: the panel
   HintRegion already advertises `Tertiary: "Reset"` but it's dead (the
   `useDomQueryFocusGroup` wrapper doesn't forward `onTertiary`); wire Y to click
