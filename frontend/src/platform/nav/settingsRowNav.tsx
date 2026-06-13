@@ -155,6 +155,14 @@ export function useSettingsRowFocusGroup(
       const btn = el.querySelector<HTMLElement>("button, a[href]");
       btn?.click();
     },
+    onTertiary: (_i, el) => {
+      // Y resets the focused row to its inherited value — matches the panel's
+      // `Tertiary: "Reset"` hint. Only SettingRows with an active override
+      // render `[data-setting-reset]`, so this is a no-op elsewhere. Ignored
+      // mid-adjust so Y can't reset a value the operator is actively editing.
+      if (adjustEl()) return;
+      el.querySelector<HTMLElement>("[data-setting-reset]")?.click();
+    },
     onCancel: () => {
       // Adjust-mode B is caught by the pushed back handler before this; the
       // guard is belt-and-suspenders in case the stack ordering ever changes.

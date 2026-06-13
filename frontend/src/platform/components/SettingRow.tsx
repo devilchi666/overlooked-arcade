@@ -265,6 +265,7 @@ const SettingRow: Component<Props> = (props) => {
           <Show when={props.overridden && props.onReset}>
             <button
               type="button"
+              data-setting-reset
               onClick={(e) => {
                 e.currentTarget.blur();
                 props.onReset?.();

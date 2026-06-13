@@ -28,12 +28,13 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   variants) that beats the utility cascade. Operator confirms it now reads
   clearly.
 - **Almost:** n/a — Slice 1 shipped + verified.
-- **Next:** After playtest sign-off — (a) **Reset via Tertiary (Y)**: the panel
-  HintRegion already advertises `Tertiary: "Reset"` but it's dead (the
-  `useDomQueryFocusGroup` wrapper doesn't forward `onTertiary`); wire Y to click
-  the focused row's Reset. (b) **Metadata takeover** row-upgrade + game-pane
-  `<select>` overlay (deferred this slice). (c) Slice 2 — engine dialogs
-  (import wizard, per-game properties, Debug/Help).
+- **Next:** ~~Reset via Tertiary (Y)~~ **done** — taught `useDomQueryFocusGroup`
+  to forward `onSecondary`/`onTertiary` (it silently dropped them), marked the
+  SettingRow reset button `[data-setting-reset]`, and wired Y in the hook to
+  click the focused row's reset (no-op mid-adjust / on rows with no override).
+  The panel's `Tertiary: "Reset"` hint is now live. Remaining: (b) **Metadata
+  takeover** row-upgrade + game-pane `<select>` overlay (deferred this slice);
+  (c) Slice 2 — engine dialogs (import wizard, per-game properties, Debug/Help).
 
 ## 2026-06-13 — Stream queued
 
