@@ -14,14 +14,24 @@ import { onCleanup } from "solid-js";
 
 const stack: Array<() => void> = [];
 
+/// Push a back handler imperatively. Returns a disposer that removes it.
+/// Use when the handler's lifetime isn't tied to a component mount — e.g.
+/// a transient "adjust mode" that the operator enters/exits with Confirm,
+/// and that must intercept B BEFORE any outer close handler already on the
+/// stack (popBack fires the most-recently-pushed handler first).
+export function pushBackHandler(fn: () => void): () => void {
+  stack.push(fn);
+  return () => {
+    const i = stack.lastIndexOf(fn);
+    if (i >= 0) stack.splice(i, 1);
+  };
+}
+
 /// Push a back handler for the lifetime of this component. Use
 /// inside a Solid reactive scope; auto-pops on cleanup.
 export function useBackHandler(fn: () => void): void {
-  stack.push(fn);
-  onCleanup(() => {
-    const i = stack.lastIndexOf(fn);
-    if (i >= 0) stack.splice(i, 1);
-  });
+  const dispose = pushBackHandler(fn);
+  onCleanup(dispose);
 }
 
 /// Pop and invoke the most-recently registered handler. Returns true

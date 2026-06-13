@@ -256,6 +256,16 @@
     outline-style: dashed;
   }
 
+  /* Slider "adjust mode" — a settings slider the operator has entered with
+     Confirm, where up/right and down/left step the value and Confirm/Back
+     exit. A solid accent ring on the live <input type=range> distinguishes
+     "I'm editing this value" from "this row is merely focused." */
+  [data-setting-adjusting="true"] {
+    outline: 2px solid var(--oa-focus-ring, var(--color-system-accent));
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
   /* Loading state for cover art — a subtle diagonal sweep across the
      gradient placeholder while the image streams in. Keeps the tile area
      visually alive; vanishes once <img onLoad> fires. */

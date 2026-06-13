@@ -344,6 +344,7 @@ const GameFocusToggleCard: Component = () => {
         <div class="flex gap-2">
           <button
             type="button"
+            data-setting-action
             class="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-(--color-oa-ink) hover:bg-white/10"
             onClick={() => (capturing() ? stopCapture() : beginCapture())}
           >
@@ -351,6 +352,7 @@ const GameFocusToggleCard: Component = () => {
           </button>
           <button
             type="button"
+            data-setting-action
             class="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-(--color-oa-ink) hover:bg-white/10 disabled:opacity-40"
             disabled={capturing() || !chord()}
             onClick={() => save("")}
@@ -481,6 +483,7 @@ const NavRemapCard: Component = () => {
         </p>
         <button
           type="button"
+          data-setting-action
           onClick={() => void setNavBindings(DEFAULT_BINDINGS)}
           class="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-(--color-oa-ink-dim) transition hover:bg-white/[0.07] hover:text-(--color-oa-ink)"
         >
@@ -615,6 +618,7 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
       <SettingsCard title="Dev tools">
         <button
           type="button"
+          data-setting-action
           aria-expanded={devToolsOpen()}
           onClick={(e) => {
             e.currentTarget.blur();

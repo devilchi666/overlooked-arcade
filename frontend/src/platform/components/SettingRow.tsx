@@ -133,7 +133,14 @@ const SettingRow: Component<Props> = (props) => {
 
   return (
     <div
-      class="flex flex-wrap items-start gap-4 rounded-md border border-white/5 bg-white/[0.02] px-4 py-3"
+      // `data-setting-row` opts this row into the Settings center pane's
+      // controller-nav focus group (platform/nav/settingsRowNav). `tabindex=-1`
+      // lets the focus manager move DOM focus to the row for Tab / screen-reader
+      // continuity; inner controls keep their own native tab order. No effect on
+      // the legacy SettingsDialogs.tsx callers — they don't query for the marker.
+      data-setting-row
+      tabindex="-1"
+      class="flex flex-wrap items-start gap-4 rounded-md border border-white/5 bg-white/[0.02] px-4 py-3 outline-none"
       classList={{ "pointer-events-none opacity-50": !!props.disabled }}
     >
       <div class="flex w-48 shrink-0 flex-col gap-0.5">
