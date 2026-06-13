@@ -143,12 +143,13 @@ export const DebugLogDialog: Component<Props> = (props) => {
   }
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} title="Debug log" size="lg">
+    <Dialog open={props.open} onClose={props.onClose} title="Debug log" size="lg" navigate>
       {/* Header controls — filter chips + search + auto-scroll toggle */}
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <div class="flex items-center gap-1">
           <button
             type="button"
+            data-setting-action
             onClick={() => setFilter("all")}
             class="rounded px-2 py-0.5 text-[0.65rem] uppercase tracking-widest transition"
             classList={{
@@ -162,6 +163,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
             {(lvl) => (
               <button
                 type="button"
+                data-setting-action
                 onClick={() => setFilter(lvl)}
                 class="rounded px-2 py-0.5 text-[0.65rem] uppercase tracking-widest transition"
                 classList={{
@@ -181,7 +183,11 @@ export const DebugLogDialog: Component<Props> = (props) => {
           onInput={(e) => setSearch(e.currentTarget.value)}
           class="flex-1 min-w-[10rem] rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) focus-visible:border-(--color-system-accent) focus-visible:outline-none"
         />
-        <label class="flex cursor-pointer items-center gap-1.5 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        <label
+          data-setting-row
+          tabindex="-1"
+          class="flex cursor-pointer items-center gap-1.5 text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)"
+        >
           <input
             type="checkbox"
             checked={autoScroll()}
@@ -246,6 +252,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
           </span>
           <button
             type="button"
+            data-setting-action
             onClick={copyPath}
             disabled={!logFilePath()}
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink) disabled:cursor-not-allowed disabled:opacity-40"
@@ -254,6 +261,7 @@ export const DebugLogDialog: Component<Props> = (props) => {
           </button>
           <button
             type="button"
+            data-setting-action
             onClick={openFolder}
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
           >
