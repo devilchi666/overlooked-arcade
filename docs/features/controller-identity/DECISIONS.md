@@ -140,3 +140,40 @@ normalized, semantics "just work" for any pad.
   SEMANTICS (canonical → NavButton → verb, incl. the A/B-swap for Nintendo "B
   confirms"). Face buttons map by POSITION (south = bottom = Confirm-default),
   so Nintendo's physical A/B swap is a preference layer, not a layout concern.
+
+---
+
+## 2026-06-12 — Phase 2.5 diagnostics: controller test window (operator Q&A)
+
+Operator couldn't tell whether Phase 2 works — no in-app observability (only
+console logs), glyphs looked wrong, and it was unclear which panes are even
+controller-navigable. Reframed the confusion as **three independent layers**
+that were tangled: (1) mapping (raw→logical button), (2) nav logic (focus
+system response), (3) presentation (glyphs/hints). A test window instruments
+Layer 1 so the other two can be debugged with confidence.
+
+- **D14 — Build a controller test window, MVP first, under a new
+  Settings → Controllers section.** MVP = passive live display: identity
+  (name / device-key / VID-PID / `mapping` / which profile matched) + raw
+  input (button indices lit, axis bars incl. the HAT axis) + the normalized
+  chain (raw N → canonical → NavButton/Dir). Reuses `resolveLayout` +
+  `deriveDeviceIdentity` (no logic duplication; a `describePad()` helper in
+  `gamepad.ts` returns exactly what the poller uses). *Why:* it's the
+  observability that unblocks validating the whole arc, AND it's the capture
+  primitive the Phase-3 wizard + a future remap UI both reuse. Visual gamepad
+  diagram deferred to a later full version. **Settings → Controllers is the
+  home for all this arc's UI** (test → wizard → remap → glyph choice).
+
+- **D15 — Per-controller glyph sets PARKED until mapping is proven solid.**
+  (Layer 3.) "Glyphs don't match my controller" is a real but SEPARATE problem
+  from mapping correctness — Nintendo/Xbox/PlayStation button symbols keyed by
+  identity. Parked (PARKING_LOT 2026-06-12) to avoid conflating cosmetic
+  labeling with functional mapping; revisit once the test window proves Layer 1.
+
+- **Noted for later phases (not now):** (a) **reduced-layout control schemes**
+  — pads lacking shoulders/sticks/buttons need nav verbs reachable via
+  alternative inputs (a verb-fallback concern for the remap/wizard design);
+  (b) **arcade-cabinet keyboard-encoder input** (iPAC-style joystick/button/
+  spinner→keystroke routing) — major separate planning, parked. Both flagged
+  by the operator 2026-06-12. A **nav-coverage audit** (which panes are
+  controller-navigable) was requested and is in flight.

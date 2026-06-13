@@ -4,6 +4,40 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Phase 2.5: controller test window + nav-coverage audit
+
+- **Shipped:** Operator couldn't tell whether Phase 2 worked (no in-app
+  observability). Built the **controller test window** under a new
+  **Settings → Controllers** category (the home for all this arc's device UI):
+  - `engine/ControllerTestPanel.tsx` (`ControllersSettings`): live read-out
+    per connected pad — identity (name / device-key / VID:PID / browser
+    `mapping` / **which profile matched**), raw buttons (lit on press) with the
+    **normalized result** each maps to (raw b1 → "A"/Confirm), and axis bars
+    incl. the decoded HAT direction. Pauses nav while open (test presses don't
+    toggle settings); leave with the mouse. Uses `Index` for the live arrays.
+  - `gamepad.ts`: exported `describePad()` (returns exactly what the poller
+    uses — single source of truth) + `decodeHat()`; wired the category into
+    `SettingsPanel.tsx`. tsc + lint + nav tests (28) green.
+  - This panel is also the capture primitive the Phase-3 wizard + a future
+    remap UI reuse (D14).
+  - **Decisions recorded** (D14 test window/home, D15 glyph sets parked);
+    **parked** (PARKING_LOT): per-controller glyph sets, reduced-layout control
+    schemes, arcade-cabinet keyboard-encoder input, and the updatable-data-files
+    refresh story.
+  - **Nav-coverage audit** ran (Explore subagent): the 5 Retroverse tabs +
+    modals/menus have solid nav; the **engine surface (Settings bodies,
+    metadata editor, dialogs) is the big keyboard-only gap**. Full table:
+    [NAV_COVERAGE_AUDIT_2026-06-12.md](NAV_COVERAGE_AUDIT_2026-06-12.md). That's
+    Layer 2 (nav wiring), distinct from this arc's Layer 1 (mapping).
+- **Almost:** test window not yet operator-exercised; the Faceoff mapping is
+  authored + cross-checked but still wants the live confirmation the test
+  window now makes trivial.
+- **Next:** operator opens Settings → Controllers, presses each button, confirms
+  raw→normalized is correct (bottom = "A"/Confirm). If right → the full SDL
+  gamecontrollerdb import ("test my pad first, then build it"). If wrong →
+  one-line fix in controllers.json. Glyphs + nav-coverage gaps are parked
+  follow-ups.
+
 ## 2026-06-12 — Phase 2 normalization infra (frontend-only; Switch Pro profile pending capture)
 
 - **Shipped:** Phase 1 validated by operator (replug-stable ports + identity

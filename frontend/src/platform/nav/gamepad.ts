@@ -56,6 +56,45 @@ const DEFAULT_LAYOUT: ResolvedLayout = {
   hatAxis: null,
 };
 
+/// A pad's resolved identity + the effective layout the poller is actually
+/// using for it. Powers the Settings → Controllers test window so it shows
+/// EXACTLY what nav sees (no duplicated mapping logic). Pure — safe to call
+/// each frame from a diagnostic UI.
+export type PadDiagnostic = {
+  index: number;
+  id: string;
+  deviceKey: string;
+  vid: string | null;
+  pid: string | null;
+  name: string;
+  /** Web Gamepad mapping: "standard" (browser-canonical) or "" (raw). */
+  mapping: string;
+  /** True when a controllers.json profile remapped this (non-standard) pad. */
+  profiled: boolean;
+  /** The effective layout (profile remap, or the standard fallback). */
+  layout: ResolvedLayout;
+  buttonCount: number;
+  axisCount: number;
+};
+
+export function describePad(pad: Gamepad): PadDiagnostic {
+  const identity = deriveDeviceIdentity(pad.id);
+  const resolved = resolveLayout(identity.key, pad.mapping);
+  return {
+    index: pad.index,
+    id: pad.id,
+    deviceKey: identity.key,
+    vid: identity.vid,
+    pid: identity.pid,
+    name: identity.name,
+    mapping: pad.mapping,
+    profiled: resolved !== null,
+    layout: resolved ?? DEFAULT_LAYOUT,
+    buttonCount: pad.buttons.length,
+    axisCount: pad.axes.length,
+  };
+}
+
 const INITIAL_REPEAT_MS = 400;
 const REPEAT_INTERVAL_MS = 80;
 const STICK_DEADZONE = 0.4;
@@ -110,7 +149,7 @@ const HAT_BUCKETS: { value: number; dir: NavDirection }[] = [
   { value:  1.000, dir: "left" },   // NW → left
 ];
 
-function decodeHat(v: number): NavDirection | null {
+export function decodeHat(v: number): NavDirection | null {
   // Idle sentinel — anything outside the [-1, 1] range can't be a
   // valid HAT value, so we treat it as "no direction".
   if (Math.abs(v) > 1.1) return null;

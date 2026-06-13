@@ -37,6 +37,7 @@ import {
   ShadersSettings,
   ThemesSettings,
 } from "./SettingsSections";
+import { ControllersSettings } from "./ControllerTestPanel";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
@@ -52,6 +53,7 @@ type CategoryId =
   | "shaders"
   | "gameplay"
   | "performance"
+  | "controllers"
   | "controller-nav"
   | "per-system-ui"
   | "experimental"
@@ -118,6 +120,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "CPU tier detection that drives core recommendations.",
     helpText:
       "Auto-detects your CPU brand + cores + base clock and buckets into High / Mid / Low. The Import Wizard uses this to pick the right core per system (Beetle PSX HW on High, PCSX-ReARMed on Low, etc.). Override below if the heuristic misclassifies — Steam Deck under-rates, old workstations over-rate, throttled laptops over-rate.",
+  },
+  {
+    id: "controllers",
+    group: "oa-wide",
+    label: "Controllers",
+    glyph: "🎮",
+    description: "Your physical controllers — identity, mapping, and a live test.",
+    helpText:
+      "Live test window: see which controller is detected, whether a profile matched, and what each raw button/axis maps to. The home for controller device setup (test now; remap + a press-the-buttons wizard later).",
   },
   {
     id: "controller-nav",
@@ -482,6 +493,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "performance"}>
             <PerformanceSettings settings={ctx.settings} />
+          </Match>
+          <Match when={activeCategoryId() === "controllers"}>
+            <ControllersSettings />
           </Match>
           <Match when={activeCategoryId() === "controller-nav"}>
             <ControllerNavSettings settings={ctx.settings} />
