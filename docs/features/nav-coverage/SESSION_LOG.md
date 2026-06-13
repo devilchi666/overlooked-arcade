@@ -32,9 +32,14 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   to forward `onSecondary`/`onTertiary` (it silently dropped them), marked the
   SettingRow reset button `[data-setting-reset]`, and wired Y in the hook to
   click the focused row's reset (no-op mid-adjust / on rows with no override).
-  The panel's `Tertiary: "Reset"` hint is now live. Remaining: (b) **Metadata
-  takeover** row-upgrade + game-pane `<select>` overlay (deferred this slice);
-  (c) Slice 2 — engine dialogs (import wizard, per-game properties, Debug/Help).
+  The panel's `Tertiary: "Reset"` hint is now live. **Slice 1 merged to main
+  (`--no-ff`).** Remaining: (b) **Metadata takeover** row-upgrade + game-pane
+  `<select>` overlay (deferred this slice); (c) **Slice 2 — engine dialogs**,
+  now scoped in [SLICE_2_PLAN.md](SLICE_2_PLAN.md): the lever is upgrading
+  `Dialog.tsx` with an opt-in `navigate` prop that mounts
+  `useSettingsRowFocusGroup` over the body (GameProperties as reference
+  adopter), then easy/medium adopters; ImportWizard deep-nav splits to its own
+  slice.
 
 ## 2026-06-13 — Stream queued
 
