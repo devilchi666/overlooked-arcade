@@ -4,6 +4,33 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-12 — Controller label families (SDL type table ported)
+
+- **Shipped:** Operator tested the test window — all correct EXCEPT face
+  buttons read swapped (press Y → shows X). Diagnosed as NOT a bug: the
+  Nintendo-vs-Xbox positional-naming difference (canonical = positional; the
+  Faceoff's Nintendo labels sit swapped). Fix = a **label-family layer**
+  (DECISIONS D16):
+  - Ported SDL's authoritative VID/PID→type table (`controller_list.h`,
+    `MAKE_CONTROLLER_ID`) into `controllerTypes.json` — 582 pads (385 xbox /
+    164 ps / 36 nintendo). Faceoff `0e6f:0184` → nintendo with zero hand-tagging.
+  - `controllerFamily.ts`: `ControllerFamily` + `FAMILY_LABELS` (face +
+    shoulders) + `resolveFamily()` (SDL table → name heuristic → generic) +
+    `familyLabel()`. Threaded `family` through `describePad`; barrel re-exports
+    the two new modules.
+  - Test window now shows each pad's **real labels** (Nintendo pad shows B for
+    Confirm) + a "label family" row.
+  - Scales as the operator wanted: detect family (don't tag every pad);
+    thousands of pads → ~4 label sets. Same `resolveFamily()` will drive glyph
+    ICONS later (still parked; labels done).
+  - 7 new tests (`controllerFamily.test.ts`); nav suite 35 green; tsc + lint
+    clean.
+- **Almost:** operator hasn't re-tested the test window with family labels (the
+  Faceoff should now read B/A/Y/X in physical positions).
+- **Next:** operator confirms labels read right, then the full SDL
+  gamecontrollerdb MAPPING import (the deferred "test first, then build it").
+  Glyph icons + nav-coverage gaps remain parked follow-ups.
+
 ## 2026-06-12 — Phase 2.5: controller test window + nav-coverage audit
 
 - **Shipped:** Operator couldn't tell whether Phase 2 worked (no in-app

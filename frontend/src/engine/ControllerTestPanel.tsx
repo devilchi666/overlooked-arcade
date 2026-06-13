@@ -22,6 +22,7 @@ import { Index, Show, createSignal, onCleanup, onMount, type Accessor, type Comp
 import {
   decodeHat,
   describePad,
+  familyLabel,
   isNavEnabled,
   setNavEnabled,
   type PadDiagnostic,
@@ -48,10 +49,11 @@ function snapshot(): PadFrame[] {
   return frames;
 }
 
-/// What a raw button index resolves to under the pad's effective layout.
+/// What a raw button index resolves to, shown in the pad's OWN label family
+/// (e.g. a Nintendo pad shows "B" for the south/Confirm button, not "A").
 function resolveButton(diag: PadDiagnostic, i: number): string {
   const nav = diag.layout.buttons[i];
-  if (nav) return nav.toUpperCase();
+  if (nav) return familyLabel(diag.family, nav);
   const dir = diag.layout.dpad[i];
   if (dir) return `dpad ${dir}`;
   return "—";
@@ -129,6 +131,8 @@ const PadCard: Component<{ frame: Accessor<PadFrame> }> = (props) => {
               <span class="text-emerald-300">matched (controllers.json)</span>
             </Show>
           </dd>
+          <dt>label family</dt>
+          <dd class="capitalize text-(--color-oa-ink)">{diag().family}</dd>
           <dt>buttons / axes</dt>
           <dd>
             {diag().buttonCount} / {diag().axisCount}

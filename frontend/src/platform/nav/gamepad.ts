@@ -19,6 +19,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import { deriveDeviceIdentity } from "./deviceKey";
 import { resolveLayout, type ResolvedLayout } from "./controllerProfiles";
+import { resolveFamily, type ControllerFamily } from "./controllerFamily";
 import type { NavButton, NavDirection, NavEvent, NavPhase } from "./types";
 
 /// Web Gamepad API "standard layout" mapping. Skips the dpad slots
@@ -73,6 +74,8 @@ export type PadDiagnostic = {
   profiled: boolean;
   /** The effective layout (profile remap, or the standard fallback). */
   layout: ResolvedLayout;
+  /** Label family (Nintendo/Xbox/PlayStation/generic) for button labels. */
+  family: ControllerFamily;
   buttonCount: number;
   axisCount: number;
 };
@@ -90,6 +93,7 @@ export function describePad(pad: Gamepad): PadDiagnostic {
     mapping: pad.mapping,
     profiled: resolved !== null,
     layout: resolved ?? DEFAULT_LAYOUT,
+    family: resolveFamily(identity.key, identity.name),
     buttonCount: pad.buttons.length,
     axisCount: pad.axes.length,
   };

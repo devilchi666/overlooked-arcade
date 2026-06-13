@@ -11,6 +11,8 @@ export * from "./verbs";
 export * from "./navBindings";
 export * from "./glyphs";
 export * from "./gamepad";
+export * from "./controllerProfiles";
+export * from "./controllerFamily";
 export * from "./back";
 export * from "./focus";
 export * from "./HintBar";

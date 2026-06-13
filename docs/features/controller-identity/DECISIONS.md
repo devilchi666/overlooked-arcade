@@ -170,6 +170,32 @@ Layer 1 so the other two can be debugged with confidence.
   identity. Parked (PARKING_LOT 2026-06-12) to avoid conflating cosmetic
   labeling with functional mapping; revisit once the test window proves Layer 1.
 
+- **D16 — Controller LABEL family, detected from SDL's authoritative VID/PID
+  table (ported), with a tiny per-family label set.** Resolves the operator's
+  "press Y, see X" — which was NOT a mapping bug but the Nintendo-vs-Xbox
+  positional-naming difference (canonical names by position; Nintendo labels sit
+  swapped). *Design that scales:* thousands of controllers collapse to ~4 label
+  families (Nintendo / Xbox / PlayStation / generic); we DETECT family, we don't
+  tag every pad. Detection order: SDL VID/PID→type table → name-keyword
+  heuristic → generic. *Source:* ported SDL `controller_list.h`
+  (`MAKE_CONTROLLER_ID → k_eControllerType_*`) into
+  `frontend/src/platform/nav/controllerTypes.json` (582 pads classified: 385
+  xbox / 164 playstation / 36 nintendo). The Faceoff `0e6f:0184` is tagged
+  Switch-family by SDL → resolves to nintendo with ZERO hand-tagging, validating
+  the approach. `controllerFamily.ts` holds the family type + `FAMILY_LABELS`
+  (face + shoulders) + `resolveFamily()` + `familyLabel()`. Test window now
+  shows each pad's real labels. **Regenerate the JSON** from SDL
+  `controller_list.h` when refreshing controller data (rides the parked
+  update-mechanism arc); the parser lived in `/tmp/parse_ctypes.cjs` (one-shot,
+  re-derivable from this note). *Why authoritative-first:* operator chose
+  porting SDL's table over name-only heuristics for accuracy across the board.
+
+- **D15 amended — face/shoulder LABELS now done (D16); only glyph ICONS stay
+  parked.** The label-family work delivers the textual labels (test window).
+  Actual pictographic glyph rendering (Nintendo/PlayStation symbol art in the
+  hint bar) remains parked, but now has a clean hook: it's `family → glyph set`,
+  reusing the exact same `resolveFamily()`.
+
 - **Noted for later phases (not now):** (a) **reduced-layout control schemes**
   — pads lacking shoulders/sticks/buttons need nav verbs reachable via
   alternative inputs (a verb-fallback concern for the remap/wizard design);
