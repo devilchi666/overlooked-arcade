@@ -11,6 +11,26 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Controller-Nav Coverage** — queued 2026-06-13, operator's chosen next
+  stream (starts at Slice 1: Settings category bodies). A nav-wiring sweep
+  bringing controller navigation to the engine-surface screens (Settings
+  bodies, metadata editor, dialogs) the audit found keyboard/mouse-only. The
+  Retroverse tabs + modals already navigate well. Feature folder
+  [features/nav-coverage/](features/nav-coverage/) (README + the audit it
+  builds from); queued in [NEXT.md](NEXT.md) HIGH band. **Layer 2 (nav
+  wiring)** — distinct from the controller-identity arc below (Layer 1).
+
+- **Controller Identity & Auto-Config** — ✅ **SHIPPED + MERGED to main
+  2026-06-13** (`808fc0b`). Full arc: stable VID/PID identity (both pollers) →
+  replug-stable ports → non-standard-pad normalization (per-pad + full SDL
+  `gamecontrollerdb` import, 813 pads) → label families (Nintendo/Xbox/PS, from
+  SDL's type table) → live test window (Settings → Controllers). Fixed the
+  operator's wired Faceoff Switch pad end-to-end. Plan
+  [PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md);
+  feature folder [features/controller-identity/](features/controller-identity/).
+  Parked follow-ups: Phase-3 wizard (pads in no DB), glyph icons, data-file
+  update mechanism, multi-OS mapping bundles (see PARKING_LOT.md).
+
 - **Metadata Curation (Settings → "Metadata" editor)** — planned
   2026-06-11, execution queued (starts next session at Wave 1 / S1).
   A premium operator surface to edit game + system metadata on an

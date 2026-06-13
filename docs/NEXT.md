@@ -342,7 +342,32 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Controller Identity & Auto-Config — Phase 0 (identity spike)
+### Controller-Nav Coverage — wire nav into the engine-surface gaps
+
+**Queued 2026-06-13** (surfaced by the controller-identity nav-coverage audit).
+Full scope + prioritized gap table + the standard recipe:
+[features/nav-coverage/README.md](features/nav-coverage/README.md) →
+[features/controller-identity/NAV_COVERAGE_AUDIT_2026-06-12.md](features/controller-identity/NAV_COVERAGE_AUDIT_2026-06-12.md).
+The five Retroverse tabs + modals/menus already navigate well; this is a
+wiring sweep over the **engine surface** (Settings category bodies, the
+metadata editor, engine dialogs) which the audit found keyboard/mouse-only.
+This is **Layer 2** (nav wiring) — distinct from the just-shipped
+controller-identity arc (Layer 1, mapping). Incremental, one surface per
+slice, highest-traffic first:
+1. **Settings category bodies** (`frontend/src/engine/*Settings*` /
+   `PerSystemSettingsBody` / `MetadataSettingsBody`) — sidebar already
+   navigable; per-category forms need row nav. Recipe: `useDomQueryFocusGroup`
+   with a `[data-setting-row]`-style selector per body.
+2. **Engine dialogs / complex forms** (import steps, per-game properties,
+   Debug/Help) — `useDomQueryFocusGroup` + `useBackHandler` +
+   `captureFocusReturn` for modal scope.
+3. **Carousels** (Home / Play Now rails) — horizontal `useFocusGroup` per rail.
+4. **GameDetailPanel** panel-mode action buttons (PLAY / MORE) as a RIGHT
+   neighbour group.
+Verify each slice with the controller test window (Settings → Controllers) +
+an actual pad; keep nav tests green. **Operator's chosen next stream.**
+
+### Controller Identity & Auto-Config — ✅ SHIPPED + MERGED 2026-06-13 (Phase 0→2.5 + label families + full SDL DB import)
 
 **Planned 2026-06-12.** Full plan:
 [PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md);
