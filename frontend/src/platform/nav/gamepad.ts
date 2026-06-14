@@ -106,6 +106,13 @@ const INITIAL_REPEAT_MS = 400;
 const REPEAT_INTERVAL_MS = 80;
 const STICK_DEADZONE = 0.4;
 
+/// Verbose per-press raw button / axis / HAT logging. Defaults OFF (it's noisy
+/// — fires on every press). Flip via the DevTools panel (Settings → About) or
+/// `window.__oaGamepadDebug = true`. The one-shot "connected" line stays always
+/// on (low frequency, useful). Invaluable for non-standard-pad mapping work.
+const GAMEPAD_DEBUG = (): boolean =>
+  (globalThis as { __oaGamepadDebug?: boolean }).__oaGamepadDebug === true;
+
 let inputEnabled = true;
 
 /// Master enable / disable. Settings calls this when the operator
@@ -356,9 +363,11 @@ function detectHatAxes(pad: Gamepad): void {
     const v = pad.axes[i] ?? 0;
     if (Math.abs(v) > 1.1) {
       set.add(i);
-      console.log(
-        `[oa-gamepad] detected HAT axis ${i} on pad ${pad.index} (idle=${v.toFixed(3)})`,
-      );
+      if (GAMEPAD_DEBUG()) {
+        console.log(
+          `[oa-gamepad] detected HAT axis ${i} on pad ${pad.index} (idle=${v.toFixed(3)})`,
+        );
+      }
     }
   }
   // Phase-2: honor a profile-declared HAT axis even if the idle-sentinel
@@ -417,7 +426,7 @@ function pollButtons(pad: Gamepad, now: number): void {
     // Diagnostic: log ANY button press at any index, even unmapped
     // ones, so we can spot DPad on non-standard indices. Only logs on
     // the down edge.
-    if (isPressed && !prev) {
+    if (isPressed && !prev && GAMEPAD_DEBUG()) {
       console.log(`[oa-gamepad] raw button ${i} pressed`);
     }
     if (!buttonName && !dpadDir) continue;
@@ -461,16 +470,18 @@ function pollStick(pad: Gamepad, now: number): void {
   // layouts use two axes (6+7). Threshold lowered to 0.1 so even
   // gentle DPad deflections surface, and the "distinct value" gate
   // logs each new position rather than each frame.
-  for (let i = 2; i < pad.axes.length; i++) {
-    const v = pad.axes[i] ?? 0;
-    if (Math.abs(v) <= 0.1) continue;
-    const key = `${pad.index}:${i}`;
-    const prev = lastLoggedAxis.get(key);
-    // Log if we've never logged this axis OR the value changed by > 0.1
-    // (so we capture HAT transitions like 1.0 → 0.43 → -0.14 → ...).
-    if (prev === undefined || Math.abs(prev - v) > 0.1) {
-      lastLoggedAxis.set(key, v);
-      console.log(`[oa-gamepad] raw axis ${i} = ${v.toFixed(3)}`);
+  if (GAMEPAD_DEBUG()) {
+    for (let i = 2; i < pad.axes.length; i++) {
+      const v = pad.axes[i] ?? 0;
+      if (Math.abs(v) <= 0.1) continue;
+      const key = `${pad.index}:${i}`;
+      const prev = lastLoggedAxis.get(key);
+      // Log if we've never logged this axis OR the value changed by > 0.1
+      // (so we capture HAT transitions like 1.0 → 0.43 → -0.14 → ...).
+      if (prev === undefined || Math.abs(prev - v) > 0.1) {
+        lastLoggedAxis.set(key, v);
+        console.log(`[oa-gamepad] raw axis ${i} = ${v.toFixed(3)}`);
+      }
     }
   }
   const x = pad.axes[0] ?? 0;

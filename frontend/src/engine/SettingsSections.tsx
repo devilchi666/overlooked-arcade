@@ -1436,10 +1436,10 @@ export const AboutSettings: Component = () => {
         </div>
       </SettingsCard>
 
-      {/* Developer tools — dev/debug builds only. */}
-      <Show when={import.meta.env.DEV}>
-        <DevToolsPanel />
-      </Show>
+      {/* Developer tools. Rendered unconditionally for now (the whole app is
+          pre-release); the panel is clearly labelled "dev build". Re-gate behind
+          import.meta.env.DEV before any public release — tracked in PARKING_LOT. */}
+      <DevToolsPanel />
     </div>
   );
 };

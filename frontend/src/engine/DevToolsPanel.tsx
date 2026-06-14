@@ -8,8 +8,15 @@
 // and mirrors it into a local signal for the button state. Add a new entry to
 // DEBUG_FLAGS to surface another stream — no other wiring needed.
 
-import { createSignal, For, Show, type Component } from "solid-js";
-import { getLogFilePath, openDevtools, revealLogsFolder } from "@oa/platform/api/shellApi";
+import { createSignal, For, onMount, Show, type Component } from "solid-js";
+import { spawnTestJob } from "@oa/platform/api/jobsApi";
+import {
+  getLogFilePath,
+  getOaDataDir,
+  openDevtools,
+  restartApp,
+  revealLogsFolder,
+} from "@oa/platform/api/shellApi";
 
 type FlagDef = { key: string; label: string; hint: string };
 
@@ -23,6 +30,11 @@ const DEBUG_FLAGS: readonly FlagDef[] = [
     key: "__oaFocusDebug",
     label: "Focus (index) nav",
     hint: "Log the legacy index focus-group routing.",
+  },
+  {
+    key: "__oaGamepadDebug",
+    label: "Gamepad raw input",
+    hint: "Log raw button / axis / HAT presses — controller-mapping work.",
   },
 ];
 
@@ -41,6 +53,29 @@ const DevToolsPanel: Component = () => {
   };
 
   const [logMsg, setLogMsg] = createSignal<string>("");
+  const [dataDir, setDataDir] = createSignal<string>("");
+  onMount(() => {
+    void getOaDataDir()
+      .then(setDataDir)
+      .catch(() => {});
+  });
+
+  const spawnJob = async (): Promise<void> => {
+    try {
+      await spawnTestJob(4);
+      setLogMsg("Spawned a 4s test job — watch the background-jobs bar.");
+    } catch (e) {
+      setLogMsg(String(e));
+    }
+  };
+  const reloadUi = (): void => location.reload();
+  const restart = async (): Promise<void> => {
+    try {
+      await restartApp();
+    } catch (e) {
+      setLogMsg(String(e));
+    }
+  };
 
   const copyLogPath = async (): Promise<void> => {
     try {
@@ -122,15 +157,29 @@ const DevToolsPanel: Component = () => {
         <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); void openInspector(); }}>
           Open inspector
         </button>
+        <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); void spawnJob(); }}>
+          Spawn test job
+        </button>
         <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); void copyLogPath(); }}>
           Copy log path
         </button>
         <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); void openLogs(); }}>
           Open logs folder
         </button>
+        <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); reloadUi(); }}>
+          Reload UI
+        </button>
+        <button type="button" class={actionBtn} onClick={(e) => { e.currentTarget.blur(); void restart(); }}>
+          Restart app
+        </button>
       </div>
       <Show when={logMsg()}>
         <p class="mt-2 break-all text-[0.6rem] text-(--color-oa-ink-dim)">{logMsg()}</p>
+      </Show>
+      <Show when={dataDir()}>
+        <p class="mt-2 break-all text-[0.6rem] text-(--color-oa-ink-dim)/70">
+          Data dir: <code class="font-mono text-(--color-oa-ink-dim)">{dataDir()}</code>
+        </p>
       </Show>
     </section>
   );
