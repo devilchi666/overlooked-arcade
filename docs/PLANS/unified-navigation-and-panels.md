@@ -18,6 +18,35 @@ that fight for `active`. There are dozens of panels and the list grows — manua
 wiring is a treadmill. (Slices 1–3 proved the *activate* layer; they did not
 solve *discovery* or *structure*.)
 
+## Minimum control set (the control floor) — INVARIANT
+
+**Every action in the shell MUST be reachable with only: direction (D-pad/hat
+OR left stick) + Confirm + Back.** That is the floor — arcade cabinets and
+budget pads may have nothing else (joystick + 2 buttons). All other inputs (X/Y,
+shoulders L1/R1/L2/R2, Start, stick-click) are **accelerators only**: they speed
+movement, jump regions, or surface more info, but must **never** be the *sole*
+path to any action.
+
+The spatial engine makes this **structural, not per-feature**: universal
+focusable discovery means every actionable element (including Reset chips, tab
+buttons, menu triggers) is reachable by Direction→Confirm. The floor holds *by
+construction* — as long as Pillar B guarantees every action has a **visible,
+focusable affordance** (nothing hidden behind an enhancement-only button,
+right-click, or hover).
+
+Things this flags to fix during the arc:
+- **Reset** (made Y-only in Slice 1) → reachable by navigating to the Reset chip
+  + Confirm once it's a discovered focusable; Y stays the accelerator.
+- **Tabs / sub-tabs** (Retroverse L1/R1 cycle) → the tab strip must be
+  Direction-navigable + Confirm-selectable; L1/R1 = accelerator.
+- **Context menu / "more" / details** (X / right-click / hover today) → needs a
+  **visible, focusable trigger** (e.g. a "⋯" button); X stays the accelerator.
+- **Menu / options** (Start) → same: a visible, navigable affordance.
+
+**Acceptance (every panel):** with everything unplugged but Direction + Confirm
++ Back, you can still do everything. The accelerator buttons only make it
+faster.
+
 ## Two pillars
 
 **Pillar A — Spatial navigation engine (the substrate).** One global navigator

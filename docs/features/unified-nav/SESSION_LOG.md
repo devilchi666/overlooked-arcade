@@ -14,6 +14,12 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
   [../../PLANS/unified-navigation-and-panels.md](../../PLANS/unified-navigation-and-panels.md).
   Rollout: build + prove on Settings first (operator choice). Queued in NEXT.md
   HIGH band; ACTIVE_WORK + INDEX updated.
+  - **Control-floor invariant added (operator, 2026-06-14):** every action must
+    be reachable with ONLY direction + Confirm + Back (arcade cabs / 2-button
+    pads); all other buttons are accelerators, never the sole path. The spatial
+    engine makes this structural (every actionable element auto-discovered →
+    Direction+Confirm reaches it) provided Pillar B gives every action a visible,
+    focusable affordance. See the plan's "Minimum control set" invariant.
 - **Almost:** n/a — design only, no code.
 - **Next:** **Phase 1 — spatial engine + universal discovery, proven on the
   whole Settings surface** (incl. embedded sub-pages: Library Manager tabs,
