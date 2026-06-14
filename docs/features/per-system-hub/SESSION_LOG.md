@@ -4,6 +4,33 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Playtest fixes + arc CLOSED (all merged to main)
+
+- **Shipped (branch `feat/per-system-metadata-split`, merged `86759b1`):** the
+  metadata split + a run of playtest fixes, all on main.
+  - **Metadata split** (DECISIONS context): per-system "Metadata" → two cards,
+    **Platform Metadata** (`SystemMetaForm`) + **Game Metadata**
+    (`MetadataGamePane` locked to the system); standalone "Game metadata"
+    Settings category + `MetadataSettingsBody` takeover removed.
+  - **HintBar** on the engine surface fixed (Navigate/Select/Back/Reset).
+  - **DevTools toggle reactivity** fixed (frontend flag buttons read a signal,
+    not the raw global — they were visually dead).
+  - **Game-list scroll**: `PanelScaffold` `fill` mode for self-scrolling
+    children; **vertical movement prefers the focused element's scroll
+    container** (`nearestScrollContainer`) so UP stays in a long list until a
+    true edge (killed the row↔"Edited" bounce). General win for any list.
+  - **DevTools in release builds**: operator builds with `cargo tauri build`
+    (release) — added a `devtools` Cargo feature (→ `tauri/devtools`) in
+    oa-shell DEFAULT so the WebView inspector + `open_devtools` work there;
+    backend log streams already work (log keeps debug/trace in release).
+  - Spatial debug log gained `curRect`/`nextRect` (gated). typecheck + lint +
+    vitest(98) + cargo check green throughout.
+- **Almost:** "system" vs "platform" terminology now mixed (parked audit);
+  per-game metadata still a Settings concern (future move into game-detail).
+- **Next:** **arc COMPLETE.** Dev-tooling re-gating (panel + `devtools` default
+  feature) is parked for pre-public-release. Operator confirmed everything
+  working.
+
 ## 2026-06-14 — Metadata IA refinement: Platform vs Game metadata + HintBar fix
 
 - **Shipped (branch `feat/per-system-metadata-split`):** per operator, per-game

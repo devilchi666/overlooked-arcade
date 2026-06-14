@@ -11,20 +11,28 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Per-System Settings Hub** — planned + **S1 shipped 2026-06-14** (branch
-  `feat/per-system-hub`, awaiting playtest). Consolidates ALL per-system settings
-  (today scattered across the Per-system / Media / Metadata categories + the
-  Library→Game-media grid + BIOS in System Health) into one card-based **Systems**
-  hub: a grid of per-system cards → a per-system hub of **domain cards** (Display
-  & Video · Input · Core/Launcher · Media · Metadata · BIOS) → a domain editor.
-  Built on the merged spatial-nav engine (zero per-control wiring); delivers the
-  unified-nav **Pillar B** primitives (`HubCard`/`HubGrid`/`PanelScaffold`) as a
-  byproduct, so it supersedes the standalone "Pillar B on Settings" task. S1 =
-  nav-stack proof + Display & Core domains (reuse `perSystemSections`); old
-  surfaces stay live in parallel until S5 removes them. Plan
+- **Per-System Settings Hub** — ✅ **COMPLETE + MERGED to main 2026-06-14**
+  (operator playtested clean). Consolidated ALL per-system settings (was
+  scattered across the Per-system / Media / Metadata categories + the
+  Library→Game-media grid + BIOS in System Health) into one card-based
+  **Systems** hub: grid of per-system cards → per-system **domain cards**
+  (Display & Video · Core/Launcher · Input · Media · **Platform Metadata** ·
+  **Game Metadata** · BIOS) → editor. Built on the spatial-nav engine (zero
+  per-control wiring); the `HubCard`/`HubGrid`/`PanelScaffold` primitives ARE the
+  unified-nav **Pillar B** deliverable. S1–S5 + the metadata split shipped:
+  removed the old categories/grid + `PerSystemSettingsBody`/`GameMediaManagePanel`/
+  `UnidentifiedGamesDialog`/`MediaSettings` (net ~−1.7k lines); extracted
+  `SystemMetaForm`, `useGameMediaOps`, `PlatformMediaSlots`. **Also shipped this
+  arc:** a dev-only **DevTools panel** (Settings → About) — logging toggles
+  (spatial/focus/gamepad) + backend log streams (media/audio/render via a runtime
+  log-level bridge) + Open inspector (`devtools` Cargo feature, default-on for
+  the operator's `cargo tauri build`) + test job / log path / restart; and the
+  engine-surface **HintBar** fixed. Plan
   [PLANS/per-system-settings-hub.md](PLANS/per-system-settings-hub.md); feature
-  folder [features/per-system-hub/](features/per-system-hub/) (IA decisions
-  D1–D5). **Next: operator playtest, then S2 — Media domain.**
+  folder [features/per-system-hub/](features/per-system-hub/) (decisions D1–D5).
+  **Parked follow-ups** (PARKING_LOT 2026-06-14): "system" vs "platform"
+  terminology audit; re-gate the DevTools panel + move `devtools` out of default
+  features before any PUBLIC release; move per-game metadata into game-detail.
 
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
@@ -51,12 +59,13 @@ spanned every system but was filed under whichever core happened to be active.
     stranding) resolved; D1–D4 in
     [features/unified-nav/DECISIONS.md](features/unified-nav/DECISIONS.md).
     typecheck/lint/vitest(97)/build green.
-  - **Next: Pillar B** — unified panel structure/look on Settings
-    (PanelScaffold + control-row vocabulary + fix the stale HintBar labels),
-    engine-first by design (DECISIONS D3). Then Phase 2 (formalize the
-    `Dialog`/container scope + retire `Dialog.navigate` markers) and Phase 3
-    (themes / virtualized-grid + carousel adapters). Queued in
-    [NEXT.md](NEXT.md) HIGH band.
+  - **Pillar B ✅ delivered** by the Per-System Settings Hub arc
+    (`HubCard`/`HubGrid`/`PanelScaffold` + the engine-surface HintBar fix).
+    **Remaining phases (not yet started):** Phase 2 — formalize the spatial
+    scope into `Dialog` + `EngineManagerSurface` so every dialog inherits nav
+    for free + retire `Dialog.navigate`'s marker dependence; Phase 3 — Retroverse
+    tabs + thin adapters for the virtualized library grid + carousels; Phase 4 —
+    kiosk/arcade limited-button input pass. Queued in [NEXT.md](NEXT.md).
   - **Predecessor — Controller-Nav Coverage (Slices 1–3, 2026-06-13/14):**
     Slice 1 (Settings row-nav: `useSettingsRowFocusGroup` + select-overlay +
     slider-adjust + Y-reset) and Slice 2 (engine dialogs via `Dialog.navigate`)
