@@ -37,6 +37,36 @@ use serde::Serialize;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
+/// On-demand per-target verbose logging (DevTools → "backend log streams"). The
+/// `log` macros gate on the GLOBAL max level, so to surface debug/trace for a
+/// specific subsystem at runtime we raise the global max to Trace whenever any
+/// stream is enabled, then filter by these target prefixes in `enabled()`; with
+/// none enabled we restore the base level. Driven by the `set_log_streams`
+/// command.
+static VERBOSE_PREFIXES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static BASE_LEVEL: OnceLock<log::LevelFilter> = OnceLock::new();
+
+/// Replace the verbose target-prefix set (e.g. `["oa_shell::media"]`). Empty =
+/// back to the base level. Adjusts the global max level so the macros emit.
+pub fn set_verbose_prefixes(prefixes: Vec<String>) {
+    let base = BASE_LEVEL.get().copied().unwrap_or(log::LevelFilter::Info);
+    log::set_max_level(if prefixes.is_empty() {
+        base
+    } else {
+        log::LevelFilter::Trace
+    });
+    if let Ok(mut v) = VERBOSE_PREFIXES.lock() {
+        *v = prefixes;
+    }
+}
+
+fn target_is_verbose(target: &str) -> bool {
+    VERBOSE_PREFIXES
+        .lock()
+        .map(|v| v.iter().any(|p| target.starts_with(p.as_str())))
+        .unwrap_or(false)
+}
+
 /// Single log record surfaced to the frontend's `get_recent_logs` view.
 /// Both the file and the ring serialize from this shape; the format on
 /// disk is human-readable plain text, while the ring vends JSON via
@@ -110,7 +140,7 @@ pub struct MultiLogger {
 
 impl log::Log for MultiLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= self.min_level
+        metadata.level() <= self.min_level || target_is_verbose(metadata.target())
     }
 
     fn log(&self, record: &log::Record) {
@@ -207,6 +237,7 @@ pub fn init_early() -> LoggerHandle {
         min_level,
     };
     let _ = LOGGER.set(logger);
+    let _ = BASE_LEVEL.set(min_level);
     let static_ref: &'static MultiLogger = LOGGER.get().expect("logger just installed");
     let _ = log::set_logger(static_ref).map(|()| log::set_max_level(min_level));
 

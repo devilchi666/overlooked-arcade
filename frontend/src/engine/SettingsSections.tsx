@@ -50,7 +50,6 @@ import {
 import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
-import { PlatformMediaDialog } from "./PlatformMediaDialog";
 import DevToolsPanel from "./DevToolsPanel";
 import { usePlatform } from "@oa/platform/platformContext";
 import { setHelpDialog, setWizardOpen } from "@oa/platform/dialogs";
@@ -1116,58 +1115,9 @@ export const LibrarySettings: Component = () => {
   );
 };
 
-export const MediaSettings: Component = () => {
-  // Lift PlatformMediaDialog into the SETTINGS pane via the
-  // variant="panel" prop. Per-system art slots (banner / clear-logo /
-  // console / controller / fanart / marquee / photo / wheel /
-  // background) become editable directly here — same picker / clear
-  // affordances as the legacy Library Manager → Game media → Platform
-  // media… entry.
-  //
-  // Per-game cover art sync controls (libretro-thumbnails, region
-  // priority, identify ROMs, storage stats) stay on the SETTINGS →
-  // Library category's Game media tab — see the explanatory card
-  // below. We don't duplicate them here because:
-  //   1. They're already accessible from SETTINGS → Library → Game
-  //      media (the Library wrap that landed in the previous merge).
-  //   2. The Library Manager surface gives them better spatial
-  //      affordance — per-system rows with progress bars, sortable
-  //      region lists, etc. — which would clash with this category's
-  //      single-system focus.
-  return (
-    <div class="flex flex-col gap-4">
-      <SettingsCard title="Per-platform media">
-        <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
-          Pick a system, then assign images to each slot. The HOME
-          tab's hero, the LIBRARY tile header, and the kiosk wheel
-          all consume these files immediately — no rescan needed.
-          Operator-supplied art always wins over libretro-thumbnails
-          synced art.
-        </p>
-        <div class="-mx-5 -mb-5 mt-2">
-          <PlatformMediaDialog
-            variant="panel"
-            open
-            onClose={() => {}}
-          />
-        </div>
-      </SettingsCard>
-
-      <SettingsCard title="Per-game art (libretro-thumbnails sync)">
-        <p class="text-[0.75rem] text-(--color-oa-ink-dim)">
-          Per-game cover art syncs from the libretro-thumbnails repo
-          per system. Sync triggers, region priority, "only sync
-          identified" gate, hash-based ROM identification, and the
-          on-disk storage panel all live on the{" "}
-          <span class="text-(--color-system-accent)">Library</span>{" "}
-          category's <span class="text-(--color-oa-ink)">Game
-          media</span> tab — embedded above in SETTINGS →{" "}
-          <span class="text-(--color-system-accent)">Library</span>.
-        </p>
-      </SettingsCard>
-    </div>
-  );
-};
+// (Removed: the legacy `MediaSettings` category body — per-system art now lives
+// in Settings → Systems → a system → Media; the global media prefs stay on the
+// Library category's Game-media tab. Per-System Settings Hub arc S5.)
 
 type BiosEntryStatus = "ok" | "unknownHash" | "missing" | "error";
 
