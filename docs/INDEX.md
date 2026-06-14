@@ -38,6 +38,7 @@ Routing table. Read this first; it points to everything else.
 - [features/per-system-ui/](features/per-system-ui/) — Per-system custom UI. Stage 1 code arc complete; Stages 2+3 + content pilots pending.
 - [features/retroverse-ui/](features/retroverse-ui/) — Top-toolbar tab IA. 6/6 tabs operator-facing as of 2026-05-28. Design at [PLANS/retroverse-ui-rollout.md](PLANS/retroverse-ui-rollout.md).
 - [features/theming-substrate/](features/theming-substrate/) — Theming substrate (BigBox-style themes, engine vs theme territory inside one binary). 3-arc structure planned 2026-06-06; ARC 1 queued. Design at [PLANS/theming-substrate.md](PLANS/theming-substrate.md).
+- [features/unified-nav/](features/unified-nav/) — **Unified Navigation & Panel System** (planned 2026-06-14). Spatial-nav engine (universal focusable auto-discovery + geometry movement + layer scoping) + a unified input-agnostic panel structure/look (keyboard / controller / kiosk). Supersedes per-panel nav wiring. Design at [PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md). Predecessor: [features/nav-coverage/](features/nav-coverage/).
 
 **Shipped (archived):** sidebar, ui-polish, library-import, portable-install, media-taxonomy, controller-nav, background-jobs. See [_archive/INDEX.md](_archive/INDEX.md) for the manifest.
 
@@ -69,6 +70,7 @@ cores are currently being worked on.
 - [PLANS/theming-substrate.md](PLANS/theming-substrate.md) — 3-arc theming substrate plan (engine/theme territory split + `.oatheme` distribution; absorbs Kiosk plan's 4-layer substrate). Phases 1-2 + boundary-enforcement track + grab-bag drain shipped; Phase 4 next, then the enable-other-themes track (Phase 3/5/6 + ARC 2-3).
 - [PLANS/theming-grabbag-drain.md](PLANS/theming-grabbag-drain.md) — ✅ SHIPPED 2026-06-09. Drained `src/components/` to zero (→ `engine/` + `platform/components/`); six boundary lint zones enforced.
 - [PLANS/theming-platform-api-bridge.md](PLANS/theming-platform-api-bridge.md) — **Theming Phase 4** (queued 2026-06-09). Last platform/theme decoupling step: corral 351 raw `invoke()` calls (54 files / 222 commands) behind typed `platform/api/*` wrappers + an invoke-ban lint rule. Slice 1 (`settingsApi`) in NEXT.md HIGH band.
+- [PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md) — **Unified Navigation & Panel System** (2026-06-14). Spatial-nav engine (universal auto-discovery + geometry movement + layer scoping, reusing the Controller-Nav-Coverage activate layer) + a unified input-agnostic panel structure/look. Phase 1 (engine + prove on Settings) in NEXT.md HIGH band.
 
 **Shipped plans (archived):** background-jobs-and-progress-bar, collections-tab-retroverse, discover-tab-retroverse, game-info-panel, main-window, play-now-tab-retroverse, retroverse-flag-deprecation, settings-declutter-system-health, settings-tab-retroverse, system-info-panel-v1, system-wiring-plan. See [_archive/INDEX.md](_archive/INDEX.md).
 

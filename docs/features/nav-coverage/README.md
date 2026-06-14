@@ -1,8 +1,17 @@
 # Controller-Nav Coverage
 
-**Status:** Queued 2026-06-13 (operator's chosen next stream). A cross-cutting
-nav-wiring sweep — bring controller navigation to the engine-surface screens
-that the audit found keyboard/mouse-only.
+> **Superseded 2026-06-14 by the [Unified Navigation & Panel System](../unified-nav/)
+> arc** ([plan](../../PLANS/unified-navigation-and-panels.md)). The per-panel
+> wiring approach below didn't scale (most engine panels stayed inert), so it's
+> replaced by a spatial-nav engine with universal auto-discovery. This folder is
+> kept as **history + the reused activate layer**: Slices 1–2 (Settings row-nav,
+> engine dialogs) shipped + merged; Slice 3 (ImportWizard) folded into the
+> engine; the select-overlay / slider-adjust / Y-reset dispatch + the
+> [OSK plan](OSK_PLAN.md) are reused wholesale.
+
+**Status:** Slices 1–3 done (1–2 merged; 3 folded). Superseded by unified-nav.
+A cross-cutting nav-wiring sweep — bring controller navigation to the
+engine-surface screens that the audit found keyboard/mouse-only.
 
 ## Why this exists
 

@@ -11,14 +11,24 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Controller-Nav Coverage** — queued 2026-06-13, operator's chosen next
-  stream (starts at Slice 1: Settings category bodies). A nav-wiring sweep
-  bringing controller navigation to the engine-surface screens (Settings
-  bodies, metadata editor, dialogs) the audit found keyboard/mouse-only. The
-  Retroverse tabs + modals already navigate well. Feature folder
-  [features/nav-coverage/](features/nav-coverage/) (README + the audit it
-  builds from); queued in [NEXT.md](NEXT.md) HIGH band. **Layer 2 (nav
-  wiring)** — distinct from the controller-identity arc below (Layer 1).
+- **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
+  Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
+  engine panels stayed inert). Two pillars: a **spatial-navigation engine**
+  (universal focusable auto-discovery + geometry movement + layer scoping,
+  reusing the Slice-1/2/3 activate layer) **+** a unified, input-agnostic panel
+  structure/look (keyboard / controller / kiosk-arcade). Plan:
+  [PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md);
+  feature folder [features/unified-nav/](features/unified-nav/). **Phase 1
+  (next): engine + prove on the whole Settings surface** — queued in
+  [NEXT.md](NEXT.md) HIGH band.
+  - **Predecessor — Controller-Nav Coverage (Slices 1–3, 2026-06-13/14):**
+    Slice 1 (Settings row-nav: `useSettingsRowFocusGroup` + select-overlay +
+    slider-adjust + Y-reset) and Slice 2 (engine dialogs via `Dialog.navigate`)
+    **shipped + merged to main**. Slice 3 (ImportWizard) on
+    `nav-coverage-slice3`, **folded** into the engine (reusable `selector`
+    override + bare-button dispatch kept; per-panel markers superseded). OSK for
+    text entry deferred ([features/nav-coverage/OSK_PLAN.md](features/nav-coverage/OSK_PLAN.md)).
+    History: [features/nav-coverage/](features/nav-coverage/).
 
 - **Controller Identity & Auto-Config** — ✅ **SHIPPED + MERGED to main
   2026-06-13** (`808fc0b`). Full arc: stable VID/PID identity (both pollers) →

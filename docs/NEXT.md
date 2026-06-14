@@ -342,30 +342,32 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Controller-Nav Coverage — wire nav into the engine-surface gaps
+### Unified Navigation & Panel System — the substrate that makes panels "just work"
 
-**Queued 2026-06-13** (surfaced by the controller-identity nav-coverage audit).
-Full scope + prioritized gap table + the standard recipe:
-[features/nav-coverage/README.md](features/nav-coverage/README.md) →
-[features/controller-identity/NAV_COVERAGE_AUDIT_2026-06-12.md](features/controller-identity/NAV_COVERAGE_AUDIT_2026-06-12.md).
-The five Retroverse tabs + modals/menus already navigate well; this is a
-wiring sweep over the **engine surface** (Settings category bodies, the
-metadata editor, engine dialogs) which the audit found keyboard/mouse-only.
-This is **Layer 2** (nav wiring) — distinct from the just-shipped
-controller-identity arc (Layer 1, mapping). Incremental, one surface per
-slice, highest-traffic first:
-1. **Settings category bodies** (`frontend/src/engine/*Settings*` /
-   `PerSystemSettingsBody` / `MetadataSettingsBody`) — sidebar already
-   navigable; per-category forms need row nav. Recipe: `useDomQueryFocusGroup`
-   with a `[data-setting-row]`-style selector per body.
-2. **Engine dialogs / complex forms** (import steps, per-game properties,
-   Debug/Help) — `useDomQueryFocusGroup` + `useBackHandler` +
-   `captureFocusReturn` for modal scope.
-3. **Carousels** (Home / Play Now rails) — horizontal `useFocusGroup` per rail.
-4. **GameDetailPanel** panel-mode action buttons (PLAY / MORE) as a RIGHT
-   neighbour group.
-Verify each slice with the controller test window (Settings → Controllers) +
-an actual pad; keep nav tests green. **Operator's chosen next stream.**
+**Pivoted 2026-06-14** from the per-panel Controller-Nav Coverage sweep. The
+opt-in-twice model (mount a group + tag every control) doesn't scale — most
+engine panels stayed inert. Replaced by a **spatial-navigation engine**
+(universal focusable auto-discovery + geometry movement + layer scoping, reusing
+the Slice-1/2/3 activate layer) **plus** a unified, input-agnostic panel
+structure/look. Full design + phases:
+**[PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md)**;
+feature folder [features/unified-nav/](features/unified-nav/).
+
+**Phase 1 (start here): engine + prove on Settings.** Build the spatial engine
++ universal discovery; land it on the **whole Settings surface** including the
+embedded sub-pages inert today (Library Manager Views / Game media, Media,
+Metadata, System Health, Profile, About). Apply the Pillar-B panel scaffold to
+Settings as the reference adopter. Acceptance: every Settings sub-surface fully
+controller-navigable with **zero per-control wiring** + a consistent look. Then
+Phase 2 (roll scope into `Dialog` + `EngineManagerSurface`) → Phase 3
+(Retroverse tabs + grid/carousel adapters) → Phase 4 (kiosk/arcade input).
+
+**Predecessor — Controller-Nav Coverage Slices 1–3 (2026-06-13/14):** Slices
+1–2 (Settings row-nav + engine dialogs) **shipped + merged**; Slice 3
+(ImportWizard) on `nav-coverage-slice3`, **folded** into the engine (reusable
+infra kept; per-panel markers superseded). The activate layer (dispatch +
+select-overlay + slider-adjust + Y-reset + deferred OSK) is reused wholesale.
+History: [features/nav-coverage/](features/nav-coverage/).
 
 ### Controller Identity & Auto-Config — ✅ SHIPPED + MERGED 2026-06-13 (Phase 0→2.5 + label families + full SDL DB import)
 
