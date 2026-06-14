@@ -17,8 +17,8 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   all pass; frontend-only. Files: `engine/SettingsPanel.tsx`,
   `engine/SettingsSections.tsx`, `engine/LibraryManagerPage.tsx`, +
   `engine/{OrganizeLanding,CollectionsManager,SidebarSystemsCard,ImportSetupLanding,ExternalEmulatorsLanding}.tsx`.
-- 🟡 **Slice 2 — Library re-point** *(code-complete on
-  `feat/settings-ia-slice-2`; pending operator playtest + merge)* — Rust
+- ✅ **Slice 2 — Library re-point** *(MERGED to main 2026-06-14, operator
+  playtested clean — merge `59b0d52`)* — Rust
   `preview_repoint_folder` + `repoint_folder` commands in `library_db.rs`
   (filename-existence verify → in-place path rebase in a tx; folder + game ids
   stay stable so covers/metadata/favorites/play-time survive; sibling-folder
