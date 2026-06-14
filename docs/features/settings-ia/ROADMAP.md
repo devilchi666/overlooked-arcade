@@ -17,10 +17,16 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   all pass; frontend-only. Files: `engine/SettingsPanel.tsx`,
   `engine/SettingsSections.tsx`, `engine/LibraryManagerPage.tsx`, +
   `engine/{OrganizeLanding,CollectionsManager,SidebarSystemsCard,ImportSetupLanding,ExternalEmulatorsLanding}.tsx`.
-- 🟡 **Slice 2 — Library re-point** *(IN PROGRESS — backend + UI)* —
-  `repoint_folder(folder_id, new_path)` Rust command (verify same-ROMs → rebase
-  paths in place → update watcher) + `repointFolder` api wrapper + per-folder
-  "Move / relink…" UI.
+- 🟡 **Slice 2 — Library re-point** *(code-complete on
+  `feat/settings-ia-slice-2`; pending operator playtest + merge)* — Rust
+  `preview_repoint_folder` + `repoint_folder` commands in `library_db.rs`
+  (filename-existence verify → in-place path rebase in a tx; folder + game ids
+  stay stable so covers/metadata/favorites/play-time survive; sibling-folder
+  boundary respected) + `previewRepointFolder`/`repointFolder` api wrappers +
+  per-folder **"Relink…"** button → pick dir → preview (matched/missing confirm)
+  → commit → `refreshLibraryFolders` (re-registers the watcher via App.tsx's
+  effect) + `refreshGroups`. 2 new Rust tests (rebase+preserve, preview
+  matched/missing). cargo 839 + typecheck/lint/vitest(98) green.
 - ⬜ **Slice 3 — Themes/Appearance + declarative theme-settings schema** *(rides
   theming Phase 5)* — `ThemeManifest.settings_schema` + validator + generic
   `AppearancePanel` renderer; migrate global tile/sort/group/view-mode into

@@ -10,6 +10,7 @@ import {
 import * as libraryApi from "@oa/platform/api/libraryApi";
 import { confirm } from "@oa/platform/lib/confirm";
 import { pushToast } from "@oa/platform/lib/toast";
+import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   getOnlySyncIdentified,
   setOnlySyncIdentified,
@@ -153,6 +154,7 @@ const SortableFolderRow: Component<{
   id: string;
   folder: string;
   onRemove: (folderId: string) => void;
+  onRelink: (folderId: string) => void;
 }> = (props) => {
   const sortable = createSortable(props.id);
   return (
@@ -182,6 +184,17 @@ const SortableFolderRow: Component<{
       <span class="flex-1 truncate font-mono text-(--color-oa-ink)" title={props.folder}>
         {props.folder}
       </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          props.onRelink(props.id);
+        }}
+        title="Moved these ROMs? Point OA at the new folder — keeps all covers, metadata, favorites and play-time."
+        class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-white/[0.08] hover:text-(--color-oa-ink)"
+      >
+        Relink…
+      </button>
       <button
         type="button"
         onClick={(e) => {
@@ -288,6 +301,46 @@ const LibraryManagerPage: Component<Props> = (props) => {
   };
   function removeLibraryFolder(folderId: string) {
     void props.settings.removeLibraryFolderById(folderId);
+  }
+  /// Relink a moved folder: the user picks the new location, OA previews how
+  /// many tracked ROMs are present there, then rebases the folder + its games'
+  /// paths IN PLACE on confirm — covers / metadata / favorites / play-time are
+  /// keyed by game id, not path, so they all survive. The App.tsx watcher
+  /// effect (keyed on settings.libraryFolders()) re-registers automatically
+  /// after refreshLibraryFolders().
+  async function relinkFolder(folderId: string) {
+    const picked = await pickDirectory({ directory: true, multiple: false });
+    if (!picked || typeof picked !== "string") return;
+    let preview: libraryApi.RepointPreview;
+    try {
+      preview = await libraryApi.previewRepointFolder(folderId, picked);
+    } catch (e) {
+      pushToast("error", `Couldn't read that folder: ${e}`);
+      return;
+    }
+    const allFound = preview.matched === preview.total;
+    const sample = preview.sampleMissing.slice(0, 3).join(", ");
+    const message = allFound
+      ? `All ${preview.total} ROMs were found at the new location. Relink this folder? Covers, metadata, favorites and play-time are all kept.`
+      : `${preview.matched} of ${preview.total} ROMs found at the new location`
+        + (preview.missing > 0 ? ` (${preview.missing} missing${sample ? `, e.g. ${sample}` : ""})` : "")
+        + `. Relink anyway? Missing ROMs will point at the new folder until you re-scan.`;
+    if (!(await confirm(message, {
+      title: "Relink folder",
+      confirmLabel: "Relink",
+      danger: preview.matched === 0,
+    }))) return;
+    try {
+      const res = await libraryApi.repointFolder(folderId, picked);
+      await props.settings.refreshLibraryFolders();
+      await props.library.refreshGroups();
+      pushToast(
+        "success",
+        `Relinked — ${res.gamesUpdated} game${res.gamesUpdated === 1 ? "" : "s"} now point at the new folder.`,
+      );
+    } catch (e) {
+      pushToast("error", `Relink failed: ${e}`);
+    }
   }
   function resetLibraryRegionPriority() {
     void persistLibraryPrefs({
@@ -626,6 +679,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
                             id={row.id}
                             folder={row.path}
                             onRemove={removeLibraryFolder}
+                            onRelink={relinkFolder}
                           />
                         )}
                       </For>

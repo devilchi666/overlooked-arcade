@@ -152,6 +152,37 @@ export function setWatchedFolders(folders: string[], extensions: string[]): Prom
   return invoke("set_watched_folders", { folders, extensions });
 }
 
+/// Read-only preview of relinking a moved folder (Settings IA Slice 2): how
+/// many tracked ROMs are present at `newPath`. No DB write.
+export type RepointPreview = {
+  total: number;
+  matched: number;
+  missing: number;
+  sampleMissing: string[];
+  oldPath: string;
+  newPath: string;
+};
+
+/// Result of a committed relink: the updated folder row + rebased game count.
+export type RepointResult<T = LibraryFolderRow> = {
+  folder: T;
+  gamesUpdated: number;
+};
+
+/// Preview relinking folder `folderId` to `newPath` (same ROMs, new path).
+export function previewRepointFolder(folderId: string, newPath: string): Promise<RepointPreview> {
+  return invoke<RepointPreview>("preview_repoint_folder", { folderId, newPath });
+}
+
+/// Commit the relink: rebase the folder + its games' paths in place. Game ids
+/// stay stable so covers/metadata/favorites/play-time survive.
+export function repointFolder<T = LibraryFolderRow>(
+  folderId: string,
+  newPath: string,
+): Promise<RepointResult<T>> {
+  return invoke<RepointResult<T>>("repoint_folder", { folderId, newPath });
+}
+
 /// True when a directory has no importable content (pre-flight for add).
 export function directoryIsEmpty(path: string): Promise<boolean> {
   return invoke<boolean>("directory_is_empty", { path });

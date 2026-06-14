@@ -4,6 +4,28 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Slice 2 implemented (code-complete, pending playtest)
+
+- **Shipped (branch `feat/settings-ia-slice-2`, not yet merged):** Library
+  **re-point** (relink a moved folder). Rust: `RepointPreview`/`RepointResult` +
+  `preview_repoint_folder` (read-only relative-path existence verify) +
+  `repoint_folder` (one-tx in-place rebase of `folders.path` + every child
+  game's `file_path` by prefix; folder id + game ids stay stable; refuses
+  same-path + collision; sibling-folder boundary respected) in `library_db.rs`,
+  plus two Tauri commands in `main.rs`. Because covers/metadata/favorites/
+  play-time are keyed by game id (not path), the in-place UPDATE preserves them
+  all — proven by a test that seeds favorite + play-time via the real setters
+  and asserts they survive. Frontend: `previewRepointFolder`/`repointFolder`
+  wrappers + a per-folder **"Relink…"** button (pick dir → preview confirm with
+  matched/missing → commit → `refreshLibraryFolders` re-registers the watcher
+  via App.tsx's folder effect + `refreshGroups`). cargo `oa-shell` 839 (+2) +
+  typecheck/lint/vitest(98) green.
+- **Almost:** verify is filename-existence only (no hash spot-check — deferred;
+  enough to catch a wrong-folder pick).
+- **Next:** operator playtest (move a real folder → Relink → confirm zero
+  cover/favorite/play-time loss + watcher tracks new path) → merge. Then Slice 3
+  (declarative Appearance schema, rides theming Phase 5).
+
 ## 2026-06-14 — Slice 1 MERGED + Slice 2 started
 
 - **Shipped:** Slice 1 merged to main (`e71eef0`) after operator playtest passed.
