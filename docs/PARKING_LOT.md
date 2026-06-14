@@ -378,3 +378,8 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
   Why it came up: Controller Identity — operator flagged that cab makers route joysticks/buttons/spinners/trackballs through keyboard-encoder boards (iPAC, KADE, etc.) that emit keystrokes, not gamepad HID. Supporting cabinets means a whole input path that looks like a keyboard but is really N players' physical controls, plus spinner/trackball relative-axis handling.
   Why deferred: "major planning" per operator — a dedicated arc (encoder profiles, per-player key→canonical mapping, relative-axis devices) well beyond the current pad-identity work.
   Reconsider when: cabinet/arcade deployment becomes a target. Cross-ref: the keyboard mapping layer (`crates/oa-input` `KeyboardMapping`); controller-identity arc.
+
+- 2026-06-14 — Re-add DevTools access (dev-only) to Settings → About
+  Why it came up: operator noticed the WebView DevTools were removed by mistake a while back, and F12 (the old open-devtools key in some setups) now summons the engine surface. During development it's useful to open the WebView inspector.
+  What: add a dev-only "Open DevTools" affordance in Settings → About (Tauri `WebviewWindow.openDevtools()` / the `devtools` Cargo feature, gated to debug builds). Don't ship it in release.
+  Reconsider when: next time touching Settings → About / the engine About panel, or when debugging frontend issues warrants it. Tracked as a session task too.

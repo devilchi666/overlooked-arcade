@@ -77,6 +77,20 @@ describe("pickInDirection", () => {
     expect(pickInDirection(cur, candidates, "down")).toBeNull();
   });
 
+  it("prefers an aligned same-row neighbour over a diagonal one (the metadata Reset bug)", () => {
+    // A text input; a Reset button far to the right on the SAME row; and a
+    // full-width section header just BELOW whose center sits barely to the right.
+    // Right must land on the same-row Reset, not the diagonal header.
+    const input = toNavRect({ left: 156, top: 100, right: 296, bottom: 124 }); // cx 226
+    const resetSameRow = toNavRect({ left: 460, top: 100, right: 500, bottom: 124 }); // cx 480
+    const headerBelow = toNavRect({ left: 8, top: 130, right: 500, bottom: 154 }); // cx 254, below
+    const cands = [
+      { rect: headerBelow, item: "header" },
+      { rect: resetSameRow, item: "reset" },
+    ];
+    expect(pickInDirection(input, cands, "right")).toBe("reset");
+  });
+
   it("breaks ties by document order (first wins)", () => {
     const candidates = [
       { rect: box(0, 160), item: "first" },
