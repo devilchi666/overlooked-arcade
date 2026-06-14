@@ -20,7 +20,7 @@
 // content files relocate into engine/ next (migrating their own store
 // reads to usePlatform), after which the zone is enforced.
 
-import { createMemo, createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createSignal, For, Match, Show, Switch, type Component } from "solid-js";
 import { HintRegion } from "@oa/platform/nav";
 import {
   AboutSettings,
@@ -30,7 +30,6 @@ import {
   ExperimentalSettings,
   GameplaySettings,
   LibrarySettings,
-  MediaSettings,
   PerformanceSettings,
   PerSystemUiSettings,
   ProfileSettings,
@@ -38,11 +37,9 @@ import {
   ThemesSettings,
 } from "./SettingsSections";
 import { ControllersSettings } from "./ControllerTestPanel";
-import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
 import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
-import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -60,12 +57,10 @@ type CategoryId =
   | "experimental"
   | "themes"
   | "library"
-  | "media"
   | "metadata"
   | "system-health"
   | "profile"
-  | "about"
-  | "per-system";
+  | "about";
 
 type CategoryDef = {
   id: CategoryId;
@@ -186,22 +181,13 @@ const CATEGORIES: readonly CategoryDef[] = [
       "Where OA looks for ROMs. Each folder can scan-subfolders, treat-subfolders-as-systems, or watch for changes. The Library Manager surface (folders, views, game media) embeds directly in this category — Library Manager's full Library / Views / Game media tab strip is what you see when you click in.",
   },
   {
-    id: "media",
-    group: "content",
-    label: "Media",
-    glyph: "⊞",
-    description: "Per-platform art slots + audio assets.",
-    helpText:
-      "Banner / clear-logo / console / controller / fanart / marquee / photo / wheel / background per system. Operator-supplied art always wins over synced art.",
-  },
-  {
     id: "metadata",
     group: "content",
-    label: "Metadata",
+    label: "Game metadata",
     glyph: "✎",
-    description: "Curate game + system facts as an override layer.",
+    description: "Curate per-game facts as an override layer.",
     helpText:
-      "Edit the factual metadata OA shows — manufacturer / specs / hero copy per system today; game facts (year / developer / genre / …) as the editor grows. Edits store as a per-field override over the synced/baked values, so a reset always restores the source and a re-sync never clobbers your edit. Each field shows where its value came from + a one-click reset.",
+      "Edit the factual metadata OA shows per game (year / developer / genre / players / …). Edits store as a per-field override over the synced/baked values, so a reset always restores the source and a re-sync never clobbers your edit. Per-SYSTEM facts now live in Settings → Systems → a system → Metadata.",
   },
   {
     id: "system-health",
@@ -232,16 +218,6 @@ const CATEGORIES: readonly CategoryDef[] = [
   },
 ];
 
-const PER_SYSTEM_CATEGORY: CategoryDef = {
-  id: "per-system",
-  group: "system",
-  label: "Per-system",
-  glyph: "▥",
-  description: "Per-system overrides — display / rewind / shaders / default core / bindings.",
-  helpText:
-    "Per-system overrides override OA-wide defaults; per-game settings override per-system in turn. Empty rows fall through to the inherited value. Bindings + Core options open as focused editors since they're large enough to warrant their own dialog UI.",
-};
-
 const GROUP_LABELS: Record<CategoryGroup, string> = {
   "oa-wide": "OA-WIDE",
   content: "CONTENT",
@@ -262,40 +238,21 @@ const SettingsPanel: Component<Props> = (props) => {
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
     props.initialCategory ?? "display",
   );
-  // The category to return to when leaving the Metadata full-screen
+  // The category to return to when leaving the Game-metadata full-screen
   // takeover via its back button (D6). Recorded on entry so "‹ Settings"
   // lands you back where you came from.
-  const [prevCategory, setPrevCategory] = createSignal<CategoryId>("media");
+  const [prevCategory, setPrevCategory] = createSignal<CategoryId>("library");
   const selectCategory = (id: CategoryId) => {
     if (id === "metadata" && activeCategoryId() !== "metadata") {
       setPrevCategory(activeCategoryId());
     }
     setActiveCategoryId(id);
   };
-  const [perSystemExpanded, setPerSystemExpanded] = createSignal(false);
-  const [perSystemActiveId, setPerSystemActiveId] = createSignal<SystemId | null>(null);
-  const activeCategory = () => {
-    if (activeCategoryId() === "per-system") return PER_SYSTEM_CATEGORY;
-    return CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
-  };
+  const activeCategory = () =>
+    CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
 
   const categoriesInGroup = (group: CategoryGroup) =>
     CATEGORIES.filter((c) => c.group === group);
-
-  const allSystems = createMemo<{ id: SystemId; displayName: string }[]>(() => {
-    const ids = Object.keys(systemThemes) as SystemId[];
-    const rows = ids.map((id) => ({
-      id,
-      displayName: systemThemes[id]?.displayName ?? id,
-    }));
-    rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
-    return rows;
-  });
-
-  function pickSystem(id: SystemId) {
-    setPerSystemActiveId(id);
-    setActiveCategoryId("per-system");
-  }
 
   // Navigation: the spatial engine (pushed by EngineManagerSurface as one
   // layer over the whole takeover) auto-discovers every native control in the
@@ -371,74 +328,6 @@ const SettingsPanel: Component<Props> = (props) => {
             </section>
           )}
         </For>
-        <section class="mt-6 border-t border-white/5 pt-4">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              setPerSystemExpanded((v) => !v);
-            }}
-            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
-            aria-expanded={perSystemExpanded()}
-          >
-            <span
-              class="text-[0.55rem] text-(--color-oa-ink-dim)"
-              aria-hidden="true"
-            >
-              {perSystemExpanded() ? "▾" : "▸"}
-            </span>
-            <span class="text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-              Per-system
-            </span>
-            <span class="ml-auto text-[0.55rem] text-(--color-oa-ink-dim)/60">
-              {allSystems().length}
-            </span>
-          </button>
-          <Show
-            when={perSystemExpanded()}
-            fallback={
-              <p class="mt-1.5 px-2 text-[0.65rem] text-(--color-oa-ink-dim)/70">
-                Expand to pick a system and edit its override tier.
-              </p>
-            }
-          >
-            <ul class="mt-1 flex max-h-[420px] flex-col gap-0.5 overflow-y-auto">
-              <For each={allSystems()}>
-                {(sys) => {
-                  const isActive = () =>
-                    activeCategoryId() === "per-system" &&
-                    perSystemActiveId() === sys.id;
-                  return (
-                    <li>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.currentTarget.blur();
-                          pickSystem(sys.id);
-                        }}
-                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
-                        classList={{
-                          "bg-(--color-system-accent)/15 text-(--color-oa-ink)": isActive(),
-                          "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)":
-                            !isActive(),
-                        }}
-                        aria-current={isActive() ? "page" : undefined}
-                        data-system={sys.id}
-                        title={sys.displayName}
-                      >
-                        <span
-                          class="inline-block h-2 w-2 shrink-0 rounded-full bg-(--color-system-accent)"
-                          aria-hidden="true"
-                        />
-                        <span class="truncate">{sys.displayName}</span>
-                      </button>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
-          </Show>
-        </section>
       </aside>
 
       {/* data-nav-region: the spatial engine treats this whole center pane as
@@ -516,9 +405,6 @@ const SettingsPanel: Component<Props> = (props) => {
           <Match when={activeCategoryId() === "library"}>
             <LibrarySettings />
           </Match>
-          <Match when={activeCategoryId() === "media"}>
-            <MediaSettings />
-          </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />
           </Match>
@@ -527,13 +413,6 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "about"}>
             <AboutSettings />
-          </Match>
-          <Match when={activeCategoryId() === "per-system"}>
-            <PerSystemSettingsBody
-              systemId={perSystemActiveId}
-              settings={ctx.settings}
-              onOpenMetadata={() => selectCategory("metadata")}
-            />
           </Match>
         </Switch>
       </section>
