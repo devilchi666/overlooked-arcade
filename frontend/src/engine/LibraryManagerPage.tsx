@@ -159,7 +159,7 @@ const SortableFolderRow: Component<{
     <li
       ref={sortable.ref}
       style={transformStyle(sortable.transform)}
-      class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs transition"
+      class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-1.5 text-xs transition"
       classList={{
         "hover:border-white/15": !sortable.isActiveDraggable,
         "border-(--color-system-accent) bg-(--color-system-accent)/10 z-10 shadow-lg":
@@ -575,8 +575,11 @@ const LibraryManagerPage: Component<Props> = (props) => {
             <Show when={activeTab() === "library"}>
             <div class="space-y-3">
               <div class="flex items-center justify-between">
-                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
+                <h3 class="flex items-center gap-2 text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
                   Library folders
+                  <span class="rounded bg-white/[0.06] px-1.5 py-0.5 text-[0.6rem] tabular-nums">
+                    {props.settings.libraryFolders().length}
+                  </span>
                 </h3>
                 <div class="flex gap-2">
                   <button
@@ -616,7 +619,7 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 >
                   <DragDropSensors />
                   <SortableProvider ids={props.settings.libraryFolderRows().map((r) => r.id)}>
-                    <ul class="space-y-1">
+                    <ul class="max-h-56 space-y-1 overflow-y-auto pr-1">
                       <For each={props.settings.libraryFolderRows()}>
                         {(row) => (
                           <SortableFolderRow
