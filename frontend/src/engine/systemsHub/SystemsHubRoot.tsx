@@ -24,6 +24,7 @@ import { SystemHubDetail } from "./SystemHubDetail";
 import { domainLabel, type DomainId } from "./domains";
 import { DisplayVideoEditor } from "./domains/DisplayVideoEditor";
 import { CoreLauncherEditor } from "./domains/CoreLauncherEditor";
+import { MediaEditor } from "./domains/MediaEditor";
 
 type HubView =
   | { level: "grid" }
@@ -139,6 +140,9 @@ export const SystemsHubRoot: Component<{ settings: SettingsStore }> = (props) =>
               </Match>
               <Match when={domain() === "core"}>
                 <CoreLauncherEditor systemId={() => sysId()!} />
+              </Match>
+              <Match when={domain() === "media"}>
+                <MediaEditor systemId={() => sysId()!} />
               </Match>
             </Switch>
           </Match>

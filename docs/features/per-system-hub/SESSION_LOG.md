@@ -4,6 +4,32 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — S2: Media domain (artwork + game-data ops)
+
+- **Shipped (branch `feat/per-system-hub`):** the Media domain card is live.
+  - `systemsHub/gameMediaOps.ts` — `useGameMediaOps()` hook lifting the 6
+    per-system ops (Identify / Sync covers / Sync metadata / Clear metadata /
+    Refresh hash DB / Freshen) + busy state + the background-completion event
+    listeners out of LibraryManagerPage. Self-contained (reads
+    `usePlatform().library` + `useMedia()` + `useSystemsStats()`). Lives under
+    `engine/` because it depends on the engine stats hook (platform↛engine
+    boundary). Persistence + Tauri commands unchanged.
+  - `engine/PlatformMediaSlots.tsx` — extracted the per-system art-slot grid
+    (9 slots) from `PlatformMediaDialog`, controlled by a `systemId` accessor
+    (no internal `<select>`). `PlatformMediaDialog` refactored to consume it
+    (now just owns its system picker + Dialog chrome) — DRY, no behavior change.
+  - `systemsHub/domains/MediaEditor.tsx` — Artwork (`PlatformMediaSlots`) +
+    Game-data ops inline (5 op rows, accent/rose styling, busy-gated, count
+    summary; progress via the global BackgroundJobsBar). Media domain card
+    enabled + wired in `SystemsHubRoot`.
+  - typecheck + lint + vitest(97) + build green.
+- **Almost:** the "View N unidentified" affordance from the old Manage drawer
+  isn't surfaced in the hub yet (deferred — needs `UnidentifiedGamesDialog`
+  wiring); LibraryManagerPage still has its own op copy until S5.
+- **Next:** operator playtest (run an op from a system's Media card; set/clear
+  an art slot; confirm parity with the old Library→Game-media grid). Then
+  **S3 — Metadata extraction** (`SystemMetaForm` from `MetadataSettingsBody`).
+
 ## 2026-06-14 — Arc planned + S1 shipped (nav-stack proof + Display & Core)
 
 - **Shipped (branch `feat/per-system-hub`):**
