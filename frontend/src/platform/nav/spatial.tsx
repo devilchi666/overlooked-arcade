@@ -148,6 +148,20 @@ function regionOf(el: HTMLElement, container: HTMLElement): HTMLElement {
   return container;
 }
 
+/// The nearest scrollable ancestor of `el` within the layer, or null. Used to
+/// keep movement INSIDE a scrolling list (a long game list, a sidebar) until a
+/// true edge, instead of letting a header/sibling just outside the scrollport
+/// win because list rows scrolled out are geometrically "further".
+function nearestScrollContainer(el: HTMLElement, container: HTMLElement): HTMLElement | null {
+  let p = el.parentElement;
+  while (p && p !== container && p !== document.body) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+    p = p.parentElement;
+  }
+  return null;
+}
+
 // --- Focus application --------------------------------------------------
 
 /// Paint the engine's focus ring on `el` and record it as the current element.
@@ -269,7 +283,19 @@ function move(dir: NavDirection): void {
   const others = all.filter((x) => x.item !== cur);
   // Region-bias: candidates in the SAME region first.
   const inRegion = others.filter((x) => regionOf(x.item, c) === region);
-  let next = pickInDirection(curRect, inRegion, dir);
+  // Prefer candidates within cur's own scroll container first — keeps movement
+  // inside a scrolling list (game list / sidebar) until a true edge, instead of
+  // a header just outside the scrollport winning over rows that scrolled away.
+  const curScroll = nearestScrollContainer(cur, c);
+  let next: HTMLElement | null = null;
+  if (curScroll) {
+    next = pickInDirection(
+      curRect,
+      inRegion.filter((x) => curScroll.contains(x.item)),
+      dir,
+    );
+  }
+  if (!next) next = pickInDirection(curRect, inRegion, dir);
   let crossed = false;
   // LEFT/RIGHT cross to an adjacent region when there's no in-region neighbour.
   // UP/DOWN deliberately do NOT cross (locked nav model) — that's what stopped
@@ -280,12 +306,19 @@ function move(dir: NavDirection): void {
     crossed = next !== null;
   }
   if (SPATIAL_DEBUG()) {
+    const r = (el: HTMLElement | null): string => {
+      if (!el) return "∅";
+      const b = el.getBoundingClientRect();
+      return `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)}`;
+    };
     console.log("[oa-spatial] move", {
       dir,
       items: items.length,
       region: region === c ? "(layer)" : describe(region as HTMLElement),
       cur: describe(cur),
+      curRect: r(cur),
       next: describe(next),
+      nextRect: r(next),
       crossed,
     });
   }
