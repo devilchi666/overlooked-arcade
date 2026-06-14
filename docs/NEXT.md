@@ -342,6 +342,31 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### Settings IA Redesign — Slice 1: IA re-skeleton + Library/Organize split
+
+**Planned 2026-06-14** (operator design session). Re-cuts the engine Settings IA
+around user intent: new top-level **Themes/Appearance · Library · Organize My
+Collection · Import & Setup · External Emulators** groups, replacing the
+conflated Settings → Library 3-tab admin surface. Full design + 5 slices +
+boundaries: **[PLANS/settings-ia-redesign.md](PLANS/settings-ia-redesign.md)**;
+feature folder [features/settings-ia/](features/settings-ia/) (decisions D1–D7).
+
+**Slice 1 (start here; frontend-only, ~ moderate):** add the new groups/
+categories in `frontend/src/engine/SettingsPanel.tsx` (`CATEGORIES` +
+`GROUP_ORDER` + `Match` arms); split `engine/LibraryManagerPage.tsx` into a
+**Library** landing (folders/scan + region/version priority + cleanup) and a new
+**Organize** landing (mount `ViewsManagerTab`/`ViewEditorPane` + a new Collections
+manager over `platform/library/customCollections.ts` + the sidebar-systems
+visibility block moved out of Library); rebuild landings as card hubs reusing
+`engine/systemsHub/` primitives (`HubGrid`/`HubCard`/`PanelScaffold`); rename
+user-facing "Views" → "Sidebar layouts" (keep the `views` store as-is); stand up
+Import & Setup + External Emulators as card shells (Wizard CTA; re-home the
+CoresPage external-emulator section). Spatial-nav drives all new landings for
+free. Verify: typecheck + lint (boundary zones green) + vitest + `cargo test -p
+oa-shell` (frontend-only, unaffected) + operator playtest of the new IA. Later
+slices (re-point backend; declarative Appearance schema → theming Phase 5;
+External Emulators → VL Phase D; Import & Setup depth) ride their parent arcs.
+
 ### Unified Navigation & Panel System — the substrate that makes panels "just work"
 
 **Pivoted 2026-06-14** from the per-panel Controller-Nav Coverage sweep. The

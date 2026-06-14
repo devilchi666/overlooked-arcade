@@ -11,6 +11,21 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Settings IA Redesign** — planned 2026-06-14 (operator design session),
+  execution deferred (starts next session at **Slice 1**). Re-cuts the engine
+  Settings IA around user intent: new top-level **Themes/Appearance · Library ·
+  Organize My Collection · Import & Setup · External Emulators** groups, replacing
+  the conflated Settings → Library 3-tab admin surface. Key calls (D1–D7):
+  appearance = theme territory surfaced in an engine Themes/Appearance tab via a
+  **declarative per-theme settings schema** (rides theming Phase 5); Library gains
+  **re-point** (relink a moved folder — verify same-ROMs, rebase paths in place;
+  no on-disk file ops, the operator's external organizer owns those); "Views"
+  renamed + moved with Collections into Organize. Sliced; Slice 1 (IA re-skeleton
+  + Library/Organize split) is frontend-only + low-risk. Plan
+  [PLANS/settings-ia-redesign.md](PLANS/settings-ia-redesign.md); feature folder
+  [features/settings-ia/](features/settings-ia/). Slice 1 queued in
+  [NEXT.md](NEXT.md) HIGH band.
+
 - **Per-System Settings Hub** — ✅ **COMPLETE + MERGED to main 2026-06-14**
   (operator playtested clean). Consolidated ALL per-system settings (was
   scattered across the Per-system / Media / Metadata categories + the
