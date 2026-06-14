@@ -4,6 +4,30 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Metadata IA refinement: Platform vs Game metadata + HintBar fix
+
+- **Shipped (branch `feat/per-system-metadata-split`):** per operator, per-game
+  metadata now lives **under each system**, and the system's metadata splits in
+  two clearly-labelled cards.
+  - Hub: the single "Metadata" domain → **two** cards: **Platform Metadata**
+    (console facts, `SystemMetaForm`) + **Game Metadata** (per-game facts for
+    THIS system's games). `MetadataGamePane` gained `lockedSystemId` (hides the
+    all-systems picker, filters to the system); new
+    `GameMetadataEditor` + `PlatformMetadataEditor` (renamed from MetadataEditor).
+  - **Removed the standalone "Game metadata" Settings category** + the
+    `MetadataSettingsBody` takeover (deleted) — per-game metadata is no longer a
+    top-level entry; it's reached via Systems → a system → Game Metadata.
+  - **HintBar fixed** on the engine surface: the stale "Switch region" / "Prev
+    tab" / "Search" labels replaced with the real spatial verbs (Navigate /
+    Select / Back / Reset).
+  - typecheck + lint + vitest(98) + build green; frontend-only.
+- **Almost:** "Platform" vs "System" terminology is now inconsistent (ids/keys
+  say "system", the new card says "Platform") — parked an audit TODO
+  (PARKING_LOT 2026-06-14) to pick one term UI-wide.
+- **Next:** operator playtest (Systems → a system shows Platform Metadata + Game
+  Metadata cards; Game Metadata lists only that system's games; no standalone
+  Game-metadata category; HintBar reads correctly).
+
 ## 2026-06-14 — DevTools: on-demand backend log streams (media / audio / renderer)
 
 - **Shipped (branch `feat/per-system-hub`):** the noisy logging in those three
