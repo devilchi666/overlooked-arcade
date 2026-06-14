@@ -11532,11 +11532,11 @@ fn set_log_streams(streams: Vec<String>) {
 /// the button. Opens on the first known window, falling back to any window.
 #[tauri::command]
 fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
-    // Tauri auto-enables the inspector in debug builds; `open_devtools` only
-    // exists under `debug_assertions` (or the tauri `devtools` feature, which we
-    // don't ship in release). Gate on debug so release builds compile + cleanly
-    // reject the call.
-    #[cfg(debug_assertions)]
+    // `open_devtools` exists when the inspector is compiled in: debug builds, or
+    // any build with the tauri `devtools` feature (our `devtools` feature, on by
+    // default — so the operator's `cargo tauri build` includes it). The
+    // non-inspector branch keeps a no-default-feature release compiling.
+    #[cfg(any(debug_assertions, feature = "devtools"))]
     {
         for label in ["library", "main"] {
             if let Some(w) = app.get_webview_window(label) {
@@ -11550,7 +11550,7 @@ fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
         }
         Err("no webview window to open devtools on".to_string())
     }
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(any(debug_assertions, feature = "devtools")))]
     {
         let _ = app;
         Err("DevTools are not available in this build".to_string())

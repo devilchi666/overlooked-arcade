@@ -10,6 +10,11 @@ export const PanelScaffold: Component<{
   system?: SystemId;
   title: string;
   subtitle?: string;
+  /// When true the body is a bounded `flex-1` region with NO outer scroll —
+  /// for children that manage their OWN internal scrolling (e.g. the
+  /// game-metadata pane's 3-pane layout with a scrolling game list). The
+  /// default body adds `overflow-y-auto` for simple top-to-bottom content.
+  fill?: boolean;
   children: JSX.Element;
 }> = (props) => (
   <div class="flex h-full min-h-0 flex-col gap-4" data-system={props.system}>
@@ -27,7 +32,14 @@ export const PanelScaffold: Component<{
         </Show>
       </div>
     </header>
-    <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">{props.children}</div>
+    <Show
+      when={props.fill}
+      fallback={
+        <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">{props.children}</div>
+      }
+    >
+      <div class="flex min-h-0 flex-1">{props.children}</div>
+    </Show>
   </div>
 );
 

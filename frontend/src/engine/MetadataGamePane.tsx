@@ -84,9 +84,13 @@ const GamePicker: Component<{
   activeId: Accessor<string | null>;
   overridden: Accessor<Set<string>>;
   onPick: (group: GameGroupInfo) => void;
+  /// When set, the picker is locked to this system: the system dropdown is
+  /// hidden and the list shows only that system's games (Systems hub → a
+  /// system → Game Metadata).
+  lockedSystemId?: SystemId;
 }> = (props) => {
   const [query, setQuery] = createSignal("");
-  const [systemFilter, setSystemFilter] = createSignal<string>("");
+  const [systemFilter, setSystemFilter] = createSignal<string>(props.lockedSystemId ?? "");
   const [editedOnly, setEditedOnly] = createSignal(false);
 
   const filtered = createMemo(() => {
@@ -114,16 +118,18 @@ const GamePicker: Component<{
         class="w-full rounded-md border border-white/10 bg-black/40 px-3 py-1.5 text-sm text-(--color-oa-ink) placeholder:text-(--color-oa-ink-dim)/50 focus:border-(--color-system-accent)/60 focus:outline-none"
       />
       <div class="flex items-center gap-2">
-        <select
-          value={systemFilter()}
-          onChange={(e) => setSystemFilter(e.currentTarget.value)}
-          class="min-w-0 flex-1 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
-        >
-          <option value="">All systems</option>
-          <For each={props.systems}>
-            {(s) => <option value={s.id}>{s.displayName}</option>}
-          </For>
-        </select>
+        <Show when={!props.lockedSystemId}>
+          <select
+            value={systemFilter()}
+            onChange={(e) => setSystemFilter(e.currentTarget.value)}
+            class="min-w-0 flex-1 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-(--color-oa-ink) focus:border-(--color-system-accent)/60 focus:outline-none"
+          >
+            <option value="">All systems</option>
+            <For each={props.systems}>
+              {(s) => <option value={s.id}>{s.displayName}</option>}
+            </For>
+          </select>
+        </Show>
         <button
           type="button"
           onClick={(e) => {
@@ -315,6 +321,8 @@ const MetadataGamePane: Component<{
   groups: GameGroupInfo[];
   /// Systems that actually have games — the picker's filter dropdown.
   systems: { id: SystemId; displayName: string }[];
+  /// When set, lock the picker to this system (Systems hub → Game Metadata).
+  lockedSystemId?: SystemId;
 }> = (props) => {
   const groupList = () => props.groups;
 
@@ -591,6 +599,7 @@ const MetadataGamePane: Component<{
         activeId={activeId}
         overridden={overriddenSet}
         onPick={setSelected}
+        lockedSystemId={props.lockedSystemId}
       />
 
       <Show

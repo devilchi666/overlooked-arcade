@@ -20,7 +20,7 @@
 // content files relocate into engine/ next (migrating their own store
 // reads to usePlatform), after which the zone is enforced.
 
-import { createSignal, For, Match, Show, Switch, type Component } from "solid-js";
+import { createSignal, For, Match, Switch, type Component } from "solid-js";
 import { HintRegion } from "@oa/platform/nav";
 import {
   AboutSettings,
@@ -37,7 +37,6 @@ import {
   ThemesSettings,
 } from "./SettingsSections";
 import { ControllersSettings } from "./ControllerTestPanel";
-import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
 import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
 import { usePlatform } from "@oa/platform/platformContext";
@@ -57,7 +56,6 @@ type CategoryId =
   | "experimental"
   | "themes"
   | "library"
-  | "metadata"
   | "system-health"
   | "profile"
   | "about";
@@ -181,15 +179,6 @@ const CATEGORIES: readonly CategoryDef[] = [
       "Where OA looks for ROMs. Each folder can scan-subfolders, treat-subfolders-as-systems, or watch for changes. The Library Manager surface (folders, views, game media) embeds directly in this category — Library Manager's full Library / Views / Game media tab strip is what you see when you click in.",
   },
   {
-    id: "metadata",
-    group: "content",
-    label: "Game metadata",
-    glyph: "✎",
-    description: "Curate per-game facts as an override layer.",
-    helpText:
-      "Edit the factual metadata OA shows per game (year / developer / genre / players / …). Edits store as a per-field override over the synced/baked values, so a reset always restores the source and a re-sync never clobbers your edit. Per-SYSTEM facts now live in Settings → Systems → a system → Metadata.",
-  },
-  {
     id: "system-health",
     group: "system",
     label: "System Health",
@@ -238,16 +227,6 @@ const SettingsPanel: Component<Props> = (props) => {
   const [activeCategoryId, setActiveCategoryId] = createSignal<CategoryId>(
     props.initialCategory ?? "display",
   );
-  // The category to return to when leaving the Game-metadata full-screen
-  // takeover via its back button (D6). Recorded on entry so "‹ Settings"
-  // lands you back where you came from.
-  const [prevCategory, setPrevCategory] = createSignal<CategoryId>("library");
-  const selectCategory = (id: CategoryId) => {
-    if (id === "metadata" && activeCategoryId() !== "metadata") {
-      setPrevCategory(activeCategoryId());
-    }
-    setActiveCategoryId(id);
-  };
   const activeCategory = () =>
     CATEGORIES.find((c) => c.id === activeCategoryId()) ?? CATEGORIES[0]!;
 
@@ -262,28 +241,23 @@ const SettingsPanel: Component<Props> = (props) => {
   // <select>/<input>/<button> directly).
 
   return (
-    <Show
-      when={activeCategoryId() !== "metadata"}
-      fallback={
-        <MetadataSettingsBody onBack={() => setActiveCategoryId(prevCategory())} />
-      }
-    >
     <div
       class="grid h-full w-full"
       style={{
         "grid-template-columns": "260px minmax(0,1fr)",
       }}
     >
+      {/* Hints reflect the spatial-nav model that drives this surface:
+          direction = move anywhere, Confirm = select, Back = up a level,
+          Y = reset a row. (No "switch region" / "tab" — the engine moves by
+          geometry, not regions/tabs.) */}
       <HintRegion
         hints={{
-          dpad: "Switch region",
+          dpad: "Navigate",
           stick: "Navigate",
           Confirm: "Select",
           Back: "Back",
-          Secondary: "Search",
           Tertiary: "Reset",
-          PrevSection: "Prev tab",
-          NextSection: "Next tab",
         }}
       />
 
@@ -307,7 +281,7 @@ const SettingsPanel: Component<Props> = (props) => {
                           type="button"
                           onClick={(e) => {
                             e.currentTarget.blur();
-                            selectCategory(category.id);
+                            setActiveCategoryId(category.id);
                           }}
                           class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                           classList={{
@@ -417,7 +391,6 @@ const SettingsPanel: Component<Props> = (props) => {
         </Switch>
       </section>
     </div>
-    </Show>
   );
 };
 

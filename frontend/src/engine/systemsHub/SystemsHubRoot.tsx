@@ -25,7 +25,8 @@ import { domainLabel, type DomainId } from "./domains";
 import { DisplayVideoEditor } from "./domains/DisplayVideoEditor";
 import { CoreLauncherEditor } from "./domains/CoreLauncherEditor";
 import { MediaEditor } from "./domains/MediaEditor";
-import { MetadataEditor } from "./domains/MetadataEditor";
+import { PlatformMetadataEditor } from "./domains/PlatformMetadataEditor";
+import { GameMetadataEditor } from "./domains/GameMetadataEditor";
 import { InputEditor } from "./domains/InputEditor";
 import { BiosEditor } from "./domains/BiosEditor";
 
@@ -147,8 +148,11 @@ export const SystemsHubRoot: Component<{ settings: SettingsStore }> = (props) =>
               <Match when={domain() === "media"}>
                 <MediaEditor systemId={() => sysId()!} />
               </Match>
-              <Match when={domain() === "metadata"}>
-                <MetadataEditor systemId={() => sysId()!} />
+              <Match when={domain() === "platform-metadata"}>
+                <PlatformMetadataEditor systemId={() => sysId()!} />
+              </Match>
+              <Match when={domain() === "game-metadata"}>
+                <GameMetadataEditor systemId={() => sysId()!} />
               </Match>
               <Match when={domain() === "input"}>
                 <InputEditor systemId={() => sysId()!} />

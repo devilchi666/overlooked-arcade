@@ -54,13 +54,17 @@ function readFlag(key: string): boolean {
 }
 
 const DevToolsPanel: Component = () => {
-  // One signal mirroring all flags; re-read on each toggle so the buttons
-  // reflect external changes (e.g. set from the console) on next interaction.
-  const [, setTick] = createSignal(0);
-  const isOn = (key: string): boolean => readFlag(key);
+  // Reactive mirror of the global flags — the buttons read THIS (a signal), so
+  // they actually re-render on toggle. The global is the source the loggers
+  // read; we write both. Seeded from the current globals at mount.
+  const [flags, setFlags] = createSignal<Record<string, boolean>>(
+    Object.fromEntries(DEBUG_FLAGS.map((f) => [f.key, readFlag(f.key)])),
+  );
+  const isOn = (key: string): boolean => flags()[key] === true;
   const toggle = (key: string): void => {
-    (globalThis as Record<string, unknown>)[key] = !readFlag(key);
-    setTick((n) => n + 1);
+    const next = !isOn(key);
+    (globalThis as Record<string, unknown>)[key] = next;
+    setFlags((prev) => ({ ...prev, [key]: next }));
   };
 
   // Backend log streams — the active set is sent to Rust on every change.
