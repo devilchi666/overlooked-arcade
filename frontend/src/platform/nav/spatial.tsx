@@ -505,12 +505,28 @@ if (typeof window !== "undefined") {
       return;
     }
 
-    // In a text field, leave horizontal arrows + chars + Enter to the field;
-    // Up/Down still navigate OUT of it (single-line fields rarely need them).
+    // In a text field, leave chars + Enter to the field. Up/Down navigate OUT
+    // (single-line fields rarely need them). Left/Right edit the caret UNLESS
+    // it's already at the edge — then they navigate out (caret-edge escape), so
+    // a focusable sitting beside an input (e.g. a per-field Reset button) is
+    // reachable by keyboard too. Inputs that don't support selection (number)
+    // report null → treated as at-edge so escape still works.
     if (editable) {
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         move(e.key === "ArrowUp" ? "up" : "down");
+        return;
+      }
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && t instanceof HTMLInputElement) {
+        const len = t.value.length;
+        const start = t.selectionStart;
+        const end = t.selectionEnd;
+        const atStart = start === null || (start === 0 && end === 0);
+        const atEnd = start === null || (start === len && end === len);
+        if ((e.key === "ArrowLeft" && atStart) || (e.key === "ArrowRight" && atEnd)) {
+          e.preventDefault();
+          move(e.key === "ArrowLeft" ? "left" : "right");
+        }
       }
       return;
     }

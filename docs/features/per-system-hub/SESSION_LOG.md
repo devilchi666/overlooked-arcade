@@ -4,6 +4,29 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — S3: Metadata domain (SystemMetaForm extraction)
+
+- **Shipped (branch `feat/per-system-hub`):** the Metadata domain card is live.
+  - `engine/SystemMetaForm.tsx` — the per-system metadata editor extracted from
+    the 952-line `MetadataSettingsBody`: keyed by a single `systemId` accessor,
+    owns the merged/curated/override resources + optimistic debounced autosave
+    (mid-switch guard preserved) + the grouped `MetaField` form + `MetaField` /
+    `LivePreviewHero` / `PeripheralEditor` sub-components + `FIELD_GROUPS` +
+    provenance (`inheritedFor`/`effective`). Props: `systemId`, optional
+    `showPreview`, `onSaved`. Persistence unchanged (`*_system_info_override`).
+  - `MetadataSettingsBody` slimmed to the takeover shell (back · Systems/Games
+    switch · preview toggle · `SystemList` rail) + `<SystemMetaForm>` (onSaved →
+    refetch the rail's "edited" dots). Per-GAME (`MetadataGamePane`) untouched +
+    OUT of the hub (DECISIONS D5).
+  - `systemsHub/domains/MetadataEditor.tsx` = `SystemMetaForm` + live preview in
+    a `PanelScaffold`. Metadata domain card enabled + wired in `SystemsHubRoot`.
+  - typecheck + lint + vitest(97) + build green.
+- **Almost:** the takeover's Games half still exists (per-game metadata) — stays;
+  only the System half migrates. Takeover removed in S5 after parity.
+- **Next:** operator playtest (edit a system's facts from its Metadata card →
+  autosave; confirm the old Metadata takeover shows the same values). Then
+  **S4 — BIOS + Input** domains.
+
 ## 2026-06-14 — S2: Media domain (artwork + game-data ops)
 
 - **Shipped (branch `feat/per-system-hub`):** the Media domain card is live.

@@ -54,9 +54,19 @@ function axisGap(aMin: number, aMax: number, bMin: number, bMax: number): number
 }
 
 /// How strongly cross-axis misalignment is penalised relative to primary-axis
-/// distance. >1 keeps movement "honest" (a neighbour directly in line is
-/// preferred over a closer-but-diagonal one). Tunable; 3 feels right on forms.
+/// distance among candidates that still OVERLAP on the cross axis. >1 keeps
+/// movement "honest" (a neighbour more directly in line is preferred over a
+/// closer-but-slightly-offset one). Tunable; 3 feels right on forms/grids.
 const CROSS_WEIGHT = 3;
+
+/// Flat penalty added when a candidate does NOT overlap the current element on
+/// the cross axis at all (a "diagonal" target). Larger than any on-screen
+/// primary distance, so an aligned same-row/-column neighbour ALWAYS beats a
+/// diagonal one — e.g. Right from a form input lands on the same-row Reset
+/// button, never a full-width section header sitting just below. Non-overlapping
+/// candidates are still reachable when nothing aligned exists; they just rank
+/// behind everything aligned.
+const MISALIGN_PENALTY = 1_000_000;
 
 /// Score a candidate for a move in `dir` from `cur`. Returns null when the
 /// candidate is not ahead in that direction (i.e. not a legal target). Lower
@@ -91,7 +101,7 @@ export function scoreCandidate(
       cross = axisGap(cur.top, cur.bottom, cand.top, cand.bottom);
       break;
   }
-  return primary + cross * CROSS_WEIGHT;
+  return primary + cross * CROSS_WEIGHT + (cross > 0 ? MISALIGN_PENALTY : 0);
 }
 
 /// Pick the best item to move to in `dir` from `cur`. `candidates` should be in

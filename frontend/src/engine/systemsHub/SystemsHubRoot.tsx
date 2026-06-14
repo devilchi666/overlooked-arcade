@@ -25,6 +25,7 @@ import { domainLabel, type DomainId } from "./domains";
 import { DisplayVideoEditor } from "./domains/DisplayVideoEditor";
 import { CoreLauncherEditor } from "./domains/CoreLauncherEditor";
 import { MediaEditor } from "./domains/MediaEditor";
+import { MetadataEditor } from "./domains/MetadataEditor";
 
 type HubView =
   | { level: "grid" }
@@ -143,6 +144,9 @@ export const SystemsHubRoot: Component<{ settings: SettingsStore }> = (props) =>
               </Match>
               <Match when={domain() === "media"}>
                 <MediaEditor systemId={() => sysId()!} />
+              </Match>
+              <Match when={domain() === "metadata"}>
+                <MetadataEditor systemId={() => sysId()!} />
               </Match>
             </Switch>
           </Match>
