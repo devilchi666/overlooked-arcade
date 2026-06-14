@@ -27,27 +27,20 @@ import {
 } from "@thisbeyond/solid-dnd";
 import type { LibraryStore } from "@oa/platform/library/store";
 import { useMedia } from "@oa/platform/library/media";
-import type { LayoutStore } from "@oa/platform/layout/state";
 import type { SettingsStore } from "@oa/platform/settings/store";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import type { ViewsStore } from "@oa/platform/views/store";
-import { collectHiddenContainers, findNode } from "@oa/platform/views/resolver";
-import { platformNodeIdFor } from "@oa/platform/views/defaults";
 import SettingRow, { selectClass } from "@oa/platform/components/SettingRow";
-import ViewsManagerTab from "./ViewsManagerTab";
 import { ImportArtPackDialog } from "./ImportArtPackDialog";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
 
 type Props = {
   settings: SettingsStore;
   library: LibraryStore;
-  layout: LayoutStore;
-  views: ViewsStore;
   onAddLibraryFolder: () => void;
   onRescanLibraryFolders: () => void;
   /// Optional deep-link target — chooses which tab the page lands on
   /// when first mounted. Falls back to the persisted last-visited tab.
-  initialTab?: "library" | "media" | "views";
+  initialTab?: "library" | "media";
 };
 
 type MediaStorageStats = {
@@ -209,11 +202,10 @@ const SortableFolderRow: Component<{
 // Cores moved to the dedicated CoresPage. Library + Media stay full-page
 // because of the wide editors (folder lists, per-system sync rows with
 // progress bars, region priority editor, disk-usage panel).
-const TABS = ["library", "views", "media"] as const;
+const TABS = ["library", "media"] as const;
 type TabId = typeof TABS[number];
 const TAB_LABELS: Record<TabId, string> = {
   library:      "Library",
-  views:        "Views",
   media:        "Game media",
 };
 // TAB_HINTS dropped 2026-05-31 alongside the page-mode header that
@@ -425,9 +417,6 @@ const LibraryManagerPage: Component<Props> = (props) => {
                 resources (createResource etc. are tied to props.open, so
                 this is purely a visibility toggle). */}
             <section class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
-            <Show when={activeTab() === "views"}>
-              <ViewsManagerTab views={props.views} library={props.library} />
-            </Show>
             <Show when={activeTab() === "media"}>
             <div class="space-y-5">
               {/* Header — page title + top-level entry-point buttons. */}
@@ -641,110 +630,6 @@ const LibraryManagerPage: Component<Props> = (props) => {
                   </SortableProvider>
                 </DragDropProvider>
               </Show>
-
-              {/* --- Sidebar systems (LaunchBox-equivalent) --- */}
-              <div class="mt-6 space-y-2">
-                <h3 class="text-[0.65rem] uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
-                  Sidebar systems
-                </h3>
-                <label class="flex items-center gap-2 text-xs text-(--color-oa-ink)">
-                  <input
-                    type="checkbox"
-                    checked={props.layout.autoHideEmptySystems()}
-                    onChange={(e) => props.layout.setAutoHideEmptySystems(e.currentTarget.checked)}
-                  />
-                  <span>Auto-hide systems with no games</span>
-                </label>
-
-                {/* Hidden containers (v2.3) — operator can right-click a
-                    container in the sidebar tree to hide it; this surfaces
-                    the un-hide affordance so it's not a one-way trip. Walks
-                    the active view at any depth so v3+ nested-container
-                    views work too. Renders only when at least one container
-                    is hidden. */}
-                <Show when={collectHiddenContainers(props.views.activeView()?.root ?? {
-                  id: "_empty", label: "", rule: null, accent: null, art: null, hidden: false, children: []
-                }).length > 0}>
-                  <div class="mt-4 space-y-1">
-                    <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                      Hidden containers
-                    </p>
-                    <ul class="space-y-1">
-                      <For each={collectHiddenContainers(props.views.activeView()?.root ?? {
-                        id: "_empty", label: "", rule: null, accent: null, art: null, hidden: false, children: []
-                      })}>
-                        {(container) => (
-                          <li class="flex items-center justify-between gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
-                            <span class="flex-1 truncate text-(--color-oa-ink-dim)">
-                              {container.label}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.currentTarget.blur();
-                                props.views.setNodeHidden(container.id, false);
-                              }}
-                              class="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-system-accent)/15 hover:text-(--color-oa-ink)"
-                            >
-                              Show
-                            </button>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </div>
-                </Show>
-                <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
-                  Uncheck a system to hide it from the left sidebar. Hidden systems still live
-                  in the registry; per-system files (bindings, settings) are preserved.
-                </p>
-                <ul class="space-y-1">
-                  <For each={Object.keys(systemThemes) as SystemId[]}>
-                    {(id) => {
-                      const theme = systemThemes[id];
-                      const count = () =>
-                        props.library.state.entries.filter((e) => e.systemId === id && !e.seed).length;
-                      /// PR-γ source of truth is the active view's per-leaf
-                      /// `hidden` flag; the legacy flat `layout.hiddenSystems`
-                      /// set is checked as a fallback so systems not present
-                      /// in the active view's tree (custom v3+ views) still
-                      /// honor the operator's hide intent. Writes go to both
-                      /// to keep the two representations consistent during
-                      /// the soft-migration window.
-                      const hidden = () => {
-                        const active = props.views.activeView();
-                        if (active) {
-                          const node = findNode(active, platformNodeIdFor(id));
-                          if (node && "kind" in node && node.kind === "platform" && node.hidden) {
-                            return true;
-                          }
-                        }
-                        return props.layout.hiddenSystems().includes(id);
-                      };
-                      return (
-                        <li class="flex items-center gap-3 rounded border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={!hidden()}
-                            onChange={(e) => {
-                              const list = props.layout.hiddenSystems();
-                              const show = e.currentTarget.checked;
-                              if (show) {
-                                props.layout.setHiddenSystems(list.filter((s) => s !== id));
-                              } else if (!list.includes(id)) {
-                                props.layout.setHiddenSystems([...list, id]);
-                              }
-                              props.views.setNodeHidden(platformNodeIdFor(id), !show);
-                            }}
-                          />
-                          <span class="flex-1 truncate text-(--color-oa-ink)">{theme.displayName}</span>
-                          <span class="text-(--color-oa-ink-dim) tabular-nums">{count()}</span>
-                        </li>
-                      );
-                    }}
-                  </For>
-                </ul>
-              </div>
 
               {/* --- Region & version priority --- */}
               <div class="mt-6 space-y-2">

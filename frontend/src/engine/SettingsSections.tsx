@@ -52,7 +52,7 @@ import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import DevToolsPanel from "./DevToolsPanel";
 import { usePlatform } from "@oa/platform/platformContext";
-import { setHelpDialog, setWizardOpen } from "@oa/platform/dialogs";
+import { setHelpDialog } from "@oa/platform/dialogs";
 import { addLibraryFolder, rescanLibraryFolders } from "@oa/platform/libraryAdmin";
 import SettingRow from "@oa/platform/components/SettingRow";
 import {
@@ -1064,53 +1064,21 @@ export const CoresCategorySettings: Component = () => {
 // --- Library / Media / BIOS — informational cards ---------------------
 
 export const LibrarySettings: Component = () => {
-  // Embed LibraryManagerPage's Library / Views / Game media tab
-  // strip directly in the SETTINGS pane. The SETTINGS sidebar
-  // already provides navigation; the category header above already
-  // says "Library". The "Game media" tab also shows up here
-  // intentionally — its content is more capable than the SETTINGS →
-  // Media category (which stays as informational placeholder until
-  // PlatformMediaDialog gets its own panel-mode lift), and
-  // operators expect Library Manager's Media tab to keep working
-  // from this surface.
-  //
-  // Above the embedded Library Manager: the Phase 1B Slice 1
-  // "Re-scan with smart detection" card — the Settings → Library
-  // entry point per the guided-setup plan §12 IA. Re-establishes a
-  // path to the Import Wizard (orphaned after the 2026-05-31 legacy-
-  // Shell deletion).
-  //
-  // The System Readiness card lived here until 2026-06-03; it
-  // moved to Settings → System Health → Overview as part of the
-  // declutter arc (see docs/PLANS/settings-declutter-system-health.md).
+  // Settings IA redesign (Slice 1): Library is now the directory CUSTODIAN —
+  // tracked folders + scan options, region/version priority, cleanup, and Game
+  // media. Onboarding (the "Set up your library" wizard CTA) moved to the new
+  // **Import & Setup** category; sidebar-systems visibility + Views +
+  // Collections moved to the new **Organize My Collection** category. So this
+  // category just embeds LibraryManagerPage's (now 2-tab) management surface.
   const platform = usePlatform();
   return (
-    <div class="flex flex-col gap-4">
-      <SettingsCard
-        title="Add or re-scan your library"
-        description="Drop in your ROMs and OA will get them ready. We'll detect systems, suggest canonical titles via hash matching, and walk you through anything that needs your input."
-      >
-        <button
-          type="button"
-          class="self-start rounded-md bg-(--color-system-accent) px-4 py-2 text-xs font-semibold uppercase tracking-wider text-(--color-oa-bg-deep) transition hover:brightness-110"
-          onClick={(e) => {
-            e.currentTarget.blur();
-            setWizardOpen(true);
-          }}
-        >
-          Set up your library
-        </button>
-      </SettingsCard>
-      <div class="-mx-8 -mb-6">
-        <LibraryManagerPage
-          settings={platform.settings}
-          library={platform.library}
-          layout={platform.layout}
-          views={platform.views}
-          onAddLibraryFolder={addLibraryFolder}
-          onRescanLibraryFolders={rescanLibraryFolders}
-        />
-      </div>
+    <div class="-mx-8 -mb-6">
+      <LibraryManagerPage
+        settings={platform.settings}
+        library={platform.library}
+        onAddLibraryFolder={addLibraryFolder}
+        onRescanLibraryFolders={rescanLibraryFolders}
+      />
     </div>
   );
 };
