@@ -342,7 +342,17 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Settings IA Redesign — Slice 1: IA re-skeleton + Library/Organize split
+### Settings IA Redesign — Slice 2: Library re-point (Slice 1 ✅ merged)
+
+**Slice 1 ✅ MERGED to main 2026-06-14** (`e71eef0`, operator playtested) — the
+IA re-skeleton + Library/Organize split shipped. **Now in progress: Slice 2 —
+Library re-point** (relink a moved folder): new Rust `repoint_folder(folder_id,
+new_path)` command (verify the new dir holds the same ROMs → rebase
+`folders.path` + child ROM paths IN PLACE so game ids/covers/metadata survive →
+update the watcher target) + `repointFolder` api wrapper + per-folder "Move /
+relink…" UI in the Library folders card. Then Slice 3 (declarative Appearance
+schema → theming Phase 5), Slice 4 (External Emulators → VL Phase D), Slice 5
+(Import & Setup depth).
 
 **Planned 2026-06-14** (operator design session). Re-cuts the engine Settings IA
 around user intent: new top-level **Themes/Appearance · Library · Organize My

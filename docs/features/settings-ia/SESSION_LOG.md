@@ -4,6 +4,14 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Slice 1 MERGED + Slice 2 started
+
+- **Shipped:** Slice 1 merged to main (`e71eef0`) after operator playtest passed.
+  Now starting **Slice 2 — Library re-point** (relink a moved folder).
+- **Next:** Rust `repoint_folder` command (verify same-ROMs → in-place path
+  rebase → watcher update) + `repointFolder` api wrapper + per-folder "Move /
+  relink…" UI in the Library folders card.
+
 ## 2026-06-14 — Slice 1 implemented (code-complete, pending playtest)
 
 - **Shipped (branch `feat/settings-ia-slice-1`, not yet merged):** the IA

@@ -2,8 +2,8 @@
 
 Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-ia-redesign.md).
 
-- 🟡 **Slice 1 — IA re-skeleton + Library/Organize split** *(code-complete on
-  `feat/settings-ia-slice-1`; pending operator playtest + merge)* — added the
+- ✅ **Slice 1 — IA re-skeleton + Library/Organize split** *(MERGED to main
+  2026-06-14, operator playtested clean — merge `e71eef0`)* — added the
   new top-level CONTENT categories **Import & Setup** (`ImportSetupLanding`),
   **Organize My Collection** (`OrganizeLanding`), **External Emulators**
   (`ExternalEmulatorsLanding`, shell only); relabelled Themes → **Themes /
@@ -17,9 +17,10 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   all pass; frontend-only. Files: `engine/SettingsPanel.tsx`,
   `engine/SettingsSections.tsx`, `engine/LibraryManagerPage.tsx`, +
   `engine/{OrganizeLanding,CollectionsManager,SidebarSystemsCard,ImportSetupLanding,ExternalEmulatorsLanding}.tsx`.
-- ⬜ **Slice 2 — Library re-point** *(backend + UI)* — `repoint_folder(folder_id,
-  new_path)` Rust command (verify same-ROMs → rebase paths in place → update
-  watcher) + `repointFolder` api wrapper + per-folder "Move / relink…" UI.
+- 🟡 **Slice 2 — Library re-point** *(IN PROGRESS — backend + UI)* —
+  `repoint_folder(folder_id, new_path)` Rust command (verify same-ROMs → rebase
+  paths in place → update watcher) + `repointFolder` api wrapper + per-folder
+  "Move / relink…" UI.
 - ⬜ **Slice 3 — Themes/Appearance + declarative theme-settings schema** *(rides
   theming Phase 5)* — `ThemeManifest.settings_schema` + validator + generic
   `AppearancePanel` renderer; migrate global tile/sort/group/view-mode into

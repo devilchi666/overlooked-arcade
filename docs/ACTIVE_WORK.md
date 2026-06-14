@@ -11,8 +11,9 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Settings IA Redesign** — planned 2026-06-14 (operator design session),
-  execution deferred (starts next session at **Slice 1**). Re-cuts the engine
+- **Settings IA Redesign** — **Slice 1 ✅ MERGED to main 2026-06-14** (`e71eef0`,
+  operator playtested clean); **Slice 2 (Library re-point) IN PROGRESS**.
+  Re-cuts the engine
   Settings IA around user intent: new top-level **Themes/Appearance · Library ·
   Organize My Collection · Import & Setup · External Emulators** groups, replacing
   the conflated Settings → Library 3-tab admin surface. Key calls (D1–D7):
