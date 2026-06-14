@@ -382,4 +382,5 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
 - 2026-06-14 — Re-add DevTools access (dev-only) to Settings → About
   Why it came up: operator noticed the WebView DevTools were removed by mistake a while back, and F12 (the old open-devtools key in some setups) now summons the engine surface. During development it's useful to open the WebView inspector.
   What: add a dev-only "Open DevTools" affordance in Settings → About (Tauri `WebviewWindow.openDevtools()` / the `devtools` Cargo feature, gated to debug builds). Don't ship it in release.
-  Reconsider when: next time touching Settings → About / the engine About panel, or when debugging frontend issues warrants it. Tracked as a session task too.
+  Status: ✅ SHIPPED 2026-06-14 (per-system-hub arc) — `engine/DevToolsPanel.tsx` in Settings → About: logging toggles (spatial nav / focus nav / gamepad-raw), Open inspector (Rust `open_devtools`, debug_assertions-gated), Spawn test job, Copy log path, Open logs folder, Reload UI, Restart app, data-dir readout.
+  REMAINING: the panel renders UNCONDITIONALLY for now (operator's dev env evaluates `import.meta.env.DEV` as false — likely Vite serving a built dist while Rust is debug). Re-gate it behind a reliable dev/debug check before any public release so it doesn't reach end users.

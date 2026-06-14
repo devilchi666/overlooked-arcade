@@ -4,6 +4,30 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — S4: BIOS + Input domains + DevTools panel
+
+- **Shipped (branch `feat/per-system-hub`):** all six domain cards now live.
+  - `domains/BiosEditor.tsx` — per-system slice of `get_bios_status` (filtered by
+    `entry.slug === systemId`), reusing the status pills; "needs no BIOS" for
+    cart/disc-only systems; Refresh + `system/` folder hint.
+  - `domains/InputEditor.tsx` — launches the existing `SystemBindingsDialog` +
+    `SystemCoreOptionsDialog` (route through the spatial layer when active).
+  - Both domain cards enabled + wired in `SystemsHubRoot`. **All domains
+    (Display · Core · Media · Metadata · Input · BIOS) now functional.**
+  - **DevTools panel (operator request, folded in):** `engine/DevToolsPanel.tsx`
+    in **Settings → About**, gated to dev builds (`import.meta.env.DEV`).
+    Toggle buttons for the debug-logging streams (`__oaSpatialDebug` /
+    `__oaFocusDebug`, registry-driven so adding more is one line) + Open
+    inspector + Copy log path + Open logs folder. New Rust `open_devtools`
+    command (debug-gated `WebviewWindow::open_devtools`) + `shellApi.openDevtools`.
+  - typecheck + lint + vitest(98) green; `cargo check -p oa-shell` clean (forced
+    rebuild). PARKING_LOT DevTools entry can be marked done.
+- **Almost:** per-system BIOS/core readiness glyphs on the level-1 SystemCard
+  still deferred (would need a grid-level bios/core fetch) — noted, not blocking.
+- **Next:** operator playtest (BIOS + Input cards; the DevTools panel toggles +
+  Open inspector). Then **S5 — remove the old scattered surfaces** (Per-system /
+  Media / Metadata categories + Library Game-media tab) + cleanup.
+
 ## 2026-06-14 — S3: Metadata domain (SystemMetaForm extraction)
 
 - **Shipped (branch `feat/per-system-hub`):** the Metadata domain card is live.

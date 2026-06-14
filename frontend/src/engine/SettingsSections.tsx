@@ -51,6 +51,7 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import { PlatformMediaDialog } from "./PlatformMediaDialog";
+import DevToolsPanel from "./DevToolsPanel";
 import { usePlatform } from "@oa/platform/platformContext";
 import { setHelpDialog, setWizardOpen } from "@oa/platform/dialogs";
 import { addLibraryFolder, rescanLibraryFolders } from "@oa/platform/libraryAdmin";
@@ -1434,6 +1435,11 @@ export const AboutSettings: Component = () => {
           </button>
         </div>
       </SettingsCard>
+
+      {/* Developer tools. Rendered unconditionally for now (the whole app is
+          pre-release); the panel is clearly labelled "dev build". Re-gate behind
+          import.meta.env.DEV before any public release — tracked in PARKING_LOT. */}
+      <DevToolsPanel />
     </div>
   );
 };
