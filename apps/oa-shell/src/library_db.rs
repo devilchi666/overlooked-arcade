@@ -361,6 +361,36 @@ pub struct FolderUpdate {
     pub last_scanned_at: Option<i64>,
 }
 
+/// Read-only preview of a folder re-point (Settings IA Slice 2). Walks the
+/// games currently tracked under a folder and checks whether each one's file
+/// exists at the proposed new path (a fast relative-path existence pass — no
+/// hashing). The UI shows matched/missing before the operator commits, so a
+/// wrong target folder is caught before any DB write.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepointPreview {
+    /// Total games tracked under the folder (by path prefix).
+    pub total: usize,
+    /// Games whose file exists at the new path (relative path preserved).
+    pub matched: usize,
+    /// Games whose file is NOT present at the new path.
+    pub missing: usize,
+    /// Up to a handful of missing file basenames, for the confirm dialog.
+    pub sample_missing: Vec<String>,
+    /// The normalized old + proposed-new folder paths the rebase would use.
+    pub old_path: String,
+    pub new_path: String,
+}
+
+/// Result of a committed re-point: the updated folder + how many game rows had
+/// their `file_path` rebased in place.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepointResult {
+    pub folder: Folder,
+    pub games_updated: usize,
+}
+
 /// Stable id for a folder by its path. djb2 hash — same family as
 /// `romIdFromPath` in the frontend; lets us add-then-remove-then-add the
 /// same folder and recover the same id (FK cascade wipes orphan rules
@@ -6269,6 +6299,167 @@ impl LibraryDb {
         Ok(())
     }
 
+    // --- Re-point a moved folder (Settings IA Slice 2) --------------------
+    //
+    // When a user moves their ROMs to a new directory (SAME ROMs, new path),
+    // they relink the tracked folder rather than re-importing. The rebase is
+    // IN PLACE: game rows keep their stable `id` (the PK, a hash of the
+    // ORIGINAL path), so every cover / metadata / favorite / play-time —
+    // all keyed by `id`, not by path — survives untouched. OA never touches
+    // the files on disk (the operator's external organizer owns that).
+
+    /// Strip trailing path separators so "C:\\roms\\" and "C:\\roms" prefix-match
+    /// identically.
+    fn normalize_folder_path(p: &str) -> String {
+        p.trim_end_matches(|c| c == '/' || c == '\\').to_string()
+    }
+
+    /// Is `path` inside the folder `prefix`? True when they're equal or `path`
+    /// continues with a separator — so "C:\\roms\\snes" matches its games but
+    /// NOT the sibling "C:\\roms\\snes2".
+    fn path_under_folder(path: &str, prefix: &str) -> bool {
+        if !path.starts_with(prefix) {
+            return false;
+        }
+        match path.as_bytes().get(prefix.len()) {
+            None => true,
+            Some(&b) => b == b'/' || b == b'\\',
+        }
+    }
+
+    /// (id, file_path) for every game whose file lives under `folder_path`.
+    /// Games carry no folder FK — linkage is purely by path prefix.
+    fn games_under_path(
+        conn: &Connection,
+        folder_path: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let mut stmt = conn
+            .prepare("SELECT id, file_path FROM games")
+            .map_err(|e| format!("prepare games_under_path: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("query games_under_path: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect games_under_path: {e}"))?;
+        Ok(rows
+            .into_iter()
+            .filter(|(_, fp)| Self::path_under_folder(fp, folder_path))
+            .collect())
+    }
+
+    /// Read-only: would these ROMs be found at `new_path`? Checks each tracked
+    /// game's relative path for existence under the new directory. No DB write.
+    pub fn preview_repoint_folder(
+        &self,
+        folder_id: &str,
+        new_path: &str,
+    ) -> Result<RepointPreview, String> {
+        let (old_path, games) = {
+            let conn = self
+                .inner
+                .lock()
+                .map_err(|_| "library_db: lock poisoned".to_string())?;
+            let folder = Self::query_folders(&conn, None)?
+                .into_iter()
+                .find(|f| f.id == folder_id)
+                .ok_or_else(|| format!("unknown folder id: {folder_id}"))?;
+            let old_path = Self::normalize_folder_path(&folder.path);
+            let games = Self::games_under_path(&conn, &old_path)?;
+            (old_path, games)
+            // lock released here — filesystem stat calls below don't hold it
+        };
+        let new_path = Self::normalize_folder_path(new_path);
+
+        let total = games.len();
+        let mut matched = 0usize;
+        let mut sample_missing: Vec<String> = Vec::new();
+        for (_, fp) in &games {
+            let suffix = &fp[old_path.len()..];
+            let candidate = format!("{new_path}{suffix}");
+            if std::path::Path::new(&candidate).exists() {
+                matched += 1;
+            } else if sample_missing.len() < 8 {
+                let name = std::path::Path::new(fp)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(fp.as_str())
+                    .to_string();
+                sample_missing.push(name);
+            }
+        }
+        Ok(RepointPreview {
+            total,
+            matched,
+            missing: total - matched,
+            sample_missing,
+            old_path,
+            new_path,
+        })
+    }
+
+    /// Commit a re-point: rebase the folder path + every game's `file_path`
+    /// under it, in one transaction, IN PLACE (folder id + game ids stay
+    /// stable). Returns the updated folder + the count of rebased games.
+    pub fn repoint_folder(
+        &self,
+        folder_id: &str,
+        new_path: &str,
+    ) -> Result<RepointResult, String> {
+        let mut conn = self
+            .inner
+            .lock()
+            .map_err(|_| "library_db: lock poisoned".to_string())?;
+        let folder = Self::query_folders(&conn, None)?
+            .into_iter()
+            .find(|f| f.id == folder_id)
+            .ok_or_else(|| format!("unknown folder id: {folder_id}"))?;
+        let old_path = Self::normalize_folder_path(&folder.path);
+        let new_path = Self::normalize_folder_path(new_path);
+        if old_path == new_path {
+            return Err("new path is the same as the current path".to_string());
+        }
+        // Refuse to collide with a different tracked folder already at new_path
+        // (folders.path is UNIQUE — let's fail with a clear message, not a
+        // constraint error).
+        let collides = Self::query_folders(&conn, Some(&new_path))?
+            .into_iter()
+            .any(|f| f.id != folder_id);
+        if collides {
+            return Err(format!("another tracked folder already points at {new_path}"));
+        }
+
+        let games = Self::games_under_path(&conn, &old_path)?;
+        let games_updated = games.len();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("begin repoint tx: {e}"))?;
+        {
+            tx.execute(
+                "UPDATE folders SET path = ?1 WHERE id = ?2",
+                params![new_path, folder_id],
+            )
+            .map_err(|e| format!("update folder path: {e}"))?;
+            let mut stmt = tx
+                .prepare("UPDATE games SET file_path = ?1 WHERE id = ?2")
+                .map_err(|e| format!("prepare game rebase: {e}"))?;
+            for (id, fp) in &games {
+                let rebased = format!("{new_path}{}", &fp[old_path.len()..]);
+                stmt.execute(params![rebased, id])
+                    .map_err(|e| format!("rebase game {id}: {e}"))?;
+            }
+        }
+        tx.commit().map_err(|e| format!("commit repoint tx: {e}"))?;
+
+        let mut updated = folder;
+        updated.path = new_path;
+        Ok(RepointResult {
+            folder: updated,
+            games_updated,
+        })
+    }
+
     /// Return every rule for the given folder, sorted by insertion order.
     pub fn list_folder_rules(&self, folder_id: &str) -> Result<Vec<FolderRule>, String> {
         let conn = self.inner.lock().map_err(|_| "library_db: lock poisoned".to_string())?;
@@ -6613,6 +6804,109 @@ mod tests {
             disc_number: None,
             identity_id: None,
         }
+    }
+
+    #[test]
+    fn repoint_folder_rebases_in_place_and_preserves_state() {
+        let db = fresh_db();
+        let f = db.add_folder("/roms/snes", true, false, true).expect("add");
+        // Two games under the folder + a sibling-folder game that must NOT be
+        // rebased (boundary check).
+        db.add_games(&[
+            GameRow {
+                file_path: "/roms/snes/Mario.sfc".into(),
+                ..row("mario", "Super Mario World")
+            },
+            GameRow {
+                file_path: "/roms/snes/sub/Zelda.sfc".into(),
+                ..row("zelda", "Zelda")
+            },
+            GameRow {
+                file_path: "/roms/snes2/Other.sfc".into(),
+                ..row("other", "Other")
+            },
+        ])
+        .expect("seed");
+        // User-state lives in columns the rebase must NOT touch — seed it
+        // through the real setters so the preservation claim is real.
+        db.update_favorite("mario", true).expect("favorite");
+        db.update_play_session("mario", 4242, 1_700_000_000).expect("play session");
+
+        // Trailing separator on the new path must be normalized away.
+        let res = db.repoint_folder(&f.id, "/games/snes/").expect("repoint");
+        assert_eq!(res.games_updated, 2, "only the two under /roms/snes");
+        assert_eq!(res.folder.path, "/games/snes");
+        assert_eq!(res.folder.id, f.id, "folder id stays stable");
+
+        let games = db.list_games().expect("list");
+        let by = |id: &str| games.iter().find(|g| g.id == id).expect("present").clone();
+        let mario = by("mario");
+        assert_eq!(mario.file_path, "/games/snes/Mario.sfc");
+        assert!(mario.favorite, "favorite preserved through rebase");
+        assert_eq!(mario.play_time_secs, 4242, "play time preserved through rebase");
+        assert_eq!(by("zelda").file_path, "/games/snes/sub/Zelda.sfc", "nested path rebased");
+        assert_eq!(
+            by("other").file_path, "/roms/snes2/Other.sfc",
+            "sibling folder (snes2) must not be rebased by the snes re-point"
+        );
+
+        // Folder row itself updated; the same id resolves by the new path.
+        let folder = db
+            .get_folder_by_path("/games/snes", false)
+            .expect("get")
+            .expect("present");
+        assert_eq!(folder.id, f.id);
+
+        // Re-pointing to the same path is a no-op error, not a silent rebase.
+        assert!(db.repoint_folder(&f.id, "/games/snes").is_err());
+    }
+
+    #[test]
+    fn preview_repoint_folder_counts_matched_and_missing() {
+        // Real temp dirs: the new dir has only SOME of the tracked files, so
+        // preview must report matched/missing by relative-path existence.
+        let base = std::env::temp_dir().join(format!(
+            "oa-repoint-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let old_dir = base.join("old");
+        let new_dir = base.join("new");
+        std::fs::create_dir_all(&old_dir).expect("mkdir old");
+        std::fs::create_dir_all(&new_dir).expect("mkdir new");
+        std::fs::write(new_dir.join("Mario.sfc"), b"x").expect("write mario");
+        // Zelda intentionally absent from new_dir.
+
+        let db = fresh_db();
+        let old_str = old_dir.to_string_lossy().to_string();
+        let f = db.add_folder(&old_str, true, false, true).expect("add");
+        db.add_games(&[
+            GameRow {
+                file_path: format!("{old_str}/Mario.sfc"),
+                ..row("mario", "Mario")
+            },
+            GameRow {
+                file_path: format!("{old_str}/Zelda.sfc"),
+                ..row("zelda", "Zelda")
+            },
+        ])
+        .expect("seed");
+
+        let new_str = new_dir.to_string_lossy().to_string();
+        let p = db.preview_repoint_folder(&f.id, &new_str).expect("preview");
+        assert_eq!(p.total, 2);
+        assert_eq!(p.matched, 1, "Mario present at new path");
+        assert_eq!(p.missing, 1, "Zelda missing at new path");
+        assert!(
+            p.sample_missing.iter().any(|s| s == "Zelda.sfc"),
+            "missing sample names the absent ROM, got {:?}",
+            p.sample_missing
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // --- VL Phase E — game_identities (Sub-phase 1) -------------------

@@ -2649,6 +2649,8 @@ fn main() {
             add_folder,
             update_folder,
             remove_folder,
+            preview_repoint_folder,
+            repoint_folder,
             list_folder_rules,
             set_folder_rules,
             reorder_folders,
@@ -10415,6 +10417,29 @@ fn remove_folder(
     db: tauri::State<'_, library_db::LibraryDb>,
 ) -> Result<(), String> {
     db.remove_folder(&id)
+}
+
+/// Read-only preview of relinking a moved folder (Settings IA Slice 2): how
+/// many tracked ROMs are present at `new_path`. No DB write.
+#[tauri::command]
+fn preview_repoint_folder(
+    folder_id: String,
+    new_path: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<library_db::RepointPreview, String> {
+    db.preview_repoint_folder(&folder_id, &new_path)
+}
+
+/// Commit the relink: rebase the folder + its games' paths in place (ids stay
+/// stable so covers/metadata/favorites/play-time survive). The frontend
+/// re-registers the watcher afterwards.
+#[tauri::command]
+fn repoint_folder(
+    folder_id: String,
+    new_path: String,
+    db: tauri::State<'_, library_db::LibraryDb>,
+) -> Result<library_db::RepointResult, String> {
+    db.repoint_folder(&folder_id, &new_path)
 }
 
 #[tauri::command]
