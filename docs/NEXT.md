@@ -362,13 +362,23 @@ feature folder [features/unified-nav/](features/unified-nav/).
 nav spec). See [features/unified-nav/SESSION_LOG.md](features/unified-nav/SESSION_LOG.md)
 + DECISIONS D1–D4.
 
-**Next (start here): Pillar B — unified panel structure/look on Settings.**
-PanelScaffold + a shared control-row vocabulary (generalize `SettingRow`) + the
-standard tab pattern, applied to Settings as the reference adopter; fix the now-
-stale HintBar labels ("Switch region"/"Prev tab") on the engine surface. Then
+**Pillar B is now delivered by the Per-System Settings Hub arc** (below) — its
+`HubCard` / `HubGrid` / `PanelScaffold` primitives ARE the unified panel
+structure, and the stale-HintBar-label fix folds into it. After that arc:
 Phase 2 (formalize the `Dialog`/`EngineManagerSurface` scope + retire
 `Dialog.navigate` markers) → Phase 3 (Retroverse tabs + grid/carousel adapters)
 → Phase 4 (kiosk/arcade input).
+
+### Per-System Settings Hub — card-based consolidation (active arc)
+
+Planned + **S1 shipped 2026-06-14** (branch `feat/per-system-hub`). Consolidates
+all per-system settings into one card-based **Systems** hub (systems grid →
+per-system domain cards → editor), replacing the scattered Per-system / Media /
+Metadata categories + the Library→Game-media grid + BIOS. Built on the Phase-1
+spatial engine. Plan + slices:
+**[PLANS/per-system-settings-hub.md](PLANS/per-system-settings-hub.md)**; feature
+[features/per-system-hub/](features/per-system-hub/) (IA decisions D1–D5).
+**Next: playtest S1, then S2 — Media domain.**
 
 **Predecessor — Controller-Nav Coverage Slices 1–3 (2026-06-13/14):** Slices
 1–2 (Settings row-nav + engine dialogs) **shipped + merged**; Slice 3

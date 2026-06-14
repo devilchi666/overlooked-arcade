@@ -11,6 +11,21 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Per-System Settings Hub** — planned + **S1 shipped 2026-06-14** (branch
+  `feat/per-system-hub`, awaiting playtest). Consolidates ALL per-system settings
+  (today scattered across the Per-system / Media / Metadata categories + the
+  Library→Game-media grid + BIOS in System Health) into one card-based **Systems**
+  hub: a grid of per-system cards → a per-system hub of **domain cards** (Display
+  & Video · Input · Core/Launcher · Media · Metadata · BIOS) → a domain editor.
+  Built on the merged spatial-nav engine (zero per-control wiring); delivers the
+  unified-nav **Pillar B** primitives (`HubCard`/`HubGrid`/`PanelScaffold`) as a
+  byproduct, so it supersedes the standalone "Pillar B on Settings" task. S1 =
+  nav-stack proof + Display & Core domains (reuse `perSystemSections`); old
+  surfaces stay live in parallel until S5 removes them. Plan
+  [PLANS/per-system-settings-hub.md](PLANS/per-system-settings-hub.md); feature
+  folder [features/per-system-hub/](features/per-system-hub/) (IA decisions
+  D1–D5). **Next: operator playtest, then S2 — Media domain.**
+
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
   engine panels stayed inert). Two pillars: a **spatial-navigation engine**

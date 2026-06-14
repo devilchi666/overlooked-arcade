@@ -41,12 +41,14 @@ import { ControllersSettings } from "./ControllerTestPanel";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
+import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
 
 type CategoryId =
+  | "systems"
   | "display"
   | "audio"
   | "shaders"
@@ -164,6 +166,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Default OA theme picker.",
     helpText:
       "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — visual variants land here as they're built.",
+  },
+  {
+    id: "systems",
+    group: "content",
+    label: "Systems",
+    glyph: "▦",
+    description: "Everything per-system, grouped into cards.",
+    helpText:
+      "One card per system. Open a system to reach all of its settings — Display & Video, Input, Core/Launcher, Media, Metadata, BIOS — in one logical place. Library-first; toggle Show-all to pre-configure a system before importing its ROMs.",
   },
   {
     id: "library",
@@ -498,6 +509,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "themes"}>
             <ThemesSettings />
+          </Match>
+          <Match when={activeCategoryId() === "systems"}>
+            <SystemsHubRoot settings={ctx.settings} />
           </Match>
           <Match when={activeCategoryId() === "library"}>
             <LibrarySettings />
