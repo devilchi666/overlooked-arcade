@@ -2,13 +2,21 @@
 
 Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-ia-redesign.md).
 
-- ⬜ **Slice 1 — IA re-skeleton + Library/Organize split** *(start here;
-  frontend-only)* — new top-level groups (Organize / Import & Setup / External
-  Emulators), reshape Library, expand Themes → Themes/Appearance; split
-  `LibraryManagerPage` into Library (folders/scan/region/cleanup) + Organize
-  (Views renamed + Collections + sidebar visibility); rebuild landings as card
-  hubs reusing `engine/systemsHub/` primitives. (in `engine/SettingsPanel.tsx`,
-  `engine/SettingsSections.tsx`, `engine/LibraryManagerPage.tsx`)
+- 🟡 **Slice 1 — IA re-skeleton + Library/Organize split** *(code-complete on
+  `feat/settings-ia-slice-1`; pending operator playtest + merge)* — added the
+  new top-level CONTENT categories **Import & Setup** (`ImportSetupLanding`),
+  **Organize My Collection** (`OrganizeLanding`), **External Emulators**
+  (`ExternalEmulatorsLanding`, shell only); relabelled Themes → **Themes /
+  Appearance**; reshaped **Library** to management-only. Split
+  `LibraryManagerPage` (dropped the Views tab + the sidebar-systems block; now a
+  2-tab Library/Game-media management surface; `layout`/`views` props removed).
+  New Organize landing mounts `ViewsManagerTab` (user-facing "Views" → "Sidebar
+  layouts") + new `CollectionsManager` (over `customCollections`) + extracted
+  `SidebarSystemsCard`. Import & Setup landing carries the Wizard CTA + folder
+  add/rescan as `HubCard`s. typecheck + lint (boundary zones green) + vitest(98)
+  all pass; frontend-only. Files: `engine/SettingsPanel.tsx`,
+  `engine/SettingsSections.tsx`, `engine/LibraryManagerPage.tsx`, +
+  `engine/{OrganizeLanding,CollectionsManager,SidebarSystemsCard,ImportSetupLanding,ExternalEmulatorsLanding}.tsx`.
 - ⬜ **Slice 2 — Library re-point** *(backend + UI)* — `repoint_folder(folder_id,
   new_path)` Rust command (verify same-ROMs → rebase paths in place → update
   watcher) + `repointFolder` api wrapper + per-folder "Move / relink…" UI.

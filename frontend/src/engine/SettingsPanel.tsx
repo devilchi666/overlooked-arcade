@@ -39,6 +39,9 @@ import {
 import { ControllersSettings } from "./ControllerTestPanel";
 import SystemHealthPage from "./SystemHealthPage";
 import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
+import OrganizeLanding from "./OrganizeLanding";
+import ImportSetupLanding from "./ImportSetupLanding";
+import ExternalEmulatorsLanding from "./ExternalEmulatorsLanding";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -55,7 +58,10 @@ type CategoryId =
   | "per-system-ui"
   | "experimental"
   | "themes"
+  | "import-setup"
   | "library"
+  | "organize"
+  | "external-emulators"
   | "system-health"
   | "profile"
   | "about";
@@ -154,11 +160,38 @@ const CATEGORIES: readonly CategoryDef[] = [
   {
     id: "themes",
     group: "oa-wide",
-    label: "Themes",
-    glyph: "▦",
-    description: "Default OA theme picker.",
+    label: "Themes / Appearance",
+    glyph: "◑",
+    description: "Pick the active shell — and configure how browsing looks.",
     helpText:
-      "Reserved for when shells become swappable (e.g. Retroverse vs Heroic-style vs kiosk). One theme today — visual variants land here as they're built.",
+      "Choose the active theme (Retroverse / CoverFlow / bare). Per-theme appearance — tile size, sort, group, grid vs list, and whatever knobs a theme declares — lands here as each theme exposes it (the declarative theme-settings schema, Settings IA Slice 3).",
+  },
+  {
+    id: "import-setup",
+    group: "content",
+    label: "Import & Setup",
+    glyph: "⊕",
+    description: "Get your ROMs into OA.",
+    helpText:
+      "Where a new library starts. The guided Import Wizard scans a folder, detects systems, and identifies games by hash; or add a folder directly for a quick scan. Day-to-day folder management lives under Library.",
+  },
+  {
+    id: "library",
+    group: "content",
+    label: "Library",
+    glyph: "▤",
+    description: "Your ROM folders + game media.",
+    helpText:
+      "The directory custodian: tracked library folders + scan options, region/version priority for multi-dump games, game-media (covers/art) sync, and cleanup. Importing moved to Import & Setup; sidebar layouts + collections moved to Organize.",
+  },
+  {
+    id: "organize",
+    group: "content",
+    label: "Organize My Collection",
+    glyph: "🗂",
+    description: "Sidebar layouts + collections.",
+    helpText:
+      "How your library is arranged for browsing: custom sidebar layouts (group systems by manufacturer / form factor / your own tree), curated collections (flat sets that cross systems), and which systems show in the sidebar. Navigation structure — not tile appearance (that's Themes / Appearance).",
   },
   {
     id: "systems",
@@ -170,13 +203,13 @@ const CATEGORIES: readonly CategoryDef[] = [
       "One card per system. Open a system to reach all of its settings — Display & Video, Input, Core/Launcher, Media, Metadata, BIOS — in one logical place. Library-first; toggle Show-all to pre-configure a system before importing its ROMs.",
   },
   {
-    id: "library",
+    id: "external-emulators",
     group: "content",
-    label: "Library",
-    glyph: "▤",
-    description: "Library folders + scanner cadence.",
+    label: "External Emulators",
+    glyph: "🖥",
+    description: "Standalone emulator setup.",
     helpText:
-      "Where OA looks for ROMs. Each folder can scan-subfolders, treat-subfolders-as-systems, or watch for changes. The Library Manager surface (folders, views, game media) embeds directly in this category — Library Manager's full Library / Views / Game media tab strip is what you see when you click in.",
+      "Setup for systems that run through a dedicated standalone emulator (Dolphin / Cemu / RPCS3 / Lime3DS) instead of an in-process core. Binary paths + install pipeline consolidate here; per-system launcher choice stays in Systems.",
   },
   {
     id: "system-health",
@@ -376,8 +409,17 @@ const SettingsPanel: Component<Props> = (props) => {
           <Match when={activeCategoryId() === "systems"}>
             <SystemsHubRoot settings={ctx.settings} />
           </Match>
+          <Match when={activeCategoryId() === "import-setup"}>
+            <ImportSetupLanding />
+          </Match>
           <Match when={activeCategoryId() === "library"}>
             <LibrarySettings />
+          </Match>
+          <Match when={activeCategoryId() === "organize"}>
+            <OrganizeLanding />
+          </Match>
+          <Match when={activeCategoryId() === "external-emulators"}>
+            <ExternalEmulatorsLanding />
           </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />
