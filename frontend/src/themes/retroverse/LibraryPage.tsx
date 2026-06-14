@@ -35,10 +35,40 @@ import {
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
 import { useTheme } from "@oa/platform/theme/host";
+import { useThemeSettings } from "@oa/platform/theme/themeSettings";
+import type { LibraryAppearance } from "@oa/platform/components/LibraryView";
+import {
+  LIBRARY_TILE_SIZE_MIN,
+  LIBRARY_TILE_SIZE_MAX,
+  LIBRARY_TILE_SIZE_STEP,
+  LIBRARY_TILE_SIZE_DEFAULT,
+  type SortKey,
+  type GroupBy,
+  type ViewMode,
+} from "@oa/platform/layout/state";
 import { setSystemContextFor, setContainerContextFor } from "../../platform/dialogs";
 
 const LibraryPage: Component = () => {
   const ctx = useTheme();
+
+  // Settings IA Slice 3 — library browse-appearance is now PER-THEME. Read
+  // Retroverse's own slice (seeded once from the global layout in the theme
+  // entry, so nothing jumps on first run); the engine Themes / Appearance panel
+  // writes these same keys. The shared platform LibraryView stays
+  // config-agnostic — it receives appearance via prop, never reaching into
+  // theme settings itself (layer boundary).
+  const ts = useThemeSettings();
+  const clampTile = (px: number): number => {
+    const c = Math.max(LIBRARY_TILE_SIZE_MIN, Math.min(LIBRARY_TILE_SIZE_MAX, px));
+    return Math.round(c / LIBRARY_TILE_SIZE_STEP) * LIBRARY_TILE_SIZE_STEP;
+  };
+  const appearance: LibraryAppearance = {
+    sortKey: () => ts.get<SortKey>("sortKey", "title"),
+    groupBy: () => ts.get<GroupBy>("groupBy", "none"),
+    viewMode: () => ts.get<ViewMode>("viewMode", "capsule"),
+    tileSize: () => ts.get<number>("tileSize", LIBRARY_TILE_SIZE_DEFAULT),
+    setTileSize: (px) => ts.set("tileSize", clampTile(px)),
+  };
 
   // Header card title + count. When the operator filters by a system
   // via the sidebar (view-node selection), title becomes the system's
@@ -254,7 +284,7 @@ const LibraryPage: Component = () => {
         <div class="min-h-0 flex-1 overflow-hidden">
           <LibraryView
             library={ctx.library}
-            layout={ctx.layout}
+            appearance={appearance}
             views={ctx.views}
             currentView={ctx.currentView()}
             searchQuery={ctx.searchQuery()}

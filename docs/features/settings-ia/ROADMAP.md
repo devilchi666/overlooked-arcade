@@ -27,10 +27,20 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   → commit → `refreshLibraryFolders` (re-registers the watcher via App.tsx's
   effect) + `refreshGroups`. 2 new Rust tests (rebase+preserve, preview
   matched/missing). cargo 839 + typecheck/lint/vitest(98) green.
-- ⬜ **Slice 3 — Themes/Appearance + declarative theme-settings schema** *(rides
-  theming Phase 5)* — `ThemeManifest.settings_schema` + validator + generic
-  `AppearancePanel` renderer; migrate global tile/sort/group/view-mode into
-  per-theme namespaces.
+- 🟡 **Slice 3 — Themes/Appearance + declarative theme-settings schema**
+  *(code-complete on `feat/settings-ia-slice-3`; pending operator playtest +
+  merge)* — `ThemeSettingControl`/`ThemeSettingsSchema` + `settings_schema` on
+  `ThemeManifest`; S4 validator extended (`SETTING_KEY_INVALID`/
+  `SETTING_CONTROL_INVALID`, +9 vitest cases); generic `engine/AppearancePanel`
+  renders the active theme's schema via `SettingRow` bound to `useThemeSettings`
+  (per-control reset), mounted in Themes / Appearance. `bare`'s Compact toggle
+  moved hand-coded → declarative. **Retroverse** migrated: declares
+  tile/sort/group/view in its schema, reads them per-theme via a new
+  `LibraryAppearance` prop on the shared `LibraryView` (platform grid stays
+  config-agnostic — boundary-clean), one-time seed from the global layout so
+  nothing jumps. Manifest `settings_schema` format ships now; theming Phase 5's
+  `.oatheme` loader reuses it. typecheck/lint/vitest(107) green; THEME_CONTRACT
+  §8 added.
 - ⬜ **Slice 4 — External Emulators consolidation** *(rides VL Phase D)* —
   promote the CoresPage external-emulator section into the new tab; retire the
   duplicate.

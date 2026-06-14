@@ -232,3 +232,36 @@ collision-free guarantee. Storage is one frontend `localStorage` key
 the restart-based theme swap; values are opaque JSON (declare the shape via the
 `get` type arg). This is a **fourth** settings namespace alongside the
 OA-wide / per-system / per-game tiers — distinct keyspace, no overlap.
+
+## 8. Declarative appearance options — `settings_schema` (Settings IA Slice 3)
+
+§7 is the *storage*. `settings_schema` is the *declaration* that makes those prefs
+**user-editable without writing any UI**. A theme lists its controls in the
+manifest; the engine renders them in **Settings → Themes / Appearance**, bound to
+the §7 per-theme storage under each control's `key`. A community theme OA has
+never seen surfaces *its* options automatically — that's the whole point.
+
+```ts
+settings_schema: [
+  { key: "compactRows", type: "toggle", label: "Compact rows", default: false },
+  { key: "tileSize", type: "slider", label: "Tile size",
+    default: 220, min: 120, max: 400, step: 20, unit: "px" },
+  { key: "sortKey", type: "select", label: "Sort by", default: "title",
+    options: [{ value: "title", label: "Name" }, { value: "year", label: "Year" }] },
+]
+```
+
+- **Three control types:** `toggle` (boolean) · `slider` (numeric, `min`/`max`/
+  `step`, optional `unit`) · `select` (string, `options`). Each needs a unique
+  non-empty `key` and a `label`; `hint` is optional.
+- **The theme consumes the value** itself via `useThemeSettings().get(key, default)`
+  — the schema only drives the *editor*. The `key` + `default` must match what the
+  theme reads. (Retroverse declares `tileSize`/`sortKey`/`groupBy`/`viewMode` and
+  reads them in its `LibraryView` appearance prop; the in-grid tile-size slider
+  writes the same `tileSize` key, so both surfaces stay in sync.)
+- **Validated (S4):** unique keys, valid type, present label, slider `min < max`
+  + step > 0 + default in range, select default ∈ option values. A malformed
+  control is a **disqualifying error** — a broken Appearance panel is worse than
+  none. See `validate.ts` (`SETTING_KEY_INVALID` / `SETTING_CONTROL_INVALID`).
+- Optional — a theme with nothing to configure omits the field, and the
+  Appearance panel shows "no options."

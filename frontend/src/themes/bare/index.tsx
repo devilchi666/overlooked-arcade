@@ -76,6 +76,19 @@ const BARE_MANIFEST: ThemeManifest = {
   // keeps the default Xbox A. Proves a theme picks its controller-glyph
   // identity via one manifest field. Omitting it inherits "xbox".
   glyph_set: "playstation",
+  // Settings IA Slice 3 — bare's one appearance option, now DECLARED rather
+  // than hand-rendered. The engine's generic Appearance panel reads this and
+  // draws the toggle; bare just consumes the value (`compact()` below). Same
+  // per-theme storage key as before, so existing choices carry over.
+  settings_schema: [
+    {
+      key: "compactRows",
+      type: "toggle",
+      label: "Compact rows",
+      hint: "Tighter list spacing",
+      default: false,
+    },
+  ],
 };
 
 const BareEntry: ThemeEntry = (_props) => {
@@ -119,16 +132,10 @@ const BareEntry: ThemeEntry = (_props) => {
           </p>
         </div>
         <div class="flex items-center gap-3">
-          {/* S5.4 demo — a theme-owned pref. Toggling persists to bare's slice of
-              the per-theme namespace and survives restart; the list density below
-              reacts live. */}
-          <button
-            type="button"
-            onClick={() => settings.set("compactRows", !compact())}
-            class="rounded border border-white/10 px-2.5 py-1 text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
-          >
-            {compact() ? "Compact ✓" : "Compact"}
-          </button>
+          {/* The "Compact" density toggle moved to Settings → Themes / Appearance
+              (Settings IA Slice 3): bare DECLARES it in `settings_schema` and the
+              engine renders it. bare just consumes `compact()` below — same
+              per-theme storage key, so the choice carries over. */}
           {/* D3 — every theme reserves the top-right slot for the engine summon
               icon (F12 · Select+Start). The operator's always-available path back
               to Settings → Themes to switch shells. */}
