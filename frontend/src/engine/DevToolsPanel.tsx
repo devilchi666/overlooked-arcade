@@ -16,9 +16,20 @@ import {
   openDevtools,
   restartApp,
   revealLogsFolder,
+  setLogStreams,
 } from "@oa/platform/api/shellApi";
 
 type FlagDef = { key: string; label: string; hint: string };
+
+/// Backend (Rust) log streams — toggled via a Tauri command that raises the
+/// log level for the matching target prefixes on demand (the noisy logging in
+/// these areas is Rust-side, so a JS global can't reach it).
+type StreamDef = { id: string; label: string; hint: string };
+const BACKEND_STREAMS: readonly StreamDef[] = [
+  { id: "media", label: "Media sync", hint: "Art / metadata / hash sync + identify (oa_shell::media)." },
+  { id: "audio", label: "Audio", hint: "Mixer / cpal sink / UI-sound playback (audio_player, oa_audio)." },
+  { id: "render", label: "Renderer", hint: "wgpu pipeline / framebuffer (oa_render)." },
+];
 
 const DEBUG_FLAGS: readonly FlagDef[] = [
   {
@@ -50,6 +61,15 @@ const DevToolsPanel: Component = () => {
   const toggle = (key: string): void => {
     (globalThis as Record<string, unknown>)[key] = !readFlag(key);
     setTick((n) => n + 1);
+  };
+
+  // Backend log streams — the active set is sent to Rust on every change.
+  const [streams, setStreams] = createSignal<string[]>([]);
+  const streamOn = (id: string): boolean => streams().includes(id);
+  const toggleStream = (id: string): void => {
+    const next = streamOn(id) ? streams().filter((s) => s !== id) : [...streams(), id];
+    setStreams(next);
+    void setLogStreams(next).catch((e) => setLogMsg(String(e)));
   };
 
   const [logMsg, setLogMsg] = createSignal<string>("");
@@ -146,6 +166,39 @@ const DevToolsPanel: Component = () => {
                 }}
               >
                 {isOn(flag.key) ? "On" : "Off"}
+              </button>
+            </div>
+          )}
+        </For>
+      </div>
+
+      {/* Backend (Rust) log streams */}
+      <p class="mb-2 mt-4 text-[0.7rem] text-(--color-oa-ink-dim)">
+        Backend log streams (raise the Rust log level for that subsystem on demand):
+      </p>
+      <div class="flex flex-col gap-2">
+        <For each={BACKEND_STREAMS}>
+          {(s) => (
+            <div class="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+              <div class="min-w-0">
+                <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">{s.label}</p>
+                <p class="text-[0.65rem] text-(--color-oa-ink-dim)">{s.hint}</p>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  toggleStream(s.id);
+                }}
+                aria-pressed={streamOn(s.id)}
+                class="shrink-0 rounded-md border px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+                classList={{
+                  "border-emerald-400/40 bg-emerald-500/15 text-emerald-200": streamOn(s.id),
+                  "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                    !streamOn(s.id),
+                }}
+              >
+                {streamOn(s.id) ? "On" : "Off"}
               </button>
             </div>
           )}

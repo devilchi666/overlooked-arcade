@@ -4,6 +4,25 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — DevTools: on-demand backend log streams (media / audio / renderer)
+
+- **Shipped (branch `feat/per-system-hub`):** the noisy logging in those three
+  areas is Rust-side, so JS-global flags can't reach it. Added a runtime bridge:
+  - `logger.rs`: `MultiLogger.enabled()` now also passes records whose target
+    matches a runtime **verbose-prefix** set; `set_verbose_prefixes()` raises the
+    global max level to Trace while any stream is on (the `log` macros gate on
+    the global max) and restores the base level (`BASE_LEVEL`) when empty.
+  - Rust `set_log_streams(streams)` command maps "media"→`oa_shell::media`,
+    "audio"→`oa_shell::audio_player`+`oa_audio`, "render"→`oa_render`.
+  - `shellApi.setLogStreams` + a **"Backend log streams"** toggle group in the
+    DevTools panel (Media sync / Audio / Renderer) sending the active set.
+  - typecheck + lint + vitest(98) green; `cargo check -p oa-shell` clean (forced
+    rebuild). Frontend flag toggles (spatial / focus / gamepad) unchanged.
+- **Almost:** per-target filtering is prefix-based; fine for these three. If a
+  4th stream is wanted, add a `BACKEND_STREAMS` entry + a match arm.
+- **Next:** operator playtest (toggle a backend stream → its debug/trace lines
+  appear in the Debug log; toggle off → quiet).
+
 ## 2026-06-14 — S5: removed the old scattered surfaces (arc cleanup)
 
 - **Shipped (branch `feat/per-system-hub`):** the per-system duplication is gone.

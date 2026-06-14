@@ -2707,6 +2707,7 @@ fn main() {
             quit_app,
             restart_app,
             open_devtools,
+            set_log_streams,
             get_system_status,
             get_bios_status,
             unload_rom,
@@ -11502,6 +11503,27 @@ fn restart_app(app: tauri::AppHandle) {
     // Tauri 2's AppHandle::restart terminates the current process and
     // spawns a fresh instance; it never returns.
     app.restart();
+}
+
+/// Enable on-demand verbose (debug/trace) logging for specific backend
+/// subsystems, driven by the DevTools panel's "backend log streams" toggles.
+/// Maps friendly stream names to log-target prefixes; an empty list restores
+/// the base log level. Streams: "media" / "audio" / "render".
+#[tauri::command]
+fn set_log_streams(streams: Vec<String>) {
+    let mut prefixes: Vec<String> = Vec::new();
+    for s in &streams {
+        match s.as_str() {
+            "media" => prefixes.push("oa_shell::media".to_string()),
+            "audio" => {
+                prefixes.push("oa_shell::audio_player".to_string());
+                prefixes.push("oa_audio".to_string());
+            }
+            "render" => prefixes.push("oa_render".to_string()),
+            _ => {}
+        }
+    }
+    logger::set_verbose_prefixes(prefixes);
 }
 
 /// Open the WebView inspector (DevTools) for the dev-tools panel in

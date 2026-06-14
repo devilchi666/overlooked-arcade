@@ -37,6 +37,12 @@ export function openDevtools(): Promise<void> {
   return invoke("open_devtools");
 }
 
+/// Enable on-demand verbose backend logging for the given subsystems
+/// ("media" / "audio" / "render"); [] restores the base level. DevTools panel.
+export function setLogStreams(streams: string[]): Promise<void> {
+  return invoke("set_log_streams", { streams });
+}
+
 /// The resolved OA data dir (portable `<exe_dir>/settings/` or AppData).
 export function getOaDataDir(): Promise<string> {
   return invoke<string>("get_oa_data_dir");
