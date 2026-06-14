@@ -19,7 +19,7 @@ import {
   type JSX,
 } from "solid-js";
 import { useBackHandler } from "@oa/platform/nav";
-import { captureFocusReturn, useFocusGroup } from "@oa/platform/nav";
+import { captureFocusReturn, useFocusGroup, useSettingsRowFocusGroup } from "@oa/platform/nav";
 import { HintRegion } from "@oa/platform/nav";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
@@ -67,6 +67,32 @@ const DialogBackHandler: Component<{ onClose: () => void }> = (props) => {
   return null;
 };
 
+/// Navigate variant of DialogBackHandler — for `<Dialog navigate>`. Instead of
+/// the inert 0-item group, it mounts a real `useSettingsRowFocusGroup` over the
+/// dialog body so a gamepad walks the body's SettingRows + `[data-setting-
+/// action]` buttons with the Slice-1 vocabulary (toggle-flip / select-overlay /
+/// slider-adjust / Y-reset). Same lifecycle guarantees as the inert handler:
+/// captures + restores focus, B closes via the back stack (fires before the
+/// group's onCancel). Free-text fields stay keyboard-only until the OSK lands
+/// (docs/features/nav-coverage/OSK_PLAN.md). Renders the select-overlay host.
+const DialogNavHandler: Component<{
+  bodyRef: () => HTMLElement | undefined;
+  onClose: () => void;
+}> = (props) => {
+  useBackHandler(() => props.onClose());
+  const restoreFocus = captureFocusReturn();
+  const groupId = `dialog-nav-${++dialogIdCounter}`;
+  const nav = useSettingsRowFocusGroup({
+    id: groupId,
+    containerRef: props.bodyRef,
+    autoActivate: false,
+    onCancel: () => props.onClose(),
+  });
+  onMount(() => nav.activate());
+  onCleanup(restoreFocus);
+  return <>{nav.overlay}</>;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -78,6 +104,12 @@ type Props = {
   system?: string;
   /// Width preset. Default "md".
   size?: DialogSize;
+  /// Opt into controller body navigation. When set, the dialog walks its body
+  /// rows ([data-setting-row]) + action buttons ([data-setting-action]) with a
+  /// real focus group instead of the inert input-trap. Default (unset) keeps
+  /// the trap — correct for read-only dialogs (Help/About). See
+  /// docs/features/nav-coverage/SLICE_2_PLAN.md.
+  navigate?: boolean;
   /// Body content.
   children: JSX.Element;
 };
@@ -105,10 +137,23 @@ export const Dialog: Component<Props> = (props) => {
     onCleanup(() => window.removeEventListener("keydown", onKey, { capture: true }));
   });
 
+  let bodyEl: HTMLElement | undefined;
+
   return (
     <Show when={props.open}>
-      <DialogBackHandler onClose={props.onClose} />
-      <HintRegion hints={{ Back: "Close" }} />
+      <Show
+        when={props.navigate}
+        fallback={<DialogBackHandler onClose={props.onClose} />}
+      >
+        <DialogNavHandler bodyRef={() => bodyEl} onClose={props.onClose} />
+      </Show>
+      <HintRegion
+        hints={
+          props.navigate
+            ? { Confirm: "Select", Back: "Close", Tertiary: "Reset" }
+            : { Back: "Close" }
+        }
+      />
       <div
         // z-[70]: platform-owned modal dialogs render ABOVE the engine
         // manager takeover (EngineManagerSurface, z-[60]) — Settings →
@@ -168,7 +213,12 @@ export const Dialog: Component<Props> = (props) => {
               </svg>
             </button>
           </header>
-          <div class="max-h-[70vh] overflow-y-auto px-6 py-5">{props.children}</div>
+          <div
+            ref={(el) => (bodyEl = el)}
+            class="max-h-[70vh] overflow-y-auto px-6 py-5"
+          >
+            {props.children}
+          </div>
         </div>
       </div>
     </Show>

@@ -18,6 +18,12 @@ import {
   type Component,
 } from "solid-js";
 import { listDiscSetMembers } from "@oa/platform/api/emulatorApi";
+import {
+  captureFocusReturn,
+  HintRegion,
+  useBackHandler,
+  useDomQueryFocusGroup,
+} from "@oa/platform/nav";
 import type { RomEntry } from "@oa/platform/library/types";
 
 type Props = {
@@ -67,6 +73,25 @@ const DiscPickerDialog: Component<Props> = (props) => {
   window.addEventListener("keydown", onKeyDown);
   onCleanup(() => window.removeEventListener("keydown", onKeyDown));
 
+  // Controller nav: a vertical group over the disc buttons + Cancel. Custom
+  // chrome (no <Dialog>), so it wires its own modal plumbing — capture the
+  // launching surface (library grid) + restore on close, B closes via the back
+  // stack. The buttons get the shared [data-oa-focus] ring (no outline utility
+  // competes here).
+  let cardRef: HTMLElement | undefined;
+  useBackHandler(() => props.onClose());
+  const restoreFocus = captureFocusReturn();
+  const nav = useDomQueryFocusGroup({
+    id: "disc-picker",
+    containerRef: () => cardRef,
+    selector: "button",
+    orientation: "vertical",
+    onActivate: (_i, el) => el.click(),
+    onCancel: () => props.onClose(),
+  });
+  onMount(() => nav.activate());
+  onCleanup(restoreFocus);
+
   const pickDisc = (member: RomEntry) => {
     props.onLaunch(member);
     props.onClose();
@@ -82,7 +107,11 @@ const DiscPickerDialog: Component<Props> = (props) => {
         if (e.currentTarget === e.target) props.onClose();
       }}
     >
-      <div class="flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl">
+      <div
+        ref={(el) => (cardRef = el)}
+        class="flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/10 bg-(--color-oa-bg-deep) shadow-2xl"
+      >
+        <HintRegion hints={{ Confirm: "Pick disc", Back: "Cancel" }} />
         <header class="flex items-start gap-3 border-b border-white/5 px-5 py-4">
           <span
             class="mt-0.5 inline-block h-7 w-7 shrink-0 text-center text-xl leading-7"

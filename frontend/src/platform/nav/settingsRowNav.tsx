@@ -141,6 +141,13 @@ export function useSettingsRowFocusGroup(
         checkbox.click();
         return;
       }
+      // A radio row = one radio in its label; Confirm selects it. (Each radio
+      // is its own row, so there's no ambiguity about which to pick.)
+      const radio = el.querySelector<HTMLInputElement>('input[type="radio"]');
+      if (radio && !radio.disabled) {
+        radio.click();
+        return;
+      }
       const select = el.querySelector<HTMLSelectElement>("select");
       if (select && !select.disabled) {
         setPicker(select);
@@ -280,7 +287,10 @@ const SettingSelectOverlay: Component<{
     <Portal>
       <div
         data-setting-select-root
-        class="fixed z-[60] max-h-72 overflow-y-auto rounded-md border border-white/10 bg-(--color-oa-bg-deep)/95 text-sm shadow-2xl shadow-black/60 backdrop-blur"
+        // z-[80]: above both the engine manager surface (z-[60], Settings) and
+        // platform dialogs (z-[70]) — a select row inside a `<Dialog navigate>`
+        // must open its picker ON TOP of the dialog, not behind it.
+        class="fixed z-[80] max-h-72 overflow-y-auto rounded-md border border-white/10 bg-(--color-oa-bg-deep)/95 text-sm shadow-2xl shadow-black/60 backdrop-blur"
         style={style}
         onClick={(e) => e.stopPropagation()}
       >

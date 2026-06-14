@@ -4,6 +4,31 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-13 — Slice 2: engine dialogs (2.0 / 2.1 / 2.2)
+
+- **Shipped:** The lever — `Dialog.tsx` gains an opt-in `navigate` prop that
+  mounts `useSettingsRowFocusGroup` over the dialog body (replacing the inert
+  trap) + renders the select-overlay; default unset keeps the trap, so
+  read-only dialogs are untouched. Added **radio** dispatch to the hook and
+  bumped the select-overlay to `z-[80]` (above dialogs' `z-[70]`). Adopters:
+  **2.0** GamePropertiesDialog (reference; one prop). **2.1** DebugLogDialog
+  (filter/footer buttons + auto-scroll toggle marked; search + log body
+  native/skipped), DiscPickerDialog (custom chrome → own vertical group +
+  capture/restore + B-close; it's on the launch path), HelpDialogs (no change —
+  read-only, inert trap is correct). **2.2** UnidentifiedGamesDialog (per-row
+  "Show in folder" + footer), ScummvmDetectDialog (mode radios, pickers,
+  per-row include/overwrite checkboxes, footer; descriptor text inputs stay
+  native). OSK for text entry deferred ([OSK_PLAN.md](OSK_PLAN.md)). tsc clean;
+  `vitest run src/platform/nav` green (44).
+- **Almost:** Operator playtest pending for the Slice 2 adopters (Properties,
+  Debug log, Disc picker, Unidentified, ScummVM detect) — verify walk + Confirm
+  per control, select overlay opens above the dialog, B closes + restores
+  focus. Branch `nav-coverage-slice2`, not yet merged.
+- **Next:** Slice 3 — ImportWizard deep nav (table per-row pickers, step
+  transitions, rule editor); then carousels + GameDetailPanel; OSK slice.
+  Known v1 gap: GameProperties patch **Clear** + free-text fields aren't
+  pad-reachable (keyboard escape hatch / OSK later).
+
 ## 2026-06-13 — Slice 1: Settings category bodies (OA-wide + per-system)
 
 - **Shipped:** Controller row-nav for the Settings center pane. New reusable
