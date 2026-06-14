@@ -324,6 +324,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
       subtitle="Walks a folder for game subdirectories and auto-generates .scummvm descriptor files for known titles."
       size="xl"
       system="scummvm"
+      navigate
     >
       <div class="flex flex-col gap-4">
         {/* Detection mode toggle — built-in curated table (default,
@@ -334,7 +335,11 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
             Detection source
           </legend>
           <div class="flex flex-col gap-2">
-            <label class="flex cursor-pointer items-start gap-2 text-xs text-(--color-oa-ink)">
+            <label
+              data-setting-row
+              tabindex="-1"
+              class="flex cursor-pointer items-start gap-2 text-xs text-(--color-oa-ink)"
+            >
               <input
                 type="radio"
                 name="scummvm-detect-mode"
@@ -352,7 +357,11 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
                 </span>
               </span>
             </label>
-            <label class="flex cursor-pointer items-start gap-2 text-xs text-(--color-oa-ink)">
+            <label
+              data-setting-row
+              tabindex="-1"
+              class="flex cursor-pointer items-start gap-2 text-xs text-(--color-oa-ink)"
+            >
               <input
                 type="radio"
                 name="scummvm-detect-mode"
@@ -396,6 +405,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
                 </div>
                 <button
                   type="button"
+                  data-setting-action
                   onClick={() => void pickCliPath()}
                   class="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-(--color-oa-ink) hover:bg-white/[0.08]"
                 >
@@ -419,6 +429,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
           </div>
           <button
             type="button"
+            data-setting-action
             onClick={() => void pickFolder()}
             disabled={scanning() || writing()}
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-oa-ink) hover:bg-white/[0.08] disabled:opacity-50"
@@ -428,6 +439,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
           <Show when={folder()}>
             <button
               type="button"
+              data-setting-action
               onClick={() => void runScan(folder()!)}
               disabled={scanning() || writing()}
               class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-system-accent-soft) hover:bg-(--color-system-accent)/25 disabled:opacity-50"
@@ -474,7 +486,11 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
                   const state = () => rowState().get(r.directory);
                   return (
                     <div class="flex flex-col gap-2 rounded-md border border-white/10 bg-white/[0.03] p-3">
-                      <div class="flex items-center gap-2">
+                      <div
+                        data-setting-row
+                        tabindex="-1"
+                        class="flex items-center gap-2"
+                      >
                         <input
                           type="checkbox"
                           checked={state()?.include ?? false}
@@ -521,7 +537,11 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
                           class="flex-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-sm font-mono text-(--color-oa-ink)"
                         />
                         <Show when={r.alreadyExists}>
-                          <label class="flex items-center gap-1 whitespace-nowrap text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          <label
+                            data-setting-row
+                            tabindex="-1"
+                            class="flex items-center gap-1 whitespace-nowrap text-[0.65rem] uppercase tracking-widest text-(--color-oa-ink-dim)"
+                          >
                             <input
                               type="checkbox"
                               checked={state()?.overwrite ?? false}
@@ -559,6 +579,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
           <div class="flex gap-2">
             <button
               type="button"
+              data-setting-action
               onClick={() => props.onClose()}
               disabled={writing()}
               class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-oa-ink-dim) hover:text-(--color-oa-ink)"
@@ -567,6 +588,7 @@ export const ScummvmDetectDialog: Component<Props> = (props) => {
             </button>
             <button
               type="button"
+              data-setting-action
               onClick={() => void writeBatch()}
               disabled={writing() || scanning() || includedCount() === 0}
               class="rounded-md border border-(--color-system-accent)/40 bg-(--color-system-accent)/15 px-3 py-1.5 text-xs uppercase tracking-wider text-(--color-system-accent-soft) hover:bg-(--color-system-accent)/25 disabled:opacity-50"

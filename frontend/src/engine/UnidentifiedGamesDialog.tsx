@@ -105,6 +105,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
       subtitle={headerSubtitle()}
       system={props.systemId ?? undefined}
       size="xl"
+      navigate
     >
       <div class="flex flex-col gap-4">
         <Show
@@ -161,6 +162,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
                   </div>
                   <button
                     type="button"
+                    data-setting-action
                     onClick={(e) => {
                       e.currentTarget.blur();
                       onShowInFolder(row.filePath);
@@ -178,6 +180,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
         <footer class="flex items-center justify-end gap-2 border-t border-white/5 pt-3">
           <button
             type="button"
+            data-setting-action
             onClick={(e) => {
               e.currentTarget.blur();
               props.onClose();
@@ -189,6 +192,7 @@ const UnidentifiedGamesDialog: Component<UnidentifiedGamesDialogProps> = (props)
           <Show when={(rows()?.length ?? 0) > 0}>
             <button
               type="button"
+              data-setting-action
               onClick={(e) => {
                 e.currentTarget.blur();
                 onRunIdentify();
