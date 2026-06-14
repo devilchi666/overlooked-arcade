@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { captureFocusReturn, useDomQueryFocusGroup } from "@oa/platform/nav";
-import { useBackHandler } from "@oa/platform/nav";
+import { useBackHandler, SpatialModalScope } from "@oa/platform/nav";
 import { listCores } from "@oa/platform/api/coresApi";
 import {
   startBackgroundScan,
@@ -1162,6 +1162,12 @@ const ImportWizard: Component<Props> = (props) => {
         onCleanup(restoreFocus);
         return null;
       })()}
+      <SpatialModalScope
+        id="import-wizard"
+        onCancel={() => {
+          if (!scanRunning() && !committing()) props.onClose();
+        }}
+      >
       <div
         // z-[70]: platform-owned modal dialogs render ABOVE the engine
         // manager takeover (EngineManagerSurface, z-[60]) — Settings →
@@ -1334,6 +1340,7 @@ const ImportWizard: Component<Props> = (props) => {
           </footer>
         </div>
       </div>
+      </SpatialModalScope>
       {/* ScummVM auto-detect — mounted at wizard root so it can layer
           on top of the wizard's own backdrop. Scoped to the currently-
           picked folder. */}

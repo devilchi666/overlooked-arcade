@@ -23,6 +23,7 @@ import {
   type Component,
 } from "solid-js";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { SpatialModalScope } from "@oa/platform/nav";
 
 export type GameMediaManageStats = {
   total: number;
@@ -166,11 +167,14 @@ const GameMediaManagePanel: Component<GameMediaManagePanelProps> = (props) => {
 
   return (
     <Show when={open()}>
+      <SpatialModalScope id="game-media-manage" onCancel={() => props.onClose()}>
       {/* Backdrop — semi-transparent overlay that closes on click. Sits
           below the panel itself so clicks on the panel don't bubble
-          and trigger close. */}
+          and trigger close. z-[70]: lifted above the engine takeover
+          (z-[60]) so it's visible + navigable when summoned from inside
+          the Settings → Library → Game-media surface. */}
       <div
-        class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+        class="fixed inset-0 z-[70] bg-black/40 backdrop-blur-[1px]"
         onClick={(e) => {
           e.stopPropagation();
           props.onClose();
@@ -178,14 +182,14 @@ const GameMediaManagePanel: Component<GameMediaManagePanelProps> = (props) => {
         aria-hidden="true"
       />
 
-      {/* Panel — slides in from the right. z-45 sits above page chrome
-          and below the BackgroundJobsBar (z-55) + modals (z-50). */}
+      {/* Panel — slides in from the right. z-[71] sits just above its
+          own backdrop (and above the engine takeover). */}
       <aside
         role="dialog"
         aria-modal="true"
         aria-label={`${systemName()} game media operations`}
         data-system={props.systemId() ?? undefined}
-        class="fixed right-0 top-0 z-45 flex h-full w-full max-w-[480px] flex-col gap-4 overflow-y-auto border-l border-white/10 bg-(--color-oa-bg-deep) p-6 shadow-2xl"
+        class="fixed right-0 top-0 z-[71] flex h-full w-full max-w-[480px] flex-col gap-4 overflow-y-auto border-l border-white/10 bg-(--color-oa-bg-deep) p-6 shadow-2xl"
       >
         <header class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -308,6 +312,7 @@ const GameMediaManagePanel: Component<GameMediaManagePanelProps> = (props) => {
           </button>
         </footer>
       </aside>
+      </SpatialModalScope>
     </Show>
   );
 };

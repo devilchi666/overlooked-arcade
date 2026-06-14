@@ -353,14 +353,22 @@ structure/look. Full design + phases:
 **[PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md)**;
 feature folder [features/unified-nav/](features/unified-nav/).
 
-**Phase 1 (start here): engine + prove on Settings.** Build the spatial engine
-+ universal discovery; land it on the **whole Settings surface** including the
-embedded sub-pages inert today (Library Manager Views / Game media, Media,
-Metadata, System Health, Profile, About). Apply the Pillar-B panel scaffold to
-Settings as the reference adopter. Acceptance: every Settings sub-surface fully
-controller-navigable with **zero per-control wiring** + a consistent look. Then
-Phase 2 (roll scope into `Dialog` + `EngineManagerSurface`) → Phase 3
-(Retroverse tabs + grid/carousel adapters) → Phase 4 (kiosk/arcade input).
+**Phase 1 (Pillar A — spatial engine) ✅ SHIPPED + MERGED 2026-06-14**
+(`feat/unified-nav-phase-1`). The spatial engine (`platform/nav/spatial.tsx`)
++ universal native-focusable discovery now drives the **whole Settings surface**
+(sidebar, all category bodies, embedded sub-pages, dialogs, custom modals) with
+**zero per-control wiring**. Movement model resolved to a **region-bias hybrid**
+(UP/DOWN within a region, LEFT/RIGHT between — DECISIONS D1, matches the locked
+nav spec). See [features/unified-nav/SESSION_LOG.md](features/unified-nav/SESSION_LOG.md)
++ DECISIONS D1–D4.
+
+**Next (start here): Pillar B — unified panel structure/look on Settings.**
+PanelScaffold + a shared control-row vocabulary (generalize `SettingRow`) + the
+standard tab pattern, applied to Settings as the reference adopter; fix the now-
+stale HintBar labels ("Switch region"/"Prev tab") on the engine surface. Then
+Phase 2 (formalize the `Dialog`/`EngineManagerSurface` scope + retire
+`Dialog.navigate` markers) → Phase 3 (Retroverse tabs + grid/carousel adapters)
+→ Phase 4 (kiosk/arcade input).
 
 **Predecessor — Controller-Nav Coverage Slices 1–3 (2026-06-13/14):** Slices
 1–2 (Settings row-nav + engine dialogs) **shipped + merged**; Slice 3

@@ -41,11 +41,6 @@ import { ControllersSettings } from "./ControllerTestPanel";
 import PerSystemSettingsBody from "./PerSystemSettingsBody";
 import MetadataSettingsBody from "./MetadataSettingsBody";
 import SystemHealthPage from "./SystemHealthPage";
-import {
-  activateFocusGroup,
-  useDomQueryFocusGroup,
-  useSettingsRowFocusGroup,
-} from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { usePlatform } from "@oa/platform/platformContext";
 
@@ -291,30 +286,12 @@ const SettingsPanel: Component<Props> = (props) => {
     setActiveCategoryId("per-system");
   }
 
-  let leftRef: HTMLElement | undefined;
-  let centerRef: HTMLElement | undefined;
-  const LEFT_ID = "engine-settings-left";
-  const CENTER_ID = "engine-settings-center";
-  useDomQueryFocusGroup({
-    id: LEFT_ID,
-    containerRef: () => leftRef,
-    orientation: "vertical",
-    onActivate: (_i, el) => el.click(),
-    neighbours: { right: CENTER_ID },
-  });
-  // Center pane: the form bodies are SettingRows (select / slider / toggle) +
-  // the odd action button, not bare <button>s. useSettingsRowFocusGroup walks
-  // them by `[data-setting-row]` / `[data-setting-action]` and gives Confirm
-  // per-control behaviour (flip toggle / overlay-pick select / slider adjust
-  // mode). Sidebar hand-off (DPad LEFT → sidebar) stays wired via neighbours;
-  // B with no overlay / adjust active returns focus to the sidebar.
-  const centerNav = useSettingsRowFocusGroup({
-    id: CENTER_ID,
-    containerRef: () => centerRef,
-    autoActivate: false,
-    neighbours: { left: LEFT_ID },
-    onCancel: () => activateFocusGroup(LEFT_ID),
-  });
+  // Navigation: the spatial engine (pushed by EngineManagerSurface as one
+  // layer over the whole takeover) auto-discovers every native control in the
+  // sidebar + center pane + embedded sub-pages by geometry — no per-pane focus
+  // groups, no `[data-setting-*]` markers needed here. The legacy markers on
+  // SettingRow stay as harmless no-ops (the spatial engine reads the native
+  // <select>/<input>/<button> directly).
 
   return (
     <Show
@@ -342,10 +319,7 @@ const SettingsPanel: Component<Props> = (props) => {
         }}
       />
 
-      <aside
-        ref={(el) => (leftRef = el)}
-        class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4"
-      >
+      <aside class="min-w-0 overflow-y-auto border-r border-white/5 px-3 py-4">
         <p class="px-2 text-[0.55rem] font-semibold uppercase tracking-[0.4em] text-(--color-oa-ink-dim)">
           Categories
         </p>
@@ -373,6 +347,7 @@ const SettingsPanel: Component<Props> = (props) => {
                             "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)": !isActive(),
                           }}
                           aria-current={isActive() ? "page" : undefined}
+                          data-nav-autofocus={isActive() ? "true" : undefined}
                         >
                           <span class="w-4 text-center text-sm">{category.glyph}</span>
                           <span class="truncate">{category.label}</span>
@@ -455,8 +430,14 @@ const SettingsPanel: Component<Props> = (props) => {
         </section>
       </aside>
 
+      {/* data-nav-region: the spatial engine treats this whole center pane as
+          ONE region — UP/DOWN flow through its content (Set up → rows → cards),
+          LEFT/RIGHT cross to the categories sidebar / embedded sub-nav. Without
+          it the content had no region of its own and fell into the layer
+          catch-all, stranding the embedded Library sub-nav. Embedded landmarks
+          (the Library Manager's own <nav>/<aside>) stay their own sub-regions. */}
       <section
-        ref={(el) => (centerRef = el)}
+        data-nav-region="settings-content"
         class="min-h-0 min-w-0 overflow-y-auto px-8 py-6"
       >
         <header class="mb-6">
@@ -542,9 +523,6 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
         </Switch>
       </section>
-      {/* Controller-nav select-overlay host for the center pane's SettingRows.
-          Portaled internally, so its position in the tree is just lifecycle. */}
-      {centerNav.overlay}
     </div>
     </Show>
   );

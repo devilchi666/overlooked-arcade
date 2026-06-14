@@ -31,6 +31,7 @@ import type { NavDirection, NavDirectionEvent, NavEvent } from "./types";
 import { isNavEnabled, onNavEvent } from "./gamepad";
 import { isSwapAB, navBindings, resolveButtonVerb, resolveKeyVerb } from "./navBindings";
 import { isDirectionVerb, type NavVerb } from "./verbs";
+import { isSpatialActive } from "./spatial";
 
 export type FocusOrientation = "vertical" | "horizontal" | "grid";
 
@@ -194,6 +195,10 @@ function activeHandle(): FocusGroupHandle | null {
 // Global gamepad subscription — once, at module load. Routes every raw
 // NavEvent to whichever group is active. No-op if no group is active.
 onNavEvent((event) => {
+  // The spatial engine (./spatial) owns input while any spatial layer is
+  // active — it routes the event itself, so the index-based manager must not
+  // also handle it. Exactly one model per event.
+  if (isSpatialActive()) return;
   const handle = activeHandle();
   if (!handle) {
     focusLog("event dropped — no active/registered group", event);
@@ -213,6 +218,8 @@ onNavEvent((event) => {
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if (!isNavEnabled()) return;
+    // Spatial engine owns the keyboard while a spatial layer is active.
+    if (isSpatialActive()) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement | null;
     const tag = target?.tagName;
@@ -662,9 +669,22 @@ export function useDomQueryFocusGroup(opts: DomQueryFocusGroupOptions): DomQuery
   createEffect(() => {
     const idx = focusedIndex();
     const active = group.isActive();
+    // While the spatial engine owns input, index-based groups are inert
+    // (./spatial bypasses their event routing). Don't paint their focus ring
+    // too — it'd ghost a dashed outline on an embedded sub-page's first row
+    // alongside the spatial ring. Tracks isSpatialActive reactively, so the
+    // paint resumes the moment the spatial layer pops.
+    const spatial = isSpatialActive();
     void domRev();
     queueMicrotask(() => {
       const items = queryItems();
+      if (spatial) {
+        items.forEach((el) => {
+          el.removeAttribute("data-oa-focus");
+          el.removeAttribute("data-oa-focus-active");
+        });
+        return;
+      }
       const targetIdx = items.length === 0 ? -1 : Math.min(Math.max(0, idx), items.length - 1);
       lastFocusedEl = targetIdx >= 0 ? items[targetIdx] : null;
       items.forEach((el, i) => {

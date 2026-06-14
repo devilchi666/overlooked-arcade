@@ -18,9 +18,30 @@ spanned every system but was filed under whichever core happened to be active.
   reusing the Slice-1/2/3 activate layer) **+** a unified, input-agnostic panel
   structure/look (keyboard / controller / kiosk-arcade). Plan:
   [PLANS/unified-navigation-and-panels.md](PLANS/unified-navigation-and-panels.md);
-  feature folder [features/unified-nav/](features/unified-nav/). **Phase 1
-  (next): engine + prove on the whole Settings surface** — queued in
-  [NEXT.md](NEXT.md) HIGH band.
+  feature folder [features/unified-nav/](features/unified-nav/).
+  - **Phase 1 ✅ shipped + merged to main 2026-06-14**
+    (`feat/unified-nav-phase-1`). Pillar A spatial engine
+    (`platform/nav/spatial.tsx` + pure `spatialGeometry.ts` + `sliderStep.ts`):
+    global layer stack, native focusable auto-discovery (no markers),
+    **region-bias hybrid** movement (UP/DOWN within a region, LEFT/RIGHT
+    between — derived from `<aside>`/`<nav>` landmarks + a `data-nav-region`
+    hook; matches the locked nav spec, DECISIONS D1), the Slice-1/2/3 activate
+    layer reused, gamepad+keyboard routing, layer scoping. Proven on the whole
+    Settings surface: `EngineManagerSurface` pushes one layer; `SettingsPanel`
+    dropped its index groups; `Dialog` → `SpatialDialogLayer` when active;
+    custom modals (Import Wizard / Game-media / Missing-cores) wrapped in
+    `SpatialModalScope` + z-lifted. `focus.ts` bypasses the legacy index
+    manager while a spatial layer is active. Three playtest rounds
+    (collapsed-`<details>` focus trap, flat-plane darting, content-region
+    stranding) resolved; D1–D4 in
+    [features/unified-nav/DECISIONS.md](features/unified-nav/DECISIONS.md).
+    typecheck/lint/vitest(97)/build green.
+  - **Next: Pillar B** — unified panel structure/look on Settings
+    (PanelScaffold + control-row vocabulary + fix the stale HintBar labels),
+    engine-first by design (DECISIONS D3). Then Phase 2 (formalize the
+    `Dialog`/container scope + retire `Dialog.navigate` markers) and Phase 3
+    (themes / virtualized-grid + carousel adapters). Queued in
+    [NEXT.md](NEXT.md) HIGH band.
   - **Predecessor — Controller-Nav Coverage (Slices 1–3, 2026-06-13/14):**
     Slice 1 (Settings row-nav: `useSettingsRowFocusGroup` + select-overlay +
     slider-adjust + Y-reset) and Slice 2 (engine dialogs via `Dialog.navigate`)

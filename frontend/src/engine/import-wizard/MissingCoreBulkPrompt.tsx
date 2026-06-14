@@ -13,6 +13,7 @@ import * as coresApi from "@oa/platform/api/coresApi";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { listenTo, OA_EVENTS } from "@oa/platform/api/eventsApi";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { SpatialModalScope } from "@oa/platform/nav";
 
 // Phase 1B Slice 4 — Bulk-install missing cores modal.
 //
@@ -244,8 +245,16 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
 
   return (
     <Show when={props.open}>
+      <SpatialModalScope
+        id="missing-core-bulk"
+        onCancel={() => {
+          if (!anyDownloading()) props.onClose();
+        }}
+      >
       <div
-        class="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
+        // z-[72]: above the Import Wizard (z-[70]) it opens from + the
+        // engine takeover (z-[60]) so it's visible + navigable on top.
+        class="fixed inset-0 z-[72] grid place-items-center bg-black/60 backdrop-blur-sm"
         onClick={(e) => {
           if (e.currentTarget === e.target && !anyDownloading()) props.onClose();
         }}
@@ -423,6 +432,7 @@ const MissingCoreBulkPrompt: Component<MissingCoreBulkPromptProps> = (props) => 
           </footer>
         </div>
       </div>
+      </SpatialModalScope>
     </Show>
   );
 };
