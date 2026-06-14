@@ -21,6 +21,7 @@ import {
 import { useBackHandler } from "@oa/platform/nav";
 import { captureFocusReturn, useFocusGroup, useSettingsRowFocusGroup } from "@oa/platform/nav";
 import { HintRegion } from "@oa/platform/nav";
+import { isSpatialActive, SpatialDialogLayer } from "@oa/platform/nav";
 
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
@@ -141,11 +142,22 @@ export const Dialog: Component<Props> = (props) => {
 
   return (
     <Show when={props.open}>
+      {/* Inside an engine takeover the spatial engine is active: the dialog
+          body becomes a spatial layer (universal discovery + geometry), so we
+          skip the index-based handlers entirely. In the legacy/library world
+          (spatial inactive) the original index handlers drive nav. */}
       <Show
-        when={props.navigate}
-        fallback={<DialogBackHandler onClose={props.onClose} />}
+        when={isSpatialActive()}
+        fallback={
+          <Show
+            when={props.navigate}
+            fallback={<DialogBackHandler onClose={props.onClose} />}
+          >
+            <DialogNavHandler bodyRef={() => bodyEl} onClose={props.onClose} />
+          </Show>
+        }
       >
-        <DialogNavHandler bodyRef={() => bodyEl} onClose={props.onClose} />
+        <SpatialDialogLayer bodyRef={() => bodyEl} onClose={props.onClose} />
       </Show>
       <HintRegion
         hints={

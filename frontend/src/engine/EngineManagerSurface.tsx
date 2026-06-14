@@ -22,11 +22,14 @@
 
 import { createEffect, onCleanup, Show, type Component } from "solid-js";
 import { closeEngineSurface, engineSurfaceOpen } from "../platform/engineSurface";
+import { useSpatialLayer } from "@oa/platform/nav";
 import SettingsPanel from "./SettingsPanel";
 
 const EngineManagerSurface: Component = () => {
   // Escape closes the surface. Document-level capture so it fires
-  // regardless of which inner control has focus.
+  // regardless of which inner control has focus. (Note: the spatial engine's
+  // own keydown intercepts Escape ONLY when a nested overlay/dialog/adjust is
+  // open — it lets a top-level Escape bubble here to close the takeover.)
   createEffect(() => {
     if (!engineSurfaceOpen()) return;
     const handler = (e: KeyboardEvent) => {
@@ -42,7 +45,27 @@ const EngineManagerSurface: Component = () => {
 
   return (
     <Show when={engineSurfaceOpen()}>
+      <Surface />
+    </Show>
+  );
+};
+
+/// Inner surface — mounted only while the takeover is open, so the spatial
+/// layer's lifetime exactly matches the takeover's. The whole takeover is ONE
+/// spatial layer: universal discovery scoped to its root makes the sidebar,
+/// every category body, and the embedded sub-pages (Library Manager / System
+/// Health / Metadata / Profile / About) navigable with zero per-control wiring.
+const Surface: Component = () => {
+  let rootEl: HTMLElement | undefined;
+  const nav = useSpatialLayer({
+    id: "engine-surface",
+    containerRef: () => rootEl,
+    onCancel: () => closeEngineSurface(),
+  });
+  return (
+    <>
       <div
+        ref={(el) => (rootEl = el)}
         // Fullscreen, opaque, above ALL other UI (ToastStack uses z-50;
         // drop overlay uses z-50; QuickSettings uses z-40-ish). z-[60]
         // sits cleanly above. Backdrop is fully opaque per D3 ("not a
@@ -87,7 +110,9 @@ const EngineManagerSurface: Component = () => {
           <SettingsPanel />
         </main>
       </div>
-    </Show>
+      {/* Select-picker overlay host for the spatial engine (portaled). */}
+      {nav.overlay}
+    </>
   );
 };
 

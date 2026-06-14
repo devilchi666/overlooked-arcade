@@ -39,33 +39,15 @@ import {
 } from "./focus";
 import { pushBackHandler } from "./back";
 import { HintRegion } from "./HintBar";
+import { nextSliderValue } from "./sliderStep";
 
 /// Selector for the rows + standalone action buttons the center group walks.
 /// Explicit opt-in (no bare `button`) so embedded sub-pages aren't half-wired.
 export const SETTING_ROW_SELECTOR = "[data-setting-row], [data-setting-action]";
 
-/// One slider step in `dir` (+1 = increase) from `value`, clamped to
-/// [min, max] and snapped to the step grid relative to `min` so repeated
-/// gamepad steps don't accumulate float drift (e.g. 0.05-step bloom). `min`
-/// / `max` may be ±Infinity when the input declares no bound. Pure — unit-
-/// tested in settingsRowNav.test.ts.
-export function nextSliderValue(
-  value: number,
-  step: number,
-  min: number,
-  max: number,
-  dir: 1 | -1,
-): number {
-  let next = value + dir * step;
-  if (Number.isFinite(min)) next = Math.max(min, next);
-  if (Number.isFinite(max)) next = Math.min(max, next);
-  if (Number.isFinite(min) && step > 0) {
-    next = min + Math.round((next - min) / step) * step;
-    if (Number.isFinite(max)) next = Math.min(max, next);
-    next = Math.max(min, next);
-  }
-  return next;
-}
+/// Re-exported from ./sliderStep (moved there so the spatial engine can share
+/// it without an import cycle). settingsRowNav.test.ts imports it from here.
+export { nextSliderValue };
 
 export type SettingsRowFocusGroupOptions = {
   id: string;
