@@ -95,7 +95,10 @@ const MetaField: Component<{
   onInput: (raw: string) => void;
   onReset: () => void;
 }> = (props) => (
-  <div class="group relative flex items-center gap-3 rounded-md py-1 pl-3 pr-2 transition hover:bg-white/[0.03]">
+  <div
+    data-setting-row
+    class="group relative flex items-center gap-3 rounded-md py-1 pl-3 pr-2 transition hover:bg-white/[0.03]"
+  >
     <span
       class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-(--color-system-accent) transition-opacity"
       classList={{ "opacity-0": !props.overridden, "opacity-100": props.overridden }}
@@ -117,15 +120,22 @@ const MetaField: Component<{
       onInput={(e) => props.onInput(e.currentTarget.value)}
       class={INPUT_CLASS}
     />
-    <div class="flex w-48 shrink-0 items-center justify-end gap-2 text-[0.65rem] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+    <div class="flex w-48 shrink-0 items-center justify-end gap-2 text-[0.65rem]">
+      {/* The "Default:" hint stays quiet (hover/focus only); the Reset button
+          is ALWAYS visible when overridden so it's reachable by direction nav
+          (and by the Y/Tertiary accelerator via data-setting-reset). */}
       <Show when={props.inherited}>
-        <span class="truncate text-(--color-oa-ink-dim)/70" title={sourceTooltip(props.inherited!.from)}>
+        <span
+          class="truncate text-(--color-oa-ink-dim)/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          title={sourceTooltip(props.inherited!.from)}
+        >
           Default: {props.inherited!.value}
         </span>
       </Show>
       <Show when={props.overridden}>
         <button
           type="button"
+          data-setting-reset
           onClick={(e) => {
             e.currentTarget.blur();
             props.onReset();
@@ -349,6 +359,10 @@ export const SystemMetaForm: Component<{
   const [savedAt, setSavedAt] = createSignal<number | null>(null);
 
   const isDirty = () => JSON.stringify(draft()) !== JSON.stringify(baseline());
+  // True when the system has SAVED overrides (so "Reset all" stays usable after
+  // autosave clears the dirty flag — the bug where it greyed out permanently).
+  const hasSavedOverrides = () =>
+    JSON.stringify(baseline()) !== JSON.stringify(EMPTY_SYSTEM_INFO_OVERRIDE);
 
   // Capture (system, snapshot) so a fast system switch mid-debounce can't write
   // one system's draft to another; the baseline write is guarded to the
@@ -488,7 +502,7 @@ export const SystemMetaForm: Component<{
               e.currentTarget.blur();
               void handleResetAll();
             }}
-            disabled={saving() || !isDirty()}
+            disabled={saving() || (!hasSavedOverrides() && !isDirty())}
             class="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim) transition hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-200 disabled:opacity-40"
             title="Drop every metadata override for this system"
           >
