@@ -31,6 +31,12 @@ export function restartApp(): Promise<void> {
   return invoke("restart_app");
 }
 
+/// Open the WebView inspector (DevTools). Debug builds only — rejects in
+/// release. Wired to the dev-tools panel in Settings → About.
+export function openDevtools(): Promise<void> {
+  return invoke("open_devtools");
+}
+
 /// The resolved OA data dir (portable `<exe_dir>/settings/` or AppData).
 export function getOaDataDir(): Promise<string> {
   return invoke<string>("get_oa_data_dir");

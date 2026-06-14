@@ -26,6 +26,8 @@ import { DisplayVideoEditor } from "./domains/DisplayVideoEditor";
 import { CoreLauncherEditor } from "./domains/CoreLauncherEditor";
 import { MediaEditor } from "./domains/MediaEditor";
 import { MetadataEditor } from "./domains/MetadataEditor";
+import { InputEditor } from "./domains/InputEditor";
+import { BiosEditor } from "./domains/BiosEditor";
 
 type HubView =
   | { level: "grid" }
@@ -147,6 +149,12 @@ export const SystemsHubRoot: Component<{ settings: SettingsStore }> = (props) =>
               </Match>
               <Match when={domain() === "metadata"}>
                 <MetadataEditor systemId={() => sysId()!} />
+              </Match>
+              <Match when={domain() === "input"}>
+                <InputEditor systemId={() => sysId()!} />
+              </Match>
+              <Match when={domain() === "bios"}>
+                <BiosEditor systemId={() => sysId()!} />
               </Match>
             </Switch>
           </Match>

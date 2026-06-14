@@ -2706,6 +2706,7 @@ fn main() {
             set_core_pref,
             quit_app,
             restart_app,
+            open_devtools,
             get_system_status,
             get_bios_status,
             unload_rom,
@@ -11501,6 +11502,37 @@ fn restart_app(app: tauri::AppHandle) {
     // Tauri 2's AppHandle::restart terminates the current process and
     // spawns a fresh instance; it never returns.
     app.restart();
+}
+
+/// Open the WebView inspector (DevTools) for the dev-tools panel in
+/// Settings → About. Only available in debug builds (or when the `devtools`
+/// Cargo feature is on); a no-op error otherwise so the frontend can disable
+/// the button. Opens on the first known window, falling back to any window.
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    // Tauri auto-enables the inspector in debug builds; `open_devtools` only
+    // exists under `debug_assertions` (or the tauri `devtools` feature, which we
+    // don't ship in release). Gate on debug so release builds compile + cleanly
+    // reject the call.
+    #[cfg(debug_assertions)]
+    {
+        for label in ["library", "main"] {
+            if let Some(w) = app.get_webview_window(label) {
+                w.open_devtools();
+                return Ok(());
+            }
+        }
+        if let Some((_, w)) = app.webview_windows().into_iter().next() {
+            w.open_devtools();
+            return Ok(());
+        }
+        Err("no webview window to open devtools on".to_string())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("DevTools are not available in this build".to_string())
+    }
 }
 
 /// Retroverse-UI Phase C2 — Snapshot of host system load for the HOME tab's
