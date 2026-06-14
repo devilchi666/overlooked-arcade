@@ -218,7 +218,7 @@ function focusedTarget(): HTMLElement | null {
 // frontend::oa-spatial). Kept compiled in — mirrors ./focus's FOCUS_DEBUG — so a
 // future movement regression is diagnosable by flipping one flag.
 const SPATIAL_DEBUG = (): boolean =>
-  (globalThis as { __oaSpatialDebug?: boolean }).__oaSpatialDebug === true;
+  (globalThis as { __oaSpatialDebug?: boolean }).__oaSpatialDebug !== false;
 
 function describe(el: HTMLElement | null): string {
   if (!el) return "∅";
