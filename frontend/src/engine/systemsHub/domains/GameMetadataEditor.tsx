@@ -34,6 +34,7 @@ export const GameMetadataEditor: Component<{ systemId: Accessor<SystemId> }> = (
       system={props.systemId()}
       title={systemThemes[props.systemId()]?.displayName ?? props.systemId()}
       subtitle="Game metadata · per-game facts for this system"
+      fill
     >
       <MetadataGamePane
         previewOpen={previewOpen}
