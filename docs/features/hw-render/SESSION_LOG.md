@@ -17,8 +17,9 @@ its own SW/GL renderer). So M3 splits into **Half 1 — per-core hardware
 validation** (needs the operator's cores + BIOS + GPU; can't be done from
 this side) and **Half 2 — hardware-independent groundwork** (this session).
 
-- **Shipped (`feat/hw-render-m3`, not merged):** D4 observability + fallback
-  signal. oa-libretro: `HwRenderStatus` enum on `State` (NotRequested /
+- **Shipped (✅ MERGED to main 2026-06-15 — cherry-picked clean onto current main
+  off the original `feat/hw-render-m3`; 846 oa-shell tests green post-pick):** D4
+  observability + fallback signal. oa-libretro: `HwRenderStatus` enum on `State` (NotRequested /
   AcceptedVulkan / DeclinedNonVulkan(ctx) / DeclinedInstanceError), set in
   the three `SET_HW_RENDER` branches; `LibretroCore::hw_render_status()`
   accessor + crate re-export. oa-shell: new `hw_render.rs` —
