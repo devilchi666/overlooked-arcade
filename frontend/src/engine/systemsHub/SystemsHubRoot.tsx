@@ -23,6 +23,7 @@ import { SystemsHub } from "./SystemsHub";
 import { SystemHubDetail } from "./SystemHubDetail";
 import { domainLabel, type DomainId } from "./domains";
 import { DisplayVideoEditor } from "./domains/DisplayVideoEditor";
+import { LayoutEditor } from "./domains/LayoutEditor";
 import { CoreLauncherEditor } from "./domains/CoreLauncherEditor";
 import { MediaEditor } from "./domains/MediaEditor";
 import { PlatformMetadataEditor } from "./domains/PlatformMetadataEditor";
@@ -141,6 +142,9 @@ export const SystemsHubRoot: Component<{ settings: SettingsStore }> = (props) =>
             >
               <Match when={domain() === "display"}>
                 <DisplayVideoEditor systemId={() => sysId()!} settings={props.settings} />
+              </Match>
+              <Match when={domain() === "layout"}>
+                <LayoutEditor systemId={() => sysId()!} />
               </Match>
               <Match when={domain() === "core"}>
                 <CoreLauncherEditor systemId={() => sysId()!} />

@@ -9,6 +9,44 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L5: end-user per-system layout override UI ("Layout" Hub domain card) — ✅ shipped + MERGED to main (operator playtested)
+
+> Branch `feat/theming-arc2-l5-layout-picker`. The D32 user-agency headline: a
+> runtime "pick your view per system" surface writing the already-built L3 override
+> store — pure UI, no new machinery. Three forks signed off (AskUserQuestion):
+> home = engine Hub Layout card (not theme territory); scope = ALL FOUR ViewTypes
+> exposed (operator overruled game-browse-only) with reserved views labeled;
+> primitives = list/grid/carousel/wheel (no `custom`). DECISIONS **D43**.
+
+- **Shipped:**
+  - **`engine/systemsHub/domains/LayoutEditor.tsx`** — per-system layout picker
+    mirroring `DisplayVideoEditor`'s `PanelScaffold`/`HubSection` shape. One
+    `SettingRow` per view (game-browse first, then the reserved system/manufacturer/
+    details). Each row: a select with a leading `Theme default — <X>` sentinel
+    (→ `clearLayoutOverride`) + the four user primitives (→ `setLayoutOverride(
+    activeThemeId, system, view, choice)`); an inheritance chip showing the
+    no-override fallback (`resolveLayout({override: undefined, …})`) + its tier
+    ("this theme · per-system" / "this theme" / "engine default"); a Reset chip when
+    overridden (D30 discipline). Subtitle states overrides apply to the active theme
+    (the store is theme-keyed). `HONORED_VIEWS` labels game-browse "Shown in the
+    library now" vs the others "Reserved — no renderer yet" (honest, not broken).
+  - **`domains.ts`** — new `DomainId "layout"` + `DOMAINS` entry (glyph `▤`, blurb
+    "How this system's games are browsed", enabled).
+  - **`SystemsHubRoot.tsx`** — import + a `domain() === "layout"` Switch arm.
+- **Verified:** typecheck + lint green; `npm run test` = **149 passed** (unchanged —
+  the editor is playtest-verified like the other ARC-2 primitive renders; the cascade
+  logic is already covered by `layoutResolver.test.ts`); build green. Frontend-only.
+- **Almost:** the three reserved views (system/manufacturer/details) persist a pick
+  but change nothing visibly until they gain renderers — labeled as such.
+- **Playtest (2026-06-15) — passed.** Operator confirmed merge. Also surfaced a wanted
+  cross-theme convenience follow-on: **"Copy from theme…" + "Set for all themes"**
+  buttons on the layout editor (overrides are theme-scoped by design, D39, so a user
+  re-picks per theme) — parked as wanted (PARKING_LOT 2026-06-15; the buttons write the
+  existing store, no cascade change).
+- **Next:** **L6** — re-home Per-System UI Stage 2/3 as Retroverse content/consumption
+  (built into the substrate capability, not engine-global; D33/D34). Then **P**
+  (`.oatheme` runtime loader).
+
 ## 2026-06-15 — ARC 2 L4b: radial WheelNav primitive + render `wheel` in game-browse — ✅ shipped + MERGED to main (operator playtested: TG-16 wheel; gentle-feel + fast-scroll-deform fixes confirmed)
 
 > Branch `feat/theming-arc2-l4b-wheelnav`. Builds the reserved S5.5 `WheelNav`

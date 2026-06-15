@@ -321,6 +321,17 @@ TG-16 → right-side wheel; NES → list, SNES → carousel, others → grid/vie
 
 ### L5 — End-user override UI
 
+> **Status: ✅ MERGED to main, operator playtested (2026-06-15, D43).** Built as a
+> "Layout" domain card in the engine Per-System Settings Hub (the recommended home).
+> Forks settled: home = Hub card (not theme territory); scope = ALL FOUR ViewTypes
+> exposed (operator overruled game-browse-only), reserved views labeled "no renderer
+> yet"; primitives = list/grid/carousel/wheel (no `custom`). Per-row Reset +
+> inheritance chip via the shared `SettingRow` (D30 discipline); overrides keyed by
+> active theme. See `engine/systemsHub/domains/LayoutEditor.tsx`.
+> **Wanted follow-on parked** (PARKING_LOT 2026-06-15): cross-theme "Copy from
+> theme…" + "Set for all themes" convenience buttons — overrides are theme-scoped by
+> design (D39), so these reduce re-picking friction without a cascade change.
+
 The runtime **"pick your view per system"** surface (the D32 user-agency
 headline), writing the L3 override store. Recommend it lives in the **engine
 Per-System Settings Hub** (the shipped card-based Systems hub is the natural

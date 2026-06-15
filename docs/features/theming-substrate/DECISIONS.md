@@ -1689,3 +1689,58 @@ grid/viewMode unchanged.
 one — it's what lets B/C/other display modes be additive presets instead of a WheelNav
 rewrite (the operator's stated intent), and it's the seam the future serializable layout
 DSL / Theme Studio target.
+
+### D43 — ARC-2 L5: end-user per-system layout override UI lives as a "Layout" domain card in the engine Per-System Settings Hub
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l5-layout-picker`). **Decision:** ship the
+D32 "pick your view per system" user-agency surface as the editing UI on top of the
+already-built L3 resolver + override store — pure UI, no new machinery. Three forks
+settled with the operator before code (AskUserQuestion):
+
+1. **Home = a new "Layout" domain card in the per-system Settings Hub**
+   (`engine/systemsHub/`), NOT a theme-territory quick action. Engine-owned,
+   theme-agnostic, already controller-navigable, consistent with the other
+   per-system editors — and it keeps the *machinery* on the engine side per D34
+   (experiential content is the theme's; the picker is machinery). New
+   `DomainId "layout"` + `DOMAINS` entry + `domains/LayoutEditor.tsx` wired into the
+   `SystemsHubRoot` Switch.
+
+2. **Scope = ALL FOUR `ViewType`s get a picker now** (operator overruled my
+   game-browse-only recommendation). Only `game-browse` has a live renderer
+   (`LibraryView`); `system-browse` / `manufacturer-browse` / `game-details` are
+   honored by the resolver but nothing mounts them yet. The editor exposes all four
+   but **labels each row** "Shown in the library now" vs "Reserved — no renderer yet"
+   (a `HONORED_VIEWS` set, grown as views gain consumers) so a no-op pick reads as
+   honest, not broken — per the project's "code-exists isn't proof a feature is live"
+   discipline. `game-browse` is ordered first.
+
+3. **Picker primitives = list / grid / carousel / wheel** — curated from
+   `LAYOUT_PRIMITIVES` by excluding `custom` (it means "the theme draws this view"
+   and isn't authorable from a dropdown). `custom` still *appears* in the inheritance
+   chip when a view's default resolves to it (e.g. `game-details` → engine default
+   `custom`).
+
+**Reset discipline** mirrors the D30 NavRemapCard via the shared `SettingRow`
+primitive: each row's select carries a leading `Theme default — <X>` sentinel
+(value `""` → `clearLayoutOverride`); the inheritance chip shows the no-override
+fallback value (`resolveLayout({override: undefined, …})`) and which tier supplies it
+("this theme · per-system" / "this theme" / "engine default"); the Reset chip appears
+only when overridden. Overrides are **keyed by the active theme id**, so the subtitle
+states they apply to the active theme — the override store guarantees they don't leak
+across themes (a Retroverse pick is invisible under CoverFlow). Because the override is
+the TOP cascade tier, a pick takes effect immediately (LibraryView's `useResolvedLayout`)
+and persists across the restart-based theme swap.
+
+**Verification:** typecheck + lint + vitest (**149**, unchanged — the editor is
+playtest-verified like the other ARC-2 primitive renders; the cascade logic it leans
+on is already covered by `layoutResolver.test.ts`) + build green. Frontend-only.
+**Acceptance gate (operator playtest):** Settings → Systems → <system> → Layout →
+set Game browse → list/carousel/wheel → LibraryView reflects it immediately for that
+system; restart → still applied; Reset → back to the theme default. A reserved view's
+pick persists in the store but visibly changes nothing yet (labeled as such).
+
+**Why record this:** L5 is the D32 user-agency headline made real — it's the first
+surface where an end user, not a theme author, sets per-system layout. The "expose all
+four views but label the reserved ones" call is the load-bearing one: it honors the
+operator's choice to surface the full contract while refusing to imply a renderer
+exists where it doesn't.
