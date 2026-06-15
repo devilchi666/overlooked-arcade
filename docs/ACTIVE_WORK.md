@@ -417,8 +417,8 @@ spanned every system but was filed under whichever core happened to be active.
         vertical wheel) as the defaults so B/C land later as presets; `LibraryView`
         renders `wheel` (4th Switch arm), ring radius from measured pane height;
         Retroverse demo `tg16→wheel`; typecheck/lint/vitest(149)/build green.
-        **L5 (end-user per-system layout override UI) ✅ shipped on branch
-        `feat/theming-arc2-l5-layout-picker`, awaiting operator playtest + merge**
+        **L5 (end-user per-system layout override UI) ✅ MERGED to main, operator
+        playtested**
         (D43): new "Layout" domain card in the engine Per-System Settings Hub
         (`systemsHub/domains/LayoutEditor.tsx`) writing the L3 override store —
         per-view `SettingRow` picker (Theme-default sentinel + list/grid/carousel/
@@ -426,9 +426,10 @@ spanned every system but was filed under whichever core happened to be active.
         per-row Reset (D30 discipline), overrides keyed by active theme. Three forks
         signed off: Hub card (not theme territory) · ALL FOUR ViewTypes exposed with
         reserved views labeled "no renderer yet" · curated primitives. typecheck/lint/
-        vitest(149)/build green; frontend-only. **Next after playtest+merge: L6**
-        (re-home Per-System UI Stage 2/3 as Retroverse content) → **P** (`.oatheme`
-        runtime loader).
+        vitest(149)/build green; frontend-only. Wanted follow-on parked: cross-theme
+        "Copy from theme…" + "Set for all themes" convenience buttons (PARKING_LOT
+        2026-06-15). **Next: L6** (re-home Per-System UI Stage 2/3 as Retroverse
+        content) → **P** (`.oatheme` runtime loader).
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

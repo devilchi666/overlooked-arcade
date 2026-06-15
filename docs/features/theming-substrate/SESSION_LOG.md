@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L5: end-user per-system layout override UI ("Layout" Hub domain card) — ✅ shipped on branch, awaiting operator playtest + merge
+## 2026-06-15 — ARC 2 L5: end-user per-system layout override UI ("Layout" Hub domain card) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l5-layout-picker`. The D32 user-agency headline: a
 > runtime "pick your view per system" surface writing the already-built L3 override
@@ -38,10 +38,14 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   logic is already covered by `layoutResolver.test.ts`); build green. Frontend-only.
 - **Almost:** the three reserved views (system/manufacturer/details) persist a pick
   but change nothing visibly until they gain renderers — labeled as such.
-- **Next:** **operator playtest** — Settings → Systems → <system> → Layout → set Game
-  browse → list/carousel/wheel reflects immediately + survives restart; Reset restores
-  the theme default. Then merge. **After: L6** (re-home Per-System UI Stage 2/3 as
-  Retroverse content) → **P** (`.oatheme` runtime loader).
+- **Playtest (2026-06-15) — passed.** Operator confirmed merge. Also surfaced a wanted
+  cross-theme convenience follow-on: **"Copy from theme…" + "Set for all themes"**
+  buttons on the layout editor (overrides are theme-scoped by design, D39, so a user
+  re-picks per theme) — parked as wanted (PARKING_LOT 2026-06-15; the buttons write the
+  existing store, no cascade change).
+- **Next:** **L6** — re-home Per-System UI Stage 2/3 as Retroverse content/consumption
+  (built into the substrate capability, not engine-global; D33/D34). Then **P**
+  (`.oatheme` runtime loader).
 
 ## 2026-06-15 — ARC 2 L4b: radial WheelNav primitive + render `wheel` in game-browse — ✅ shipped + MERGED to main (operator playtested: TG-16 wheel; gentle-feel + fast-scroll-deform fixes confirmed)
 

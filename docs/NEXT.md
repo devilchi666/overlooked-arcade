@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1…L4b ✅ MERGED; L5 shipped on branch (playtest pending); L6 next
+### Theming ARC 2 — L1…L5 ✅ MERGED to main; L6 next
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.
 - **L2a (view/layout manifest contract)** — ✅ MERGED 2026-06-15. `ViewType`/`LayoutPrimitive` enums + `views` field + validator. D37.
@@ -86,7 +86,7 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 - **L3b (per-system layout wired into game-browse)** — ✅ MERGED 2026-06-15, operator playtested (NES→list, slider hides on list). Coexist model (D40): `layout` optional; `useDeclaredLayout` keyed on `selectedSystemId()`; `LibraryView` renders grid/list (carousel/wheel/custom→grid fallback) else the global viewMode. D40.
 - **L4a (render carousel in game-browse)** — ✅ MERGED 2026-06-15, operator playtested (SNES coverflow). `LibraryView` renders a per-system `carousel` via `CarouselNav`; Retroverse demo SNES→carousel. `wheel`/`custom` still grid-fallback. D41.
 - **L4b (radial WheelNav primitive + render `wheel`)** — ✅ MERGED to main, operator playtested (TG-16 wheel). Built the reserved `WheelNav` as a general angle→x/y engine (pure `wheelGeometry.ts`); **shape A (right-side vertical wheel) as the defaults** so B/C land later as presets (operator's stated intent); `LibraryView` renders `wheel` (4th Switch arm), ring radius from a measured pane height; Retroverse demo `tg16→wheel`. Two playtest fixes rode along: gentler feel (arc 80°/sideScale 0.85) + fast-scroll deform fix (snap transitions while scrolling). typecheck/lint/vitest(149)/build green. D42.
-- **L5 (end-user per-system layout override UI)** — ✅ shipped on branch `feat/theming-arc2-l5-layout-picker`, awaiting operator playtest + merge. New "Layout" domain card in the engine Per-System Settings Hub (`systemsHub/domains/LayoutEditor.tsx`) writing the L3 override store; per-view `SettingRow` picker (Theme-default sentinel + list/grid/carousel/wheel, no `custom`), inheritance chip + per-row Reset (D30), overrides keyed by active theme. Forks signed off: Hub card · ALL FOUR ViewTypes exposed (reserved views labeled "no renderer yet") · curated primitives. typecheck/lint/vitest(149)/build green. D43.
+- **L5 (end-user per-system layout override UI)** — ✅ MERGED to main, operator playtested. New "Layout" domain card in the engine Per-System Settings Hub (`systemsHub/domains/LayoutEditor.tsx`) writing the L3 override store; per-view `SettingRow` picker (Theme-default sentinel + list/grid/carousel/wheel, no `custom`), inheritance chip + per-row Reset (D30), overrides keyed by active theme. Forks signed off: Hub card · ALL FOUR ViewTypes exposed (reserved views labeled "no renderer yet") · curated primitives. typecheck/lint/vitest(149)/build green. D43. **Wanted follow-on parked:** cross-theme "Copy from theme…" + "Set for all themes" convenience buttons (PARKING_LOT 2026-06-15).
 - **L6 — NEXT:** re-home Per-System UI Stage 2/3 as Retroverse content/consumption (built into the substrate capability, not engine-global; D33/D34). Then **P** (`.oatheme` runtime loader).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
