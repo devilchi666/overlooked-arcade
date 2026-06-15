@@ -342,40 +342,32 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Settings IA Redesign — Slice 2: Library re-point (Slice 1 ✅ merged)
+### Settings IA Redesign — Slices 1–4 ✅ SHIPPED (arc core complete)
 
-**Slice 1 ✅ MERGED to main 2026-06-14** (`e71eef0`, operator playtested) — the
-IA re-skeleton + Library/Organize split shipped. **Now in progress: Slice 2 —
-Library re-point** (relink a moved folder): new Rust `repoint_folder(folder_id,
-new_path)` command (verify the new dir holds the same ROMs → rebase
-`folders.path` + child ROM paths IN PLACE so game ids/covers/metadata survive →
-update the watcher target) + `repointFolder` api wrapper + per-folder "Move /
-relink…" UI in the Library folders card. Then Slice 3 (declarative Appearance
-schema → theming Phase 5), Slice 4 (External Emulators → VL Phase D), Slice 5
-(Import & Setup depth).
+**The Settings-IA re-cut is DONE (all merged to main, operator-playtested):**
+S1 IA re-skeleton + Library/Organize split (`e71eef0`), S2 Library re-point
+(`59b0d52`), S3 declarative per-theme Appearance schema (`5386305`), S4 External
+Emulators consolidation (`f3082ed`). Settings now reads **Import & Setup ·
+Library · Organize My Collection · Systems · External Emulators ·
+Themes/Appearance**. Plan + slice log:
+**[PLANS/settings-ia-redesign.md](PLANS/settings-ia-redesign.md)** /
+[features/settings-ia/](features/settings-ia/) (decisions D1–D7). **Slice 5
+(Import & Setup depth) deferred — folds into guided-setup Phase 2.**
 
-**Planned 2026-06-14** (operator design session). Re-cuts the engine Settings IA
-around user intent: new top-level **Themes/Appearance · Library · Organize My
-Collection · Import & Setup · External Emulators** groups, replacing the
-conflated Settings → Library 3-tab admin surface. Full design + 5 slices +
-boundaries: **[PLANS/settings-ia-redesign.md](PLANS/settings-ia-redesign.md)**;
-feature folder [features/settings-ia/](features/settings-ia/) (decisions D1–D7).
+### External-emulator research pass — verify CLI + author profiles  *(next chosen work)*
 
-**Slice 1 (start here; frontend-only, ~ moderate):** add the new groups/
-categories in `frontend/src/engine/SettingsPanel.tsx` (`CATEGORIES` +
-`GROUP_ORDER` + `Match` arms); split `engine/LibraryManagerPage.tsx` into a
-**Library** landing (folders/scan + region/version priority + cleanup) and a new
-**Organize** landing (mount `ViewsManagerTab`/`ViewEditorPane` + a new Collections
-manager over `platform/library/customCollections.ts` + the sidebar-systems
-visibility block moved out of Library); rebuild landings as card hubs reusing
-`engine/systemsHub/` primitives (`HubGrid`/`HubCard`/`PanelScaffold`); rename
-user-facing "Views" → "Sidebar layouts" (keep the `views` store as-is); stand up
-Import & Setup + External Emulators as card shells (Wizard CTA; re-home the
-CoresPage external-emulator section). Spatial-nav drives all new landings for
-free. Verify: typecheck + lint (boundary zones green) + vitest + `cargo test -p
-oa-shell` (frontend-only, unaffected) + operator playtest of the new IA. Later
-slices (re-point backend; declarative Appearance schema → theming Phase 5;
-External Emulators → VL Phase D; Import & Setup depth) ride their parent arcs.
+The chosen follow-on after the Settings-IA arc. Run the research scoped in
+**[RESEARCH/external-emulators.md](RESEARCH/external-emulators.md)**: verify the
+command-line launch invocation (+ fullscreen flag, content format,
+BIOS/firmware/keys, per-OS binary) for a batch of standalone emulators — both
+systems OA can't run via cores (Cemu / RPCS3 / Ryujinx / Lime3DS / Vita3K /
+Xenia / xemu / …) and ones it can but where users may prefer a standalone
+(PCSX2 / DuckStation / PPSSPP / Dolphin / …) — then author real
+`config/emulators/<id>.yaml` profiles (schema in
+`apps/oa-shell/src/emulator_profiles.rs`; `dolphin.yaml` is the template). Fill
+the doc's roster tables with verified data; flag which section-B systems need an
+OA system id wired first. **Legal posture: zero ROMs / BIOS / keys, ever.**
+Surfaces in Settings → External Emulators (shipped S4).
 
 ### Unified Navigation & Panel System — the substrate that makes panels "just work"
 

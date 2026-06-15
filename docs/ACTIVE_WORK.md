@@ -11,8 +11,14 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Settings IA Redesign** — **Slice 1 ✅ MERGED to main 2026-06-14** (`e71eef0`,
-  operator playtested clean); **Slice 2 (Library re-point) IN PROGRESS**.
+- **Settings IA Redesign** — **Slices 1–4 ✅ ALL MERGED to main (2026-06-14/15,
+  operator-playtested):** S1 IA re-skeleton + Library/Organize split (`e71eef0`),
+  S2 Library re-point (`59b0d52`), S3 declarative per-theme Appearance schema
+  (`5386305`), S4 External Emulators consolidation + research-need doc
+  (`f3082ed`). The core re-cut is **done**. **Slice 5 (Import & Setup depth)
+  DEFERRED** — folds into guided-setup Phase 2. **Next chosen work: the
+  external-emulator research pass** ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md))
+  — verify CLI invocations + author `config/emulators/*.yaml` profiles.
   Re-cuts the engine
   Settings IA around user intent: new top-level **Themes/Appearance · Library ·
   Organize My Collection · Import & Setup · External Emulators** groups, replacing

@@ -4,6 +4,22 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-15 — Session close: Slices 1–4 all merged to main
+
+- **Shipped this arc (all merged + operator-playtested):** Slice 1 (IA
+  re-skeleton + Library/Organize split, `e71eef0`), Slice 2 (Library re-point,
+  `59b0d52`), Slice 3 (declarative per-theme Appearance schema, `5386305`),
+  Slice 4 (External Emulators consolidation + research-need doc, `f3082ed`). The
+  core Settings-IA re-cut is **done**: Import & Setup · Library · Organize My
+  Collection · Systems · External Emulators · Themes/Appearance.
+- **Almost / deferred:** Slice 5 (Import & Setup depth) folds into **guided-setup
+  Phase 2** — not a standalone chunk; deferred. External-emulator install
+  pipeline still rides VL Phase D.
+- **Next (operator choice):** the **external-emulator research pass** — verify
+  command-line invocations for a batch of emulators + author real
+  `config/emulators/*.yaml` profiles, per `docs/RESEARCH/external-emulators.md`.
+  A `/clear`-resume prompt was handed off for it.
+
 ## 2026-06-14 — Slice 4 implemented (code-complete, pending playtest)
 
 - **Shipped (branch `feat/settings-ia-slice-4`, not yet merged):** External

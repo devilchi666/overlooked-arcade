@@ -54,5 +54,14 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   research-need doc cataloguing the external-emulator roster + command-line-launch
   details to gather (systems we DON'T support via cores AND ones we DO, so users
   have options): [RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md).
-- ⬜ **Slice 5 — Import & Setup depth** *(onboarding)* — Wizard + guided
-  first-run (ties to `docs/features/guided-setup/` Phase 2).
+- ⬜ **Slice 5 — Import & Setup depth** *(DEFERRED — folds into the Guided Setup
+  arc)* — the onboarding depth (first-run readiness overview + curated CPU-tier
+  core selection) is essentially **guided-setup Phase 2**, just housed in the new
+  Import & Setup tab. Not a standalone chunk — pick it up *as* guided-setup
+  Phase 2 (`docs/features/guided-setup/`, already queued) when onboarding is the
+  priority. The Slice-1 card shell (Wizard CTA + Add/Rescan) + the existing
+  first-launch empty-state cover the basics until then.
+
+**Arc status:** the core Settings-IA re-cut (Slices 1–4) is **shipped + merged**.
+Slice 5 defers to guided-setup. Next chosen work = the **external-emulator
+research pass** ([RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md)).
