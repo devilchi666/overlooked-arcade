@@ -1,10 +1,13 @@
 # Research need — External / standalone emulators (command-line launching)
 
 **Status:** Research IN PROGRESS. The scope (roster + per-emulator template)
-is below. **First verification batch done 2026-06-15** — Dolphin (confirm),
-PCSX2, DuckStation, PPSSPP, Cemu, RPCS3 verified against official docs/source;
-see "Verified batch" below. Profiles authored for the three whose OA system id
-already exists (PCSX2/DuckStation/PPSSPP); Dolphin already shipped. Raised
+is below. **Verified 2026-06-15** — all of section A's single-system alts
+(Dolphin, PCSX2, DuckStation, PPSSPP, melonDS, mGBA, Flycast, Mesen 2, DeSmuME)
+plus section-B headliners Cemu + RPCS3, all checked against official
+docs/source; see "Verified batch" below. **9 profiles authored** for the
+section-A emulators whose OA system id already exists. **Still open:** the
+multi-system section-A emulators (BizHawk, ares) + standalone MAME need a schema
+decision; every section-B system needs OA system-id wiring (VL Phase D). Raised
 2026-06-14 alongside Settings IA Slice 4 (External Emulators consolidation).
 
 ## Why this matters
@@ -92,14 +95,14 @@ For each emulator, gather:
 | **PCSX2** (Qt) | PS2 (✅) | `pcsx2-qt.exe -batch -fullscreen -- {content}` | ✅ **VERIFIED + shipped** (`pcsx2.yaml`). Draft was old-wx & wrong: binary is `pcsx2-qt.exe`, path **must** follow `--`. User-dumped BIOS required. |
 | **DuckStation** (Qt) | PSX (✅) | `duckstation-qt-x64-ReleaseLTCG.exe -batch -fullscreen -- {content}` | ✅ **VERIFIED + shipped** (`duckstation.yaml`). **License CC BY-NC-ND** — never bundle/redistribute/ship configs; link official download only. User-dumped BIOS required. |
 | **PPSSPP** | PSP (✅) | `PPSSPPWindows64.exe {content} --fullscreen --escape-exit --pause-menu-exit` | ✅ **VERIFIED + shipped** (`ppsspp.yaml`). Path positional; **exit flags mandatory** or it idles on its own menu. No BIOS (HLE). |
-| **melonDS** | DS | `"{content}"` | Core exists. |
-| **mGBA** | GBA, GB/GBC | `"{content}" -f` | Core exists. |
-| **Flycast / Redream** | Dreamcast | flycast `"{content}"` · redream `"{content}"` | Cores exist; Redream is closed-source. |
-| **Mesen** | NES, SNES, GB | `"{content}"` | Core exists. |
-| **DeSmuME** | DS | `"{content}"` | Alt to melonDS. |
-| **BizHawk** | Multi (TAS) | `EmuHawk.exe "{content}"` | Multi-system; TAS/tooling audience. |
-| **ares** | Multi | `--system <sys> "{content}"` | Multi-system; needs system disambiguation. |
-| **standalone MAME** | Arcade | `mame <romname>` | We run MAME modules via cores; standalone for the long tail. |
+| **melonDS** | DS (`nds` ✅) | `melonDS.exe -f -b always {content}` | ✅ **VERIFIED + shipped** (`melonds.yaml`). Path positional; `-b always` forces direct boot; `-f` fullscreen. No BIOS (built-in FreeBIOS). |
+| **mGBA** | GBA (✅), GB (✅), GBC (✅) | `mGBA.exe -f {content}` | ✅ **VERIFIED + shipped** (`mgba.yaml`). Qt GUI build; path positional; `-f` fullscreen. No BIOS (HLE). |
+| **Flycast / Redream** | Dreamcast (✅) | `flycast.exe -config window:fullscreen=yes {content}` | ✅ **Flycast VERIFIED + shipped** (`flycast.yaml`). No fullscreen flag — use `-config section:key=value`. **No auto-exit** (process exits via pause-menu Exit; hotkey unbound by default). No BIOS (HLE default). Redream not yet researched (closed-source). |
+| **Mesen** | NES/SNES/GB/GBC/GBA/SMS/GG/PCE/WS/Coleco (all ✅) | `Mesen.exe --fullscreen {content}` | ✅ **VERIFIED + shipped** (`mesen.yaml`, Mesen **2**). Multi-system but **auto-detects** (no `--system` flag) → single positional template. Use the **native** (non-.NET) build. Carts BIOS-free; PCE-CD/FDS need user BIOS (excluded). |
+| **DeSmuME** | DS (`nds` ✅) | `DeSmuME.exe {content}` | ✅ **VERIFIED + shipped** (`desmume.yaml`). Alt to melonDS. Path positional; **no fullscreen flag**. Windows exe is version-stamped (`DeSmuME_x64.exe`). No BIOS (HLE). |
+| **BizHawk** | Multi (TAS) | `EmuHawk.exe "{content}"` | ⏸️ **DEFERRED — needs schema decision** (multi-system; may need per-system args). TAS/tooling audience. |
+| **ares** | Multi | `--system <sys> "{content}"` | ⏸️ **DEFERRED — needs schema decision** (multi-system; needs explicit `--system` disambiguation, which the single-template schema can't express per-system yet). |
+| **standalone MAME** | Arcade (`mame` ✅) | `mame <romname>` | ⏸️ **DEFERRED — content-model mismatch.** MAME takes a short **rom-set name** + a configured `rompath`, not a file path, so `{content}=<full path>` doesn't fit. Needs a content-resolution decision before a profile. |
 
 ### B. Systems with NO usable in-process core — standalone REQUIRED
 
@@ -121,18 +124,33 @@ entry before their profile is useful.)
 
 ## Verified batch — 2026-06-15
 
-First verification pass: each CLI checked against the emulator's **official
-docs and/or source command-line parser** (not forum hearsay). Per-emulator
-findings, including the data the current single-field schema can't yet hold.
+Verification pass: each CLI checked against the emulator's **official docs
+and/or source command-line parser** (not forum hearsay). Two sub-batches done
+2026-06-15: the high-value headliners (Dolphin/PCSX2/DuckStation/PPSSPP +
+section-B Cemu/RPCS3), then the remaining single-system section-A alts
+(melonDS/mGBA/Flycast/Mesen/DeSmuME). Per-emulator findings below include the
+data the current single-field schema can't yet hold.
 
-### Profiles authored (OA system id already exists)
+### Profiles authored (OA system id already exists) — 9 total
 
-| Profile | System | argv template (Windows) | BIOS/firmware | Notes |
+| Profile | System(s) | argv template (Windows) | BIOS/firmware | Notes |
 | --- | --- | --- | --- | --- |
 | `dolphin.yaml` | `gamecube` | `--batch --exec={content}` | none to launch | shipped pilot; confirmed correct. |
 | `pcsx2.yaml` | `ps2` | `-batch -fullscreen -- {content}` | PS2 BIOS (user-dumped) | path **must** follow `--`. |
 | `duckstation.yaml` | `psx` | `-batch -fullscreen -- {content}` | PS1 BIOS (user-dumped) | CC BY-NC-ND — no bundling/configs. |
 | `ppsspp.yaml` | `psp` | `{content} --fullscreen --escape-exit --pause-menu-exit` | none (HLE) | exit flags mandatory; path positional. |
+| `melonds.yaml` | `nds` | `-f -b always {content}` | none (FreeBIOS) | `-b always` forces direct boot. |
+| `mgba.yaml` | `gba` `gb` `gbc` | `-f {content}` | none (HLE) | Qt GUI build; path positional. |
+| `flycast.yaml` | `dreamcast` | `-config window:fullscreen=yes {content}` | none (HLE default) | no auto-exit; long-lived child. |
+| `mesen.yaml` | `nes` `snes` `gb` `gbc` `gba` `sms` `gamegear` `tg16` `wonderswan` `coleco` | `--fullscreen {content}` | carts none; PCE-CD/FDS need user BIOS (excluded) | Mesen 2; auto-detects; native build. |
+| `desmume.yaml` | `nds` | `{content}` | none (HLE) | no fullscreen flag; version-stamped exe. |
+
+**Multi-profile-per-system** is now live (first time beyond Dolphin): `nds`
+has melonDS + DeSmuME; `gb`/`gbc`/`gba` have mGBA + Mesen. `launchers.json`
+holds one default per system; the rest are opt-in. Both UI surfaces already
+handle this (`CoreLauncherEditor` lists all supporting profiles in one
+dropdown; `ExternalEmulatorsSection` shows coherent per-profile selects) — no
+code change needed.
 
 ### Per-OS binary names (schema-accretion data — not yet representable)
 
@@ -148,6 +166,11 @@ schema grows a per-OS map (open question #1):
 | PPSSPP | `PPSSPPWindows64.exe` | `PPSSPP.app/Contents/MacOS/PPSSPP` | `PPSSPPSDL` / `PPSSPPQt` / flatpak `org.ppsspp.PPSSPP` |
 | Cemu | `Cemu.exe` | `Cemu.app/Contents/MacOS/Cemu` (experimental) | `Cemu-*.AppImage` / flatpak `info.cemu.Cemu` |
 | RPCS3 | `rpcs3.exe` | `RPCS3.app/Contents/MacOS/rpcs3` | `rpcs3-*_linux64.AppImage` / flatpak `net.rpcs3.RPCS3` |
+| melonDS | `melonDS.exe` | `melonDS.app/Contents/MacOS/melonDS` | `melonDS` / flatpak `net.kuribo64.melonDS` |
+| mGBA | `mGBA.exe` | `mGBA.app/Contents/MacOS/mGBA` | `mgba-qt` (fallback `mgba`) / flatpak `io.mgba.mGBA` |
+| Flycast | `flycast.exe` | `Flycast.app/Contents/MacOS/Flycast` | `flycast` / flatpak `org.flycast.Flycast` |
+| Mesen | `Mesen.exe` | `Mesen.app/Contents/MacOS/Mesen` | `Mesen` (native build; needs system SDL2) |
+| DeSmuME | `DeSmuME_x64.exe` (version-stamped) | `DeSmuME.app` | `desmume` (GTK) / `desmume-cli` (SDL) |
 
 Cross-OS note: **launch args are OS-agnostic** for all six (the same flags
 compile into every platform build) — only the binary name/path differs. So a
@@ -175,6 +198,24 @@ can stay single. macOS `.app` bundles must spawn the inner Mach-O directly (not
   Portable mode = a `portable` *folder* next to the exe (not `portable.txt`).
 - **RPCS3** — games must be pre-installed/decrypted (the frontend passes an
   existing `EBOOT.BIN`, never a raw ISO/pkg). Firmware must be installed first.
+- **melonDS** — default boot mode is `auto` (boots when an NDS rom is given),
+  but a persisted GUI "boot directly = off" can drop to firmware; `-b always`
+  hardens against that. Avoid `|` in paths (archive|member syntax).
+- **mGBA** — options-first/ROM-last is the documented form; only one trailing
+  positional is consumed. Binary casing differs by OS (Win/macOS `mGBA`, Linux
+  `mgba`/`mgba-qt`). No kiosk auto-exit — rely on window-close.
+- **Flycast** — `-config` overrides must precede the content path and use
+  `section:key=value`. Windows is **always portable** (emu.cfg + `data/` next to
+  `flycast.exe`) — the operator's binary must keep its `data/` folder beside it.
+  No auto-exit at game end; Exit hotkey unbound by default.
+- **Mesen** — use the **native** build (the ".NET build" needs .NET 8 installed;
+  Linux/macOS native builds still need system SDL2). A first-run data-location
+  wizard can block an automated spawn until dismissed. Multi-system via
+  auto-detect, so one positional template suffices (no `--system`).
+- **DeSmuME** — Windows exe is version/arch-stamped (`DeSmuME_0.9.13_x64.exe`),
+  not a stable `DeSmuME.exe`; users rename it. Loader only WARNs on name
+  mismatch so the operator's actual path wins. No CLI fullscreen flag exists.
+  Two distinct Linux binaries (`desmume` GTK vs `desmume-cli` SDL).
 
 ### Section-B wiring needed before a profile is useful
 

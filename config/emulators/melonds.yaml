@@ -1,0 +1,35 @@
+# Emulator profile — melonDS (standalone).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against src/frontend/qt_sdl/CLI.cpp (PR #1402)
+# (see docs/RESEARCH/external-emulators.md, section A).
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# No external BIOS required to play NDS games -- current melonDS ships a
+# built-in FreeBIOS and uses it by default. (User-supplied DS BIOS is
+# optional, only needed for firmware-boot / DSi mode, which OA never
+# ships.)
+id: melonds
+display_name: melonDS
+vendor: melonDS Team
+official_download_url: https://melonds.kuribo64.net/
+# Per-OS names differ (macOS: melonDS.app/Contents/MacOS/melonDS; Linux:
+# melonDS or flatpak net.kuribo64.melonDS) -- per-OS binary_name is a
+# schema-accretion item (research open-question #1).
+binary_name: melonDS.exe
+schema_version: 1
+supported_systems:
+- nds
+# Path is positional. `-b always` forces direct game-boot regardless of
+# the persisted "Boot game directly" GUI setting (default `auto` boots
+# when an NDS rom is given, but the operator may have changed it). `-f`
+# starts fullscreen. Process exits when the window closes (single-window
+# Qt app) -- ties play time to process lifetime (D3).
+launch_args_template:
+- -f
+- -b
+- always
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

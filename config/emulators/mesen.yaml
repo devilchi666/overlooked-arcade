@@ -1,0 +1,51 @@
+# Emulator profile — Mesen 2 (standalone, multi-system).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against Mesen2 UI/Utilities/CommandLineHelper.cs
+# + FirmwareHelper.h (see docs/RESEARCH/external-emulators.md, section A).
+# This is the CURRENT cross-platform Mesen 2 (SourMesen/Mesen2), NOT the
+# old NES-only Mesen.
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# Use the NATIVE build (not the ".NET build"): the native Windows build
+# is self-contained and needs no .NET runtime installed. (Linux/macOS
+# native builds require system SDL2.)
+#
+# BIOS: cartridge systems (NES, SNES, GB/GBC, GBA, SMS, Game Gear, PCE
+# HuCard, WonderSwan, ColecoVision) need none. PC Engine CD and Famicom
+# Disk System DO need a user-supplied BIOS (syscard3.pce / disksys.rom),
+# never shipped by OA -- those formats are excluded from this profile.
+id: mesen
+display_name: Mesen
+vendor: SourMesen
+official_download_url: https://github.com/SourMesen/Mesen2/releases
+# .NET-based but the native build is self-contained. Per-OS names differ
+# (macOS: Mesen.app/Contents/MacOS/Mesen; Linux: Mesen) -- per-OS
+# binary_name is a schema-accretion item (research open-question #1).
+binary_name: Mesen.exe
+schema_version: 1
+# Mesen 2 auto-detects the system from the ROM, so a single positional
+# template serves every system below with no disambiguation flag. Listed
+# is its verified BIOS-free cart coverage that maps to an OA system id.
+# mGBA is the stronger dedicated GBA alt; Mesen is offered as an option.
+supported_systems:
+- nes
+- snes
+- gb
+- gbc
+- gba
+- sms
+- gamegear
+- tg16
+- wonderswan
+- coleco
+# Path is positional (an arg is treated as a flag only if it starts with
+# - or /; otherwise it's a ROM path). `--fullscreen` starts fullscreen.
+# Process exits when the window closes (single-window Avalonia app) --
+# ties play time to process lifetime (D3).
+launch_args_template:
+- --fullscreen
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

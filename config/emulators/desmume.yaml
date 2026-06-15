@@ -1,0 +1,35 @@
+# Emulator profile — DeSmuME (standalone).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against the DeSmuME manual + Windows-port
+# behavior (see docs/RESEARCH/external-emulators.md, section A). An alt
+# to melonDS for Nintendo DS.
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# No BIOS required -- DeSmuME ships internal HLE BIOS/firmware and boots
+# games out of the box. (User-supplied DS BIOS is optional, never shipped
+# by OA.)
+id: desmume
+display_name: DeSmuME
+vendor: DeSmuME Team
+official_download_url: https://desmume.org/download/
+# NOTE: the Windows release exe is version/arch-stamped (e.g.
+# DeSmuME_0.9.13_x64.exe), NOT a stable DeSmuME.exe -- users commonly
+# rename it. binary_name here is the conventional renamed form; the
+# loader only WARNS on a name mismatch (it doesn't reject), so the
+# operator's actual exe path wins regardless. Per-OS names differ
+# (macOS: DeSmuME.app; Linux: desmume / desmume-cli) -- per-OS
+# binary_name is a schema-accretion item (research open-question #1).
+binary_name: DeSmuME.exe
+schema_version: 1
+supported_systems:
+- nds
+# Path is positional (verified on the Windows native build: it boots a
+# ROM passed as argv, not File>Open only). DeSmuME has NO command-line
+# fullscreen flag on any build, so none is passed (fullscreen is a
+# runtime menu/hotkey toggle). Process exits when the window closes.
+launch_args_template:
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).
