@@ -286,7 +286,7 @@ follow-ons.
 
 ### L4 — split into L4a (render carousel, reuse) + L4b (WheelNav, new geometry) — DECISIONS D41
 
-#### L4a — render `carousel` in game-browse — ✅ SHIPPED on branch 2026-06-15, pending operator visual playtest (DECISIONS D41)
+#### L4a — render `carousel` in game-browse — ✅ SHIPPED + MERGED to main 2026-06-15, operator playtested (SNES coverflow) (DECISIONS D41)
 
 - `LibraryView` renders a per-system `carousel` via the existing `CarouselNav`
   primitive (the path CoverFlow uses): coverflow over the flat `sorted()` list,

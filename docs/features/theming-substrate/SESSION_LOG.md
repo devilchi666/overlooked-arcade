@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L4a: render `carousel` in game-browse (reuse CarouselNav) — ✅ shipped on branch, pending operator visual playtest
+## 2026-06-15 — ARC 2 L4a: render `carousel` in game-browse (reuse CarouselNav) — ✅ shipped + MERGED to main (operator playtested: SNES coverflow)
 
 > Branch `feat/theming-arc2-l4-wheelnav`. L4 split L4a (carousel render, reuse) +
 > L4b (the radial WheelNav geometry, next session) — AskUserQuestion sign-off.

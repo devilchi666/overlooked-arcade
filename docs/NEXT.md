@@ -77,14 +77,14 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1…L3b ✅ MERGED · L4a ✅ shipped on branch (pending playtest); L4b next
+### Theming ARC 2 — L1…L4a ✅ MERGED to main; L4b next
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.
 - **L2a (view/layout manifest contract)** — ✅ MERGED 2026-06-15. `ViewType`/`LayoutPrimitive` enums + `views` field + validator. D37.
 - **L2b (D34 systemUIConfigs migration)** — ✅ MERGED 2026-06-15. Experiential config → Retroverse via `ThemePackage.perSystemUiConfigs`; `touchInputSupported` → platform-factual. D38.
 - **L3a (layout resolver + persisted override store)** — ✅ MERGED 2026-06-15. Pure `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→layout` localStorage override store. No consumer. D39.
 - **L3b (per-system layout wired into game-browse)** — ✅ MERGED 2026-06-15, operator playtested (NES→list, slider hides on list). Coexist model (D40): `layout` optional; `useDeclaredLayout` keyed on `selectedSystemId()`; `LibraryView` renders grid/list (carousel/wheel/custom→grid fallback) else the global viewMode. D40.
-- **L4a (render carousel in game-browse)** — ✅ shipped on `feat/theming-arc2-l4-wheelnav`, CI-green (typecheck/lint/vitest 145/build). `LibraryView` renders a per-system `carousel` via `CarouselNav` (reuses CoverFlow's pattern); Retroverse demo SNES→carousel. `wheel`/`custom` still grid-fallback. D41. **Pending operator visual playtest → then merge.**
+- **L4a (render carousel in game-browse)** — ✅ MERGED 2026-06-15, operator playtested (SNES coverflow). `LibraryView` renders a per-system `carousel` via `CarouselNav`; Retroverse demo SNES→carousel. `wheel`/`custom` still grid-fallback. D41.
 - **L4b — NEXT (fresh session):** build the reserved **WheelNav** radial primitive (radial geometry + windowing for big libraries) + render `wheel` in game-browse. The BigBox-signature payoff; playtest-sensitive. Then L5 override UI → L6 Stage 2/3 re-home → P loader.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned

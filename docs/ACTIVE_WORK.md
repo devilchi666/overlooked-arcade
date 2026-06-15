@@ -407,12 +407,12 @@ spanned every system but was filed under whichever core happened to be active.
         coexist model — `layout` made optional, `useDeclaredLayout` keyed on
         `selectedSystemId()`, `LibraryView` renders the declared primitive
         (grid/list; carousel/wheel/custom→grid fallback) else the global viewMode;
-        Retroverse demo NES→list. **L4a (render carousel in game-browse) ✅ shipped
-        on `feat/theming-arc2-l4-wheelnav`, pending visual playtest** (D41):
-        `LibraryView` renders a per-system `carousel` via `CarouselNav` (CoverFlow's
-        pattern); Retroverse demo SNES→carousel; wheel/custom still grid-fallback.
-        typecheck/lint/vitest(145)/build green. **Next: L4b** (fresh session) — the
-        radial WheelNav primitive + render `wheel`. Then L5 override UI → L6 → P.
+        Retroverse demo NES→list. **L4a (render carousel in game-browse) ✅ MERGED,
+        operator playtested (SNES coverflow)** (D41): `LibraryView` renders a
+        per-system `carousel` via `CarouselNav` (CoverFlow's pattern); Retroverse
+        demo SNES→carousel; wheel/custom still grid-fallback. **Next: L4b** (fresh
+        session) — the radial WheelNav primitive + render `wheel`. Then L5 override
+        UI → L6 → P.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

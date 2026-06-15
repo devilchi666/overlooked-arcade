@@ -6,6 +6,40 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-15 — Theming ARC 2 planned + kicked off (L1→L4a) · full doc audit · per-core sweep · HW-Render M3 landed · VL Phase B reframed
+
+Big multi-thread session. Cross-stream milestones below; per-slice detail in
+`features/theming-substrate/SESSION_LOG.md` + DECISIONS D32–D41.
+
+- **Shipped (all merged to main):**
+  - **Theming ARC 2 planned** — `PLANS/theming-arc-2-per-system-layout.md`
+    (Per-System Layout Substrate) + DECISIONS **D34** (capability=platform /
+    content=theme ownership line) + **D35** (arc split/renumber: 1 MVS · 2 layout ·
+    3 cinematic+scripting · 4 Theme Studio).
+  - **Theming ARC 2 build L1→L4a merged** — **L1** per-system UI consumption is a
+    per-theme opt-in (D33 fix, D36); **L2a** view/layout manifest contract (D37);
+    **L2b** D34 systemUIConfigs experiential→Retroverse migration (D38); **L3a**
+    layout resolver + persisted `(theme,system,view)→layout` override store (D39);
+    **L3b** per-system layout wired into game-browse, coexist with the global
+    viewMode (D40); **L4a** render per-system `carousel` via CarouselNav (D41).
+    Retroverse demo: NES→list, SNES→carousel.
+  - **Full active-surface doc audit** (`AUDIT_2026-06-15.md`, now removed) +
+    **per-core ROADMAP/README sweep** (29 files repathed for the platform/ refactor)
+    — status flips, dead-link fixes, arc-number sweep, supersession banners,
+    **8 shipped plans + the metadata-editing folder archived**, `CHATGPT_BRIEFING.md`
+    deleted, NEXT.md narrative compressed, ACTIVE_WORK re-sorted.
+  - **HW-Render M3 Half 2 landed** (cherry-picked off the stale branch; status
+    observability + software-peer fallback).
+  - **Dead "Retroverse UI" experimental flag removed** (zero readers since Phase 6).
+- **Reframed (not built):** **VL Phase B** → re-derive-on-current-main (branch is a
+  reference, not a merge — 171 commits behind; Settings IA / GameInfoModal /
+  SystemHealthPage all moved). No time pressure.
+- **Next:** **Theming ARC 2 L4b** — build the reserved radial **WheelNav** primitive
+  (radial geometry + windowing for big libraries) + render `wheel` in game-browse.
+  Then L5 (user-facing per-system layout picker) → L6 (re-home Per-System UI
+  Stage 2/3 as Retroverse content) → P (`.oatheme` runtime loader). Queued in
+  NEXT.md HIGH.
+
 ## 2026-06-09 — Bootless launch ("Boot without game") + VL Phase C merge bookkeeping
 
 Picked up the libretro-plumbing follow-up. Also corrected stale
