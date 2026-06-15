@@ -30,6 +30,7 @@ import {
   createMemo,
   createSignal,
   For,
+  onCleanup,
   untrack,
   type Accessor,
   type Component,
@@ -84,10 +85,31 @@ export function WheelNav<T>(props: WheelNavProps<T>): ReturnType<Component> {
 
   const [internalIdx, setInternalIdx] = createSignal(0);
   const focusedIndex = (): number => (props.focusedIndex ? props.focusedIndex() : internalIdx());
+
+  // Fast-scroll detection. A CSS transition restarts (with its velocity reset)
+  // every time the focus moves; when steps arrive faster than the transition
+  // duration the items fall progressively behind the true focus and the wheel
+  // visibly deforms / the leading edge gaps. So when moves come in rapid
+  // succession we collapse the transition to a near-snap (items keep up), and
+  // restore the full gentle ease once scrolling settles.
+  const [fastScrolling, setFastScrolling] = createSignal(false);
+  let lastMoveAt = 0;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => settleTimer && clearTimeout(settleTimer));
+
   const setFocusedIndex = (n: number): void => {
     const len = itemsArr().length;
     if (len === 0) return;
     const clamped = Math.max(0, Math.min(len - 1, n));
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now - lastMoveAt < 140) {
+      setFastScrolling(true);
+      if (settleTimer) clearTimeout(settleTimer);
+      // Drop back to the smooth ease shortly after the last rapid move, so the
+      // final resting step animates nicely.
+      settleTimer = setTimeout(() => setFastScrolling(false), 160);
+    }
+    lastMoveAt = now;
     if (props.setFocusedIndex) props.setFocusedIndex(clamped);
     else setInternalIdx(clamped);
   };
@@ -102,6 +124,8 @@ export function WheelNav<T>(props: WheelNavProps<T>): ReturnType<Component> {
   const falloff = (): number => props.opacityFalloff ?? 0.07;
   const minOpacity = (): number => props.minOpacity ?? 0.35;
   const transitionMs = (): number => props.transitionMs ?? 300;
+  // ~snap while fast-scrolling so items track the focus; full ease when settled.
+  const effectiveTransitionMs = (): number => (fastScrolling() ? 70 : transitionMs());
 
   const group = useFocusGroup({
     id: props.id,
@@ -200,7 +224,7 @@ export function WheelNav<T>(props: WheelNavProps<T>): ReturnType<Component> {
                 transform: `translate(calc(-50% + ${d().dx}px), calc(-50% + ${d().dy}px)) scale(${scaleFor(offset())})`,
                 opacity: String(Math.max(minOpacity(), 1 - Math.abs(offset()) * falloff())),
                 "z-index": String(100 - Math.abs(offset())),
-                transition: `transform ${transitionMs()}ms cubic-bezier(.22,.61,.36,1), opacity ${transitionMs()}ms ease`,
+                transition: `transform ${effectiveTransitionMs()}ms cubic-bezier(.22,.61,.36,1), opacity ${effectiveTransitionMs()}ms ease`,
                 "will-change": "transform, opacity",
               }}
               onClick={() => {

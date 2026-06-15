@@ -51,6 +51,15 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   column. Operator confirmed gentle-but-still-a-wheel is the target; the **near-flat
   vertical strip** + the **continual/looping wheel** are noted future *views* (presets
   over the same geometry, not rewrites).
+- **Playtest round 2 (2026-06-15) — fast-scroll deform fix:** slow stepping looked
+  right but fast scrolling "deformed the whole wheel and pulled away from the bottom/
+  top depending on direction." Cause: every focus step restarts a 300ms CSS transition
+  with its velocity reset, so steps arriving faster than the transition stack up and the
+  items fall progressively behind the true focus (leading edge gaps). Fix: WheelNav
+  detects rapid moves (<140ms apart) and collapses the transition to a ~70ms near-snap
+  while fast-scrolling so items track the focus, restoring the full 300ms gentle ease
+  ~160ms after the last move (the final resting step still animates nicely). Slow
+  stepping unchanged.
 - **Almost:** wheel polish (preload buffer for fast scroll, reflection/depth blur,
   per-shape tuning) deferred; B/C + strip + looping shapes are future presets (D42 §2).
 - **Next:** **operator visual playtest** — select TG-16 → navigable right-side radial
