@@ -47,7 +47,7 @@ animations as those slices land.
 ## System slugs
 
 The `<systemId>` directory name MUST match `SystemId` in
-`frontend/src/themes/registry.ts`. Current set (43 systems):
+`frontend/src/platform/themes/registry.ts`. Current set (43 systems):
 
 ```
 tg16, pce-cd, lynx, nes, snes, mame, atari7800, genesis, segacd,
@@ -298,7 +298,10 @@ when you focus a tile from that system.
   per system and it fires alongside the full-path animation.
 - 2026-05-26 — Slice 3 ships the backgrounds cascade. The
   `<systemId>/backgrounds/` directories are now consumed by the
-  `<SystemBackground>` component. Static + animated paths live; the
+  `<ThemeBackground>` component
+  (`frontend/src/platform/components/ThemeBackground.tsx`; renamed from
+  `<SystemBackground>` and now theme-opt-in, not auto-mounted). Static +
+  animated paths live; the
   shader path falls back to static until Slice 8 (Vectrex pilot)
   ships the shader-driven render path.
 - 2026-05-26 — Slice 2 ships the sounds cascade; this file initialized

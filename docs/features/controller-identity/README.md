@@ -6,8 +6,13 @@ gameplay bindings from shared data files, with a wizard for unknown pads.
 
 - **Plan:** [../../PLANS/controller-identity-substrate.md](../../PLANS/controller-identity-substrate.md)
   (full design, phases, decisions D1–D8, risks).
-- **Status:** Planning locked 2026-06-12; execution queued **foundation-first**
-  (Phase 0 = the Rust VID/PID spike). Not yet started in code.
+- **Status:** **Shipped + merged 2026-06-13** (merge `808fc0b`). The full
+  arc — Phase 0 → 2.5 (Rust VID/PID identity spike through to the runtime
+  auto-config path) plus label families and bulk SDL `gamecontrollerdb`
+  import — landed on main.
+- **Parked follow-ups:** the Phase-3 press-the-buttons wizard for unknown
+  pads, glyph icons, an in-app data-file (`controllers.json`) update
+  mechanism, and multi-OS mapping bundles.
 
 ## The one-paragraph why
 

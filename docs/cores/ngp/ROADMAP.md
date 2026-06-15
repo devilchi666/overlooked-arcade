@@ -36,8 +36,8 @@ ROM.
 
 ## ⬜ Phase 2 — Polish
 
-- ✅ `lcd-handheld` shader preset — defaulted 2026-05-24 for `ngp` (in `frontend/src/themes/registry.ts::systemThemes.ngp.defaultShaderPreset`).
-- ✅ NGP-mono vs NGPC visual differentiation — tile shortName now reads "NGP" for `.ngp` files / "NGPC" for `.ngc` files (in `frontend/src/components/LibraryTile.tsx::subsystemLabel`). Defaulted 2026-05-24.
+- ✅ `lcd-handheld` shader preset — defaulted 2026-05-24 for `ngp` (in `frontend/src/platform/themes/registry.ts::systemThemes.ngp.defaultShaderPreset`).
+- ✅ NGP-mono vs NGPC visual differentiation — tile shortName now reads "NGP" for `.ngp` files / "NGPC" for `.ngc` files (in `frontend/src/platform/components/LibraryTile.tsx::subsystemLabel`). Defaulted 2026-05-24.
 
 ---
 

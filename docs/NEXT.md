@@ -8,300 +8,35 @@ When you close an item, the matching PR also flips the corresponding `⬜` to `�
 
 ---
 
-## Pipelined sequence (three major arcs interleaved)
+## Shipped & superseded arcs (historical pointer)
 
-**Decided 2026-05-26.** Three major arcs below — Guided Setup, Per-System Custom UI, and Game Info Panel — share a foundation and can pipeline through subsequent stages.
+The 2026-05-26 "pipelined sequence" (Controller-nav → Per-System UI → Game Info
+Panel, interleaved with Guided Setup) has shipped or been superseded. Per-system
+status lives in `docs/cores/<id>/ROADMAP.md`; what to pick up next is the **HIGH
+band** below. Current per-arc status:
 
-### The shared foundation: Phase 0 — Controller-nav primitives ✅ SHIPPED 2026-05-26
-
-Merged to main as `feat/controller-nav-primitives` (5 phase commits). See
-[docs/features/controller-nav/](features/controller-nav/) for the slice
-breakdown + decisions. Five deliverables landed:
-
-- ✅ Focus manager — `nav/focus.ts::useFocusGroup` (vertical / horizontal / grid)
-- ✅ Gamepad → UI event layer — `nav/gamepad.ts` Web Gamepad API rAF poller
-- ✅ Focus-ring component pattern — `[data-oa-focus="true"]` 2px outline (in frontend/src/index.css)
-- ✅ On-screen hint bar — `nav/HintBar.tsx` with `HintRegion` provider stack
-- ✅ Settings → Controller-nav — Display dialog gains a Controller navigation section
-
-A follow-on **completion pass** (`feat/controller-nav-completion`,
-merged to main 2026-05-26) extended focus + back-stack coverage to
-every remaining interactive surface — global back stack, sidebar
-containers, every Dialog, top toolbar menu bar, chained popovers
-(CorePicker / RegionPicker), right-sidebar action row, plus a fix to
-suppress the frontend gamepad poller while gilrs owns input and three
-post-test fixes (library grid DPad wrap-across-rows, menu bar focus
-ring visibility + disabled filter + dynamic content support, and a
-cross-cutting `data-oa-focus-active` CSS broadening). See
-[features/controller-nav/ROADMAP.md](features/controller-nav/ROADMAP.md)
-"Completion pass (post-Phase 0)" for the slice inventory and
-[features/controller-nav/SESSION_LOG.md](features/controller-nav/SESSION_LOG.md)
-for the 2026-05-26 completion-pass entry. Per-System UI Stage 1 is
-the next major arc.
-
-### Strict sequence to the inflection point
-
-```
-Phase 0 ✓ (controller-nav, shipped 2026-05-26)
-       ↓
-Per-System UI Stage 1 (polish layer, ~5-7w) — IN FLIGHT 2026-05-26
-   - ✅ Slice 1 — SystemUIConfig data model + registry baseline +
-        Settings → Display "Per-system experiences" master toggle +
-        prefers-reduced-motion plumbing + feature-folder scaffold
-        (merged to main 2026-05-26)
-   - ✅ Slice 2 — Per-system SFX wiring: Rust `resolve_ui_sound`
-        resolver cascade (operator override → per-system bundle →
-        `_baseline` → silence), frontend `playSystemUiSound` helper
-        gating on master toggle + audioProfile, library-grid
-        navigate / launch call sites (merged to main 2026-05-26)
-   - ✅ Slice 3 — Per-system background renderer: new
-        `apps/oa-shell/src/system_ui_assets.rs` Rust module with
-        `resolve_background_asset` cascade + `<SystemBackground>`
-        component rendering static (gradient + optional image),
-        animated (looping `<video>`), or shader (fallback to static
-        until Slice 8) paths. Source chain: hover → focused →
-        activeView → pinned. Merged to main 2026-05-27. Static path
-        operator-validated; animated path code-complete pending
-        Slice 7 NES pilot content.
-   - ✅ Slice 4 — Boot animation framework: SystemBootAnimation
-        component triggered by `activeSystemId` transition (sidebar
-        entry), `oa-boot-fade` CSS keyframe. Toggle semantics
-        (refined after playtest): sub-toggle OFF → no overlay
-        (instant), ON + no reduced-motion → 1 s full,
-        `prefers-reduced-motion` → 200 ms cross-fade as the
-        accessibility floor. Per-system `boot-intro` SFX dispatched
-        whenever the visual fires. Skippable on any input. Settings
-        sub-toggle gated on master. `boot-intro` event added to
-        `resolve_ui_sound` so pilots can dispatch the SFX. Merged
-        to main 2026-05-27.
-   - ✅ Slice 5 — Tile flourish system: tileShape enum →
-        aspect-ratio override on the cover container (+ rounded-full
-        for circle); interactionStyle enum → `data-oa-interaction`
-        attribute driving CSS transition timing + hover transform
-        (delayed = 360 ms LCD-feel; physical = 220 ms spring +
-        click pulse). Baseline `instant` keeps Tailwind defaults.
-        Master toggle off falls back to today's behaviour. Merged
-        to main 2026-05-27.
-   - ⬜ Slice 6 — Game Boy pilot full build
-   - ⬜ Slice 7 — NES pilot full build
-   - ⬜ Slice 8 — Vectrex pilot + custom-component escape hatch
-   - ⬜ Slice 9 — Per-core README "Per-system UI" sections
-   - See [features/per-system-ui/ROADMAP.md](features/per-system-ui/ROADMAP.md)
-       ↓
-Game Info Panel v1 (polish for Per-System Stage 1, ~3-4w)
-   - YAML front-matter data model + parser
-   - KNOWN_GAME_BUGS migration into structured per-game entries
-   - Tile-hover card + long-press full panel + tile badge
-   - Operator "Edit locally" via SQLite override table
-   - Inline "Apply best emulator" + "Apply controls" actions
-   - "Submit correction" surface (stubbed for v1 — clipboard copy)
-       ↓
-[INFLECTION POINT — ≈ 10-14 weeks from green-light]
-```
-
-**Why this order:** Per-System Stage 1 is the identity moment — it makes OA feel different from the field. Game Info Panel v1 is the **practical complement** — once every system feels alive, the natural next ask is "what is THIS specific game about, what version is it, will it work, which core is best?" Shipping the info panel as polish on top of Stage 1 lands the operator's first complete-feeling experience: themed library + per-game depth. Onboarding polish (guided setup) and behavior depth (Per-System Stages 2-3) come after, against a much richer product.
-
-**No interleaving until those three are done.** Discipline matters. Half-finishing multiple arcs is the failure mode this sequence avoids.
-
-### After the inflection point — interleave by session feel
-
-```
-Phase 0 ✓
-Per-System Stage 1 ✓
-Game Info Panel v1 ✓
-       ↓
-   ╔════════════════════════════════════════════════════════════╗
-   ║  Pick by session — all tracks pipeline freely              ║
-   ║                                                            ║
-   ║  Guided Setup Track (~5-6w cumulative):                    ║
-   ║    Phase 1B  Wizard upgrade (~3-4w)                        ║
-   ║    Phase 2B  Curated core selection (~1w)                  ║
-   ║    Phase 2C  Folder management (~1w)                       ║
-   ║    Phase 2D  First-system bindings + KNOWN_GAME_BUGS (~1w) ║
-   ║                — auto-applies per-game core overrides from ║
-   ║                  the same KNOWN_GAME_BUGS data this plan   ║
-   ║                  migrated; shared infrastructure win       ║
-   ║    Phase 2E  Help suppression (~3-4d)                      ║
-   ║    Phase 2F  Existing-operator re-entry (~3-4d)            ║
-   ║                                                            ║
-   ║  Per-System UI Stage 2 — Behavior layer (~4-6w):           ║
-   ║    Per-system navigation (carousel / list / wheel)         ║
-   ║    Per-system interaction style (instant / delayed /       ║
-   ║      physical)                                             ║
-   ║    Per-system tile emphasis                                ║
-   ║    5-10 more systems tuned to showcase tier                ║
-   ║                                                            ║
-   ║  Per-System UI Stage 3 — Experience layer (~6-10w):        ║
-   ║    In-game overlays themed per system                      ║
-   ║    Library ↔ game transitions themed                       ║
-   ║    Per-system metadata priorities (consumes Game Info      ║
-   ║      Panel fields for the per-system priority routing)     ║
-   ║    All ~40 systems tuned past baseline                     ║
-   ║                                                            ║
-   ║  Game Info Panel v2 (~3-5w, infra-heavy):                  ║
-   ║    Scraper infrastructure (GitHub Actions on data repo)    ║
-   ║    Separate overlooked-arcade-game-info data repo          ║
-   ║    Daily auto-sync from data repo to OA installs           ║
-   ║    GitHub Issue → auto-PR community contribution flow      ║
-   ║    Wikipedia/etc richer-source integration (later)         ║
-   ╚════════════════════════════════════════════════════════════╝
-```
-
-Each phase is a shippable PR. Pick whichever feels right session-to-session. Order across phases doesn't matter after the inflection point; there are no hard dependencies.
-
-### Total estimate
-
-- **Phase 0 + Per-System Stage 1 + Game Info Panel v1 (the inflection point):** ~10-14 weeks. Foundation + identity-defining demo + per-game depth. Shippable as a complete inflection on its own.
-- **Full vision (all three arcs through Per-System Stage 3 + Game Info Panel v2):** ~25-37 weeks.
-
-### Shared-infrastructure savings
-
-Pipelining compounds code reuse:
-- Focus manager + hint bar + audio dispatcher built in Phase 0 power all three arcs throughout
-- `SystemUIConfig` registry pattern (Per-System Stage 1) reuses the shape of `LIGHT_GUN_SYSTEMS` (shipped 2026-05-25) — same declarative-table pattern across systems
-- Per-system SFX (Per-System Stage 1) routes through the existing 4-bus audio mixer (shipped 2026-05-24 in media-taxonomy)
-- Per-system bindings card (Guided Setup Phase 2D) reuses the same per-system theming + audio that Per-System Stage 1 builds
-- **Structured per-game data format (Game Info Panel v1) is consumed by**: Guided Setup Phase 2D (auto-apply per-game core overrides from KNOWN_GAME_BUGS at import commit) AND Per-System UI Stage 3 (`metadataPriority` field drives per-system priority routing using the same fields). Three features share one structured source — defining it once unlocks all three.
-
-Probably 15-25% off the total vs running the three arcs as fully separate work streams.
-
-### Kiosk shell scheduling — separate, after the full pipeline
-
-The kiosk shell ([docs/features/kiosk-shell/KIOSK_PLAN.md](features/kiosk-shell/KIOSK_PLAN.md)) is its own major arc, scoped at multi-month effort. After this plan locks, kiosk shell's positioning shifted (per 2026-05-26 DECISIONS Q): it becomes the theme editor for power users that **consumes the built-in per-system experiences as starting defaults**. Kiosk shell scheduling happens after the per-system-UI / guided-setup pipeline ships, when there's a richer product to wrap a kiosk mode around.
-
----
-
-## NEXT MAJOR ARC — Guided Setup
-
-**Planning locked 2026-05-25.** Full plan at [docs/PLANS/guided-setup.md](PLANS/guided-setup.md).
-
-Upgrade the existing Import Wizard into a guided-setup flow:
-- Smart ROM/system matching (hash → header → extension → folder-hint)
-- Per-system readiness checklist (single component, reused in Settings)
-- Curated CPU-tier core selection (`sysinfo` crate + per-system tier table; no benchmarking)
-- Controller-navigable from day one (DPad + focus rings, Steam Big Picture style)
-- Optional canonical folder layout (opt-in, mode-aware default)
-- Per-game KNOWN_GAME_BUGS overrides applied at commit
-- Help / tip suppression with criticality tier (load-bearing alerts never suppressible)
-
-**Audience priority:** couch gamers primary, cabinet builders secondary (kiosk shell later), desktop users tertiary (already served).
-
-**Voice:** warm + curator/enthusiast. Sample copy in the plan.
-
-**Phase 0 = controller-nav primitives** (~2-3 weeks frontend infrastructure: focus manager, gamepad → UI event layer, focus-ring component pattern, on-screen hint bar). ✅ shipped 2026-05-26 — see [features/controller-nav/](features/controller-nav/).
-
-**Phase 1B = wizard upgrade** (~3-4 weeks) ✅ SHIPPED 2026-06-01 —
-all six slices in one day. See
-[features/guided-setup/SESSION_LOG.md](features/guided-setup/SESSION_LOG.md)
-for the per-slice ship log. The orphaned wizard (legacy-Shell
-toolbar entry point deleted 2026-05-31) is now reachable via
-Settings → Library; smart-scan emits per-row Hash/Header/Extension/
-Hint confidence + canonical titles; LaunchBox-inspired per-ROM
-results table with inline edits + bulk-select + sort + filter;
-per-system readiness checklist surfaced in wizard Step 3 + Settings
-card; bulk missing-core install modal calling `download_core` in
-parallel; structured per-file BIOS resolution with a Pick BIOS file
-picker; warmed copy + first-launch hero in `LibraryView`.
-
-**Phases 2B-2F** (~4-5 weeks): curated core selection, folder management, first-system bindings + KNOWN_GAME_BUGS, help suppression, existing-operator re-entry. **Phase 2 (curated CPU-tier core selection) is queued in HIGH band below — awaiting fresh operator green-light to start.**
-
-**Total estimate:** 8-10 weeks of focused work.
-
-Dwarfs the MEDIUM band below — while in flight, this arc dominates the roadmap for ~2 months. MEDIUM-band shader work + light-gun playtest can pipeline alongside if multiple sessions overlap.
-
----
-
-## NEXT MAJOR ARC — Per-System Custom UI
-
-**Planning locked 2026-05-25 → 2026-05-26.** Full plan at [docs/PLANS/per-system-ui.md](PLANS/per-system-ui.md).
-
-Make each system feel like its own mini-experience. Per-system audio, boot animations, navigation behavior, layout structure, tile flourishes. This is the **default OA experience** (not a power-user feature); a "Per-system experiences" toggle in Settings lets the minority who want a uniform plain library opt out.
-
-Shipped in three stages, each fully working:
-
-- **Stage 1 — Polish layer** (~5-7 weeks): `SystemUIConfig` data model + per-system SFX + boot animations + tile flourishes + per-system backgrounds + Settings toggle. 3 pilots fully built (Game Boy → NES → Vectrex); all 37 other systems get a tasteful baseline config so the whole library feels themed.
-- **Stage 2 — Behavior layer** (~4-6 weeks): per-system navigation (grid / carousel / list / wheel), per-system interaction style (instant / delayed / physical), per-system tile emphasis. Library view only; in-game UI uniform. 5-10 more systems tuned to showcase tier (Jaguar, PS1, Saturn, MAME, TG-16 candidates).
-- **Stage 3 — Experience layer** (~6-10 weeks): in-game overlays (pause, quick settings, save-state UI) themed per system. Library ↔ game transitions themed. Per-system metadata priorities. All ~40 systems tuned past baseline.
-
-**Architecture:** hybrid. Config-driven SystemUIConfig DSL for most systems; per-system Solid component escape hatch for signature cases (Vectrex confirmed; others TBD).
-
-**Audio sourcing:** multi-source. CC0 pack baseline + original recordings for pilots + AI-generated for hard-to-source synthesized sounds (Vectrex vector blips). No community submission on the desktop normal version (theme ecosystem WAIT lock unaffected).
-
-**Mode separation locked:**
-- **Themed** (default ON): per-system custom UI as designed
-- **No theme** (Settings toggle OFF): uniform plain library; no audio, no animations, no flourishes
-- **Kiosk** (future, separate plan): theme editor for power users; consumes built-in per-system experiences as starting defaults
-
-**Total estimate:** ~15-23 weeks across all three stages. Stage 1 alone is shippable as a real feature (~5-7 weeks).
-
-**Status (2026-05-26):** Stage 1 is in flight on
-`feat/per-system-ui-stage-1-slice-1`; foundation slice (data model +
-toggle + reduced-motion plumbing) shipped, awaiting operator
-playtest before Slice 2. Tracked at
-[features/per-system-ui/](features/per-system-ui/).
-
-**Order vs guided-setup is deferred.** Both arcs are multi-month. Options: (a) sequence — finish guided-setup first, then this; (b) parallel — pipeline if multiple sessions overlap, sharing controller-nav primitives between guided-setup Phase 0 and per-system-UI Stage 1; (c) inverse — this first, then guided-setup. Operator's call.
-
----
-
-## NEXT MAJOR ARC — Game Info Panel
-
-**Planning locked 2026-05-26.** Full plan at [docs/PLANS/game-info-panel.md](PLANS/game-info-panel.md).
-
-**Scheduling: ships as polish on top of Per-System UI Stage 1** in the strict-sequence portion of the pipeline (see "Pipelined sequence" above). Third step after Phase 0 + Per-System Stage 1.
-
-Surface structured reference data per game in OA's library — date, publisher, region, version, player count, controls supported, known bugs, best-emulator recommendations, operator-editable short summary. **Not editorial, not recommendations** (those would belong in a future Play History Intelligence feature).
-
-**v1 scope (tight, ~3-4 weeks):**
-- YAML front-matter data model in per-system markdown (`docs/cores/<id>/games-info.md`)
-- One-time migration: existing `KNOWN_GAME_BUGS.md` free-form markdown → structured entries
-- Tile-hover compact card + long-press / `i` full panel + tile badge for known issues
-- Operator local edits in SQLite override table; field-typed precedence merges sources
-- Inline "Apply best emulator" + "Apply controls" buttons wire to existing `GameOverrides`
-- "Submit correction" surface stubbed (clipboard copy + informational toast) for v1
-
-**v1 sources:** supplied `.dat` files (libretro-database) that OA already syncs + KNOWN_GAME_BUGS migration. No scraper running. No separate data repo. No community pipeline.
-
-**v2 architecture FULLY DESIGNED but DEFERRED** (~3-5 weeks when it lands):
-- Scheduled scraper in GitHub Actions on the data repo
-- Separate `overlooked-arcade-game-info` data repo (lower contribution bar, cleaner versioning)
-- Daily auto-sync from data repo to OA installs + manual "check now" button
-- GitHub Issue → auto-PR community contribution flow with maintainer review
-- Wikipedia / TheGamesDB / ScreenScraper richer-source integration paths
-
-**Shared infrastructure with other arcs:**
-- Guided Setup Phase 2D auto-applies per-game core overrides using the same structured KNOWN_GAME_BUGS data this v1 migrates — one structured source, two features consuming it
-- Per-System UI Stage 3 `metadataPriority` field drives per-system priority routing using the same fields this plan defines
-
-**Distinct from theme ecosystem WAIT lock (DECISIONS G).** Game info is a factual database, not a creative ecosystem. Dead-ecosystem trap doesn't apply — value exists at v1 even with zero community contributions because OA ships with seed data from existing `.dat` sources.
-
----
-
-## ✅ CLOSED ARC — Background jobs + persistent progress bar
-
-**Full 7-phase arc shipped 2026-06-02 / 2026-06-03 + polish.** Plan
-archived: [_archive/PLANS/background-jobs-and-progress-bar.md](_archive/PLANS/background-jobs-and-progress-bar.md).
-Feature folder archived:
-[_archive/features/background-jobs/](_archive/features/background-jobs/).
-JobRegistry + BackgroundJobsBar are now load-bearing infrastructure
-consumed by every long-running operation; the Phase 0 of the
-[virtual-library-and-launcher-arc](PLANS/virtual-library-and-launcher-arc.md)
-treats it as a given.
-
-_(Original ~140-line summary trimmed 2026-06-03 as part of the docs
-cleanup; full per-phase detail lives in the archive.)_
-
----
-## NEXT MAJOR ARC — Per-track SHA-1 matching for disc-shape systems
-
-**Folded into the Virtual library + launcher arc as Slice A1.** Plan
-at [PLANS/disc-track-sha1-matching.md](PLANS/disc-track-sha1-matching.md)
-remains authoritative for the per-track hashing schema + extraction
-shape; sequencing now lives under
-[PLANS/virtual-library-and-launcher-arc.md](PLANS/virtual-library-and-launcher-arc.md)
-Phase A1. ~1 week of work; closes Tier 1 identification for
-PSX / Saturn / Sega CD / Dreamcast / NeoCD / PCE-CD / PC-FX / 3DO /
-GameCube / PSP / PS2.
+- **Controller-nav primitives** — ✅ shipped 2026-05-26; archived at
+  [_archive/features/controller-nav/](_archive/features/controller-nav/). Going
+  forward superseded by the Unified-Nav spatial engine
+  ([features/unified-nav/](features/unified-nav/)).
+- **Guided Setup** — Phase 0 + Phase 1B (wizard upgrade) + Phase 2 (CPU-tier
+  curated cores) shipped; later phases (folder mgmt, help-suppression,
+  existing-operator re-entry) partial/queued. Plan:
+  [PLANS/guided-setup.md](PLANS/guided-setup.md).
+- **Per-System Custom UI** — Stage 1 machinery shipped (now in `platform/`);
+  **superseded/merged into Theming ARC 2** (D32/D33/D34) — pilots + Stage 2/3
+  re-home there as Retroverse content. Current model:
+  [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md).
+- **Game Info Panel** — v1 shipped 2026-05-30 (see the cross-system infra
+  inventory at the foot of this file); v2 (scraper + data repo + community
+  pipeline) designed + deferred
+  ([_archive/PLANS/game-info-panel.md](_archive/PLANS/game-info-panel.md) §11).
+- **Background jobs + persistent progress bar** — ✅ closed; archived
+  ([_archive/features/background-jobs/](_archive/features/background-jobs/)).
+  Load-bearing infra every long-running op now consumes.
+- **Per-track SHA-1 (disc-shape systems)** — folded into the Virtual Library arc
+  as Slice A1; shipped + pivoted to a fuzzy-filename primary; plan archived
+  ([_archive/PLANS/disc-track-sha1-matching.md](_archive/PLANS/disc-track-sha1-matching.md)).
 
 ---
 
@@ -341,6 +76,30 @@ queued behind operator review of the Phase 0 commit.
 These are operator-independent and the infrastructure they sit on already exists.
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
+
+### Theming ARC 2 — L1: per-system UI consumption opt-in (D33 fix)  *(queued — ARC-2 Slice 1)*
+
+The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
+2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).
+Convert the **global `perSystemUiEnabled`-gated** tile-flourish + per-system-SFX
+path in the shared platform grid into a **per-theme opt-in capability** (matching
+how `<ThemeBackground>` already works — mounted only by CoverFlow). A theme
+declares how much per-system UI it consumes (Retroverse: full; CoverFlow:
+backgrounds only; `bare`: none); keep a **user master-off** as the
+accessibility / reduced-motion / low-end escape (the one survivor of the old
+global toggle). Files: `frontend/src/platform/components/LibraryTile.tsx`
+(tileShape/interactionStyle), the grid-nav SFX dispatch, `platform/theme/manifest.ts`
+(+ a `per_system_ui` capability field) + `validate.ts`; App bridges the active
+theme's capability into the gated paths (same pattern as S5.3 glyph-set / S5.1
+ambient themeId). Frontend-only + a touch of Rust if the SFX gate moves. ~small.
+**Gate:** same library reads per-system under Retroverse, uniform under
+CoverFlow/`bare`; master-off forces uniform under Retroverse. Pulled forward
+ahead of the view/layout contract because it's the concrete user-visible defect
+and establishes the platform-capability / theme-consumption split (D33/D34) the
+rest of the arc builds on. Then **L2** (view/layout manifest contract +
+`systemUIConfigs` experiential→Retroverse split) → L3 resolver + persisted user
+override → L4 WheelNav → L5 override UI → L6 Per-System UI Stage 2/3 re-home → P
+`.oatheme` loader.
 
 ### Settings IA Redesign — Slices 1–4 ✅ SHIPPED (arc core complete)
 
@@ -450,57 +209,17 @@ auto-config → replug → compose with the core-side plans. Gating: ready.
 Estimate: Phase 0 ≈ 1–2 days (mostly the gilrs spike); full arc ≈ several
 weeks across phases.
 
-### Metadata Curation — Wave 1 close-out (narrative + controller-nav + cleanup)
+### ✅ CLOSED — Metadata Curation (absorbed into the Per-System Settings Hub, 2026-06-15)
 
-**Planned 2026-06-11.** Full plan:
-[PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature folder
-[features/metadata-editing/](features/metadata-editing/). The arc builds a
-premium **Settings → "Metadata"** editor for game + system metadata on an
-**override layer** (operator decisions D1–D5).
-
-**✅ S1 shipped 2026-06-11** (branch `feat/metadata-curation`): the
-game-factual override backend. `game_metadata_overrides` table (schema
-v23→v24), `GameMetadataOverride` + `apply_to_identity`, get/set/delete/
-reset_field commands, `update_identity_metadata` exposed, read-path merge in
-`list_game_groups`, 7 SQL fixture tests.
-
-**✅ S2 shipped 2026-06-12** (same branch): the `metadata` Settings category
-+ premium SYSTEM editor (`MetadataSettingsBody.tsx`). Audit found the system
-override editor already existed (flat `PerSystemInfoSection` in the
-Per-system drill-in); operator chose Option A (new category + premium
-rebuild). Ships live preview hero, per-field provenance + reset (via
-`SettingRow`), optimistic debounced autosave, searchable system list +
-"Edited only" filter (new `list_system_info_overridden` command). 837 green;
-typecheck + lint silent. **GATE: awaiting operator playtest sign-off on the
-premium *feel*** (D5 exit criterion).
-
-**✅ S3 shipped 2026-06-12** (same branch): the GAME editor + searchable
-entity-list picker (D4) over the S1 backend, behind a Systems/Games switch in
-the takeover. Typed controls (`metadataControls.tsx`: year/players steppers,
-star rating, genre chips w/ corpus typeahead, region/release-type pills) +
-game tile/hero live preview + autosave. Backend exposed `get_identity`
-(provenance baseline) + `list_game_metadata_overridden`; new
-`gameMetadataApi.ts` + `gameMetadata.ts`. 837 green; typecheck + lint silent.
-**GATE: awaiting operator playtest of the game-editor feel.**
-
-**Close-out status (2026-06-12):** ✅ narrative game-info folded in
-(Notes & guidance section), ✅ Per-system drill-in replaced with an
-"Edit in Metadata →" pointer (operator Option A), ✅ empty systems hidden
-(Systems list + Games picker filter to systems with ≥1 game). One item
-remains:
-
-- **Controller-native nav** within the metadata takeover (both panes) —
-  the `useDomQueryFocusGroup` / HintRegion focus-group plumbing the normal
-  Settings pane has. Needs the system pane extracted into its own
-  component (clean mount/unmount with the Systems/Games switch) + **live
-  controller playtesting** — do this as a focused pass with the operator
-  testing, not blind. Native Tab focus works today.
-- Optional polish: picker virtualization (caps at 500 rows); remove the
-  now-orphaned `PerSystemInfoSection.tsx`; structured bugs editor in the
-  narrative section.
-
-Then **Wave 2** (S4 undo stack, S5 merge-mode bulk edit + find-replace).
-Gating: ready. Estimate: controller-nav pass ≈ 1 session; Wave 2 ≈ 1 week.
+The override backend shipped (`game_metadata_overrides`, schema v24) and the
+editor UI was **absorbed into the Per-System Settings Hub** — the standalone
+`metadata` Settings category + `MetadataSettingsBody.tsx` were **removed** when
+the Hub's **Game/Platform Metadata domain cards** (`engine/systemsHub/domains/
+{Game,Platform}MetadataEditor.tsx`) shipped + merged 2026-06-14. No standalone
+arc remains. Plan + feature folder archived (`_archive/PLANS/metadata-editing.md`,
+`_archive/features/metadata-editing/`). Wave-2 ideas (undo stack, bulk
+find-replace) — if ever wanted — would extend the Hub editors, not a separate
+surface.
 
 ### ✅ Portability + state-storage audit — DONE 2026-06-11
 
@@ -1157,15 +876,15 @@ What's already shipped that future work can lean on. Cite these in PRs that clos
 - **POINTER + LIGHTGUN devices** — `oa_core::InputState.pointer` is now `(x, y, pressed, in_viewport)` + `pointer_secondary` companion for multi-touch (index 1+) + `cb_input_state` dispatch for both `RETRO_DEVICE_POINTER` (touch/stylus shape, NDS et al.) AND `RETRO_DEVICE_LIGHTGUN` (classical gun shape, NES Zapper / Saturn Virtua Gun / PSX GunCon / Dreamcast HotD / SMS Light Phaser / SNES Super Scope / Atari 7800 XEGS Light Gun). Pure helper functions `pointer_field_value(primary, secondary, index, id)` + `lightgun_field_value(pointer, buttons, id)` in `crates/oa-libretro/src/state.rs` are exhaustively unit-tested (30 tests covering both helpers + viewport coord math edge cases). `InputPoller::poll_pointer` + `PointerViewport` (window-relative mapping fed from `Renderer::last_viewport()` per frame); pointer outside the viewport reports `(0, 0, false, false)` so light-gun cores polling `LIGHTGUN_IS_OFFSCREEN` see the reload-by-aim gesture (House of the Dead 2, Time Crisis series, Lethal Enforcers, Confidential Mission). IS_OFFSCREEN plumbed end-to-end 2026-05-27. POINTER multi-touch (index 0 → primary, 1 → secondary, ≥2 → zero; COUNT reports 0/1/2 total pressed) plumbed 2026-05-30 via Phase 3 of `feat/gameplay-fixes-batch`. LIGHTGUN gun-side buttons (AUX_A/B/C + START + SELECT + DPAD + RELOAD) plumbed 2026-05-30 via Phase 4 of `feat/gameplay-fixes-batch` — `InputState.lightgun_buttons: u32` (bit position == libretro id) + State mirror + `oa_input::lightgun_buttons_from_joypad_bits` derives the bitmask from per-port RetroPad bindings (no new bindings UI). Catalogue of known light-gun systems + device-type expectations in `apps/oa-shell/src/light_gun_systems.rs`.
 - **Direct-launch CLI** — `--system` / `--core` / per-game lookup + bootstrap-hint so the emu thread loads the right .dll on first launch.
 - **Disc-id extraction** — `cd_id.rs::extractors` covers pce-cd, segacd, saturn, psx/ps2, neocd, pcfx, gamecube, dreamcast; 3DO returns None by design.
-- **Per-system theming** — `frontend/src/themes/systems.css` + `registry.ts`.
-- **Bindings UI** — `SystemBindingsEditor.tsx` renders button-name chips per system.
+- **Per-system theming** — `frontend/src/platform/themes/systemPalettes.ts` (typed `SYSTEM_PALETTES` map, injected as `[data-system]` CSS at boot; `systems.css` retired, D26) + `platform/themes/registry.ts`.
+- **Bindings UI** — `engine/SystemBindingsEditor.tsx` renders button-name chips per system.
 - **CJK font fallbacks** — `frontend/src/index.css::--font-display` covers PC-FX + FDS Japanese-only libraries.
 - **Multi-core CPU awareness (rayon + tokio blocking pool + zstd + parallel boot)** — Shipped 2026-05-21 on `feat/multicore-cpu-awareness`. Workspace gains `rayon` (1.10); five cold-path bottlenecks now parallelize. Media sync wraps `generate_thumbnail` in `tokio::task::spawn_blocking` so decode/resize/encode runs across cores while `buffer_unordered(8)` keeps the network side busy. ROM hash resolve pre-populates the `hash_cache` via `par_iter` inside `spawn_blocking` — the cartridge read+SHA-1+header-strip work saturates all cores before the for-loop's DB-write phase. Rewind ring (`oa-savestate`) compresses every snapshot at zstd level 1 — 5–10× memory reduction lets the 64 MiB cap hold proportionally more rewind history. Boot-time `archive::sweep_temp` + `read_media_db` + `read_media_prefs` + `library_db::open` fan out to four `std::thread::spawn` workers, joining at point-of-use so the wgpu/WebView init runs concurrently with the disk reads — 100-400ms cold-start savings. Project-wide rationale lives in `docs/DECISIONS.md` 2026-05-21 entry.
 - **libretro memory map storage** — Shipped 2026-05-30 on `feat/libretro-env-callbacks-batch`. `RETRO_ENVIRONMENT_SET_MEMORY_MAPS` (env 36) parses the descriptor array into `oa_core::MemoryDescriptor` values (`flags`, `offset`, `start`, `select`, `disconnect`, `len`, `addrspace`) accessible via `Core::memory_map()`; host base pointers stored separately as `usize` in `State.memory_map_ptrs`. Cleared on `load_rom` alongside rotation so back-to-back swaps don't inherit stale descriptors. Unblocks future RetroAchievements rcheevos integration, cheat-search address translation, and AI/scripting layers that read game state by symbolic guest address. 3 unit tests in `state.rs::tests` cover null pointer / zero-count / 2-region NES-shape map.
 - **libretro core OSD → toast** — Shipped 2026-05-30 on same branch. `RETRO_ENVIRONMENT_SET_MESSAGE` (env 6) + `SET_MESSAGE_EXT` (env 60) + `GET_MESSAGE_INTERFACE_VERSION` (env 59, returns v1). Cores' OSD messages ("Save state slot N saved", "Disc swapped", BIOS-fallback warnings) queue as `oa_core::CoreMessage { text, level, log_only }` on `State.pending_messages`; the emu thread drains each frame via `Core::drain_messages()` and emits as `oa://toast` events through the existing `emit_toast` helper. Toasts pick up the active system theme via `current_system_id`. `target=LOG` messages log-only (skip toast); duration/priority/type fields ignored in v1 (toast stack has its own schedule). Future polish: route `MESSAGE_TYPE_PROGRESS` to a progress-bar widget.
 - **libretro `SET_SUPPORT_NO_GAME` flag + `load_no_rom()`** — Shipped 2026-05-30 on same branch. Env 18 captures the bool into `State.supports_no_game`; `LibretroCore::supports_no_game()` exposes it to the shell. `LibretroCore::load_no_rom()` calls `retro_load_game(NULL)` for cores that advertised support (DOSBox-Pure built-in browser, ScummVM engine launcher, etc.). Post-load common work (controller port wiring, av_info snapshot) extracted into `finish_load()` shared with `load_rom`. Shell-side UI button for bootless launch still ⬜ — operator-driven, low priority.
 - **libretro disc-control v2 extras** — Shipped 2026-05-30 on same branch. Four v2-only function pointers previously stored-but-unused now have `LibretroCore` methods: `add_disc_image()`, `replace_disc_image(idx, path)`, `set_initial_disc_image(idx, path)` (multi-disc resume; cores that register interface late can't honor — returns false), `disc_image_path(idx)`. `DiscInfo` gains `paths: Vec<String>` populated from `get_image_path` for v2 cores; v1 fallback returns empty. `read_disc_string_field` helper collapses get_image_label / get_image_path buffer-fill duplication. Frontend `QuickSettings.tsx` `DiscInfo` type extended with optional `paths` field for future tooltip polish.
-- **Game Info Panel v1** — Shipped 2026-05-30 on `feat/game-info-panel-v1`. Three-layer data model (file layer at `docs/cores/<id>/games-info.md` + SQLite `game_info_overrides` table + field-typed precedence merge) feeding three UI surfaces. Rust types live in `apps/oa-shell/src/game_info.rs` (GameInfo / GameInfoOverride / MergedGameInfo / GameInfoBadge); SQLite migration v15 adds the overrides table; six Tauri commands cover read (`get_game_info`, `get_game_info_override`), write (`set_game_info_override`, `delete_game_info_override`), and bulk queries (`list_game_info_overridden`, `list_game_info_badges`). Frontend surfaces: Retroverse `GameDetailPanel` gains Operator note / Controls / Recommended core (+Apply best emulator action wired through `update_game_core_override`) / Known issues sections; `LibraryTile` gains bottom-right `⚠ N` + `✎` badges; `GameInfoModal` gains a 4th "Game info" tab with an inline editor (short summary + controls supported + recommended core + bugs add/remove + Submit correction stub). Files: `apps/oa-shell/src/game_info.rs`, schema in `docs/cores/SCHEMA.md`, plan in `docs/PLANS/game-info-panel.md`. v1 ship includes a seed `psx/games-info.md` (Tomb Raider + FF7); cross-system migration of `KNOWN_GAME_BUGS.md` content is operator-driven follow-up. v2 evolution (separate data repo + scraper + GitHub-Issue submission flow) designed but deferred per plan §11. **Schema extended 2026-05-31** with the optional `touch_hotspots: [{ label, x, y, w, h }]` field — NDS-specific in practice today; coordinates in NDS bottom-screen native space (0..256 × 0..192). The new `TouchHotspotOverlay` component (`frontend/src/components/TouchHotspotOverlay.tsx`) renders labelled accent outlines over the bottom-screen area while a stylus-using game runs; toggle lives in QuickSettings → "Show touch hints" (per-session, NDS-gated). Seed entries in `docs/cores/nds/games-info.md` (Phantom Hourglass / Brain Age / Trauma Center). v1 limitation: assumes default melonDS stacked-vertical screen layout; non-default layouts (side-by-side, top-only) misplace hotspots until v2 reads the core option.
+- **Game Info Panel v1** — Shipped 2026-05-30 on `feat/game-info-panel-v1`. Three-layer data model (file layer at `docs/cores/<id>/games-info.md` + SQLite `game_info_overrides` table + field-typed precedence merge) feeding three UI surfaces. Rust types live in `apps/oa-shell/src/game_info.rs` (GameInfo / GameInfoOverride / MergedGameInfo / GameInfoBadge); SQLite migration v15 adds the overrides table; six Tauri commands cover read (`get_game_info`, `get_game_info_override`), write (`set_game_info_override`, `delete_game_info_override`), and bulk queries (`list_game_info_overridden`, `list_game_info_badges`). Frontend surfaces: Retroverse `GameDetailPanel` gains Operator note / Controls / Recommended core (+Apply best emulator action wired through `update_game_core_override`) / Known issues sections; `LibraryTile` gains bottom-right `⚠ N` + `✎` badges; `GameInfoModal` gains a 4th "Game info" tab with an inline editor (short summary + controls supported + recommended core + bugs add/remove + Submit correction stub). Files: `apps/oa-shell/src/game_info.rs`, schema in `docs/cores/SCHEMA.md`, plan in `docs/PLANS/game-info-panel.md`. v1 ship includes a seed `psx/games-info.md` (Tomb Raider + FF7); cross-system migration of `KNOWN_GAME_BUGS.md` content is operator-driven follow-up. v2 evolution (separate data repo + scraper + GitHub-Issue submission flow) designed but deferred per plan §11. **Schema extended 2026-05-31** with the optional `touch_hotspots: [{ label, x, y, w, h }]` field — NDS-specific in practice today; coordinates in NDS bottom-screen native space (0..256 × 0..192). The new `TouchHotspotOverlay` component (`frontend/src/platform/components/TouchHotspotOverlay.tsx`) renders labelled accent outlines over the bottom-screen area while a stylus-using game runs; toggle lives in QuickSettings → "Show touch hints" (per-session, NDS-gated). Seed entries in `docs/cores/nds/games-info.md` (Phantom Hourglass / Brain Age / Trauma Center). v1 limitation: assumes default melonDS stacked-vertical screen layout; non-default layouts (side-by-side, top-only) misplace hotspots until v2 reads the core option.
 
 - **System Info Panel v1** — Shipped 2026-06-01 on `feat/system-info-panel-v1`. Three-layer per-system metadata replacing the hand-typed-5-of-45 `frontend/src/routes/retroverse/systemMetadataStubs.ts`: L1 (MAME baseline, baked at launch from `assets/mame-source/listxml-slim.json` + `history-slim.xml` shipped by `tools/mame-extractor/`), L2 (curated YAML at `docs/cores/<id>/system-info.yaml`, baked into SQLite `system_info_curated`), L3 (per-install operator overrides in SQLite `system_info_overrides`). Rust types + parsers + field-typed merge live in `apps/oa-shell/src/system_info.rs`; SQLite migration v16 adds the four tables (`system_info_mame` / `_curated` / `_overrides` / `_meta`); six Tauri commands cover read (`get_system_info` merged, `get_system_info_override` raw L3, `get_system_info_curated` raw L2), write (`set_system_info_override`, `delete_system_info_override`, `reset_system_info_to_default`), and operator-driven L1 re-import (`refresh_mame_system_info`). The operator-driven refresh in `apps/oa-shell/src/mame_import.rs` mirrors the maintainer-time `tools/mame-extractor/` parser in-process — detects MAME at `<exe_dir>/Emulators/MAME/` first, shells out to `mame -listxml` + reads local `history.xml`, overwrites L1 without touching L2 or L3. Frontend surfaces: Retroverse `SystemInfoPanel` + `HomePage` hero consume the merged record via `getSystemInfo`; new `PerSystemInfoSection` (per-system Settings drill-in) is the L3 edit UI with form-row-per-field input + provenance badges (no badge = L1 default; slate "curated" = L2; accent "edited" = L3) + peripherals editor + Reset all overrides button; `StorageSettings` gains a "Refresh MAME system info" card with folder-picker fallback. Schema reference in `docs/cores/SCHEMA.md` (system-info.yaml section); plan in `docs/PLANS/system-info-panel-v1.md`. v1 seed L2 YAMLs for snes / nes / genesis / psx / gb (5 of 45 systems migrated from the old stub data); remaining 40 fall through to L1 only. Three OA slugs lack MAME data entirely in MAME 0.288 (`3do` model-specific only, `msx` + `msx2` software-list-only) and stay L2-only per plan §5's same recipe DOSBox/ScummVM use. v2 candidates (session-scoped re-imports → sticky; bundled-only L1 → scheduled refresh from `overlooked-arcade-system-info` repo) stay parked. **SCHEMA_VERSION constant trap** surfaced + fixed during the rollout: the early-return `if current == SCHEMA_VERSION` in `bootstrap_schema` short-circuits all migrations when the constant isn't bumped with each new migration. Game Info Panel v1's v14→v15 had also shipped without the bump (silently absent `game_info_overrides` on any v14 install); constant now sits at 16 with a long inline comment calling out the trap.
 - **Project-wide `Emulators/` convention** — Shipped 2026-06-01 with System Info Panel v1 Phase 1a. Top-level `Emulators/` directory at the repo / install root is the canonical home for every third-party emulator binary OA shells out to (MAME today; DOSBox-X / ScummVM standalone / etc. eventually). `tools/bump-mame.sh` + `apps/oa-shell/src/mame_import.rs::detect_mame_binary` both probe `<root>/Emulators/MAME/mame.exe` first; the shipped install applies the same shape at `<exe_dir>/Emulators/MAME/`. `/Emulators/` added to `.gitignore`. Future external emulators follow the recipe `<root>/Emulators/<name>/`.

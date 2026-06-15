@@ -176,6 +176,17 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
 
   Cross-refs: legacy Shell deletion commit `274df1e` (`feat/retroverse-legacy-deletion`); overlay-fix branch `feat/retroverse-per-system-overlay-fix`; `docs/PLANS/per-system-ui.md` (Stage 1+ plan); `docs/features/kiosk-shell/KIOSK_PLAN.md` (Kiosk design notes); `docs/DECISIONS.md` 2026-05-26 Q (Kiosk-as-theme-editor framing).
 
+  **SUPERSESSION (2026-06-15):** The "two-shell — Kiosk hosts the themable
+  experience" framing above is superseded by the swappable-whole-shell
+  **theming substrate** + `ThemeBackground` (D29) + per-system-UI-as-theme-opt-in
+  (D32/D33/D34). The visual overlay is no longer a Kiosk-only home: per-system UI
+  is now a theme-opt-in capability of the shared substrate. The cited frontend
+  paths are **dead** — `frontend/src/components/SystemBackground.tsx` /
+  `SystemBootAnimation.tsx` no longer exist; the live equivalent is
+  `frontend/src/platform/components/ThemeBackground.tsx`. See
+  `docs/features/theming-substrate/` for the current architecture. (Historical
+  entry left intact above.)
+
 - 2026-06-01 — Forty more L2 `system-info.yaml` files (the unrepresented systems)
   Why it came up: System Info Panel v1 shipped 2026-06-01 with L2
   YAMLs for only 5 of 45 systems (snes / nes / genesis / psx / gb —

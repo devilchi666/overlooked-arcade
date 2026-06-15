@@ -1,5 +1,11 @@
 # Per-System Custom UI — Roadmap
 
+> **⚠️ Slices 6–9 (pilots) + Stage 2/3 re-homed into Theming ARC 2 (2026-06-15)
+> as Retroverse content** — see slice **L6** in
+> [PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md).
+> Slices 1–5 (machinery) shipped + stand (now in `platform/`). This roadmap is
+> historical for the machinery; the pilots proceed under ARC 2.
+
 Stage 1 of the per-system-ui arc. Plan locked at
 [docs/PLANS/per-system-ui.md](../../PLANS/per-system-ui.md). Plan §11
 lists the full Stage 1 deliverables (11 code items + 6 content items +

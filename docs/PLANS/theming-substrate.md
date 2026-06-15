@@ -38,10 +38,12 @@ substrate exposes; some themes opt into them, some don't.
 **Retroverse becomes the first theme on the substrate.** Dogfood test:
 if Retroverse can be a `.oatheme`, anything can.
 
-Three arcs total, ~34-40 weeks. Arc 1 (Minimum Viable Substrate,
-~22-26 weeks) ships layout + assets + palette overrides without
-scripting or shaders. Arcs 2-3 add Rhai behaviors + WGSL shaders +
-in-engine Theme Studio when the substrate proves out.
+Four arcs total (D35 renumber), ~34-40 weeks. Arc 1 (Minimum Viable
+Substrate, ~22-26 weeks) ships layout + assets + palette overrides
+without scripting or shaders — shipped bar the `.oatheme` loader. Arc 2
+is the Per-System Layout Substrate (declarative, no scripting). Arcs 3-4
+add Rhai behaviors + WGSL shaders + in-engine Theme Studio when the
+substrate proves out.
 
 ---
 
@@ -71,8 +73,8 @@ in-engine Theme Studio when the substrate proves out.
   DECISIONS G WAIT lock. Operator-loaded themes only in ARC 1.
 - **Two-binary split** — explicitly rejected per 2026-06-06
   conversation.
-- **Rhai scripting + WGSL shader hooks** — deferred to ARC 2.
-- **In-engine Theme Studio editor** — deferred to ARC 3.
+- **Rhai scripting + WGSL shader hooks** — deferred to ARC 3.
+- **In-engine Theme Studio editor** — deferred to ARC 4.
 - **Replacing the per-system data layer** — themes inherit
   per-system colors, metadata, and assets from the existing
   `themes/registry.ts` + `config/systems/<id>/system.yaml`
@@ -97,11 +99,12 @@ Locked in conversation 2026-06-06; live in
 5. **Theme manifest format:** TOML (matches `system.yaml` peer
    format + supports inline comments).
 6. **Theme swap requires app restart** in ARC 1. Hot-swap deferred
-   to ARC 3.
+   to ARC 4.
 7. **Build-time bundling only in ARC 1.** Runtime loading from
-   extracted `.oatheme` zips deferred to ARC 2 — Tauri's
-   `tauri://localhost` origin breaks out-of-bundle dynamic imports
-   without explicit CSP allowlist work.
+   extracted `.oatheme` zips deferred to ARC 2's tail (the `.oatheme`
+   loader, post-D35 renumber) — Tauri's `tauri://localhost` origin
+   breaks out-of-bundle dynamic imports without explicit CSP
+   allowlist work.
 8. **Kiosk plan's substrate spec absorbed.** The 4-layer model +
    `.oatheme` zip + federated Index + Theme Studio designed in
    KIOSK_PLAN.md §2 becomes the substrate for ALL of OA. Kiosk
@@ -147,12 +150,21 @@ Locked in conversation 2026-06-06; live in
 
 | Arc | Focus | Estimate | Status |
 | --- | --- | --- | --- |
-| 1 | Minimum Viable Substrate — engine/theme separation + platform layer + Tauri hardening + `.oatheme` distribution + Retroverse rebuilt as a theme + 2nd pilot. Layout + assets + palette only; no scripting or shaders. | ~22-26 weeks | queued |
-| 2 | Behaviors + Shaders — Rhai scripting + WGSL shader hooks per KIOSK_PLAN §2.2. | ~7 weeks | future |
-| 3 | Theme Studio — in-engine visual + code editor per KIOSK_PLAN §2.3. | ~5-7 weeks | future |
+| 1 | Minimum Viable Substrate — engine/theme separation + platform layer + Tauri hardening + Retroverse rebuilt as a theme + 2nd pilot. Layout + assets + palette only; no scripting or shaders. | ~22-26 weeks | **complete** bar the `.oatheme` loader (→ ARC 2 tail) |
+| 2 | **Per-System Layout Substrate** — D32 per-system layout/view capability + D33 consumption opt-in + Per-System UI Stage 2/3 re-home + the `.oatheme` runtime loader. Fully declarative; no scripting/shaders. | TBD | **planned** — [PLANS/theming-arc-2-per-system-layout.md](theming-arc-2-per-system-layout.md) |
+| 3 | **Cinematic & Scripting** (was ARC 2) — declarative motion/transitions + `<video>`/attract + Rhai scripting + WGSL shader hooks per KIOSK_PLAN §2.2. | ~7+ weeks | future |
+| 4 | **Theme Studio** (was ARC 3) — in-engine visual + code editor per KIOSK_PLAN §2.3. | ~5-7 weeks | future |
 
-Arc 1 is the focus of this plan. Arcs 2-3 get their own plans when
-scheduled.
+> **Arc renumber (2026-06-15, DECISIONS D35):** the old ARC-2 ("Behaviors +
+> Shaders") split — the declarative per-system *layout* capability (D32/D33)
+> became its own arc (ARC 2), the cinematic/scripting axis moved to ARC 3, and
+> Theme Studio bumped to ARC 4. The `.oatheme` loader (originally §6 Phase 5)
+> moved into ARC 2's tail. Older "ARC 2 = Rhai+WGSL" / "Theme Studio (ARC 3)"
+> references throughout this file + sibling docs reflect the pre-renumber
+> numbering until next touched.
+
+Arc 1 was the focus of this plan; ARC 2 has its own plan (linked above). ARCs
+3-4 get their own plans when scheduled.
 
 ---
 
@@ -269,7 +281,7 @@ The theme-level extension surface. No scripting or shaders yet.
   fallback → null.
 - Layout DSL choice: **start with hand-written TS components**.
   Themes are Solid component trees in their entry file. Declarative
-  TOML/RON layout DSL deferred to ARC 2/3 when Theme Studio needs
+  TOML/RON layout DSL deferred to ARC 2/4 when Theme Studio needs
   a serializable format.
 - 5 engine-owned nav primitives themes pick from (per KIOSK_PLAN
   §3.1): `grid`, `wheel`, `list`, `carousel`, `custom`. Each a
@@ -487,7 +499,7 @@ build-time bundling only. Runtime loading deferred to ARC 2.
 active theme's context + remounting cleanly is non-trivial
 (gamepad listeners, audio routing, focus state). **Decision for
 Phase 5:** theme swap requires app restart in ARC 1. Hot-swap
-deferred to ARC 3 alongside Theme Studio.
+deferred to ARC 4 alongside Theme Studio.
 
 **R4 (MEDIUM) — SystemId drift silently falls through to PcEngine.**
 Confirmed at `main.rs:578-699`. Phase 4 parity test must run in
@@ -567,11 +579,13 @@ Per-phase acceptance gates above. End of arc:
 - **Virtual Library arc** ([docs/PLANS/virtual-library-and-launcher-arc.md](virtual-library-and-launcher-arc.md))
   — sequenced together per §7. VL Phase E + C land mid-arc.
 - **Per-System Custom UI** ([docs/PLANS/per-system-ui.md](per-system-ui.md))
-  — Stage 2+3 (currently paused for content) gets easier to ship
-  after this arc lands, because the platform/theme boundary
-  formalizes the registry + cascade patterns Stage 1 prototyped.
+  — **merged into ARC 2** (D32/D33/D34). Stage 1 machinery shipped (now in
+  `platform/`); Stage 2/3 + the GB/NES/Vectrex pilots re-home into ARC 2 as
+  **Retroverse content** consumed via the per-system substrate capability —
+  not a paused side-stream. See
+  [theming-arc-2-per-system-layout.md](theming-arc-2-per-system-layout.md) §3.
 - **Kiosk Shell** ([docs/features/kiosk-shell/KIOSK_PLAN.md](../features/kiosk-shell/KIOSK_PLAN.md))
-  — KIOSK_PLAN §2.2-2.5 is the source spec for ARCs 2-3 (Rhai
+  — KIOSK_PLAN §2.2-2.5 is the source spec for ARCs 3-4 (Rhai
   behaviors + WGSL shaders + Theme Studio). Kiosk-as-mode
   capabilities (attract / multi-monitor / 5-bus mixer) become
   substrate features any theme opts into.
@@ -598,7 +612,7 @@ D19–D20; the forward-looking scope calls are captured here.
 2. **Kiosk/cabinet capabilities are platform features, deferred (D20).** Attract,
    CRT/shader chrome, multi-monitor (marquee / manuals / second-controls) are
    engine-owned platform toggles a shell opts into via the manifest's
-   `required_engine_capabilities` field — out of scope for a good while (ARC 2-3).
+   `required_engine_capabilities` field — out of scope for a good while (ARC 3-4).
    **Two cheap seams reserved in ARC 1** so they don't become expensive
    retrofits: (a) the theme-host lifecycle is written as a *general* "platform can
    preempt + restore the theme" pattern (not an F12-special-case), so attract
@@ -620,7 +634,7 @@ Audience = "both — me now, creators later" → contracts built creator-grade n
 | 5 | **Theme vs per-system precedence** — per D19, theme composes over per-system. | **Decide now** (decided; resolver already has the cascade shape). |
 | 6 | **Audio as a resolver category** — `ui-sound` category + a verb→sound hook in the new primitives (engine defaults). | **Seam now.** |
 | 7 | **Theme contract validator + CI test** — manifest parses, required tokens present, declared nav primitive + surfaces exist. The `bare` theme becomes its fixture. | **Build now (light)** — the load-time validator + one fixture. |
-| 8 | **DSL-friendly primitive APIs** — primitives take declarative config objects (orientation/density/focus/easing/data-source), minimal imperative escape hatches, so a future serializable DSL (ARC 2/3) can target them. | **Seam now** (pure discipline, zero extra code). |
+| 8 | **DSL-friendly primitive APIs** — primitives take declarative config objects (orientation/density/focus/easing/data-source), minimal imperative escape hatches, so a future serializable DSL (ARC 2/4) can target them. | **Seam now** (pure discipline, zero extra code). |
 | 9 | **Per-theme settings namespace** — reserve a namespaced slice of the settings store for theme-owned prefs (collision-free). One toggle in `bare` proves it. | **Seam now.** |
 | 10 | **Loose-folder hot-reload for dev** | **Defer** — Vite HMR already hot-reloads the in-bundle toy theme; the real watcher is Phase 5. |
 
@@ -640,7 +654,7 @@ whole-shells* as early as possible — even rough, even on a partial substrate �
 then deepen each substrate layer *underneath* a thing that already visibly works
 (a walking skeleton / tracer bullet), instead of a 22-26-week plumbing march
 before the first swap. ARC boundaries are unchanged (the operator did **not**
-fold ARC 2-3 magic into ARC 1); only the *order within ARC 1* changes.
+fold ARC 3-4 magic into ARC 1); only the *order within ARC 1* changes.
 
 The early milestone borrows thin slices from three plan phases at once:
 - **Phase 3** — verb-native nav layer + `list`/`grid` primitives + token
@@ -653,7 +667,7 @@ The early milestone borrows thin slices from three plan phases at once:
 
 **Honest caveat:** ARC-1 Wheel is layout + palette + distinct typography/feel —
 genuinely a different shell, but the *cinematic* layer (attract, CRT ceremony,
-shaders) is still ARC 2-3. The vertical slice proves **swappability + distinct
+shaders) is still ARC 3-4. The vertical slice proves **swappability + distinct
 identity early**; wow-polish lands later.
 
 **Revised ARC-1 slice order** (supersedes §6's phase-sequential order for

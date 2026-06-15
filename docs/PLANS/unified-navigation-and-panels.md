@@ -1,5 +1,10 @@
 # Unified Navigation & Panel System — arc plan
 
+**Status:** **Phase 1 MERGED to main** (merge `c372dd2`) — the spatial
+navigation engine is proven on the whole Settings surface. **Pillar B**
+(unified panel structure & look) is delivered by the Per-System Settings
+Hub. **Phases 2–4 queued.**
+
 Planned 2026-06-14. Supersedes the per-panel wiring approach of the
 Controller-Nav Coverage stream (Slices 1–3) for the engine surface. Operator
 directive: stop hand-wiring each panel; build a **unified system so any panel
@@ -87,7 +92,7 @@ predictable; the engine makes the structure pay off across every input.
 
 ## Phases (operator chose: build + prove on Settings first)
 
-1. **Engine + prove on Settings.** Build the spatial engine + universal
+1. ✅ **Engine + prove on Settings.** (MERGED to main — `c372dd2`.) Build the spatial engine + universal
    discovery behind the existing manager. Land it on the **whole Settings
    surface** including the embedded sub-pages that are inert today (Library
    Manager tabs, Media, Metadata, System Health, Profile, About). Apply the

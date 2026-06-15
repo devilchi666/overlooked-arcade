@@ -8,7 +8,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## 🟨 Phase 1 — Onboarding (2026-05-19)
 
-- ✅ `mame` slug added to `frontend/src/themes/registry.ts` (extensions: `.zip` + `.chd`; theme block in `themes/systems.css` — neon arcade red at hue 12°).
+- ✅ `mame` slug added to `frontend/src/platform/themes/registry.ts` (extensions: `.zip` + `.chd`; palette entry in `frontend/src/platform/themes/systemPalettes.ts` — neon arcade red at hue 12°).
 - ✅ `oa_core::SystemId::Mame` variant added.
 - ✅ `apps/oa-shell/src/bindings.rs` — `mame` button module (B1–B6 + START + COIN + d-pad, identity-mapped to libretro RetroPad), `MAME_BUTTONS` iteration order, `default_mame_bindings()`, dispatch arms in `bit_for` / `buttons_for` / `to_libretro_bits` / `defaults_for`. 14 unit tests green.
 - ✅ `default_core_dll_for_system("mame") → "mame_libretro.dll"` in `apps/oa-shell/src/main.rs`.
@@ -61,6 +61,6 @@ Closed by shared analog input infra Phases A-D (2026-05-21).
 
 ## ⬜ Phase 2+ contributions
 
-- ⬜ MAME-specific button glyphs for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `SystemBindingsEditor.tsx:226`).
+- ⬜ MAME-specific button glyphs for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `frontend/src/engine/SystemBindingsEditor.tsx`).
 - ✅ Per-game ROM-set metadata via libretro thumbnails — closed by cross-system media sync (`media::sync_media_for_system`); listxml metadata pass is deferred separately.
 - ⬜ Multi-game-per-zip handling — operator-driven curation decision.

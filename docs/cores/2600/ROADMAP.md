@@ -28,11 +28,12 @@ shell, scanner, bindings, library DB, and settings pipelines.
 - ✅ `rom_hashes::libretro_dat_refs_for_system("2600")` returns
   `metadat/no-intro/Atari - 2600`.
 - ✅ `media::repo_for_system_id("2600")` returns `Some("Atari_-_2600")`.
-- ✅ System registered in `frontend/src/themes/registry.ts` —
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` —
   `systemThemes["2600"]` entry (extension `["a26"]`, portrait 3/4 tile
   aspect, `crt-lite` default shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — muted wood-
-  grain brown (hue 60°, chroma 0.07).
+- ✅ Theme palette in `frontend/src/platform/themes/systemPalettes.ts`
+  (typed `SYSTEM_PALETTES`, injected as `[data-system]` CSS at boot) —
+  muted wood-grain brown (hue 60°, chroma 0.07).
 - ✅ Single-button exception documented in the
   `z_is_the_primary_action_button_on_every_system` test header;
   Z=FIRE assertion lives in `defaults_cover_every_2600_button`

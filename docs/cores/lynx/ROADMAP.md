@@ -10,8 +10,8 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 Core comes online as part of the project's transition to a multi-core launcher. The libretro pivot means Lynx didn't need a new Rust crate — it's a `.dll` operator drop-in.
 
-- ✅ System registered in `frontend/src/themes/registry.ts` (SystemId union extended, `lynx` entry with `.lnx` / `.lyx` extensions + landscape tile aspect).
-- ✅ Theme block in `frontend/src/themes/systems.css` — purple accent from the Lynx box-art family.
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` (SystemId union extended, `lynx` entry with `.lnx` / `.lyx` extensions + landscape tile aspect).
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts` (`SYSTEM_PALETTES.lynx`, Epyx violet 290°, injected as `[data-system]` CSS at boot — the retired `systems.css` per-system block) — purple accent from the Lynx box-art family.
 - ✅ Per-system button bits + bindings in `apps/oa-shell/src/bindings.rs::lynx` + `LYNX_BUTTONS` + `default_lynx_bindings()` + `defaults_for("lynx")` arm.
 - ✅ `lynx_to_libretro_bits` identity remap (bits laid out to match libretro positions directly).
 - ✅ `bindings::to_libretro_bits` + `bit_for` + `buttons_for` per-system dispatch — replaces the previous tg16-only hardcoded remap.
@@ -37,7 +37,7 @@ Core comes online as part of the project's transition to a multi-core launcher. 
 
 - ⬜ Per-system shader tweaks — operator-driven shader-preset choice (per-system shader override is shipped cross-system).
 - ⬜ Pause-button hotkey decision — operator-driven binding preference.
-- ⬜ Library theming validation — operator visual check (per-system theming infra shipped cross-system via `frontend/src/themes/systems.css` + `registry.ts`).
+- ⬜ Library theming validation — operator visual check (per-system theming infra shipped cross-system via `frontend/src/platform/themes/systemPalettes.ts` + `registry.ts`).
 
 ---
 

@@ -40,6 +40,14 @@ new in Phase 1) with its own internal navigation. The shape it
 ships with mirrors today's SETTINGS three-pane layout — operators
 already know it.
 
+> **Path note:** the "Today's location" / "After Phase 1" columns below
+> (and the Theme-territory table's "Today's location" column) are
+> **Phase-1 starting-state snapshots**. After the `platform/` refactor +
+> Phase 6, current homes are `platform/`, `engine/`, and
+> `themes/retroverse/` (e.g. `engine/SettingsPanel.tsx`,
+> `themes/retroverse/*Page.tsx`); the `routes/retroverse/` +
+> `layout/retroverse/` dirs are gone.
+
 | Surface | Today's location (pre-Phase 1) | After Phase 1 | Notes |
 | --- | --- | --- | --- |
 | **Settings — 14 OA-wide / content / system categories** (Display / Audio / Shaders / Gameplay / Performance / Controller nav / Per-system UI / Experimental / Themes / Library / Media / System Health / Profile / About) | `routes/retroverse/SettingsPage.tsx` tab body | `engine/manager/SettingsPanel.tsx` (extracted, identical UX) | Category bodies in `engine/SettingsSections.tsx` are engine-owned and are reused as-is. |
@@ -143,9 +151,9 @@ convention.
 
 | Layer | Dirs (`frontend/src/`) | May import | Must NOT import |
 | --- | --- | --- | --- |
-| **Platform** (foundation SDK) | `platform/**`, `nav/**` | external libs, Tauri, `oa-core` types, other platform/nav | `engine/`, `routes/`, `themes/` (top-level), `components/` (grab-bag), `App.tsx` |
-| **Engine** (engine-owned UI) | `engine/**` | platform, nav | `routes/` (theme), `themes/` |
-| **Theme** (the active theme) | `routes/retroverse/**`, `layout/retroverse/**`, `themes/**` | platform, nav, **engine-public components** (e.g. `<EngineSummonIcon/>`) | other themes' internals, `App.tsx` |
+| **Platform** (foundation SDK) | `platform/**`, `nav/**` | external libs, Tauri, `oa-core` types, other platform/nav | `engine/`, `themes/**`, `components/` (grab-bag), `App.tsx` |
+| **Engine** (engine-owned UI) | `engine/**` | platform, nav | `themes/**` (theme) |
+| **Theme** (the active theme) | `themes/**` (e.g. `themes/retroverse/**`) | platform, nav, **engine-public components** (e.g. `<EngineSummonIcon/>`) | other themes' internals, `App.tsx` |
 | **Composition root** | `App.tsx`, `main.tsx` | everything (it wires the layers) | — (nothing imports it) |
 
 Rule of thumb: **dependencies point DOWN** (theme → engine → platform).

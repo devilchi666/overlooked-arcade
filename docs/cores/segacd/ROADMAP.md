@@ -13,13 +13,14 @@ Paired with Sega 32X. Core comes online via the libretro pivot — no
 Rust crate vendoring. Genesis Plus GX is the recommended default
 (same .dll already shipping for SMS + Game Gear).
 
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `segacd`, `systemThemes.segacd` entry (extensions
   `cue / chd / ccd / toc / m3u / iso`, landscape tile aspect 4/3,
   `plain` default shader preset for FMV-heavy library).
-- ✅ Theme block in `frontend/src/themes/systems.css` — sapphire blue
-  at hue 235° + L=0.55 + C=0.20. Family-cousin to Genesis cobalt (245°)
-  but visually distinct via lightness axis.
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts` —
+  sapphire blue at hue 235° + L=0.55 + C=0.20. Family-cousin to Genesis
+  cobalt (245°) but visually distinct via lightness axis. Lives in the
+  typed `SYSTEM_PALETTES` map, injected as `[data-system]` CSS at boot.
 - ✅ Per-system input wiring — segacd shares the 6-button Mega Drive
   controller via the `"genesis" | "segacd" | "sega32x" => genesis_*`
   dispatch arms in `apps/oa-shell/src/bindings.rs`. Same pattern PCE-CD

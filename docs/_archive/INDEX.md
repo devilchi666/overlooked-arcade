@@ -49,6 +49,13 @@ When you should NOT read the archive:
   to ~26-slot LaunchBox shape. v1 legacy keys (boxart / snap /
   title / cart) remain readable for one-release fallback.
 
+- **`metadata-editing/`** — Metadata Curation arc. Archived 2026-06-15:
+  the override backend (`game_metadata_overrides`) shipped, and the
+  editor UI was **absorbed into the Per-System Settings Hub**
+  (`engine/systemsHub/domains/{Game,Platform}MetadataEditor.tsx`) — the
+  standalone `metadata` Settings category was removed. Backend decisions
+  (D1-D5) stay valid + reused by the Hub.
+
 - **`portable-install/`** — `<exe_dir>/settings/` opt-in via
   `portable.txt` marker file next to oa-shell.exe.
 
@@ -107,6 +114,34 @@ When you should NOT read the archive:
 - **`system-wiring-plan.md`** — Original per-system Rust crate
   wiring plan. Superseded by the 2026-05-16 libretro pivot; kept
   for historical reference.
+
+### Archived 2026-06-15 (doc audit — shipped/closed arcs)
+
+- **`controller-identity-substrate.md`** — Controller Identity &
+  Auto-Config. Full arc shipped + merged 2026-06-13 (`808fc0b`):
+  VID/PID identity, replug-stable ports, non-standard-pad
+  normalization + SDL `gamecontrollerdb` import, label families.
+- **`disc-track-sha1-matching.md`** — VL Phase A1 sub-plan. Per-track
+  SHA-1 shipped 2026-06-03 then pivoted to fuzzy-filename primary;
+  only the parked Sub-phase 4 remains (tracked in the parent VL arc).
+- **`game-identities-schema.md`** — VL Phase E sub-plan. Schema
+  v22→v23 `game_identities` + read-path swap; Sub-phases 1-3 shipped
+  2026-06-07 (Phase E complete).
+- **`launcher-abstraction.md`** — VL Phase C sub-plan. `Launcher`
+  trait + `ExternalProcessLauncher` + profile registry; C1-C3 merged
+  2026-06-08 (Phase C complete).
+- **`metadata-editing.md`** — Metadata Curation arc. Override backend
+  shipped; editor UI absorbed into the Per-System Settings Hub
+  (see archived feature folder). Closed 2026-06-15.
+- **`settings-ia-redesign.md`** — Settings IA re-cut. Slices 1-4
+  merged 2026-06-14/15 (Import & Setup · Library · Organize · Systems ·
+  External Emulators · Themes/Appearance); Slice 5 deferred into
+  guided-setup Phase 2.
+- **`theming-grabbag-drain.md`** — Drained `src/components/` to zero
+  (→ `engine/` + `platform/components/`); shipped 2026-06-09.
+- **`theming-platform-api-bridge.md`** — Theming Phase 4. Corralled
+  raw `invoke()`/`listen` behind typed `platform/api/*` + lint ban;
+  all 6 slices + 4.5 merged 2026-06-10 (Phase 4 complete).
 
 ---
 

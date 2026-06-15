@@ -1,5 +1,16 @@
 # Kiosk shell — full-screen cabinet mode
 
+> **SUPERSESSION (2026-06-15, DECISIONS D7):** The theme substrate +
+> in-engine Theme Studio scope below **migrated to
+> [../theming-substrate/](../theming-substrate/) (ARCs 1-4)**. Kiosk-specific
+> scope that remains here = attract mode / multi-monitor surfaces / 5-bus
+> audio mixer (the D20 deferred platform capabilities). Content below is
+> preserved but read it as superseded-for-substrate where it discusses
+> theming/Theme Studio. The `frontend/src/themes/systems.css` mention below was
+> RETIRED → runtime `[data-system]` injection in
+> `frontend/src/platform/themes/systemPalettes.ts`; `registry.ts` →
+> `frontend/src/platform/themes/registry.ts`.
+
 Cross-cutting work stream for the full-screen "BigBox-class" presentation
 mode: theming substrate (4-layer + Rhai), in-engine Theme Studio, attract
 mode (3 tiers), 5-bus audio mixer, multi-monitor surfaces, launch ceremony,
@@ -24,8 +35,8 @@ presentation tier that wraps every core uniformly.
 
 ## Related
 
-- Sidebar ([../sidebar/](../sidebar/)) — kiosk Phase 1+ consumes the views
+- Sidebar ([../../_archive/features/sidebar/](../../_archive/features/sidebar/)) — kiosk Phase 1+ consumes the views
   data model the sidebar work landed.
-- UI polish ([../ui-polish/](../ui-polish/)) — Phase 0 of this kiosk plan.
+- UI polish ([../../_archive/features/ui-polish/](../../_archive/features/ui-polish/)) — Phase 0 of this kiosk plan.
 - Parking lot entry — `docs/PARKING_LOT.md` 2026-05-22 entry that lives
   alongside this plan.

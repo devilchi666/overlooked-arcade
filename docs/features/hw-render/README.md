@@ -35,18 +35,28 @@ what's actually implemented vs what's still on paper.
 
 ## Integration points (real files)
 
-- `crates/oa-libretro/src/ffi.rs` — env constants present; HW-render +
-  Vulkan negotiation structs to add.
-- `crates/oa-libretro/src/state.rs` — the `SET_HW_RENDER => false` arm
-  (to replace) + `cb_video_refresh` `RETRO_HW_FRAME_BUFFER_VALID`
-  sentinel handling.
+All four landed in M1/M2 (merged to main):
+
+- `crates/oa-libretro/src/ffi.rs` — HW-render + Vulkan negotiation
+  structs implemented (M1).
+- `crates/oa-libretro/src/state.rs` — the old `SET_HW_RENDER => false`
+  arm replaced with the negotiation handler + `cb_video_refresh`
+  `RETRO_HW_FRAME_BUFFER_VALID` sentinel handling (M1).
 - `crates/oa-render/src/lib.rs` — wgpu instance/device creation
-  (`Backends::PRIMARY` → Vulkan for the HW path) + the new `HwContext`
-  trait / `VulkanHwContext` impl.
+  (`Backends::PRIMARY` → Vulkan for the HW path) + the `HwContext`
+  trait / `VulkanHwContext` impl (M1/M2).
 - `apps/oa-shell/src/main.rs` — `LoadRom` run loop / framebuffer push
-  (HW-aware present branch).
+  with the HW-aware zero-copy present branch (M2).
 
 ## Status
 
-Planning locked 2026-06-07. No code yet. Slotted after VL Phase C3,
-before Theming ARC 2 — see the plan's Sequencing section.
+- **M1 (handshake) — PROVEN.** The `SET_HW_RENDER` + Vulkan negotiation
+  path and the `RETRO_HW_FRAME_BUFFER_VALID` present branch are in place.
+- **M2 (zero-copy) — MERGED to main** (merge `c27da4c`, tag
+  `hw-render-m2-proven`): the core's output stays GPU-resident and OA's
+  shaders sample it with zero copy at 60fps.
+- **M3 (lineup + reinit) — stranded on `feat/hw-render-m3`** (not merged).
+- **M4 (more backends if needed) — future.**
+
+Slotted after VL Phase C3, before Theming ARC 3 (Cinematic & Scripting)
+— see the plan's Sequencing section.

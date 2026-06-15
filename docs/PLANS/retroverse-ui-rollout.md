@@ -47,9 +47,12 @@ window prefs persistence) — the new design slots into the existing
 
 Confirmed by code-grep, not assumed:
 
-- **Three-pane layout primitives** at `frontend/src/layout/`
-  (`Shell.tsx`, `TopToolbar.tsx`, `LeftSidebar.tsx`,
-  `RightSidebar.tsx`). Same shape Retroverse uses.
+- **Three-pane layout primitives.** (Post-`platform/` refactor:
+  `frontend/src/layout/` no longer exists — `Shell`, `TopToolbar` and
+  `RightSidebar` were folded into the Retroverse-internal
+  `frontend/src/themes/retroverse/RetroverseShell.tsx`; `LeftSidebar` moved
+  to `frontend/src/platform/components/LeftSidebar.tsx`.) Same shape
+  Retroverse uses.
 - **`TopToolbar` is a generic three-zone slot** (left / center /
   right) — re-skinning App.tsx's usage touches App.tsx, not
   TopToolbar.
@@ -57,7 +60,7 @@ Confirmed by code-grep, not assumed:
   `<Match when={currentView().kind === ...}>` blocks in
   `App.tsx`. Extending to handle tab kinds is incremental.
 - **Per-system theming + asset registry** —
-  `frontend/src/themes/systemUIConfigs.ts` + `registry.ts` from
+  `frontend/src/platform/themes/systemUIConfigs.ts` + `registry.ts` from
   per-system-ui Stage 1.
 - **Controller-nav v2 polish** — DOM-query focus groups,
   identity-tracked focus, DPad / shoulder / back-stack.
@@ -348,7 +351,8 @@ status. After each phase ships:
 - Per-tab implementation details land in commit messages, not
   here (this doc stays high-level).
 
-Current status (2026-05-28):
+Current status (snapshot 2026-05-28 — note: this section lags; all
+6/6 tabs are now shipped. See §10 "Remaining work" for the live list):
 
 - ✅ Designs locked for all six tabs + content-packs plumbing.
 - ✅ Phase A merged — branch `feat/retroverse-ui-phase-a` shipped

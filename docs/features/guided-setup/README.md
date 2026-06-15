@@ -15,7 +15,7 @@ decisions, not design rationale.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| Phase 0 | Controller-nav primitives (shared with Per-System UI) | ✅ shipped 2026-05-26 — see [features/controller-nav/](../controller-nav/) |
+| Phase 0 | Controller-nav primitives (shared with Per-System UI) | ✅ shipped 2026-05-26 — see [features/controller-nav/](../../_archive/features/controller-nav/) |
 | Phase 1B | Wizard upgrade (~3-4 weeks) | ✅ SHIPPED 2026-06-01 — all 6 slices in one day. See `docs/features/guided-setup/SESSION_LOG.md` for the per-slice ship log. |
 | Phase 2B | Curated core selection (~1 week) | ⬜ next (awaiting fresh operator green-light — Phase 1B closure is a natural pause point) |
 | Phase 2C | Folder management (~1 week) | ⬜ pending |

@@ -43,8 +43,9 @@ inside route here.
 ## Sidebar / theme
 
 Sidebar slug: `sega32xcd`. ShortName "32X-CD". Form factor "console";
-manufacturer "sega". CSS accent in
-[`frontend/src/themes/systems.css`](../../frontend/src/themes/systems.css)
+manufacturer "sega". Per-system palette in
+[`frontend/src/platform/themes/systemPalettes.ts`](../../../frontend/src/platform/themes/systemPalettes.ts)
+(typed `SYSTEM_PALETTES` map, injected as `[data-system]` CSS at boot)
 sits in the orange-red 32X family (hue 42°) but slightly deeper
 (L 0.60) to read distinctly from cart 32X at a glance.
 

@@ -36,7 +36,7 @@ Per-system data lives in ~8 places:
 | `apps/oa-shell/src/main.rs` device-id dropdowns (Saturn, GC, etc.) | Hardcoded `DEVICE_ID_OPTIONS_*` arrays | `config/systems/<id>/system.yaml` (input section) |
 | `docs/cores/<id>/system-info.yaml` (L2 curated for System Info Panel) | In-tree docs | `config/systems/<id>/system.yaml` (merged) |
 | `docs/cores/<id>/games-info.md` (Game Info Panel YAML records) | In-tree docs | `config/systems/<id>/games.yaml` |
-| `frontend/src/themes/registry.ts::systemThemes` | TS const | **stays** for now (defer to kiosk-mode work) |
+| `frontend/src/platform/themes/registry.ts::systemThemes` | TS const | **stays** for now (defer to kiosk-mode work) |
 
 ### Operator-locked decisions (2026-06-01)
 
@@ -325,7 +325,7 @@ GitHub Action that runs `cargo test descriptor_validate_all_in_tree` on PR. Alre
 
 ## Out of scope (for this arc)
 
-- **Frontend `systemThemes` registry consolidation.** Stays as TS const in `frontend/src/themes/registry.ts` until the kiosk-mode theme work warrants pulling it. The 3-file YAML schema reserves a `theme:` block for the future migration so we don't have to rev the schema later.
+- **Frontend `systemThemes` registry consolidation.** Stays as TS const in `frontend/src/platform/themes/registry.ts` until the kiosk-mode theme work warrants pulling it. The 3-file YAML schema reserves a `theme:` block for the future migration so we don't have to rev the schema later.
 - **Theme CSS variables consolidation.** Same reasoning.
 - **L1 engine-default fallback removal.** Some hardcoded fallbacks stay in code (e.g., a system with no YAML still gets minimal bindings via `bindings.rs` default arms). Removing those entirely is a follow-up after we trust the YAML pipeline.
 - **Plugin / extension API.** PARKING_LOT entry written 2026-06-01; not on this arc.

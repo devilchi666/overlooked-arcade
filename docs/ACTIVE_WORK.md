@@ -11,61 +11,6 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Settings IA Redesign** — **Slices 1–4 ✅ ALL MERGED to main (2026-06-14/15,
-  operator-playtested):** S1 IA re-skeleton + Library/Organize split (`e71eef0`),
-  S2 Library re-point (`59b0d52`), S3 declarative per-theme Appearance schema
-  (`5386305`), S4 External Emulators consolidation + research-need doc
-  (`f3082ed`). The core re-cut is **done**. **Slice 5 (Import & Setup depth)
-  DEFERRED** — folds into guided-setup Phase 2. **External-emulator research
-  pass — batch 1 ✅ MERGED to main (2026-06-15, branch
-  `feat/external-emulator-profiles`).** Verified launch CLIs for all section-A
-  single-system alts (Dolphin/PCSX2/DuckStation/PPSSPP/melonDS/mGBA/Flycast/
-  Mesen 2/DeSmuME) + section-B Cemu/RPCS3 against official docs/source; authored
-  **9 `config/emulators/*.yaml` profiles**; doc + profile test + per-OS data
-  updated ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md)).
-  **External-emulator DEPTH is now PARKED pending a dedicated planning arc** —
-  operator decision 2026-06-15: there are bigger plans for external emulators, to
-  be designed properly in a future planning session rather than cobbled together
-  incrementally. The open-items seed (multi-system schema for BizHawk/ares, MAME
-  content model, section-B system-id wiring → VL Phase D) lives in the research
-  doc. **The Settings IA stream is now fully closed.**
-  Re-cuts the engine
-  Settings IA around user intent: new top-level **Themes/Appearance · Library ·
-  Organize My Collection · Import & Setup · External Emulators** groups, replacing
-  the conflated Settings → Library 3-tab admin surface. Key calls (D1–D7):
-  appearance = theme territory surfaced in an engine Themes/Appearance tab via a
-  **declarative per-theme settings schema** (rides theming Phase 5); Library gains
-  **re-point** (relink a moved folder — verify same-ROMs, rebase paths in place;
-  no on-disk file ops, the operator's external organizer owns those); "Views"
-  renamed + moved with Collections into Organize. Sliced; Slice 1 (IA re-skeleton
-  + Library/Organize split) is frontend-only + low-risk. Plan
-  [PLANS/settings-ia-redesign.md](PLANS/settings-ia-redesign.md); feature folder
-  [features/settings-ia/](features/settings-ia/). Slice 1 queued in
-  [NEXT.md](NEXT.md) HIGH band.
-
-- **Per-System Settings Hub** — ✅ **COMPLETE + MERGED to main 2026-06-14**
-  (operator playtested clean). Consolidated ALL per-system settings (was
-  scattered across the Per-system / Media / Metadata categories + the
-  Library→Game-media grid + BIOS in System Health) into one card-based
-  **Systems** hub: grid of per-system cards → per-system **domain cards**
-  (Display & Video · Core/Launcher · Input · Media · **Platform Metadata** ·
-  **Game Metadata** · BIOS) → editor. Built on the spatial-nav engine (zero
-  per-control wiring); the `HubCard`/`HubGrid`/`PanelScaffold` primitives ARE the
-  unified-nav **Pillar B** deliverable. S1–S5 + the metadata split shipped:
-  removed the old categories/grid + `PerSystemSettingsBody`/`GameMediaManagePanel`/
-  `UnidentifiedGamesDialog`/`MediaSettings` (net ~−1.7k lines); extracted
-  `SystemMetaForm`, `useGameMediaOps`, `PlatformMediaSlots`. **Also shipped this
-  arc:** a dev-only **DevTools panel** (Settings → About) — logging toggles
-  (spatial/focus/gamepad) + backend log streams (media/audio/render via a runtime
-  log-level bridge) + Open inspector (`devtools` Cargo feature, default-on for
-  the operator's `cargo tauri build`) + test job / log path / restart; and the
-  engine-surface **HintBar** fixed. Plan
-  [PLANS/per-system-settings-hub.md](PLANS/per-system-settings-hub.md); feature
-  folder [features/per-system-hub/](features/per-system-hub/) (decisions D1–D5).
-  **Parked follow-ups** (PARKING_LOT 2026-06-14): "system" vs "platform"
-  terminology audit; re-gate the DevTools panel + move `devtools` out of default
-  features before any PUBLIC release; move per-game metadata into game-detail.
-
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
   engine panels stayed inert). Two pillars: a **spatial-navigation engine**
@@ -107,35 +52,14 @@ spanned every system but was filed under whichever core happened to be active.
     text entry deferred ([features/nav-coverage/OSK_PLAN.md](features/nav-coverage/OSK_PLAN.md)).
     History: [features/nav-coverage/](features/nav-coverage/).
 
-- **Controller Identity & Auto-Config** — ✅ **SHIPPED + MERGED to main
-  2026-06-13** (`808fc0b`). Full arc: stable VID/PID identity (both pollers) →
-  replug-stable ports → non-standard-pad normalization (per-pad + full SDL
-  `gamecontrollerdb` import, 813 pads) → label families (Nintendo/Xbox/PS, from
-  SDL's type table) → live test window (Settings → Controllers). Fixed the
-  operator's wired Faceoff Switch pad end-to-end. Plan
-  [PLANS/controller-identity-substrate.md](PLANS/controller-identity-substrate.md);
-  feature folder [features/controller-identity/](features/controller-identity/).
-  Parked follow-ups: Phase-3 wizard (pads in no DB), glyph icons, data-file
-  update mechanism, multi-OS mapping bundles (see PARKING_LOT.md).
-
-- **Metadata Curation (Settings → "Metadata" editor)** — planned
-  2026-06-11, execution queued (starts next session at Wave 1 / S1).
-  A premium operator surface to edit game + system metadata on an
-  **override layer** (per-field reset + provenance), housed as its own
-  engine Settings category. System override backend already shipped
-  (`system_info_overrides`); the arc builds the missing game-factual
-  override half + the editor UI. Inline-in-library editing deferred.
-  Plan: [PLANS/metadata-editing.md](PLANS/metadata-editing.md); feature
-  folder [features/metadata-editing/](features/metadata-editing/).
-  Wave 1 / S1 queued in [NEXT.md](NEXT.md) HIGH band. (Distinct stream
-  from the theming work below — engine territory, theme-free.)
-
 - **Theming Substrate (BigBox-style themes + engine/theme territory
-  split)** — major multi-arc planned 2026-06-06. 3 arcs; ARC 1
-  (Minimum Viable Substrate, ~22-26 weeks) in flight; ARCs 2-3
-  (Rhai behaviors + WGSL shaders + Theme Studio) follow. Plan at
-  [PLANS/theming-substrate.md](PLANS/theming-substrate.md); feature
-  folder [features/theming-substrate/](features/theming-substrate/).
+  split)** — major multi-arc planned 2026-06-06. **4 arcs (D35 renumber):**
+  ARC 1 (Minimum Viable Substrate) **complete** bar the `.oatheme` loader;
+  **ARC 2 = Per-System Layout Substrate** (planned, L1 queued); ARC 3 =
+  Cinematic & Scripting (Rhai + WGSL + declarative motion); ARC 4 = Theme
+  Studio. Plans at [PLANS/theming-substrate.md](PLANS/theming-substrate.md)
+  + [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md);
+  feature folder [features/theming-substrate/](features/theming-substrate/).
   - **Phase 1 ✅ shipped + merged 2026-06-06** (merge `870edb2`).
     Engine/theme surface separation: SETTINGS + Library Manager +
     Import Wizard + BIOS + Core installer + System Health +
@@ -298,7 +222,9 @@ spanned every system but was filed under whichever core happened to be active.
         `ConfirmHost`, themeable/controller-navigable via the Dialog primitive).
       - **Phase 3 design locked 2026-06-10** (design conversation, no code yet):
         DECISIONS **D19** (per-system theming is Retroverse-only, NOT a substrate
-        contract — the substrate's job is swappable whole-shells) + **D20**
+        contract — the substrate's job is swappable whole-shells; **superseded
+        2026-06-15 by D32/D33 — per-system UI is now an ARC-2 substrate capability
+        themes opt into**) + **D20**
         (kiosk/cabinet capabilities — attract / CRT-shaders / multi-monitor — are
         deferred platform features, with two cheap seams reserved: general
         preempt/restore theme lifecycle + named manifest `surfaces`). **ARC-1
@@ -466,6 +392,25 @@ spanned every system but was filed under whichever core happened to be active.
         (C1 sever shim · C2 relocate + delete dead code · C3 drop exceptions + probe);
         typecheck+lint+vitest(58)+build green; cargo `oa-shell` green; frontend-only. **Only §6
         Phase 5 (`.oatheme` distribution/loader) now remains open in ARC 1.**
+      - **ARC 2 — Per-System Layout Substrate — ✅ PLANNED 2026-06-15 (no code).**
+        With ARC 1 complete (Phase 6 gate passed), planned ARC 2 from the fixed
+        inputs **D32** (per-system layout becomes a substrate contract +
+        persisted end-user override) + **D33** (per-system UI is a platform
+        capability themes opt INTO). Two new decisions: **D34** (factual data +
+        machinery = platform; experiential design + content = theme — the
+        shipped global `systemUIConfigs.ts` experiential config migrates to
+        Retroverse) + **D35** (arc split/renumber: **ARC 2 = layout**, **ARC 3 =
+        cinematic/scripting** [old ARC-2 Rhai+WGSL+motion], **ARC 4 = Theme
+        Studio**; the `.oatheme` loader absorbed as ARC 2's tail). Slice order
+        (contracts-first, D33 fix pulled forward): **L1** D33 consumption opt-in
+        · **L2** view/layout manifest contract + systemUIConfigs split · **L3**
+        resolver + persisted `(theme,system,view)→layout` user override · **L4**
+        WheelNav body · **L5** end-user override UI (engine Per-System Hub) ·
+        **L6** re-home Per-System UI Stage 2/3 as Retroverse content · **P**
+        `.oatheme` runtime loader. Plan:
+        [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md).
+        Cinematic/scripting axis = ARC 3 (own plan when scheduled). **L1 queued
+        in [NEXT.md](NEXT.md) HIGH band.** Supersedes per-system-ui Stage 2/3.
   - ESLint boundary rule defers to Phase 4 alongside Tauri-bridge
     work. Operator decisions locked 2026-06-06: one unified
     premium frontend (no LaunchBox/BigBox split); manifest = TOML;
@@ -889,10 +834,9 @@ spanned every system but was filed under whichever core happened to be active.
   + SETTINGS expansion; 2026-05-29 closed the unified controller
   pipeline + menu/dialog polish + Slice 12 custom collections +
   Per-system SETTINGS drill-in + Now-playing chip + DISCOVER body.
-  Toggle Settings → Display → Experimental → Retroverse UI ON to
-  enter; flag OFF stays byte-identical with the legacy Shell apart
-  from the heart overlay on tiles + the custom-collections submenu
-  in TileContextMenu (Retroverse-only).
+  (The Retroverse experimental flag + legacy Shell were both removed
+  2026-05-31; Retroverse is now the default shell, rebuilt as a real
+  theme under `themes/retroverse/` — see theming Phase 6.)
 
   **Current state (2026-05-29 end of day):**
   - HOME — v2 dense mockup (system spotlight + carousel arrows +
@@ -935,35 +879,23 @@ spanned every system but was filed under whichever core happened to be active.
   - RetroAchievements integration OR local milestone tracking
     (HOME ACHIEVEMENTS card + GameDetailPanel / SystemInfoPanel
     sections are placeholders).
-  - Per-System UI Stage 2 + Stage 3 — separate plan.
-  - Flag deprecation endpoint — eventual.
+  - Per-System UI Stage 2 + Stage 3 — now Theming ARC 2 (slice L6).
+  - Flag deprecation — done (legacy Shell removed 2026-05-31).
 
   **Content workstream (operator-side):** per-system hero art (drop
   console + fanart into existing PlatformMedia slots),
   `systemMetadataStubs.ts` refinement for ~38 systems beyond the 7
   priority stubs, per-system blurbs.
 
-- **Per-System Custom UI Stage 1 — code arc complete; content-side
-  pause** ([features/per-system-ui/](features/per-system-ui/)).
-  Slices 1-5 merged to main 2026-05-26 / 2026-05-27: the foundation
-  + the four consumer-side mechanisms (per-system SFX wiring,
-  background renderer, boot animation framework, tile flourish
-  system). Master toggle ON gives every system a visibly distinct
-  feel via the registry alone — operator playtested across the
-  Stage 1 pilots and confirmed the per-system differences read.
-  Remaining slices 6-9 are content-heavy: GB / NES / Vectrex
-  full pilot builds (SFX recordings, background assets, boot
-  animation keyframes, plus a Vectrex custom-component escape
-  hatch) + per-core README "Per-system UI" sections. Held pending
-  operator content production (CC0 audio curation, DMG gradient,
-  AI-generated Vectrex vector blips, etc. — see plan §9 for
-  sourcing strategy). Resumes when operator green-lights with
-  content in hand. See
-  [features/per-system-ui/ROADMAP.md](features/per-system-ui/ROADMAP.md)
-  for the slice breakdown and
-  [features/per-system-ui/ASSETS.md](features/per-system-ui/ASSETS.md)
-  for the operator-facing asset catalog (where every sound /
-  background / boot animation file goes on disk).
+- **Per-System Custom UI — ⇒ merged into Theming ARC 2 (2026-06-15).**
+  Stage 1 machinery (Slices 1-5: SFX wiring, background renderer, boot
+  animation framework, tile flourish) shipped + now lives in `platform/`.
+  The architecture is **superseded by D32/D33/D34** — per-system UI is a
+  platform capability themes opt into; pilots (GB/NES/Vectrex) + Stage 2/3
+  re-home as Retroverse content under
+  [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)
+  (slice L6). Folder banner-reconciled:
+  [features/per-system-ui/](features/per-system-ui/).
 
 ---
 
@@ -971,6 +903,29 @@ spanned every system but was filed under whichever core happened to be active.
 
 Compressed log. Full per-arc detail lives in `docs/_archive/` — see
 [_archive/INDEX.md](_archive/INDEX.md) for the searchable manifest.
+
+**2026-06-13 → 06-15** (moved out of In-flight by the 2026-06-15 doc audit)
+- **Settings IA Redesign** — Slices 1–4 merged (re-cut Settings around intent:
+  Import & Setup · Library · Organize · Systems · External Emulators ·
+  Themes/Appearance; declarative per-theme Appearance schema; Library re-point) +
+  external-emulator batch-1 profiles (9 `config/emulators/*.yaml`). Slice 5
+  deferred into guided-setup Phase 2; external-emulator depth parked for a
+  planning arc. Plan archived (`_archive/PLANS/settings-ia-redesign.md`).
+- **Per-System Settings Hub** — ✅ COMPLETE + merged 2026-06-14. Card-based
+  **Systems** hub (grid → per-system domain cards → editor) consolidating all
+  per-system settings, **including the Game/Platform Metadata editors** (absorbed
+  the standalone Metadata Curation arc). `HubCard`/`HubGrid`/`PanelScaffold` ARE
+  the unified-nav Pillar-B deliverable; shipped a dev-only DevTools panel + HintBar
+  fix alongside. Parked: terminology audit, re-gate DevTools before public release.
+- **Controller Identity & Auto-Config** — ✅ full arc shipped + merged 2026-06-13
+  (`808fc0b`): VID/PID identity, replug-stable ports, non-standard-pad
+  normalization + SDL `gamecontrollerdb` import (813 pads), label families, live
+  test window. Fixed the operator's wired Faceoff Switch pad end-to-end. Parked:
+  Phase-3 wizard, glyph icons, data-file update mechanism. Plan archived.
+- **Metadata Curation** — ✅ closed 2026-06-15. Override backend shipped
+  (`game_metadata_overrides`, schema v24); editor UI **absorbed into the
+  Per-System Hub** (Game/Platform Metadata domain cards) — standalone `metadata`
+  Settings category removed. Plan + feature folder archived.
 
 **2026-06-08**
 - Libretro plumbing audit (`docs/cores/AUDIT_2026-06-08.md`) + fixes +

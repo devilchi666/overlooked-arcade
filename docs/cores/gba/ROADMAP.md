@@ -28,11 +28,12 @@ shell, scanner, bindings, library DB, and settings pipelines.
   `metadat/no-intro/Nintendo - Game Boy Advance`.
 - ✅ `media::repo_for_system_id("gba")` returns
   `Some("Nintendo_-_Game_Boy_Advance")`.
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `gba`, `systemThemes.gba` entry (extension
   `["gba"]`, portrait 3/4 tile aspect, `crt-lite` default shader preset
   per the handheld convention).
-- ✅ Theme block in `frontend/src/themes/systems.css` — deep indigo
+- ✅ Theme palette in the per-system palette map
+  (`frontend/src/platform/themes/systemPalettes.ts`) — deep indigo
   (hue 285°, lightness 0.55, chroma 0.20). Sits between SNES (270°,
   L=0.62) and Lynx (290°, L=0.65) in hue but the lightness axis
   separates the three: GBA = darkest, SNES = mid, Lynx = brightest.
@@ -61,7 +62,7 @@ audio + working controller at native 59.73 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ✅ Dedicated `lcd-handheld` shader preset — defaulted 2026-05-24 for `gba` (in `frontend/src/themes/registry.ts::systemThemes.gba.defaultShaderPreset`).
+- ✅ Dedicated `lcd-handheld` shader preset — defaulted 2026-05-24 for `gba` (in `frontend/src/platform/themes/registry.ts::systemThemes.gba.defaultShaderPreset`).
 - ✅ Per-system aspect override — GBA is 3:2 — shipped via `system_settings::default_display_aspect("gba") = Some(1.5)`.
 - ✅ BIOS auto-detection / pre-launch check — closed by `check_gba_bios` (see Phase 1 entry above). Warn-only by design — mGBA HLE handles BIOS-less launches gracefully for the common case.
 - ✅ Game-tilt sensor support (Kirby Tilt 'n' Tumble, Yoshi Topsy-Turvy, WarioWare Twisted!) — closed by Phase G sensor interface (`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE` wired through to a keyboard-arrow-keys-as-tilt fallback in `apps/oa-shell/src/main.rs`). Real OS-level accelerometer access is a separate later phase; the keyboard fallback makes these games playable today. Operator playtest pending.
