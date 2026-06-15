@@ -1,5 +1,9 @@
 # Guided Setup — Session Log
 
+> **Note:** Code paths in dated entries below predate the platform/ refactor —
+> the import-wizard components cited as `frontend/src/components/import-wizard/`
+> now live at `frontend/src/engine/import-wizard/`.
+
 ## 2026-06-11 — LaunchBox competitive research + settings/import/library decisions (no code)
 
 Research-and-decisions session. 4 primary + 6 sub-agents studied LaunchBox

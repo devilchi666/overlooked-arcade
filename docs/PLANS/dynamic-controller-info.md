@@ -8,7 +8,7 @@
 
 ## Problem
 
-The per-game Input dialog dispatches the libretro device id the operator picks from a hardcoded dropdown (`DEVICE_ID_OPTIONS_BASE` / `_GAMECUBE` / `_SNES` in `frontend/src/components/GameDialogs.tsx`). Each core has its own subclass ids — and the dropdown's generic `Light Gun = 4`, `Mouse = 2`, `Pointer = 6` entries are wrong for almost every core that uses peripherals.
+The per-game Input dialog dispatches the libretro device id the operator picks from a hardcoded dropdown (`DEVICE_ID_OPTIONS_BASE` / `_GAMECUBE` / `_SNES` in `frontend/src/platform/components/GameDialogs.tsx`). Each core has its own subclass ids — and the dropdown's generic `Light Gun = 4`, `Mouse = 2`, `Pointer = 6` entries are wrong for almost every core that uses peripherals.
 
 ### Concrete evidence (2026-06-05 light-gun bring-up)
 

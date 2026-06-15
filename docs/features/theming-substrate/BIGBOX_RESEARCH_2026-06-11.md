@@ -5,8 +5,8 @@
 **Purpose:** Deep-dive on BigBox (LaunchBox big-screen mode) theming —
 how it works, what the community loves/hates/wants, the visual-editor
 landscape, and the cinematic media/motion axis — mapped onto OA's
-theming-substrate arc (ARC 1 ✅ nearly done, ARC 2 shaders/behaviors,
-ARC 3 Theme Studio).
+theming-substrate arc (ARC 1 ✅ nearly done, ARC 2 per-system layout,
+ARC 3 shaders/behaviors, ARC 4 Theme Studio — post-D35 renumber).
 
 This is a **research + strategy** doc, not a plan. Decisions it implies
 go to `DECISIONS.md` / `PLANS/theming-substrate.md` when scheduled.
@@ -37,7 +37,7 @@ load-bearing ones are cited inline.
    tripping* visual editor.** BigBox has none; the beloved third-party
    "Community Theme Creator" (~13.6K downloads) is partly paywalled and
    **cannot re-open hand-authored themes**. This is exactly the gap
-   ARC 3 (Theme Studio) targets — and the round-trip problem is solvable
+   ARC 4 (Theme Studio) targets — and the round-trip problem is solvable
    only if we hold a *single declarative source of truth* from day one
    (§6). Our token/manifest substrate already does this.
 
@@ -51,7 +51,7 @@ load-bearing ones are cited inline.
    be composited under UI, video engine churned 3× in 2025, and the
    incumbents' fix for motion lag is *turning motion off*. **OA's
    wgpu/WGSL pipeline, where video is just a sampled texture, structurally
-   dissolves the airspace problem** and is the right home for ARC 2's
+   dissolves the airspace problem** and is the right home for ARC 3's
    shader/motion work. See §4 + §7.
 
 ---
@@ -85,7 +85,7 @@ OnSelectionChanged/OnEnter`), placed into the view tree via an XAML
 namespace import. There is **no sandboxed scripting language** — extension
 is full .NET against the host assemblies. This is why theme zips carry
 DLLs and need the Windows "Unblock" step on install. **Contrast with OA's
-planned ARC 2 model: sandboxed Rhai behaviors + WGSL shaders, not arbitrary
+planned ARC 3 model: sandboxed Rhai behaviors + WGSL shaders, not arbitrary
 native code.** Ours is safer to distribute and the right call for a public
 ecosystem.
 
@@ -199,12 +199,13 @@ choice* is an incremental seam, not a rebuild, and (c) it's what makes
 pitch in CLAUDE.md) literally true at the layout level, not just the
 palette level. The clean shape: a theme manifest declares a default layout
 plus optional `per_system` layout overrides; the active-system signal
-(already wired) selects which primitive + token set mounts. This is the
-natural ARC 2 companion to behaviors/shaders.
+(already wired) selects which primitive + token set mounts. Post-D35 this
+became its own arc — **ARC 2 (Per-System Layout Substrate)** — ahead of the
+ARC-3 behaviors/shaders work.
 
 ---
 
-## 4. Movement, layers, media — the cinematic axis (ARC 2 territory)
+## 4. Movement, layers, media — the cinematic axis (ARC 3 territory)
 
 ### Media slots — BigBox's taxonomy is the spec to match/exceed
 
@@ -221,7 +222,7 @@ ES-DE adds one idea BigBox lacks: **`miximage`** — a *generated composite*
 (screenshot + marquee + box + physical media auto-laid-out). No LaunchBox
 equivalent. Worth a parking-lot note as a content-generation feature.
 
-**OA action:** when ARC 2's media binding lands, use BigBox's ImageTypes
+**OA action:** when ARC 3's media binding lands, use BigBox's ImageTypes
 list as the checklist for our media-slot vocabulary (we already have a
 MediaDb; the per-game metadata lives there per our memory note). The five
 screenshot sub-slots and the arcade-specific set are easy to under-scope.
@@ -245,7 +246,7 @@ established pattern is: **z-index + alpha + color-multiply tint in the
 declarative layer; named blend modes belong in the GPU shader stage.** This
 is a gift to OA's architecture — a WGSL pipeline can unify game feed,
 bezels, and reactive UI in one compositor with real blend modes, which
-*no incumbent offers in the theme layer.* Strong ARC 2 differentiator.
+*no incumbent offers in the theme layer.* Strong ARC 3 differentiator.
 
 ### Motion / animation
 
@@ -262,7 +263,7 @@ bezels, and reactive UI in one compositor with real blend modes, which
   primitive anywhere; no **ambilight / art-reactive ambient background**
   (mature in Plex/YouTube, absent from every emulator frontend surveyed).
 
-**OA action:** ARC 2's motion layer (the `motion` token group is already
+**OA action:** ARC 3's motion layer (the `motion` token group is already
 *reserved* in `tokens.ts` per S3) should ship: (1) easing as a first-class
 authorable property, (2) a preset gallery *on top of* a real keyframe model
 (the HyperTheme combo — see §6), (3) parallax-by-depth and (4) at least one
@@ -277,7 +278,7 @@ blocking-storyboard bug: transitions must be interruptible.
   (libVLC → WMP → FFmpeg), breaking complex video-grid themes each time.
   **OA's wgpu model, where video is a sampled texture in the same pipeline,
   eliminates airspace entirely.** This is a genuine structural win — call
-  it out in ARC 2 planning.
+  it out in ARC 3 planning.
 - **Image caching / disk I/O — not GPU — is the most-cited stutter cause.**
   Scroll stutter on an RTX 3070 traced to a near-full drive; fix was SSD +
   pre-caching. Lesson: async image loading + a sane cache are worth more
@@ -290,7 +291,7 @@ blocking-storyboard bug: transitions must be interruptible.
   stretch on 21:9; ultrawide needs dedicated theme forks. **OA's relative/
   token-driven layout should be resolution-independent by design** so we
   never fork a theme per aspect ratio. Anchor/constraint-based layout (the
-  Unreal "anchor medallion" idiom) is the model to steal for ARC 3.
+  Unreal "anchor medallion" idiom) is the model to steal for ARC 4.
 - **Per-source audio gain is missing in BigBox** (can't lower startup-video
   volume in-app). Trivial for OA's 5-bus mixer (kiosk plan) to beat.
 
@@ -317,7 +318,7 @@ actually congregates; Reddit is poorly indexed for this topic.)
 ### 5.2 What they HATE (recurring, high-signal)
 1. **Creating a theme is HARD** — the XAML/WPF barrier is the #1 complaint.
    Even experienced WPF devs hit missing assemblies + no design view + must
-   reverse-engineer existing themes. *(OA's declarative-first floor + ARC 3
+   reverse-engineer existing themes. *(OA's declarative-first floor + ARC 4
    visual editor is the direct counter.)*
 2. **Themes break on every BigBox update** — top recurring grievance, a
    real maintenance tax. v11.10 changed Wall/Grid behavior and forced
@@ -352,7 +353,7 @@ actually congregates; Reddit is poorly indexed for this topic.)
 
 ---
 
-## 6. The visual editor — ARC 3 (Theme Studio) intelligence
+## 6. The visual editor — ARC 4 (Theme Studio) intelligence
 
 **Headline:** across the *entire* emulator-frontend space, true WYSIWYG
 theme editors are vanishingly rare. This is the biggest open opportunity.
@@ -375,11 +376,11 @@ theme editors are vanishingly rare. This is the biggest open opportunity.
   drag-and-drop canvas, transform handles, grid overlays, layer grouping,
   unlimited undo/redo, **direct PSD import with layer preservation**, **63+
   animation types on a timeline with easing/loop/yoyo**, multi-aspect-ratio.
-  **This is the closest existing model to OA's ARC 3 target — study it.**
+  **This is the closest existing model to OA's ARC 4 target — study it.**
 - **GameEx:** shipped a (beta) first-party visual editor — rare proof it's
   doable in-house.
 
-### The hard problem — round-tripping (this decides ARC 3's architecture)
+### The hard problem — round-tripping (this decides ARC 4's architecture)
 Three boundary models exist; only the first round-trips power-user content:
 
 - **Model A — code-is-truth, canvas is a live view of it** (round-trips
@@ -396,13 +397,13 @@ Three boundary models exist; only the first round-trips power-user content:
 - **Model C — two sources of truth / regeneration** (WordPress Gutenberg
   block-invalidation; Figma→code re-inference). **Inherently lossy. Avoid.**
 
-**The load-bearing conclusion for ARC 3:** the systems that round-trip
+**The load-bearing conclusion for ARC 4:** the systems that round-trip
 power-user content cleanly all keep a **single declarative source of truth**
 and treat the visual editor as either (1) a live *view* of that source, or
 (2) a panel of controls whose *schema is declared in the source itself*, or
 (3) a *mapping* into named handles — **never** a regenerated second
 artifact. **OA's token/manifest substrate is already a single declarative
-source of truth (Model A).** The ARC 3 mandate is therefore: the Theme
+source of truth (Model A).** The ARC 4 mandate is therefore: the Theme
 Studio reads and writes *named values into declared handles* (tokens,
 manifest fields, primitive props, behavior params) and **never rewrites the
 hand-authored body** of a custom primitive/behavior. Power users author
@@ -411,7 +412,7 @@ the bodies. This is the exact implementable form of the project's north-
 star memory note ("declarative-first + escape hatch so the Theme Studio can
 round-trip what power-users author").
 
-### Editor design ideas worth stealing (for ARC 3 planning)
+### Editor design ideas worth stealing (for ARC 4 planning)
 - **Layers/z-order = list order** with direct-manipulation transform
   handles in a live preview — the **OBS model** that non-technical
   streamers learned effortlessly. Keep *one* consistent "top of list =
@@ -432,7 +433,7 @@ round-trip what power-users author").
 
 ## 7. What this means for OA — consolidated recommendations
 
-Ordered by leverage. None are for *this* session — they feed ARC 2/3
+Ordered by leverage. None are for *this* session — they feed ARC 2-4
 planning and the operator's roadmap calls.
 
 **A. Validate the substrate bets we already made (no action — confidence).**
@@ -457,17 +458,17 @@ Break-on-update is BigBox's #2 hate and an author-retention killer.
 Document a versioned-contract stability policy alongside the validator
 (deprecation windows, schema_version migration path). Cheap, high-trust.
 
-**D. Use BigBox's `ImageTypes` list as the ARC 2 media-slot checklist.**
+**D. Use BigBox's `ImageTypes` list as the ARC 3 media-slot checklist.**
 ~47 image types incl. 5 screenshot sub-slots + arcade-specific set. Easy to
 under-scope. Add ES-DE's generated `miximage` to PARKING_LOT as a content-
 gen idea.
 
-**E. Make ARC 2's compositor lean into what no incumbent has:** named blend
+**E. Make ARC 3's compositor lean into what no incumbent has:** named blend
 modes in the theme layer, parallax-by-depth, an art-reactive ambient
 background, interruptible transitions (avoid BigBox's blocking-storyboard
 bug), and per-source audio gain (the 5-bus mixer beats BigBox trivially).
 
-**F. ARC 3 Theme Studio = Model A round-tripping, full stop.** Single
+**F. ARC 4 Theme Studio = Model A round-tripping, full stop.** Single
 declarative source of truth; editor writes named values into declared
 handles, never rewrites hand-authored bodies. Study Unity UI Builder
 (markup round-trip) + HyperTheme (the domain's WYSIWYG precedent) + OBS

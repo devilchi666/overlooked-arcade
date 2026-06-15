@@ -1255,3 +1255,97 @@ experiences" and force per-theme duplication. The operator's instinct that
 per-system UI "should be theme-only" is satisfied not by privatizing the
 machinery but by making *consumption* a per-theme opt-in. Supersedes the
 "Retroverse-only" half of **D19**; **D32** stands.
+
+---
+
+### D34 — Per-system *capability* is platform; per-system *content + experiential choices* are theme (ARC-2 ownership line)
+
+**Date:** 2026-06-15 (ARC-2 planning;
+[PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md)
+§2). **Decision:** the operator drew the precise line D33 left implicit, when
+clarifying that the per-system-ui Stage-1 pilots' content (GB/NES/Vectrex SFX,
+backgrounds, boot animations, the Vectrex view) "is for the Retroverse theme,
+not for every theme."
+
+**The line:** *factual data + machinery = platform; experiential design +
+content = theme.*
+
+- **Platform owns the capability** — the layout resolver + cascade, the layout
+  primitives (list/grid/carousel/**wheel**/custom), the `views`/`per_system`
+  manifest contract + validator, the user-override store, the *factual*
+  per-system data (palette/accent — already split to `SYSTEM_PALETTES` in
+  S5.2), the asset-cascade tiers + SFX dispatcher + boot framework, and a thin
+  `_baseline` per-system fallback.
+- **Each theme owns its content + experiential choices** — the actual SFX
+  banks / backgrounds / boot animations (homed in the theme's asset tree, the
+  S5.1 theme tier `assets/themes/<id>/system-ui/<system>/…`), the per-system
+  *layout choices* (declared in the theme's manifest `views[].per_system`), the
+  Vectrex custom view, tile flourishes, signature feel.
+
+**Consequence (the migration ARC 2 does):** the shipped platform-global
+`systemUIConfigs.ts` holds *experiential* per-system choices (`layout` /
+`audioProfile` / `interactionStyle` / `tileShape`) for all 40 systems as a
+platform default every theme would inherit — exactly the "forced cross-theme"
+defect D33 names. ARC 2 migrates the experiential config out of platform-global
+into **Retroverse-owned** declaration (Retroverse, the flagship, carries the
+full 40-system set; CoverFlow none; `bare` none). Platform keeps only the thin
+`_baseline` fallback so a theme that opts in without authoring 40 configs still
+renders something.
+
+**Therefore** the paused Per-System UI **Stage 1 pilots (slices 6–9)** +
+**Stages 2–3** re-home into ARC 2 as **Retroverse content**, NOT platform
+behaviour — the per-system-ui ↔ theming merge point D32/D33 named.
+
+**Why:** without this line, "make consumption theme-opt-in" (D33) is
+ambiguous about *where the consumed content lives*. Baking rich per-system
+content into the platform `_baseline` would re-create the forced-global defect
+one layer down (every theme inherits Retroverse's taste). Homing rich content
+in the theme + a thin platform fallback gives genuine per-theme expression with
+a graceful floor.
+
+**How to apply:** new per-system *experiential* work lands as theme content +
+manifest declaration; new per-system *machinery* lands in platform. Never
+duplicate the machinery into a theme; never bake a theme's signature content
+into the platform baseline. The boundary lint already enforces the import
+direction (`platform ↛ themes`); D34 is the content/data analogue.
+
+---
+
+### D35 — Arc separation + renumber: ARC 2 = layout, ARC 3 = cinematic/scripting, ARC 4 = Theme Studio
+
+**Date:** 2026-06-15 (ARC-2 planning). **Decision:** the old ARC-2 ("Behaviors
++ Shaders — Rhai + WGSL") is **split**. The declarative per-system *layout*
+capability (D32/D33/D34) is a self-contained, scripting-free arc and the
+operator's headline; the cinematic/scripting axis is a different beast with a
+different risk profile. Fusing them made ARC 2 a 15+ week monster spanning two
+unrelated thrusts.
+
+**New arc structure:**
+- **ARC 2 — Per-System Layout Substrate** — D32 layout/view capability + D33
+  consumption opt-in + the per-system-ui Stage 2/3 re-home + the `.oatheme`
+  runtime loader (the deferred §6 Phase 5). Fully declarative.
+  [PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md).
+- **ARC 3 — Cinematic & Scripting** — the old ARC-2 content: declarative
+  motion/transitions (the reserved `motion` token category), `<video>`
+  backgrounds / attract, sandboxed Rhai behaviours, WGSL shader chrome, media
+  binding. Natural internal order: declarative motion → Rhai → WGSL.
+- **ARC 4 — Theme Studio** — the old ARC 3 (visual editor, Model A
+  round-tripping), bumped one slot. Unchanged in content; D32's "Theme Studio
+  stays after the layout/motion/shader capabilities exist" sequencing holds.
+
+**The `.oatheme` loader sits at ARC 2's tail** (not ARC 3) because it closes
+the last open ARC-1 thread *and* D6 notes its CSP work "becomes load-bearing
+for Rhai sandboxing anyway" — so it tees up ARC 3 cleanly.
+
+**Why:** ARC 2 ships the BigBox-parity headline ("each system is literally its
+own home at the layout level") without waiting on a scripting engine, and the
+cinematic axis gets its own focused arc instead of a cramped tail slice. The
+declarative-motion insight (D23.6 — much of "motion" is CSS-achievable without
+Rhai) lives in ARC 3 with the rest of the cinematic work rather than leaking
+into the layout arc.
+
+**How to apply:** "ARC 2" now unambiguously means the layout substrate.
+References to "ARC 2 = Rhai + WGSL" and "Theme Studio (ARC 3)" in older docs
+(plan §5 table, D32, the BigBox research, THEME_CONTRACT) are updated to the
+2/3/4 numbering as those docs are next touched; the plan §5 arc table is
+updated this session.

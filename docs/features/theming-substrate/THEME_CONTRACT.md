@@ -152,7 +152,8 @@ system to inherit that var. Source of truth: `platform/themes/systemPalettes.ts`
 The `--motion-*` durations + `--ease-*` easings exist and are honored by the
 a11y baseline, but **themes do not drive animation in ARC 1**. The cinematic /
 motion axis — transitions, video backgrounds, attract mode, WGSL shader chrome
-— is ARC 2-3 (the BigBox-style capability the substrate builds toward). When it
+— is ARC 3 (the BigBox-style capability the substrate builds toward; was ARC 2
+before the D35 renumber). When it
 lands it will extend this contract with a `motion`/`transitions` token category;
 it is intentionally absent from `ThemeTokens` today so the contract doesn't make
 a promise the substrate can't yet keep.

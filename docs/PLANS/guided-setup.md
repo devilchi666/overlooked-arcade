@@ -1,6 +1,12 @@
 # Guided Setup — Plan
 
-**Status:** Planning. No code. Locked design after the 2026-05-25 advisor + operator planning session.
+**Status:** Partially shipped. Locked design after the 2026-05-25 advisor + operator planning session.
+
+- **Phase 0 — Controller-nav primitives:** **shipped** (focus manager / gamepad→UI layer / focus-ring / hint-bar now used across the shell; the controller-nav feature folder is archived).
+- **Phase 1 — Wizard upgrade:** **Phase 1B closed 2026-06-01** (merge `bf77117`; six slices — smart scan, per-ROM results table, per-system readiness checklist, bulk missing-core install, guided BIOS resolution, voice/tone copy pass + first-launch hero).
+- **Phase 2 — Curated CPU-tier core selection:** **shipped** (merge `43b6bbf`, Slices 1–4; `apps/oa-shell/src/cpu_tier.rs` + `sysinfo` + per-system tier table + Settings → Performance card + readiness-checklist tier pick).
+- **Phase 3 — Folder management** (canonical-layout move/copy), **Phase 5 — Help-suppression registry**, **Phase 6 — Existing-operator re-entry:** partial / queued. The re-scan-via-Settings entry point exists (`df49a8c`); the canonical-layout move pipeline, help-suppression registry, and override-preservation diff are not confirmed shipped — **verify against code before relying on these.**
+- **Phase 4 — First-system bindings + KNOWN_GAME_BUGS overrides:** **verify** (bindings cards / KNOWN_GAME_BUGS auto-application not confirmed against code).
 
 **Author:** Operator + Claude (LLM pair).
 

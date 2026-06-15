@@ -1,5 +1,20 @@
 # Per-System Custom UI — Session Log
 
+## 2026-06-15 — Merged into Theming ARC 2 (architecture superseded) — no code
+
+- **Shipped:** README + plan banners marking this arc **superseded/merged** by
+  Theming ARC 2 (DECISIONS D32/D33/D34/D35). The "default experience + global
+  toggle + hardcoded-no-format" stance is retired; per-system UI is now a
+  **platform capability themes opt into**, and per-system content is **theme
+  content** (D34). Stage 1 Slices 1–5 (machinery) stand, now in `platform/`.
+- **Re-homed:** Stage 1 pilots (slices 6–9: GB/NES/Vectrex) + Stages 2–3 become
+  **Theming ARC 2 slice L6**, built as Retroverse content. The content specs in
+  this folder (pilot character, asset sourcing, boot policy, ASSETS.md) carry
+  forward as L6's brief.
+- **Next:** no standalone work here. Per-system layout/experience work proceeds
+  under [PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md)
+  (L1 D33 opt-in queued in NEXT.md HIGH).
+
 ## 2026-05-27 — Slice 5: Tile flourish system
 
 Branch `feat/per-system-ui-stage-1-slice-5` cut from main after the

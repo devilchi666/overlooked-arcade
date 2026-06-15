@@ -12,6 +12,11 @@
 > that lands.
 >
 > Original design + decisions log preserved below for reference.
+>
+> **Note:** Frontend paths below predate the 2026-06 platform/ refactor
+> (`components/` → `platform/components/`, `themes/` → `platform/themes/`,
+> `systems.css` retired → `systemPalettes.ts`). Treat the cited paths as
+> their post-refactor homes; not rewritten line-by-line.
 
 ## Context
 

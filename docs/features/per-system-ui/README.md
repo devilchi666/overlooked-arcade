@@ -1,5 +1,25 @@
 # Per-System Custom UI — Feature
 
+> **⚠️ SUPERSEDED / MERGED into Theming ARC 2 (2026-06-15).** The architecture
+> in this folder + [its plan](../../PLANS/per-system-ui.md) predates the theming
+> substrate and its **foundational stance is retired** by DECISIONS D32/D33/D34:
+> per-system UI is **NOT** "the default OA experience behind a global toggle" —
+> it's a **platform capability themes opt INTO**, and per-system *content*
+> (SFX/backgrounds/boot animations/the Vectrex view) is **Retroverse's content**,
+> not a platform default every theme inherits. **Stage 1 Slices 1–5 (the
+> machinery) shipped + stand** (now living in `platform/`). **Stage 1 pilots
+> (slices 6–9) + Stages 2–3 re-home into Theming ARC 2 as Retroverse content**
+> (slice **L6**). The content specs below (pilot character, asset sourcing, boot
+> policy) stay useful as L6's content brief; the *modes / global-toggle /
+> hardcoded-no-format* architecture is replaced. Source of truth going forward:
+> **[PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md)**
+> (§2 ownership line, §3 reconciliation table).
+>
+> Stale paths in this folder: `frontend/src/themes/systemUIConfigs.ts` →
+> `platform/themes/systemUIConfigs.ts`; `<SystemBackground>` → `<ThemeBackground>`
+> (S5.5 replacement); the global `perSystemUiEnabled` toggle → per-theme opt-in +
+> user master-off.
+
 Each system in OA's library carries its own mini-experience — audio,
 boot animation, tile flourishes, background, eventually navigation
 shape + in-game overlay theming. Default OA experience (not opt-in);

@@ -1,6 +1,21 @@
 # Per-System Custom UI — Plan
 
-**Status:** Planning. No code. Locked design after the 2026-05-25 advisor + operator planning session (second session of the day, separate from the guided-setup planning earlier).
+> **⚠️ ARCHITECTURE SUPERSEDED by Theming ARC 2 (2026-06-15, DECISIONS
+> D32/D33/D34/D35).** This plan's *foundational stance* — per-system UI as "the
+> DEFAULT OA experience" behind a **global master toggle**, with all character
+> "hardcoded in-tree, no theme format" (§1, §2, §4) — is **retired**. Under the
+> theming substrate: per-system UI is a **platform capability themes opt INTO**;
+> per-system *content* (SFX/backgrounds/boot/Vectrex view) is **theme content**
+> (Retroverse's), homed in the theme's asset tree, not a platform default.
+> **Stage 1 Slices 1–5 (machinery) shipped + stand** (in `platform/`); **Stage 1
+> pilots 6–9 + Stages 2–3 re-home into Theming ARC 2 as Retroverse content**
+> (slice L6). The *content* specs here (pilot character, asset sourcing strategy,
+> boot-animation policy) remain the brief for L6; the *modes / global-toggle*
+> architecture is replaced. Go to
+> **[theming-arc-2-per-system-layout.md](theming-arc-2-per-system-layout.md)**
+> (§2 ownership line + §3 reconciliation table) for the current model.
+
+**Status:** SUPERSEDED (see banner). Original: planning, locked after the 2026-05-25 advisor + operator planning session (second session of the day, separate from the guided-setup planning earlier).
 
 **Author:** Operator + Claude (LLM pair).
 

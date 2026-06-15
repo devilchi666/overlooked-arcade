@@ -9,6 +9,33 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 planned: Per-System Layout Substrate (D32/D33 → plan + D34/D35) — no code
+
+Planning session. Designed ARC 2 with D32 (per-system layout becomes a
+substrate contract) + D33 (per-system UI is a platform capability themes opt
+into) as fixed inputs; wrote the plan + two new decisions.
+
+- **Shipped (docs):**
+  [PLANS/theming-arc-2-per-system-layout.md](../../PLANS/theming-arc-2-per-system-layout.md)
+  — the ARC-2 plan: capability/content ownership line (§2), reconciliation of
+  the stale per-system-ui plan (§3), the view-type + layout-primitive model +
+  resolution cascade (§4), and the **L1→P slice order** (L1 D33 opt-in pulled
+  forward as the keystone · L2 view/layout contract + systemUIConfigs split ·
+  L3 resolver + persisted user override · L4 WheelNav body · L5 end-user
+  override UI · L6 re-home Per-System UI Stage 2/3 as Retroverse content · P
+  `.oatheme` runtime loader). DECISIONS **D34** (factual data + machinery =
+  platform; experiential design + content = theme — the shipped global
+  `systemUIConfigs.ts` experiential config migrates to Retroverse) + **D35**
+  (arc separation/renumber: ARC 2 = layout, ARC 3 = cinematic/scripting [old
+  ARC-2 Rhai+WGSL+motion], ARC 4 = Theme Studio).
+- **Key operator calls this session:** separate the layout arc from the
+  cinematic/scripting arc (D35); pull the D33 consumption-opt-in fix forward as
+  L1; the per-system pilot *content* (GB/NES/Vectrex) belongs to the Retroverse
+  theme, not to every theme (drove D34).
+- **Almost:** n/a (planning only; no build).
+- **Next:** **L1 — D33 consumption opt-in** (queued NEXT.md HIGH). ARC 1's only
+  residual thread (the `.oatheme` loader) is absorbed as ARC 2's tail slice P.
+
 ## 2026-06-11 — BigBox theming research + D32 (per-system layout becomes a substrate contract) — no code
 
 Research-and-decisions session. A 4-agent BigBox theme-system study →

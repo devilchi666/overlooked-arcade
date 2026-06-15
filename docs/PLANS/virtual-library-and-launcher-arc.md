@@ -266,7 +266,9 @@ scheduled after the launch-return baseline proves out.
 
 ## Phases
 
-### Phase 0 — DECISIONS reversal + plan commitment (~1 day)
+### Phase 0 — DECISIONS reversal + plan commitment (~1 day) — ✅ SHIPPED
+
+**✅ Merged to main** (the DECISIONS reversal + plan commitment landed).
 
 Paperwork only. Adds entries to:
 - `docs/DECISIONS.md` — reversal of 2026-05-16 libretro-only
@@ -292,14 +294,14 @@ Preservation Vault its filterable fields.
 
 **Slices:**
 
-- **A1 — Disc-track SHA-1** (~1 week): ship the queued plan at
+- **A1 — Disc-track SHA-1** ✅ **shipped** (~1 week): ship the queued plan at
   `docs/PLANS/disc-track-sha1-matching.md`. Hashes data tracks for
   `.cue+.bin` / `.chd` / `.gdi` / `.iso`, matches against redump's
   per-track SHA-1 fields, stamps canonical title on the library row.
   Closes Tier 1 for PSX / Saturn / Sega CD / Dreamcast / NeoCD /
   PCE-CD / PC-FX / 3DO / GameCube / PSP / PS2.
 
-- **A2 — Filename tag decode** (~3–4 days): extend
+- **A2 — Filename tag decode** ✅ **shipped** (~3–4 days): extend
   `apps/oa-shell/src/title_parse.rs` with a decode table for
   bracket flags. Net-new typed fields on `ParsedTitle`:
   `dump_status: { Verified, BadDump, Unknown, OverDump, Fixed }`,
@@ -337,7 +339,10 @@ Preservation Vault its filterable fields.
 - Background Jobs surfaces the Tier 5 deep-dive pass when triggered;
   pause / resume / cancel work uniformly.
 
-### Phase E — Schema promotion to game_identities (~3–4 weeks)
+### Phase E — Schema promotion to game_identities (~3–4 weeks) — ✅ SHIPPED
+
+**✅ Merged to main** (Sub-phases 1–3 complete — `game_identities` schema
+v23, identity CRUD, identity-backed group read path + frontend).
 
 **Pulled forward per operator decision 2026-06-03.** Without this,
 later phases keep building on the per-file model.
@@ -363,10 +368,11 @@ later phases keep building on the per-file model.
 - `apps/oa-shell/src/library_groups.rs` — `GameGroup` is now backed
   by an identity row rather than computed in-memory. Ranking logic
   preserved.
-- `frontend/src/components/LibraryTile.tsx` + grid — render from
+- `frontend/src/platform/components/LibraryTile.tsx` +
+  `frontend/src/platform/components/VirtualLibraryGrid.tsx` — render from
   identities; per-variant launch via the existing `Run version ▸`
   submenu.
-- `frontend/src/components/GameDetailPanel.tsx` — header shows
+- `frontend/src/themes/retroverse/GameDetailPanel.tsx` — header shows
   canonical metadata; existing variant tab shows per-variant
   metadata.
 - Cross-file search now keys on canonical title.
@@ -383,6 +389,9 @@ later phases keep building on the per-file model.
 - 660+ oa-shell tests stay green throughout.
 
 ### Phase B — Two-mode UX + Collection Health (~2 weeks)
+
+**Status: code-complete (Slices 1–4) but STRANDED on branch
+`feat/virtual-library-phase-b` — NOT merged to main.**
 
 **Two-mode toggle:**
 - New OA-wide pref — `library_mode: "casual" | "preservation"`.
@@ -423,7 +432,11 @@ later phases keep building on the per-file model.
   real % numbers + drill-in CTAs.
 - 660+ oa-shell tests + frontend typecheck silent.
 
-### Phase C — Launcher abstraction (~2–3 weeks)
+### Phase C — Launcher abstraction (~2–3 weeks) — ✅ SHIPPED
+
+**✅ Merged to main** (merge `28875d5`; Sub-phases C1–C3 — `Launcher`
+trait + `LibretroLauncher` + `ExternalProcessLauncher` + profile registry
++ capability gating + per-system launcher pref + force-quit affordance).
 
 **The critical architecture work.** Refactor `crates/oa-core::Core`
 trait into a `Launcher` trait that supports both libretro-loaded
@@ -589,9 +602,9 @@ implementation here; the workspace split in Phase G keeps it possible.
 - `crates/oa-libretro/src/lib.rs` — `LibretroLauncher` impl
 - `apps/oa-shell/src/emulator_profiles.rs` (new — Phase C/D)
 - `config/emulators/<id>.yaml` (new — Phase C profiles)
-- `frontend/src/components/LibraryTile.tsx` + `LibraryGrid.tsx` — render from identities (Phase E)
-- `frontend/src/components/GameDetailPanel.tsx` — Variants tab (Phase B)
-- `frontend/src/routes/retroverse/SystemHealthPage.tsx` — Collection Health rollups (Phase B)
+- `frontend/src/platform/components/LibraryTile.tsx` + `VirtualLibraryGrid.tsx` — render from identities (Phase E)
+- `frontend/src/themes/retroverse/GameDetailPanel.tsx` — Variants tab (Phase B)
+- `frontend/src/engine/SystemHealthPage.tsx` — Collection Health rollups (Phase B)
 
 ---
 

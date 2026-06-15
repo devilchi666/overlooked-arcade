@@ -7,8 +7,10 @@ plan §14 (those are strategic / cross-stage; these are concrete
 ## 2026-05-26 — SystemUIConfig storage: sibling file, not merged into SystemTheme
 
 **Decision:** Per-system UI configs live in
-`frontend/src/themes/systemUIConfigs.ts`, parallel to the existing
-`frontend/src/themes/registry.ts`. Not merged into `SystemTheme`.
+`frontend/src/themes/systemUIConfigs.ts` (now
+`frontend/src/platform/themes/systemUIConfigs.ts`), parallel to the existing
+`frontend/src/themes/registry.ts` (now
+`frontend/src/platform/themes/registry.ts`). Not merged into `SystemTheme`.
 
 **Why:** Per plan §14.2, two options were viable:
 
@@ -34,13 +36,15 @@ stays untouched.
 
 **Revisit when:** Stage 3 ships (architecture stable enough to merge);
 or if a consumer needs both visual + behavioral fields together
-often enough that two imports feels awkward.
+often enough that two imports feels awkward. *(Path note: both files now
+live under `frontend/src/platform/themes/` after the `platform/` refactor.)*
 
 ---
 
 ## 2026-05-26 — `prefers-reduced-motion` lives in `frontend/src/lib/`
 
-**Decision:** Created `frontend/src/lib/reducedMotion.ts` as a
+**Decision:** Created `frontend/src/lib/reducedMotion.ts` (now
+`frontend/src/platform/lib/reducedMotion.ts`) as a
 module-level Solid signal subscribed to a shared
 `window.matchMedia("(prefers-reduced-motion: reduce)")` listener.
 Consumers (boot animation framework, tile flourish system, transition

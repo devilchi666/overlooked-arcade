@@ -37,6 +37,8 @@ Per plan §11:
 - Third hand-built theme folder dropped at `<exe_dir>/themes/test/`
   → appears in Appearance picker → loads
 
-ARC 2 (Behaviors + Shaders — Rhai + WGSL) gets its own plan when
-scheduled. KIOSK_PLAN §2.2 is the source spec; doesn't need to be
-written from scratch.
+ARC 2 (Per-System Layout Substrate — D32 per-system layout/view +
+the `.oatheme` loader; declarative, no scripting) gets its own plan
+when scheduled. The Behaviors + Shaders work (Rhai + WGSL) is now
+ARC 3 (D35 renumber); KIOSK_PLAN §2.2 is its source spec and doesn't
+need to be written from scratch.

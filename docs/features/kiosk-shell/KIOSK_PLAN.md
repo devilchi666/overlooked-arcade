@@ -1,12 +1,14 @@
 # Kiosk / Cabinet Mode — Design Plan
 
-> **STATUS: 📐 DESIGN-ONLY — NOT YET IMPLEMENTED.** Full design locked 2026-05-22 (this doc). Phase 0 (desktop polish) ran in parallel via `../ui-polish/UI_POLISH_PLAN.md` (✅ shipped) + `../ui-polish/UI_MENU_BAR_PLAN.md`. Phase 1+ (kiosk shell itself: `--kiosk` flag, theme substrate, attract mode, in-game menu, 5-bus mixer, multi-monitor surfaces) has not begun.
+> **SUPERSESSION (2026-06-15, DECISIONS D7):** The **theme substrate + in-engine Theme Studio** scope in this plan (notably §2.2-2.4) **migrated to [../theming-substrate/](../theming-substrate/) (ARCs 1-4)**. What stays kiosk-specific = attract mode / multi-monitor surfaces / 5-bus audio mixer (the D20 deferred platform capabilities). Content is preserved below; read the theming/Theme-Studio sections as superseded-for-substrate.
+
+> **STATUS: 📐 DESIGN-ONLY — NOT YET IMPLEMENTED.** Full design locked 2026-05-22 (this doc). Phase 0 (desktop polish) ran in parallel via `../../_archive/features/ui-polish/UI_POLISH_PLAN.md` (✅ shipped) + `../../_archive/features/ui-polish/UI_MENU_BAR_PLAN.md`. Phase 1+ (kiosk shell itself: `--kiosk` flag, theme substrate, attract mode, in-game menu, 5-bus mixer, multi-monitor surfaces) has not begun.
 
 **Status:** Someday plan. Designed but not on the active roadmap. Pick this up after current polish + settings IA work lands.
 
 **Date settled:** 2026-05-22 (planning conversation).
 
-**Purpose:** Capture every design decision settled during the kiosk-mode planning conversation so a future session can pick this up without re-deriving anything. Companion documents that already exist on this topic: `../ui-polish/UI_AUDIT.md` (today's UI surfaces — informs what changes for kiosk) and `../ui-polish/UI_MENU_BAR_PLAN.md` (desktop-mode IA polish — runs in parallel to / before this).
+**Purpose:** Capture every design decision settled during the kiosk-mode planning conversation so a future session can pick this up without re-deriving anything. Companion documents that already exist on this topic: `../../_archive/features/ui-polish/UI_AUDIT.md` (today's UI surfaces — informs what changes for kiosk) and `../../_archive/features/ui-polish/UI_MENU_BAR_PLAN.md` (desktop-mode IA polish — runs in parallel to / before this).
 
 This file is the source of truth for *what we decided*. When implementation starts, individual phases get their own working docs.
 
@@ -29,6 +31,12 @@ This file is the source of truth for *what we decided*. When implementation star
 - **Configuration depth lives in desktop mode**, play-time settings in kiosk. Cabinet operators boot to kiosk; when they need deep config, they switch to desktop mode in-app, configure, switch back. No separate launcher app.
 
 ### 2.2 Theming substrate: four layers
+
+> **SUPERSEDED-FOR-SUBSTRATE (2026-06-15, D7):** §2.2 (substrate), §2.3 (Theme
+> Studio), and §2.4 (theme distribution) below describe scope that **migrated to
+> [../theming-substrate/](../theming-substrate/) (ARCs 1-4)**. Preserved here as
+> the originating design record; the live home for this work is the
+> theming-substrate feature folder.
 
 | Layer | Format | Purpose | Touches render thread? |
 |---|---|---|---|
@@ -524,7 +532,7 @@ If a theme can read `%USERPROFILE%\Documents\passwords.txt`, the federation mode
 ## 19. Phased implementation
 
 ### Phase 0 — Polish current program (NOW)
-- **Settings/IA polish** per `../ui-polish/UI_MENU_BAR_PLAN.md`. Step-1 (trim placeholders) through Step-7 (Tools menu) are the critical pre-work.
+- **Settings/IA polish** per `../../_archive/features/ui-polish/UI_MENU_BAR_PLAN.md`. Step-1 (trim placeholders) through Step-7 (Tools menu) are the critical pre-work.
 - Get the desktop UI to a polished baseline; many of the surfaces stay in desktop mode forever.
 - Mode switch foundation — even before kiosk is built, the shell architecture should anticipate a future mode switch (don't bake desktop-only assumptions into shared state).
 
@@ -598,7 +606,7 @@ If a theme can read `%USERPROFILE%\Documents\passwords.txt`, the federation mode
 These connect the kiosk plan to today's code:
 
 - **Engine crates are already standalone** — `oa-core`, `oa-render`, `oa-audio`, `oa-input`, `oa-libretro`, `oa-content`, `oa-savestate` don't care which shell sits on top. The architectural split the plan needs has already happened.
-- **Per-system theming pillar already exists** — `frontend/src/themes/systems.css` + `registry.ts`. Kiosk extends this rather than rebuilds it.
+- **Per-system theming pillar already exists** — `frontend/src/platform/themes/systemPalettes.ts` (runtime `[data-system]` injection; `systems.css` was retired, D26) + `frontend/src/platform/themes/registry.ts`. Kiosk extends this rather than rebuilds it.
 - **Save state infrastructure shipped** — Phase 1.5 + Phase 4 covers the in-game-menu and auto-resume needs.
 - **Shader pipeline shipped** — `ShaderPreset` enum + `shaders/presets/*.preset.toml` + hot-reload + per-game/per-system overrides. Kiosk shaders slot into this.
 - **Library scan + Import Wizard + watcher** — first-launch onboarding leans on this directly.
@@ -631,7 +639,7 @@ What's missing and needs to be built or planned:
 
 ## 22. Companion docs
 
-- `../ui-polish/UI_AUDIT.md` (2026-05-18) — today's UI surfaces. Informs what changes for kiosk.
-- `../ui-polish/UI_MENU_BAR_PLAN.md` (2026-05-18) — desktop-mode IA polish. Phase 0 of this plan.
+- `../../_archive/features/ui-polish/UI_AUDIT.md` (2026-05-18) — today's UI surfaces. Informs what changes for kiosk.
+- `../../_archive/features/ui-polish/UI_MENU_BAR_PLAN.md` (2026-05-18) — desktop-mode IA polish. Phase 0 of this plan.
 - `docs/DECISIONS.md` — when implementation starts, append per-phase decisions here.
 - `docs/PARKING_LOT.md` — kiosk-plan entry points here.

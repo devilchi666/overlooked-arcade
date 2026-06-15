@@ -27,8 +27,11 @@ struct retro_input_descriptor {
 };
 ```
 
-(See `crates/oa-pce-sys/vendor/libretro-common/include/libretro.h:3331` for the
-struct, line 582 for the env-call docstring.)
+(See `crates/oa-libretro/src/ffi.rs` for the live ABI typedefs:
+`retro_input_descriptor` (line ~361) and the
+`RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS = 11` env constant (line ~163).
+The old `crates/oa-pce-sys/vendor/.../libretro.h` reference is retired —
+`oa-pce-sys` is excluded from the workspace build.)
 
 Cores publish these arrays **per-game**, not per-system — FCEUmm describes Super Mario Bros' B button as "Run" and Castlevania's B button as "Whip" because the in-game semantics differ. The bindings UI currently shows OA's per-system RetroPad bit labels ("A", "B", "X", "Y", "L", "R", "Start", "Select"), which are the *physical* mapping the operator chose. The per-game *semantic* label is what the core publishes — and what the operator actually wants to see when remapping.
 

@@ -218,7 +218,7 @@ first card grid + a per-system Manage… side panel.
 - **Next:** Phase 6 — operator playtest + merge to main; `--no-ff`
   per the locked feature-branch workflow.
 
-- **Plan:** [docs/PLANS/settings-declutter-system-health.md](PLANS/settings-declutter-system-health.md)
+- **Plan:** [docs/PLANS/settings-declutter-system-health.md](_archive/PLANS/settings-declutter-system-health.md)
   (six phases; one back-and-forth Q&A round on 2026-06-03 locked the
   shape).
 
