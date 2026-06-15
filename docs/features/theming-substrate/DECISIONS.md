@@ -1208,3 +1208,50 @@ this records the "what"):**
   Stage 2/3, which paused for content.
 - Scope guard: this is ARC 2 work; ARC 1 finishes on its current Phase-5
   (`.oatheme` loader) line first.
+
+### D33 — Per-system UI is a shared substrate capability (D32 reaffirmed over D19), with consumption made strictly theme-opt-in
+
+**Date:** 2026-06-15. **Decision:** operator reaffirmed the **D32 model** over the
+older D19 ("per-system theming is Retroverse-only") after an audit of where the
+shipped Per-System UI machinery actually lives. Per-system UI (backgrounds, boot
+animations, tile flourishes, SFX, palettes, and the ARC-2 layout/view capability)
+stays a **platform-owned capability that any theme opts into** — NOT pulled back
+into `themes/retroverse/`. The substrate owns the per-system *contract*; each
+theme *chooses* whether to consume it; the user can override at runtime (D32).
+
+**Audit findings that informed this (2026-06-15):**
+- All per-system UI machinery already lives in `platform/` (`platform/themes/
+  systemUIConfigs.ts`, `systemBootAnimation.ts`, `systemUiSound.ts`,
+  `systemPalettes.ts`; `platform/components/{ThemeBackground,SystemBootAnimation,
+  LibraryTile}.tsx`; Rust `system_ui_assets.rs`) — correct home for a capability.
+- **Backgrounds are already correctly theme-opt-in:** `<ThemeBackground>` is
+  mounted only by CoverFlow; App.tsx unmounted the global background 2026-05-31
+  (Retroverse visual conflict); Retroverse consumes none of it.
+- **Boot animations are dormant** — `<SystemBootAnimation>` is mounted nowhere
+  (was App-global, now orphaned).
+- **Residual mis-scope (the fix this decision mandates):** tile flourishes +
+  per-system SFX are still forced cross-theme through the shared `platform` grid
+  (`LibraryTile` reads `tileShape`/`interactionStyle`; grid-nav dispatches
+  `playSystemUiSound`), gated only by a single **global** `perSystemUiEnabled`
+  toggle. Any theme using the shared `LibraryView`/grid (incl. Retroverse)
+  inherits Retroverse-flavored per-system tiles/SFX whether it wants them or not.
+
+**How to apply (ARC 2):**
+- Make per-system UI consumption **uniformly theme-opt-in**, matching how
+  backgrounds already behave: a theme declares whether it consumes per-system UI
+  (Retroverse: yes; CoverFlow: backgrounds only; bare: no). Convert the global
+  `perSystemUiEnabled`-gated tile/SFX path in the shared grid into a per-theme
+  opt-in (capability stays in platform; *consumption* becomes a theme choice).
+- **Re-home the paused Per-System UI Stage 2/3 as ARC-2 work** that builds *into*
+  the substrate capability (consumed by Retroverse), NOT as engine-global
+  behavior. This is the per-system-ui ↔ theming merge point D32 named.
+- Capability stays in `platform/`; only the *forced-global consumption* is the
+  defect to correct. Do not duplicate the machinery into themes.
+
+**Why:** D32 is the newer, deliberately-reasoned position (from the BigBox
+research) and the per-system capability is ARC 2's headline user-facing value;
+D19's "Retroverse-private" would forfeit "any theme can have per-system
+experiences" and force per-theme duplication. The operator's instinct that
+per-system UI "should be theme-only" is satisfied not by privatizing the
+machinery but by making *consumption* a per-theme opt-in. Supersedes the
+"Retroverse-only" half of **D19**; **D32** stands.
