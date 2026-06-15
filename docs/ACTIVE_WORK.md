@@ -399,8 +399,7 @@ spanned every system but was filed under whichever core happened to be active.
         via `ThemePackage.perSystemUiConfigs` + App bridge; `touchInputSupported`
         split to platform-factual `systemSupportsTouch`; `uiConfigFor` merges over
         `BASELINE_UI`. Operator playtested visual-identical. **L3a (layout
-        resolver + persisted override store) ✅ shipped on
-        `feat/theming-arc2-l3-layout-resolver`, CI-green** (D39): pure
+        resolver + persisted override store) ✅ MERGED to main, CI-green** (D39): pure
         `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→
         layout` localStorage override store; no consumer, no visual change. **Next:
         L3b** — wire `useResolvedLayout` into `LibraryView` (keyed on

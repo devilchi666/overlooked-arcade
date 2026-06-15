@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L3a: layout resolver + persisted per-system override store (plumbing, no consumer) — ✅ shipped on branch, CI-green
+## 2026-06-15 — ARC 2 L3a: layout resolver + persisted per-system override store (plumbing, no consumer) — ✅ shipped + MERGED to main, CI-green
 
 > Branch `feat/theming-arc2-l3-layout-resolver`. L3 split L3a (plumbing) + L3b
 > (LibraryView consumer + the resolved-layout-vs-viewMode UX call) — AskUserQuestion
@@ -60,7 +60,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   Merge L2a+L2b together. **After: L3** — the resolver + persisted user override
   that finally *consumes* the L2a `views` contract.
 
-## 2026-06-15 — ARC 2 L2a: view/layout manifest contract (schema only) — ✅ shipped on branch, CI-green (no consumer, no visual change)
+## 2026-06-15 — ARC 2 L2a: view/layout manifest contract (schema only) — ✅ shipped + MERGED to main (with L2b), CI-green (no consumer, no visual change)
 
 > Branch `feat/theming-arc2-l2a-view-layout-contract`. L2 split into **L2a (contract,
 > additive)** + **L2b (the D34 migration)** — operator sign-off via AskUserQuestion.

@@ -219,7 +219,7 @@ uniform under Retroverse.
 The plan's original L2 bundled the additive contract with the consumer-touching
 migration; split for independent playtestability (the S4→S5 pattern).
 
-#### L2a — View/layout contract (schema only) — ✅ SHIPPED on branch 2026-06-15, CI-green
+#### L2a — View/layout contract (schema only) — ✅ SHIPPED + MERGED to main 2026-06-15 (with L2b), CI-green
 
 - Added the `ViewType` + `LayoutPrimitive` enums + `VIEW_TYPES`/`LAYOUT_PRIMITIVES`
   allow-lists + the manifest `views?: { [view]: { layout, per_system? } }` block
@@ -255,7 +255,7 @@ Split for the same contracts-first reason as L2: the plumbing is clean/testable;
 the consumer raises a real UX question (resolved per-system layout vs the
 existing global capsule/list `viewMode` toggle).
 
-#### L3a — Resolver + persisted override store — ✅ SHIPPED on branch 2026-06-15, CI-green
+#### L3a — Resolver + persisted override store — ✅ SHIPPED + MERGED to main 2026-06-15, CI-green
 
 - Pure `resolveLayout` over the §4 cascade (**user override → theme `per_system`
   → theme view default → engine default**) + a reactive `useResolvedLayout(view,
