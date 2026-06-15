@@ -135,6 +135,17 @@ export type ThemeManifest = {
    * mismatch must not disqualify a theme). The user-facing picker + controller
    * auto-detect are deferred. */
   glyph_set?: string;
+  /** Per-system UI consumption opt-in (Theming ARC 2 L1; DECISIONS D33/D34).
+   * Per-system UI is a platform *capability*; whether a theme *consumes* it on
+   * the shared library grid is the theme's choice. `tiles` = per-system
+   * `tileShape` + `interactionStyle` on `LibraryTile`; `sfx` = per-system nav
+   * sounds on the grid. Omit the field, or a sub-flag, to inherit OFF — the D33
+   * "uniformly theme-opt-in" default (matching how backgrounds + boot are
+   * opt-in by component mount). The user's master toggle (Settings) gates ABOVE
+   * this as a global off-switch. Per-system *layout* (D32) is a separate `views`
+   * field (L2), NOT this. Validator warns + falls back to OFF on a malformed
+   * value (a consumption flag shouldn't disqualify a theme). */
+  per_system_ui?: { tiles?: boolean; sfx?: boolean };
   /** Declarative appearance/options the engine renders generically in
    * Settings → Themes / Appearance, bound to per-theme storage. Optional. The
    * S4 validator checks unique keys + type-correct defaults / ranges / options;

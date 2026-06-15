@@ -38,6 +38,10 @@ const RETROVERSE_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
+  // Theming ARC 2 L1 (D33/D34): Retroverse is the flagship that consumes the
+  // full per-system experience on the shared grid — per-system tile flourishes
+  // + nav SFX. CoverFlow / bare omit this and get a uniform grid.
+  per_system_ui: { tiles: true, sfx: true },
   // Settings IA Slice 3 — Retroverse declares its library browse-appearance.
   // The engine renders these in Settings → Themes / Appearance; LibraryView /
   // GridControls read the same per-theme keys. Defaults mirror the pre-Slice-3

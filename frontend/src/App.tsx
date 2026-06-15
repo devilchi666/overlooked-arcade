@@ -78,7 +78,7 @@ import { registerLibraryAdmin } from "@oa/platform/libraryAdmin";
 import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJobsBar";
 import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
 import { setSwapAB, setActiveGlyphSetId } from "@oa/platform/nav";
-import { setPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
+import { setPerSystemUiEnabled, setThemePerSystemUi } from "@oa/platform/themes/systemUiSound";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import { Dynamic } from "solid-js/web";
@@ -377,6 +377,11 @@ const App: Component = () => {
   // omitted falls back to the default. Reactive so a (future, ARC-3 hot-swap)
   // theme change repaints hints; in ARC 1 it just fires once at boot.
   createEffect(() => setActiveGlyphSetId(activeTheme()?.manifest.glyph_set));
+  // Theming ARC 2 L1 (D33/D34): bridge the active theme's per-system-UI
+  // consumption opt-in. The shared grid's per-system tiles + SFX are OFF unless
+  // the active theme declares `per_system_ui` (Retroverse does; CoverFlow / bare
+  // don't) — gated above by the user master toggle (setPerSystemUiEnabled).
+  createEffect(() => setThemePerSystemUi(activeTheme()?.manifest.per_system_ui));
 
   // Legacy "Start button → open menu bar" handler removed alongside
   // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;

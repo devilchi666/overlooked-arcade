@@ -69,6 +69,12 @@ describe("validateTheme — valid", () => {
     expect(v.ok).toBe(true);
     expect(v.warnings).toEqual([]);
   });
+
+  it("a well-formed per_system_ui passes clean", () => {
+    const v = validateTheme(pkg({ per_system_ui: { tiles: true, sfx: false } }));
+    expect(v.ok).toBe(true);
+    expect(v.warnings).toEqual([]);
+  });
 });
 
 describe("validateTheme — errors", () => {
@@ -165,6 +171,14 @@ describe("validateTheme — warnings (non-fatal)", () => {
     const v = validateTheme(pkg({ glyph_set: "ps5" }));
     expect(v.ok).toBe(true);
     expect(codes(v.warnings)).toContain("UNKNOWN_GLYPH_SET");
+  });
+
+  it("malformed per_system_ui → INVALID_PER_SYSTEM_UI warning, still ok (falls back OFF)", () => {
+    const v = validateTheme(
+      pkg({ per_system_ui: { tiles: "yes" } as unknown as { tiles?: boolean } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("INVALID_PER_SYSTEM_UI");
   });
 });
 

@@ -392,7 +392,16 @@ spanned every system but was filed under whichever core happened to be active.
         (C1 sever shim · C2 relocate + delete dead code · C3 drop exceptions + probe);
         typecheck+lint+vitest(58)+build green; cargo `oa-shell` green; frontend-only. **Only §6
         Phase 5 (`.oatheme` distribution/loader) now remains open in ARC 1.**
-      - **ARC 2 — Per-System Layout Substrate — ✅ PLANNED 2026-06-15 (no code).**
+      - **ARC 2 — Per-System Layout Substrate — PLANNED + L1 IN FLIGHT 2026-06-15.**
+        **L1 (D33 consumption opt-in) ✅ shipped on `feat/theming-arc2-l1-per-system-opt-in`,
+        pending operator playtest** (DECISIONS **D36**): per-theme `per_system_ui?:
+        {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX
+        gate (`userMaster AND themeOptsIn`); Retroverse opts in, CoverFlow/bare go
+        uniform; user master toggle kept as global off-switch. typecheck/lint/
+        vitest(114)/build green, frontend-only. Acceptance gate: Retroverse
+        per-system as before, CoverFlow/bare uniform, master-off forces uniform.
+        **Next after playtest+merge: L2** (view/layout manifest contract +
+        systemUIConfigs experiential→Retroverse split, D34).
         With ARC 1 complete (Phase 6 gate passed), planned ARC 2 from the fixed
         inputs **D32** (per-system layout becomes a substrate contract +
         persisted end-user override) + **D33** (per-system UI is a platform

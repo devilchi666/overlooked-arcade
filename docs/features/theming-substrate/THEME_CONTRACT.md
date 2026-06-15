@@ -46,6 +46,7 @@ Fields (`platform/theme/manifest.ts`):
 | `reserves_corner` | engine-summon-icon corner — `"top-right"` in ARC 1 |
 | `surfaces` | named surfaces the theme renders — **`["main"]` only in ARC 1** (D20b) |
 | `glyph_set` | optional — controller-glyph set the HintBar paints: `"xbox"` (default) or `"playstation"` (S5.3). Unknown / omitted falls back to `xbox` (validator WARNING, not error) |
+| `per_system_ui` | optional — opt into consuming **per-system UI on the shared library grid**: `{ tiles?, sfx? }` (ARC 2 L1, D33/D34). `tiles` = per-system `tileShape`/`interactionStyle`; `sfx` = per-system nav sounds. Omit (or a sub-flag) → uniform grid (the opt-in default). Gated ABOVE by the user master toggle. Backgrounds/boot are opt-in by component mount, not here; per-system *layout* is the separate `views` field (L2). Malformed → validator WARNING + falls back OFF |
 
 ## 2. Entry component
 

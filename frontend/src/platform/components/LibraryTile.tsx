@@ -4,7 +4,7 @@ import { useMedia } from "@oa/platform/library/media";
 import { useGameInfoBadges } from "@oa/platform/library/gameInfoBadges";
 import { DEFAULT_TILE_ASPECT, systemThemes } from "@oa/platform/themes/registry";
 import { uiConfigFor, type UITileShape } from "@oa/platform/themes/systemUIConfigs";
-import { isPerSystemUiEnabled } from "@oa/platform/themes/systemUiSound";
+import { consumesPerSystemTiles } from "@oa/platform/themes/systemUiSound";
 
 /// Per-System UI Stage 1 Slice 5 — map the `tileShape` enum to a CSS
 /// `aspect-ratio` value. `"auto"` returns null so the caller falls back
@@ -90,19 +90,19 @@ const LibraryTile: Component<Props> = (props) => {
   /// default interaction feel.
   const uiConfig = () => uiConfigFor(props.entry.systemId);
   const tileAspectStyle = (): string => {
-    if (!isPerSystemUiEnabled()) return theme().tileAspect ?? DEFAULT_TILE_ASPECT;
+    if (!consumesPerSystemTiles()) return theme().tileAspect ?? DEFAULT_TILE_ASPECT;
     const override = aspectForTileShape(uiConfig().tileShape);
     return override ?? theme().tileAspect ?? DEFAULT_TILE_ASPECT;
   };
   const isCircle = () =>
-    isPerSystemUiEnabled() && uiConfig().tileShape === "circle";
+    consumesPerSystemTiles() && uiConfig().tileShape === "circle";
   /// Surfaced as a `data-oa-interaction` attribute on the tile button
   /// so the CSS rules in index.css (`@layer base`) can swap transition
   /// timing + add a click-bounce keyframe for the `physical` profile.
   /// When the master toggle is off we publish `instant` so every tile
   /// shares the baseline feel regardless of its config entry.
   const interactionAttr = (): string => {
-    if (!isPerSystemUiEnabled()) return "instant";
+    if (!consumesPerSystemTiles()) return "instant";
     return uiConfig().interactionStyle;
   };
   /// Subsystem distinction for systems where a single OA system_id covers

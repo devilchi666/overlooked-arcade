@@ -182,7 +182,12 @@ Each slice ends in an operator-playtestable milestone, validator/tests green,
 one real consumer. Branch-per-arc per the feature-branch workflow (one branch,
 commit/push freely, merge at playtestable milestones).
 
-### L1 — D33 consumption opt-in *(the keystone, pulled forward)*
+### L1 — D33 consumption opt-in *(the keystone, pulled forward)* — ✅ SHIPPED on branch 2026-06-15, pending operator playtest (DECISIONS D36)
+
+> Built as designed: manifest `per_system_ui?: { tiles?, sfx? }`, App-bridged into
+> `systemUiSound.ts` gates (`consumesPerSystemTiles`/`Sfx` = userMaster AND theme),
+> Retroverse opts in, CoverFlow/bare uniform, user master kept as off-switch.
+> Validator `INVALID_PER_SYSTEM_UI` warning. typecheck/lint/vitest(114)/build green.
 
 Convert the global `perSystemUiEnabled`-gated tile/SFX path in the shared grid
 into a **per-theme opt-in capability**, matching how backgrounds already
