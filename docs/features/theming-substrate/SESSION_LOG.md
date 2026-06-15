@@ -9,6 +9,34 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L3b: per-system layout wired into game-browse (coexist with viewMode) — ✅ shipped on branch, pending operator visual playtest
+
+> Branch `feat/theming-arc2-l3b-layout-consumer`. The first LIVE consumer of the
+> view/layout contract — per-system layout becomes visible. UX fork signed off
+> (AskUserQuestion — **coexist**: the global capsule/list `viewMode` toggle stays
+> the default; per-system overrides only where declared). DECISIONS **D40**.
+
+- **Shipped:** `ViewLayoutConfig.layout` made **optional** (a theme can declare
+  `per_system` without a view-wide default — else it'd override every system's
+  global toggle); validator relaxed (validate layout only when present).
+  `resolveDeclaredLayout` / `useDeclaredLayout` — the cascade MINUS the engine
+  default (`undefined` = "keep your own default"). `LibraryView` consumes it keyed
+  on the existing `selectedSystemId()`: declared `list` → `DetailListView`, `grid`
+  → `VirtualLibraryGrid`; carousel/wheel/custom fall back to grid (not yet rendered
+  in the shared browse view — follow-on / L4); `undefined` → today's `viewMode`
+  switch (behavior-preserving). **Retroverse demo:** `views.game-browse.per_system
+  = { nes: "list" }` (no view-wide layout) — NES browses as a list, others keep
+  viewMode. Real curation lands in L6.
+- **Verified:** typecheck + lint green; `npm run test` = **145 passed** (3 new
+  `resolveDeclaredLayout` cases; the L2a missing-layout test repurposed to
+  per_system-only-is-valid); build green. Frontend-only.
+- **Almost:** carousel/wheel/custom game-browse RENDERING (grid fallback for now) +
+  the L5 user-facing per-system picker.
+- **Next:** **operator visual playtest** — select NES → game list; other systems /
+  All Games → grid (or global viewMode); the global toggle still drives undeclared
+  systems. Then merge. **After: L4** — build the reserved WheelNav radial primitive
+  (now it has a consumer), then L5 override UI → L6 → P.
+
 ## 2026-06-15 — ARC 2 L3a: layout resolver + persisted per-system override store (plumbing, no consumer) — ✅ shipped + MERGED to main, CI-green
 
 > Branch `feat/theming-arc2-l3-layout-resolver`. L3 split L3a (plumbing) + L3b

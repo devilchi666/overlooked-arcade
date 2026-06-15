@@ -60,6 +60,51 @@ export function resolveLayout(args: {
   return ENGINE_DEFAULT_LAYOUTS[view];
 }
 
+/// The DECLARED tiers only (no engine-default fallback): `user override → theme
+/// per_system → theme view default`. Returns `undefined` when neither the user
+/// nor the active theme declares a layout — the signal a consumer uses to keep
+/// its OWN default (e.g. game-browse keeps the global capsule/list `viewMode`
+/// toggle for undeclared systems — the L3b "coexist" model, D40). For a consumer
+/// that wants a guaranteed primitive, use `resolveLayout` (engine default).
+export function resolveDeclaredLayout(args: {
+  override?: LayoutPrimitive;
+  themeViews?: ThemeViews;
+  view: ViewType;
+  systemId?: SystemId | null;
+}): LayoutPrimitive | undefined {
+  const { override, themeViews, view, systemId } = args;
+  if (override) return override;
+  const v = themeViews?.[view];
+  if (v) {
+    if (systemId) {
+      const perSystem = v.per_system?.[systemId];
+      if (perSystem) return perSystem;
+    }
+    if (v.layout) return v.layout;
+  }
+  return undefined;
+}
+
+/// Reactive `resolveDeclaredLayout` for the active theme + a reactive system
+/// context — `undefined` means "nothing declared; keep your own default".
+export function useDeclaredLayout(
+  view: ViewType,
+  systemId: Accessor<SystemId | null | undefined>,
+): Accessor<LayoutPrimitive | undefined> {
+  return createMemo(() => {
+    const themeId = activeThemeId();
+    const sys = systemId() ?? null;
+    const override =
+      themeId && sys ? getLayoutOverride(themeId, sys, view) : undefined;
+    return resolveDeclaredLayout({
+      override,
+      themeViews: activeTheme()?.manifest.views,
+      view,
+      systemId: sys,
+    });
+  });
+}
+
 /// Reactive resolver for the ACTIVE theme + a (reactive) system context. Reads
 /// the user override (keyed by the active theme id), the active theme's `views`
 /// map, and the engine defaults. `systemId` is an accessor so the result

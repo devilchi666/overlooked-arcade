@@ -265,19 +265,24 @@ existing global capsule/list `viewMode` toggle).
   reactive (the D28 per-theme-settings pattern; survives the restart swap).
 - **No consumer** — CI-gated, no visual change. typecheck/lint/vitest(142)/build green.
 
-#### L3b — first live consumer (game-browse) + the viewMode UX call *(NEXT)*
+#### L3b — first live consumer (game-browse) + the viewMode UX call — ✅ SHIPPED on branch 2026-06-15, pending operator visual playtest (DECISIONS D40)
 
-- Wire `useResolvedLayout("game-browse", selectedSystemId())` into `LibraryView`
-  (which already computes `selectedSystemId()` + already switches grid↔list on
-  `viewMode`). Retroverse declares a couple of per-system layout variations to
-  prove the cascade end-to-end.
-- **Settle the UX fork:** how the per-system resolved layout relates to the
-  existing global capsule/list `viewMode` toggle (supersede vs coexist). `wheel`
-  stays the L4 stub.
+- **UX fork resolved = COEXIST** (D40): the global capsule/list `viewMode` toggle
+  stays the default; per-system layout overrides it only where declared. Required
+  making `ViewLayoutConfig.layout` OPTIONAL (a theme declares `per_system` without
+  a forced view default) + a `resolveDeclaredLayout`/`useDeclaredLayout` tier that
+  returns `undefined` ("keep your own default") when nothing's declared.
+- `LibraryView` consumes `useDeclaredLayout("game-browse", selectedSystemId())`:
+  declared `list`→`DetailListView`, `grid`→`VirtualLibraryGrid`;
+  carousel/wheel/custom → grid fallback (rendering them in the shared browse view
+  is a follow-on; `wheel` needs L4). Undeclared → today's `viewMode` switch.
+- Retroverse demo: `views.game-browse.per_system = { nes: "list" }` (no view-wide
+  layout). typecheck/lint/vitest(145)/build green.
 
-**Gate (L3b):** switching the active system on the browse view changes the
-resolved primitive per Retroverse's declared map; with no override set, the theme
-default wins; **operator visual playtest.**
+**Gate (L3b):** select NES → list; other systems / All Games → grid (or the global
+viewMode); the global toggle still drives undeclared systems. **Operator visual
+playtest.** Carousel/wheel game-browse rendering + the L5 user picker are the
+follow-ons.
 
 ### L4 — WheelNav implementation
 

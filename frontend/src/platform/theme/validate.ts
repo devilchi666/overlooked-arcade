@@ -454,8 +454,10 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
           });
           continue;
         }
+        // `layout` is OPTIONAL (L3b / D40) — a theme may declare only
+        // `per_system` overrides. Validate it only when present.
         const layout = (cfg as Record<string, unknown>).layout;
-        if (typeof layout !== "string" || !layoutSet.has(layout)) {
+        if (layout != null && (typeof layout !== "string" || !layoutSet.has(layout))) {
           errors.push({
             code: "INVALID_VIEW_LAYOUT",
             field: `views.${view}.layout`,

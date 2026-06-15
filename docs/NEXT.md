@@ -77,13 +77,14 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1/L2a/L2b/L3a ✅ MERGED to main; L3b next
+### Theming ARC 2 — L1/L2a/L2b/L3a ✅ MERGED · L3b ✅ shipped on branch (pending playtest); L4 next
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.
 - **L2a (view/layout manifest contract)** — ✅ MERGED 2026-06-15. `ViewType`/`LayoutPrimitive` enums + `views` field + validator. D37.
 - **L2b (D34 systemUIConfigs migration)** — ✅ MERGED 2026-06-15. Experiential config → Retroverse via `ThemePackage.perSystemUiConfigs`; `touchInputSupported` → platform-factual. D38.
 - **L3a (layout resolver + persisted override store)** — ✅ MERGED 2026-06-15. Pure `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→layout` localStorage override store. No consumer. D39.
-- **L3b — NEXT:** wire `useResolvedLayout("game-browse", selectedSystemId())` into `LibraryView` + settle per-system layout vs the global `viewMode` toggle; visual playtest. Then L4 WheelNav → L5 override UI → L6 Stage 2/3 re-home → P loader.
+- **L3b (per-system layout wired into game-browse)** — ✅ shipped on `feat/theming-arc2-l3b-layout-consumer`, CI-green (typecheck/lint/vitest 145/build). Coexist model (D40): `layout` made optional; `useDeclaredLayout` keyed on `selectedSystemId()`; `LibraryView` renders the declared primitive (grid/list; carousel/wheel/custom→grid fallback) else the global viewMode. Retroverse demo: NES→list. **Pending operator visual playtest → then merge.**
+- **L4 — NEXT:** build the reserved **WheelNav** radial primitive (now it has a consumer — a per-system `wheel` layout) + render carousel/wheel in game-browse. Then L5 override UI → L6 Stage 2/3 re-home → P loader.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

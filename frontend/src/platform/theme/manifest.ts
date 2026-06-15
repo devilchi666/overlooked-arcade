@@ -56,7 +56,12 @@ export type LayoutPrimitive = "list" | "grid" | "carousel" | "wheel" | "custom";
  * (kept loose `string` here so the manifest type doesn't couple to the registry;
  * the validator checks them against `SYSTEM_PALETTES` / SystemId). */
 export type ViewLayoutConfig = {
-  layout: LayoutPrimitive;
+  /** The theme's default layout for this view. OPTIONAL (L3b / D40): a theme may
+   * declare only `per_system` overrides and leave the view-wide default to the
+   * consumer's own fallback (e.g. game-browse falls back to the global
+   * capsule/list `viewMode` toggle — the "coexist" model). Omit to NOT override
+   * that default for undeclared systems. */
+  layout?: LayoutPrimitive;
   per_system?: Record<string, LayoutPrimitive>;
 };
 

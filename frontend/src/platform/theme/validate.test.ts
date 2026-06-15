@@ -302,9 +302,10 @@ describe("validateTheme — views (ARC 2 L2 / D32)", () => {
     expect(codes(v.errors)).toContain("INVALID_VIEW_LAYOUT");
   });
 
-  it("a missing layout → INVALID_VIEW_LAYOUT", () => {
-    const v = validateTheme(pkg({ views: { "game-browse": {} } as unknown as Views }));
-    expect(codes(v.errors)).toContain("INVALID_VIEW_LAYOUT");
+  it("a per_system-only entry (no view-wide layout) is valid (L3b — layout optional)", () => {
+    const v = validateTheme(pkg({ views: { "game-browse": { per_system: { nes: "list" } } } }));
+    expect(v.ok).toBe(true);
+    expect(codes(v.errors)).not.toContain("INVALID_VIEW_LAYOUT");
   });
 
   it("a per_system override on an unknown system id → UNKNOWN_SYSTEM_ID", () => {
