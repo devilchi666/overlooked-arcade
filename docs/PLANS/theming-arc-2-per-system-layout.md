@@ -343,7 +343,24 @@ engine-owned, theme-agnostic, and already controller-navigable.)
 **Gate:** user overrides a system's `game-browse` layout → it persists across a
 restart; Reset restores the theme default.
 
-### L6 — Re-home Per-System UI Stage 2/3 as Retroverse content/consumption
+### L6 — Per-system character in Retroverse: make a pilot console feel distinctive (sound + background + boot + feel), end-to-end
+
+> **Renamed 2026-06-15** from "Re-home Per-System UI Stage 2/3 as Retroverse
+> content/consumption" — the old title was inherited jargon. **In plain English:**
+> make each console feel like its own little world inside Retroverse (Game Boy
+> *sounds* like a Game Boy, Vectrex glows like a phosphor screen), not just a
+> library with a different accent colour. The *machinery* for this already shipped
+> (per-system-ui Stage 1 slices 1–5, now in `platform/`); ARC 2 L2–L5 already
+> delivered the per-system *layout* switching (old "Stage 2"). What's LEFT here is
+> mostly **content + consumption wiring**: take a pilot system end-to-end as
+> **Retroverse theme content** (not engine-global behaviour — D33/D34), filling the
+> existing machinery with real assets.
+>
+> **⏸ PARKED 2026-06-15** (operator) — bigger priorities first (Virtual Library
+> arc, external-emulator research, etc.). The plumbing is done and stable, so this
+> can wait; pick it up when per-system *polish* becomes the priority. The pilot
+> content briefs in [per-system-ui.md](per-system-ui.md) (§ pilot character / asset
+> sourcing / boot-animation policy) remain the spec.
 
 Rebuild the paused per-system-ui **behaviour layer (Stage 2)** + **experience
 layer (Stage 3)** as ARC-2 work **consumed by Retroverse**, built *into* the

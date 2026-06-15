@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1…L5 ✅ MERGED to main; L6 next
+### Theming ARC 2 — L1…L5 ✅ MERGED to main; L6 PARKED, P (loader) remaining
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.
 - **L2a (view/layout manifest contract)** — ✅ MERGED 2026-06-15. `ViewType`/`LayoutPrimitive` enums + `views` field + validator. D37.
@@ -87,7 +87,8 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 - **L4a (render carousel in game-browse)** — ✅ MERGED 2026-06-15, operator playtested (SNES coverflow). `LibraryView` renders a per-system `carousel` via `CarouselNav`; Retroverse demo SNES→carousel. `wheel`/`custom` still grid-fallback. D41.
 - **L4b (radial WheelNav primitive + render `wheel`)** — ✅ MERGED to main, operator playtested (TG-16 wheel). Built the reserved `WheelNav` as a general angle→x/y engine (pure `wheelGeometry.ts`); **shape A (right-side vertical wheel) as the defaults** so B/C land later as presets (operator's stated intent); `LibraryView` renders `wheel` (4th Switch arm), ring radius from a measured pane height; Retroverse demo `tg16→wheel`. Two playtest fixes rode along: gentler feel (arc 80°/sideScale 0.85) + fast-scroll deform fix (snap transitions while scrolling). typecheck/lint/vitest(149)/build green. D42.
 - **L5 (end-user per-system layout override UI)** — ✅ MERGED to main, operator playtested. New "Layout" domain card in the engine Per-System Settings Hub (`systemsHub/domains/LayoutEditor.tsx`) writing the L3 override store; per-view `SettingRow` picker (Theme-default sentinel + list/grid/carousel/wheel, no `custom`), inheritance chip + per-row Reset (D30), overrides keyed by active theme. Forks signed off: Hub card · ALL FOUR ViewTypes exposed (reserved views labeled "no renderer yet") · curated primitives. typecheck/lint/vitest(149)/build green. D43. **Wanted follow-on parked:** cross-theme "Copy from theme…" + "Set for all themes" convenience buttons (PARKING_LOT 2026-06-15).
-- **L6 — NEXT:** re-home Per-System UI Stage 2/3 as Retroverse content/consumption (built into the substrate capability, not engine-global; D33/D34). Then **P** (`.oatheme` runtime loader).
+- **L6 — Per-system character in Retroverse: make a pilot console feel distinctive (sound + background + boot + feel), end-to-end** — ⏸ **PARKED 2026-06-15** (operator; bigger priorities first). Plain English: make each console feel like its own world in Retroverse (Game Boy sounds like a Game Boy, Vectrex glows like phosphor), not just a colour swap. Machinery already shipped (per-system-ui Stage 1) + ARC 2 L2–L5 did the layout switching; what's left is mostly pilot **content** built as Retroverse theme content (D33/D34). Resume when per-system polish is the priority.
+- **P — `.oatheme` runtime loader** — the last open ARC-2 thread (also the last open ARC-1 thread): on-disk discovery + extract + dynamic `import()` of a theme from a loose folder / `.oatheme` zip, plus the CSP allowlist ARC 1 deferred. Tees up ARC 3 (the CSP work becomes load-bearing for Rhai sandboxing). Sequence after L6 OR pull forward independently — it doesn't depend on L6.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

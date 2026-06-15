@@ -428,8 +428,12 @@ spanned every system but was filed under whichever core happened to be active.
         reserved views labeled "no renderer yet" · curated primitives. typecheck/lint/
         vitest(149)/build green; frontend-only. Wanted follow-on parked: cross-theme
         "Copy from theme…" + "Set for all themes" convenience buttons (PARKING_LOT
-        2026-06-15). **Next: L6** (re-home Per-System UI Stage 2/3 as Retroverse
-        content) → **P** (`.oatheme` runtime loader).
+        2026-06-15). **L6 (per-system character in Retroverse — pilot a console
+        end-to-end; renamed from "re-home Stage 2/3") ⏸ PARKED 2026-06-15** (operator;
+        bigger priorities first — machinery is done + stable, so it can wait). **P**
+        (`.oatheme` runtime loader) remains the last ARC-2/ARC-1 thread; pick it up
+        independently when scheduled. ARC 2 is effectively at a rest point — see
+        NEXT.md HIGH band for the bigger arcs.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX
