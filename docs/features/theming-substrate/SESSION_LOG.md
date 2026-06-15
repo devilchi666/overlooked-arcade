@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L1: per-system-UI consumption opt-in (the D33 fix) — ✅ shipped on branch, pending operator playtest
+## 2026-06-15 — ARC 2 L1: per-system-UI consumption opt-in (the D33 fix) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l1-per-system-opt-in`. The keystone ARC-2 slice (pulled
 > forward): convert the forced-global per-system tile/SFX path on the shared grid
