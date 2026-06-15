@@ -30,7 +30,7 @@ import {
   type Component,
 } from "solid-js";
 import type { SystemId } from "@oa/platform/themes/registry";
-import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
+import { systemSupportsTouch } from "@oa/platform/themes/systemUIConfigs";
 import { getGameInfo, type TouchHotspot } from "@oa/platform/library/gameInfo";
 
 type Props = {
@@ -44,12 +44,13 @@ type Props = {
   enabled: () => boolean;
 };
 
-/// Per-system gate. Reads `touchInputSupported` from the per-system
-/// UI registry — collapses the historical HOTSPOT_SYSTEMS /
-/// STYLUS_SYSTEMS / QuickSettings triplicate into one source of truth
-/// (Theming Substrate ARC 1 Phase 2 cleanup).
+/// Per-system gate. Reads the platform FACTUAL touch-support lookup
+/// (`systemSupportsTouch`, D34 — hardware fact, theme-independent) —
+/// collapses the historical HOTSPOT_SYSTEMS / STYLUS_SYSTEMS /
+/// QuickSettings triplicate into one source of truth (Theming
+/// Substrate ARC 1 Phase 2 cleanup).
 function isTouchSystem(systemId: SystemId): boolean {
-  return systemUIConfigs[systemId]?.touchInputSupported === true;
+  return systemSupportsTouch(systemId);
 }
 
 /// NDS combined framebuffer dimensions (top + bottom stacked vertically).

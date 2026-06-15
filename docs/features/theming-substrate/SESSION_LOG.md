@@ -9,6 +9,60 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L2b: D34 systemUIConfigs experiential→Retroverse migration — ✅ shipped on branch (stacks on L2a), pending operator visual-identical playtest
+
+> Branch `feat/theming-arc2-l2b-systemuiconfigs-migration` (off L2a — both merge
+> together). The D34 migration: move the experiential per-system config out of the
+> platform-global map into theme content; keep `touchInputSupported` factual.
+> Home signed off (AskUserQuestion — `ThemePackage.perSystemUiConfigs`). DECISIONS **D38**.
+
+- **Shipped:** `ThemePackage.perSystemUiConfigs?` (peer of `perSystemTokens`);
+  platform `systemUIConfigs.ts` keeps the contract (`SystemUIConfig` type + `UI*`
+  enums + `BASELINE_UI`) + a new **factual** `systemSupportsTouch()` lookup, drops
+  the global per-system map + `touchInputSupported` from the experiential type, and
+  `uiConfigFor` now merges the **active theme's** override (bridged from App) over
+  `BASELINE_UI`. The gb/nes/vectrex pilot values moved to
+  `themes/retroverse/systemUiConfigs.ts`; Retroverse declares `perSystemUiConfigs`.
+  App.tsx bridges it (`setThemeSystemUiConfigs`). The 3 touch consumers
+  (QuickSettings / StylusOverlay / TouchHotspotOverlay) read `systemSupportsTouch`
+  instead of the removed map. Validator checks `perSystemUiConfigs` keys (system-ids).
+- **Verified:** typecheck + lint green; `npm run test` = **131 passed** (new
+  `systemUIConfigs.test.ts` merge/touch tests + 3 validator cases; builtin-themes
+  still clean); build green. Frontend-only.
+- **Almost:** nothing in L2b scope. (Deep per-field validation of
+  `perSystemUiConfigs` values deferred to the on-disk-theme phase.)
+- **Next:** **operator visual-identical playtest** — Retroverse per-system tiles +
+  nav SFX unchanged (gb portrait/delayed, nes console-audio, vectrex
+  physical/square), CoverFlow/bare uniform, NDS stylus/touch overlays still gate.
+  Merge L2a+L2b together. **After: L3** — the resolver + persisted user override
+  that finally *consumes* the L2a `views` contract.
+
+## 2026-06-15 — ARC 2 L2a: view/layout manifest contract (schema only) — ✅ shipped on branch, CI-green (no consumer, no visual change)
+
+> Branch `feat/theming-arc2-l2a-view-layout-contract`. L2 split into **L2a (contract,
+> additive)** + **L2b (the D34 migration)** — operator sign-off via AskUserQuestion.
+> This is L2a: stamp the view/layout contract + validator, exactly like S4 stamped
+> the manifest before S5 consumed it. DECISIONS **D37**.
+
+- **Shipped:** `manifest.ts` gains `ViewType` (manufacturer-browse / system-browse /
+  game-browse / game-details) + `LayoutPrimitive` (list / grid / carousel / wheel /
+  custom) + `ViewLayoutConfig` + `ThemeViews` + the `VIEW_TYPES` / `LAYOUT_PRIMITIVES`
+  allow-lists + a `views?: ThemeViews` manifest field (per-view default layout +
+  optional `per_system` overrides, D32). `validateTheme` validates it (known view
+  types / primitives / system-ids; malformed = ERROR like settings_schema —
+  `INVALID_VIEWS` / `UNKNOWN_VIEW_TYPE` / `INVALID_VIEW_LAYOUT`, reusing
+  `UNKNOWN_SYSTEM_ID`). THEME_CONTRACT §1 row added. **No consumer** — the L3
+  resolver is the first reader; built-ins omit `views` (still validate clean).
+- **Verified:** typecheck + lint green; `npm run test` = **122 passed** (8 new views
+  validator cases); build green. Frontend-only. Contract-only → no visual change, so
+  no playtest beyond CI (optional smoke-test: app still boots, themes still switch).
+- **Almost:** nothing in L2a scope.
+- **Next:** **L2b — the D34 migration:** move the experiential `systemUIConfigs` map
+  (layout/audioProfile/interactionStyle/tileShape/…) into `themes/retroverse/`,
+  bridge it into the tile/SFX consumers (the L1 opt-in pattern), keep
+  `touchInputSupported` factual in platform. Behavior-preserving → visual-identical
+  playtest gate.
+
 ## 2026-06-15 — ARC 2 L1: per-system-UI consumption opt-in (the D33 fix) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l1-per-system-opt-in`. The keystone ARC-2 slice (pulled

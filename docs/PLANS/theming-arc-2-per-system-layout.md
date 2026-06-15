@@ -214,21 +214,40 @@ theme-consumption split** every later slice builds on.
 and **uniform** under CoverFlow / `bare`; the user master-off still forces
 uniform under Retroverse.
 
-### L2 — View/layout contract (schema only) + systemUIConfigs split
+### L2 — split into L2a (contract) + L2b (D34 migration) — DECISIONS D37
 
-- Add the `ViewType` + `LayoutPrimitive` enums and the manifest `views` block
-  (§4). Extend `validateTheme` (S4 validator) + the Vitest gate.
+The plan's original L2 bundled the additive contract with the consumer-touching
+migration; split for independent playtestability (the S4→S5 pattern).
+
+#### L2a — View/layout contract (schema only) — ✅ SHIPPED on branch 2026-06-15, CI-green
+
+- Added the `ViewType` + `LayoutPrimitive` enums + `VIEW_TYPES`/`LAYOUT_PRIMITIVES`
+  allow-lists + the manifest `views?: { [view]: { layout, per_system? } }` block
+  (§4) to `manifest.ts`. Extended `validateTheme` (malformed = ERROR) + 8 Vitest
+  cases. **No consumer** — the L3 resolver is the first reader; built-ins omit
+  `views`. Pure additive, zero visual change. typecheck/lint/vitest(122)/build green.
+
+**Gate:** validator unit + builtin-themes tests green (built-ins validate with no
+`views`); CI-only (no visual change → no playtest beyond an optional boot smoke-test).
+
+#### L2b — D34 `systemUIConfigs` migration — ✅ SHIPPED on branch 2026-06-15 (stacks on L2a), pending operator visual-identical playtest (DECISIONS D38)
+
+> Built as designed: experiential per-system config → `themes/retroverse/systemUiConfigs.ts`
+> via `ThemePackage.perSystemUiConfigs` (peer of `perSystemTokens`); App bridges it;
+> `uiConfigFor` merges over `BASELINE_UI`; `touchInputSupported` split to platform-factual
+> `systemSupportsTouch` (3 touch consumers repointed). typecheck/lint/vitest(131)/build green.
+
 - **Migrate the experiential per-system config** out of platform-global
-  `systemUIConfigs.ts`: the *factual* subset stays platform; the *experiential*
-  subset (layout/audioProfile/interactionStyle/tileShape choices) becomes
-  Retroverse-declared (manifest `views[].per_system` for layout; the rest as
-  Retroverse content per D34). Platform retains the thin `_baseline` fallback.
-- No live layout consumer yet — pure schema + migration (mirrors S4 stamping
-  the manifest contract before S5 consumed it).
+  `systemUIConfigs.ts`: `touchInputSupported` is the *only* factual field (hardware:
+  has-touchscreen; gates stylus/touch overlays regardless of theme) → **stays
+  platform**; everything else (layout / audioProfile / interactionStyle / tileShape /
+  …) is experiential → moves to `themes/retroverse/`, **bridged into the tile/SFX
+  consumers via the L1 opt-in pattern** (only read when the theme opts in). Platform
+  keeps a thin `_baseline` fallback.
+- Behavior-preserving — Retroverse renders identically to today.
 
-**Gate:** validator unit + builtin-themes tests green; all built-in manifests
-(Retroverse with its `views` map, CoverFlow, `bare`) validate; no visual change
-yet (Retroverse renders its declared defaults identically to today).
+**Gate:** validator + builtin-themes green; **operator visual-identical playtest** —
+Retroverse per-system tiles/SFX unchanged; CoverFlow/bare unaffected.
 
 ### L3 — Resolver + persistence + first live consumer
 

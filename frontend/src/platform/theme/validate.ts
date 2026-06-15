@@ -31,8 +31,10 @@
 import type { ThemePackage } from "./types";
 import { TOKEN_VAR, type ThemeTokens } from "./tokens";
 import {
+  LAYOUT_PRIMITIVES,
   MAX_SCHEMA_VERSION,
   SUPPORTED_SCHEMA_VERSIONS,
+  VIEW_TYPES,
   type ThemeSurface,
 } from "./manifest";
 import {
@@ -71,6 +73,9 @@ export type ThemeIssueCode =
   | "EMPTY_PALETTE_VALUE" // a perSystemTokens value is empty / blank
   | "SETTING_KEY_INVALID" // a settings_schema control key is missing / empty / duplicated
   | "SETTING_CONTROL_INVALID" // a settings_schema control is malformed (type / label / default / range / options)
+  | "INVALID_VIEWS" // views (or a view entry / per_system) is the wrong shape
+  | "UNKNOWN_VIEW_TYPE" // a views key ∉ VIEW_TYPES
+  | "INVALID_VIEW_LAYOUT" // a view layout (or per_system value) ∉ LAYOUT_PRIMITIVES
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
@@ -394,6 +399,97 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
             field: `perSystemTokens.${systemId}.${paletteKey}`,
             message: `perSystemTokens.${systemId}.${paletteKey} must be a non-empty CSS value string (omit the key to inherit the baseline)`,
           });
+        }
+      }
+    }
+  }
+
+  // --- perSystemUiConfigs (L2b / D34): per-system experiential overrides keyed
+  //     by SystemId. Validate the keys are known systems; the field VALUES are
+  //     enum-typed Partial<SystemUIConfig> (deep value validation waits for
+  //     on-disk themes). Mirrors the perSystemTokens key check. ---
+  if (pkg.perSystemUiConfigs != null) {
+    for (const systemId of Object.keys(pkg.perSystemUiConfigs)) {
+      if (!(systemId in SYSTEM_PALETTES)) {
+        errors.push({
+          code: "UNKNOWN_SYSTEM_ID",
+          field: `perSystemUiConfigs.${systemId}`,
+          message: `perSystemUiConfigs.${systemId} is not a known system id (see SystemId / SYSTEM_PALETTES)`,
+        });
+      }
+    }
+  }
+
+  // --- views (ARC 2 L2 / D32): per-view layout map. Each key ∈ VIEW_TYPES, each
+  //     `layout` ∈ LAYOUT_PRIMITIVES, optional `per_system` overrides keyed by
+  //     SystemId → LayoutPrimitive. Malformed = ERROR (a broken layout map is
+  //     worse than none, like settings_schema). Contract only in L2a — the L3
+  //     resolver is the first consumer. ---
+  if (m?.views != null) {
+    const views: unknown = m.views;
+    if (typeof views !== "object" || Array.isArray(views)) {
+      errors.push({
+        code: "INVALID_VIEWS",
+        field: "views",
+        message: "manifest.views must be an object mapping view types to { layout, per_system? }",
+      });
+    } else {
+      const layoutSet = new Set<string>(LAYOUT_PRIMITIVES);
+      const viewSet = new Set<string>(VIEW_TYPES);
+      for (const view of Object.keys(views as Record<string, unknown>)) {
+        if (!viewSet.has(view)) {
+          errors.push({
+            code: "UNKNOWN_VIEW_TYPE",
+            field: `views.${view}`,
+            message: `views.${view} is not a known view type (${VIEW_TYPES.join(", ")})`,
+          });
+          continue;
+        }
+        const cfg = (views as Record<string, unknown>)[view];
+        if (typeof cfg !== "object" || cfg === null || Array.isArray(cfg)) {
+          errors.push({
+            code: "INVALID_VIEWS",
+            field: `views.${view}`,
+            message: `views.${view} must be an object { layout, per_system? }`,
+          });
+          continue;
+        }
+        const layout = (cfg as Record<string, unknown>).layout;
+        if (typeof layout !== "string" || !layoutSet.has(layout)) {
+          errors.push({
+            code: "INVALID_VIEW_LAYOUT",
+            field: `views.${view}.layout`,
+            message: `views.${view}.layout must be one of ${LAYOUT_PRIMITIVES.join(", ")}`,
+          });
+        }
+        const perSystem = (cfg as Record<string, unknown>).per_system;
+        if (perSystem != null) {
+          if (typeof perSystem !== "object" || Array.isArray(perSystem)) {
+            errors.push({
+              code: "INVALID_VIEWS",
+              field: `views.${view}.per_system`,
+              message: `views.${view}.per_system must be an object of SystemId → layout primitive`,
+            });
+          } else {
+            for (const sysId of Object.keys(perSystem as Record<string, unknown>)) {
+              if (!(sysId in SYSTEM_PALETTES)) {
+                errors.push({
+                  code: "UNKNOWN_SYSTEM_ID",
+                  field: `views.${view}.per_system.${sysId}`,
+                  message: `views.${view}.per_system.${sysId} is not a known system id (see SystemId / SYSTEM_PALETTES)`,
+                });
+                continue;
+              }
+              const pl = (perSystem as Record<string, unknown>)[sysId];
+              if (typeof pl !== "string" || !layoutSet.has(pl)) {
+                errors.push({
+                  code: "INVALID_VIEW_LAYOUT",
+                  field: `views.${view}.per_system.${sysId}`,
+                  message: `views.${view}.per_system.${sysId} must be one of ${LAYOUT_PRIMITIVES.join(", ")}`,
+                });
+              }
+            }
+          }
         }
       }
     }

@@ -1403,3 +1403,103 @@ forces uniform even under Retroverse.
 the default-OFF / flagship-must-opt-in are the two a later contributor could undo —
 by coupling the gate to the theme registry, or by "restoring" per-system UI as a
 global default and re-creating the D33 forced-cross-theme defect.
+
+---
+
+### D37 — ARC-2 L2 split: stamp the view/layout contract (L2a) before the D34 migration (L2b)
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l2a-view-layout-contract`). **Decision:**
+the plan's L2 bundled two different-risk pieces — the *additive* view/layout
+contract and the *consumer-touching* D34 `systemUIConfigs` migration. Split via
+AskUserQuestion sign-off into **L2a (contract, this slice)** + **L2b (migration,
+next)**, so each is independently playtestable and the contract is stamped before
+anything consumes it (the S4→S5 pattern).
+
+**L2a build shape (shipped):**
+1. **`ViewType`** = `manufacturer-browse | system-browse | game-browse |
+   game-details` — the library journey. The validator allow-lists the full set; the
+   engine *honors* a growing subset (L3 wires `game-browse` first). The union
+   extends (home / collections / now-playing) when honored — "reserve the contract,
+   defer the body" (D20b pattern).
+2. **`LayoutPrimitive`** = `list | grid | carousel | wheel | custom` — the S5.5
+   nav-primitive set. Named as plain string-literals in `manifest.ts` so the
+   contract stays **decoupled from the nav layer** (like `glyph_set`); the L3
+   resolver owns the `LayoutPrimitive → nav component` mapping. `wheel` is still the
+   reserved S5.5 stub until L4.
+3. **Manifest `views?: { [view]: { layout, per_system? } }`** — per-view default
+   layout + optional per-system override (D32). `per_system` keys kept loose
+   `string` in the type (no registry coupling); the validator checks them against
+   `SYSTEM_PALETTES`/SystemId.
+4. **Validator: malformed = ERROR** (not warning) — a broken layout map is worse
+   than none, same rationale as `settings_schema`. Codes `INVALID_VIEWS` /
+   `UNKNOWN_VIEW_TYPE` / `INVALID_VIEW_LAYOUT`; reuses `UNKNOWN_SYSTEM_ID` for
+   per-system keys. (Contrast `per_system_ui`/`glyph_set` = warnings: those degrade
+   gracefully to a safe default; a malformed *layout map* can't.)
+5. **No consumer in L2a.** Built-ins declare no `views` (still validate clean); the
+   L3 resolver is the first reader. Pure additive, zero visual change.
+
+**L2b (next):** the D34 migration — `touchInputSupported` is the *only* factual
+`SystemUIConfig` field (hardware: has-touchscreen; gates stylus/touch overlays
+regardless of theme) and stays platform; everything else (layout / audioProfile /
+interactionStyle / tileShape / …) is experiential → moves to `themes/retroverse/`,
+bridged into the tile/SFX consumers via the L1 opt-in pattern (only read when the
+theme opts in). Behavior-preserving (visual-identical gate).
+
+**Why record this:** the split rationale (contract before migration) and the
+factual-vs-experiential line (`touchInputSupported` is the lone factual field) are
+what a later contributor needs to not (a) fold the risky migration back into the
+contract slice, or (b) drag `touchInputSupported` into the theme and break
+touch-overlay gating for non-Retroverse themes.
+
+---
+
+### D38 — ARC-2 L2b: per-system experiential config is theme content (`ThemePackage.perSystemUiConfigs`), bridged + merged over `BASELINE_UI`; `touchInputSupported` stays platform-factual
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l2b-systemuiconfigs-migration`). **Decision:**
+the D34 migration build shape — moving the experiential per-system config out of
+the platform-global `systemUIConfigs` map into theme content. Home signed off via
+AskUserQuestion (`ThemePackage.perSystemUiConfigs`, the peer of `perSystemTokens`).
+
+1. **`ThemePackage.perSystemUiConfigs?: Partial<Record<SystemId, Partial<SystemUIConfig>>>`**
+   — theme content, the exact peer of `perSystemTokens`. App.tsx bridges
+   `activeTheme()?.perSystemUiConfigs` into a platform signal
+   (`setThemeSystemUiConfigs`, the L1/glyph-set pattern); `uiConfigFor(systemId)`
+   returns `{ ...BASELINE_UI, ...override[systemId] }`. Rejected: a manifest field
+   (it's content, not metadata — same reason `perSystemTokens` isn't on the
+   manifest) and a separate registry injection (more indirection than the package
+   field needs).
+
+2. **Platform keeps the contract; the theme owns the values.** `SystemUIConfig`
+   type + the `UI*` enums + `BASELINE_UI` stay in `platform/themes/systemUIConfigs.ts`
+   (the capability); the per-system *values* moved to
+   `themes/retroverse/systemUiConfigs.ts`. Only the 3 systems that differ from
+   baseline (gb/nes/vectrex pilots) have entries — every other system inherits
+   `BASELINE_UI`, so the migrated content is tiny.
+
+3. **`touchInputSupported` is FACTUAL → stays platform, split OUT of `SystemUIConfig`.**
+   It's a hardware fact (NDS has a touchscreen under *any* theme) and gates the
+   stylus/touch overlays theme-independently — so it cannot be theme content. New
+   `systemSupportsTouch(systemId)` lookup (a `Set<SystemId>`); the 3 factual
+   consumers (QuickSettings / StylusOverlay / TouchHotspotOverlay) read it instead
+   of the removed map. *Constraint:* don't move touch-support into the theme — it
+   would break touch overlays for non-Retroverse themes.
+
+4. **Behavior-preserving.** Retroverse declares gb/nes/vectrex exactly as the old
+   global map → identical render. CoverFlow/bare ship none → `BASELINE_UI` (and
+   don't consume tiles/SFX anyway, per L1's opt-in gate). Composes with L1: the
+   experiential config is only *read* on the tile/SFX paths a theme opted into.
+
+5. **Validator:** `perSystemUiConfigs` keys checked against SystemId (reuse
+   `UNKNOWN_SYSTEM_ID`), mirroring `perSystemTokens`; field VALUES are enum-typed
+   `Partial<SystemUIConfig>` so deep value validation waits for on-disk themes.
+
+**Verification:** typecheck + lint + vitest (131; new `systemUIConfigs.test.ts`
+merge/touch tests + validator cases) + build green. Frontend-only.
+**Acceptance gate (operator playtest, visual-identical):** Retroverse per-system
+tiles + nav SFX unchanged (gb portrait/delayed, nes console-audio, vectrex
+physical/square); CoverFlow/bare uniform; NDS stylus/touch overlays still gate.
+
+**Why record this:** (1) the package-field-not-manifest home and (3) the
+`touchInputSupported`-stays-factual split are the two a later contributor could
+get wrong — by promoting the config to the manifest, or by folding touch-support
+back into the theme content and breaking non-Retroverse touch overlays.

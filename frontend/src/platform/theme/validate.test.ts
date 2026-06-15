@@ -270,3 +270,81 @@ describe("validateTheme — settings_schema (Settings IA Slice 3)", () => {
     expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
   });
 });
+
+describe("validateTheme — views (ARC 2 L2 / D32)", () => {
+  type Views = ThemeManifest["views"];
+
+  it("a valid views map (default layout + per_system override) passes clean", () => {
+    const v = validateTheme(
+      pkg({
+        views: {
+          "game-browse": { layout: "grid", per_system: { tg16: "wheel", lynx: "grid" } },
+          "system-browse": { layout: "list" },
+        },
+      }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("omitting views is fine (optional)", () => {
+    expect(validateTheme(pkg()).ok).toBe(true);
+  });
+
+  it("an unknown view type → UNKNOWN_VIEW_TYPE", () => {
+    const v = validateTheme(pkg({ views: { "box-art-wall": { layout: "grid" } } as unknown as Views }));
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("UNKNOWN_VIEW_TYPE");
+  });
+
+  it("an unknown layout primitive → INVALID_VIEW_LAYOUT", () => {
+    const v = validateTheme(pkg({ views: { "game-browse": { layout: "mosaic" } } as unknown as Views }));
+    expect(codes(v.errors)).toContain("INVALID_VIEW_LAYOUT");
+  });
+
+  it("a missing layout → INVALID_VIEW_LAYOUT", () => {
+    const v = validateTheme(pkg({ views: { "game-browse": {} } as unknown as Views }));
+    expect(codes(v.errors)).toContain("INVALID_VIEW_LAYOUT");
+  });
+
+  it("a per_system override on an unknown system id → UNKNOWN_SYSTEM_ID", () => {
+    const v = validateTheme(
+      pkg({ views: { "game-browse": { layout: "grid", per_system: { dreamcast64: "wheel" } } } as unknown as Views }),
+    );
+    expect(codes(v.errors)).toContain("UNKNOWN_SYSTEM_ID");
+  });
+
+  it("a per_system override with a bad layout → INVALID_VIEW_LAYOUT", () => {
+    const v = validateTheme(
+      pkg({ views: { "game-browse": { layout: "grid", per_system: { tg16: "spiral" } } } as unknown as Views }),
+    );
+    expect(codes(v.errors)).toContain("INVALID_VIEW_LAYOUT");
+  });
+
+  it("views as an array → INVALID_VIEWS", () => {
+    const v = validateTheme(pkg({ views: [] as unknown as Views }));
+    expect(codes(v.errors)).toContain("INVALID_VIEWS");
+  });
+});
+
+describe("validateTheme — perSystemUiConfigs (ARC 2 L2b / D34)", () => {
+  it("a well-formed per-system override map passes clean", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemUiConfigs: { gb: { tileShape: "portrait-3:4" }, nes: { audioProfile: "console" } } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("an unknown system id key → UNKNOWN_SYSTEM_ID", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemUiConfigs: { dreamcast64: { tileShape: "square" } } as unknown as Record<string, never> }),
+    );
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("UNKNOWN_SYSTEM_ID");
+  });
+
+  it("omitting perSystemUiConfigs is fine (optional)", () => {
+    expect(validateTheme(pkg()).ok).toBe(true);
+  });
+});

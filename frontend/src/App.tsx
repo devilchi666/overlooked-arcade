@@ -79,6 +79,7 @@ import BackgroundJobsBar from "./platform/components/background-jobs/BackgroundJ
 import ResumePromptDialog from "./platform/components/background-jobs/ResumePromptDialog";
 import { setSwapAB, setActiveGlyphSetId } from "@oa/platform/nav";
 import { setPerSystemUiEnabled, setThemePerSystemUi } from "@oa/platform/themes/systemUiSound";
+import { setThemeSystemUiConfigs } from "@oa/platform/themes/systemUIConfigs";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
 import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import { Dynamic } from "solid-js/web";
@@ -382,6 +383,11 @@ const App: Component = () => {
   // the active theme declares `per_system_ui` (Retroverse does; CoverFlow / bare
   // don't) — gated above by the user master toggle (setPerSystemUiEnabled).
   createEffect(() => setThemePerSystemUi(activeTheme()?.manifest.per_system_ui));
+  // Theming ARC 2 L2b (D34): bridge the active theme's per-system experiential
+  // config (audioProfile / interactionStyle / tileShape / …) into uiConfigFor.
+  // Theme content (Retroverse ships the pilots; CoverFlow/bare ship none →
+  // BASELINE_UI). Mirrors the perSystemTokens / per_system_ui bridges.
+  createEffect(() => setThemeSystemUiConfigs(activeTheme()?.perSystemUiConfigs));
 
   // Legacy "Start button → open menu bar" handler removed alongside
   // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;

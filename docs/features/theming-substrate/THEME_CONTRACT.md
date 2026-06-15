@@ -47,6 +47,7 @@ Fields (`platform/theme/manifest.ts`):
 | `surfaces` | named surfaces the theme renders — **`["main"]` only in ARC 1** (D20b) |
 | `glyph_set` | optional — controller-glyph set the HintBar paints: `"xbox"` (default) or `"playstation"` (S5.3). Unknown / omitted falls back to `xbox` (validator WARNING, not error) |
 | `per_system_ui` | optional — opt into consuming **per-system UI on the shared library grid**: `{ tiles?, sfx? }` (ARC 2 L1, D33/D34). `tiles` = per-system `tileShape`/`interactionStyle`; `sfx` = per-system nav sounds. Omit (or a sub-flag) → uniform grid (the opt-in default). Gated ABOVE by the user master toggle. Backgrounds/boot are opt-in by component mount, not here; per-system *layout* is the separate `views` field (L2). Malformed → validator WARNING + falls back OFF |
+| `views` | optional — **per-view layout map** (ARC 2 L2 / D32): `{ [view]: { layout, per_system? } }`. `view` ∈ `manufacturer-browse` / `system-browse` / `game-browse` / `game-details`; `layout` ∈ `list` / `grid` / `carousel` / `wheel` / `custom`; `per_system` overrides the layout per SystemId. Omit a view → engine default (set by the L3 resolver). Malformed → validator ERROR. **Contract only as of L2a — no consumer until the L3 resolver; the engine honors a growing subset of view types.** |
 
 ## 2. Entry component
 
@@ -137,6 +138,21 @@ This is D19's **optional sub-cascade**: a theme composes over the
 platform-provided per-system palette, or ignores it entirely (a system-agnostic
 theme ships none). Omit a system to inherit it wholesale; omit a key within a
 system to inherit that var. Source of truth: `platform/themes/systemPalettes.ts`.
+
+### Per-system experiential UI (L2b / D34) — `perSystemUiConfigs`
+
+A theme MAY give specific systems experiential character (audio profile, tile
+shape, interaction feel, …) by declaring
+`perSystemUiConfigs?: Partial<Record<SystemId, Partial<SystemUIConfig>>>` on its
+`ThemePackage` — the peer of `perSystemTokens`. The shell merges each entry over
+`BASELINE_UI` (`uiConfigFor`) and the consumers read it **only where the theme
+opted into per-system UI** (`per_system_ui`, L1). Per-system UI is a platform
+*capability* (the `SystemUIConfig` type + `BASELINE_UI` + the resolver live in
+`platform/themes/systemUIConfigs.ts`); the per-system *values* are theme content
+(D34). Omit a system → it reads `BASELINE_UI`; omit the field → uniform. A
+system's **factual** touch-support (does the hardware have a touchscreen) is NOT
+here — it's the platform `systemSupportsTouch()` lookup, theme-independent.
+Per-system *layout* is the separate `views` contract (L2a).
 
 ### The contract RULE (D2 guarantee)
 

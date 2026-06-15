@@ -19,6 +19,7 @@ import type { Component } from "solid-js";
 import type { ThemeManifest, ThemeSurface } from "./manifest";
 import type { ThemeTokens } from "./tokens";
 import type { PerSystemTokens } from "@oa/platform/themes/systemPalettes";
+import type { PerSystemUiConfigs } from "@oa/platform/themes/systemUIConfigs";
 
 // ThemeSurface is defined in manifest.ts (a manifest concept — the
 // `surfaces` field lists them) and re-exported here so theme entry code can
@@ -56,4 +57,14 @@ export type ThemePackage = {
   /// inherit the platform per-system palette wholesale (a system-agnostic theme
   /// ships none). See platform/themes/systemPalettes.ts.
   perSystemTokens?: PerSystemTokens;
+  /// Per-system experiential UI overrides (ARC 2 L2b / D34) — a partial
+  /// `SystemUIConfig` per system (audioProfile / interactionStyle / tileShape /
+  /// …), merged over `BASELINE_UI` by `uiConfigFor`. THEME content (peer of
+  /// `perSystemTokens`): the per-system *capability* lives in platform, the
+  /// per-system *values* are the theme's. App.tsx bridges this to
+  /// `setThemeSystemUiConfigs`; only consumed where the theme opted into
+  /// per-system UI (L1). Omit → every system reads `BASELINE_UI`. Retroverse
+  /// ships the gb/nes/vectrex pilots; CoverFlow / bare ship none. (Factual
+  /// per-system data like touch-support stays platform — `systemSupportsTouch`.)
+  perSystemUiConfigs?: PerSystemUiConfigs;
 };
