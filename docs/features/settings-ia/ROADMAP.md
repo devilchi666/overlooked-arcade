@@ -27,9 +27,9 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   → commit → `refreshLibraryFolders` (re-registers the watcher via App.tsx's
   effect) + `refreshGroups`. 2 new Rust tests (rebase+preserve, preview
   matched/missing). cargo 839 + typecheck/lint/vitest(98) green.
-- 🟡 **Slice 3 — Themes/Appearance + declarative theme-settings schema**
-  *(code-complete on `feat/settings-ia-slice-3`; pending operator playtest +
-  merge)* — `ThemeSettingControl`/`ThemeSettingsSchema` + `settings_schema` on
+- ✅ **Slice 3 — Themes/Appearance + declarative theme-settings schema**
+  *(MERGED to main 2026-06-14, operator playtested clean — merge `5386305`)* —
+  `ThemeSettingControl`/`ThemeSettingsSchema` + `settings_schema` on
   `ThemeManifest`; S4 validator extended (`SETTING_KEY_INVALID`/
   `SETTING_CONTROL_INVALID`, +9 vitest cases); generic `engine/AppearancePanel`
   renders the active theme's schema via `SettingRow` bound to `useThemeSettings`
@@ -41,8 +41,13 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   nothing jumps. Manifest `settings_schema` format ships now; theming Phase 5's
   `.oatheme` loader reuses it. typecheck/lint/vitest(107) green; THEME_CONTRACT
   §8 added.
-- ⬜ **Slice 4 — External Emulators consolidation** *(rides VL Phase D)* —
-  promote the CoresPage external-emulator section into the new tab; retire the
-  duplicate.
+- 🟡 **Slice 4 — External Emulators consolidation** *(IN PROGRESS)* — relocate
+  the existing CoresPage "External emulators" section (binary paths + per-system
+  default-launcher) into the `ExternalEmulatorsLanding`, retire the duplicate.
+  The one-click *install pipeline* depth still rides **VL Phase D** (unbuilt) —
+  this slice ships the consolidation + a hook for the installer. Paired with a
+  research-need doc cataloguing the external-emulator roster +
+  command-line-launch details we must gather (both systems we DON'T support via
+  cores AND ones we DO, so users have options): [RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md).
 - ⬜ **Slice 5 — Import & Setup depth** *(onboarding)* — Wizard + guided
   first-run (ties to `docs/features/guided-setup/` Phase 2).
