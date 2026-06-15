@@ -297,21 +297,27 @@ follow-ons.
   snes: "carousel" }`. typecheck/lint/vitest(145)/build green.
 - **Gate:** select SNES → coverflow; NES → list; others → grid/viewMode.
 
-#### L4b — WheelNav radial primitive *(NEXT — fresh focused session)*
+#### L4b — WheelNav radial primitive — ✅ SHIPPED on `feat/theming-arc2-l4b-wheelnav`, awaiting operator playtest + merge (DECISIONS D42)
 
-Build the reserved radial **WheelNav** primitive (S5.5 shipped only the typed
+Built the reserved radial **WheelNav** primitive (S5.5 shipped only the typed
 contract + a warn-once stub). The BigBox-signature parity piece (HyperSpin-style
 wheel is the aesthetic reference per the research).
 
+- **Shape fork signed off: shape A (right-side vertical wheel) first**; operator
+  wants B (centred fan) / C (bottom arc) + other display modes later, so the geometry
+  is built **general** (a pure `wheelGeometry.ts` angle→x/y projection keyed on
+  `anchorAngle` + an on-screen `anchor` point) and shape A is just the DEFAULTS.
+  B/C land later as new anchor/anchorAngle/arc presets — no WheelNav rewrite.
 - Verb-native + declarative-props like the other primitives; `onNavSound` hook;
-  windowing for large libraries (reuse CarouselNav's windowing discipline, D29.1);
-  radial geometry (radius / arcDegrees / anchorAngle / rotation). Render `wheel`
-  in `LibraryView` (replace its current grid-fallback).
-- Playtest-sensitive (radial math + windowing on 1700+ game systems) → its own
-  focused session.
+  windowing for large libraries (CarouselNav's discipline, D29.1); vertical nav;
+  late-claim; wheel-scroll; click-to-focus/confirm; covers upright. `LibraryView`
+  renders `wheel` as a 4th `<Switch>` arm; ring radius derived from a measured pane
+  height so it fills the column. Retroverse demo: `tg16 → wheel`.
+- typecheck/lint/vitest(149, +5 `wheelGeometry` cases)/build green. Frontend-only.
 
 **Gate (L4b):** a system whose resolved layout is `wheel` renders a navigable
-radial wheel (browse + launch); falls back cleanly where unsupported.
+radial wheel (browse + launch); falls back cleanly where unsupported. → select
+TG-16 → right-side wheel; NES → list, SNES → carousel, others → grid/viewMode.
 
 ### L5 — End-user override UI
 

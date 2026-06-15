@@ -81,8 +81,13 @@ surfaces — pick the one matching your IA, or drop to `useFocusGroup` directly:
 - **`CustomNav`** (S5.5) — the escape hatch: you draw arbitrary markup, the
   primitive hands you a focus API (`{ items, focusedIndex, isActive, activate,
   bind }`) so your custom layout still gets verb nav + hints.
-- **`WheelNav`** (S5.5) — RESERVED: the typed contract for a radial wheel; the
-  layout is not yet implemented (renders nothing + warns). Use `CarouselNav` today.
+- **`WheelNav`** (S5.5 contract / L4b body) — windowed radial wheel (the BigBox /
+  HyperSpin shape): items on a circle of `radius`, the focused one pinned on screen,
+  the wheel rotating under it. **Shape A = the defaults** (right-side vertical wheel —
+  `anchorAngle: 270` + `anchor: {x:"62%", y:"50%"}`), so `<WheelNav radius={…}>` renders
+  the iconic wheel with no config. Re-shape with `anchorAngle` / `anchor` / `arcDegrees`
+  (centred fan, bottom arc, …). Only ±`window` items in the DOM (scales to huge
+  libraries).
 
 All take the shared declarative props (`density` / `focusProminence` / `easing` /
 `neighbours` / verb callbacks) and an optional **`onNavSound`** hook (S5.5,
