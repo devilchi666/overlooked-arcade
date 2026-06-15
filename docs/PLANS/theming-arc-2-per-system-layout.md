@@ -284,20 +284,34 @@ viewMode); the global toggle still drives undeclared systems. **Operator visual
 playtest.** Carousel/wheel game-browse rendering + the L5 user picker are the
 follow-ons.
 
-### L4 — WheelNav implementation
+### L4 — split into L4a (render carousel, reuse) + L4b (WheelNav, new geometry) — DECISIONS D41
+
+#### L4a — render `carousel` in game-browse — ✅ SHIPPED on branch 2026-06-15, pending operator visual playtest (DECISIONS D41)
+
+- `LibraryView` renders a per-system `carousel` via the existing `CarouselNav`
+  primitive (the path CoverFlow uses): coverflow over the flat `sorted()` list,
+  controlled focus (right-pane detail + `onFocus` follow), covers via `useMedia`,
+  launch/info handlers, `data-system` cards for Retroverse's per-system accent.
+  3-way `<Switch>` (grid fallback / list / carousel). `wheel`/`custom` still
+  grid-fallback. Retroverse demo: `views.game-browse.per_system = { nes: "list",
+  snes: "carousel" }`. typecheck/lint/vitest(145)/build green.
+- **Gate:** select SNES → coverflow; NES → list; others → grid/viewMode.
+
+#### L4b — WheelNav radial primitive *(NEXT — fresh focused session)*
 
 Build the reserved radial **WheelNav** primitive (S5.5 shipped only the typed
-contract + a warn-once stub — "reserve the contract, defer the body"). It now
-has a consumer: a per-system layout can select `wheel`. The BigBox-signature
-parity piece (HyperSpin-style wheel is the aesthetic reference per the
-research).
+contract + a warn-once stub). The BigBox-signature parity piece (HyperSpin-style
+wheel is the aesthetic reference per the research).
 
-- Verb-native + declarative-props like the other primitives; `onNavSound`
-  hook; windowing for large libraries (reuse CarouselNav's windowing
-  discipline, D29.1).
+- Verb-native + declarative-props like the other primitives; `onNavSound` hook;
+  windowing for large libraries (reuse CarouselNav's windowing discipline, D29.1);
+  radial geometry (radius / arcDegrees / anchorAngle / rotation). Render `wheel`
+  in `LibraryView` (replace its current grid-fallback).
+- Playtest-sensitive (radial math + windowing on 1700+ game systems) → its own
+  focused session.
 
-**Gate:** a system whose resolved layout is `wheel` renders a navigable radial
-wheel (browse + launch); falls back cleanly where unsupported.
+**Gate (L4b):** a system whose resolved layout is `wheel` renders a navigable
+radial wheel (browse + launch); falls back cleanly where unsupported.
 
 ### L5 — End-user override UI
 

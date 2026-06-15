@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, Show, Switch, type Component } from "solid-js";
 import type { LibraryStore } from "@oa/platform/library/store";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { SortKey, GroupBy, ViewMode } from "@oa/platform/layout/state";
@@ -14,6 +14,7 @@ import DiscPickerDialog from "./DiscPickerDialog";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useDeclaredLayout } from "@oa/platform/theme/layoutResolver";
+import { CarouselNav } from "@oa/platform/nav";
 import type { ViewsStore } from "@oa/platform/views/store";
 import { findNode, resolveNodeSystemIds } from "@oa/platform/views/resolver";
 import { parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -136,10 +137,11 @@ const LibraryView: Component<Props> = (props) => {
   // not yet rendered in the shared browse view (carousel/wheel ride a follow-on;
   // wheel needs the L4 primitive) so they fall back to grid for now.
   const declaredLayout = useDeclaredLayout("game-browse", selectedSystemId);
-  const effectiveLayoutMode = (): "grid" | "list" => {
+  const effectiveLayoutMode = (): "grid" | "list" | "carousel" => {
     const d = declaredLayout();
     if (d === "list") return "list";
-    if (d) return "grid"; // grid, or the not-yet-rendered carousel/wheel/custom
+    if (d === "carousel") return "carousel"; // L4a
+    if (d) return "grid"; // wheel/custom not yet rendered here (L4b/L5) → grid
     return props.appearance.viewMode() === "list" ? "list" : "grid";
   };
 
@@ -186,6 +188,23 @@ const LibraryView: Component<Props> = (props) => {
   const grouped = createMemo(() =>
     groupEntries(sorted(), props.appearance.groupBy(), systemDisplayName),
   );
+
+  // ARC 2 L4a — `carousel` game-browse. A coverflow over the flat `sorted()`
+  // list (reuses the CarouselNav primitive, the same path CoverFlow uses).
+  // Controlled focus so the right-pane detail + `onFocus` follow the centred
+  // card; cover art via `useMedia` (identity key → per-file fallback).
+  const [carouselIdx, setCarouselIdx] = createSignal(0);
+  createEffect(() => {
+    const n = sorted().length;
+    if (n > 0 && carouselIdx() > n - 1) setCarouselIdx(n - 1);
+  });
+  createEffect(() => {
+    const g = sorted()[carouselIdx()];
+    if (g) props.onFocus(g);
+  });
+  const coverFor = (entry: RomEntry): string | null =>
+    (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
+    media.coverUrl(entry.systemId, entry.id);
 
   const title = (): string => {
     const sysId = selectedSystemId();
@@ -253,8 +272,7 @@ const LibraryView: Component<Props> = (props) => {
             />
           }
         >
-          <Show
-            when={effectiveLayoutMode() === "list"}
+          <Switch
             fallback={
               <VirtualLibraryGrid
                 groups={grouped()}
@@ -274,20 +292,78 @@ const LibraryView: Component<Props> = (props) => {
               />
             }
           >
-            <DetailListView
-              groups={grouped()}
-              onLaunch={wrappedOnLaunch}
-              onShowSaves={props.onShowSaves}
-              onPickContext={props.onPickContext}
-              onFocus={props.onFocus}
-              onShowInfo={props.onShowInfo}
-              selectedId={props.selectedId}
-              variantCountFor={(id) =>
-                props.library.groupsByVariantId().get(id)?.variants.length
-              }
-              focusGroupNeighbours={props.gridFocusNeighbours}
-            />
-          </Show>
+            <Match when={effectiveLayoutMode() === "list"}>
+              <DetailListView
+                groups={grouped()}
+                onLaunch={wrappedOnLaunch}
+                onShowSaves={props.onShowSaves}
+                onPickContext={props.onPickContext}
+                onFocus={props.onFocus}
+                onShowInfo={props.onShowInfo}
+                selectedId={props.selectedId}
+                variantCountFor={(id) =>
+                  props.library.groupsByVariantId().get(id)?.variants.length
+                }
+                focusGroupNeighbours={props.gridFocusNeighbours}
+              />
+            </Match>
+            <Match when={effectiveLayoutMode() === "carousel"}>
+              {/* L4a — per-system `carousel` browse (CarouselNav coverflow over
+                  the flat sorted list). Cards carry data-system so Retroverse's
+                  per-system accent drives the focus ring. */}
+              <CarouselNav
+                id="library-carousel"
+                class="h-full w-full"
+                items={sorted}
+                focusedIndex={carouselIdx}
+                setFocusedIndex={setCarouselIdx}
+                cardWidth={210}
+                pitch={168}
+                neighbours={props.gridFocusNeighbours}
+                hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
+                onConfirm={(_i, g) => wrappedOnLaunch(g)}
+                onSecondary={(_i, g) => props.onShowInfo?.(g)}
+              >
+                {(entry, ctx) => (
+                  <div
+                    class="relative aspect-[3/4] w-full overflow-hidden rounded-xl border bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
+                    data-system={entry.systemId}
+                    classList={{
+                      "border-(--color-system-accent) ring-2 ring-(--color-system-accent)/60": ctx.focused(),
+                      "border-white/10": !ctx.focused(),
+                    }}
+                  >
+                    <Show
+                      when={coverFor(entry)}
+                      fallback={
+                        <div
+                          class="absolute inset-0 flex items-end p-3"
+                          style={{
+                            background:
+                              "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
+                          }}
+                        >
+                          <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
+                            {entry.title}
+                          </span>
+                        </div>
+                      }
+                    >
+                      {(src) => (
+                        <img
+                          src={src()}
+                          alt={entry.title}
+                          class="absolute inset-0 h-full w-full object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </CarouselNav>
+            </Match>
+          </Switch>
         </Show>
       </div>
       <Show when={discPickerEntry()}>

@@ -43,14 +43,14 @@ const RETROVERSE_MANIFEST: ThemeManifest = {
   // full per-system experience on the shared grid — per-system tile flourishes
   // + nav SFX. CoverFlow / bare omit this and get a uniform grid.
   per_system_ui: { tiles: true, sfx: true },
-  // Theming ARC 2 L3b (D32/D40): per-system layout for the game-browse view.
+  // Theming ARC 2 L3b/L4a (D32/D40): per-system layout for the game-browse view.
   // NO view-wide `layout` here — that would override every system's global
   // capsule/list toggle (the "coexist" model keeps the toggle as the default).
-  // Only `per_system` overrides: NES browses as a text list (demo proving the
-  // cascade end-to-end; per-system layout is curated for real in L6). Other
-  // systems keep the operator's global viewMode.
+  // Only `per_system` overrides — demos proving the cascade end-to-end (real
+  // per-system curation lands in L6): NES → text list, SNES → coverflow carousel.
+  // Other systems keep the operator's global viewMode.
   views: {
-    "game-browse": { per_system: { nes: "list" } },
+    "game-browse": { per_system: { nes: "list", snes: "carousel" } },
   },
   // Settings IA Slice 3 — Retroverse declares its library browse-appearance.
   // The engine renders these in Settings → Themes / Appearance; LibraryView /
