@@ -598,16 +598,32 @@ spanned every system but was filed under whichever core happened to be active.
     Casual / Preservation toggle; Variants tab on GameDetailPanel;
     System Health Overview gains % verified / % covers / % metadata
     rollups.
-    - ⚠️ **STRANDED-ON-BRANCH (recorded 2026-06-12):** Phase B is in fact
+    - ⚠️ **RE-DERIVE, don't merge (reassessed 2026-06-15):** Phase B is
       **code-complete (Slices 1–4)** on branch `feat/virtual-library-phase-b`
-      (tip `a475b29`, also on `origin`) — never merged to main. Contains new
-      `SystemHealthPage.tsx`, `GameInfoModal` Variants tab, `filter.ts`
-      preservation filters, two-mode settings toggle + library-mode pref.
-      Built ~2026-06-09, then deprioritised behind the metadata / theming /
-      controller-identity arcs. Branch is ~95 commits behind current main and
-      touches files heavily rewritten since (`GameInfoModal`, `LibraryView`,
-      settings store), so resurrecting it = a conflict-resolving merge +
-      playtest, NOT a fast-forward. Parked intentionally; do not delete.
+      (tip `a475b29`, also on `origin`) — ~647 lines / 14 files, forked
+      2026-06-09 and now **171 commits behind main**. The files it needs have
+      all since **moved or been rewritten**, so a merge would be a conflict
+      slog. The clean path is to **re-implement on current main, using the
+      branch as a design+code reference** (the branch does not rot as a
+      reference, so there is **no time pressure** — slot it after Theming
+      ARC 2 L1). What it adds + the re-home work:
+      - **Slice 1 — Casual ⇄ Preservation mode + Settings toggle.** Built
+        against the OLD `SettingsSections` + settings store; **must re-home
+        into the new Settings IA "Library" group** (`engine/SettingsSections.tsx`
+        + the rewritten `platform/settings/store.ts`).
+      - **Slice 2 — preservation variant ribbon** on tiles/list. Paints chrome
+        on the *shared* `LibraryTile`/grid unconditionally — **reconcile with
+        D33** (make it theme-opt-in, not forced cross-theme).
+      - **Slice 3 — Variants tab** — re-apply onto the relocated+rewritten
+        `platform/components/GameInfoModal.tsx`.
+      - **Slice 4 — Collection Health rollups** — re-home onto
+        `engine/SystemHealthPage.tsx` (moved from `routes/retroverse/`).
+      No *conceptual* conflict with locked decisions (two-mode UX is core to
+      this arc; orthogonal to theming). Parked intentionally; do not delete the
+      branch (it's the reference). The branch's `a475b29` docs commit
+      (re-categorize Preservation Vault / Phase F as theme territory) predates
+      D31–D34 — re-evaluate against current theme/engine territory when Phase F
+      is planned.
   - **Phase C — launcher abstraction (~2–3 weeks):** `Launcher`
     lifecycle trait ABOVE the untouched `oa_core::Core`;
     `LibretroLauncher` + `ExternalProcessLauncher` impls;

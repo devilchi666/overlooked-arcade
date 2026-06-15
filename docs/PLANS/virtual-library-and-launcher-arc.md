@@ -390,8 +390,25 @@ later phases keep building on the per-file model.
 
 ### Phase B — Two-mode UX + Collection Health (~2 weeks)
 
-**Status: code-complete (Slices 1–4) but STRANDED on branch
-`feat/virtual-library-phase-b` — NOT merged to main.**
+**Status: code-complete on branch `feat/virtual-library-phase-b` (tip
+`a475b29`) — RE-DERIVE, don't merge (reassessed 2026-06-15).** The branch is
+171 commits behind main and every file it needs has since moved or been
+rewritten, so merging would be a conflict slog. Re-implement on current main
+using the branch as a design+code reference; it does not rot as a reference, so
+there is no time pressure (slot after Theming ARC 2 L1). Re-home map:
+- **Slice 1 toggle** → the new Settings IA **Library** group
+  (`engine/SettingsSections.tsx` + the rewritten `platform/settings/store.ts`),
+  NOT the old Display→Library-presentation location described below.
+- **Slice 2 variant ribbon** → reconcile with **D33** (theming): it currently
+  paints chrome on the shared `LibraryTile`/grid unconditionally — make it
+  theme-opt-in rather than forced cross-theme.
+- **Slice 3 Variants tab** → re-apply onto `platform/components/GameInfoModal.tsx`
+  (relocated + rewritten since the branch).
+- **Slice 4 Collection Health** → `engine/SystemHealthPage.tsx` (moved from
+  `routes/retroverse/`).
+No conceptual conflict with locked decisions — two-mode UX is core to this arc
+and orthogonal to theming. (Section below is the original design intent; the
+re-home map above supersedes its specific file/menu locations.)
 
 **Two-mode toggle:**
 - New OA-wide pref — `library_mode: "casual" | "preservation"`.
