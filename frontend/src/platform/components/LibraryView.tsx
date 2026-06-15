@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, Show, Switch, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type Component } from "solid-js";
 import type { LibraryStore } from "@oa/platform/library/store";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { SortKey, GroupBy, ViewMode } from "@oa/platform/layout/state";
@@ -14,7 +14,7 @@ import DiscPickerDialog from "./DiscPickerDialog";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useDeclaredLayout } from "@oa/platform/theme/layoutResolver";
-import { CarouselNav } from "@oa/platform/nav";
+import { CarouselNav, WheelNav } from "@oa/platform/nav";
 import type { ViewsStore } from "@oa/platform/views/store";
 import { findNode, resolveNodeSystemIds } from "@oa/platform/views/resolver";
 import { parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -133,15 +133,16 @@ const LibraryView: Component<Props> = (props) => {
   // can pick a layout primitive for the CURRENT system; `useDeclaredLayout`
   // returns `undefined` when nothing is declared → we keep the existing global
   // capsule/list `viewMode` toggle as the default (the "coexist" model, D40).
-  // grid → VirtualLibraryGrid, list → DetailListView; carousel/wheel/custom are
-  // not yet rendered in the shared browse view (carousel/wheel ride a follow-on;
-  // wheel needs the L4 primitive) so they fall back to grid for now.
+  // grid → VirtualLibraryGrid, list → DetailListView, carousel → CarouselNav
+  // (L4a), wheel → WheelNav radial (L4b). `custom` is theme-drawn (not rendered
+  // in the shared browse view) so it falls back to grid for now.
   const declaredLayout = useDeclaredLayout("game-browse", selectedSystemId);
-  const effectiveLayoutMode = (): "grid" | "list" | "carousel" => {
+  const effectiveLayoutMode = (): "grid" | "list" | "carousel" | "wheel" => {
     const d = declaredLayout();
     if (d === "list") return "list";
     if (d === "carousel") return "carousel"; // L4a
-    if (d) return "grid"; // wheel/custom not yet rendered here (L4b/L5) → grid
+    if (d === "wheel") return "wheel"; // L4b
+    if (d) return "grid"; // custom not rendered here (L5/L6) → grid
     return props.appearance.viewMode() === "list" ? "list" : "grid";
   };
 
@@ -189,19 +190,47 @@ const LibraryView: Component<Props> = (props) => {
     groupEntries(sorted(), props.appearance.groupBy(), systemDisplayName),
   );
 
-  // ARC 2 L4a — `carousel` game-browse. A coverflow over the flat `sorted()`
-  // list (reuses the CarouselNav primitive, the same path CoverFlow uses).
-  // Controlled focus so the right-pane detail + `onFocus` follow the centred
-  // card; cover art via `useMedia` (identity key → per-file fallback).
-  const [carouselIdx, setCarouselIdx] = createSignal(0);
+  // ARC 2 L4a/L4b — flat-list browse primitives (`carousel` coverflow + `wheel`
+  // radial) over the flat `sorted()` list. Shared controlled focus so the
+  // right-pane detail + `onFocus` follow the focused card; cover art via
+  // `useMedia` (identity key → per-file fallback).
+  const [browseIdx, setBrowseIdx] = createSignal(0);
   createEffect(() => {
     const n = sorted().length;
-    if (n > 0 && carouselIdx() > n - 1) setCarouselIdx(n - 1);
+    if (n > 0 && browseIdx() > n - 1) setBrowseIdx(n - 1);
   });
   createEffect(() => {
-    const g = sorted()[carouselIdx()];
+    const g = sorted()[browseIdx()];
     if (g) props.onFocus(g);
   });
+
+  // ARC 2 L4b — the radial wheel sizes its ring to the browse pane (vertical
+  // extent ≈ radius), so it fills the column at any window size.
+  let paneRef: HTMLDivElement | undefined;
+  const [paneHeight, setPaneHeight] = createSignal(720);
+  onMount(() => {
+    if (!paneRef) return;
+    // Measure SYNCHRONOUSLY up front so the wheel paints at the correct radius
+    // on its first frame. `onMount` runs before the browser paints, and
+    // getBoundingClientRect forces layout now — so the radius is right before
+    // anything is shown. (Relying only on the async ResizeObserver below made
+    // the wheel paint at the default radius and then ANIMATE down to the real
+    // one a beat later — the "wheel gets smaller / top pulls down" jump on first
+    // scroll. The intermediate radius is now never painted, so no animation.)
+    const initial = paneRef.getBoundingClientRect().height;
+    if (initial > 0) setPaneHeight(initial);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      // Only react to real resizes (window/layout), not sub-pixel reflow churn.
+      if (h && h > 0 && Math.abs(h - paneHeight()) > 2) setPaneHeight(h);
+    });
+    ro.observe(paneRef);
+    onCleanup(() => ro.disconnect());
+  });
+  // 0.76 pairs with WheelNav's gentle 80° default arc so the ±window items still
+  // span the pane vertically (a shallower arc spreads less per unit radius).
+  const wheelRadius = (): number => Math.max(320, paneHeight() * 0.76);
   const coverFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);
@@ -260,7 +289,7 @@ const LibraryView: Component<Props> = (props) => {
         tileSize={effectiveLayoutMode() === "grid" ? props.appearance.tileSize() : undefined}
         onTileSizeChange={props.appearance.setTileSize}
       />
-      <div class="min-h-0 flex-1">
+      <div class="min-h-0 flex-1" ref={paneRef}>
         <Show
           when={hasAny()}
           fallback={
@@ -315,8 +344,8 @@ const LibraryView: Component<Props> = (props) => {
                 id="library-carousel"
                 class="h-full w-full"
                 items={sorted}
-                focusedIndex={carouselIdx}
-                setFocusedIndex={setCarouselIdx}
+                focusedIndex={browseIdx}
+                setFocusedIndex={setBrowseIdx}
                 cardWidth={210}
                 pitch={168}
                 neighbours={props.gridFocusNeighbours}
@@ -362,6 +391,63 @@ const LibraryView: Component<Props> = (props) => {
                   </div>
                 )}
               </CarouselNav>
+            </Match>
+            <Match when={effectiveLayoutMode() === "wheel"}>
+              {/* L4b — per-system `wheel` browse (WheelNav radial, shape A:
+                  right-side vertical wheel). The focused cover juts left toward
+                  the pane centre; neighbours fan up/down + curve away right,
+                  leaving the left of the column free. Cards carry data-system so
+                  Retroverse's per-system accent drives the focus ring. */}
+              <WheelNav
+                id="library-wheel"
+                class="h-full w-full"
+                items={sorted}
+                focusedIndex={browseIdx}
+                setFocusedIndex={setBrowseIdx}
+                radius={wheelRadius()}
+                neighbours={props.gridFocusNeighbours}
+                hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
+                onConfirm={(_i, g) => wrappedOnLaunch(g)}
+                onSecondary={(_i, g) => props.onShowInfo?.(g)}
+              >
+                {(entry, ctx) => (
+                  <div
+                    class="relative aspect-[3/4] w-44 overflow-hidden rounded-xl border bg-(--color-oa-bg-deep) shadow-2xl shadow-black/60"
+                    data-system={entry.systemId}
+                    classList={{
+                      "border-(--color-system-accent) ring-2 ring-(--color-system-accent)/60": ctx.focused(),
+                      "border-white/10": !ctx.focused(),
+                    }}
+                  >
+                    <Show
+                      when={coverFor(entry)}
+                      fallback={
+                        <div
+                          class="absolute inset-0 flex items-end p-3"
+                          style={{
+                            background:
+                              "radial-gradient(ellipse 130% 70% at 50% -10%, var(--color-system-glow), transparent 70%), var(--color-oa-bg-deep)",
+                          }}
+                        >
+                          <span class="line-clamp-3 text-[0.7rem] font-medium leading-tight text-(--color-oa-ink-dim)">
+                            {entry.title}
+                          </span>
+                        </div>
+                      }
+                    >
+                      {(src) => (
+                        <img
+                          src={src()}
+                          alt={entry.title}
+                          class="absolute inset-0 h-full w-full object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </WheelNav>
             </Match>
           </Switch>
         </Show>

@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1…L4a ✅ MERGED to main; L4b next
+### Theming ARC 2 — L1…L4b ✅ MERGED to main; L5 next
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.
 - **L2a (view/layout manifest contract)** — ✅ MERGED 2026-06-15. `ViewType`/`LayoutPrimitive` enums + `views` field + validator. D37.
@@ -85,7 +85,8 @@ When something lands in this bucket, name it concretely (`apps/oa-shell/src/<pat
 - **L3a (layout resolver + persisted override store)** — ✅ MERGED 2026-06-15. Pure `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→layout` localStorage override store. No consumer. D39.
 - **L3b (per-system layout wired into game-browse)** — ✅ MERGED 2026-06-15, operator playtested (NES→list, slider hides on list). Coexist model (D40): `layout` optional; `useDeclaredLayout` keyed on `selectedSystemId()`; `LibraryView` renders grid/list (carousel/wheel/custom→grid fallback) else the global viewMode. D40.
 - **L4a (render carousel in game-browse)** — ✅ MERGED 2026-06-15, operator playtested (SNES coverflow). `LibraryView` renders a per-system `carousel` via `CarouselNav`; Retroverse demo SNES→carousel. `wheel`/`custom` still grid-fallback. D41.
-- **L4b — NEXT (fresh session):** build the reserved **WheelNav** radial primitive (radial geometry + windowing for big libraries) + render `wheel` in game-browse. The BigBox-signature payoff; playtest-sensitive. Then L5 override UI → L6 Stage 2/3 re-home → P loader.
+- **L4b (radial WheelNav primitive + render `wheel`)** — ✅ MERGED to main, operator playtested (TG-16 wheel). Built the reserved `WheelNav` as a general angle→x/y engine (pure `wheelGeometry.ts`); **shape A (right-side vertical wheel) as the defaults** so B/C land later as presets (operator's stated intent); `LibraryView` renders `wheel` (4th Switch arm), ring radius from a measured pane height; Retroverse demo `tg16→wheel`. Two playtest fixes rode along: gentler feel (arc 80°/sideScale 0.85) + fast-scroll deform fix (snap transitions while scrolling). typecheck/lint/vitest(149)/build green. D42.
+- **L5 — NEXT:** the end-user "pick your view per system" override UI (writes the L3 override store) — recommended home is the engine Per-System Settings Hub (a "Layout" domain card per system, per-row Reset). Then L6 Stage 2/3 re-home → P loader.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

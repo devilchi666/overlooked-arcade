@@ -410,9 +410,14 @@ spanned every system but was filed under whichever core happened to be active.
         Retroverse demo NES→list. **L4a (render carousel in game-browse) ✅ MERGED,
         operator playtested (SNES coverflow)** (D41): `LibraryView` renders a
         per-system `carousel` via `CarouselNav` (CoverFlow's pattern); Retroverse
-        demo SNES→carousel; wheel/custom still grid-fallback. **Next: L4b** (fresh
-        session) — the radial WheelNav primitive + render `wheel`. Then L5 override
-        UI → L6 → P.
+        demo SNES→carousel; wheel/custom still grid-fallback. **L4b (radial WheelNav
+        primitive + render `wheel`) ✅ MERGED to main, operator playtested (TG-16
+        wheel; gentle-feel + fast-scroll-deform fixes confirmed)** (D42): built the reserved `WheelNav` as a
+        general angle→x/y engine (pure `wheelGeometry.ts`), shape A (right-side
+        vertical wheel) as the defaults so B/C land later as presets; `LibraryView`
+        renders `wheel` (4th Switch arm), ring radius from measured pane height;
+        Retroverse demo `tg16→wheel`; typecheck/lint/vitest(149)/build green.
+        **Next: L5** override UI → L6 → P.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

@@ -9,6 +9,64 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L4b: radial WheelNav primitive + render `wheel` in game-browse — ✅ shipped + MERGED to main (operator playtested: TG-16 wheel; gentle-feel + fast-scroll-deform fixes confirmed)
+
+> Branch `feat/theming-arc2-l4b-wheelnav`. Builds the reserved S5.5 `WheelNav`
+> contract (was a warn-once stub) — the BigBox/HyperSpin radial wheel. Shape fork
+> signed off: **shape A (right-side vertical wheel) first**; operator wants B/C "and
+> other ways to display" later as variations, so the geometry is built general.
+> Demo system signed off: **tg16** (AskUserQuestion). DECISIONS **D42**.
+
+- **Shipped:**
+  - **`wheelGeometry.ts`** — pure `wheelDisplacement(offset, geom)` + `wheelStepDeg`
+    angle→x/y projection, split out so the bug-prone radial math is unit-testable
+    (mirrors `spatialGeometry.ts`). Items on a circle of `radius`; focus at
+    `anchorAngle`; each item's on-screen pixel delta derived from its signed offset
+    (next → below). No circle centre, no track transform — a focus change re-projects
+    every item and CSS transitions animate the slide along the arc.
+  - **`WheelNav` body** — vertical `useFocusGroup`, windowing (±`window` in DOM,
+    scales to 1700+-game systems, D29.1), `useLateClaim`, `onNavSound`, wheel-scroll,
+    click-side-to-focus / click-focus-to-confirm. **Shape A is the DEFAULTS**
+    (`anchorAngle` 0→270; new optional `anchor` on-screen-pin prop default right-of-
+    centre) so the bare primitive renders the iconic wheel; B/C are future prop
+    presets over the same engine. Covers stay upright (no counter-rotation). Reserved
+    props (radius/arcDegrees/window/anchorAngle/transitionMs) unchanged → drop-in.
+  - **`LibraryView`** renders `wheel` via a 4th `<Switch>` arm (grid/list/carousel/
+    wheel); carousel + wheel share one controlled browse focus index; ring `radius`
+    is `ResizeObserver`-measured pane-height × 0.52 (min 240) so it fills the column
+    at any size. `custom` still grid-falls-back.
+  - **Retroverse demo:** `views.game-browse.per_system` adds `tg16: "wheel"` (the
+    plan's canonical wheel example), alongside `nes: "list"` + `snes: "carousel"`.
+- **Verified:** typecheck + lint green; `npm run test` = **149 passed** (+5
+  `wheelGeometry` cases replacing the stub `toBeNull` assertion; builtin-themes still
+  validates with `tg16: wheel`); build green. Frontend-only.
+- **Playtest round 1 (2026-06-15) — gentler wheel feel:** operator found the wheel
+  "shrinking / pulling toward the middle" while scrolling. First fix (sync pane-height
+  measure in `onMount` to kill an initial radius-settle animation) addressed a real but
+  different jump. The actual complaint was the radial feel being too aggressive: tuned
+  shape-A defaults gentler — `arcDegrees` 140→80 (near-even vertical spacing instead of
+  edge-bunching + a milder horizontal curve), `sideScale` 0.62→0.85 (focus still
+  biggest, neighbours don't dwindle), `opacityFalloff`/`minOpacity` softened; bumped
+  the `LibraryView` radius multiplier 0.52→0.76 so the shallower arc still fills the
+  column. Operator confirmed gentle-but-still-a-wheel is the target; the **near-flat
+  vertical strip** + the **continual/looping wheel** are noted future *views* (presets
+  over the same geometry, not rewrites).
+- **Playtest round 2 (2026-06-15) — fast-scroll deform fix:** slow stepping looked
+  right but fast scrolling "deformed the whole wheel and pulled away from the bottom/
+  top depending on direction." Cause: every focus step restarts a 300ms CSS transition
+  with its velocity reset, so steps arriving faster than the transition stack up and the
+  items fall progressively behind the true focus (leading edge gaps). Fix: WheelNav
+  detects rapid moves (<140ms apart) and collapses the transition to a ~70ms near-snap
+  while fast-scrolling so items track the focus, restoring the full 300ms gentle ease
+  ~160ms after the last move (the final resting step still animates nicely). Slow
+  stepping unchanged.
+- **Almost:** wheel polish (preload buffer for fast scroll, reflection/depth blur,
+  per-shape tuning) deferred; B/C + strip + looping shapes are future presets (D42 §2).
+- **Next:** **operator visual playtest** — select TG-16 → navigable right-side radial
+  wheel (browse via Up/Down + scroll, Confirm launches, Secondary info); NES → list,
+  SNES → carousel, others → grid/viewMode. Then merge. **After: L5** (user-facing
+  per-system layout picker) → L6 → P.
+
 ## 2026-06-15 — ARC 2 L4a: render `carousel` in game-browse (reuse CarouselNav) — ✅ shipped + MERGED to main (operator playtested: SNES coverflow)
 
 > Branch `feat/theming-arc2-l4-wheelnav`. L4 split L4a (carousel render, reuse) +

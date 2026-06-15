@@ -1629,3 +1629,63 @@ others → grid / global viewMode.
 honor-as-grid until built) is what keeps the shared browse view from sprouting a
 half-built radial layout — L4b builds the real `WheelNav` when it gets a focused
 session.
+
+### D42 — ARC-2 L4b: build the radial `WheelNav` as a general angle→x/y engine (shape A = defaults), render `wheel` in game-browse
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l4b-wheelnav`). **Decision:** implement the
+reserved S5.5 `WheelNav` contract (was a warn-once stub) as the iconic BigBox /
+HyperSpin radial wheel, but build the geometry **general** so future display shapes
+are presets, not rewrites. The operator picked **shape A first** (right-side vertical
+wheel) and explicitly asked that B/C "and other ways to display" land later as
+variations. Build shape:
+
+1. **Geometry is a pure angle→x/y projection** (`platform/nav/primitives/
+   wheelGeometry.ts`, split out so the bug-prone radial math is unit-testable —
+   mirrors the spatial engine's `spatialGeometry.ts`). Items sit on a circle of
+   `radius`; the focused item is at `anchorAngle` (deg, 0 = top); each item's
+   on-screen position is the pixel DELTA from wherever the focus is pinned, derived
+   from its signed `offset`. Positive offset (next item) rotates DOWN so the wheel
+   reads like a vertical list. No circle centre, no track transform — a focus change
+   re-projects every visible item and CSS transitions animate the slide along the arc.
+
+2. **Shape A is the DEFAULTS, not a special case.** `anchorAngle` default moved
+   **0 → 270** (focus = leftmost point of the circle → centre off-screen right) and a
+   new optional `anchor` prop (on-screen pin point, default right-of-centre `62%/50%`)
+   was added. So `<WheelNav radius={…}>{…}</WheelNav>` renders the iconic wheel with
+   zero config (low-floor). **Shape B** (centred fan) = `anchor:{x:"50%",y:"50%"}` +
+   wider arc; **shape C** (bottom arc) = `anchorAngle ~0` + `anchor:{y:"82%"}`. These
+   are new prop presets over the same body — recorded so the next session adds them
+   without touching the engine. Optional visual knobs (`focusedScale`/`sideScale`/
+   `opacityFalloff`/`minOpacity`/`arcDegrees`) mirror CarouselNav for parity; the
+   originally-reserved props (`radius`/`arcDegrees`/`window`/`anchorAngle`/
+   `transitionMs`) are unchanged so it stays a drop-in.
+
+3. **Vertical orientation + windowing + parity wiring.** `useFocusGroup({orientation:
+   "vertical"})` (Up/Down browses, matching the region-bias hybrid); only ±`window`
+   items in the DOM (scales to NES's 1708 games, D29.1); `useLateClaim`, `onNavSound`,
+   wheel-scroll, click-side-to-focus / click-focus-to-confirm — all lifted from
+   CarouselNav. **Covers stay upright** (no per-item counter-rotation — the
+   slide-along-the-arc motion is the wheel feel; rotating art hurts legibility).
+
+4. **`LibraryView` renders `wheel`** as a 4th `<Switch>` arm (grid/list/carousel/
+   wheel); the carousel + wheel share one controlled browse focus index; the ring
+   `radius` is derived from a `ResizeObserver`-measured pane height (`0.52 ×` height,
+   min 240) so the wheel fills the column at any window size. `custom` still
+   grid-falls-back (theme-drawn; L5/L6).
+
+5. **Retroverse demo:** `views.game-browse.per_system` adds `tg16: "wheel"` — the
+   plan's own canonical wheel example and the project's flagship system — joining
+   `nes: "list"`, `snes: "carousel"`. Demo; real curation is L6.
+
+**Verification:** typecheck + lint + vitest (**149**, +5 `wheelGeometry` cases
+replacing the stub assertion) + build green. Frontend-only.
+**Acceptance gate (operator visual playtest):** select TG-16 → a navigable right-side
+radial wheel of TG-16 games (focused cover pinned right-of-centre, neighbours fanning
+up/down + curving away, the left of the pane free); Up/Down + scroll rotate it;
+Confirm launches; Secondary opens info. NES → list, SNES → carousel, others →
+grid/viewMode unchanged.
+
+**Why record this:** the "general engine, shape A as defaults" call is the load-bearing
+one — it's what lets B/C/other display modes be additive presets instead of a WheelNav
+rewrite (the operator's stated intent), and it's the seam the future serializable layout
+DSL / Theme Studio target.
