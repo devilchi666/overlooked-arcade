@@ -1,9 +1,10 @@
-// Retroverse-UI Phase B Slice 5 — top-level Retroverse shell.
+// Retroverse — top-level shell (the default theme's `main` surface).
 //
-// Active only when the operator flips Settings → Display → Experimental
-// → Retroverse UI ON. Replaces the existing Shell wholesale in App.tsx's
-// return via a <Show when={isRetroverseUiEnabled()} fallback={<Shell />}>
-// — two distinct UIs, no hybrid state.
+// Mounted by App.tsx via the active-theme registry (`<Dynamic component=
+// {activeTheme().entry}>`). The old experimental Retroverse-vs-legacy-Shell
+// toggle was removed once the legacy Shell was deleted (2026-05-31) and
+// Retroverse became a real theme (Phase 6); theme switching now lives in
+// Settings → Themes.
 //
 // Owns the top toolbar (logo + 6-tab strip + search input) and dispatches
 // to the active-route page below it. Each page renders its own internal
