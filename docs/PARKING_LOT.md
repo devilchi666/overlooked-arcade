@@ -18,6 +18,10 @@ Append-only. Date entries. When an item moves into scope, link the deciding entr
 
 ## Items
 
+- 2026-06-15 — External-emulator DEPTH — dedicated planning arc
+  Why it came up: batch-1 verified profiles (9 standalone alts) merged to main; operator has bigger plans for external-emulator support.
+  Why deferred: to be designed properly in its own planning session, not cobbled together incrementally. Open-items seed (multi-system schema for BizHawk/ares, MAME rom-set content model, section-B system-id wiring → VL Phase D, per-OS binary_name, per-game config + plugin/script hooks) lives in [RESEARCH/external-emulators.md](RESEARCH/external-emulators.md).
+
 - ~~2026-05-15 — Per-system overscan / safe-area / aspect-correction quirks~~
   Why it came up: Phase 2 scaling modes need a per-system "true aspect ratio" + overscan crop config to make "aspect-correct fit" really accurate (PCE's non-square pixels, NTSC overscan, etc.).
   Why deferred: implement the basic scaling modes first; system-specific aspect tuning becomes per-core polish in each system's bring-up.

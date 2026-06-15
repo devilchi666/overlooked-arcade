@@ -4,11 +4,45 @@
 is below. **Verified 2026-06-15** — all of section A's single-system alts
 (Dolphin, PCSX2, DuckStation, PPSSPP, melonDS, mGBA, Flycast, Mesen 2, DeSmuME)
 plus section-B headliners Cemu + RPCS3, all checked against official
-docs/source; see "Verified batch" below. **9 profiles authored** for the
-section-A emulators whose OA system id already exists. **Still open:** the
+docs/source; see "Verified batch" below. **9 profiles authored + MERGED to main**
+(branch `feat/external-emulator-profiles`) for the section-A emulators whose OA
+system id already exists.
+
+**DEPTH PARKED pending a dedicated planning arc (operator decision 2026-06-15):**
+there are bigger plans for external emulators; the depth work is to be designed
+properly in a future planning session rather than cobbled together
+incrementally. This doc is the open-items seed for that arc. **Still open:** the
 multi-system section-A emulators (BizHawk, ares) + standalone MAME need a schema
-decision; every section-B system needs OA system-id wiring (VL Phase D). Raised
-2026-06-14 alongside Settings IA Slice 4 (External Emulators consolidation).
+decision (see below); every section-B system needs OA system-id wiring (VL
+Phase D). Raised 2026-06-14 alongside Settings IA Slice 4 (External Emulators
+consolidation).
+
+## Open schema questions for the future planning arc
+
+The 9 shipped profiles all fit today's schema (one flat `launch_args_template`
++ `{content}` = full file path, shared across all `supported_systems`). Three
+deferred emulators break that assumption — the planning arc must decide how (or
+whether) to extend the schema:
+
+1. **Per-system argument variation (ares).** ares needs `--system <name>` with
+   ares's own system spelling (`"Mega Drive"` vs `"Super Famicom"`), which one
+   flat template can't express. Options: a `{system}` token + per-profile
+   `system_aliases` map (OA id → emulator's name); OR a `per_system` override
+   block; OR one profile per (emulator, system) pair (no schema change, ~20
+   near-dup files). **Verify first** — modern ares/BizHawk may auto-detect by
+   file extension, which would dissolve this entirely.
+2. **Non-path content model (MAME).** MAME takes a short **rom-set name** + a
+   configured `rompath` (`mame sf2`), not a file path; software-list titles use
+   `-cart`/`-cdrm`/etc. `{content}` = full path doesn't fit. Options: extra
+   substitution tokens (`{content_stem}`, `{content_dir}`); OR a `content_mode`
+   enum (`path` | `rom_name` | `software_list`); OR defer (the in-process MAME
+   core already covers it; standalone is long-tail).
+3. **Section-B system-id wiring (Cemu/RPCS3/Switch/3DS/Vita/Xbox/PS4/Model 3 +
+   Wii).** Each needs an OA system id + `config/systems/<id>/` descriptor +
+   sidebar/metadata before its (often already CLI-verified) profile is useful.
+   PS3 additionally needs directory-based content resolution (EBOOT.BIN inside a
+   game folder, not one ROM file) and a firmware precondition. This is VL Phase
+   D (new-system installer + wiring) territory.
 
 ## Why this matters
 

@@ -17,16 +17,18 @@ spanned every system but was filed under whichever core happened to be active.
   (`5386305`), S4 External Emulators consolidation + research-need doc
   (`f3082ed`). The core re-cut is **done**. **Slice 5 (Import & Setup depth)
   DEFERRED** — folds into guided-setup Phase 2. **External-emulator research
-  pass — batch 1 ✅ (2026-06-15, branch `feat/external-emulator-profiles`,
-  commits `2709af2` + `86161e7`; NOT yet merged — awaiting operator playtest).**
-  Verified launch CLIs for all section-A single-system alts (Dolphin/PCSX2/
-  DuckStation/PPSSPP/melonDS/mGBA/Flycast/Mesen 2/DeSmuME) + section-B Cemu/RPCS3
-  against official docs/source; authored **9 `config/emulators/*.yaml` profiles**;
-  doc + profile test + per-OS data updated
-  ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md)). **Still
-  open:** multi-system emulators (BizHawk/ares) + standalone MAME need a schema
-  decision; section-B systems need OA system-id wiring (VL Phase D) before their
-  profiles are useful.
+  pass — batch 1 ✅ MERGED to main (2026-06-15, branch
+  `feat/external-emulator-profiles`).** Verified launch CLIs for all section-A
+  single-system alts (Dolphin/PCSX2/DuckStation/PPSSPP/melonDS/mGBA/Flycast/
+  Mesen 2/DeSmuME) + section-B Cemu/RPCS3 against official docs/source; authored
+  **9 `config/emulators/*.yaml` profiles**; doc + profile test + per-OS data
+  updated ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md)).
+  **External-emulator DEPTH is now PARKED pending a dedicated planning arc** —
+  operator decision 2026-06-15: there are bigger plans for external emulators, to
+  be designed properly in a future planning session rather than cobbled together
+  incrementally. The open-items seed (multi-system schema for BizHawk/ares, MAME
+  content model, section-B system-id wiring → VL Phase D) lives in the research
+  doc. **The Settings IA stream is now fully closed.**
   Re-cuts the engine
   Settings IA around user intent: new top-level **Themes/Appearance · Library ·
   Organize My Collection · Import & Setup · External Emulators** groups, replacing
