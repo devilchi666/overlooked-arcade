@@ -9,6 +9,31 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L1: per-system-UI consumption opt-in (the D33 fix) — ✅ shipped on branch, pending operator playtest
+
+> Branch `feat/theming-arc2-l1-per-system-opt-in`. The keystone ARC-2 slice (pulled
+> forward): convert the forced-global per-system tile/SFX path on the shared grid
+> into a per-theme opt-in. Shape signed off (AskUserQuestion — `{tiles,sfx}` struct)
+> before code. DECISIONS **D36**.
+
+- **Shipped:** manifest gains `per_system_ui?: { tiles?, sfx? }`; `systemUiSound.ts`
+  adds the per-theme consumption layer (`setThemePerSystemUi` + `consumesPerSystemTiles`/
+  `consumesPerSystemSfx` = userMaster AND theme-opts-in); App.tsx bridges
+  `activeTheme()?.manifest.per_system_ui` (mirrors the glyph-set bridge); `LibraryTile`
+  + `VirtualLibraryGrid` + `playSystemUiSound` consume the new gates instead of the raw
+  master toggle. **Retroverse declares `{tiles:true, sfx:true}`**; CoverFlow + bare
+  declare nothing → uniform grid. User master toggle kept as the global off-switch.
+  Validator: `INVALID_PER_SYSTEM_UI` warning (fallback OFF). THEME_CONTRACT §1 row added.
+- **Verified:** `npm run typecheck` + `npm run lint` green; `npm run test` = **114 passed**
+  (incl. new `systemUiSound.test.ts` 5 gate tests + 2 validator cases); `npm run build`
+  green. Frontend-only — Rust resolvers untouched.
+- **Almost:** nothing in L1 scope. (LibraryTile's old "perSystemUiEnabled OFF" code
+  comment left as harmless historical wording.)
+- **Next:** **operator playtest** the acceptance gate — Retroverse per-system as before;
+  CoverFlow + bare uniform; user master-off forces uniform under Retroverse. Then merge.
+  **After: L2** — view/layout manifest contract + the `systemUIConfigs` experiential→theme
+  split (D34).
+
 ## 2026-06-15 — ARC 2 planned: Per-System Layout Substrate (D32/D33 → plan + D34/D35) — no code
 
 Planning session. Designed ARC 2 with D32 (per-system layout becomes a

@@ -14,7 +14,7 @@ import LibraryTile from "./LibraryTile";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
 import { useFocusGroup } from "@oa/platform/nav";
-import { isPerSystemUiEnabled, playSystemUiSound } from "@oa/platform/themes/systemUiSound";
+import { consumesPerSystemTiles, playSystemUiSound } from "@oa/platform/themes/systemUiSound";
 import { DEFAULT_TILE_ASPECT, systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { uiConfigFor, type UITileShape } from "@oa/platform/themes/systemUIConfigs";
 
@@ -106,7 +106,7 @@ function aspectForTileShape(shape: UITileShape): number | null {
 // Mirror LibraryTile's tileAspectStyle resolution so estimate matches the
 // shape the tile actually renders.
 function aspectForSystem(sysId: string): number {
-  if (isPerSystemUiEnabled()) {
+  if (consumesPerSystemTiles()) {
     const override = aspectForTileShape(uiConfigFor(sysId as SystemId).tileShape);
     if (override !== null) return override;
   }
@@ -258,7 +258,7 @@ const VirtualLibraryGrid: Component<Props> = (props) => {
   createEffect(() => {
     void columnCount();
     void actualTileWidth();
-    void isPerSystemUiEnabled();
+    void consumesPerSystemTiles();
     virtualizer.measure();
   });
 

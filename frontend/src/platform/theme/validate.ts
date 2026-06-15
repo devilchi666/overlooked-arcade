@@ -74,7 +74,8 @@ export type ThemeIssueCode =
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
-  | "UNKNOWN_GLYPH_SET"; // glyph_set ∉ GLYPH_SETS (hints fall back to default)
+  | "UNKNOWN_GLYPH_SET" // glyph_set ∉ GLYPH_SETS (hints fall back to default)
+  | "INVALID_PER_SYSTEM_UI"; // per_system_ui not { tiles?, sfx? } booleans (→ OFF)
 
 export type ThemeIssue = {
   code: ThemeIssueCode;
@@ -217,6 +218,29 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
       field: "glyph_set",
       message: `manifest.glyph_set "${m.glyph_set}" is not a known glyph set (${Object.keys(GLYPH_SETS).join(", ")}); the HintBar falls back to the default`,
     });
+  }
+
+  // --- per_system_ui (ARC 2 L1, D33/D34): optional { tiles?, sfx? } booleans.
+  //     Warning (not error) + falls back to OFF on a malformed value — a theme
+  //     shouldn't be disqualified over a consumption flag; the safe default is a
+  //     uniform grid. ---
+  if (m?.per_system_ui != null) {
+    const psu: unknown = m.per_system_ui;
+    const ok =
+      typeof psu === "object" &&
+      !Array.isArray(psu) &&
+      ["tiles", "sfx"].every((k) => {
+        const v = (psu as Record<string, unknown>)[k];
+        return v === undefined || typeof v === "boolean";
+      });
+    if (!ok) {
+      warnings.push({
+        code: "INVALID_PER_SYSTEM_UI",
+        field: "per_system_ui",
+        message:
+          "manifest.per_system_ui must be an object of optional booleans { tiles?, sfx? }; falling back to OFF",
+      });
+    }
   }
 
   // --- settings_schema (Settings IA Slice 3): unique non-empty keys +

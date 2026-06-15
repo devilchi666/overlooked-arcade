@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1: per-system UI consumption opt-in (D33 fix)  *(queued — ARC-2 Slice 1)*
+### Theming ARC 2 — L1: per-system UI consumption opt-in (D33 fix)  *(✅ shipped on `feat/theming-arc2-l1-per-system-opt-in`, pending operator playtest → then L2)*
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

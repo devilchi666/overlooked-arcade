@@ -1349,3 +1349,57 @@ References to "ARC 2 = Rhai + WGSL" and "Theme Studio (ARC 3)" in older docs
 (plan §5 table, D32, the BigBox research, THEME_CONTRACT) are updated to the
 2/3/4 numbering as those docs are next touched; the plan §5 arc table is
 updated this session.
+
+---
+
+### D36 — ARC-2 L1: per-system-UI consumption is a per-theme manifest opt-in, App-bridged, gated under the user master toggle (the D33 fix)
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l1-per-system-opt-in`). **Decision:** the
+build shape for L1 — converting the forced-global per-system tile/SFX path into a
+per-theme opt-in. Shape signed off via AskUserQuestion (the `{ tiles, sfx }` struct)
+before code.
+
+1. **Manifest field `per_system_ui?: { tiles?: boolean; sfx?: boolean }`** — a small
+   *separable* struct, not a coarse boolean and not a richer one. The two genuinely
+   *forced-global* surfaces (the only ones the shared grid imposes cross-theme) are
+   tile flourishes (`LibraryTile` `tileShape`/`interactionStyle`) and nav SFX
+   (`playSystemUiSound`); the code already gates them separately, so the contract
+   mirrors that. Backgrounds + boot are already opt-in by **component mount**
+   (`ThemeBackground` / `SystemBootAnimation`) → no flag. Per-system **layout** (D32)
+   is the *separate* `views` field (L2) — deliberately NOT folded in here.
+
+2. **App-bridged into the gate, exactly like S5.3's `glyph_set`.** `systemUiSound.ts`
+   holds a `themeUiSig` (default `{tiles:false, sfx:false}`) + `setThemePerSystemUi`;
+   App.tsx `createEffect(() => setThemePerSystemUi(activeTheme()?.manifest.per_system_ui))`.
+   nav/themes stays a generic leaf; App is the one place that knows the active theme.
+   *Constraint:* don't make `systemUiSound`/consumers reach into `theme/registry` —
+   bridge from App.
+
+3. **Effective gate = `userMaster AND activeThemeOptsIn(surface)`.** New accessors
+   `consumesPerSystemTiles()` / `consumesPerSystemSfx()` fold the existing user master
+   toggle (`isPerSystemUiEnabled`, kept) with the per-theme flag. The user toggle
+   survives as a **global off-switch** (accessibility / low-end escape, default ON) —
+   master-off forces uniform regardless of theme. `LibraryTile` + the grid's
+   column-fit estimate consume `consumesPerSystemTiles`; `playSystemUiSound` consumes
+   `consumesPerSystemSfx`.
+
+4. **Default OFF (the D33 rule).** A theme that declares nothing gets a uniform grid.
+   **Retroverse** (the default/flagship) must now *explicitly* declare
+   `per_system_ui: { tiles: true, sfx: true }` to keep its per-system feel; CoverFlow
+   + bare declare nothing → uniform. The flagship needing an explicit opt-in is the
+   point: per-system UI is a platform capability themes *choose*, not a forced default.
+
+5. **Malformed value = validator WARNING + fall back OFF**, not an error (mirrors
+   `glyph_set`). A consumption flag shouldn't disqualify a whole theme; the safe
+   fallback (uniform) is graceful. `INVALID_PER_SYSTEM_UI`.
+
+**Verification:** typecheck + lint + vitest (114, incl. new `systemUiSound.test.ts`
+gate tests + 2 validator cases) + build green; frontend-only (Rust resolvers
+unchanged). **Acceptance gate (operator playtest):** Retroverse reads per-system
+(tiles + nav SFX) as before; CoverFlow + bare read **uniform**; the user master-off
+forces uniform even under Retroverse.
+
+**Why record this:** (2) the App-bridge-not-consumer-reads-theme direction and (4)
+the default-OFF / flagship-must-opt-in are the two a later contributor could undo —
+by coupling the gate to the theme registry, or by "restoring" per-system UI as a
+global default and re-creating the D33 forced-cross-theme defect.
