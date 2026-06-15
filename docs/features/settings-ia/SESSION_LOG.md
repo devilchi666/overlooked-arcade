@@ -4,6 +4,36 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-15 — External-emulator research pass (batch 1)
+
+- **Shipped:** verified launch CLIs for all of section A's **single-system**
+  alts (Dolphin confirmed, PCSX2, DuckStation, PPSSPP, melonDS, mGBA, Flycast,
+  Mesen 2, DeSmuME) + section-B headliners Cemu + RPCS3 — each against official
+  docs and/or the emulator's source command-line parser (via parallel research
+  subagents), not draft/hearsay. **Authored 8 new `config/emulators/*.yaml`
+  profiles** (9 total incl. dolphin) for the section-A emulators whose OA system
+  id already exists; YAML parse-validated out-of-band. Generalized the profile
+  test to guard ALL shipped profiles (the loader only WARNs on a bad file).
+  Updated [../../RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md)
+  roster tables + a "Verified batch" block (per-OS binary names the single-field
+  schema can't yet hold + quirks + section-B wiring needs). Branch
+  `feat/external-emulator-profiles` (commits `2709af2`, `86161e7`). Key
+  corrections vs the draft: PCSX2 was old-wx (binary `pcsx2-qt.exe`, path after
+  `--`); PPSSPP needs `--escape-exit`/`--pause-menu-exit` or it never returns to
+  OA; DuckStation is CC BY-NC-ND (no bundling/configs); Mesen 2 is multi-system
+  but auto-detects (no `--system`). First multi-profile-per-system case beyond
+  Dolphin — confirmed both UI surfaces already handle it (no code change).
+- **Almost:** nothing built/playtested — docs + YAML only (operator builds with
+  `cargo tauri build`). The new Rust test needs that build to run green.
+- **Next:** operator playtest — point a binary path in Settings → External
+  Emulators and launch a PS2/PSX/PSP/DS/etc. game externally to confirm a profile
+  on real hardware. Then: a **schema decision** for the multi-system emulators
+  (BizHawk, ares need per-system args) + standalone MAME (rom-set content model);
+  and **section-B system-id wiring** (wiiu/ps3/…) is VL Phase D before Cemu/RPCS3
+  profiles are useful. Legal posture held throughout: zero ROMs/BIOS/keys/firmware.
+
+---
+
 ## 2026-06-15 — Session close: Slices 1–4 all merged to main
 
 - **Shipped this arc (all merged + operator-playtested):** Slice 1 (IA
