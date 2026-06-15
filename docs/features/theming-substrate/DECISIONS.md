@@ -1591,3 +1591,41 @@ distinction are the two a later contributor could undo — by re-requiring `layo
 (which would silently override everyone's global toggle), or by having LibraryView
 call `resolveLayout` (engine default) instead of `useDeclaredLayout`, forcing grid
 on users who set viewMode=list globally.
+
+---
+
+### D41 — ARC-2 L4 split: render `carousel` in game-browse (L4a, reuse) before building the `WheelNav` radial primitive (L4b, new geometry)
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l4-wheelnav`). **Decision:** L4 (render
+carousel/wheel + build WheelNav) splits — **L4a** wire the EXISTING `CarouselNav`
+into game-browse (reuse, lower risk), **L4b** build the reserved radial `WheelNav`
+geometry + render `wheel` (new, playtest-sensitive). Signed off via AskUserQuestion;
+L4b deferred to a fresh focused session (radial math + windowing for big libraries
+shouldn't be rushed at the tail of a long session). L4a build shape:
+
+1. **`LibraryView` renders `carousel` via the `CarouselNav` primitive** — the same
+   path CoverFlow uses: a coverflow over the flat `sorted()` list, controlled focus
+   (so the right-pane detail + `onFocus` follow the centred card), cover art via
+   `useMedia` (identity key → per-file fallback), `onConfirm`→launch /
+   `onSecondary`→info. Cards carry `data-system` so Retroverse's per-system accent
+   drives the focus ring (vs CoverFlow's deliberately system-agnostic cards, D19).
+   The render switch became a 3-way `<Switch>` (grid fallback / list / carousel).
+
+2. **`wheel` + `custom` still fall back to grid** in game-browse — `wheel` needs the
+   L4b primitive; `custom` is theme-drawn markup not meaningful for the shared view.
+   So a per-system `carousel` is now live; `wheel`/`custom` are honored-as-grid
+   until their slices.
+
+3. **Retroverse demo extended:** `views.game-browse.per_system = { nes: "list",
+   snes: "carousel" }` — SNES browses as a coverflow (good box art), NES as a list,
+   others keep the global viewMode. Demos; real curation is L6.
+
+**Verification:** typecheck + lint + vitest (145) + build green. Frontend-only.
+**Acceptance gate (operator visual playtest):** select SNES → coverflow of SNES
+games (centred scaled cover, neighbours fanning, Confirm launches); NES → list;
+others → grid / global viewMode.
+
+**Why record this:** the reuse-before-new-geometry split (and that `wheel`/`custom`
+honor-as-grid until built) is what keeps the shared browse view from sprouting a
+half-built radial layout — L4b builds the real `WheelNav` when it gets a focused
+session.

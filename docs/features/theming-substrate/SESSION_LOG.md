@@ -9,6 +9,29 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L4a: render `carousel` in game-browse (reuse CarouselNav) — ✅ shipped on branch, pending operator visual playtest
+
+> Branch `feat/theming-arc2-l4-wheelnav`. L4 split L4a (carousel render, reuse) +
+> L4b (the radial WheelNav geometry, next session) — AskUserQuestion sign-off.
+> DECISIONS **D41**.
+
+- **Shipped:** `LibraryView` renders a per-system `carousel` via the `CarouselNav`
+  primitive (the path CoverFlow uses): coverflow over the flat `sorted()` list,
+  controlled focus (right-pane detail + `onFocus` follow the centred card), covers
+  via `useMedia`, `onConfirm`→launch / `onSecondary`→info, cards carry `data-system`
+  for Retroverse's per-system accent. The render switch is now a 3-way `<Switch>`
+  (grid fallback / list / carousel). `wheel`/`custom` still fall back to grid
+  (wheel = L4b; custom = theme-drawn). Retroverse demo: `views.game-browse.per_system
+  = { nes: "list", snes: "carousel" }`.
+- **Verified:** typecheck + lint green; `npm run test` = **145 passed** (carousel
+  render is playtest-verified like the other primitives — no Solid render harness;
+  builtin-themes still validates with `snes: carousel`); build green. Frontend-only.
+- **Almost:** carousel polish (preload buffer / selectedId ring) deferred; `wheel`
+  rendering is L4b.
+- **Next:** **operator visual playtest** — select SNES → coverflow; NES → list;
+  others → grid/viewMode. Then merge. **After: L4b** (build the radial WheelNav
+  primitive + render `wheel`) → L5 override UI → L6 → P.
+
 ## 2026-06-15 — ARC 2 L3b: per-system layout wired into game-browse (coexist with viewMode) — ✅ shipped + MERGED to main (operator playtested: NES lists, slider hides on list)
 
 > Branch `feat/theming-arc2-l3b-layout-consumer`. The first LIVE consumer of the
