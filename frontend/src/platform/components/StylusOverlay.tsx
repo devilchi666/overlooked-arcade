@@ -23,7 +23,7 @@ import {
   type Component,
 } from "solid-js";
 import type { SystemId } from "@oa/platform/themes/registry";
-import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
+import { systemSupportsTouch } from "@oa/platform/themes/systemUIConfigs";
 
 type Props = {
   /// SystemId of the currently-running game, or null when no game is
@@ -31,14 +31,15 @@ type Props = {
   runningSystemId: () => SystemId | null;
 };
 
-/// Per-system gate. Reads `touchInputSupported` from the per-system
-/// UI registry — collapses the historical HOTSPOT_SYSTEMS /
-/// STYLUS_SYSTEMS / QuickSettings triplicate into one source of
-/// truth (Theming Substrate ARC 1 Phase 2 cleanup). Light-gun
-/// systems use the cursor for AIM rather than TAP and stay opt-out;
-/// future stylus-vs-aim splits add a finer field then.
+/// Per-system gate. Reads the platform FACTUAL touch-support lookup
+/// (`systemSupportsTouch`, D34 — hardware fact, theme-independent) —
+/// collapses the historical HOTSPOT_SYSTEMS / STYLUS_SYSTEMS /
+/// QuickSettings triplicate into one source of truth (Theming
+/// Substrate ARC 1 Phase 2 cleanup). Light-gun systems use the cursor
+/// for AIM rather than TAP and stay opt-out; future stylus-vs-aim
+/// splits add a finer field then.
 function isTouchSystem(systemId: SystemId): boolean {
-  return systemUIConfigs[systemId]?.touchInputSupported === true;
+  return systemSupportsTouch(systemId);
 }
 
 const StylusOverlay: Component<Props> = (props) => {

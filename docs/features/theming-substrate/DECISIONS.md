@@ -1450,3 +1450,56 @@ factual-vs-experiential line (`touchInputSupported` is the lone factual field) a
 what a later contributor needs to not (a) fold the risky migration back into the
 contract slice, or (b) drag `touchInputSupported` into the theme and break
 touch-overlay gating for non-Retroverse themes.
+
+---
+
+### D38 — ARC-2 L2b: per-system experiential config is theme content (`ThemePackage.perSystemUiConfigs`), bridged + merged over `BASELINE_UI`; `touchInputSupported` stays platform-factual
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l2b-systemuiconfigs-migration`). **Decision:**
+the D34 migration build shape — moving the experiential per-system config out of
+the platform-global `systemUIConfigs` map into theme content. Home signed off via
+AskUserQuestion (`ThemePackage.perSystemUiConfigs`, the peer of `perSystemTokens`).
+
+1. **`ThemePackage.perSystemUiConfigs?: Partial<Record<SystemId, Partial<SystemUIConfig>>>`**
+   — theme content, the exact peer of `perSystemTokens`. App.tsx bridges
+   `activeTheme()?.perSystemUiConfigs` into a platform signal
+   (`setThemeSystemUiConfigs`, the L1/glyph-set pattern); `uiConfigFor(systemId)`
+   returns `{ ...BASELINE_UI, ...override[systemId] }`. Rejected: a manifest field
+   (it's content, not metadata — same reason `perSystemTokens` isn't on the
+   manifest) and a separate registry injection (more indirection than the package
+   field needs).
+
+2. **Platform keeps the contract; the theme owns the values.** `SystemUIConfig`
+   type + the `UI*` enums + `BASELINE_UI` stay in `platform/themes/systemUIConfigs.ts`
+   (the capability); the per-system *values* moved to
+   `themes/retroverse/systemUiConfigs.ts`. Only the 3 systems that differ from
+   baseline (gb/nes/vectrex pilots) have entries — every other system inherits
+   `BASELINE_UI`, so the migrated content is tiny.
+
+3. **`touchInputSupported` is FACTUAL → stays platform, split OUT of `SystemUIConfig`.**
+   It's a hardware fact (NDS has a touchscreen under *any* theme) and gates the
+   stylus/touch overlays theme-independently — so it cannot be theme content. New
+   `systemSupportsTouch(systemId)` lookup (a `Set<SystemId>`); the 3 factual
+   consumers (QuickSettings / StylusOverlay / TouchHotspotOverlay) read it instead
+   of the removed map. *Constraint:* don't move touch-support into the theme — it
+   would break touch overlays for non-Retroverse themes.
+
+4. **Behavior-preserving.** Retroverse declares gb/nes/vectrex exactly as the old
+   global map → identical render. CoverFlow/bare ship none → `BASELINE_UI` (and
+   don't consume tiles/SFX anyway, per L1's opt-in gate). Composes with L1: the
+   experiential config is only *read* on the tile/SFX paths a theme opted into.
+
+5. **Validator:** `perSystemUiConfigs` keys checked against SystemId (reuse
+   `UNKNOWN_SYSTEM_ID`), mirroring `perSystemTokens`; field VALUES are enum-typed
+   `Partial<SystemUIConfig>` so deep value validation waits for on-disk themes.
+
+**Verification:** typecheck + lint + vitest (131; new `systemUIConfigs.test.ts`
+merge/touch tests + validator cases) + build green. Frontend-only.
+**Acceptance gate (operator playtest, visual-identical):** Retroverse per-system
+tiles + nav SFX unchanged (gb portrait/delayed, nes console-audio, vectrex
+physical/square); CoverFlow/bare uniform; NDS stylus/touch overlays still gate.
+
+**Why record this:** (1) the package-field-not-manifest home and (3) the
+`touchInputSupported`-stays-factual split are the two a later contributor could
+get wrong — by promoting the config to the manifest, or by folding touch-support
+back into the theme content and breaking non-Retroverse touch overlays.

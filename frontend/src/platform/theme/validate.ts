@@ -404,6 +404,22 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
     }
   }
 
+  // --- perSystemUiConfigs (L2b / D34): per-system experiential overrides keyed
+  //     by SystemId. Validate the keys are known systems; the field VALUES are
+  //     enum-typed Partial<SystemUIConfig> (deep value validation waits for
+  //     on-disk themes). Mirrors the perSystemTokens key check. ---
+  if (pkg.perSystemUiConfigs != null) {
+    for (const systemId of Object.keys(pkg.perSystemUiConfigs)) {
+      if (!(systemId in SYSTEM_PALETTES)) {
+        errors.push({
+          code: "UNKNOWN_SYSTEM_ID",
+          field: `perSystemUiConfigs.${systemId}`,
+          message: `perSystemUiConfigs.${systemId} is not a known system id (see SystemId / SYSTEM_PALETTES)`,
+        });
+      }
+    }
+  }
+
   // --- views (ARC 2 L2 / D32): per-view layout map. Each key ∈ VIEW_TYPES, each
   //     `layout` ∈ LAYOUT_PRIMITIVES, optional `per_system` overrides keyed by
   //     SystemId → LayoutPrimitive. Malformed = ERROR (a broken layout map is

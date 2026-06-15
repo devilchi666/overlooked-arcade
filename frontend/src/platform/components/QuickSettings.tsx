@@ -18,7 +18,7 @@ import { getVideoState, type VideoState } from "@oa/platform/api/settingsApi";
 import { reportInvokeError } from "@oa/platform/lib/toast";
 import type { RomEntry } from "@oa/platform/library/types";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { systemUIConfigs } from "@oa/platform/themes/systemUIConfigs";
+import { systemSupportsTouch } from "@oa/platform/themes/systemUIConfigs";
 import type { SettingsStore } from "@oa/platform/settings/store";
 import { captureFocusReturn, useDomQueryFocusGroup, useFocusGroup } from "@oa/platform/nav";
 import { useBackHandler } from "@oa/platform/nav";
@@ -1719,15 +1719,16 @@ const MemoryInspectorPanel: Component<MemoryInspectorProps> = (props) => {
 // its own component so the focus group + back handler scope cleanly to
 // "actions" view only — the rewind / TAS / memory sub-views have their
 // own UI and would need separate focus groups (deferred).
-/// Per-system gate. Reads `touchInputSupported` from the per-system
-/// UI registry — collapses the historical HOTSPOT_SYSTEMS triplicate
-/// across this file, TouchHotspotOverlay, and StylusOverlay into a
-/// single source of truth (Theming Substrate ARC 1 Phase 2 cleanup).
+/// Per-system gate. Reads the platform FACTUAL touch-support lookup
+/// (`systemSupportsTouch`, D34 — hardware fact, theme-independent) —
+/// collapses the historical HOTSPOT_SYSTEMS triplicate across this
+/// file, TouchHotspotOverlay, and StylusOverlay into a single source
+/// of truth (Theming Substrate ARC 1 Phase 2 cleanup).
 function isTouchSystem(systemId: string): boolean {
   // QuickSettings deals in raw systemId strings (RomEntry.systemId).
-  // The registry is keyed by SystemId; the cast is safe because
-  // unknown systems just hit `undefined` and return false.
-  return systemUIConfigs[systemId as SystemId]?.touchInputSupported === true;
+  // The lookup is keyed by SystemId; the cast is safe because unknown
+  // systems just aren't in the set and return false.
+  return systemSupportsTouch(systemId as SystemId);
 }
 
 const ActionsPanel: Component<{

@@ -326,3 +326,25 @@ describe("validateTheme — views (ARC 2 L2 / D32)", () => {
     expect(codes(v.errors)).toContain("INVALID_VIEWS");
   });
 });
+
+describe("validateTheme — perSystemUiConfigs (ARC 2 L2b / D34)", () => {
+  it("a well-formed per-system override map passes clean", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemUiConfigs: { gb: { tileShape: "portrait-3:4" }, nes: { audioProfile: "console" } } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("an unknown system id key → UNKNOWN_SYSTEM_ID", () => {
+    const v = validateTheme(
+      pkg({}, { perSystemUiConfigs: { dreamcast64: { tileShape: "square" } } as unknown as Record<string, never> }),
+    );
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("UNKNOWN_SYSTEM_ID");
+  });
+
+  it("omitting perSystemUiConfigs is fine (optional)", () => {
+    expect(validateTheme(pkg()).ok).toBe(true);
+  });
+});

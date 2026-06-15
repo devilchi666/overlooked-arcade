@@ -9,6 +9,34 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L2b: D34 systemUIConfigs experiential→Retroverse migration — ✅ shipped on branch (stacks on L2a), pending operator visual-identical playtest
+
+> Branch `feat/theming-arc2-l2b-systemuiconfigs-migration` (off L2a — both merge
+> together). The D34 migration: move the experiential per-system config out of the
+> platform-global map into theme content; keep `touchInputSupported` factual.
+> Home signed off (AskUserQuestion — `ThemePackage.perSystemUiConfigs`). DECISIONS **D38**.
+
+- **Shipped:** `ThemePackage.perSystemUiConfigs?` (peer of `perSystemTokens`);
+  platform `systemUIConfigs.ts` keeps the contract (`SystemUIConfig` type + `UI*`
+  enums + `BASELINE_UI`) + a new **factual** `systemSupportsTouch()` lookup, drops
+  the global per-system map + `touchInputSupported` from the experiential type, and
+  `uiConfigFor` now merges the **active theme's** override (bridged from App) over
+  `BASELINE_UI`. The gb/nes/vectrex pilot values moved to
+  `themes/retroverse/systemUiConfigs.ts`; Retroverse declares `perSystemUiConfigs`.
+  App.tsx bridges it (`setThemeSystemUiConfigs`). The 3 touch consumers
+  (QuickSettings / StylusOverlay / TouchHotspotOverlay) read `systemSupportsTouch`
+  instead of the removed map. Validator checks `perSystemUiConfigs` keys (system-ids).
+- **Verified:** typecheck + lint green; `npm run test` = **131 passed** (new
+  `systemUIConfigs.test.ts` merge/touch tests + 3 validator cases; builtin-themes
+  still clean); build green. Frontend-only.
+- **Almost:** nothing in L2b scope. (Deep per-field validation of
+  `perSystemUiConfigs` values deferred to the on-disk-theme phase.)
+- **Next:** **operator visual-identical playtest** — Retroverse per-system tiles +
+  nav SFX unchanged (gb portrait/delayed, nes console-audio, vectrex
+  physical/square), CoverFlow/bare uniform, NDS stylus/touch overlays still gate.
+  Merge L2a+L2b together. **After: L3** — the resolver + persisted user override
+  that finally *consumes* the L2a `views` contract.
+
 ## 2026-06-15 — ARC 2 L2a: view/layout manifest contract (schema only) — ✅ shipped on branch, CI-green (no consumer, no visual change)
 
 > Branch `feat/theming-arc2-l2a-view-layout-contract`. L2 split into **L2a (contract,

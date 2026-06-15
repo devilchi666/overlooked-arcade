@@ -21,6 +21,7 @@ import {
   LIBRARY_TILE_SIZE_DEFAULT,
 } from "@oa/platform/layout/state";
 import RetroverseShell from "./RetroverseShell";
+import { RETROVERSE_SYSTEM_UI } from "./systemUiConfigs";
 
 /// Authored inline as a typed object in S2 (the manifest reader lands in
 /// Phase 5 / S4). Mirrors what Retroverse's `theme.toml` will declare.
@@ -125,4 +126,8 @@ const RetroverseEntry: ThemeEntry = (_props) => {
 export const retroverse: ThemePackage = {
   manifest: RETROVERSE_MANIFEST,
   entry: RetroverseEntry,
+  // ARC 2 L2b (D34): per-system experiential character (the gb/nes/vectrex
+  // pilots) is Retroverse content, merged over BASELINE_UI by uiConfigFor. Only
+  // consumed because Retroverse opts into per-system UI (per_system_ui, L1).
+  perSystemUiConfigs: RETROVERSE_SYSTEM_UI,
 };

@@ -139,6 +139,21 @@ platform-provided per-system palette, or ignores it entirely (a system-agnostic
 theme ships none). Omit a system to inherit it wholesale; omit a key within a
 system to inherit that var. Source of truth: `platform/themes/systemPalettes.ts`.
 
+### Per-system experiential UI (L2b / D34) — `perSystemUiConfigs`
+
+A theme MAY give specific systems experiential character (audio profile, tile
+shape, interaction feel, …) by declaring
+`perSystemUiConfigs?: Partial<Record<SystemId, Partial<SystemUIConfig>>>` on its
+`ThemePackage` — the peer of `perSystemTokens`. The shell merges each entry over
+`BASELINE_UI` (`uiConfigFor`) and the consumers read it **only where the theme
+opted into per-system UI** (`per_system_ui`, L1). Per-system UI is a platform
+*capability* (the `SystemUIConfig` type + `BASELINE_UI` + the resolver live in
+`platform/themes/systemUIConfigs.ts`); the per-system *values* are theme content
+(D34). Omit a system → it reads `BASELINE_UI`; omit the field → uniform. A
+system's **factual** touch-support (does the hardware have a touchscreen) is NOT
+here — it's the platform `systemSupportsTouch()` lookup, theme-independent.
+Per-system *layout* is the separate `views` contract (L2a).
+
 ### The contract RULE (D2 guarantee)
 
 - A theme styles **only** via (a) its `tokens` object and (b) its own scoped

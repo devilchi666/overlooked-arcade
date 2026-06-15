@@ -230,7 +230,12 @@ migration; split for independent playtestability (the S4→S5 pattern).
 **Gate:** validator unit + builtin-themes tests green (built-ins validate with no
 `views`); CI-only (no visual change → no playtest beyond an optional boot smoke-test).
 
-#### L2b — D34 `systemUIConfigs` migration *(NEXT)*
+#### L2b — D34 `systemUIConfigs` migration — ✅ SHIPPED on branch 2026-06-15 (stacks on L2a), pending operator visual-identical playtest (DECISIONS D38)
+
+> Built as designed: experiential per-system config → `themes/retroverse/systemUiConfigs.ts`
+> via `ThemePackage.perSystemUiConfigs` (peer of `perSystemTokens`); App bridges it;
+> `uiConfigFor` merges over `BASELINE_UI`; `touchInputSupported` split to platform-factual
+> `systemSupportsTouch` (3 touch consumers repointed). typecheck/lint/vitest(131)/build green.
 
 - **Migrate the experiential per-system config** out of platform-global
   `systemUIConfigs.ts`: `touchInputSupported` is the *only* factual field (hardware:
