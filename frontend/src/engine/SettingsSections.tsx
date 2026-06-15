@@ -547,7 +547,7 @@ export const ControllerNavSettings: Component<{ settings: SettingsStore }> = (pr
   );
 };
 
-// --- Experimental (hosts the Retroverse master toggle) ----------------
+// --- Experimental (preview-quality feature toggles) -------------------
 
 /// Mirror of Rust `LibraryPrefs` (camelCase via #[serde(rename_all)]).
 /// Only the fields ExperimentalSettings actually reads/writes are
@@ -556,7 +556,7 @@ type LibraryPrefsLike = Record<string, unknown> & {
   discTrackExperimentalEnabled?: boolean;
 };
 
-export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (props) => {
+export const ExperimentalSettings: Component = () => {
   const [devToolsOpen, setDevToolsOpen] = createSignal(false);
 
   // Mirror of LibraryPrefs.disc_track_experimental_enabled from the
@@ -586,18 +586,8 @@ export const ExperimentalSettings: Component<{ settings: SettingsStore }> = (pro
     <div class="flex flex-col gap-4">
       <SettingsCard
         title="Experimental"
-        description="Preview-quality features still under active development. Safe to toggle; defaults preserve today's behavior. See docs/PLANS/retroverse-ui-rollout.md for the rollout plan."
+        description="Preview-quality features still under active development. Safe to toggle; defaults preserve today's behavior."
       >
-        <SettingRow
-          label="Retroverse UI"
-          inherited={null}
-          overridden={false}
-          toggle={{
-            checked: props.settings.experimentalRetroverseUi(),
-            onChange: (v) => props.settings.setExperimentalRetroverseUi(v),
-          }}
-          description="Top-toolbar tab IA (HOME / LIBRARY / COLLECTIONS / PLAY NOW / DISCOVER / SETTINGS) replacing today's sidebar-driven layout. Flipping this OFF returns to the legacy Shell layout immediately — no restart required."
-        />
         <SettingRow
           label="Per-track SHA-1 disc identification"
           inherited={null}

@@ -155,7 +155,7 @@ const CATEGORIES: readonly CategoryDef[] = [
     glyph: "⚗",
     description: "Preview-quality features under active development.",
     helpText:
-      "Hosts the Retroverse UI master toggle. Flip it OFF to return to the legacy Shell layout immediately — no restart required. Useful as the escape hatch if you ever get stuck.",
+      "Preview-quality features still under active development (e.g. per-track SHA-1 disc identification). Safe to toggle; defaults preserve today's behavior.",
   },
   {
     id: "themes",
@@ -401,7 +401,7 @@ const SettingsPanel: Component<Props> = (props) => {
             <PerSystemUiSettings settings={ctx.settings} />
           </Match>
           <Match when={activeCategoryId() === "experimental"}>
-            <ExperimentalSettings settings={ctx.settings} />
+            <ExperimentalSettings />
           </Match>
           <Match when={activeCategoryId() === "themes"}>
             <ThemesSettings />

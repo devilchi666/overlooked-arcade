@@ -138,17 +138,6 @@ const DEFAULT_PER_SYSTEM_UI_ENABLED = true;
 // when prefers-reduced-motion is true.
 const DEFAULT_BOOT_ANIMATIONS_ENABLED = true;
 
-// Retroverse UI experimental toggle (Phase A of the Retroverse rollout
-// — see docs/PLANS/retroverse-ui-rollout.md). Default flipped from
-// OFF → ON on 2026-05-31 as the start of the deprecation cycle —
-// fresh installs land in Retroverse; existing operators with a stored
-// preference keep their value (no surprise switch). Operators who get
-// stuck flip back via Settings → Display → Experimental → Retroverse
-// UI — the toggle stays as the escape hatch through one release
-// cycle of playtest, then the flag + the legacy Shell drop together
-// per docs/PLANS/retroverse-flag-deprecation.md §7.
-const DEFAULT_EXPERIMENTAL_RETROVERSE_UI = true;
-
 // Retroverse SETTINGS → Profile — display name + avatar. Drives the
 // top-right profile chip on the Retroverse shell and any future
 // "Hi, <name>" surfaces. Defaults to empty / generic so a fresh
@@ -172,7 +161,6 @@ type Persisted = {
   controllerNavAnimationMs: number;
   perSystemUiEnabled: boolean;
   bootAnimationsEnabled: boolean;
-  experimentalRetroverseUi: boolean;
   profileDisplayName: string;
   profileAvatar: string;
 };
@@ -245,7 +233,6 @@ function load(): Persisted {
     controllerNavAnimationMs: DEFAULT_CONTROLLER_NAV_ANIMATION_MS,
     perSystemUiEnabled: DEFAULT_PER_SYSTEM_UI_ENABLED,
     bootAnimationsEnabled: DEFAULT_BOOT_ANIMATIONS_ENABLED,
-    experimentalRetroverseUi: DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
     profileDisplayName: DEFAULT_PROFILE_DISPLAY_NAME,
     profileAvatar: DEFAULT_PROFILE_AVATAR,
   };
@@ -312,10 +299,6 @@ function load(): Persisted {
         typeof parsed.bootAnimationsEnabled === "boolean"
           ? parsed.bootAnimationsEnabled
           : DEFAULT_BOOT_ANIMATIONS_ENABLED,
-      experimentalRetroverseUi:
-        typeof parsed.experimentalRetroverseUi === "boolean"
-          ? parsed.experimentalRetroverseUi
-          : DEFAULT_EXPERIMENTAL_RETROVERSE_UI,
       profileDisplayName:
         typeof parsed.profileDisplayName === "string"
           ? parsed.profileDisplayName
@@ -434,8 +417,6 @@ export function createSettingsStore() {
     createSignal<boolean>(initial.perSystemUiEnabled);
   const [bootAnimationsEnabled, setBootAnimationsEnabled] =
     createSignal<boolean>(initial.bootAnimationsEnabled);
-  const [experimentalRetroverseUi, setExperimentalRetroverseUi] =
-    createSignal<boolean>(initial.experimentalRetroverseUi);
   const [profileDisplayName, setProfileDisplayName] =
     createSignal<string>(initial.profileDisplayName);
   const [profileAvatar, setProfileAvatar] =
@@ -471,7 +452,6 @@ export function createSettingsStore() {
       controllerNavAnimationMs: controllerNavAnimationMs(),
       perSystemUiEnabled: perSystemUiEnabled(),
       bootAnimationsEnabled: bootAnimationsEnabled(),
-      experimentalRetroverseUi: experimentalRetroverseUi(),
       profileDisplayName: profileDisplayName(),
       profileAvatar: profileAvatar(),
     });
@@ -590,7 +570,6 @@ export function createSettingsStore() {
     controllerNavAnimationMs, setControllerNavAnimationMs,
     perSystemUiEnabled, setPerSystemUiEnabled,
     bootAnimationsEnabled, setBootAnimationsEnabled,
-    experimentalRetroverseUi, setExperimentalRetroverseUi,
     profileDisplayName, setProfileDisplayName,
     profileAvatar, setProfileAvatar,
   };

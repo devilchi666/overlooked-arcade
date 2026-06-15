@@ -81,7 +81,6 @@ import { setSwapAB, setActiveGlyphSetId } from "@oa/platform/nav";
 import { setPerSystemUiEnabled, setThemePerSystemUi } from "@oa/platform/themes/systemUiSound";
 import { setThemeSystemUiConfigs } from "@oa/platform/themes/systemUIConfigs";
 import { setBootAnimationsEnabled } from "@oa/platform/themes/systemBootAnimation";
-import { setRetroverseUiEnabled } from "@oa/platform/lib/retroverseFlag";
 import { Dynamic } from "solid-js/web";
 import { BUILTIN_THEMES } from "./themes";
 import {
@@ -368,11 +367,6 @@ const App: Component = () => {
   // collapses to the same short path orthogonally — accessibility
   // floor regardless of this flag.
   createEffect(() => setBootAnimationsEnabled(settings.bootAnimationsEnabled()));
-  // Retroverse UI rollout Phase A Slice 1: bridge the experimental
-  // master toggle to the lib/retroverseFlag accessor. Phase A wires
-  // the flag without consumers; Phase B's RetroverseShell is the
-  // first surface that reads it. See docs/PLANS/retroverse-ui-rollout.md.
-  createEffect(() => setRetroverseUiEnabled(settings.experimentalRetroverseUi()));
   // Theming S5.3: bridge the active theme's manifest `glyph_set` to the HintBar
   // glyph-set indirection. A theme picks "xbox" | "playstation"; unknown /
   // omitted falls back to the default. Reactive so a (future, ARC-3 hot-swap)
