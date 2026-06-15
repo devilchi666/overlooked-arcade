@@ -1,0 +1,57 @@
+# Emulator profile — ares (standalone, multi-system).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against the ares README/docs
+# (https://github.com/ares-emulator/ares) — see
+# docs/RESEARCH/external-emulators.md, section A + decision ED4.
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# ares AUTO-DETECTS the system from the game file, so a single positional
+# {content} template serves every system below — no --system flag. ares
+# documents --system as OPTIONAL ("useful when the system type cannot be
+# auto-detected"); that ambiguous case is the reserved {system} seam (ED4,
+# documented in emulator_profiles.rs, not built). It is why genuinely
+# ambiguous-extension systems (e.g. bare MSX .rom) are NOT listed here.
+#
+# BIOS: every system listed is a BIOS-free cartridge format. ares' CD /
+# disk systems (PC Engine CD, etc.) need a user-supplied BIOS and are
+# excluded — OA never ships BIOS.
+id: ares
+display_name: ares
+vendor: ares team
+official_download_url: https://ares-emu.net/download
+# Per-OS binary names (ED4 schema accretion). Windows ships ares.exe;
+# macOS is an .app bundle (spawn the inner Mach-O, not `open`); Linux
+# ships a bare `ares` binary (or flatpak dev.ares.ares).
+binary_name:
+  windows: ares.exe
+  macos: ares.app/Contents/MacOS/ares
+  linux: ares
+schema_version: 1
+# Confident, auto-detect-safe, BIOS-free coverage that maps to an OA
+# system id. Multi-profile-per-system is supported — these overlap with
+# the dedicated single-system emulators and Mesen; ares is offered as an
+# option, not a default.
+supported_systems:
+- 2600
+- coleco
+- gamegear
+- gb
+- gba
+- gbc
+- genesis
+- n64
+- nes
+- ngp
+- sms
+- snes
+- tg16
+- virtualboy
+- wonderswan
+# Path is positional. ares boots the game and exits when its window
+# closes (single-window app) -- ties play time to process lifetime (D3).
+launch_args_template:
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

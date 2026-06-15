@@ -1,0 +1,58 @@
+# Emulator profile — BizHawk / EmuHawk (standalone, multi-system, TAS).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against the BizHawk wiki
+# (https://github.com/TASEmulators/BizHawk/wiki/WIP-Manual:-Loading-roms)
+# — see docs/RESEARCH/external-emulators.md, section A + decision ED4.
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# BizHawk maps the game's FILE EXTENSION to a console on load, so a single
+# positional {content} template serves every system below — no per-system
+# argument. (The reserved {system} seam in emulator_profiles.rs covers a
+# future ambiguous-extension case; nothing here needs it.) The TAS/tooling
+# audience is the reason to offer BizHawk alongside the dedicated cores.
+#
+# BIOS: every system listed boots BIOS-free (cartridge cores). BizHawk's
+# disc systems (PSX/Saturn) need user-dumped BIOS and a disc-format
+# decision and are intentionally excluded from this profile for now.
+id: bizhawk
+display_name: BizHawk
+vendor: TASEmulators
+official_download_url: https://github.com/TASEmulators/BizHawk/releases
+# Per-OS binary names (ED4 schema accretion). BizHawk has NO native macOS
+# build, so the macos key is omitted -> resolve() is None on macOS and the
+# soft name-check is skipped. Windows runs EmuHawk.exe directly; Linux
+# launches through the EmuHawkMono.sh wrapper script.
+binary_name:
+  windows: EmuHawk.exe
+  linux: EmuHawkMono.sh
+schema_version: 1
+# Confident, extension-auto-detected, BIOS-free coverage mapping to an OA
+# system id. Multi-profile-per-system is supported — BizHawk is an opt-in
+# alternative, not a default.
+supported_systems:
+- 2600
+- atari7800
+- coleco
+- gamegear
+- gb
+- gba
+- gbc
+- genesis
+- intv
+- lynx
+- n64
+- nes
+- ngp
+- sms
+- snes
+- tg16
+- virtualboy
+- wonderswan
+# Path is positional. EmuHawk boots the game and exits when its window
+# closes -- ties play time to process lifetime (D3).
+launch_args_template:
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

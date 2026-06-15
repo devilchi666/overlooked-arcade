@@ -11,6 +11,26 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **External Emulator Depth** — NEW arc opened 2026-06-15 (planning session;
+  no code yet). Deepens the shipped launcher abstraction (VL Phase C) along
+  three threads: (1) recipe-format upgrade + **independent recipe updates** so
+  changed emulator CLI flags never force a whole-OA rebuild; (2) an **install
+  pipeline** with a per-emulator **legal gate** (Green = OA may download+install,
+  Yellow = official-link-only, default Yellow; zero ROMs/BIOS/keys ever); (3)
+  **OA-authored per-emulator control** (config injection · per-game config ·
+  artifact reading) building toward the long-term north star of running the
+  emulator **inside OA's own window**. Load-bearing principle: per-emulator
+  knowledge is **updatable data** (recipes), not baked-in code (ED2). Plugin
+  model = OA-authored adapters, **NOT** a third-party SDK (ED1; the 2026-06-02
+  rejection stands). Plan:
+  [PLANS/external-emulator-depth.md](PLANS/external-emulator-depth.md); decisions
+  ED1–ED6 in [features/external-emulators/DECISIONS.md](features/external-emulators/DECISIONS.md);
+  feature folder [features/external-emulators/](features/external-emulators/).
+  - **Slice 1 ⬜ queued** ([NEXT.md](NEXT.md) HIGH band) — schema accretion
+    (per-OS `binary_name` map) + author `ares.yaml` + `bizhawk.yaml` (auto-detect
+    verified 2026-06-15, no `--system` needed) + MAME content-model call. Plan →
+    docs → /clear; execution is a fresh self-contained session.
+
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
   engine panels stayed inert). Two pillars: a **spatial-navigation engine**

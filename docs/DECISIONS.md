@@ -1466,3 +1466,51 @@ Until one of those lands, this is closed.
 **Cross-ref:** commits `ce2034d` (this change) + `d98417b` (the H1 polled-keyboard path it gates); audit `docs/cores/AUDIT_2026-06-08.md` (H1/H2).
 
 ---
+
+## 2026-06-15 — External Emulator Depth arc opened; extended control = OA-authored updatable recipes, not a third-party SDK
+
+**Decision:** Opened the **External Emulator Depth** arc (plan:
+`docs/PLANS/external-emulator-depth.md`; decisions ED1–ED6 in
+`docs/features/external-emulators/DECISIONS.md`). It deepens the shipped
+launcher abstraction (VL Phase C) along three threads: a recipe-format
+upgrade with **independent updates**, an **install pipeline** with a
+per-emulator legal gate, and **OA-authored per-emulator control**
+building toward the long-term north star of window-wrapping. Two
+load-bearing project-level calls:
+
+1. **Extended control is OA-authored adapters, NOT a generic third-party
+   plugin SDK.** This reaffirms the 2026-06-02 PARKING_LOT plugin-API
+   rejection — only the narrow operator-profile case was ever un-parked
+   (2026-06-03). No public plugin contract for strangers.
+2. **Per-emulator knowledge is updatable DATA, decoupled from the OA
+   binary.** Recipes (`config/emulators/<id>.yaml`) refresh through the
+   content-pack-style update channel; a changed emulator flag = a
+   published recipe update, never an OA rebuild/reship. Compiled Rust
+   stays a thin generic engine; declarative-first with a code escape
+   hatch only for genuinely-new mechanisms.
+
+**Why:** The operator wants real depth (install management, deeper
+control, eventual in-window embedding) but flagged the killer constraint:
+emulators churn their CLI/options constantly, and that must not force a
+whole-OA update each time. Routing emulator knowledge through updatable
+data answers that without reopening the rejected generic-SDK surface.
+Legal trust is paramount — OA installs only emulators whose license
+permits it (Green), links-only otherwise (Yellow, the default when
+unverified), and never touches ROMs/BIOS/keys.
+
+**Considered and rejected:** a generic third-party plugin SDK (relitigates
+the 2026-06-02 rejection — maintenance/security/version-compat burden
+that doesn't fit a one-person non-commercial project); hardcoding
+per-emulator launch/control logic in Rust (would couple emulator-flag
+churn to OA's release cadence — exactly what the operator vetoed);
+auto-installing any emulator regardless of license (trust risk — Yellow
+default instead); one-profile-per-(emulator,system) pair (~20 near-dup
+files — dissolved by the verified ares/BizHawk auto-detect).
+
+**Cross-ref:** `docs/PLANS/external-emulator-depth.md`;
+`docs/features/external-emulators/DECISIONS.md` (ED1–ED6);
+`docs/PARKING_LOT.md` 2026-06-02 plugin-API entry (+ 2026-06-03 partial
+un-park); `docs/RESEARCH/external-emulators.md` (verified ares/BizHawk
+auto-detect resolves schema question #1).
+
+---

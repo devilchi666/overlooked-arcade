@@ -24,6 +24,71 @@ use std::path::{Path, PathBuf};
 
 use oa_core::LauncherCapabilities;
 
+/// Expected executable filename for a profile, either a single name
+/// shared across every OS (the original schema) or a per-OS map.
+///
+/// Schema accretion (ED4 — external-emulator-depth Slice 1): the same
+/// emulator ships a different binary name per platform (`Dolphin.exe` /
+/// `Dolphin.app/Contents/MacOS/Dolphin` / `dolphin-emu`), so a profile
+/// may now declare a `{ windows, macos, linux }` map. A bare string
+/// stays valid and applies to every OS — every shipped profile that
+/// predates this field keeps parsing unchanged.
+///
+/// Resolution is "the entry for the OS we're running on" via
+/// [`BinaryName::resolve`]. A map that omits the current OS resolves to
+/// `None` — the binary-name sanity check is a warn-only soft check
+/// (renamed builds and forks are legitimate), so "no expected name for
+/// this OS" simply means "skip the check," never "reject."
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+pub enum BinaryName {
+    /// One name for every platform — the original shape.
+    Single(String),
+    /// Per-OS names. Any subset may be present; an absent OS resolves to
+    /// `None` (e.g. BizHawk has no native macOS build, so its profile
+    /// omits the `macos` key).
+    PerOs(BinaryNameMap),
+}
+
+/// The per-OS arm of [`BinaryName`]. Each field is optional so a profile
+/// only lists the platforms the emulator actually ships on.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+pub struct BinaryNameMap {
+    #[serde(default)]
+    pub windows: Option<String>,
+    #[serde(default)]
+    pub macos: Option<String>,
+    #[serde(default)]
+    pub linux: Option<String>,
+}
+
+impl BinaryName {
+    /// The expected binary filename for the OS we're compiled for, or
+    /// `None` when a per-OS map omits the current platform. The single
+    /// string arm always resolves to `Some`.
+    pub fn resolve(&self) -> Option<&str> {
+        match self {
+            BinaryName::Single(s) => Some(s.as_str()),
+            BinaryName::PerOs(m) => m.current_os(),
+        }
+    }
+}
+
+impl BinaryNameMap {
+    /// The entry for the OS this build targets. wasm/other platforms
+    /// fall through to the Linux entry (closest "generic unix" match).
+    fn current_os(&self) -> Option<&str> {
+        let picked = if cfg!(target_os = "windows") {
+            &self.windows
+        } else if cfg!(target_os = "macos") {
+            &self.macos
+        } else {
+            &self.linux
+        };
+        picked.as_deref()
+    }
+}
+
 /// One `config/emulators/<id>.yaml` profile. Field set per decision D4.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct EmulatorProfile {
@@ -39,16 +104,28 @@ pub struct EmulatorProfile {
     /// Phase D's installer automates this.
     #[serde(default)]
     pub official_download_url: String,
-    /// Expected executable filename (`"Dolphin.exe"`). Used to sanity-
-    /// check the operator-picked binary path (warn, not reject — forks
-    /// and renamed builds are legitimate).
-    pub binary_name: String,
+    /// Expected executable filename (`"Dolphin.exe"`), or a per-OS map
+    /// (ED4). Used to sanity-check the operator-picked binary path
+    /// (warn, not reject — forks and renamed builds are legitimate).
+    /// Resolve the current-OS name with [`BinaryName::resolve`].
+    pub binary_name: BinaryName,
     #[serde(default)]
     pub schema_version: u32,
     /// OA system ids this emulator can run (`["gamecube"]`).
     pub supported_systems: Vec<String>,
     /// Argv template, one arg per element. `{content}` expands to the
     /// resolved game path at launch time.
+    ///
+    /// RESERVED SEAM (ED4 — documented, not built): the rare emulator
+    /// whose file extension is genuinely ambiguous (e.g. a bare MSX
+    /// `.rom`, which ares cannot always auto-detect) will eventually need
+    /// a per-system disambiguation token — a `{system}` placeholder fed
+    /// from a `system_aliases: { <oa id>: <emulator system name> }` map,
+    /// expanded the same way `{content}` is. ares + BizHawk auto-detect
+    /// every system in their shipped profiles (ED4, verified 2026-06-15),
+    /// so nothing here consumes `{system}` today; this note marks where
+    /// it lands when a real ambiguous case surfaces, so the schema can
+    /// accrete it additively rather than be reshaped.
     pub launch_args_template: Vec<String>,
     /// What the external session supports of OA's QuickSettings
     /// surface. Omitted flags fail closed (all-false `Default`).
@@ -277,7 +354,9 @@ mod tests {
         let profiles = EmulatorProfiles::load_from_dir(&dir);
         let dolphin = profiles.get("dolphin").expect("dolphin profile loads");
         assert_eq!(dolphin.display_name, "Dolphin");
-        assert_eq!(dolphin.binary_name, "Dolphin.exe");
+        // Single-string binary_name resolves to the same name on every OS.
+        assert_eq!(dolphin.binary_name, BinaryName::Single("Dolphin.exe".into()));
+        assert_eq!(dolphin.binary_name.resolve(), Some("Dolphin.exe"));
         assert_eq!(dolphin.supported_systems, vec!["gamecube".to_string()]);
         assert!(
             dolphin.launch_args_template.iter().any(|a| a.contains("{content}")),
@@ -301,8 +380,10 @@ mod tests {
         //   - at least one supported system
         //   - the launch template references {content}
         //   - external profiles expose no OA capabilities in v1 (D5)
+        //   - binary_name names at least one platform (Single, or a
+        //     PerOs map that isn't entirely empty) — ED4 schema accretion
         let dir = resolve_config_emulators_dir().expect("config/emulators resolves in-tree");
-        let mut count = 0;
+        let mut ids = Vec::new();
         for entry in std::fs::read_dir(&dir).expect("read_dir config/emulators").flatten() {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
@@ -329,9 +410,102 @@ mod tests {
                 "{}: external profiles expose no OA capabilities in v1 (D5)",
                 path.display()
             );
-            count += 1;
+            // ED4: binary_name must name at least one platform's binary.
+            match &profile.binary_name {
+                BinaryName::Single(s) => assert!(
+                    !s.is_empty(),
+                    "{}: binary_name string must be non-empty",
+                    path.display()
+                ),
+                BinaryName::PerOs(m) => assert!(
+                    m.windows.is_some() || m.macos.is_some() || m.linux.is_some(),
+                    "{}: per-OS binary_name map must list at least one platform",
+                    path.display()
+                ),
+            }
+            // Every shipped emulator ships a Windows build (the operator's
+            // platform), so on Windows each profile must resolve a name.
+            #[cfg(target_os = "windows")]
+            assert!(
+                profile.binary_name.resolve().is_some_and(|n| !n.is_empty()),
+                "{}: must resolve a Windows binary name",
+                path.display()
+            );
+            ids.push(stem);
         }
-        assert!(count >= 4, "expected the shipped roster (dolphin + the verified batch), found {count}");
+        assert!(
+            ids.len() >= 9,
+            "expected the shipped roster (dolphin + the verified batch + ares/bizhawk), found {}",
+            ids.len()
+        );
+        // The two ED4 multi-system additions must be present and parse.
+        for must in ["ares", "bizhawk"] {
+            assert!(ids.iter().any(|i| i == must), "missing shipped profile '{must}'");
+        }
+    }
+
+    #[test]
+    fn binary_name_accepts_single_string_and_per_os_map() {
+        // Single string — the original, backward-compatible shape.
+        let single: EmulatorProfile = serde_yaml::from_str(
+            r#"
+id: single
+display_name: Single
+binary_name: foo.exe
+supported_systems: [gamecube]
+launch_args_template: ["{content}"]
+"#,
+        )
+        .expect("parse single-string binary_name");
+        assert_eq!(single.binary_name, BinaryName::Single("foo.exe".into()));
+        assert_eq!(single.binary_name.resolve(), Some("foo.exe"));
+
+        // Per-OS map — the ED4 accretion.
+        let per_os: EmulatorProfile = serde_yaml::from_str(
+            r#"
+id: peros
+display_name: Per OS
+binary_name:
+  windows: foo.exe
+  macos: Foo.app/Contents/MacOS/Foo
+  linux: foo
+supported_systems: [gamecube]
+launch_args_template: ["{content}"]
+"#,
+        )
+        .expect("parse per-OS binary_name map");
+        let expected = if cfg!(target_os = "windows") {
+            Some("foo.exe")
+        } else if cfg!(target_os = "macos") {
+            Some("Foo.app/Contents/MacOS/Foo")
+        } else {
+            Some("foo")
+        };
+        assert_eq!(per_os.binary_name.resolve(), expected);
+    }
+
+    #[test]
+    fn per_os_binary_name_omitting_current_os_resolves_none() {
+        // BizHawk-shaped: Windows + Linux only, no macOS build. On macOS
+        // resolve() is None (the soft name-check is then skipped).
+        let profile: EmulatorProfile = serde_yaml::from_str(
+            r#"
+id: winlin
+display_name: Win+Linux only
+binary_name:
+  windows: EmuHawk.exe
+  linux: EmuHawkMono.sh
+supported_systems: [nes]
+launch_args_template: ["{content}"]
+"#,
+        )
+        .expect("parse");
+        #[cfg(target_os = "windows")]
+        assert_eq!(profile.binary_name.resolve(), Some("EmuHawk.exe"));
+        #[cfg(target_os = "linux")]
+        assert_eq!(profile.binary_name.resolve(), Some("EmuHawkMono.sh"));
+        #[cfg(target_os = "macos")]
+        assert_eq!(profile.binary_name.resolve(), None);
     }
 
     #[test]

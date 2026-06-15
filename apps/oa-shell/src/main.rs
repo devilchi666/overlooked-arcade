@@ -11256,7 +11256,9 @@ fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProf
             display_name: p.display_name.clone(),
             vendor: p.vendor.clone(),
             official_download_url: p.official_download_url.clone(),
-            binary_name: p.binary_name.clone(),
+            // Surface the current-OS name to the Settings UI; an OS the
+            // profile omits resolves to an empty string (no expected name).
+            binary_name: p.binary_name.resolve().unwrap_or("").to_string(),
             supported_systems: p.supported_systems.clone(),
             binary_path: emulator_profiles::effective_binary_path(p, &state.app_data_dir)
                 .map(|p| p.to_string_lossy().into_owned()),
@@ -11285,12 +11287,15 @@ fn set_emulator_binary_path(
             return Err(format!("not a file: {p}"));
         }
         let picked_name = pb.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if !picked_name.eq_ignore_ascii_case(&profile.binary_name) {
-            log::warn!(
-                "oa-shell: {} binary path set to '{picked_name}' (profile expects '{}') — accepting",
-                profile.display_name,
-                profile.binary_name
-            );
+        // Soft check only against the current-OS expected name; a profile
+        // that omits this OS (resolve() == None) skips the check entirely.
+        if let Some(expected) = profile.binary_name.resolve() {
+            if !picked_name.eq_ignore_ascii_case(expected) {
+                log::warn!(
+                    "oa-shell: {} binary path set to '{picked_name}' (profile expects '{expected}') — accepting",
+                    profile.display_name,
+                );
+            }
         }
     }
     let mut prefs = emulator_profiles::read_binary_path_prefs(&state.app_data_dir);
