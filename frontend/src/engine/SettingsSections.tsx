@@ -51,6 +51,7 @@ import CoresPage from "./CoresPage";
 import LibraryManagerPage from "./LibraryManagerPage";
 import { refreshJobPrefs } from "@oa/platform/lib/backgroundJobs";
 import DevToolsPanel from "./DevToolsPanel";
+import AppearancePanel from "./AppearancePanel";
 import { usePlatform } from "@oa/platform/platformContext";
 import { setHelpDialog } from "@oa/platform/dialogs";
 import { addLibraryFolder, rescanLibraryFolders } from "@oa/platform/libraryAdmin";
@@ -1677,6 +1678,15 @@ export const ThemesSettings: Component = () => {
             }}
           </For>
         </div>
+      </SettingsCard>
+
+      {/* Settings IA Slice 3 — the active theme's declarative appearance
+          options, rendered generically from its manifest `settings_schema`. */}
+      <SettingsCard
+        title="Appearance"
+        description="Options the active theme exposes. Each theme decides what's configurable here — and remembers its own choices."
+      >
+        <AppearancePanel />
       </SettingsCard>
 
       <SettingsCard title="About theme switching">

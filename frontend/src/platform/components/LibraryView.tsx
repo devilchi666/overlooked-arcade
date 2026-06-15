@@ -1,7 +1,7 @@
 import { createMemo, createSignal, Show, type Component } from "solid-js";
 import type { LibraryStore } from "@oa/platform/library/store";
 import type { RomEntry } from "@oa/platform/library/types";
-import type { LayoutStore } from "@oa/platform/layout/state";
+import type { SortKey, GroupBy, ViewMode } from "@oa/platform/layout/state";
 import type { SidebarView } from "@oa/platform/layout/types";
 import {
   collapseDiscSets,
@@ -21,9 +21,22 @@ import GridControls from "./GridControls";
 import SystemHeader from "./SystemHeader";
 import VirtualLibraryGrid from "./VirtualLibraryGrid";
 
+/// The browse-appearance the LIBRARY view reads. Settings IA Slice 3 moved
+/// these from the global `layout` store to PER-THEME storage: the theme owns
+/// its tile size / sort / grouping / view mode and passes them in, so the
+/// shared platform grid stays config-agnostic (it never reaches into
+/// active-theme settings itself — that would invert the layer boundary).
+export type LibraryAppearance = {
+  sortKey: () => SortKey;
+  groupBy: () => GroupBy;
+  viewMode: () => ViewMode;
+  tileSize: () => number;
+  setTileSize: (px: number) => void;
+};
+
 type Props = {
   library: LibraryStore;
-  layout: LayoutStore;
+  appearance: LibraryAppearance;
   views: ViewsStore;
   currentView: SidebarView;
   searchQuery: string;
@@ -151,10 +164,10 @@ const LibraryView: Component<Props> = (props) => {
     return collapseDiscSets(variantCollapsed);
   });
   const sorted = createMemo(() =>
-    sortEntries(collapsed(), props.layout.sortKey(), getYear),
+    sortEntries(collapsed(), props.appearance.sortKey(), getYear),
   );
   const grouped = createMemo(() =>
-    groupEntries(sorted(), props.layout.groupBy(), systemDisplayName),
+    groupEntries(sorted(), props.appearance.groupBy(), systemDisplayName),
   );
 
   const title = (): string => {
@@ -208,8 +221,8 @@ const LibraryView: Component<Props> = (props) => {
       <GridControls
         title={title()}
         count={count()}
-        tileSize={props.layout.viewMode() === "capsule" ? props.layout.libraryTileSize() : undefined}
-        onTileSizeChange={props.layout.setLibraryTileSize}
+        tileSize={props.appearance.viewMode() === "capsule" ? props.appearance.tileSize() : undefined}
+        onTileSizeChange={props.appearance.setTileSize}
       />
       <div class="min-h-0 flex-1">
         <Show
@@ -224,11 +237,11 @@ const LibraryView: Component<Props> = (props) => {
           }
         >
           <Show
-            when={props.layout.viewMode() === "list"}
+            when={props.appearance.viewMode() === "list"}
             fallback={
               <VirtualLibraryGrid
                 groups={grouped()}
-                tileWidth={props.layout.libraryTileSize()}
+                tileWidth={props.appearance.tileSize()}
                 onLaunch={wrappedOnLaunch}
                 onShowSaves={props.onShowSaves}
                 onPickContext={props.onPickContext}

@@ -48,6 +48,46 @@ export const SUPPORTED_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([1]);
  * OA" vs. "unsupported schema"). */
 export const MAX_SCHEMA_VERSION = Math.max(...SUPPORTED_SCHEMA_VERSIONS);
 
+/** One declarative control in a theme's `settings_schema` (Settings IA Slice 3).
+ * The engine renders it generically in Settings → Themes / Appearance, bound to
+ * the theme's own per-theme storage (`useThemeSettings()`) under `key`. A
+ * discriminated union on `type`; the engine renderer + the S4 validator both
+ * switch on it. The point: a theme — including a community one OA has never
+ * seen — declares its options here and they surface automatically, with zero
+ * engine code per option. */
+export type ThemeSettingControl =
+  | {
+      key: string;
+      type: "toggle";
+      label: string;
+      hint?: string;
+      default: boolean;
+    }
+  | {
+      key: string;
+      type: "slider";
+      label: string;
+      hint?: string;
+      default: number;
+      min: number;
+      max: number;
+      step: number;
+      /** Optional unit suffix shown in the value readout (e.g. "px"). */
+      unit?: string;
+    }
+  | {
+      key: string;
+      type: "select";
+      label: string;
+      hint?: string;
+      default: string;
+      options: ReadonlyArray<{ value: string; label: string }>;
+    };
+
+/** A theme's declared appearance/options surface. Optional on the manifest —
+ * a theme with nothing to configure omits it. */
+export type ThemeSettingsSchema = ReadonlyArray<ThemeSettingControl>;
+
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */
   id: string;
@@ -95,4 +135,10 @@ export type ThemeManifest = {
    * mismatch must not disqualify a theme). The user-facing picker + controller
    * auto-detect are deferred. */
   glyph_set?: string;
+  /** Declarative appearance/options the engine renders generically in
+   * Settings → Themes / Appearance, bound to per-theme storage. Optional. The
+   * S4 validator checks unique keys + type-correct defaults / ranges / options;
+   * a malformed control is a disqualifying ERROR (a broken options panel is
+   * worse than none). */
+  settings_schema?: ThemeSettingsSchema;
 };

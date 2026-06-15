@@ -4,6 +4,36 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Slice 3 implemented (code-complete, pending playtest)
+
+- **Shipped (branch `feat/settings-ia-slice-3`, not yet merged):** declarative
+  per-theme appearance. `ThemeManifest` gains `settings_schema` (toggle/slider/
+  select control descriptors); the S4 validator checks them (unique keys, valid
+  type/label, slider min<max + default-in-range, select default∈options — a
+  malformed control is a disqualifying error; +9 vitest cases). New generic
+  `engine/AppearancePanel` reads the active theme's schema and renders each
+  control via `SettingRow` bound to `useThemeSettings()` (per-control reset),
+  mounted in Settings → Themes / Appearance below the picker. `bare`'s "Compact"
+  toggle moved from hand-coded JSX to a declared control (engine renders it; bare
+  just consumes the value). **Retroverse** migrated off the global layout store:
+  it declares `tileSize`/`sortKey`/`groupBy`/`viewMode` in its schema and reads
+  them per-theme; the shared platform `LibraryView` swapped its `layout` prop for
+  a focused `LibraryAppearance` prop (Retroverse builds it from `useThemeSettings`
+  and passes it in — the platform grid never reaches into theme settings, keeping
+  the layer boundary clean). A one-time seed in `RetroverseEntry` copies the
+  current global values into Retroverse's namespace so nothing jumps; this also
+  finally gives the previously-dormant sort/group/view-mode real UI. The
+  `settings_schema` manifest format ships now; theming Phase 5's `.oatheme` loader
+  reuses it (no rework). typecheck/lint/vitest(107) green; THEME_CONTRACT.md §8
+  added.
+- **Almost:** the global `layout` sortKey/groupBy/viewMode/libraryTileSize fields
+  are now vestigial for Retroverse (kept as the migration source; safe to retire
+  in a later cleanup). CoverFlow declares no schema yet (shows "no options").
+- **Next:** operator playtest (Themes / Appearance shows Retroverse's tile/sort/
+  group/layout + bare's Compact; changing them works + persists per-theme; the
+  in-grid tile slider stays in sync; switching themes shows that theme's options)
+  → merge. Then Slice 4 (External Emulators → VL Phase D).
+
 ## 2026-06-14 — Slice 2 implemented (code-complete, pending playtest)
 
 - **Shipped (branch `feat/settings-ia-slice-2`, not yet merged):** Library

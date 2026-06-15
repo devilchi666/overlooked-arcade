@@ -69,6 +69,8 @@ export type ThemeIssueCode =
   | "UNKNOWN_SYSTEM_ID" // a perSystemTokens key ∉ SystemId (SYSTEM_PALETTES)
   | "UNKNOWN_PALETTE_KEY" // a perSystemTokens sub-key ∉ SystemPalette (PALETTE_VAR)
   | "EMPTY_PALETTE_VALUE" // a perSystemTokens value is empty / blank
+  | "SETTING_KEY_INVALID" // a settings_schema control key is missing / empty / duplicated
+  | "SETTING_CONTROL_INVALID" // a settings_schema control is malformed (type / label / default / range / options)
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
@@ -215,6 +217,99 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
       field: "glyph_set",
       message: `manifest.glyph_set "${m.glyph_set}" is not a known glyph set (${Object.keys(GLYPH_SETS).join(", ")}); the HintBar falls back to the default`,
     });
+  }
+
+  // --- settings_schema (Settings IA Slice 3): unique non-empty keys +
+  //     type-correct defaults / ranges / options. A malformed control is a
+  //     disqualifying ERROR — a broken Appearance panel is worse than none. ---
+  if (m?.settings_schema != null) {
+    if (!Array.isArray(m.settings_schema)) {
+      errors.push({
+        code: "SETTING_CONTROL_INVALID",
+        field: "settings_schema",
+        message: "manifest.settings_schema must be an array of controls",
+      });
+    } else {
+      const seenKeys = new Set<string>();
+      m.settings_schema.forEach((c, i) => {
+        const at = `settings_schema[${i}]`;
+        if (!isNonEmptyString(c?.key)) {
+          errors.push({
+            code: "SETTING_KEY_INVALID",
+            field: at,
+            message: `${at}.key is required and must be a non-empty string`,
+          });
+        } else if (seenKeys.has(c.key)) {
+          errors.push({
+            code: "SETTING_KEY_INVALID",
+            field: at,
+            message: `${at}.key "${c.key}" is duplicated — control keys must be unique within a theme`,
+          });
+        } else {
+          seenKeys.add(c.key);
+        }
+        if (!isNonEmptyString(c?.label)) {
+          errors.push({
+            code: "SETTING_CONTROL_INVALID",
+            field: at,
+            message: `${at}.label is required and must be a non-empty string`,
+          });
+        }
+        switch (c.type) {
+          case "toggle":
+            if (typeof c.default !== "boolean") {
+              errors.push({
+                code: "SETTING_CONTROL_INVALID",
+                field: at,
+                message: `${at}.default must be a boolean for a toggle`,
+              });
+            }
+            break;
+          case "slider":
+            if (
+              typeof c.min !== "number" ||
+              typeof c.max !== "number" ||
+              typeof c.step !== "number" ||
+              c.min >= c.max ||
+              c.step <= 0
+            ) {
+              errors.push({
+                code: "SETTING_CONTROL_INVALID",
+                field: at,
+                message: `${at} slider needs numeric min < max and step > 0`,
+              });
+            } else if (typeof c.default !== "number" || c.default < c.min || c.default > c.max) {
+              errors.push({
+                code: "SETTING_CONTROL_INVALID",
+                field: at,
+                message: `${at}.default must be a number within [${c.min}, ${c.max}]`,
+              });
+            }
+            break;
+          case "select":
+            if (!Array.isArray(c.options) || c.options.length === 0) {
+              errors.push({
+                code: "SETTING_CONTROL_INVALID",
+                field: at,
+                message: `${at} select needs a non-empty options array`,
+              });
+            } else if (!c.options.some((o: { value?: unknown }) => o?.value === c.default)) {
+              errors.push({
+                code: "SETTING_CONTROL_INVALID",
+                field: at,
+                message: `${at}.default "${c.default}" must match one of the option values`,
+              });
+            }
+            break;
+          default:
+            errors.push({
+              code: "SETTING_CONTROL_INVALID",
+              field: at,
+              message: `${at}.type must be one of: toggle | slider | select`,
+            });
+        }
+      });
+    }
   }
 
   // --- tokens: keys ∈ ThemeTokens, values non-empty ---

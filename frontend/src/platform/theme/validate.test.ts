@@ -167,3 +167,92 @@ describe("validateTheme — warnings (non-fatal)", () => {
     expect(codes(v.warnings)).toContain("UNKNOWN_GLYPH_SET");
   });
 });
+
+describe("validateTheme — settings_schema (Settings IA Slice 3)", () => {
+  type Schema = ThemeManifest["settings_schema"];
+
+  it("a valid toggle + slider + select schema passes clean", () => {
+    const v = validateTheme(
+      pkg({
+        settings_schema: [
+          { key: "compact", type: "toggle", label: "Compact", default: false },
+          { key: "tile", type: "slider", label: "Tile", default: 220, min: 120, max: 400, step: 20, unit: "px" },
+          {
+            key: "sort",
+            type: "select",
+            label: "Sort",
+            default: "title",
+            options: [
+              { value: "title", label: "Name" },
+              { value: "year", label: "Year" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("omitting settings_schema is fine (optional)", () => {
+    expect(validateTheme(pkg()).ok).toBe(true);
+  });
+
+  it("duplicate keys → SETTING_KEY_INVALID", () => {
+    const v = validateTheme(
+      pkg({
+        settings_schema: [
+          { key: "x", type: "toggle", label: "A", default: false },
+          { key: "x", type: "toggle", label: "B", default: true },
+        ],
+      }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_KEY_INVALID");
+  });
+
+  it("missing key → SETTING_KEY_INVALID", () => {
+    const v = validateTheme(
+      pkg({ settings_schema: [{ type: "toggle", label: "A", default: false }] as unknown as Schema }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_KEY_INVALID");
+  });
+
+  it("missing label → SETTING_CONTROL_INVALID", () => {
+    const v = validateTheme(
+      pkg({ settings_schema: [{ key: "x", type: "toggle", default: false }] as unknown as Schema }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
+  });
+
+  it("slider default out of [min,max] → SETTING_CONTROL_INVALID", () => {
+    const v = validateTheme(
+      pkg({ settings_schema: [{ key: "t", type: "slider", label: "T", default: 999, min: 0, max: 100, step: 5 }] }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
+  });
+
+  it("slider min >= max → SETTING_CONTROL_INVALID", () => {
+    const v = validateTheme(
+      pkg({ settings_schema: [{ key: "t", type: "slider", label: "T", default: 5, min: 10, max: 10, step: 1 }] }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
+  });
+
+  it("select default not among options → SETTING_CONTROL_INVALID", () => {
+    const v = validateTheme(
+      pkg({
+        settings_schema: [
+          { key: "s", type: "select", label: "S", default: "ghost", options: [{ value: "a", label: "A" }] },
+        ],
+      }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
+  });
+
+  it("unknown control type → SETTING_CONTROL_INVALID", () => {
+    const v = validateTheme(
+      pkg({ settings_schema: [{ key: "x", type: "radio", label: "X", default: 1 }] as unknown as Schema }),
+    );
+    expect(codes(v.errors)).toContain("SETTING_CONTROL_INVALID");
+  });
+});
