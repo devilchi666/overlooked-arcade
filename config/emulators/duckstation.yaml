@@ -1,0 +1,42 @@
+# Emulator profile — DuckStation (standalone, modern Qt build).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against the official wiki + README (see
+# docs/RESEARCH/external-emulators.md, section A).
+#
+# LICENSE / DISTRIBUTION (important): DuckStation is CC BY-NC-ND 4.0 as
+# of 2024-09-13. The NoDerivatives clause means OA must NOT bundle,
+# redistribute, or ship a pre-configured build/settings package. This
+# profile only references the user's OWN install and links to the
+# official download -- that is permitted; shipping the binary or a
+# modified config is not. (Phase D's installer must respect this:
+# download-from-official-only, no repackaging.)
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# PS1 requires a user-dumped BIOS (proprietary). OA never ships or
+# downloads it -- the user supplies it via DuckStation's setup wizard.
+id: duckstation
+display_name: DuckStation
+vendor: Stenzek
+official_download_url: https://www.duckstation.org/
+# Windows release exe inside the official archive. The download asset is
+# named differently (duckstation-windows-x64-release.zip) from the
+# runnable exe. Per-OS names differ (macOS: DuckStation.app; Linux:
+# DuckStation-x64.AppImage) -- per-OS binary_name is a schema-accretion
+# item (research open-question #1).
+binary_name: duckstation-qt-x64-ReleaseLTCG.exe
+schema_version: 1
+supported_systems:
+- psx
+# CLI: options first, then the disc path. The `--` separator marks the
+# rest as the filename (required when the path has spaces or a leading
+# dash -- always safe with arbitrary {content}). -batch exits the
+# process when the emulated system powers off (D3).
+launch_args_template:
+- -batch
+- -fullscreen
+- "--"
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

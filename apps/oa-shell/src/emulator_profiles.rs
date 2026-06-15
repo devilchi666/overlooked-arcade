@@ -290,6 +290,51 @@ mod tests {
     }
 
     #[test]
+    fn all_shipped_profiles_parse_and_hold_invariants() {
+        // The loader skips a malformed profile with only a warn, so a
+        // broken file would silently vanish rather than fail. Parse each
+        // shipped *.yaml strictly here so authoring a bad profile fails
+        // the build. Invariants every profile must hold:
+        //   - parses against the EmulatorProfile schema
+        //   - file stem == declared id (loader warns but doesn't reject;
+        //     we hold the stricter line in the tree)
+        //   - at least one supported system
+        //   - the launch template references {content}
+        //   - external profiles expose no OA capabilities in v1 (D5)
+        let dir = resolve_config_emulators_dir().expect("config/emulators resolves in-tree");
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir).expect("read_dir config/emulators").flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            let raw = std::fs::read_to_string(&path).expect("read profile");
+            let profile: EmulatorProfile = serde_yaml::from_str(&raw)
+                .unwrap_or_else(|e| panic!("profile {} failed to parse: {e}", path.display()));
+            assert_eq!(profile.id, stem, "{}: id must match file stem", path.display());
+            assert!(
+                !profile.supported_systems.is_empty(),
+                "{}: must declare at least one supported system",
+                path.display()
+            );
+            assert!(
+                profile.launch_args_template.iter().any(|a| a.contains("{content}")),
+                "{}: launch template must reference {{content}}",
+                path.display()
+            );
+            assert_eq!(
+                profile.capabilities,
+                LauncherCapabilities::none(),
+                "{}: external profiles expose no OA capabilities in v1 (D5)",
+                path.display()
+            );
+            count += 1;
+        }
+        assert!(count >= 4, "expected the shipped roster (dolphin + the verified batch), found {count}");
+    }
+
+    #[test]
     fn omitted_capabilities_fail_closed() {
         let yaml = r#"
 id: testemu

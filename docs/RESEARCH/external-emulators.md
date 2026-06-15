@@ -1,9 +1,11 @@
 # Research need — External / standalone emulators (command-line launching)
 
-**Status:** Research NOT yet done. This doc scopes the research — the roster to
-investigate + the per-emulator data we must gather — so a future session (or the
-operator) can fill it in systematically. Raised 2026-06-14 alongside Settings IA
-Slice 4 (External Emulators consolidation).
+**Status:** Research IN PROGRESS. The scope (roster + per-emulator template)
+is below. **First verification batch done 2026-06-15** — Dolphin (confirm),
+PCSX2, DuckStation, PPSSPP, Cemu, RPCS3 verified against official docs/source;
+see "Verified batch" below. Profiles authored for the three whose OA system id
+already exists (PCSX2/DuckStation/PPSSPP); Dolphin already shipped. Raised
+2026-06-14 alongside Settings IA Slice 4 (External Emulators consolidation).
 
 ## Why this matters
 
@@ -86,10 +88,10 @@ For each emulator, gather:
 
 | Emulator | Systems | CLI launch (DRAFT — verify) | Notes |
 | --- | --- | --- | --- |
-| **Dolphin** | GameCube, Wii | `--batch --exec="{content}"` | ✅ shipped pilot (`dolphin.yaml`). |
-| **PCSX2** (Qt) | PS2 | `-batch -fullscreen "{content}"` | More mature than the PS2 core for many titles. |
-| **DuckStation** (Qt) | PSX | `-batch -fullscreen -- "{content}"` | Core exists (swanstation); standalone more featured. |
-| **PPSSPP** | PSP | `"{content}" --fullscreen` | Core exists. |
+| **Dolphin** | GameCube (✅), Wii (no id) | `--batch --exec={content}` | ✅ **VERIFIED + shipped** (`dolphin.yaml`). No `--fullscreen` flag exists — fullscreen is `-C Dolphin.Display.Fullscreen=True` or persistent ini. Wii half has no OA system id. |
+| **PCSX2** (Qt) | PS2 (✅) | `pcsx2-qt.exe -batch -fullscreen -- {content}` | ✅ **VERIFIED + shipped** (`pcsx2.yaml`). Draft was old-wx & wrong: binary is `pcsx2-qt.exe`, path **must** follow `--`. User-dumped BIOS required. |
+| **DuckStation** (Qt) | PSX (✅) | `duckstation-qt-x64-ReleaseLTCG.exe -batch -fullscreen -- {content}` | ✅ **VERIFIED + shipped** (`duckstation.yaml`). **License CC BY-NC-ND** — never bundle/redistribute/ship configs; link official download only. User-dumped BIOS required. |
+| **PPSSPP** | PSP (✅) | `PPSSPPWindows64.exe {content} --fullscreen --escape-exit --pause-menu-exit` | ✅ **VERIFIED + shipped** (`ppsspp.yaml`). Path positional; **exit flags mandatory** or it idles on its own menu. No BIOS (HLE). |
 | **melonDS** | DS | `"{content}"` | Core exists. |
 | **mGBA** | GBA, GB/GBC | `"{content}" -f` | Core exists. |
 | **Flycast / Redream** | Dreamcast | flycast `"{content}"` · redream `"{content}"` | Cores exist; Redream is closed-source. |
@@ -103,8 +105,8 @@ For each emulator, gather:
 
 | Emulator | System | CLI launch (DRAFT — verify) | Notes |
 | --- | --- | --- | --- |
-| **Cemu** | Wii U | `-g "{content}"` (`-f` fullscreen) | New system id needed. |
-| **RPCS3** | PS3 | `--no-gui "{content}"` (EBOOT.BIN / game folder) | Firmware install step (plugin/script later). |
+| **Cemu** | Wii U | `Cemu.exe -g {content} -f` | ✅ **CLI VERIFIED 2026-06-15** — but **needs `wiiu` system id first** (see wiring notes). `{content}` = `.wua` (best, no keys) / `.wud` / `.wux` / the `.rpx` inside an extracted `code/` folder. **No auto-exit** (window-close = exit, not game-end). `keys.txt` user-supplied for encrypted content. |
+| **RPCS3** | PS3 | `rpcs3.exe --no-gui {content}` (+ optional `--fullscreen`) | ✅ **CLI VERIFIED 2026-06-15** — but **needs `ps3` system id first** (see wiring notes). `{content}` = path to `EBOOT.BIN`. **Firmware (PS3UPDAT.PUP) is a hard prerequisite**, user-installed once via File → Install Firmware (never shipped/downloaded by OA). `--no-gui` exit can linger (track + reap PID). |
 | **Ryujinx** | Switch | `"{content}"` | Firmware + keys (user-supplied; never shipped). Watch project-status churn. |
 | **Lime3DS** (Citra successor) | 3DS | `"{content}"` | Citra discontinued; Lime3DS is the maintained fork. |
 | **Vita3K** | PS Vita | `-r <title-id>` / `--content "{content}"` | Install-then-run model. |
@@ -116,6 +118,92 @@ For each emulator, gather:
 (Lists are a starting point, not exhaustive — add as the community surfaces
 options. New systems in section B need an OA system id + metadata + sidebar
 entry before their profile is useful.)
+
+## Verified batch — 2026-06-15
+
+First verification pass: each CLI checked against the emulator's **official
+docs and/or source command-line parser** (not forum hearsay). Per-emulator
+findings, including the data the current single-field schema can't yet hold.
+
+### Profiles authored (OA system id already exists)
+
+| Profile | System | argv template (Windows) | BIOS/firmware | Notes |
+| --- | --- | --- | --- | --- |
+| `dolphin.yaml` | `gamecube` | `--batch --exec={content}` | none to launch | shipped pilot; confirmed correct. |
+| `pcsx2.yaml` | `ps2` | `-batch -fullscreen -- {content}` | PS2 BIOS (user-dumped) | path **must** follow `--`. |
+| `duckstation.yaml` | `psx` | `-batch -fullscreen -- {content}` | PS1 BIOS (user-dumped) | CC BY-NC-ND — no bundling/configs. |
+| `ppsspp.yaml` | `psp` | `{content} --fullscreen --escape-exit --pause-menu-exit` | none (HLE) | exit flags mandatory; path positional. |
+
+### Per-OS binary names (schema-accretion data — not yet representable)
+
+The schema's single `binary_name` is Windows-first (operator's platform; the
+field is only a soft warn-check). Verified names per OS, ready for when the
+schema grows a per-OS map (open question #1):
+
+| Emulator | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Dolphin | `Dolphin.exe` | `Dolphin.app/Contents/MacOS/Dolphin` | `dolphin-emu` / flatpak `org.DolphinEmu.dolphin-emu` |
+| PCSX2 | `pcsx2-qt.exe` | `PCSX2-vX.Y.Z.app` (version-stamped) | version-stamped AppImage / flatpak `net.pcsx2.PCSX2` |
+| DuckStation | `duckstation-qt-x64-ReleaseLTCG.exe` | `DuckStation.app` | `DuckStation-x64.AppImage` |
+| PPSSPP | `PPSSPPWindows64.exe` | `PPSSPP.app/Contents/MacOS/PPSSPP` | `PPSSPPSDL` / `PPSSPPQt` / flatpak `org.ppsspp.PPSSPP` |
+| Cemu | `Cemu.exe` | `Cemu.app/Contents/MacOS/Cemu` (experimental) | `Cemu-*.AppImage` / flatpak `info.cemu.Cemu` |
+| RPCS3 | `rpcs3.exe` | `RPCS3.app/Contents/MacOS/rpcs3` | `rpcs3-*_linux64.AppImage` / flatpak `net.rpcs3.RPCS3` |
+
+Cross-OS note: **launch args are OS-agnostic** for all six (the same flags
+compile into every platform build) — only the binary name/path differs. So a
+per-OS `binary_name` map is the right schema extension; `launch_args_template`
+can stay single. macOS `.app` bundles must spawn the inner Mach-O directly (not
+`open`, which detaches the child and breaks exit-tracking).
+
+### Quirks captured (beyond the table)
+
+- **Dolphin** — `--batch` requires `--exec`; without `--batch` the process drops
+  back to the GUI and never exits (breaks lifecycle tracking). No `--fullscreen`
+  flag; use `-C Dolphin.Display.Fullscreen=True` or persisted ini.
+- **PPSSPP** — without `--escape-exit`/`--pause-menu-exit` the process idles on
+  its own menu after a game stops, so OA never restores. `--fullscreen` may
+  persist into saved config (issue #15557). Linux: pass the `EBOOT.PBP` file,
+  not its folder.
+- **DuckStation** — exe name ≠ download asset name ≠ `duckstation`; spawn
+  `duckstation-qt-x64-ReleaseLTCG.exe`. **License is the constraint**: CC
+  BY-NC-ND forbids shipping the binary OR a pre-configured settings package —
+  reference the user's own install + link official download only (this directly
+  shapes Phase D: download-from-official-only, no repackaging).
+- **PCSX2** — everything after `--` is the filename (pass the whole path as one
+  argv element; no shell quoting). `-portable`/`-datapath` exist to pin config.
+- **Cemu** — binary is capital-C `Cemu` (matters on case-sensitive Linux FS).
+  Portable mode = a `portable` *folder* next to the exe (not `portable.txt`).
+- **RPCS3** — games must be pre-installed/decrypted (the frontend passes an
+  existing `EBOOT.BIN`, never a raw ISO/pkg). Firmware must be installed first.
+
+### Section-B wiring needed before a profile is useful
+
+Both verified section-B headliners are **blocked on OA system-id wiring** — the
+CLI is known, but there's no system for the profile's `supported_systems` to
+reference, and no sidebar/metadata home for the games. Per system, what's
+needed before authoring `cemu.yaml` / `rpcs3.yaml`:
+
+- **Cemu → new `wiiu` system id.** Needs: a `config/systems/wiiu/system.yaml`
+  descriptor (display name "Wii U", manufacturer Nintendo, media/extension
+  hints for `.wua`/`.wud`/`.wux`/`.rpx`), sidebar + metadata entry, and a
+  content-format decision (which path form OA hands to `-g`: prefer `.wua`).
+  No libretro core exists, so `launchers.json` would default `wiiu → cemu`
+  with no in-process fallback. `keys.txt` is a user-supplied prerequisite
+  (never shipped) — surface as a precondition, like a BIOS gate.
+- **RPCS3 → new `ps3` system id.** Needs: a `config/systems/ps3/system.yaml`
+  descriptor (display name "PlayStation 3", Sony), sidebar + metadata entry,
+  and a content-resolution decision — PS3 "games" are **installed directories**
+  (`…/USRDIR/EBOOT.BIN`), not single files, so OA's library scanner +
+  `{content}` resolution must point at `EBOOT.BIN` within a game folder rather
+  than treating each game as one ROM file. **Firmware (PS3UPDAT.PUP) is a hard,
+  user-installed prerequisite** — the canonical "plugin/script hook later"
+  case (detect-and-prompt; never ship/fetch the PUP).
+
+The same gap applies to every other section-B system (Switch/3DS/Vita/Xbox
+360/Xbox/PS4/Model 3) and to **Wii** (Dolphin's Wii half — no `wii` id today,
+only `gamecube`): each needs a system id + descriptor + sidebar/metadata before
+a profile helps. This is properly **VL Phase D** territory (new-system
+installer + wiring), not something to bolt on ahead of it.
 
 ## Open questions for the research
 
