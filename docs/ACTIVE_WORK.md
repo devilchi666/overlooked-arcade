@@ -16,9 +16,17 @@ spanned every system but was filed under whichever core happened to be active.
   S2 Library re-point (`59b0d52`), S3 declarative per-theme Appearance schema
   (`5386305`), S4 External Emulators consolidation + research-need doc
   (`f3082ed`). The core re-cut is **done**. **Slice 5 (Import & Setup depth)
-  DEFERRED** — folds into guided-setup Phase 2. **Next chosen work: the
-  external-emulator research pass** ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md))
-  — verify CLI invocations + author `config/emulators/*.yaml` profiles.
+  DEFERRED** — folds into guided-setup Phase 2. **External-emulator research
+  pass — batch 1 ✅ (2026-06-15, branch `feat/external-emulator-profiles`,
+  commits `2709af2` + `86161e7`; NOT yet merged — awaiting operator playtest).**
+  Verified launch CLIs for all section-A single-system alts (Dolphin/PCSX2/
+  DuckStation/PPSSPP/melonDS/mGBA/Flycast/Mesen 2/DeSmuME) + section-B Cemu/RPCS3
+  against official docs/source; authored **9 `config/emulators/*.yaml` profiles**;
+  doc + profile test + per-OS data updated
+  ([RESEARCH/external-emulators.md](RESEARCH/external-emulators.md)). **Still
+  open:** multi-system emulators (BizHawk/ares) + standalone MAME need a schema
+  decision; section-B systems need OA system-id wiring (VL Phase D) before their
+  profiles are useful.
   Re-cuts the engine
   Settings IA around user intent: new top-level **Themes/Appearance · Library ·
   Organize My Collection · Import & Setup · External Emulators** groups, replacing

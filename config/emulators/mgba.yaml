@@ -1,0 +1,35 @@
+# Emulator profile — mGBA (standalone, Qt GUI build).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against doc/mgba-qt.6 + src/feature/commandline.c
+# (see docs/RESEARCH/external-emulators.md, section A).
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# No BIOS required -- mGBA ships a built-in HLE BIOS (a user-supplied
+# GBA/GB BIOS is optional, never shipped by OA).
+id: mgba
+display_name: mGBA
+vendor: endrift
+official_download_url: https://mgba.io/downloads.html
+# The Qt GUI build (the "boot and play" frontend). Per-OS names differ
+# (macOS: mGBA.app/Contents/MacOS/mGBA; Linux: mgba-qt or flatpak
+# io.mgba.mGBA) -- per-OS binary_name is a schema-accretion item
+# (research open-question #1).
+binary_name: mGBA.exe
+schema_version: 1
+# mGBA runs GBA + Game Boy / Game Boy Color from one binary; it detects
+# the system from the ROM, so a single positional template covers all
+# three OA system ids.
+supported_systems:
+- gba
+- gb
+- gbc
+# Options first, ROM path last (the documented synopsis form). `-f`
+# starts fullscreen. Process exits when the window closes (single-window
+# Qt app) -- ties play time to process lifetime (D3).
+launch_args_template:
+- -f
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

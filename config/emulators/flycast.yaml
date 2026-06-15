@@ -1,0 +1,40 @@
+# Emulator profile — Flycast (standalone, non-libretro build).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against the Flycast source + wiki
+# (see docs/RESEARCH/external-emulators.md, section A).
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# No BIOS required -- Flycast has HLE BIOS enabled by default for
+# Dreamcast and boots games with no user-supplied BIOS. (A dumped
+# dc_boot.bin is optional, improves compatibility for a few titles, and
+# is never shipped by OA.)
+id: flycast
+display_name: Flycast
+vendor: Flycast Team
+official_download_url: https://github.com/flyinghead/flycast/releases
+# Per-OS names differ (macOS: Flycast.app/Contents/MacOS/Flycast; Linux:
+# flycast or flatpak org.flycast.Flycast) -- per-OS binary_name is a
+# schema-accretion item (research open-question #1). NOTE: on Windows
+# Flycast is always portable (emu.cfg + data/ live next to flycast.exe),
+# so the operator's pointed-at binary must keep its data/ folder beside
+# it.
+binary_name: flycast.exe
+schema_version: 1
+supported_systems:
+- dreamcast
+# Path is positional. Flycast has no dedicated fullscreen flag, but the
+# generic `-config section:key=value` override forces it per-launch;
+# overrides must precede the content path. EXIT QUIRK: started WITH
+# content, Flycast's in-game "Exit" quits the process (it does not return
+# to its content browser) -- but there is no auto-exit at game end and
+# the Exit hotkey is unbound by default, so a controller-only user
+# reaches it via the pause menu. OA's exit-watcher reaps the process when
+# it dies; treat Flycast as a long-lived child (D3).
+launch_args_template:
+- -config
+- window:fullscreen=yes
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).

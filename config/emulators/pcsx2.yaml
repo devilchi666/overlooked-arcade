@@ -1,0 +1,38 @@
+# Emulator profile — PCSX2 (standalone, modern Qt build).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against pcsx2.net/docs/advanced/cli (see
+# docs/RESEARCH/external-emulators.md, section A).
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (persisted per-machine in
+# appData/emulators.json). Phase D's installer will write it later.
+#
+# PS2 requires a user-dumped BIOS (proprietary; no open-source
+# alternative). OA never ships or downloads it -- the user supplies it
+# and points PCSX2 at it. PCSX2 will not boot without it.
+id: pcsx2
+display_name: PCSX2
+vendor: PCSX2 Team
+official_download_url: https://pcsx2.net/downloads/
+# Windows exe of the modern Qt build. NOTE: the old wxWidgets 1.6 name
+# (pcsx2.exe) is gone. Per-OS names differ (macOS: PCSX2-vX.Y.Z.app;
+# Linux: version-stamped AppImage or flatpak net.pcsx2.PCSX2) -- per-OS
+# binary_name is a schema-accretion item (research open-question #1).
+binary_name: pcsx2-qt.exe
+schema_version: 1
+supported_systems:
+- ps2
+# Qt-build CLI: `pcsx2-qt [params] [--] [boot filename]`. The disc path
+# MUST follow the `--` separator (everything after `--` is treated as
+# the filename); passing it as a bare positional is the old-wx form and
+# is not the documented Qt invocation. {content} expands to the disc
+# path. -batch exits the process when emulation stops (ties play time to
+# process lifetime, D3).
+launch_args_template:
+- -batch
+- -fullscreen
+- "--"
+- "{content}"
+# External launchers support no OA capabilities in v1 (D5): PCSX2 owns
+# its own saves, input, shaders, and rendering. Omitted capabilities
+# default to all-false (fail closed).

@@ -1,0 +1,36 @@
+# Emulator profile — PPSSPP (standalone).
+# Schema: apps/oa-shell/src/emulator_profiles.rs::EmulatorProfile.
+# CLI verified 2026-06-15 against ppsspp.org/docs + UI/NativeApp.cpp
+# (see docs/RESEARCH/external-emulators.md, section A).
+#
+# binary_path is intentionally absent: the operator points OA at their
+# install via Settings -> External Emulators (appData/emulators.json).
+#
+# No BIOS / firmware required -- PPSSPP is HLE (it reimplements the PSP
+# OS). Nothing to provision.
+id: ppsspp
+display_name: PPSSPP
+vendor: Henrik Rydgard
+official_download_url: https://www.ppsspp.org/download/
+# Windows 64-bit GUI build (the one that boots AND plays a game; the
+# separate "headless" build is a test runner, not a player). Per-OS
+# names differ (macOS: PPSSPP.app; Linux: PPSSPPSDL / PPSSPPQt / flatpak
+# org.ppsspp.PPSSPP) -- per-OS binary_name is a schema-accretion item
+# (research open-question #1).
+binary_name: PPSSPPWindows64.exe
+schema_version: 1
+supported_systems:
+- psp
+# The game path is POSITIONAL (no flag) -- a bare path is treated as the
+# boot filename and goes straight into emulation. CRITICAL: without an
+# exit flag, PPSSPP returns to its OWN menu when the game stops and never
+# hands control back to OA. --escape-exit (pause/Esc key quits to OS) +
+# --pause-menu-exit (pause-menu "Exit" quits the process) together cover
+# both quit paths so the process exits and OA restores (D3).
+launch_args_template:
+- "{content}"
+- --fullscreen
+- --escape-exit
+- --pause-menu-exit
+# External launchers support no OA capabilities in v1 (D5). Omitted =
+# all-false (fail closed).
