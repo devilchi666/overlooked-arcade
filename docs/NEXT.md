@@ -77,7 +77,11 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### Theming ARC 2 — L1: per-system UI consumption opt-in (D33 fix)  *(✅ MERGED to main 2026-06-15, operator playtested → L2 next)*
+### Theming ARC 2 — L1 ✅ MERGED + L2a ✅ shipped on branch; L2b next
+
+- **L1 (per-system UI consumption opt-in, D33 fix)** — ✅ MERGED to main 2026-06-15, operator playtested.
+- **L2a (view/layout manifest contract, schema only)** — ✅ shipped on `feat/theming-arc2-l2a-view-layout-contract`, CI-green (typecheck/lint/vitest 122/build); no consumer, no visual change. `ViewType`/`LayoutPrimitive` enums + `views` manifest field + validator. D37.
+- **L2b (the D34 migration) — NEXT:** move the experiential `systemUIConfigs` map into `themes/retroverse/`, bridge into the tile/SFX consumers (L1 pattern), keep `touchInputSupported` factual in platform. Behavior-preserving → visual-identical playtest gate. Then L3 (resolver + persisted user override) → L4 WheelNav → L5 override UI → L6 Stage 2/3 re-home → P loader.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

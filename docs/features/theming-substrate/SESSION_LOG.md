@@ -9,6 +9,32 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L2a: view/layout manifest contract (schema only) — ✅ shipped on branch, CI-green (no consumer, no visual change)
+
+> Branch `feat/theming-arc2-l2a-view-layout-contract`. L2 split into **L2a (contract,
+> additive)** + **L2b (the D34 migration)** — operator sign-off via AskUserQuestion.
+> This is L2a: stamp the view/layout contract + validator, exactly like S4 stamped
+> the manifest before S5 consumed it. DECISIONS **D37**.
+
+- **Shipped:** `manifest.ts` gains `ViewType` (manufacturer-browse / system-browse /
+  game-browse / game-details) + `LayoutPrimitive` (list / grid / carousel / wheel /
+  custom) + `ViewLayoutConfig` + `ThemeViews` + the `VIEW_TYPES` / `LAYOUT_PRIMITIVES`
+  allow-lists + a `views?: ThemeViews` manifest field (per-view default layout +
+  optional `per_system` overrides, D32). `validateTheme` validates it (known view
+  types / primitives / system-ids; malformed = ERROR like settings_schema —
+  `INVALID_VIEWS` / `UNKNOWN_VIEW_TYPE` / `INVALID_VIEW_LAYOUT`, reusing
+  `UNKNOWN_SYSTEM_ID`). THEME_CONTRACT §1 row added. **No consumer** — the L3
+  resolver is the first reader; built-ins omit `views` (still validate clean).
+- **Verified:** typecheck + lint green; `npm run test` = **122 passed** (8 new views
+  validator cases); build green. Frontend-only. Contract-only → no visual change, so
+  no playtest beyond CI (optional smoke-test: app still boots, themes still switch).
+- **Almost:** nothing in L2a scope.
+- **Next:** **L2b — the D34 migration:** move the experiential `systemUIConfigs` map
+  (layout/audioProfile/interactionStyle/tileShape/…) into `themes/retroverse/`,
+  bridge it into the tile/SFX consumers (the L1 opt-in pattern), keep
+  `touchInputSupported` factual in platform. Behavior-preserving → visual-identical
+  playtest gate.
+
 ## 2026-06-15 — ARC 2 L1: per-system-UI consumption opt-in (the D33 fix) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l1-per-system-opt-in`. The keystone ARC-2 slice (pulled

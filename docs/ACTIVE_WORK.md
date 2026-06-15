@@ -392,7 +392,14 @@ spanned every system but was filed under whichever core happened to be active.
         (C1 sever shim · C2 relocate + delete dead code · C3 drop exceptions + probe);
         typecheck+lint+vitest(58)+build green; cargo `oa-shell` green; frontend-only. **Only §6
         Phase 5 (`.oatheme` distribution/loader) now remains open in ARC 1.**
-      - **ARC 2 — Per-System Layout Substrate — PLANNED + L1 MERGED 2026-06-15.**
+      - **ARC 2 — Per-System Layout Substrate — L1 MERGED + L2a shipped 2026-06-15.**
+        **L2a (view/layout manifest contract, schema only) ✅ shipped on
+        `feat/theming-arc2-l2a-view-layout-contract`, CI-green** (DECISIONS **D37**):
+        `ViewType`/`LayoutPrimitive` enums + `views?` manifest field + validator;
+        no consumer, no visual change (the L3 resolver is first reader). L2 was
+        split L2a (contract) + **L2b (the D34 migration) = NEXT** (experiential
+        `systemUIConfigs` → Retroverse, bridged into tile/SFX consumers,
+        `touchInputSupported` stays platform; visual-identical playtest gate).
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

@@ -32,6 +32,57 @@ export type ReservedCorner = "top-right";
  * render via `ThemeEntryProps.surface` (platform/theme/types.ts). */
 export type ThemeSurface = "main";
 
+/** The distinct screens of the library journey a theme composes + styles
+ * (Theming ARC 2 L2 / D32). A theme MAY declare a layout per view and vary it
+ * per system. ARC 2 validates the full set here; the engine *honors* a growing
+ * subset (the L3 resolver wires `game-browse` first) — "reserve the contract,
+ * defer the body", like D20b's surfaces. The union extends (home /
+ * collections-browse / now-playing) when those views are honored. */
+export type ViewType =
+  | "manufacturer-browse"
+  | "system-browse"
+  | "game-browse"
+  | "game-details";
+
+/** The layout primitives a view can mount — the S5.5 nav-primitive set. The L3
+ * resolver maps each to its `@oa/platform/nav` component; the manifest names them
+ * as plain string-literals so this contract stays decoupled from the nav layer
+ * (like `glyph_set`). `wheel` is the reserved radial primitive (S5.5 stub until
+ * L4). */
+export type LayoutPrimitive = "list" | "grid" | "carousel" | "wheel" | "custom";
+
+/** Per-view layout declaration: a default `layout`, optionally overridden per
+ * system (D32 — e.g. TG-16 → wheel, Lynx → grid). `per_system` keys are SystemIds
+ * (kept loose `string` here so the manifest type doesn't couple to the registry;
+ * the validator checks them against `SYSTEM_PALETTES` / SystemId). */
+export type ViewLayoutConfig = {
+  layout: LayoutPrimitive;
+  per_system?: Record<string, LayoutPrimitive>;
+};
+
+/** A theme's per-view layout map (Theming ARC 2 L2). Optional — a theme that
+ * declares nothing falls back to the engine default per view (set by the L3
+ * resolver). Omit a view to inherit its engine default. */
+export type ThemeViews = Partial<Record<ViewType, ViewLayoutConfig>>;
+
+/** All view types the contract names — the validator's allow-list + the L3
+ * resolver's iteration set. */
+export const VIEW_TYPES: readonly ViewType[] = [
+  "manufacturer-browse",
+  "system-browse",
+  "game-browse",
+  "game-details",
+];
+
+/** All layout primitives the contract names — the validator's allow-list. */
+export const LAYOUT_PRIMITIVES: readonly LayoutPrimitive[] = [
+  "list",
+  "grid",
+  "carousel",
+  "wheel",
+  "custom",
+];
+
 /** Manifest schema revisions this OA build can load. ARC 1 ships exactly
  * one (`1`). A theme declaring a `schema_version` outside this set is
  * rejected by the S4 validator (`UNSUPPORTED_SCHEMA_VERSION`) and falls back
@@ -146,6 +197,13 @@ export type ThemeManifest = {
    * field (L2), NOT this. Validator warns + falls back to OFF on a malformed
    * value (a consumption flag shouldn't disqualify a theme). */
   per_system_ui?: { tiles?: boolean; sfx?: boolean };
+  /** Per-view layout map (Theming ARC 2 L2 / D32): which layout primitive each
+   * library-journey view mounts, optionally varied per system. Optional — omit a
+   * view to inherit the engine default. **Contract only in L2a; no consumer until
+   * the L3 resolver reads it.** Validator checks known view types / primitives /
+   * system ids; a malformed entry is a disqualifying ERROR (a broken layout map
+   * is worse than none, like `settings_schema`). */
+  views?: ThemeViews;
   /** Declarative appearance/options the engine renders generically in
    * Settings → Themes / Appearance, bound to per-theme storage. Optional. The
    * S4 validator checks unique keys + type-correct defaults / ranges / options;

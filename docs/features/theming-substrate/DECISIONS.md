@@ -1403,3 +1403,50 @@ forces uniform even under Retroverse.
 the default-OFF / flagship-must-opt-in are the two a later contributor could undo —
 by coupling the gate to the theme registry, or by "restoring" per-system UI as a
 global default and re-creating the D33 forced-cross-theme defect.
+
+---
+
+### D37 — ARC-2 L2 split: stamp the view/layout contract (L2a) before the D34 migration (L2b)
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l2a-view-layout-contract`). **Decision:**
+the plan's L2 bundled two different-risk pieces — the *additive* view/layout
+contract and the *consumer-touching* D34 `systemUIConfigs` migration. Split via
+AskUserQuestion sign-off into **L2a (contract, this slice)** + **L2b (migration,
+next)**, so each is independently playtestable and the contract is stamped before
+anything consumes it (the S4→S5 pattern).
+
+**L2a build shape (shipped):**
+1. **`ViewType`** = `manufacturer-browse | system-browse | game-browse |
+   game-details` — the library journey. The validator allow-lists the full set; the
+   engine *honors* a growing subset (L3 wires `game-browse` first). The union
+   extends (home / collections / now-playing) when honored — "reserve the contract,
+   defer the body" (D20b pattern).
+2. **`LayoutPrimitive`** = `list | grid | carousel | wheel | custom` — the S5.5
+   nav-primitive set. Named as plain string-literals in `manifest.ts` so the
+   contract stays **decoupled from the nav layer** (like `glyph_set`); the L3
+   resolver owns the `LayoutPrimitive → nav component` mapping. `wheel` is still the
+   reserved S5.5 stub until L4.
+3. **Manifest `views?: { [view]: { layout, per_system? } }`** — per-view default
+   layout + optional per-system override (D32). `per_system` keys kept loose
+   `string` in the type (no registry coupling); the validator checks them against
+   `SYSTEM_PALETTES`/SystemId.
+4. **Validator: malformed = ERROR** (not warning) — a broken layout map is worse
+   than none, same rationale as `settings_schema`. Codes `INVALID_VIEWS` /
+   `UNKNOWN_VIEW_TYPE` / `INVALID_VIEW_LAYOUT`; reuses `UNKNOWN_SYSTEM_ID` for
+   per-system keys. (Contrast `per_system_ui`/`glyph_set` = warnings: those degrade
+   gracefully to a safe default; a malformed *layout map* can't.)
+5. **No consumer in L2a.** Built-ins declare no `views` (still validate clean); the
+   L3 resolver is the first reader. Pure additive, zero visual change.
+
+**L2b (next):** the D34 migration — `touchInputSupported` is the *only* factual
+`SystemUIConfig` field (hardware: has-touchscreen; gates stylus/touch overlays
+regardless of theme) and stays platform; everything else (layout / audioProfile /
+interactionStyle / tileShape / …) is experiential → moves to `themes/retroverse/`,
+bridged into the tile/SFX consumers via the L1 opt-in pattern (only read when the
+theme opts in). Behavior-preserving (visual-identical gate).
+
+**Why record this:** the split rationale (contract before migration) and the
+factual-vs-experiential line (`touchInputSupported` is the lone factual field) are
+what a later contributor needs to not (a) fold the risky migration back into the
+contract slice, or (b) drag `touchInputSupported` into the theme and break
+touch-overlay gating for non-Retroverse themes.
