@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L3b: per-system layout wired into game-browse (coexist with viewMode) — ✅ shipped on branch, pending operator visual playtest
+## 2026-06-15 — ARC 2 L3b: per-system layout wired into game-browse (coexist with viewMode) — ✅ shipped + MERGED to main (operator playtested: NES lists, slider hides on list)
 
 > Branch `feat/theming-arc2-l3b-layout-consumer`. The first LIVE consumer of the
 > view/layout contract — per-system layout becomes visible. UX fork signed off

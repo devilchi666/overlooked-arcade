@@ -402,8 +402,8 @@ spanned every system but was filed under whichever core happened to be active.
         resolver + persisted override store) ✅ MERGED to main, CI-green** (D39): pure
         `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→
         layout` localStorage override store; no consumer, no visual change. **L3b
-        (per-system layout wired into game-browse) ✅ shipped on
-        `feat/theming-arc2-l3b-layout-consumer`, pending visual playtest** (D40):
+        (per-system layout wired into game-browse) ✅ MERGED, operator
+        playtested (NES→list, slider hides on list)** (D40):
         coexist model — `layout` made optional, `useDeclaredLayout` keyed on
         `selectedSystemId()`, `LibraryView` renders the declared primitive
         (grid/list; carousel/wheel/custom→grid fallback) else the global viewMode;

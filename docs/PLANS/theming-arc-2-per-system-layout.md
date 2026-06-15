@@ -265,7 +265,7 @@ existing global capsule/list `viewMode` toggle).
   reactive (the D28 per-theme-settings pattern; survives the restart swap).
 - **No consumer** — CI-gated, no visual change. typecheck/lint/vitest(142)/build green.
 
-#### L3b — first live consumer (game-browse) + the viewMode UX call — ✅ SHIPPED on branch 2026-06-15, pending operator visual playtest (DECISIONS D40)
+#### L3b — first live consumer (game-browse) + the viewMode UX call — ✅ SHIPPED + MERGED to main 2026-06-15, operator playtested (NES→list, slider hides on list) (DECISIONS D40)
 
 - **UX fork resolved = COEXIST** (D40): the global capsule/list `viewMode` toggle
   stays the default; per-system layout overrides it only where declared. Required
