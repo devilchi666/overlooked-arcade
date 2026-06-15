@@ -6,6 +6,30 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-15 (later session) — Theming ARC 2 L5 shipped + merged: end-user per-system layout override UI
+
+Focused single-slice session. Detail in `features/theming-substrate/SESSION_LOG.md`
+(L5 entry) + DECISIONS **D43**.
+
+- **Shipped (merged to main `94d8c5f`, operator playtested):** **ARC 2 L5** — the D32
+  user-agency headline. A new **"Layout" domain card** in the engine Per-System
+  Settings Hub (`engine/systemsHub/domains/LayoutEditor.tsx`) lets the end user pick
+  the layout primitive per system, writing the already-built L3 override store. Per-view
+  `SettingRow` picker (a "Theme default — <X>" sentinel + list/grid/carousel/wheel; no
+  `custom`), an inheritance chip showing the no-override fallback + its tier, and a
+  per-row Reset (D30 discipline); overrides are keyed by the active theme. Three forks
+  signed off: home = Hub card (not theme territory) · ALL FOUR ViewTypes exposed with
+  the three reserved (no-renderer) views labeled honestly · primitives curated to
+  list/grid/carousel/wheel. Pure UI, no new machinery; frontend-only;
+  typecheck/lint/vitest(149)/build green.
+- **Almost:** a wanted cross-theme convenience follow-on is parked (operator confirmed
+  wanted) — **"Copy from theme…" + "Set for all themes"** buttons, since overrides are
+  theme-scoped by design (D39) and the user otherwise re-picks per theme. Small editor
+  addition writing the existing store; no cascade change (PARKING_LOT 2026-06-15).
+- **Next:** **ARC 2 L6** — re-home the paused Per-System UI Stage 2/3 as Retroverse
+  content/consumption (built into the substrate capability, not engine-global; D33/D34).
+  Then **P** (`.oatheme` runtime loader) closes the last ARC-1 thread + tees up ARC 3.
+
 ## 2026-06-15 (later session) — Theming ARC 2 L4b shipped + merged: radial WheelNav primitive
 
 Focused single-slice session. Detail in `features/theming-substrate/SESSION_LOG.md`
