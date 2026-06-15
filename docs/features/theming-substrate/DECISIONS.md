@@ -1744,3 +1744,61 @@ surface where an end user, not a theme author, sets per-system layout. The "expo
 four views but label the reserved ones" call is the load-bearing one: it honors the
 operator's choice to surface the full contract while refusing to imply a renderer
 exists where it doesn't.
+
+### D44 — P (`.oatheme` loader): the default theme stays bundled; externalization hardens the platform API into a versioned contract + makes untrusted-author security real; engine growth (ARC 3 motion/scripting) stays safe via additive + version-gated changes
+
+**Date:** 2026-06-15 (design conversation, no code — forward guidance for when P is
+scheduled). **Context:** operator asked, ahead of building P, (1) whether finishing the
+`.oatheme` runtime loader means Retroverse + the other built-in themes can be moved into
+`.oatheme` files and removed from the binary, and (2) whether dynamically-loaded themes
+will cause problems once the engine grows motion + scripting (ARC 3). Recorded so it
+isn't re-litigated.
+
+**Decisions / guidance:**
+
+1. **The default theme STAYS bundled in the binary — do not evict it.** Three reasons:
+   (a) it's the **guaranteed fallback floor** — the S4/D24 registry failure model is
+   "active on-disk theme fails to validate/load → fall back to a known-good theme," and
+   that floor must always be present + load-proof; an external default could be
+   missing/corrupt and leave no UI; (b) **first-run / offline** boots into a real UI
+   with zero external files; (c) it's the **in-tree dogfood that catches platform-API
+   breaks at build time** (see #3). Likely end-state: default (Retroverse or `bare`)
+   bundled; community themes — and optionally non-default built-ins like CoverFlow —
+   external. The driver for P is letting *others* drop themes in, NOT moving ours out.
+
+2. **Externalizing a theme is NOT just "move the folder."** Built-in themes today
+   consume `@oa/platform` via a **build-time Vite alias** (compiled into the one
+   bundle). A standalone `.oatheme` that's `import()`-ed at runtime must be built as a
+   **separate bundle that binds platform as a shared RUNTIME module** — so P must expose
+   platform as a stable runtime API surface (a shared global the dynamic import links
+   against), not a compile-time alias. That packaging change is core P work, alongside
+   the Rust discovery/extract/validate path + the CSP allowlist.
+
+3. **Externalization imposes two genuine new burdens** (the true price, worth weighing
+   before evicting anything): (a) **the platform API hardens into a versioned contract**
+   — in-tree themes get refactored in lockstep with platform (typechecked together); a
+   *prebuilt* external theme cannot, so breaking changes then require migrations +
+   `schema_version` discipline. Keeping the in-tree dogfood bundled preserves build-time
+   break detection even after externals exist. (b) **Untrusted-author security becomes
+   real** — the S4 validator can't catch a `<style>:root` global-CSS bypass today, nor
+   arbitrary Rhai/WGSL tomorrow (THEME_CONTRACT §6 deferred gap). P opens that door;
+   **ARC 3's Rhai sandbox is where it's hardened.**
+
+4. **Engine growth (ARC 3 motion + scripting) does NOT break external themes IF growth
+   stays additive + version-gated** — which is the existing discipline, via seams
+   already in place: `schema_version` (too-new vs unsupported messaging + migration
+   path), `required_engine_capabilities ⊆ ENGINE_CAPABILITIES` (empty in ARC 1;
+   ARC 3 populates `motion`/`scripting`/`shaders` → a theme needing a capability the
+   build lacks gets a clean refusal, not a crash), and the reserved `motion` token
+   category (S3). Adding motion fills a reserved slot; scripting is a new gated
+   capability.
+
+5. **P is the on-ramp to ARC 3, not an obstacle.** Per D6, the CSP allowlist P must add
+   to permit out-of-bundle dynamic imports "becomes load-bearing for Rhai sandboxing
+   anyway" — same boundary. That's why P is sequenced as the bridge from ARC 2 into
+   ARC 3.
+
+**Why record this:** the "evict our themes from the binary?" question is easy to
+re-ask, and the answer (keep the default bundled; externalize for *community* themes;
+accept that doing so freezes the platform API into a contract + makes author-trust a
+real concern) is load-bearing for how P and ARC 3 are scoped.
