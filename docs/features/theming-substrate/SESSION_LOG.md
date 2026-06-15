@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L4b: radial WheelNav primitive + render `wheel` in game-browse — ✅ shipped on branch, awaiting operator playtest + merge
+## 2026-06-15 — ARC 2 L4b: radial WheelNav primitive + render `wheel` in game-browse — ✅ shipped + MERGED to main (operator playtested: TG-16 wheel; gentle-feel + fast-scroll-deform fixes confirmed)
 
 > Branch `feat/theming-arc2-l4b-wheelnav`. Builds the reserved S5.5 `WheelNav`
 > contract (was a warn-once stub) — the BigBox/HyperSpin radial wheel. Shape fork

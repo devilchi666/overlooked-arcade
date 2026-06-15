@@ -411,8 +411,8 @@ spanned every system but was filed under whichever core happened to be active.
         operator playtested (SNES coverflow)** (D41): `LibraryView` renders a
         per-system `carousel` via `CarouselNav` (CoverFlow's pattern); Retroverse
         demo SNES→carousel; wheel/custom still grid-fallback. **L4b (radial WheelNav
-        primitive + render `wheel`) ✅ SHIPPED on `feat/theming-arc2-l4b-wheelnav`,
-        awaiting operator playtest + merge** (D42): built the reserved `WheelNav` as a
+        primitive + render `wheel`) ✅ MERGED to main, operator playtested (TG-16
+        wheel; gentle-feel + fast-scroll-deform fixes confirmed)** (D42): built the reserved `WheelNav` as a
         general angle→x/y engine (pure `wheelGeometry.ts`), shape A (right-side
         vertical wheel) as the defaults so B/C land later as presets; `LibraryView`
         renders `wheel` (4th Switch arm), ring radius from measured pane height;

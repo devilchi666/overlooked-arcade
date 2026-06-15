@@ -297,7 +297,7 @@ follow-ons.
   snes: "carousel" }`. typecheck/lint/vitest(145)/build green.
 - **Gate:** select SNES → coverflow; NES → list; others → grid/viewMode.
 
-#### L4b — WheelNav radial primitive — ✅ SHIPPED on `feat/theming-arc2-l4b-wheelnav`, awaiting operator playtest + merge (DECISIONS D42)
+#### L4b — WheelNav radial primitive — ✅ MERGED to main, operator playtested (TG-16 wheel) (DECISIONS D42)
 
 Built the reserved radial **WheelNav** primitive (S5.5 shipped only the typed
 contract + a warn-once stub). The BigBox-signature parity piece (HyperSpin-style
