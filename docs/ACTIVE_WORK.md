@@ -813,21 +813,21 @@ spanned every system but was filed under whichever core happened to be active.
     aspect/flip correct, CrtLite intact, audio good, AND software-core render +
     HW⇄software swap-back confirmed. Tasks 2 & 3 (multi-buffer `get_sync_index`
     / lock-narrowing) deferred indefinitely — not needed for paraLLEl-N64.
-    **HW-render arc now at a checkpoint** (M1+M2 done). Remaining M3 (validate
-    the rest of the Vulkan lineup — Beetle PSX HW, Flycast, PPSSPP, Saturn HW —
-    + capability tiering / software-peer fallback) and M4 (DX12/GL backends,
-    cross-platform) are **future stretch**, not currently in flight. Known
+    **HW-render arc now at a checkpoint** (M1 + M2 + M3 Half 2 done — see the
+    M3 bullet below). Remaining: M3 **Half 1** (operator-driven per-core HW
+    validation — Beetle PSX HW, Flycast, PPSSPP, Saturn HW) + M4 (DX12/GL
+    backends, cross-platform), **future stretch**. Known
     separate to-do: NES (+ maybe others) audio clipping/clicking — filed in
     `NEXT.md` MEDIUM, independent of the HW path. See the hw-render
     SESSION_LOG cont.15/15b/15c entries.
-    - ⚠️ **STRANDED-ON-BRANCH (recorded 2026-06-12):** M3 "Half 2" was
-      actually started and **has uncommitted-to-main code** on branch
-      `feat/hw-render-m3` (tip `fd2821b`, also on `origin`): `hw_render.rs`
-      +168 (HW-render status observability + software-peer table), plus
-      `oa-libretro` core/state changes. Built ~2026-06-09, never merged; the
-      "future stretch / not started" wording above predates it. Branch is
-      ~95 commits behind main. Parked intentionally; do not delete — resurrect
-      via conflict-resolving merge + hardware validation when M3 is picked up.
+    - **M3 "Half 2" ✅ MERGED to main 2026-06-15** (cherry-picked clean off the
+      stale `feat/hw-render-m3` onto current main; 846 oa-shell tests green).
+      Ships the D4 observability + fallback signal: `hw_render.rs` (HW-render
+      status log line every launch + `software_peer_core()` table +
+      decline-toast) + `oa-libretro` `HwRenderStatus` enum. **Not** an
+      auto-core-swap. **M3 "Half 1" (the actual per-core HW validation —
+      Beetle PSX HW / Flycast / PPSSPP / Saturn HW) is operator-driven
+      playtesting, still open.** M4 (DX12/GL backends) future stretch.
 
 - **Retroverse UI rollout** — all six top-toolbar tabs operator-
   facing with real bodies. 2026-05-28 shipped Phases A-C4 + HOME v2
