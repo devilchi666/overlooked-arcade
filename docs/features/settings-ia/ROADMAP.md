@@ -41,8 +41,8 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   nothing jumps. Manifest `settings_schema` format ships now; theming Phase 5's
   `.oatheme` loader reuses it. typecheck/lint/vitest(107) green; THEME_CONTRACT
   §8 added.
-- 🟡 **Slice 4 — External Emulators consolidation** *(code-complete on
-  `feat/settings-ia-slice-4`; pending operator playtest + merge)* — extracted the
+- ✅ **Slice 4 — External Emulators consolidation** *(MERGED to main 2026-06-15,
+  operator playtested clean — merge `f3082ed`)* — extracted the
   CoresPage "External emulators" section into a self-contained
   `engine/ExternalEmulatorsSection` (profiles + binary paths + per-system
   default-launcher), now rendered in `ExternalEmulatorsLanding` (the tab is real,
