@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-15 — ARC 2 L2b: D34 systemUIConfigs experiential→Retroverse migration — ✅ shipped on branch (stacks on L2a), pending operator visual-identical playtest
+## 2026-06-15 — ARC 2 L2b: D34 systemUIConfigs experiential→Retroverse migration — ✅ shipped + MERGED to main (with L2a; operator playtested visual-identical)
 
 > Branch `feat/theming-arc2-l2b-systemuiconfigs-migration` (off L2a — both merge
 > together). The D34 migration: move the experiential per-system config out of the

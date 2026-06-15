@@ -230,7 +230,7 @@ migration; split for independent playtestability (the S4→S5 pattern).
 **Gate:** validator unit + builtin-themes tests green (built-ins validate with no
 `views`); CI-only (no visual change → no playtest beyond an optional boot smoke-test).
 
-#### L2b — D34 `systemUIConfigs` migration — ✅ SHIPPED on branch 2026-06-15 (stacks on L2a), pending operator visual-identical playtest (DECISIONS D38)
+#### L2b — D34 `systemUIConfigs` migration — ✅ SHIPPED + MERGED to main 2026-06-15 (with L2a; operator playtested visual-identical) (DECISIONS D38)
 
 > Built as designed: experiential per-system config → `themes/retroverse/systemUiConfigs.ts`
 > via `ThemePackage.perSystemUiConfigs` (peer of `perSystemTokens`); App bridges it;
