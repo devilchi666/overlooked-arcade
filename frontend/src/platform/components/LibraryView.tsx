@@ -205,15 +205,25 @@ const LibraryView: Component<Props> = (props) => {
   });
 
   // ARC 2 L4b — the radial wheel sizes its ring to the browse pane (vertical
-  // extent ≈ radius), so it fills the column at any window size. Measure the
-  // pane height; fall back to a sane default before first layout.
+  // extent ≈ radius), so it fills the column at any window size.
   let paneRef: HTMLDivElement | undefined;
   const [paneHeight, setPaneHeight] = createSignal(720);
   onMount(() => {
-    if (!paneRef || typeof ResizeObserver === "undefined") return;
+    if (!paneRef) return;
+    // Measure SYNCHRONOUSLY up front so the wheel paints at the correct radius
+    // on its first frame. `onMount` runs before the browser paints, and
+    // getBoundingClientRect forces layout now — so the radius is right before
+    // anything is shown. (Relying only on the async ResizeObserver below made
+    // the wheel paint at the default radius and then ANIMATE down to the real
+    // one a beat later — the "wheel gets smaller / top pulls down" jump on first
+    // scroll. The intermediate radius is now never painted, so no animation.)
+    const initial = paneRef.getBoundingClientRect().height;
+    if (initial > 0) setPaneHeight(initial);
+    if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setPaneHeight(h);
+      // Only react to real resizes (window/layout), not sub-pixel reflow churn.
+      if (h && h > 0 && Math.abs(h - paneHeight()) > 2) setPaneHeight(h);
     });
     ro.observe(paneRef);
     onCleanup(() => ro.disconnect());
