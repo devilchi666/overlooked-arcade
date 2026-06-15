@@ -238,7 +238,7 @@ const LibraryView: Component<Props> = (props) => {
       <GridControls
         title={title()}
         count={count()}
-        tileSize={props.appearance.viewMode() === "capsule" ? props.appearance.tileSize() : undefined}
+        tileSize={effectiveLayoutMode() === "grid" ? props.appearance.tileSize() : undefined}
         onTileSizeChange={props.appearance.setTileSize}
       />
       <div class="min-h-0 flex-1">
