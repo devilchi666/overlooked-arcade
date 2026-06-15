@@ -1544,3 +1544,50 @@ override-store round-trip/isolation) + build green. Frontend-only.
 theme-id-keyed override store (2) are what a later contributor should preserve —
 don't make the pure resolver reach into the DOM/registry, and don't drop the
 theme-id key (it keeps one theme's "pick your view" from leaking into another).
+
+---
+
+### D40 — ARC-2 L3b: per-system layout COEXISTS with the global viewMode toggle (overrides only where declared); `layout` becomes optional
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l3b-layout-consumer`). **Decision:** how
+the per-system resolved layout relates to the existing global capsule/list
+`viewMode` toggle, signed off via AskUserQuestion — **coexist**: the global toggle
+stays the default for every system; the theme's per-system `views` (and, later, the
+user's L5 override) override it ONLY for systems where declared. Behavior-preserving.
+
+1. **`ViewLayoutConfig.layout` is now OPTIONAL.** A theme must be able to declare
+   `per_system` overrides WITHOUT a view-wide `layout` — a view default would sit
+   above `viewMode` in the cascade and override every (undeclared) system's global
+   toggle, breaking the coexist promise. So `layout?` is optional; the validator
+   validates it only when present (the L2a "missing layout = error" rule is
+   relaxed). (Refines the L2a/D37 contract.)
+
+2. **A "declared-only" resolver tier.** `resolveDeclaredLayout` / `useDeclaredLayout`
+   run the cascade MINUS the engine-default fallback → return `undefined` when
+   neither the user nor the theme declares a layout. That `undefined` is the signal
+   the consumer uses to keep its OWN default. (`resolveLayout` with the engine
+   default stays for consumers with no fallback of their own.)
+
+3. **`LibraryView` consumes it keyed on the existing `selectedSystemId()`.** When a
+   single system is in context and a layout is declared → render that primitive;
+   else → today's exact `viewMode()` capsule/list switch. Mapping: `grid` →
+   `VirtualLibraryGrid`, `list` → `DetailListView`; `carousel`/`wheel`/`custom` are
+   NOT yet rendered in the shared browse view → fall back to `grid` for now
+   (carousel/wheel game-browse rendering is a follow-on; `wheel` also needs the L4
+   primitive). So L3b proves the cascade end-to-end with grid↔list.
+
+4. **Retroverse demo: `views: { "game-browse": { per_system: { nes: "list" } } }`** —
+   NO view-wide `layout` (per the coexist rule), only a per-system override. NES
+   browses as a text list; every other system keeps the operator's global viewMode.
+   Clearly labelled a demo — real per-system layout curation lands in L6.
+
+**Verification:** typecheck + lint + vitest (145) + build green. Frontend-only.
+**Acceptance gate (operator visual playtest):** select NES → game list renders as a
+DetailListView; select another system / All Games → grid (or the global viewMode);
+flipping the global capsule/list toggle still affects all undeclared systems.
+
+**Why record this:** (1) `layout`-optional + (3) the declared-only-vs-engine-default
+distinction are the two a later contributor could undo — by re-requiring `layout`
+(which would silently override everyone's global toggle), or by having LibraryView
+call `resolveLayout` (engine default) instead of `useDeclaredLayout`, forcing grid
+on users who set viewMode=list globally.

@@ -2,7 +2,7 @@
 // user override → theme per_system → theme view default → engine default.
 
 import { describe, it, expect } from "vitest";
-import { resolveLayout, ENGINE_DEFAULT_LAYOUTS } from "./layoutResolver";
+import { resolveLayout, resolveDeclaredLayout, ENGINE_DEFAULT_LAYOUTS } from "./layoutResolver";
 import type { ThemeViews } from "./manifest";
 
 describe("resolveLayout — the D32 cascade", () => {
@@ -46,5 +46,26 @@ describe("resolveLayout — the D32 cascade", () => {
     expect(
       resolveLayout({ override: "carousel", themeViews, view: "game-browse", systemId: "tg16" }),
     ).toBe("carousel");
+  });
+});
+
+describe("resolveDeclaredLayout — declared tiers only (no engine default)", () => {
+  it("returns undefined when nothing is declared (the 'keep your own default' signal)", () => {
+    expect(resolveDeclaredLayout({ view: "game-browse" })).toBeUndefined();
+  });
+
+  it("a per_system-only theme entry resolves for its system, undefined for others", () => {
+    const themeViews: ThemeViews = {
+      "game-browse": { per_system: { nes: "list" } },
+    };
+    expect(resolveDeclaredLayout({ themeViews, view: "game-browse", systemId: "nes" })).toBe("list");
+    expect(resolveDeclaredLayout({ themeViews, view: "game-browse", systemId: "snes" })).toBeUndefined();
+    expect(resolveDeclaredLayout({ themeViews, view: "game-browse", systemId: null })).toBeUndefined();
+  });
+
+  it("a view-wide layout (when declared) resolves; a user override still wins", () => {
+    const themeViews: ThemeViews = { "game-browse": { layout: "carousel" } };
+    expect(resolveDeclaredLayout({ themeViews, view: "game-browse" })).toBe("carousel");
+    expect(resolveDeclaredLayout({ override: "wheel", themeViews, view: "game-browse" })).toBe("wheel");
   });
 });

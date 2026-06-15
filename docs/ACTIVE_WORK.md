@@ -401,10 +401,15 @@ spanned every system but was filed under whichever core happened to be active.
         `BASELINE_UI`. Operator playtested visual-identical. **L3a (layout
         resolver + persisted override store) ✅ MERGED to main, CI-green** (D39): pure
         `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→
-        layout` localStorage override store; no consumer, no visual change. **Next:
-        L3b** — wire `useResolvedLayout` into `LibraryView` (keyed on
-        `selectedSystemId`) + settle per-system layout vs the global `viewMode`
-        toggle; visual playtest. Then L4 WheelNav → L5 override UI → L6 → P.
+        layout` localStorage override store; no consumer, no visual change. **L3b
+        (per-system layout wired into game-browse) ✅ shipped on
+        `feat/theming-arc2-l3b-layout-consumer`, pending visual playtest** (D40):
+        coexist model — `layout` made optional, `useDeclaredLayout` keyed on
+        `selectedSystemId()`, `LibraryView` renders the declared primitive
+        (grid/list; carousel/wheel/custom→grid fallback) else the global viewMode;
+        Retroverse demo NES→list. typecheck/lint/vitest(145)/build green. **Next:
+        L4** — build the reserved WheelNav primitive + carousel/wheel game-browse
+        rendering. Then L5 override UI → L6 → P.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

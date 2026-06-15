@@ -13,6 +13,7 @@ import {
 import DiscPickerDialog from "./DiscPickerDialog";
 import { useMedia } from "@oa/platform/library/media";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
+import { useDeclaredLayout } from "@oa/platform/theme/layoutResolver";
 import type { ViewsStore } from "@oa/platform/views/store";
 import { findNode, resolveNodeSystemIds } from "@oa/platform/views/resolver";
 import { parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -126,6 +127,22 @@ const LibraryView: Component<Props> = (props) => {
     return parsePlatformNodeId(cv.nodeId);
   });
 
+  // ARC 2 L3b (D32/D40): per-system layout for the game-browse view. The
+  // active theme's `views["game-browse"]` (+ the user's persisted override, L5)
+  // can pick a layout primitive for the CURRENT system; `useDeclaredLayout`
+  // returns `undefined` when nothing is declared → we keep the existing global
+  // capsule/list `viewMode` toggle as the default (the "coexist" model, D40).
+  // grid → VirtualLibraryGrid, list → DetailListView; carousel/wheel/custom are
+  // not yet rendered in the shared browse view (carousel/wheel ride a follow-on;
+  // wheel needs the L4 primitive) so they fall back to grid for now.
+  const declaredLayout = useDeclaredLayout("game-browse", selectedSystemId);
+  const effectiveLayoutMode = (): "grid" | "list" => {
+    const d = declaredLayout();
+    if (d === "list") return "list";
+    if (d) return "grid"; // grid, or the not-yet-rendered carousel/wheel/custom
+    return props.appearance.viewMode() === "list" ? "list" : "grid";
+  };
+
   const filtered = createMemo(() =>
     filterEntries(
       props.library.state.entries,
@@ -221,7 +238,7 @@ const LibraryView: Component<Props> = (props) => {
       <GridControls
         title={title()}
         count={count()}
-        tileSize={props.appearance.viewMode() === "capsule" ? props.appearance.tileSize() : undefined}
+        tileSize={effectiveLayoutMode() === "grid" ? props.appearance.tileSize() : undefined}
         onTileSizeChange={props.appearance.setTileSize}
       />
       <div class="min-h-0 flex-1">
@@ -237,7 +254,7 @@ const LibraryView: Component<Props> = (props) => {
           }
         >
           <Show
-            when={props.appearance.viewMode() === "list"}
+            when={effectiveLayoutMode() === "list"}
             fallback={
               <VirtualLibraryGrid
                 groups={grouped()}
