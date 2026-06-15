@@ -40,8 +40,19 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 - **Verified:** typecheck + lint green; `npm run test` = **149 passed** (+5
   `wheelGeometry` cases replacing the stub `toBeNull` assertion; builtin-themes still
   validates with `tg16: wheel`); build green. Frontend-only.
+- **Playtest round 1 (2026-06-15) — gentler wheel feel:** operator found the wheel
+  "shrinking / pulling toward the middle" while scrolling. First fix (sync pane-height
+  measure in `onMount` to kill an initial radius-settle animation) addressed a real but
+  different jump. The actual complaint was the radial feel being too aggressive: tuned
+  shape-A defaults gentler — `arcDegrees` 140→80 (near-even vertical spacing instead of
+  edge-bunching + a milder horizontal curve), `sideScale` 0.62→0.85 (focus still
+  biggest, neighbours don't dwindle), `opacityFalloff`/`minOpacity` softened; bumped
+  the `LibraryView` radius multiplier 0.52→0.76 so the shallower arc still fills the
+  column. Operator confirmed gentle-but-still-a-wheel is the target; the **near-flat
+  vertical strip** + the **continual/looping wheel** are noted future *views* (presets
+  over the same geometry, not rewrites).
 - **Almost:** wheel polish (preload buffer for fast scroll, reflection/depth blur,
-  per-shape tuning) deferred; B/C shapes are future presets (D42 §2).
+  per-shape tuning) deferred; B/C + strip + looping shapes are future presets (D42 §2).
 - **Next:** **operator visual playtest** — select TG-16 → navigable right-side radial
   wheel (browse via Up/Down + scroll, Confirm launches, Secondary info); NES → list,
   SNES → carousel, others → grid/viewMode. Then merge. **After: L5** (user-facing

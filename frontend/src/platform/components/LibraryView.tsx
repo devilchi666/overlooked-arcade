@@ -228,7 +228,9 @@ const LibraryView: Component<Props> = (props) => {
     ro.observe(paneRef);
     onCleanup(() => ro.disconnect());
   });
-  const wheelRadius = (): number => Math.max(240, paneHeight() * 0.52);
+  // 0.76 pairs with WheelNav's gentle 80° default arc so the ±window items still
+  // span the pane vertically (a shallower arc spreads less per unit radius).
+  const wheelRadius = (): number => Math.max(320, paneHeight() * 0.76);
   const coverFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId, entry.identityId) : null) ??
     media.coverUrl(entry.systemId, entry.id);

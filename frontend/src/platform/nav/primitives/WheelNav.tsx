@@ -49,7 +49,10 @@ export type WheelNavProps<T> = Omit<NavPrimitiveBaseProps<T>, "children"> & {
   /** Ring radius in px. The vertical extent of the visible arc ≈ `radius`, so
    * size it ~half the pane height for a wheel that fills the column. */
   radius: number;
-  /** Total arc the visible window (±`window` items) spans, in degrees. Default 140. */
+  /** Total arc the visible window (±`window` items) spans, in degrees. Default 80
+   * — a gentle curve with near-even vertical spacing (a larger arc compresses
+   * the spacing toward the edges, which reads as items "bunching"). A future
+   * near-flat "strip" view drops this further (~20). */
   arcDegrees?: number;
   /** Items kept in the DOM each side of the anchored focus. Default 6. */
   window?: number;
@@ -62,7 +65,8 @@ export type WheelNavProps<T> = Omit<NavPrimitiveBaseProps<T>, "children"> & {
    * for the centred-fan / bottom-arc shapes. */
   anchor?: { x?: string; y?: string };
   /** Scale of the focused item / the farthest visible item; intermediate items
-   * lerp between them by |offset|/window. Default 1 / 0.62. */
+   * lerp between them by |offset|/window. Default 1 / 0.85 (a gentle size
+   * falloff — the focus is biggest, but the others don't dwindle). */
   focusedScale?: number;
   sideScale?: number;
   /** Per-step opacity falloff for items away from focus, clamped at `minOpacity`. */
@@ -89,14 +93,14 @@ export function WheelNav<T>(props: WheelNavProps<T>): ReturnType<Component> {
   };
 
   const win = (): number => props.window ?? 6;
-  const arcDegrees = (): number => props.arcDegrees ?? 140;
+  const arcDegrees = (): number => props.arcDegrees ?? 80;
   const anchorAngle = (): number => props.anchorAngle ?? 270;
   const anchorX = (): string => props.anchor?.x ?? "62%";
   const anchorY = (): string => props.anchor?.y ?? "50%";
   const focusedScale = (): number => props.focusedScale ?? 1;
-  const sideScale = (): number => props.sideScale ?? 0.62;
-  const falloff = (): number => props.opacityFalloff ?? 0.12;
-  const minOpacity = (): number => props.minOpacity ?? 0.2;
+  const sideScale = (): number => props.sideScale ?? 0.85;
+  const falloff = (): number => props.opacityFalloff ?? 0.07;
+  const minOpacity = (): number => props.minOpacity ?? 0.35;
   const transitionMs = (): number => props.transitionMs ?? 300;
 
   const group = useFocusGroup({
