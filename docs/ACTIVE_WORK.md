@@ -398,9 +398,14 @@ spanned every system but was filed under whichever core happened to be active.
         migration)** (D38): experiential per-system config → `themes/retroverse/`
         via `ThemePackage.perSystemUiConfigs` + App bridge; `touchInputSupported`
         split to platform-factual `systemSupportsTouch`; `uiConfigFor` merges over
-        `BASELINE_UI`. Operator playtested visual-identical. **Next: L3** (resolver
-        + persisted `(theme,system,view)→layout` user override that consumes the
-        `views` contract).
+        `BASELINE_UI`. Operator playtested visual-identical. **L3a (layout
+        resolver + persisted override store) ✅ shipped on
+        `feat/theming-arc2-l3-layout-resolver`, CI-green** (D39): pure
+        `resolveLayout` cascade + `useResolvedLayout` hook + `(theme,system,view)→
+        layout` localStorage override store; no consumer, no visual change. **Next:
+        L3b** — wire `useResolvedLayout` into `LibraryView` (keyed on
+        `selectedSystemId`) + settle per-system layout vs the global `viewMode`
+        toggle; visual playtest. Then L4 WheelNav → L5 override UI → L6 → P.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX

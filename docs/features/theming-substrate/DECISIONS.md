@@ -1503,3 +1503,44 @@ physical/square); CoverFlow/bare uniform; NDS stylus/touch overlays still gate.
 `touchInputSupported`-stays-factual split are the two a later contributor could
 get wrong — by promoting the config to the manifest, or by folding touch-support
 back into the theme content and breaking non-Retroverse touch overlays.
+
+---
+
+### D39 — ARC-2 L3 split: ship the layout resolver + persisted override store (L3a) before the LibraryView consumer (L3b)
+
+**Date:** 2026-06-15 (`feat/theming-arc2-l3-layout-resolver`). **Decision:** L3
+(per-system layout becomes real) splits — **L3a** the plumbing (resolver cascade +
+persisted user-override store + hook, no consumer), **L3b** the LibraryView
+consumer + the resolved-layout-vs-`viewMode` UX call + visual playtest. Same
+contracts-first split as L2; signed off via AskUserQuestion. L3a build shape:
+
+1. **Resolution cascade** (`layoutResolver.ts`) — `user override → theme
+   views[view].per_system[system] → theme views[view].layout → engine default`,
+   the same "resolve by active system" shape as S5.1 (assets) / S5.2 (palette)
+   with D18's per-user override tier on top. Split into a **pure `resolveLayout`**
+   (inputs → primitive; directly tested) + a reactive **`useResolvedLayout(view,
+   systemId)`** hook that wires the active theme's `views` (registry) + the
+   override store + the engine defaults. `ENGINE_DEFAULT_LAYOUTS` is the bottom
+   tier (browse views → `grid`, `game-details` → `custom`).
+
+2. **Persisted override store** (`layoutOverrides.ts`) — the `(theme_id,
+   system_id, view) → layout` namespace D32 names. One localStorage key
+   (`oa.layoutOverrides`), `createStore`-backed (reactive), keyed by **theme id**
+   so overrides don't leak across themes; mirrors the D28 `themeSettings`
+   localStorage pattern (frontend-owned, survives the restart swap). `get` /
+   `set` / `clear` (clear prunes empty branches).
+
+3. **No consumer in L3a** (the contracts-first point). Nothing reads
+   `useResolvedLayout` yet — L3b wires it into the game-browse view keyed on
+   `LibraryView`'s existing `selectedSystemId()` and decides how the per-system
+   resolved layout relates to the existing global capsule/list `viewMode` toggle
+   (the real UX fork, deferred here on purpose). So L3a is CI-gated, no visual
+   change.
+
+**Verification:** typecheck + lint + vitest (142; pure-cascade tests +
+override-store round-trip/isolation) + build green. Frontend-only.
+
+**Why record this:** the pure-core / reactive-hook split (1) and the
+theme-id-keyed override store (2) are what a later contributor should preserve —
+don't make the pure resolver reach into the DOM/registry, and don't drop the
+theme-id key (it keeps one theme's "pick your view" from leaking into another).
