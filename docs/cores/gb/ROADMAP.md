@@ -33,11 +33,12 @@ shell, scanner, bindings, library DB, and settings pipelines.
   `Some("Nintendo_-_Game_Boy")` as the primary cover repo. GBC-specific
   cover coverage from the Game-Boy-Color thumbnails repo is a documented
   follow-up gap.
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `gb`, `systemThemes.gb` entry (extensions
   `["gb", "gbc"]`, portrait 3/4 tile aspect, `crt-lite` default shader
   preset per the handheld convention).
-- ✅ Theme block in `frontend/src/themes/systems.css` — muted DMG
+- ✅ Theme palette in the per-system palette map
+  (`frontend/src/platform/themes/systemPalettes.ts`) — muted DMG
   pea-green (hue 145°, chroma 0.13). Decisively distinct from GG
   (130°, 0.18) by hue + chroma.
 - ✅ Per-core docs scaffold (this directory).
@@ -66,7 +67,7 @@ audio + working controller at native 59.73 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ✅ Dedicated `lcd-handheld` shader preset — defaulted 2026-05-24 for `gb` (in `frontend/src/themes/registry.ts::systemThemes.gb.defaultShaderPreset`). The same wave defaulted gbc / gba / gamegear / ngp / wonderswan / pokemini / psp.
+- ✅ Dedicated `lcd-handheld` shader preset — defaulted 2026-05-24 for `gb` (in `frontend/src/platform/themes/registry.ts::systemThemes.gb.defaultShaderPreset`). The same wave defaulted gbc / gba / gamegear / ngp / wonderswan / pokemini / psp.
 - ⬜ Game Boy bezel — bezel-rendering infra shipped via shader pipeline; DMG-specific bezel asset still operator-driven.
 - ⬜ DMG palette presets — operator-driven Gambatte core-option curation via the per-system Core Options page (per-system settings shipped).
 - ⬜ Super Game Boy palette support — deferred until the `snes`-side SGB path lands.

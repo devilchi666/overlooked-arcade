@@ -13,7 +13,7 @@ Per-core phase tracking for Bandai WonderSwan + WonderSwan Color. Status: ⬜ no
 - ✅ `media::repo_for_system_id("wonderswan") → "Bandai_-_WonderSwan"` (already wired; WS Color repo deferred — see DECISIONS).
 - ✅ `rom_hashes::libretro_dat_refs_for_system("wonderswan") → metadat/no-intro/{Bandai - WonderSwan, Bandai - WonderSwan Color}` — TWO DatRefs merged into one corpus.
 - ✅ Frontend `systemThemes.wonderswan` (extensions `["ws", "wsc"]`, portrait 3/4, crt-lite).
-- ✅ Theme CSS — pearl lavender 305° / L=0.70 / C=0.14.
+- ✅ Theme palette — pearl lavender 305° / L=0.70 / C=0.14 (`frontend/src/platform/themes/systemPalettes.ts`).
 - ✅ Per-core docs scaffold.
 
 ---

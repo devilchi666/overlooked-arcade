@@ -11,8 +11,10 @@ planning prompt).
 - ✅ Frontend `SystemId` union, `systemThemes` entry (CD container
   extensions, 4/3 tile aspect, plain default shader for FMV-heavy
   library), `systemUIConfigs` baseline entry.
-- ✅ `systems.css` data-system block — orange-red 32X family
-  (hue 42°), L 0.60 to read distinctly from cart 32X.
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts`
+  — orange-red 32X family (hue 42°), L 0.60 to read distinctly from cart
+  32X. Lives in the typed `SYSTEM_PALETTES` map, injected as `[data-system]`
+  CSS at boot (was the retired `systems.css` data-system block).
 - ✅ `parse_system_id` accepts `"sega32xcd" | "sega-32x-cd" |
   "32xcd" | "32x-cd"` and routes to `oa_core::SystemId::SegaCd`
   (CD-shape parent — the "stacked override" pattern, no new oa-core

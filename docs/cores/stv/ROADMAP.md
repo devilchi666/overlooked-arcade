@@ -11,8 +11,9 @@ complete; operator playtest deferred (operator picked the
   hue 220° / L 0.55 arcade-weight palette, .zip/.7z extensions,
   crt-lite default shader).
 - ✅ `systemUIConfigs` baseline entry.
-- ✅ `systems.css` `[data-system="stv"]` block — Sega arcade
-  cyan-blue distinct from Saturn purple (275°) and lynx (220°
+- ✅ `SYSTEM_PALETTES` entry (`frontend/src/platform/themes/systemPalettes.ts`,
+  injected as the `[data-system="stv"]` CSS block at boot) — Sega
+  arcade cyan-blue distinct from Saturn purple (275°) and lynx (220°
   but L 0.72).
 - ✅ `parse_system_id` accepts `"stv" | "titan" | "sega-titan-video"`
   and routes to `oa_core::SystemId::Mame` (pure alias — no new

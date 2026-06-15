@@ -13,14 +13,15 @@ Paired with PSX. First heavyweight CD-shape onboarding post-segacd. Core
 comes online via the libretro pivot — no Rust crate vendoring. Beetle
 Saturn is the recommended default.
 
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `saturn`, `systemThemes.saturn` entry (CD container
   extensions, landscape 4/3 tile, `crt-lite` shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — deepest purple
-  at hue 275° + L=0.45 + C=0.18. Sits at the bottom of the violet
-  cluster (SNES 270° L=0.62 / GBA 285° L=0.55 / Lynx 290° L=0.65 /
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts` —
+  deepest purple at hue 275° + L=0.45 + C=0.18. Sits at the bottom of the
+  violet cluster (SNES 270° L=0.62 / GBA 285° L=0.55 / Lynx 290° L=0.65 /
   Saturn 275° L=0.45). Period-accurate to the 1994-1996 Saturn launch
-  marketing palette.
+  marketing palette. Lives in the typed `SYSTEM_PALETTES` map, injected as
+  `[data-system]` CSS at boot.
 - ✅ Per-system input wiring — 13-button Saturn 6-button face pad
   module in `bindings.rs::saturn` + `SATURN_BUTTONS` table +
   `default_saturn_bindings()` + `saturn_to_libretro_bits` identity
@@ -67,7 +68,7 @@ audio + working 6-button pad at native 59.94 Hz NTSC.
 
 - ✅ **Disc-id extraction** — shipped via `apps/oa-shell/src/cd_id.rs::extractors::saturn` (reads SEGA SEGASATURN magic at disc header + T-/GS-prefix serial); `rom_hashes` points at `metadat/redump/Sega - Saturn`.
 - ✅ **3D Pad analog stick support** — closed by shared analog-input device-type wiring (analog axes infra is shipped cross-system). Operators set "3D Pad / Analog" on port 0 in the per-game Input dialog (system-aware label landed 2026-05-27 in the system-fixes branch); Beetle Saturn interprets device 5 as 3D Pad mode (analog stick + analog triggers).
-- ⬜ **6-button Saturn pad glyphs** for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `SystemBindingsEditor.tsx:226`).
+- ⬜ **6-button Saturn pad glyphs** for the bindings UI — operator polish (bindings UI button-name chips shipped cross-system via `frontend/src/engine/SystemBindingsEditor.tsx`).
 - ⬜ **Kronos vs Beetle Saturn vs YabaSanshiro** — operator-driven DECISIONS doc.
 - ⬜ **Light Gun support** — operator validation. Full pipeline wired as of 2026-06-05: LIGHTGUN dispatch (`feat/light-gun-harness` 2026-05-25 → `crates/oa-libretro/src/state.rs::lightgun_field_value`) + IS_OFFSCREEN reload-by-aim (2026-05-27) + pointer mirrored to ports 1–4 (2026-06-05 `ee0f813`, lets the gun on port 0 OR port 1 see the OS mouse) + per-game Input dialog reads Beetle Saturn / Kronos's own `RETRO_ENVIRONMENT_SET_CONTROLLER_INFO` advertisement (dynamic-controller-info arc, `docs/PLANS/dynamic-controller-info.md`) so the dropdown lists "Virtua Gun" with the correct subclass-encoded id rather than the broken generic `Light Gun = 4`. Flagship validation: Virtua Cop 1/2 / House of the Dead / Death Crimson 2 / Crypt Killer.
 - ✅ **Light-gun gun-side buttons** (AUX_A/B/C + START + SELECT + DPAD + RELOAD) — shipped 2026-05-30 via Phase 4 of `feat/gameplay-fixes-batch`. New `oa_core::InputState.lightgun_buttons: u32` + State mirror + bit-keyed `lightgun_field_value` dispatch. Bindings derive from per-port RetroPad bits via `oa_input::lightgun_buttons_from_joypad_bits` (no new bindings UI — operator rebinds existing per-system JOYPAD bits). Virtua Gun's START button (used for Virtua Cop continue prompts + House of the Dead mode-select) reaches the core through LIGHTGUN_START.

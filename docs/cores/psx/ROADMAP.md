@@ -14,12 +14,14 @@ the recommended default; Beetle PSX SW pre-registered as a recommended
 catalog peer for hosts where HW fails to obtain a Vulkan/OpenGL
 surface from our wgpu DX12 backend.
 
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `psx`, `systemThemes.psx` entry (CD container
   extensions + `.pbp`, landscape 4/3 tile, `crt-lite` shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — teal cyan at
-  hue 180° + L=0.65 + C=0.16. Open band (175-185°) — no hue crowding.
-  Evokes PS1 launch palette's cool blue/cyan/silver identity.
+- ✅ Palette entry in `frontend/src/platform/themes/systemPalettes.ts`
+  (typed `SYSTEM_PALETTES` map injected as `[data-system]` CSS at boot)
+  — teal cyan at hue 180° + L=0.65 + C=0.16. Open band (175-185°) — no
+  hue crowding. Evokes PS1 launch palette's cool blue/cyan/silver
+  identity.
 - ✅ Per-system input wiring — 14-button digital DualPad module in
   `bindings.rs::psx` + `PSX_BUTTONS` table + `default_psx_bindings()`
   + `psx_to_libretro_bits` identity remap + all 4 dispatch arms.

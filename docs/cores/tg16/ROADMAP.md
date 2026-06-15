@@ -40,8 +40,8 @@ Small follow-ups that don't gate Phase 2 but should land before Phase 5 (PCE-CD)
 
 The Phase 2 work that lives in this core (everything else is in shared crates):
 
-- ✅ TG-16 theme — shipped via the cross-system theming registry (`frontend/src/themes/systems.css` + `frontend/src/themes/registry.ts`); system page, library tile styling, and `defaultShaderPreset` slot all picked up automatically.
-- ✅ PCE button glyphs (I / II / RUN / SELECT) — shipped via `SystemBindingsEditor.tsx:226` which renders button names as accent-colored chips per system.
+- ✅ TG-16 theme — shipped via the cross-system theming registry: per-system palette map (`frontend/src/platform/themes/systemPalettes.ts`) + registry (`frontend/src/platform/themes/registry.ts`); system page, library tile styling, and `defaultShaderPreset` slot all picked up automatically.
+- ✅ PCE button glyphs (I / II / RUN / SELECT) — shipped via `frontend/src/engine/SystemBindingsEditor.tsx` which renders button names as accent-colored chips per system.
 - ✅ Per-system aspect-ratio entry — shipped via `SystemSettings.display_aspect_override` (cross-system path); see Phase 1.5 pixel-aspect-ratio entry for code refs.
 
 ---

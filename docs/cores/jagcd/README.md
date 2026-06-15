@@ -39,10 +39,11 @@ library.
 ## Sidebar / theme
 
 Sidebar slug: `jagcd`. ShortName "Jag CD". Form factor "console";
-manufacturer "atari". CSS accent palette in
-[`frontend/src/themes/systems.css`](../../frontend/src/themes/systems.css)
-sits in the gold-orange Jaguar family but a shade deeper (L 0.58,
-hue 75°) to read distinctly from cart Jaguar at a glance.
+manufacturer "atari". Accent palette is the `jagcd` entry in
+[`frontend/src/platform/themes/systemPalettes.ts`](../../frontend/src/platform/themes/systemPalettes.ts)
+(typed `SYSTEM_PALETTES`, injected as the `[data-system="jagcd"]` CSS
+block at boot) — sits in the gold-orange Jaguar family but a shade
+deeper (L 0.58, hue 75°) to read distinctly from cart Jaguar at a glance.
 
 ## Controller
 

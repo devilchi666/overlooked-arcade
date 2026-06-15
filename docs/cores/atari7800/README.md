@@ -26,7 +26,7 @@ yet-to-be-onboarded `atari2600` slug.
   mapper / region / "needs BIOS" / RAM-bank flags the ProSystem core
   reads at load time. Every modern dump (No-Intro, TOSEC) uses .a78.
 - **Headerless `.bin`** — rare; some old dumps lack the .a78 header.
-  Intentionally NOT registered in `themes/registry.ts` extension list
+  Intentionally NOT registered in `frontend/src/platform/themes/registry.ts` extension list
   because `.bin` collides with future systems (Atari 2600, Mega Drive,
   etc.). Users with headerless dumps can rename to `.a78` — the
   ProSystem core autodetects mapper from the binary itself when the

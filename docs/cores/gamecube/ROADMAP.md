@@ -15,9 +15,9 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
   disc images not single-file matched).
 - ✅ `media::repo_for_system_id` → `Nintendo_-_GameCube` (Wii cover
   sync via separate repo is Phase 2.5 polish).
-- ✅ Frontend SystemId / systemThemes / CSS (Plan A: Indigo GameCube
+- ✅ Frontend SystemId / systemThemes / palette entry (Plan A: Indigo GameCube
   oklch(0.48 0.22 280) — deep premium indigo in the Nintendo home
-  cluster).
+  cluster; `frontend/src/platform/themes/systemPalettes.ts`).
 - ✅ Per-core docs scaffold.
 - ✅ **Analog infra shipped alongside n64 onboarding** — gamepad
   LeftStick → main stick, RightStick → C-stick, both flow through

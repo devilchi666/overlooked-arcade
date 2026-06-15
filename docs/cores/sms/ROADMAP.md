@@ -14,12 +14,13 @@ Core comes online via the libretro pivot — no Rust crate vendoring.
 Genesis Plus GX installed by operator; OA wires the system into the
 existing shell, scanner, bindings, library DB, and settings pipelines.
 
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `sms`, `systemThemes.sms` entry (extension `sms`,
   landscape tile aspect 4/3, `crt-lite` default shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — neon magenta
-  (hue 340°, chroma 0.22), evoking the 1986-1990 Western Big Box
-  grid-floor art.
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts` —
+  neon magenta (hue 340°, chroma 0.22), evoking the 1986-1990 Western Big
+  Box grid-floor art. Lives in the typed `SYSTEM_PALETTES` map, injected
+  as `[data-system]` CSS at boot.
 - ✅ Per-system button bits + bindings in `apps/oa-shell/src/bindings.rs::sms`
   — 7-button layout (4-way d-pad + B1 + B2 + PAUSE), `SMS_BUTTONS`
   table, `default_sms_bindings()`, `defaults_for("sms")` arm.

@@ -15,8 +15,8 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ✅ `check_ps2_bios` + `PS2_BIOS_KNOWN_HASHES` (6 canonical entries
   spanning JP launch / US fat / US-EU slim variants). Slotted into
   CD-launch dispatch as 9th CD-shape system.
-- ✅ Frontend SystemId / systemThemes / CSS (Plan A: deep PS2
-  cobalt `oklch(0.45 0.22 215)`).
+- ✅ Frontend SystemId / systemThemes / palette entry (Plan A: deep PS2
+  cobalt `oklch(0.45 0.22 215)` in `frontend/src/platform/themes/systemPalettes.ts`).
 - ✅ Per-core docs scaffold.
 
 ---

@@ -12,8 +12,8 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 - ✅ `default_core_dll_for_system("psp") → "ppsspp_libretro.dll"`.
 - ✅ `rom_hashes` → no-intro PSP dat (.iso/.cso/.pbp single-file).
 - ✅ `media::repo_for_system_id` → `Sony_-_PlayStation_Portable`.
-- ✅ Frontend SystemId / systemThemes / CSS (Plan A: Sony cool cyan
-  `oklch(0.65 0.18 200)`).
+- ✅ Frontend SystemId / systemThemes / palette entry (Plan A: Sony cool cyan
+  `oklch(0.65 0.18 200)` in `frontend/src/platform/themes/systemPalettes.ts`).
 - ✅ No BIOS pre-check needed (PPSSPP is BIOS-free).
 - ✅ Per-core docs scaffold.
 

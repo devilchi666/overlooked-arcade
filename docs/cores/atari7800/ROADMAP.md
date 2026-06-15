@@ -8,7 +8,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ complete.
 
 ## 🟨 Phase 1 — Onboarding (2026-05-19)
 
-- ✅ `atari7800` slug added to `frontend/src/themes/registry.ts` (ext: `.a78`; theme block in `themes/systems.css` — amber/gold at hue 80°).
+- ✅ `atari7800` slug added to `frontend/src/platform/themes/registry.ts` (ext: `.a78`; theme palette in `frontend/src/platform/themes/systemPalettes.ts` — amber/gold at hue 80°).
 - ✅ `oa_core::SystemId::Atari7800` variant + `parse_system_id("atari7800")` already in place from earlier scaffolding.
 - ✅ `apps/oa-shell/src/bindings.rs` — `atari7800` button module (B1/B2 + d-pad + PAUSE + SELECT, identity-mapped to libretro RetroPad), `ATARI7800_BUTTONS`, `default_atari7800_bindings()`, dispatch arms in `bit_for` / `buttons_for` / `to_libretro_bits` / `defaults_for`. 17 bindings tests green (3 new for atari7800 + existing cross-system checks updated).
 - ✅ `default_core_dll_for_system("atari7800") → "prosystem_libretro.dll"` in `apps/oa-shell/src/main.rs`.

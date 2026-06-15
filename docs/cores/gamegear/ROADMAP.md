@@ -15,11 +15,12 @@ Genesis Plus GX installed by operator (one .dll services both
 `gamegear` and `sms`); OA wires the system into the existing shell,
 scanner, bindings, library DB, and settings pipelines.
 
-- ✅ System registered in `frontend/src/themes/registry.ts` — `SystemId`
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` — `SystemId`
   union extended with `gamegear`, `systemThemes.gamegear` entry
   (extension `gg`, landscape tile aspect 4/3, `crt-lite` default
   shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — yellow-green
+- ✅ Theme palette in the per-system palette map
+  (`frontend/src/platform/themes/systemPalettes.ts`) — yellow-green
   (hue 130°, chroma 0.18), pulled from the GG launch packaging palette.
 - ✅ Per-system button bits + bindings in `apps/oa-shell/src/bindings.rs::gamegear`
   — 7-button layout (4-way d-pad + B1 + B2 + START), `GAMEGEAR_BUTTONS`
@@ -60,7 +61,7 @@ audio + working controller at native 59.92 Hz.
 
 ## ⬜ Phase 2 — Polish
 
-- ✅ Per-system shader tweaks — `lcd-handheld` preset defaulted 2026-05-24 for gg (in `frontend/src/themes/registry.ts::systemThemes.gamegear.defaultShaderPreset`). Operators wanting a different look toggle per-system via Display.
+- ✅ Per-system shader tweaks — `lcd-handheld` preset defaulted 2026-05-24 for gg (in `frontend/src/platform/themes/registry.ts::systemThemes.gamegear.defaultShaderPreset`). Operators wanting a different look toggle per-system via Display.
 - ⬜ Game Gear bezel — bezel-rendering infra shipped via shader pipeline (`crates/oa-render/src/lib.rs::ShaderPreset` + `shaders/presets/*.preset.toml`); GG-specific bezel asset still operator-driven.
 - ⬜ Master Gear adapter — documented here so a future contributor doesn't add a separate slug.
 - ⬜ Game Gear's link cable (multiplayer Columns / Pop Breaker / a few others) — deferred.

@@ -51,9 +51,10 @@ the general `mame` library.
 ## Sidebar / theme
 
 Sidebar slug: `stv`. ShortName "ST-V". Form factor "arcade";
-manufacturer "sega". CSS accent palette in
-[`frontend/src/themes/systems.css`](../../frontend/src/themes/systems.css)
-is cyan-blue at hue 220° / L 0.55 — matches ST-V's 1994-1998
+manufacturer "sega". Accent palette is the `stv` entry in
+[`frontend/src/platform/themes/systemPalettes.ts`](../../frontend/src/platform/themes/systemPalettes.ts)
+(typed `SYSTEM_PALETTES`, injected as the `[data-system="stv"]` CSS
+block at boot) — cyan-blue at hue 220° / L 0.55 — matches ST-V's 1994-1998
 cabinet artwork + marketing palette. Sits in the same cyan
 cluster as lynx but darker, reading as an arcade-weight cool
 blue rather than handheld brightness.

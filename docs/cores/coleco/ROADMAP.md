@@ -38,7 +38,7 @@ Per-core phase tracking for ColecoVision. Status: ⬜ not started · 🟨 in pro
     ("KP1=climb-up, KP2=climb-down, …") — operator-recorded
     documentation for the active game's overlay.
   - ✅ Visual keypad reference panel
-    (`frontend/src/components/KeypadReference.tsx`, 2026-05-27) —
+    (`frontend/src/platform/components/KeypadReference.tsx`, 2026-05-27) —
     renders the physical 3×4 button layout next to the note with
     each KP labeled by its current per-system keyboard / gamepad
     mapping. Bridges "the note says KP1" to "my physical key 'Q'

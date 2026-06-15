@@ -13,14 +13,15 @@ Paired with Sega CD. Core comes online via the libretro pivot — no
 Rust crate vendoring. PicoDrive is the recommended default (the only
 mainstream libretro core with 32X support).
 
-- ✅ System registered in `frontend/src/themes/registry.ts` —
+- ✅ System registered in `frontend/src/platform/themes/registry.ts` —
   `SystemId` union extended with `sega32x`, `systemThemes.sega32x`
   entry (extensions `["32x"]`, landscape tile aspect 4/3, `crt-lite`
   default shader preset).
-- ✅ Theme block in `frontend/src/themes/systems.css` — neon orange at
-  hue 42° + L=0.68 + C=0.22. Period-accurate to the 32X marketing
-  palette; lands in the open 35-50° hue band so no collisions with
-  TG-16 55° / ChannelF 25° / NES 28° / MAME 12°.
+- ✅ Per-system palette in `frontend/src/platform/themes/systemPalettes.ts` —
+  neon orange at hue 42° + L=0.68 + C=0.22. Period-accurate to the 32X
+  marketing palette; lands in the open 35-50° hue band so no collisions
+  with TG-16 55° / ChannelF 25° / NES 28° / MAME 12°. Lives in the typed
+  `SYSTEM_PALETTES` map, injected as `[data-system]` CSS at boot.
 - ✅ Per-system input wiring — 32X shares the 6-button Mega Drive
   controller via the `"genesis" | "segacd" | "sega32x" => genesis_*`
   dispatch arms in `apps/oa-shell/src/bindings.rs`. Same pattern PCE-CD
