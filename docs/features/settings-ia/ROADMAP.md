@@ -41,13 +41,18 @@ Slice status. Plan: [../../PLANS/settings-ia-redesign.md](../../PLANS/settings-i
   nothing jumps. Manifest `settings_schema` format ships now; theming Phase 5's
   `.oatheme` loader reuses it. typecheck/lint/vitest(107) green; THEME_CONTRACT
   §8 added.
-- 🟡 **Slice 4 — External Emulators consolidation** *(IN PROGRESS)* — relocate
-  the existing CoresPage "External emulators" section (binary paths + per-system
-  default-launcher) into the `ExternalEmulatorsLanding`, retire the duplicate.
-  The one-click *install pipeline* depth still rides **VL Phase D** (unbuilt) —
-  this slice ships the consolidation + a hook for the installer. Paired with a
-  research-need doc cataloguing the external-emulator roster +
-  command-line-launch details we must gather (both systems we DON'T support via
-  cores AND ones we DO, so users have options): [RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md).
+- 🟡 **Slice 4 — External Emulators consolidation** *(code-complete on
+  `feat/settings-ia-slice-4`; pending operator playtest + merge)* — extracted the
+  CoresPage "External emulators" section into a self-contained
+  `engine/ExternalEmulatorsSection` (profiles + binary paths + per-system
+  default-launcher), now rendered in `ExternalEmulatorsLanding` (the tab is real,
+  not a shell). Retired the duplicate from `CoresPage` (also dropped its
+  catalog-coupled "no core installed — see Browse cores below" hint, which only
+  made sense on the Cores page). The one-click *install pipeline* still rides
+  **VL Phase D** (unbuilt) — bring-your-own-binary today, with a "Coming"
+  hook in the UI. Frontend-only; typecheck/lint/vitest(107) green. Paired with a
+  research-need doc cataloguing the external-emulator roster + command-line-launch
+  details to gather (systems we DON'T support via cores AND ones we DO, so users
+  have options): [RESEARCH/external-emulators.md](../../RESEARCH/external-emulators.md).
 - ⬜ **Slice 5 — Import & Setup depth** *(onboarding)* — Wizard + guided
   first-run (ties to `docs/features/guided-setup/` Phase 2).
