@@ -249,22 +249,35 @@ migration; split for independent playtestability (the S4→S5 pattern).
 **Gate:** validator + builtin-themes green; **operator visual-identical playtest** —
 Retroverse per-system tiles/SFX unchanged; CoverFlow/bare unaffected.
 
-### L3 — Resolver + persistence + first live consumer
+### L3 — split into L3a (resolver + store) + L3b (consumer + UX) — DECISIONS D39
 
-- Pure resolver `resolveLayout(themeId, systemId, view)` over the §4 cascade
-  (no user tier yet) + a `useResolvedLayout(view, systemId)` reactive hook.
-- The **user-override store**: a new persistence namespace
-  `(theme_id, system_id, view) → layout` (parallels D28 per-theme settings +
-  nav-bindings — frontend-owned localStorage or a Rust prefs bag; decide at
-  slice planning, default to the lighter frontend tier per D28's reasoning).
-  Survives the restart swap.
-- Wire `useResolvedLayout` into the **`game-browse`** view so the cascade is
-  exercised end-to-end (Retroverse declares e.g. a couple of per-system layout
-  variations to prove it).
+Split for the same contracts-first reason as L2: the plumbing is clean/testable;
+the consumer raises a real UX question (resolved per-system layout vs the
+existing global capsule/list `viewMode` toggle).
 
-**Gate:** switching the active system on the browse view changes the resolved
-primitive per Retroverse's declared map; with no override set, the theme
-default wins.
+#### L3a — Resolver + persisted override store — ✅ SHIPPED on branch 2026-06-15, CI-green
+
+- Pure `resolveLayout` over the §4 cascade (**user override → theme `per_system`
+  → theme view default → engine default**) + a reactive `useResolvedLayout(view,
+  systemId)` hook + `ENGINE_DEFAULT_LAYOUTS` (`layoutResolver.ts`).
+- The **user-override store** (`layoutOverrides.ts`): the `(theme_id, system_id,
+  view) → layout` namespace — **localStorage**, theme-id-keyed, `createStore`-
+  reactive (the D28 per-theme-settings pattern; survives the restart swap).
+- **No consumer** — CI-gated, no visual change. typecheck/lint/vitest(142)/build green.
+
+#### L3b — first live consumer (game-browse) + the viewMode UX call *(NEXT)*
+
+- Wire `useResolvedLayout("game-browse", selectedSystemId())` into `LibraryView`
+  (which already computes `selectedSystemId()` + already switches grid↔list on
+  `viewMode`). Retroverse declares a couple of per-system layout variations to
+  prove the cascade end-to-end.
+- **Settle the UX fork:** how the per-system resolved layout relates to the
+  existing global capsule/list `viewMode` toggle (supersede vs coexist). `wheel`
+  stays the L4 stub.
+
+**Gate (L3b):** switching the active system on the browse view changes the
+resolved primitive per Retroverse's declared map; with no override set, the theme
+default wins; **operator visual playtest.**
 
 ### L4 — WheelNav implementation
 

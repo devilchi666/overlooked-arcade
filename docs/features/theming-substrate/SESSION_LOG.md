@@ -9,6 +9,29 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-15 — ARC 2 L3a: layout resolver + persisted per-system override store (plumbing, no consumer) — ✅ shipped on branch, CI-green
+
+> Branch `feat/theming-arc2-l3-layout-resolver`. L3 split L3a (plumbing) + L3b
+> (LibraryView consumer + the resolved-layout-vs-viewMode UX call) — AskUserQuestion
+> sign-off, same contracts-first split as L2. DECISIONS **D39**.
+
+- **Shipped:** `platform/theme/layoutResolver.ts` — the D32 cascade (user override →
+  theme `views[view].per_system[system]` → theme `views[view].layout` → engine
+  default) as a **pure `resolveLayout`** + a reactive **`useResolvedLayout(view,
+  systemId)`** hook + `ENGINE_DEFAULT_LAYOUTS`. `platform/theme/layoutOverrides.ts`
+  — the persisted `(theme_id, system_id, view) → layout` store (one localStorage
+  key, theme-id-keyed, `createStore`-reactive; get/set/clear), the D28
+  `themeSettings` pattern. **No consumer** — nothing reads the hook yet (L3b).
+- **Verified:** typecheck + lint green; `npm run test` = **142 passed** (6 pure
+  cascade + 5 override-store round-trip/isolation cases); build green. Frontend-only,
+  no visual change → CI-gated (optional boot smoke-test).
+- **Almost:** nothing in L3a scope.
+- **Next:** **L3b** — wire `useResolvedLayout("game-browse", selectedSystemId())`
+  into `LibraryView`; settle how the per-system resolved layout relates to the
+  global capsule/list `viewMode` toggle (the UX fork); visual playtest (layouts
+  change per system). `wheel` stays the L4 stub. Then L4 WheelNav → L5 override UI
+  → L6 → P.
+
 ## 2026-06-15 — ARC 2 L2b: D34 systemUIConfigs experiential→Retroverse migration — ✅ shipped + MERGED to main (with L2a; operator playtested visual-identical)
 
 > Branch `feat/theming-arc2-l2b-systemuiconfigs-migration` (off L2a — both merge
