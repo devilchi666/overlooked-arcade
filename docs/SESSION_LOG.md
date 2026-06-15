@@ -6,6 +6,29 @@ Format: date + three lines — **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-15 (later session) — Theming ARC 2 L4b shipped + merged: radial WheelNav primitive
+
+Focused single-slice session. Detail in `features/theming-substrate/SESSION_LOG.md`
+(L4b entry, 2 playtest rounds) + DECISIONS **D42**.
+
+- **Shipped (merged to main `5060a77`, operator playtested):** **ARC 2 L4b** — the
+  reserved `WheelNav` primitive is now a real radial wheel, built as a **general
+  `angle→x/y` engine** (pure `platform/nav/primitives/wheelGeometry.ts`, unit-tested)
+  with **shape A (right-side vertical wheel) as the defaults** so shapes B/C, a
+  near-flat strip, and a continual/looping wheel land later as **prop presets, not
+  rewrites** (operator's stated intent). `LibraryView` renders per-system `wheel` (4th
+  Switch arm, ring radius from a measured pane height); Retroverse demo `tg16→wheel`.
+  Two playtest fixes folded in: **gentler feel** (arc 140°→80°, sideScale 0.62→0.85,
+  even spacing) + **fast-scroll deform fix** (collapse the per-item transition to a
+  ~70ms near-snap during rapid moves, restoring the full ease on settle).
+  typecheck/lint/vitest(149)/build green; frontend-only.
+- **Almost:** wheel polish (preload buffer, depth/reflection, per-shape tuning)
+  deferred; B/C/strip/looping shapes are future presets.
+- **Next:** **ARC 2 L5** — the end-user "pick your view per system" override UI
+  (writes the L3 override store; recommended home = the engine Per-System Settings Hub
+  as a new "Layout" domain card). Then L6 (re-home Per-System UI Stage 2/3 as Retroverse
+  content) → P (`.oatheme` runtime loader). Queued in NEXT.md HIGH band.
+
 ## 2026-06-15 — Theming ARC 2 planned + kicked off (L1→L4a) · full doc audit · per-core sweep · HW-Render M3 landed · VL Phase B reframed
 
 Big multi-thread session. Cross-stream milestones below; per-slice detail in
