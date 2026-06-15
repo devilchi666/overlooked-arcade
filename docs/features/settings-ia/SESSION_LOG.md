@@ -4,6 +4,35 @@ Newest first. Three lines per entry: **Shipped / Almost / Next**.
 
 ---
 
+## 2026-06-14 — Slice 4 implemented (code-complete, pending playtest)
+
+- **Shipped (branch `feat/settings-ia-slice-4`, not yet merged):** External
+  Emulators consolidation. Extracted the standalone-emulator config (profiles +
+  binary-path picker + per-system default-launcher) out of `CoresPage` into a
+  self-contained `engine/ExternalEmulatorsSection`, rendered in
+  `ExternalEmulatorsLanding` — the tab is now real, not a placeholder shell.
+  Retired the duplicate from CoresPage (removed its emulator state/handlers/type
+  + the now-unused `emulatorApi` import; dropped the catalog-coupled "no core
+  installed — see Browse cores below" hint, Cores-page-specific). Per-system
+  launcher choice still also lives on the system's card in Systems (per the
+  ownership lines). Bring-your-own-binary today; the install pipeline rides VL
+  Phase D (a "Coming" hook notes it). Frontend-only; typecheck/lint/vitest(107)
+  green.
+- **Also shipped — the research-need doc** the operator asked for:
+  `docs/RESEARCH/external-emulators.md` scopes the major research into
+  command-line launching of a broad emulator roster — both systems we can't run
+  via cores (Cemu/RPCS3/Ryujinx/Lime3DS/Vita3K/Xenia/xemu/…) AND ones we DO
+  support but where users may prefer a standalone (PCSX2/DuckStation/PPSSPP/
+  Dolphin/…). Includes a per-emulator research template + draft (needs-verify)
+  CLI roster + the grow-over-time philosophy (simple CLI now → options → scripts/
+  plugins → Phase-D installer).
+- **Almost:** the research itself isn't done — the doc is the scope + template;
+  CLI columns are draft and need per-emulator verification.
+- **Next:** operator playtest (External Emulators tab shows the Dolphin profile +
+  binary-path + per-system launcher; Cores page no longer duplicates it) → merge.
+  Then Slice 5 (Import & Setup depth) — or pull the external-emulator research
+  forward as its own pass.
+
 ## 2026-06-14 — Slice 3 implemented (code-complete, pending playtest)
 
 - **Shipped (branch `feat/settings-ia-slice-3`, not yet merged):** declarative
