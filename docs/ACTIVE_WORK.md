@@ -115,11 +115,16 @@ spanned every system but was filed under whichever core happened to be active.
   2026-06-16** (operator playtested) — disk themes discovered next to the exe
   (or source tree), rendered by a built-in `DeclarativeShell`, selectable in
   Appearance, distributable as the `themes` pack type. **ARC 2 now complete**
-  (L6 parked; P.2 custom-JS deferred). ARC 3 =
-  Cinematic & Scripting (Rhai + WGSL + declarative motion); ARC 4 = Theme
-  Studio. Plans at [PLANS/theming-substrate.md](PLANS/theming-substrate.md)
+  (L6 parked; P.2 custom-JS deferred). **ARC 3 = Cinematic & Scripting —
+  PLANNED 2026-06-16, M1 (Slice 1) queued, no code yet.** Forks settled (D50–D52):
+  Rhai deferred to a fenced final thrust; surface split (WGSL on the wgpu
+  game/bezel/background, UI cinematics CSS/declarative); cinematics flow into disk
+  themes as data. Thrusts M (motion) → S (game shaders) → V (video/attract) → R
+  (Rhai, deferred). ARC 4 = Theme Studio. Plans at
+  [PLANS/theming-substrate.md](PLANS/theming-substrate.md)
   + [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)
-  + [PLANS/theming-oatheme-loader.md](PLANS/theming-oatheme-loader.md);
+  + [PLANS/theming-oatheme-loader.md](PLANS/theming-oatheme-loader.md)
+  + [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md);
   feature folder [features/theming-substrate/](features/theming-substrate/).
   - **Phase 1 ✅ shipped + merged 2026-06-06** (merge `870edb2`).
     Engine/theme surface separation: SETTINGS + Library Manager +

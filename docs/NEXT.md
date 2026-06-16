@@ -180,6 +180,33 @@ per-system-descriptor loader.
   - **P.1 S3 ✅ MERGED** — registry merge + Appearance picker + `themes` pack-type spec; source-tree fallback so themes resolve from `target/`; live sample `themes/community/neon-list/`.
   - **Optional follow-ons (unqueued):** swap the dogfood's source from the inline builtin to disk; `system-ui/` background/sound asset cascade for disk themes; P.2 (runtime custom-JS).
 
+### Theming ARC 3 — Cinematic & Scripting `[PLANNED 2026-06-16; M1 = Slice 1 QUEUED]`
+
+Make OA cinematic (motion · shaders · video · attract) while keeping the
+declarative-first spine, so the look flows into the disk `.oatheme` themes ARC 2
+shipped. Plan: [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md);
+forks settled 2026-06-16 (D50–D52): **Rhai deferred to a fenced final thrust**
+(D50); **surface split** — WGSL enriches the wgpu game/bezel/background, UI
+cinematics are CSS/declarative (D51); **cinematics flow into disk themes as
+data** (D52). Thrusts (sequenced M→S→V→R-deferred):
+- **M — Declarative Motion & Transitions** (UI/DOM): activate the reserved
+  `motion` token group; interruptible transitions; parallax + keyframe/preset model.
+- **S — Game-Surface Shader Chrome** (wgpu): theme-selectable shader presets per
+  view/system (reuses the shipped `ApplyShaderPreset`/bezel pipeline); blend-mode
+  compositor differentiator.
+- **V — Video & Attract**: `<video>` background slots + media-slot vocabulary;
+  attract tiers 1–2 (tier 3 live-emulator deferred to V3).
+- **R — Rhai Scripting** ⏸ DEFERRED (D50): sandboxed event-driven behaviors,
+  gated `scripting` capability, compiled-tier; couples to P.2.
+  - **M1 ⬜ QUEUED (Slice 1)** — Motion token contract + reduced-motion plumbing
+    + one interruptible view transition, declared in `theme.toml` (motion fields →
+    `ThemeManifest` + `validateTheme`) and honored by `DeclarativeShell`. The
+    smallest valuable, disk-theme-flowing start; establishes the contract M2/M3
+    build on. Activates the already-reserved `motion` token group (`tokens.ts`,
+    S3). **Acceptance:** a disk theme declaring a motion preset animates a view
+    transition; `prefers-reduced-motion` downgrades to a short fade; tsc/lint/
+    vitest green.
+
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).
 Convert the **global `perSystemUiEnabled`-gated** tile-flourish + per-system-SFX

@@ -1944,3 +1944,57 @@ D45–D48; recorded so they aren't re-litigated.
    future system-scoped browse view, not a flat list whose layout would otherwise
    thrash as focus crosses systems. Per-system *palette* (perSystemTokens) still
    applies per-card via `data-system` — that's orthogonal and works today.
+
+---
+
+## 2026-06-16 — ARC 3 (Cinematic & Scripting) planning: the three load-bearing forks
+
+> Plan: [docs/PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md).
+> Settled with the operator 2026-06-16 in a planning session (prose discussion →
+> AskUserQuestion). No code yet; Slice 1 (M1) queued in NEXT.md HIGH band.
+
+### D50 — Rhai scripting is a DEFERRED escape hatch in ARC 3, not an up-front thread
+
+The cinematic *declarative* layer (motion, game/bezel shaders, video, attract
+tiers 1–2) ships first; none of it needs scripting. Rhai becomes the final thrust
+(Thrust R, possibly its own ARC 3.5), gated behind a `scripting` engine
+capability, compiled/power-user tier only, until the sandbox is proven.
+
+**Why:** most of the "wow" lands without scripting; Rhai is the security-heavy
+piece (untrusted code execution) and is coupled to the deferred **P.2** CSP/trust
+work (D44/D6 — the CSP allowlist becomes load-bearing for the Rhai sandbox).
+Front-loading it would mean carrying the riskiest, most architecture-heavy axis
+before the high-value, low-risk declarative axes — backwards.
+
+### D51 — Surface split: WGSL chrome targets the wgpu surface (game/bezel/background); UI cinematics are CSS/declarative
+
+OA's single-window shell is a **transparent WebView2 DOM UI composited by Windows'
+DWM *over* the wgpu game surface** (main.rs:3625–3640) — the UI is NOT rendered
+through wgpu. So shaders target the wgpu surface (game feed + bezel + background —
+machinery already shipped: `ApplyShaderPreset`/Phosphor/bezel), and the UI's
+cinematic feel is the declarative **motion** layer. "Shaders over the UI" is
+rejected.
+
+**Why:** the BigBox-research "one wgpu compositor unifying game + bezels + UI / no
+airspace problem" framing is only half-true for OA — it holds for the game
+surface, not the DOM UI. Pursuing shader effects across the UI would require
+compositing the entire WebView through wgpu, a rearchitecture that fights the
+Tauri model for marginal gain. The game-surface **blend-mode compositor** (game +
+bezel + background) is still a real differentiator no incumbent offers in the
+theme layer (BigBox research §4).
+
+### D52 — ARC 3 cinematics flow into declarative disk themes as DATA
+
+Motion presets, per-view/per-system shader-preset *selection*, and
+video-background slots are expressed as fields in `theme.toml`, validated by
+`validateTheme`, and honored by the built-in `DeclarativeShell` — so a community
+disk (`.oatheme`) theme gets cinematic with zero code. Each ARC 3 thrust extends
+the declarative manifest contract first, then its consumer. Rhai (Thrust R), when
+it lands, stays gated/compiled-tier — the one cinematic capability that is NOT
+declarative.
+
+**Why:** preserves the low-floor/high-ceiling spine ARC 2 + P.1 shipped (disk
+themes, `DeclarativeShell`). If ARC 3 cinematics were compiled-tier only, the disk
+themes we just shipped would stay visually plain forever and the "let others drop
+in rich themes" goal of the `.oatheme` loader would be hollow. The declarative
+selection-as-data pattern reuses the ARC 2 resolver cascade (`useResolvedLayout`).
