@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### oa-packs infrastructure — Slice 3 (Settings → Packs panel + lifecycle) `[ARC opened 2026-06-15]`
+### oa-packs infrastructure — Slice 4 (Privacy panel + network log) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·
 **Design:** [PLANS/content-packs.md](PLANS/content-packs.md) ·
@@ -104,30 +104,36 @@ fold the External Emulator Depth recipe-update slice into this infra (CP5).
   `uninstall`/`fetch_registry`/`install`/`update`), synchronous
   `NETWORK_DISABLED` gate, reuses `http_retry` (no rebuilt downloader).
   Decisions = CP6. 8 unit tests green.
+- **Slice 3 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; bundled with Slice 2,
+  awaiting operator playtest + merge):** Settings → Content → Packs panel
+  (`engine/PacksSettings.tsx`) — Registry & network card (config URL +
+  Save/Reset, allow-network toggle, operator-initiated Browse, Last checked),
+  Installed / Available / Updates / Recoverable-versions sections;
+  `platform/api/packsApi.ts` (11 typed wrappers). Rollback retention in
+  `packs.rs`: uninstall + update/install-over move the prior version to
+  `<data_dir>/packs-rollback/<id>-<version>/`, 14-day GC, +3 commands
+  (`list_rollbacks`/`rollback` (reversible swap)/`discard_rollback`). 9 Rust
+  tests green; frontend `tsc` + eslint clean. **Not built (deferred):**
+  progress bar (busy spinner only) + the §7 conflict-warning surface
+  (manifest has no content-level ids yet).
 
-**Slice 3 scope (next — Settings UI + lifecycle, `frontend/` + small Rust):**
-- Settings → Content → Packs panel: **Installed / Available / Updates**
-  sections (content-packs.md §9) + `Check for updates` + `Last checked` +
-  `Registry URL` display.
-- `frontend/src/.../packs.ts` (or `platform/api/packsApi.ts`) wrapping the 8
-  Slice-2 commands.
-- 14-day rollback retention (§8): on update/uninstall move the prior version
-  to `<data_dir>/packs-rollback/<pack_id>-<version>/`; GC older than 14 days;
-  Rollback action in the Installed list.
-- Conflict warning surface when two packs declare the same content id (§7).
-- Network commands disabled in-panel with a tooltip when the master toggle
-  is OFF (depends on Slice 4's Privacy panel for the toggle UI; until then
-  the gate still enforces server-side).
+**Slice 4 scope (next — Privacy panel + network log, `frontend/` + small Rust):**
+- Settings → SYSTEM → Privacy category: disclose every URL OA hits + when
+  (content-packs.md §9); the allow-network master toggle relocates/mirrors
+  here (it currently lives in the Packs panel).
+- Per-call network-log ring buffer in `oa-packs`/shell state, persisted to
+  `<data_dir>/packs/network.log` (last ~100 entries), surfaced via a
+  "Show network log" view. Empty on first launch.
 
-**Then:** Slice 4 (Privacy panel + allow-network toggle UI + network-log
-ring buffer) → Slice 5 (first consumers: `emulator-recipes` override tier on
-the bundled `config/emulators/` baseline, closing External Emulator Depth
-Slice 2; then `editorial` → DISCOVER).
+**Then:** Slice 5 (first consumers: `emulator-recipes` override tier on the
+bundled `config/emulators/` baseline, closing External Emulator Depth Slice 2;
+then `editorial` → DISCOVER). The §7 conflict-warning surface lands with the
+first consumer that defines content-level ids.
 
 **Reuse note (still applies):** `apps/oa-shell/src/core_installer.rs` is the
-richer download cousin (job rows, resume, progress events) — Slice 3 can
-graft its progress-event pattern onto pack download when the UI needs a
-progress bar. Do NOT rebuild a downloader.
+richer download cousin (job rows, resume, progress events) — graft its
+progress-event pattern onto pack download when the UI needs a real progress
+bar. Do NOT rebuild a downloader.
 
 ### External Emulator Depth — Slice 1 ✅ SHIPPED (schema accretion + ares/BizHawk profiles) `[ARC opened 2026-06-15]`
 

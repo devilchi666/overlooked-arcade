@@ -42,6 +42,7 @@ import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
 import OrganizeLanding from "./OrganizeLanding";
 import ImportSetupLanding from "./ImportSetupLanding";
 import ExternalEmulatorsLanding from "./ExternalEmulatorsLanding";
+import PacksSettings from "./PacksSettings";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -62,6 +63,7 @@ type CategoryId =
   | "library"
   | "organize"
   | "external-emulators"
+  | "packs"
   | "system-health"
   | "profile"
   | "about";
@@ -210,6 +212,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Standalone emulator setup.",
     helpText:
       "Setup for systems that run through a dedicated standalone emulator (Dolphin / Cemu / RPCS3 / Lime3DS) instead of an in-process core. Binary paths + install pipeline consolidate here; per-system launcher choice stays in Systems.",
+  },
+  {
+    id: "packs",
+    group: "content",
+    label: "Packs",
+    glyph: "📦",
+    description: "Install, update, and roll back content packs.",
+    helpText:
+      "Optional content layered on top of your install — editorial articles, emulator recipes, themes, and more. Browse the registry, install/update/uninstall packs, and restore a prior version. OA only contacts a server when you click Browse or Update; every download is sha256-verified against the registry.",
   },
   {
     id: "system-health",
@@ -420,6 +431,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "external-emulators"}>
             <ExternalEmulatorsLanding />
+          </Match>
+          <Match when={activeCategoryId() === "packs"}>
+            <PacksSettings />
           </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />

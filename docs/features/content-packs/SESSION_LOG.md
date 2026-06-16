@@ -4,6 +4,42 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
 
 ---
 
+## 2026-06-16 — Slice 3: Settings → Content → Packs panel + lifecycle + rollback retention
+
+- **Shipped (on `oa-packs-slice-2`, bundling Slices 2+3 as one playtestable
+  unit):** The operator-facing pack manager.
+  **Rust** — rollback retention in `packs.rs`: uninstall + update/install-over
+  now MOVE the prior version into `<data_dir>/packs-rollback/<id>-<version>/`
+  (retain, not hard-delete) after the replacement bytes are in hand; 14-day
+  GC; 3 new commands `oa_packs_list_rollbacks` / `oa_packs_rollback`
+  (reversible swap) / `oa_packs_discard_rollback`, all registered. **Frontend**
+  — `platform/api/packsApi.ts` (typed wrappers for all 11 commands, no raw
+  invoke at call sites) + `engine/PacksSettings.tsx` panel wired into
+  `SettingsPanel.tsx` as a new CONTENT category "Packs" (📦): Registry &
+  network card (editable config registry URL + Save/Reset per CP1, allow-
+  network `SettingRow` toggle, operator-initiated Browse button, Last
+  checked), Installed / Available / Updates / Recoverable-versions sections,
+  per-action busy state, `confirm()` on destructive actions, `pushToast` on
+  every outcome. Registry is fetched ONLY on Browse — never on mount
+  (content-packs.md §3). `cargo test -p oa-shell packs` = 9 green (added
+  retain→rollback test), clippy clean for the new files; frontend `tsc
+  --noEmit` + eslint clean.
+- **Almost:** Progress events / a download progress bar (deferred — installs
+  show a busy spinner, not a byte bar; graft `core_installer`'s
+  `oa://…-progress` pattern when wanted). Conflict-warning surface (§7) not
+  built — our manifest schema doesn't model content-level ids yet, so cross-
+  pack id collisions can't be detected until a consumer (Slice 5) defines
+  content ids. The Privacy panel proper is Slice 4 (the toggle currently
+  lives in this panel).
+- **Next:** Operator playtest. Offline-testable now: drop a folder at
+  `<exe_dir>/<type>/community/<id>/manifest.yml` → it shows under Installed →
+  Uninstall (→ Recoverable versions) → Restore. Full online flow testable by
+  pointing the registry URL at any reachable `registry.json` (CP1) — note the
+  `min_oa_version` gate is `0.0.1` today (CP6), so test packs should omit it.
+  Then merge Slices 2+3 to main, and Slice 4 (Privacy panel + network log).
+
+---
+
 ## 2026-06-16 — Slice 2: registry fetch + download + Tauri commands (network behind the gate)
 
 - **Shipped:** Shell-side network + Tauri glue around the pure `oa-packs`
