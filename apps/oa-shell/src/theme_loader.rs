@@ -292,27 +292,50 @@ const TOKENS_FILE: &str = "tokens.toml";
 /// Optional per-system palette filename.
 const PER_SYSTEM_FILE: &str = "per-system.toml";
 
-/// Resolve `<exe_dir>/themes/community/` — where installed `themes` packs land
-/// (the oa-packs `<type>/community/` layout, CP2/PD2). No source-tree fallback:
-/// like recipe packs, disk themes are an install-time artifact written next to
-/// the exe. `None` when the directory doesn't exist (no themes installed).
-pub fn resolve_themes_community_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
-    let p = exe_dir.join("themes").join("community");
-    p.is_dir().then_some(p)
+/// Resolve `<…>/themes/<leaf>` with the SAME two-candidate walk as
+/// [`crate::system_registry::resolve_config_systems_dir`] /
+/// [`crate::emulator_profiles::resolve_config_emulators_dir`]:
+///
+///   1. `<exe_dir>/themes/<leaf>` — production install path (next to the exe;
+///      where the pack channel installs, CP2/PD2).
+///   2. `<CARGO_MANIFEST_DIR>/../../themes/<leaf>` — the source tree, for
+///      `cargo run` / `cargo tauri dev` / running the workspace `target/` exe,
+///      where no resources sit beside the binary (the operator's playtest
+///      workflow runs `target/release/oa-shell.exe`, so without this a
+///      repo-placed theme is never found). Harmless in production: the baked
+///      `CARGO_MANIFEST_DIR` path doesn't exist on a user's machine.
+///
+/// `None` when neither candidate exists.
+fn resolve_themes_subdir(leaf: &str) -> Option<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let p = exe_dir.join("themes").join(leaf);
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+    }
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("themes")
+        .join(leaf);
+    dev.is_dir().then_some(dev)
 }
 
-/// Resolve the **reserved** loose-folder dev path `<exe_dir>/themes/dev/` —
-/// where an author can hand-drop a theme folder during development without
-/// going through the pack channel. Scanned at startup alongside `community/`;
-/// hot-reload is intentionally NOT wired (swap-by-restart is the shipped model,
-/// PD2). `None` when the directory doesn't exist.
+/// Resolve `themes/community/` — where installed `themes` packs land (the
+/// oa-packs `<type>/community/` layout, CP2/PD2) and where hand-placed themes
+/// go. See [`resolve_themes_subdir`] for the exe-dir-then-source-tree walk.
+pub fn resolve_themes_community_dir() -> Option<PathBuf> {
+    resolve_themes_subdir("community")
+}
+
+/// Resolve the loose-folder dev path `themes/dev/` — where an author can
+/// hand-drop a theme folder outside the pack channel. Scanned at startup
+/// alongside `community/`; hot-reload is intentionally NOT wired
+/// (swap-by-restart is the shipped model, PD2).
 pub fn resolve_themes_dev_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
-    let p = exe_dir.join("themes").join("dev");
-    p.is_dir().then_some(p)
+    resolve_themes_subdir("dev")
 }
 
 /// Discover every theme directly under `parent` (one subdirectory per theme,
@@ -439,12 +462,30 @@ fn load_optional<T: serde::de::DeserializeOwned>(path: &Path, label: &str) -> Op
 pub fn load_default() -> Vec<DiskThemeDescriptor> {
     let mut out = Vec::new();
     match resolve_themes_community_dir() {
-        Some(dir) => out.extend(load_from_parent_dir(&dir)),
-        None => log::info!("theme_loader: no themes/community/ directory — no disk themes installed"),
+        Some(dir) => {
+            log::info!("theme_loader: scanning {}", dir.display());
+            out.extend(load_from_parent_dir(&dir));
+        }
+        None => {
+            // Log WHERE we looked so a mis-placed folder is debuggable without
+            // a rebuild (the candidate next to the exe — the production path).
+            let candidate = std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|p| p.join("themes").join("community")));
+            match candidate {
+                Some(p) => log::info!(
+                    "theme_loader: no disk themes — neither {} nor the source-tree fallback exists",
+                    p.display()
+                ),
+                None => log::info!("theme_loader: no disk themes — could not resolve <exe_dir>"),
+            }
+        }
     }
     if let Some(dir) = resolve_themes_dev_dir() {
+        log::info!("theme_loader: scanning dev path {}", dir.display());
         out.extend(load_from_parent_dir(&dir));
     }
+    log::info!("theme_loader: discovered {} disk theme(s)", out.len());
     out
 }
 
@@ -825,17 +866,14 @@ surfaces = ["main"]
 
     #[test]
     fn shipped_sample_theme_parses() {
-        // The ready-to-copy `neon-list` sample under docs/ must round-trip
-        // through the loader so it can't drift from the schema (mirrors
-        // emulator_profiles' shipped-profile test). It's a doc artifact outside
-        // the install tree, so resolve it relative to the crate.
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("docs")
-            .join("features")
-            .join("theming-substrate")
-            .join("sample-themes");
+        // The live `neon-list` sample at `<repo>/themes/community/` must
+        // round-trip through the loader so it can't drift from the schema
+        // (mirrors emulator_profiles' shipped-profile test). Resolving via the
+        // real `resolve_themes_community_dir` ALSO proves the source-tree
+        // fallback works (the test binary runs from target/, so the exe-dir
+        // candidate is absent and the fallback resolves the repo dir).
+        let dir = resolve_themes_community_dir()
+            .expect("themes/community resolves in-tree via the source-tree fallback");
         let themes = load_from_parent_dir(&dir);
         let neon = themes
             .iter()

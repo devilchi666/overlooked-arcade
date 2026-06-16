@@ -35,11 +35,19 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     a `themes` pack already installs to `<exe_dir>/themes/community/<id>/` via the
     existing pipeline → the S1 loader discovers it → it's selectable. No install-
     path change needed; the spec seed is the declarative home + is test-covered.
-  - **Sample theme** (`docs/features/theming-substrate/sample-themes/neon-list/`)
-    — a ready-to-copy `theme.toml` + `tokens.toml` + `per-system.toml` (distinct
-    id so it isn't shadowed). Copy the folder to `<exe_dir>/themes/community/` →
-    restart → "Neon List" appears in Appearance. Guarded by a Rust test
-    (`shipped_sample_theme_parses`).
+  - **Sample theme** (`themes/community/neon-list/` — `theme.toml` +
+    `tokens.toml` + `per-system.toml`, distinct id so it isn't shadowed). A live
+    on-disk theme auto-discovered in dev; guarded by `shipped_sample_theme_parses`.
+  - **S3 follow-up fix (after operator playtest):** the loader's resolvers
+    shipped in S1 with NO source-tree fallback, so a repo-placed theme was never
+    found when running the workspace `target/release` exe (the operator's "not
+    showing up" report — log confirmed "no themes/community/ directory").
+    Diagnosed via the runtime log (`theme_loader: no themes/community/ directory`
+    + `system_registry: loaded … from …\config\systems` proving a source-tree
+    run). Fix: `resolve_themes_subdir` now walks `<exe_dir>/themes/<leaf>` →
+    `<repo>/themes/<leaf>`, matching every other resource loader; sample relocated
+    from `docs/` to the live `themes/community/`; `load_default` now logs the
+    scanned path + theme count. DECISIONS **D46 CORRECTION**.
   - Tests: `diskTheme.test.ts` +3 (mergeDiskThemes: append/dedup/empty);
     `theme_loader.rs` +1 (sample parses).
 - **Verified:** `tsc` + `eslint` clean; `npm run test` = **160 passed**;

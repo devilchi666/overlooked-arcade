@@ -1,11 +1,15 @@
-# Neon List — a sample on-disk `.oatheme` theme (Theming ARC 2 "P").
+# Neon List — a live sample on-disk `.oatheme` theme (Theming ARC 2 "P").
 #
-# This is a READY-TO-COPY example for validating the P.1 S3 disk-theme path. It
-# is NOT compiled into the build — copy the whole `neon-list/` folder to
-#   <exe_dir>/themes/community/neon-list/
-# (next to oa-shell.exe), restart, and pick "Neon List" in Settings → Appearance.
-# It renders a vertical list (like `bare`) with a neon palette + a NES accent
-# recolour, all from data — zero theme code.
+# This folder lives at the repo's `themes/community/<id>/` — the SOURCE-TREE
+# location the loader discovers when running the workspace exe (cargo run /
+# tauri dev / target/release). In a real install it would instead sit at
+# `<exe_dir>/themes/community/neon-list/` (where the `themes` pack channel
+# installs). Either way it's discovered, validated, and selectable in
+# Settings → Appearance with NO theme code: it renders a vertical list (like
+# `bare`) with a neon palette + a NES accent recolour, all from data.
+#
+# It is NOT bundled into production installs (no tauri `resources` entry); it's
+# the dev dogfood + the canonical authoring example.
 #
 # theme.toml mirrors the declarative ThemeManifest surface (snake_case keys),
 # MINUS entry/entry_export (implicit — the built-in DeclarativeShell renders it).

@@ -1857,8 +1857,20 @@ onto the frontend types with no transform.
 
 **How applied (S1):** `resolve_themes_community_dir()` /
 `resolve_themes_dev_dir()` resolve the paths; `load_from_parent_dir()` walks one
-subdirectory per theme. No source-tree fallback — disk themes are an
-install-time artifact (mirrors `emulator_profiles`' recipe-pack path).
+subdirectory per theme.
+
+**CORRECTION (S3, 2026-06-16):** S1 shipped these resolvers with *no* source-tree
+fallback (on the theory that disk themes are install-time artifacts like recipe
+packs). That broke the operator's actual playtest workflow: `cargo tauri build`
+runs `target/release/oa-shell.exe`, whose `<exe_dir>` has no resources beside it,
+so a repo-placed theme was never found (the loader logged "no themes/community/
+directory"). Every OTHER resource loader (`system_registry`,
+`emulator_profiles`' baseline `config/`) already carries a source-tree fallback
+for exactly this. Fixed in S3: `resolve_themes_subdir` now walks
+`<exe_dir>/themes/<leaf>` → `<repo>/themes/<leaf>` (the latter via baked
+`CARGO_MANIFEST_DIR`, harmless in production where that path doesn't exist). The
+canonical sample theme accordingly lives at `<repo>/themes/community/neon-list/`
+so it's auto-discovered in dev.
 
 ### D47 (= PD3) — One built-in `DeclarativeShell` renders every declarative theme
 
