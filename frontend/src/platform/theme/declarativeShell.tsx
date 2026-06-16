@@ -58,6 +58,10 @@ const RECOGNIZED_SETTINGS = {
 } as const;
 
 const DeclarativeShell: ThemeEntry = () => {
+  // [oa-theme-motion] unconditional mount marker — if this never appears in the
+  // log, the DeclarativeShell isn't being mounted (a non-declarative theme is
+  // active), which is the prerequisite for any M1 motion.
+  console.log("[oa-theme-motion] DeclarativeShell MOUNTED");
   const platform = usePlatform();
   const host = useTheme();
   const settings = useThemeSettings();
