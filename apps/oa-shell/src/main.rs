@@ -12193,7 +12193,7 @@ fn boot_without_game(
 /// the profile + its operator-set binary path decide everything.
 fn launch_rom_external(
     profile_id: &str,
-    path: String,
+    mut path: String,
     archive_inner_path: Option<String>,
     entry_id: Option<String>,
     system_id: String,
@@ -12208,14 +12208,19 @@ fn launch_rom_external(
     })?;
     if archive_inner_path.is_some() {
         if profile.accepts_archives {
-            // Emulator opens archives itself (BizHawk, ares) — hand it the
-            // OUTER archive path (`path`); it auto-loads the inner ROM (or
-            // shows its own picker for multi-ROM archives). No extraction,
-            // no temp dir to clean up on exit.
+            // Emulator opens archives itself (BizHawk, ares). `path` is the
+            // encoded `<archive>#<inner>` form (archive::encode_file_path);
+            // decode it down to the OUTER archive path and hand THAT to the
+            // emulator — it auto-loads the inner ROM (or shows its own
+            // picker for a multi-ROM archive). No extraction, no temp dir.
+            let (archive_path, _inner) = archive::decode_file_path(&path);
+            if !archive_path.is_file() {
+                return Err(format!("archive not found: {}", archive_path.display()));
+            }
+            path = archive_path.to_string_lossy().into_owned();
             log::info!(
-                "oa-shell: external launch [{profile_id}] archive passthrough — {} opens {} directly",
+                "oa-shell: external launch [{profile_id}] archive passthrough — {} opens {path} directly",
                 profile.display_name,
-                path
             );
         } else {
             // OA does not yet extract-for-external (temp cleanup tied to
