@@ -2773,6 +2773,7 @@ fn main() {
             packs::oa_packs_discard_rollback,
             packs::oa_packs_get_network_log,
             packs::oa_packs_clear_network_log,
+            oa_packs_recipe_overrides,
             packs::oa_packs_fetch_registry,
             packs::oa_packs_install,
             packs::oa_packs_update,
@@ -11285,6 +11286,26 @@ fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProf
                 .map(|p| p.to_string_lossy().into_owned()),
         })
         .collect()
+}
+
+/// The active `emulator-recipes` pack overrides + any same-id conflicts
+/// (oa-packs arc Slice 5). The Packs panel renders this so the operator can
+/// see which emulator recipes a community pack has replaced and resolve
+/// collisions. Reflects startup state — recipe pack changes apply on the
+/// next launch.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecipeOverridesReport {
+    overrides: Vec<emulator_profiles::RecipeOverride>,
+    conflicts: Vec<emulator_profiles::RecipeConflict>,
+}
+
+#[tauri::command]
+fn oa_packs_recipe_overrides(state: tauri::State<'_, AppState>) -> RecipeOverridesReport {
+    RecipeOverridesReport {
+        overrides: state.emulator_profiles.recipe_overrides().to_vec(),
+        conflicts: state.emulator_profiles.recipe_conflicts().to_vec(),
+    }
 }
 
 /// Persist the operator-set binary path for an emulator profile

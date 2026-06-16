@@ -146,12 +146,48 @@ pub struct EmulatorProfile {
     pub binary_path: Option<String>,
 }
 
+/// One active recipe override: a community `emulator-recipes` pack
+/// provided the profile for `id`, replacing the bundled baseline (or
+/// adding a new emulator). oa-packs arc Slice 5 (CP4/CP5).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeOverride {
+    /// The emulator profile id (`"bizhawk"`).
+    pub id: String,
+    /// The `emulator-recipes` pack that won this id.
+    pub pack_id: String,
+    /// True when this replaced a bundled baseline profile; false when the
+    /// pack introduced an emulator the baseline didn't have.
+    pub replaced_baseline: bool,
+}
+
+/// Two installed packs both provided a profile for the same emulator id;
+/// the alphabetically-last pack won (content-packs.md §7). Surfaced so the
+/// operator can resolve it (uninstall one). Slice 5 is the first pack
+/// consumer with content-level ids, so this is the §7 conflict surface's
+/// first real data.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeConflict {
+    /// The contested emulator id.
+    pub id: String,
+    /// The pack whose profile is in effect.
+    pub winner: String,
+    /// The pack(s) that lost (their profile for this id is ignored).
+    pub losers: Vec<String>,
+}
+
 /// All profiles found at startup, keyed by id. Empty when no
 /// `config/emulators/` directory resolves — every system then keeps
 /// launching through libretro, so a missing directory is not an error.
 #[derive(Debug, Default)]
 pub struct EmulatorProfiles {
     by_id: BTreeMap<String, EmulatorProfile>,
+    /// Recipe overrides applied from `emulator-recipes` community packs
+    /// (Slice 5). Empty when no packs are installed.
+    overrides: Vec<RecipeOverride>,
+    /// Same-id collisions between packs (content-packs.md §7).
+    conflicts: Vec<RecipeConflict>,
 }
 
 impl EmulatorProfiles {
@@ -221,18 +257,118 @@ impl EmulatorProfiles {
             );
             by_id.insert(profile.id.clone(), profile);
         }
-        Self { by_id }
+        Self {
+            by_id,
+            ..Default::default()
+        }
     }
 
-    /// Resolve + load the default registry. Companion to
+    /// Active recipe overrides from installed `emulator-recipes` packs.
+    pub fn recipe_overrides(&self) -> &[RecipeOverride] {
+        &self.overrides
+    }
+
+    /// Same-id collisions between installed recipe packs (§7).
+    pub fn recipe_conflicts(&self) -> &[RecipeConflict] {
+        &self.conflicts
+    }
+
+    /// Overlay `emulator-recipes` community packs onto this baseline
+    /// (CP4/CP5). Each pack contributes `emulators/<id>.yaml` files; a
+    /// matching `id` **replaces** the baseline profile wholesale (last
+    /// wins), a new `id` adds an emulator. Packs are applied in
+    /// alphabetical id order so "last wins" is deterministic; a same-id
+    /// collision between two packs is recorded as a [`RecipeConflict`].
+    /// Unparseable recipe files are logged and skipped, never fatal.
+    fn apply_recipe_overrides(mut self, community_dir: &Path) -> Self {
+        // pack_id (sorted) -> the profiles it provides.
+        let mut pack_dirs: Vec<PathBuf> = match std::fs::read_dir(community_dir) {
+            Ok(rd) => rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect(),
+            Err(_) => return self, // no packs installed — baseline stands
+        };
+        pack_dirs.sort();
+
+        // id -> ordered list of (pack_id, profile) that provide it.
+        let mut providers: BTreeMap<String, Vec<(String, EmulatorProfile)>> = BTreeMap::new();
+        for pack_dir in &pack_dirs {
+            let pack_id = pack_dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            let emu_dir = pack_dir.join("emulators");
+            let Ok(rd) = std::fs::read_dir(&emu_dir) else {
+                continue; // pack has no emulators/ dir — not a recipe pack
+            };
+            for entry in rd.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+                    continue;
+                }
+                let raw = match std::fs::read_to_string(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("emulator_profiles: read override {}: {e}", path.display());
+                        continue;
+                    }
+                };
+                match serde_yaml::from_str::<EmulatorProfile>(&raw) {
+                    Ok(p) => providers
+                        .entry(p.id.clone())
+                        .or_default()
+                        .push((pack_id.clone(), p)),
+                    Err(e) => {
+                        log::warn!("emulator_profiles: parse override {}: {e}", path.display());
+                    }
+                }
+            }
+        }
+
+        for (id, mut list) in providers {
+            // Alphabetical pack order → the last entry wins.
+            let (winner_pack, winner_profile) = list.pop().expect("non-empty by construction");
+            let replaced_baseline = self.by_id.contains_key(&id);
+            if !list.is_empty() {
+                let losers: Vec<String> = list.into_iter().map(|(pack, _)| pack).collect();
+                log::warn!(
+                    "emulator_profiles: recipe id '{id}' provided by multiple packs — '{winner_pack}' wins over {losers:?}"
+                );
+                self.conflicts.push(RecipeConflict {
+                    id: id.clone(),
+                    winner: winner_pack.clone(),
+                    losers,
+                });
+            }
+            log::info!(
+                "emulator_profiles: recipe override '{id}' from pack '{winner_pack}' ({})",
+                if replaced_baseline { "replaces baseline" } else { "new emulator" }
+            );
+            self.by_id.insert(id.clone(), winner_profile);
+            self.overrides.push(RecipeOverride {
+                id,
+                pack_id: winner_pack,
+                replaced_baseline,
+            });
+        }
+        self
+    }
+
+    /// Resolve + load the default registry, then overlay any installed
+    /// `emulator-recipes` community packs (CP4/CP5). Companion to
     /// [`crate::system_registry::SystemRegistry::load_default`].
     pub fn load_default() -> Self {
-        match resolve_config_emulators_dir() {
+        let baseline = match resolve_config_emulators_dir() {
             Some(dir) => Self::load_from_dir(&dir),
             None => {
                 log::info!("emulator_profiles: no config/emulators/ directory found — external launchers unavailable");
                 Self::empty()
             }
+        };
+        // Recipes are updatable data (ED2): community packs override the
+        // bundled baseline. Absent the dir, the baseline stands unchanged.
+        match resolve_recipe_packs_community_dir() {
+            Some(dir) => baseline.apply_recipe_overrides(&dir),
+            None => baseline,
         }
     }
 }
@@ -261,6 +397,19 @@ pub fn resolve_config_emulators_dir() -> Option<PathBuf> {
         return Some(dev);
     }
     None
+}
+
+/// Resolve `<exe_dir>/emulator-recipes/community/` — where installed
+/// `emulator-recipes` content packs land (the oa-packs on-disk layout,
+/// CP2). Unlike [`resolve_config_emulators_dir`] there's no source-tree
+/// fallback: packs are an install-time artifact, written next to the exe by
+/// the pack manager (`PacksRoot` = `<exe_dir>`). `None` when no recipe packs
+/// are installed.
+pub fn resolve_recipe_packs_community_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let p = exe_dir.join("emulator-recipes").join("community");
+    p.is_dir().then_some(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +503,83 @@ mod tests {
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).expect("mkdir tmp");
         p
+    }
+
+    /// Write a minimal valid recipe yaml for `id` into `dir`.
+    fn write_recipe(dir: &Path, id: &str, display: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join(format!("{id}.yaml")),
+            format!(
+                "id: {id}\ndisplay_name: {display}\nbinary_name: {id}.exe\nsupported_systems: [n64]\nlaunch_args_template: [\"{{content}}\"]\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn recipe_override_replaces_baseline_adds_new_and_records_conflict() {
+        // Baseline ships "bizhawk".
+        let baseline_dir = fresh_tmp_dir("ovr-baseline");
+        write_recipe(&baseline_dir, "bizhawk", "BizHawk (baseline)");
+        let baseline = EmulatorProfiles::load_from_dir(&baseline_dir);
+        assert_eq!(baseline.get("bizhawk").unwrap().display_name, "BizHawk (baseline)");
+
+        // Two packs override "bizhawk" (conflict) + one adds "newemu".
+        let community = fresh_tmp_dir("ovr-community");
+        write_recipe(&community.join("pack-a").join("emulators"), "bizhawk", "BizHawk (pack A)");
+        write_recipe(&community.join("pack-b").join("emulators"), "bizhawk", "BizHawk (pack B)");
+        write_recipe(&community.join("pack-c").join("emulators"), "newemu", "New Emu");
+
+        let merged = baseline.apply_recipe_overrides(&community);
+
+        // Alphabetically-last pack ("pack-b") wins the bizhawk id.
+        assert_eq!(merged.get("bizhawk").unwrap().display_name, "BizHawk (pack B)");
+        // New id added.
+        assert_eq!(merged.get("newemu").unwrap().display_name, "New Emu");
+
+        // Overrides: bizhawk←pack-b (replaced baseline) + newemu←pack-c (new).
+        let bizhawk_ovr = merged
+            .recipe_overrides()
+            .iter()
+            .find(|o| o.id == "bizhawk")
+            .expect("bizhawk override recorded");
+        assert_eq!(bizhawk_ovr.pack_id, "pack-b");
+        assert!(bizhawk_ovr.replaced_baseline);
+        let new_ovr = merged
+            .recipe_overrides()
+            .iter()
+            .find(|o| o.id == "newemu")
+            .expect("newemu override recorded");
+        assert_eq!(new_ovr.pack_id, "pack-c");
+        assert!(!new_ovr.replaced_baseline);
+
+        // Conflict: pack-a lost bizhawk to pack-b.
+        let conflict = merged
+            .recipe_conflicts()
+            .iter()
+            .find(|c| c.id == "bizhawk")
+            .expect("conflict recorded");
+        assert_eq!(conflict.winner, "pack-b");
+        assert_eq!(conflict.losers, vec!["pack-a".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&baseline_dir);
+        let _ = std::fs::remove_dir_all(&community);
+    }
+
+    #[test]
+    fn no_community_dir_leaves_baseline_untouched() {
+        let baseline_dir = fresh_tmp_dir("ovr-only-baseline");
+        write_recipe(&baseline_dir, "ares", "ares");
+        let baseline = EmulatorProfiles::load_from_dir(&baseline_dir);
+        // Apply against an empty community dir → no overrides, no conflicts.
+        let empty_community = fresh_tmp_dir("ovr-empty-community");
+        let merged = baseline.apply_recipe_overrides(&empty_community);
+        assert_eq!(merged.get("ares").unwrap().display_name, "ares");
+        assert!(merged.recipe_overrides().is_empty());
+        assert!(merged.recipe_conflicts().is_empty());
+        let _ = std::fs::remove_dir_all(&baseline_dir);
+        let _ = std::fs::remove_dir_all(&empty_community);
     }
 
     #[test]

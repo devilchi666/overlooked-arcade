@@ -165,6 +165,37 @@ export function clearNetworkLog(): Promise<void> {
   return invoke("oa_packs_clear_network_log");
 }
 
+// --- Emulator-recipe overrides (local; Slice 5) -------------------------
+
+/// One active recipe override from an installed `emulator-recipes` pack.
+export type RecipeOverride = {
+  /// The emulator profile id (`bizhawk`).
+  id: string;
+  /// The pack that provided it.
+  packId: string;
+  /// True when it replaced a bundled baseline recipe; false when the pack
+  /// introduced a new emulator.
+  replacedBaseline: boolean;
+};
+
+/// Two packs provided the same emulator id; `winner` is in effect.
+export type RecipeConflict = {
+  id: string;
+  winner: string;
+  losers: string[];
+};
+
+export type RecipeOverridesReport = {
+  overrides: RecipeOverride[];
+  conflicts: RecipeConflict[];
+};
+
+/// The active emulator-recipe overrides + conflicts (reflects startup
+/// state; recipe pack changes apply on the next launch). Local, no network.
+export function recipeOverrides(): Promise<RecipeOverridesReport> {
+  return invoke<RecipeOverridesReport>("oa_packs_recipe_overrides");
+}
+
 /// True if `err` is the synchronous network-disabled refusal from any gated
 /// command — lets a panel route the operator to the network toggle instead
 /// of showing a raw error.

@@ -93,6 +93,16 @@ const PacksSettings: Component = () => {
       return null;
     }
   });
+  const [recipes] = createResource(async () => {
+    try {
+      return await packsApi.recipeOverrides();
+    } catch (e) {
+      console.warn("[oa-packs] recipe_overrides failed:", e);
+      return null;
+    }
+  });
+  const hasRecipeInfo = () =>
+    (recipes()?.overrides.length ?? 0) > 0 || (recipes()?.conflicts.length ?? 0) > 0;
 
   // --- Registry (operator-initiated only) ---
   const [registry, setRegistry] = createSignal<packsApi.Registry | null>(null);
@@ -488,6 +498,43 @@ const PacksSettings: Component = () => {
                       Discard
                     </button>
                   </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Card>
+      </Show>
+
+      {/* Emulator-recipe overrides (Slice 5) */}
+      <Show when={hasRecipeInfo()}>
+        <Card
+          title="Emulator recipe overrides"
+          subtitle="Launch recipes supplied by installed emulator-recipes packs. Recipe changes apply on the next launch of OA."
+        >
+          <Show when={(recipes()?.conflicts.length ?? 0) > 0}>
+            <div class="mb-2 flex flex-col gap-1 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2">
+              <For each={recipes()?.conflicts ?? []}>
+                {(c) => (
+                  <p class="text-xs text-amber-200/90">
+                    ⚠ <span class="font-mono">{c.id}</span>: <span class="font-medium">{c.winner}</span>{" "}
+                    wins over {c.losers.join(", ")} — uninstall one to resolve.
+                  </p>
+                )}
+              </For>
+            </div>
+          </Show>
+          <div class="flex flex-col gap-2">
+            <For each={recipes()?.overrides ?? []}>
+              {(o) => (
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-mono text-sm text-(--color-oa-ink)">{o.id}</span>
+                    <span class="text-(--color-oa-ink-dim)">←</span>
+                    <span class="text-sm text-(--color-oa-ink)">{o.packId}</span>
+                  </div>
+                  <span class="rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim)">
+                    {o.replacedBaseline ? "replaces baseline" : "new emulator"}
+                  </span>
                 </div>
               )}
             </For>

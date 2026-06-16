@@ -77,68 +77,38 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### oa-packs infrastructure — Slice 5 (first consumers: emulator-recipes, editorial) `[ARC opened 2026-06-15]`
+### oa-packs infrastructure — Slice 5 tail (`editorial` consumer) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·
 **Design:** [PLANS/content-packs.md](PLANS/content-packs.md) ·
-**Decisions:** [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md) (CP1–CP6).
+**Decisions:** [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md) (CP1–CP8).
 
-The single operator-initiated content-pack distribution channel — built
-**schema + verify + install first, hosting later** (CP1). Every future
-pack-shaped stream (emulator recipes, editorial DISCOVER, themes, asset
-bundles, cheats, metadata) rides this instead of N bespoke updaters. Pack
-`type` is additive data + a dispatch arm (CP3); bundled-baseline is
-per-type (CP4); emulator recipes are the first non-editorial consumer and
-fold the External Emulator Depth recipe-update slice into this infra (CP5).
+The single operator-initiated content-pack distribution channel —
+**schema + verify + install first, hosting later** (CP1). Pack `type` is
+additive data + a dispatch arm (CP3); bundled-baseline is per-type (CP4).
 
-- **Slice 1 ✅ SHIPPED + MERGED to main (2026-06-15):** `crates/oa-packs/` —
-  pure `Registry`/`PackEntry`/`Manifest` contract types, `verify`,
-  `validate_manifest_against_registry`, `install_from_local_zip` (atomic,
-  no-partial-on-failure), per-type `PackTypeSpec` baseline (CP4). 14 tests
-  green, no network.
-- **Slice 2 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; awaiting
-  merge):** `apps/oa-shell/src/packs.rs` + `packs_prefs.rs` — `PacksPrefs`
-  at `appDataDir/packs/prefs.json` (config registry URL per CP1 + master
-  network toggle), `PacksRoot` (`<exe_dir>`), 8 Tauri commands
-  (`oa_packs_get_prefs`/`set_registry_url`/`set_allow_network`/`list`/
-  `uninstall`/`fetch_registry`/`install`/`update`), synchronous
-  `NETWORK_DISABLED` gate, reuses `http_retry` (no rebuilt downloader).
-  Decisions = CP6. 8 unit tests green.
-- **Slice 3 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; bundled with Slice 2,
-  awaiting operator playtest + merge):** Settings → Content → Packs panel
-  (`engine/PacksSettings.tsx`) — Registry & network card (config URL +
-  Save/Reset, allow-network toggle, operator-initiated Browse, Last checked),
-  Installed / Available / Updates / Recoverable-versions sections;
-  `platform/api/packsApi.ts` (11 typed wrappers). Rollback retention in
-  `packs.rs`: uninstall + update/install-over move the prior version to
-  `<data_dir>/packs-rollback/<id>-<version>/`, 14-day GC, +3 commands
-  (`list_rollbacks`/`rollback` (reversible swap)/`discard_rollback`). 9 Rust
-  tests green; frontend `tsc` + eslint clean. **Not built (deferred):**
-  progress bar (busy spinner only) + the §7 conflict-warning surface
-  (manifest has no content-level ids yet).
+- **Slices 1–4 ✅ SHIPPED + MERGED to main (2026-06-16):** the complete
+  channel — pure `crates/oa-packs/` (verify/validate/atomic-install, CP2);
+  `packs.rs`/`packs_prefs.rs` (config registry URL CP1 + network gate +
+  fetch/download/install/update/uninstall, CP6); the Packs panel + lifecycle
+  + rollback retention under `<exe_dir>/.packs-rollback/` (CP7);
+  `packs_netlog.rs` + the Privacy panel (network audit log). 12 packs tests.
+- **Slice 5 (emulator-recipes) ✅ SHIPPED on `oa-packs-slice-5` (2026-06-16;
+  awaiting playtest + merge):** first non-editorial consumer (CP5/CP8).
+  `EmulatorProfiles::load_default` overlays the bundled `config/emulators/`
+  baseline with installed `emulator-recipes` packs — whole-profile-by-id,
+  last-wins, conflicts recorded (the §7 surface's first real data). Command
+  `oa_packs_recipe_overrides` + a Packs-panel "Emulator recipe overrides"
+  section. Applied at startup (restart-to-apply; hot-reload deferred, CP8).
+  **Closes External Emulator Depth ED2/Slice 2.** 11 emulator_profiles tests.
 
-- **Slice 4 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; with Slices 2+3,
-  awaiting playtest + merge):** `packs_netlog.rs` — last-100 network-call
-  audit ring at `appDataDir/packs/network.log`, logging pushed into the two
-  network helpers so every registry fetch + pack download is recorded; +2
-  commands (`get_network_log` newest-first / `clear_network_log`).
-  `engine/PrivacySettings.tsx` — new SYSTEM "Privacy" category: disclosure of
-  the only two call types (with the live registry URL), master allow-network
-  toggle (mirrors Packs panel), network-log view (ok/error chips, Clear). 12
-  Rust tests green; clippy + `tsc` + eslint clean.
-
-**The channel is complete (Slices 1–4).** `oa-packs-slice-2` carries Slices
-2+3+4 → merge to main after playtest.
-
-**Slice 5 scope (next — first consumers, one at a time per CP3/CP5):**
-- **`emulator-recipes` pack type:** the override tier loads on top of the
-  bundled `config/emulators/` baseline (CP4) — recipe loader reads
-  `community/<pack>/` over the shipped baseline, last wins. Closes External
-  Emulator Depth Slice 2 (ED2 — "update recipes without an OA rebuild").
+**Slice 5 tail (next — the second consumer):**
 - **`editorial` pack type:** OA Editorial Baseline → DISCOVER (content-packs.md
-  §10), zero-builtin (CP4).
-- The §7 conflict-warning surface lands here — the first consumer to define
-  content-level ids is what makes cross-pack collisions detectable.
+  §10), zero-builtin (CP4 — no baseline; empty-until-installed). Needs the
+  DISCOVER UI to read `<exe_dir>/editorial/community/<pack>/` content.
+- Optional polish: a real download **progress bar** (graft
+  `core_installer.rs`'s `oa://…-progress` pattern — do NOT rebuild a
+  downloader); **hot-reload** of recipes (needs `AppState` behind a lock).
 
 **Reuse note (still applies):** `apps/oa-shell/src/core_installer.rs` is the
 richer download cousin (job rows, resume, progress events) — graft its
