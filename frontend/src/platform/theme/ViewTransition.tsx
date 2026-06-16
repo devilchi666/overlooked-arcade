@@ -51,9 +51,24 @@ export default function ViewTransition(props: ViewTransitionProps): JSX.Element 
   let anim: Animation | undefined;
 
   createEffect(() => {
-    props.trigger(); // track — re-run on every view change
+    const key = props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
+    // [oa-theme-motion] diagnostic — lands in oa-current.log. Tells us, in one
+    // line, whether the effect runs and why it does/doesn't animate.
+    const reason =
+      !node
+        ? "no-node"
+        : t.preset === "none"
+          ? "preset-none"
+          : t.durationMs <= 0
+            ? "zero-duration"
+            : typeof node.animate !== "function"
+              ? "no-waapi"
+              : "ANIMATE";
+    console.log(
+      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} ease=${t.easing} -> ${reason}`,
+    );
     if (!node) return;
     if (t.preset === "none" || t.durationMs <= 0) return;
     if (typeof node.animate !== "function") return; // jsdom / unsupported → no-op

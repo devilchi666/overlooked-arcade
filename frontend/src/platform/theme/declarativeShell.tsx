@@ -30,7 +30,7 @@
 // stays compiled-in (Retroverse) / ARC 3 (scripted). Documenting the floor is
 // the point ("low floor, high ceiling").
 
-import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
@@ -121,6 +121,18 @@ const DeclarativeShell: ThemeEntry = () => {
   //     the list appears motionless (the "I see nothing" bug). This is the
   //     browse view ENTERING once its data is ready.
   const viewKey = createMemo(() => `${layout()}|${games().length > 0}`);
+
+  // [oa-theme-motion] diagnostic — confirms the DeclarativeShell mounted (i.e. a
+  // DECLARATIVE theme is active; Retroverse's compiled shell would NOT log this)
+  // and shows whether the active theme's motion data arrived + how it resolved.
+  createEffect(() => {
+    const t = activeTheme();
+    console.log(
+      `[oa-theme-motion] shell theme=${t?.manifest.id ?? "?"} motion=${JSON.stringify(
+        t?.manifest.motion ?? null,
+      )} resolved=${JSON.stringify(viewTransition())} reducedMotion=${reducedMotion()} games=${games().length}`,
+    );
+  });
 
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
