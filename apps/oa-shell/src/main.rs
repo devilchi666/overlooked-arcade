@@ -43,6 +43,9 @@ mod logger;
 mod media;
 mod metadata;
 mod normalize;
+mod packs;
+mod packs_netlog;
+mod packs_prefs;
 mod patch;
 mod platform_media;
 mod rom_hashes;
@@ -2760,6 +2763,19 @@ fn main() {
             set_library_prefs,
             detect_cpu_tier,
             recommended_core_for_system,
+            packs::oa_packs_get_prefs,
+            packs::oa_packs_set_registry_url,
+            packs::oa_packs_set_allow_network,
+            packs::oa_packs_list,
+            packs::oa_packs_uninstall,
+            packs::oa_packs_list_rollbacks,
+            packs::oa_packs_rollback,
+            packs::oa_packs_discard_rollback,
+            packs::oa_packs_get_network_log,
+            packs::oa_packs_clear_network_log,
+            packs::oa_packs_fetch_registry,
+            packs::oa_packs_install,
+            packs::oa_packs_update,
         ])
         .setup({
             let running = running.clone();
@@ -3015,6 +3031,11 @@ fn main() {
                 // commands don't re-derive it (which would lock us out of
                 // testing relative-path setups in the future).
                 app.manage(core_installer::CoresDir(resolve_cores_dir()));
+
+                // Content-pack dest root — `<exe_dir>`. Pack installs land
+                // at `<exe_dir>/<type>/community/<pack_id>/` (CP2); resolved
+                // once here, same as CoresDir above.
+                app.manage(packs::PacksRoot(packs::resolve_packs_root()));
 
                 // Filesystem watcher — the frontend calls set_watched_folders
                 // once its settings store is hydrated. Until then this just

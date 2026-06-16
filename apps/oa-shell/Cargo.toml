@@ -40,6 +40,7 @@ oa-content   = { workspace = true }
 oa-savestate = { workspace = true }
 oa-cdrom     = { workspace = true }
 oa-libretro  = { workspace = true }
+oa-packs     = { workspace = true }
 
 # External
 tauri                        = { workspace = true }

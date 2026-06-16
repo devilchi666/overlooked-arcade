@@ -42,6 +42,8 @@ import SystemsHubRoot from "./systemsHub/SystemsHubRoot";
 import OrganizeLanding from "./OrganizeLanding";
 import ImportSetupLanding from "./ImportSetupLanding";
 import ExternalEmulatorsLanding from "./ExternalEmulatorsLanding";
+import PacksSettings from "./PacksSettings";
+import PrivacySettings from "./PrivacySettings";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -62,7 +64,9 @@ type CategoryId =
   | "library"
   | "organize"
   | "external-emulators"
+  | "packs"
   | "system-health"
+  | "privacy"
   | "profile"
   | "about";
 
@@ -212,6 +216,15 @@ const CATEGORIES: readonly CategoryDef[] = [
       "Setup for systems that run through a dedicated standalone emulator (Dolphin / Cemu / RPCS3 / Lime3DS) instead of an in-process core. Binary paths + install pipeline consolidate here; per-system launcher choice stays in Systems.",
   },
   {
+    id: "packs",
+    group: "content",
+    label: "Packs",
+    glyph: "📦",
+    description: "Install, update, and roll back content packs.",
+    helpText:
+      "Optional content layered on top of your install — editorial articles, emulator recipes, themes, and more. Browse the registry, install/update/uninstall packs, and restore a prior version. OA only contacts a server when you click Browse or Update; every download is sha256-verified against the registry.",
+  },
+  {
     id: "system-health",
     group: "system",
     label: "System Health",
@@ -219,6 +232,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Operational status of your OA install.",
     helpText:
       "Status rollup of Cores / BIOS / Readiness / Background jobs / Storage in one place. Internal tabs hold the deep-dive editors for each — the categories that used to live in the sidebar (BIOS / Cores / Storage / Background Jobs) all live here now.",
+  },
+  {
+    id: "privacy",
+    group: "system",
+    label: "Privacy",
+    glyph: "🛡",
+    description: "What OA sends, and when. Spoiler: nothing unless you ask.",
+    helpText:
+      "Full disclosure of every network call OA makes — only registry browse + pack download, both operator-initiated. Hosts the master Allow-network toggle and a per-call audit log. No telemetry, no analytics, no operator ID ever leaves your machine.",
   },
   {
     id: "profile",
@@ -421,8 +443,14 @@ const SettingsPanel: Component<Props> = (props) => {
           <Match when={activeCategoryId() === "external-emulators"}>
             <ExternalEmulatorsLanding />
           </Match>
+          <Match when={activeCategoryId() === "packs"}>
+            <PacksSettings />
+          </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />
+          </Match>
+          <Match when={activeCategoryId() === "privacy"}>
+            <PrivacySettings />
           </Match>
           <Match when={activeCategoryId() === "profile"}>
             <ProfileSettings settings={ctx.settings} />

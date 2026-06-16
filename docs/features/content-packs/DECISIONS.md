@@ -99,3 +99,74 @@ designed. Building the channel and making recipes a type avoids duplicate
 download/verify/install machinery.
 
 **Cross-ref:** [[external-emulator-depth]] Slice 2; this arc's Slice 5.
+
+---
+
+## CP6 — Slice 2 execution decisions: prefs location, min_oa_version source, network sentinel, dest_root (2026-06-16)
+
+Resolves the "open questions deferred to execution time" in
+[PLANS/oa-packs-infrastructure.md](../../PLANS/oa-packs-infrastructure.md)
+plus the glue choices Slice 2 (network + Tauri commands) had to make.
+
+- **Registry URL + allow-network live in `appDataDir/packs/prefs.json`**
+  (`PacksPrefs` in `apps/oa-shell/src/packs_prefs.rs`), same file pattern
+  as `library_prefs`. `registry_url` is **seeded** with the content-packs.md
+  §4 URL via `DEFAULT_REGISTRY_URL` but the persisted value wins and is
+  operator-overridable — honoring CP1 ("URL is config, never a constant").
+  Setting it to empty resets to the seed. The `oa-packs` crate still has
+  zero URL knowledge.
+- **`min_oa_version` source = `env!("CARGO_PKG_VERSION")`** (the workspace
+  version, `0.0.1` today), threaded into `oa_packs::install_from_local_zip`
+  as data — *not* a constant inside the crate. **Consequence:** any pack
+  with a `min_oa_version` above `0.0.1` is gated out until OA's version
+  climbs; test/local packs should omit `min_oa_version` or set it `<= 0.0.1`.
+  Chosen over a dedicated version constant because the Cargo version is the
+  single source already bumped on release.
+- **Network gate = a synchronous `Err("NETWORK_DISABLED: …")` sentinel
+  string** returned by `ensure_network_allowed` at the top of every
+  network command, before any request is built (content-packs.md §9).
+  Commands return `Result<_, String>` per the codebase convention; the
+  string is prefixed `NETWORK_DISABLED:` so the frontend (Slices 3–4) can
+  match it. The toggle defaults ON.
+- **dest_root = `<exe_dir>`** (`PacksRoot`, resolved like `resolve_cores_dir`
+  minus the `/cores`). Installs land at `<exe_dir>/<type>/community/<id>/`
+  — the literal `<type>` segment per **CP2**, which supersedes
+  content-packs.md §7's older semantic naming (`discover/`, `themes/`).
+  `oa_packs_list`/`uninstall` are type-agnostic: any top-level dir with a
+  `community/` child is a pack-type root (CP3 — no hard-coded type set).
+- **Trust chain is backend-authoritative:** `install`/`update` fetch the
+  registry themselves and look up the entry by id; they never trust a
+  frontend-supplied `sha256`. registry → `entry.sha256` →
+  `oa_packs::verify` → `install_from_local_zip`.
+- **Deferred to later slices (unchanged):** rollback retention + progress
+  events + the Settings → Packs panel (Slice 3); the Privacy panel +
+  network-log ring buffer (Slice 4). The allow-network *pref* + *gate* ship
+  now (Slice 2) so the gate is testable; only its operator-facing UI waits.
+
+---
+
+## CP7 — Rollback retention lives under `<exe_dir>`, not `<data_dir>` (2026-06-16)
+
+**Decision:** Rollback retention (content-packs.md §8) stores prior pack
+versions under **`<exe_dir>/.packs-rollback/<id>-<version>/`** — the
+install's own volume — overriding §8's stated `<data_dir>/packs-rollback/`
+location.
+
+**Why (caught in Slice 3 playtest):** Retention works by `rename`-ing the
+pack directory out of `<exe_dir>/<type>/community/`. On Windows a `rename`
+**cannot cross volumes**, and `<exe_dir>` routinely sits on a different
+drive than `<data_dir>` (AppData) — the common case is the operator running
+from `G:\…\target\release\` (or a portable install on `D:`) while AppData is
+on `C:`. With retention under `<data_dir>`, every uninstall/update silently
+failed the move (the command errored; the pack stayed put). Keeping
+retention on the install's own volume makes the move atomic, exactly as
+Slice 1's `.staging/` dir does for installs. The leading-dot name keeps
+`.packs-rollback` from looking like a pack-type root to the installed-pack
+scan (it has no `community/` child).
+
+**How to apply:** `rollback_root(root)` joins `<root>/.packs-rollback` where
+`root` is the `PacksRoot` (`<exe_dir>`). A `move_dir` helper tries `rename`
+then falls back to recursive copy + remove, so even an unexpected
+cross-volume move degrades gracefully instead of failing. The download
+staging area (`<data_dir>/packs/.download/`) is unaffected — it's only ever
+*read*, never renamed across volumes.
