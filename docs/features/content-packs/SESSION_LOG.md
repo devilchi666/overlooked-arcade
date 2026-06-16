@@ -4,6 +4,46 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
 
 ---
 
+## 2026-06-16 — Slice 5: first consumer — `emulator-recipes` override tier (closes ED2)
+
+- **Shipped (on `oa-packs-slice-5`; Slices 1–4 merged to main):** the first
+  real non-editorial pack consumer, proving the type-dispatch (CP3) +
+  per-type-baseline (CP4) model. **Rust** (`emulator_profiles.rs`):
+  `EmulatorProfiles::load_default` now loads the bundled `config/emulators/`
+  baseline then overlays installed `emulator-recipes` community packs via
+  `apply_recipe_overrides` — whole-profile-by-id, last-wins (alphabetical
+  pack order), new ids add emulators (CP8). `RecipeOverride` /
+  `RecipeConflict` track provenance + same-id collisions (the content-packs
+  §7 conflict surface's first real data). `resolve_recipe_packs_community_dir`
+  resolves `<exe_dir>/emulator-recipes/community/`. New command
+  `oa_packs_recipe_overrides` (main.rs) exposes overrides + conflicts.
+  **Frontend:** PacksSettings gained an "Emulator recipe overrides" section
+  (conflict warnings + `id ← pack` rows + "applies on next launch" note);
+  packsApi gained `recipeOverrides()` + types. This closes External Emulator
+  Depth ED2 ("update recipes without an OA rebuild"). 11 emulator_profiles
+  tests green (2 new: replace-baseline+add+conflict, empty-community-noop);
+  clippy clean; frontend `tsc` + eslint clean.
+- **Hot-reload follow-up (same day, playtest, CP9 — supersedes CP8's
+  restart-to-apply):** playtest showed uninstalling the recipe pack left the
+  overrides panel + External Emulators still showing `oa-test-recipes` (a
+  stale snapshot referencing an uninstalled pack). Fixed properly:
+  `AppState.emulator_profiles` is now `RwLock<EmulatorProfiles>`; new command
+  `oa_packs_reload_recipes` re-runs `load_default` + swaps; the Packs panel
+  calls it after every install/update/uninstall/rollback and refetches the
+  overrides view, so changes apply with no restart. All `emulator_profiles`
+  read sites clone out of a short read lock. `cargo check -p oa-shell` clean;
+  11 emulator_profiles tests still green; frontend `tsc`+eslint clean.
+- **Almost:** `editorial` → DISCOVER (the other planned Slice 5 consumer)
+  not built yet — recipes-first per the plan's lean.
+- **Next:** Operator playtest — the hand-placed `oa-test-recipes` pack now
+  carries `emulators/bizhawk.yaml` overriding the bundled BizHawk display
+  name; after rebuild+restart, Settings → External Emulators shows "BizHawk
+  (from oa-test-recipes pack)" and Packs → Emulator recipe overrides lists
+  `bizhawk ← oa-test-recipes`. Then merge `oa-packs-slice-5`. Remaining arc
+  tail: `editorial`/DISCOVER consumer; hot-reload of recipes (optional).
+
+---
+
 ## 2026-06-16 — Slice 4: Privacy panel + network-call audit log
 
 - **Shipped (on `oa-packs-slice-2`, with Slices 2+3):** **Rust** — new

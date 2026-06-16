@@ -170,3 +170,67 @@ then falls back to recursive copy + remove, so even an unexpected
 cross-volume move degrades gracefully instead of failing. The download
 staging area (`<data_dir>/packs/.download/`) is unaffected — it's only ever
 *read*, never renamed across volumes.
+
+---
+
+## CP8 — `emulator-recipes` override semantics: whole-profile-by-id, last-wins, applied at startup (2026-06-16)
+
+**Decision:** The first pack consumer, `emulator-recipes` (closing External
+Emulator Depth ED2/Slice 2), overlays the bundled `config/emulators/`
+baseline with these rules:
+
+- **Pack layout:** a recipe pack carries `emulators/<id>.yaml` files (mirrors
+  the bundled dir) under `<exe_dir>/emulator-recipes/community/<pack_id>/`.
+- **Whole-profile-by-id, last wins.** A pack's `<id>.yaml` *replaces* the
+  baseline profile for that id entirely (no field-level deep-merge); a new
+  `id` adds an emulator. This matches content-packs.md §7 "last wins" and
+  ED2's "publish a new recipe = the new flag is live" — simple, predictable,
+  and the unit of update is the whole recipe.
+- **Deterministic ordering + conflict surface.** Packs apply in
+  alphabetical pack-id order, so "last wins" is reproducible. Two packs
+  touching the same emulator id is a [`RecipeConflict`] (winner + losers),
+  logged and surfaced to the Packs panel. This is the first pack type with
+  content-level ids, so it's where content-packs.md §7's conflict-warning
+  surface gets its first real data.
+- **Applied at startup, not hot-reloaded.** Profiles load once into
+  `AppState.emulator_profiles`; a recipe pack install/update/uninstall takes
+  effect on the **next launch**. The Packs panel says so. Hot-reload would
+  need `AppState` behind a lock (a bigger change) and is deferred — the
+  operator-initiated, restart-to-apply model is honest and sufficient for v1.
+
+**Why:** Recipes are updatable *data* (ED2) — a changed CLI flag must not
+force an OA rebuild. Routing recipe updates through the pack channel as a
+`type` (CP3/CP5) with a baseline+override tier (CP4) delivers exactly that,
+and proves the type-dispatch model holds for a non-editorial consumer.
+
+**How to apply:** `EmulatorProfiles::load_default` loads the baseline then
+calls `apply_recipe_overrides(<exe_dir>/emulator-recipes/community/)`.
+`oa_packs_recipe_overrides` exposes the active overrides + conflicts to the
+UI. New recipe-pack content is just data; no code change unless a genuinely
+new launch *mechanism* is needed (the ED2 data/code boundary).
+
+---
+
+## CP9 — Recipe overrides hot-reload on pack change (supersedes CP8's restart-to-apply, 2026-06-16)
+
+**Decision:** Reverses CP8's "applied at startup, restart to apply." A pack
+install/update/uninstall/rollback now **hot-reloads** the recipe override
+tier immediately — no app restart.
+
+**Why (playtest):** With restart-to-apply, uninstalling the test recipe pack
+moved it to rollback but left the "Emulator recipe overrides" panel + the
+External Emulators name still showing `oa-test-recipes` — a stale override
+referencing a pack that's no longer installed. That's confusing and reads as
+a bug; a "restart to apply" note doesn't fix the staleness. Per the
+no-band-aid principle, the proper fix is to make the snapshot reloadable.
+
+**How:** `AppState.emulator_profiles` is now `RwLock<EmulatorProfiles>`. New
+command `oa_packs_reload_recipes` re-runs `EmulatorProfiles::load_default`
+(re-reading the bundled baseline + every installed `emulator-recipes` pack)
+and swaps the snapshot under the write lock. The Packs panel calls it after
+each pack mutation, then refetches the overrides view, so the panel +
+External Emulators reflect the change at once. All read sites clone the
+profile out of a short-lived read lock; reload only happens on operator-
+initiated pack actions, never mid-launch, so lock contention is a non-issue.
+Launches started *after* a reload use the new recipes (the in-process
+launcher reads the snapshot at launch time).

@@ -2214,9 +2214,12 @@ struct AppState {
     /// affordance) or by the external session's exit watcher (natural
     /// exit). Whoever takes the slot does the teardown choreography.
     active_launch: Arc<Mutex<Option<ActiveLaunch>>>,
-    /// VL Phase C2 — emulator profiles loaded from `config/emulators/`
-    /// at startup (decision D4: reload on restart).
-    emulator_profiles: emulator_profiles::EmulatorProfiles,
+    /// VL Phase C2 — emulator profiles loaded from `config/emulators/` at
+    /// startup, overlaid with installed `emulator-recipes` packs (CP4/CP5).
+    /// Behind a `RwLock` so a pack install/uninstall/update/rollback can
+    /// **hot-reload** the override tier without an app restart
+    /// (`oa_packs_reload_recipes` re-runs `load_default` and swaps).
+    emulator_profiles: std::sync::RwLock<emulator_profiles::EmulatorProfiles>,
     shell_window: ShellWindow,
     shell_mode: ShellMode,
     app_data_dir: PathBuf,
@@ -2773,6 +2776,8 @@ fn main() {
             packs::oa_packs_discard_rollback,
             packs::oa_packs_get_network_log,
             packs::oa_packs_clear_network_log,
+            oa_packs_recipe_overrides,
+            oa_packs_reload_recipes,
             packs::oa_packs_fetch_registry,
             packs::oa_packs_install,
             packs::oa_packs_update,
@@ -3369,7 +3374,9 @@ fn main() {
                 app.manage(AppState {
                     launcher: Arc::new(launcher::LibretroLauncher::new(cmd_tx.clone())),
                     active_launch: Arc::new(Mutex::new(None)),
-                    emulator_profiles: emulator_profiles::EmulatorProfiles::load_default(),
+                    emulator_profiles: std::sync::RwLock::new(
+                        emulator_profiles::EmulatorProfiles::load_default(),
+                    ),
                     emu_tx: Mutex::new(cmd_tx),
                     shell_window,
                     shell_mode,
@@ -11269,8 +11276,8 @@ struct EmulatorProfileInfo {
 /// startup, with each profile's effective binary path resolved.
 #[tauri::command]
 fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProfileInfo> {
-    state
-        .emulator_profiles
+    let profiles = state.emulator_profiles.read().unwrap();
+    profiles
         .iter()
         .map(|p| EmulatorProfileInfo {
             id: p.id.clone(),
@@ -11287,6 +11294,47 @@ fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProf
         .collect()
 }
 
+/// The active `emulator-recipes` pack overrides + any same-id conflicts
+/// (oa-packs arc Slice 5). The Packs panel renders this so the operator can
+/// see which emulator recipes a community pack has replaced and resolve
+/// collisions. Reflects startup state — recipe pack changes apply on the
+/// next launch.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecipeOverridesReport {
+    overrides: Vec<emulator_profiles::RecipeOverride>,
+    conflicts: Vec<emulator_profiles::RecipeConflict>,
+}
+
+#[tauri::command]
+fn oa_packs_recipe_overrides(state: tauri::State<'_, AppState>) -> RecipeOverridesReport {
+    let profiles = state.emulator_profiles.read().unwrap();
+    RecipeOverridesReport {
+        overrides: profiles.recipe_overrides().to_vec(),
+        conflicts: profiles.recipe_conflicts().to_vec(),
+    }
+}
+
+/// Hot-reload the emulator-recipe override tier without an app restart
+/// (oa-packs Slice 5). Re-runs `load_default` — re-reading the bundled
+/// baseline + all installed `emulator-recipes` packs — and swaps the
+/// in-memory snapshot. The frontend calls this after a pack
+/// install/update/uninstall/rollback so the Packs panel + External
+/// Emulators reflect the change immediately (no "restart to apply").
+#[tauri::command]
+fn oa_packs_reload_recipes(state: tauri::State<'_, AppState>) -> RecipeOverridesReport {
+    let reloaded = emulator_profiles::EmulatorProfiles::load_default();
+    {
+        let mut guard = state.emulator_profiles.write().unwrap();
+        *guard = reloaded;
+    }
+    let profiles = state.emulator_profiles.read().unwrap();
+    RecipeOverridesReport {
+        overrides: profiles.recipe_overrides().to_vec(),
+        conflicts: profiles.recipe_conflicts().to_vec(),
+    }
+}
+
 /// Persist the operator-set binary path for an emulator profile
 /// (appData `emulators.json`). `path = None` clears the override.
 /// Validates the file exists; a filename that doesn't match the
@@ -11300,7 +11348,10 @@ fn set_emulator_binary_path(
 ) -> Result<(), String> {
     let profile = state
         .emulator_profiles
+        .read()
+        .unwrap()
         .get(&profile_id)
+        .cloned()
         .ok_or_else(|| format!("unknown emulator profile '{profile_id}'"))?;
     if let Some(p) = path.as_deref() {
         let pb = std::path::Path::new(p);
@@ -11359,7 +11410,10 @@ fn set_launcher_pref(
     if let Some(id) = profile_id.as_deref() {
         let profile = state
             .emulator_profiles
+            .read()
+            .unwrap()
             .get(id)
+            .cloned()
             .ok_or_else(|| format!("unknown emulator profile '{id}'"))?;
         if !profile.supported_systems.iter().any(|s| s == &system_id) {
             return Err(format!(
@@ -11433,6 +11487,8 @@ fn get_active_launcher_capabilities(state: tauri::State<'_, AppState>) -> Active
     // id if the profile somehow isn't present.
     let launcher_name = state
         .emulator_profiles
+        .read()
+        .unwrap()
         .get(&id)
         .map(|p| p.display_name.clone())
         .unwrap_or_else(|| id.clone());
@@ -12221,12 +12277,18 @@ fn launch_rom_external(
     state: &tauri::State<'_, AppState>,
     app: &tauri::AppHandle,
 ) -> Result<(), String> {
-    let profile = state.emulator_profiles.get(profile_id).ok_or_else(|| {
-        format!(
-            "default launcher for {system_id} is '{profile_id}' but no such emulator profile \
-             loaded — check config/emulators/ or clear the per-system default launcher"
-        )
-    })?;
+    let profile = state
+        .emulator_profiles
+        .read()
+        .unwrap()
+        .get(profile_id)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "default launcher for {system_id} is '{profile_id}' but no such emulator profile \
+                 loaded — check config/emulators/ or clear the per-system default launcher"
+            )
+        })?;
     if archive_inner_path.is_some() {
         if profile.accepts_archives {
             // Emulator opens archives itself (BizHawk, ares). `path` is the
@@ -12254,7 +12316,7 @@ fn launch_rom_external(
             ));
         }
     }
-    let binary = emulator_profiles::effective_binary_path(profile, &state.app_data_dir)
+    let binary = emulator_profiles::effective_binary_path(&profile, &state.app_data_dir)
         .ok_or_else(|| {
             format!(
                 "{} has no binary path set — point OA at your install in Settings → Cores → \
@@ -12264,7 +12326,7 @@ fn launch_rom_external(
         })?;
     let display_name = profile.display_name.clone();
     let launcher_dyn: Arc<dyn oa_core::Launcher> =
-        Arc::new(launcher::ExternalProcessLauncher::new(profile, binary));
+        Arc::new(launcher::ExternalProcessLauncher::new(&profile, binary));
     let request = oa_core::LaunchRequest {
         content_path: path,
         content_bytes: Vec::new(),
