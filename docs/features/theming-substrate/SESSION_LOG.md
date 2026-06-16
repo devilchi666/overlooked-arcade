@@ -9,6 +9,51 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-16 — ARC 2 "P" P.1 S2: `DeclarativeShell` + `diskThemeToPackage` + `bare` dogfood — ✅ shipped (branch, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1` (P.1 continues on the one phase branch).
+> The frontend half of the declarative loader: a built-in shell that renders any
+> declarative theme from data, the descriptor→package mapper, and a zero-code
+> dogfood proving `bare` works with no theme component code.
+
+- **Shipped:**
+  - `platform/theme/declarativeShell.tsx` — the one built-in `ThemeEntry` (D47)
+    that renders EVERY declarative theme: reads the active manifest, resolves the
+    `game-browse` layout via `useResolvedLayout` (ARC 2 L3), and mounts the
+    matching nav primitive (List/Grid/Carousel/Wheel — all reused, none rebuilt).
+    Tokens/perSystemTokens/glyph_set need no code here (App's `.oa-theme-mount` +
+    glyph bridge already handle them); cards carry `data-system`; `ThemeBackground`
+    follows the focused game's system. List rows mirror `bare` exactly (accent dot
+    + title + system short + compact density).
+  - `platform/theme/diskTheme.ts` — `DiskThemeDescriptor` TS type (mirrors the
+    Rust struct 1:1) + `diskThemeToPackage(desc)`: injects `DeclarativeShell` as
+    the entry + synthetic non-empty `entry`/`entry_export` (satisfy the shared
+    `ThemeManifest` contract + `validateTheme`; never dereferenced — custom-JS is
+    deferred P.2).
+  - `themes/declarative-bare/` — the **dogfood**: `bare` re-expressed as a pure
+    `DiskThemeDescriptor` → `diskThemeToPackage` → registered in `BUILTIN_THEMES`
+    as "Bare (declarative)", beside hand-coded `bare` for A/B. Declares
+    `views["game-browse"].layout = "list"` so it renders a list, not the grid
+    default. Zero theme component code.
+  - **Recognized-settings seed vocabulary**: the shell interprets `compactRows`
+    (→ list density) from `settings_schema`; other declared controls still render
+    in Appearance + persist but are inert in the generic shell (accrete additively
+    — the plan's open-question, settled minimally).
+  - Tests: `platform/theme/diskTheme.test.ts` (6 — mapper carries fields,
+    validates like a builtin, rejects a bad token key, manifest→primitive
+    resolution) + `themes/declarative-bare/index.test.ts` (1 — dogfood is valid +
+    list-rendering + DeclarativeShell-backed).
+- **Verified:** `tsc` clean, `eslint` clean (incl. the platform↛theme boundary —
+  the dogfood test lives under `themes/`), `npm run test` = **157 passed** (18
+  files). The `oa-audio transformCallback` stderr is the harmless Tauri-absent
+  warning any nav-importing test prints.
+- **Almost:** disk themes don't auto-register yet — the dogfood is a builtin; the
+  `oa_themes_list_disk` → `diskThemeToPackage` → registry merge is S3.
+- **Next:** **P.1 S3** — App merges `oa_themes_list_disk` results into the
+  registry (validated like builtins), Appearance picker lists disk themes, and
+  `themes` joins `default_pack_type_specs` so a `themes` pack installs → restart →
+  selectable. Then swap the dogfood's source from inline to disk.
+
 ## 2026-06-16 — ARC 2 "P" P.1 S1: `.oatheme` on-disk loader + discovery command — ✅ shipped (branch, pre-merge)
 
 > Branch `theme-oatheme-loader-slice-1`. First slice of the declarative-first

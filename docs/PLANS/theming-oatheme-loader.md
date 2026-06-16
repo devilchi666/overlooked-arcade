@@ -115,7 +115,7 @@ implicit (`DeclarativeShell`); the loader supplies them.
 - **Acceptance:** a hand-placed `<exe_dir>/themes/community/foo/theme.toml`
   shows up in `oa_themes_list_disk` output; a malformed one is skipped.
 
-### P.1 S2 — `DeclarativeShell` generic theme component
+### P.1 S2 — `DeclarativeShell` generic theme component `[SHIPPED 2026-06-16 — branch theme-oatheme-loader-slice-1]`
 
 - A built-in shell (`themes/declarative/` or
   `platform/theme/declarativeShell.tsx`) — a Solid `ThemeEntry` that renders

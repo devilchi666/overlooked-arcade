@@ -1892,3 +1892,43 @@ picker is **P.1 S3**. S1's loader already discovers anything dropped at
 `<exe_dir>/themes/community/<id>/`, so a hand-placed folder works today; a
 channel-installed `themes` pack lands at the same path once S3 registers the
 type.
+
+### D49 — P.1 S2 `DeclarativeShell` implementation calls (recognized-settings vocabulary; dogfood as builtin; flat-browse layout)
+
+**Date:** 2026-06-16 (branch `theme-oatheme-loader-slice-1`). Execution-level
+choices made building the generic shell + mapper + dogfood. Subordinate to
+D45–D48; recorded so they aren't re-litigated.
+
+1. **Synthetic `entry`/`entry_export` on mapped disk themes.** A declarative
+   theme's on-disk manifest omits `entry`/`entry_export` (D45), but the shared
+   `ThemeManifest` contract + `validateTheme()` require non-empty strings.
+   `diskThemeToPackage` injects placeholders (`"<declarative-shell>"` /
+   `"DeclarativeShell"`) that are **never dereferenced** — the entry component is
+   always `DeclarativeShell`. *Why:* keeps one `ThemeManifest` type + one
+   validator for built-in and disk themes (no parallel "disk manifest validator");
+   the placeholders cost nothing and document that the real entry is implicit.
+
+2. **The `DeclarativeShell` interprets a small RECOGNIZED settings vocabulary**,
+   not arbitrary `settings_schema` keys. S2 recognizes exactly one — `compactRows`
+   (→ list row density), matching hand-coded `bare`. Other declared controls still
+   render in the Appearance panel + persist per-theme, but are **inert in the
+   generic shell** until the vocabulary accretes. *Why:* a generic shell can't
+   divine what an arbitrary key means; settling the minimum against the `bare`
+   dogfood and accreting additively (CP3-style) is the plan's stated approach
+   (open-question §"How much vocabulary"). The alternative — a rich layout DSL in
+   `settings_schema` — is over-build for S2 and trends toward scripting (ARC 3).
+
+3. **The S2 dogfood ships as a BUILT-IN (`themes/declarative-bare/`), not an
+   on-disk file.** It builds an inline `DiskThemeDescriptor` → `diskThemeToPackage`
+   → `BUILTIN_THEMES`. *Why:* exercises the descriptor→package→render path NOW,
+   decoupled from the disk-loading + registry-merge wiring (P.1 S3). S3 swaps only
+   the *source* of the descriptor (inline → `oa_themes_list_disk`); the render
+   path is identical. It sits beside hand-coded `bare` for A/B parity testing.
+
+4. **Flat all-systems browse resolves layout at the VIEW level**
+   (`useResolvedLayout("game-browse", () => null)`), not per focused-item system.
+   *Why:* the shell renders one flat list/grid of every game, so there is no
+   single system in context; per-system LAYOUT variation (D32) belongs to a
+   future system-scoped browse view, not a flat list whose layout would otherwise
+   thrash as focus crosses systems. Per-system *palette* (perSystemTokens) still
+   applies per-card via `data-system` — that's orthogonal and works today.

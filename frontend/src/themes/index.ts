@@ -19,8 +19,11 @@ import type { ThemePackage } from "@oa/platform/theme/types";
 import { retroverse } from "./retroverse";
 import { coverflow } from "./coverflow";
 import { bare } from "./bare";
+import { bareDeclarative } from "./declarative-bare";
 
 // Order: first = default (Retroverse). `bare` is the minimal valid reference
 // theme added in S4 — operator-selectable (the lowest-floor shell, browse +
 // launch + engine access, no tokens) and the validator's canonical fixture.
-export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow, bare];
+// `bareDeclarative` (P.1 S2 dogfood) re-expresses `bare` as pure data rendered
+// by the built-in DeclarativeShell — the zero-code proof, beside `bare` for A/B.
+export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow, bare, bareDeclarative];
