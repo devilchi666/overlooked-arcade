@@ -30,7 +30,7 @@
 // stays compiled-in (Retroverse) / ARC 3 (scripted). Documenting the floor is
 // the point ("low floor, high ceiling").
 
-import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
@@ -110,25 +110,13 @@ const DeclarativeShell: ThemeEntry = () => {
     resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
-  // Entrance play (ARC 3 M1). The surface mounts + first-paints while the OS
-  // window is still settling, so a play at mount is unseen. We flip `entered`
-  // ONCE, a beat after mount (past the window-present settle), and key the
-  // transition on it — so the browse view plays exactly one clean entrance when
-  // it's actually on-screen. (Earlier multi-trigger replays — mount + timer +
-  // focus + visibility — stacked into a strobe; one play is the fix.) M2 adds
-  // the runtime re-trigger axis (per-system/per-view layout changes); M1 is the
-  // single entrance.
-  const [entered, setEntered] = createSignal(false);
-  onMount(() => {
-    if (typeof window === "undefined") return;
-    const timer = window.setTimeout(() => setEntered(true), 350);
-    onCleanup(() => window.clearTimeout(timer));
-  });
-
   // The transition's trigger — what counts as a "view change". M1: the resolved
-  // layout primitive (the per-view/per-system axis M2 varies at runtime) gated
-  // by `entered` so the FIRST play is the deferred, on-screen entrance.
-  const viewKey = createMemo(() => `${layout()}|${entered()}`);
+  // layout primitive (the per-view/per-system axis M2 varies at runtime) plus
+  // content-readiness (the library async-loads). A SINGLE trigger → one play
+  // when the browse view first renders with content; no timer / focus / vis
+  // replays (those stacked into a strobe). The mount play is what renders
+  // (confirmed visible in the multi-play build).
+  const viewKey = createMemo(() => `${layout()}|${games().length > 0}`);
 
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;

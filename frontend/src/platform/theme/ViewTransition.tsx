@@ -42,21 +42,16 @@ export type ViewTransitionProps = {
 
 export default function ViewTransition(props: ViewTransitionProps): JSX.Element {
   let el: HTMLDivElement | undefined;
-  // Skip the initial (mount) run: the children paint at rest, and we only
-  // animate on a SUBSEQUENT trigger change (the deferred entrance / a real view
-  // change). Without this the mount run + the entrance would both play → strobe.
-  let primed = false;
 
   createEffect(() => {
-    props.trigger(); // track — re-run on every view change
+    const key = props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
-    if (!primed) {
-      // Establish the baseline at rest; don't animate the initial mount.
-      primed = true;
-      return;
-    }
-    if (!node || t.preset === "none" || t.durationMs <= 0) return;
+    const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
+    console.log(
+      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} -> ${skip || "CSS-ANIMATE"}`,
+    );
+    if (!node || skip || t.preset === "none") return;
     const keyframe = KEYFRAME_NAME[t.preset];
     // Restart the CSS animation: clear it, force a reflow so the browser sees a
     // genuine change, then re-apply. `both` holds the first frame before start
