@@ -77,6 +77,47 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### External Emulator Depth — Slice 1 ✅ SHIPPED (schema accretion + ares/BizHawk profiles) `[ARC opened 2026-06-15]`
+
+**Plan:** [PLANS/external-emulator-depth.md](PLANS/external-emulator-depth.md) ·
+**Decisions:** [features/external-emulators/DECISIONS.md](features/external-emulators/DECISIONS.md) (ED1–ED6) ·
+**Log:** [features/external-emulators/SESSION_LOG.md](features/external-emulators/SESSION_LOG.md).
+
+New arc deepening the shipped launcher abstraction (VL Phase C): recipe
+upgrade + independent updates · install pipeline (legal-gated) · OA-authored
+control toward window-wrapping. Load-bearing principle: per-emulator
+knowledge is **updatable data**, refreshed without an OA rebuild (ED2).
+
+**Slice 1 ✅ SHIPPED + PLAYTESTED + MERGED to main (2026-06-15):**
+- ✅ Per-OS `binary_name` map — untagged `BinaryName` enum (`Single` | `PerOs
+  { windows, macos, linux }`) + `resolve()` in `emulator_profiles.rs`; single
+  string stays valid (all 9 existing profiles unchanged). Consumers in `main.rs`
+  resolve current-OS name.
+- ✅ `config/emulators/ares.yaml` + `bizhawk.yaml` — single positional `{content}`
+  (auto-detect). ares full per-OS map (15 systems); bizhawk per-OS map with macOS
+  omitted (18 systems).
+- ✅ MAME — **deferred** (the `content_mode` enum is not a clean 1-field add; needs
+  real content resolution; in-process core already covers arcade). Reason in
+  SESSION_LOG + RESEARCH doc.
+- ✅ Reserved `--system`/`{system}` seam documented (not built) on
+  `launch_args_template`.
+- ✅ `all_shipped_profiles_parse_and_hold_invariants` extended + per-OS-map tests;
+  `cargo test -p oa-shell` green (849 passed).
+- ✅ **Playtest follow-ups (merged on the branch):** `accepts_archives` recipe
+  field — BizHawk/ares load `.zip` natively, so the external path hands them the
+  decoded outer archive path instead of erroring on archived content (was a
+  pre-existing VL Phase C2 gap). Verified: EmuHawk opens + tries to boot an
+  archived `coleco` game (firmware is a BizHawk-side concern OA never provides).
+
+**Acceptance met + merged to main 2026-06-15.**
+
+**Next: Slice 2** — recipe update delivery (rides content-pack infra).
+
+**Note on sequencing:** Slice 2 (recipe-update delivery) depends on the
+content-pack distribution infra (design-only today); Phase 2 (install) builds on
+VL Phase D's `InstallableProfile` sketch; Phase 2 new-system wiring rides the
+per-system-descriptor loader.
+
 ### Theming ARC 2 — L1…L5 ✅ MERGED to main; L6 PARKED, P (loader) remaining
 
 - **L1 (per-system UI consumption opt-in, D33)** — ✅ MERGED 2026-06-15.

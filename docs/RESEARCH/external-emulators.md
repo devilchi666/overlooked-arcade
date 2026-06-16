@@ -8,35 +8,46 @@ docs/source; see "Verified batch" below. **9 profiles authored + MERGED to main*
 (branch `feat/external-emulator-profiles`) for the section-A emulators whose OA
 system id already exists.
 
-**DEPTH PARKED pending a dedicated planning arc (operator decision 2026-06-15):**
-there are bigger plans for external emulators; the depth work is to be designed
-properly in a future planning session rather than cobbled together
-incrementally. This doc is the open-items seed for that arc. **Still open:** the
-multi-system section-A emulators (BizHawk, ares) + standalone MAME need a schema
-decision (see below); every section-B system needs OA system-id wiring (VL
-Phase D). Raised 2026-06-14 alongside Settings IA Slice 4 (External Emulators
-consolidation).
+**DEPTH ARC NOW PLANNED (2026-06-15):** the depth work was designed in a
+dedicated planning session →
+[PLANS/external-emulator-depth.md](../PLANS/external-emulator-depth.md)
+(decisions ED1–ED6 in
+[features/external-emulators/DECISIONS.md](../features/external-emulators/DECISIONS.md)).
+This doc remains the research seed (roster + per-emulator CLI/quirks + per-OS
+binary table). **Open-item resolution:** schema question #1 (per-system args for
+ares/BizHawk) is **dissolved** — both auto-detect (verified below); question #2
+(MAME content model) + the per-OS `binary_name` map are folded into the arc's
+**Slice 1**; question #3 (section-B system-id wiring) is the arc's **Phase 2
+Slice 5+**, riding the per-system-descriptor loader. Originally raised 2026-06-14
+alongside Settings IA Slice 4 (External Emulators consolidation).
 
-## Open schema questions for the future planning arc
+## Open schema questions — RESOLVED in the depth arc (2026-06-15)
 
 The 9 shipped profiles all fit today's schema (one flat `launch_args_template`
 + `{content}` = full file path, shared across all `supported_systems`). Three
-deferred emulators break that assumption — the planning arc must decide how (or
-whether) to extend the schema:
+deferred emulators broke that assumption. Resolution per the depth arc:
 
-1. **Per-system argument variation (ares).** ares needs `--system <name>` with
-   ares's own system spelling (`"Mega Drive"` vs `"Super Famicom"`), which one
-   flat template can't express. Options: a `{system}` token + per-profile
-   `system_aliases` map (OA id → emulator's name); OR a `per_system` override
-   block; OR one profile per (emulator, system) pair (no schema change, ~20
-   near-dup files). **Verify first** — modern ares/BizHawk may auto-detect by
-   file extension, which would dissolve this entirely.
-2. **Non-path content model (MAME).** MAME takes a short **rom-set name** + a
-   configured `rompath` (`mame sf2`), not a file path; software-list titles use
-   `-cart`/`-cdrm`/etc. `{content}` = full path doesn't fit. Options: extra
-   substitution tokens (`{content_stem}`, `{content_dir}`); OR a `content_mode`
-   enum (`path` | `rom_name` | `software_list`); OR defer (the in-process MAME
-   core already covers it; standalone is long-tail).
+1. **Per-system argument variation (ares/BizHawk) — DISSOLVED (verified
+   2026-06-15).** Both auto-detect the system from the file: ares `--system` is
+   explicitly *optional* ("useful when the system type cannot be auto-detected" —
+   [ares README/docs](https://github.com/ares-emulator/ares)); BizHawk maps file
+   extension → console on load
+   ([BizHawk wiki](https://github.com/TASEmulators/BizHawk/wiki/WIP-Manual:-Loading-roms)).
+   So both get a single positional `{content}` recipe like the other emulators —
+   no `{system}` token, no `system_aliases` map, no one-profile-per-pair. The
+   optional `--system` override is a **reserved seam** (documented, not built)
+   for the rare ambiguous-extension case (ED4).
+2. **Non-path content model (MAME) — DEFERRED at Slice-1 execution
+   (2026-06-15).** MAME takes a short **rom-set name** + a configured `rompath`
+   (`mame sf2`), not a file path; software-list titles use `-cart`/`-cdrm`/etc.
+   `{content}` = full path doesn't fit. Slice 1 considered adding a `content_mode`
+   enum (`path` | `rom_name`) but **deferred the standalone-MAME profile**: the
+   enum alone is *not* a clean ~1-field add — it has no consumer without real
+   content resolution (rom-set-name extraction from a path + `rompath` config +
+   library-scanner changes), which is well beyond Slice 1. Shipping a dead field
+   would be a band-aid. The **in-process MAME core already covers arcade**, so the
+   standalone profile waits until that content-resolution work is scoped (its own
+   slice). No `content_mode` field exists in the schema today.
 3. **Section-B system-id wiring (Cemu/RPCS3/Switch/3DS/Vita/Xbox/PS4/Model 3 +
    Wii).** Each needs an OA system id + `config/systems/<id>/` descriptor +
    sidebar/metadata before its (often already CLI-verified) profile is useful.
@@ -134,9 +145,9 @@ For each emulator, gather:
 | **Flycast / Redream** | Dreamcast (✅) | `flycast.exe -config window:fullscreen=yes {content}` | ✅ **Flycast VERIFIED + shipped** (`flycast.yaml`). No fullscreen flag — use `-config section:key=value`. **No auto-exit** (process exits via pause-menu Exit; hotkey unbound by default). No BIOS (HLE default). Redream not yet researched (closed-source). |
 | **Mesen** | NES/SNES/GB/GBC/GBA/SMS/GG/PCE/WS/Coleco (all ✅) | `Mesen.exe --fullscreen {content}` | ✅ **VERIFIED + shipped** (`mesen.yaml`, Mesen **2**). Multi-system but **auto-detects** (no `--system` flag) → single positional template. Use the **native** (non-.NET) build. Carts BIOS-free; PCE-CD/FDS need user BIOS (excluded). |
 | **DeSmuME** | DS (`nds` ✅) | `DeSmuME.exe {content}` | ✅ **VERIFIED + shipped** (`desmume.yaml`). Alt to melonDS. Path positional; **no fullscreen flag**. Windows exe is version-stamped (`DeSmuME_x64.exe`). No BIOS (HLE). |
-| **BizHawk** | Multi (TAS) | `EmuHawk.exe "{content}"` | ⏸️ **DEFERRED — needs schema decision** (multi-system; may need per-system args). TAS/tooling audience. |
-| **ares** | Multi | `--system <sys> "{content}"` | ⏸️ **DEFERRED — needs schema decision** (multi-system; needs explicit `--system` disambiguation, which the single-template schema can't express per-system yet). |
-| **standalone MAME** | Arcade (`mame` ✅) | `mame <romname>` | ⏸️ **DEFERRED — content-model mismatch.** MAME takes a short **rom-set name** + a configured `rompath`, not a file path, so `{content}=<full path>` doesn't fit. Needs a content-resolution decision before a profile. |
+| **BizHawk** | Multi (TAS) | `EmuHawk.exe "{content}"` | ✅ **VERIFIED + shipped** (`bizhawk.yaml`, Slice 1). Maps file extension → console on load, so single positional template. Per-OS `binary_name` map with **macOS omitted** (no native build). 18 BIOS-free auto-detect systems; disc+BIOS (PSX/Saturn) excluded for now. |
+| **ares** | Multi | `"{content}"` | ✅ **VERIFIED + shipped** (`ares.yaml`, Slice 1). Auto-detects from the file; `--system` is optional/fallback-only (the reserved seam, ED4). Single positional template, full per-OS `binary_name` map. 15 BIOS-free systems; ambiguous-extension (MSX `.rom`) + CD/BIOS systems excluded. |
+| **standalone MAME** | Arcade (`mame` ✅) | `mame <romname>` | ⏸️ **DEFERRED (re-confirmed Slice 1, 2026-06-15) — content-model mismatch.** MAME takes a short **rom-set name** + a configured `rompath`, not a file path, so `{content}=<full path>` doesn't fit. The `content_mode` enum is not a clean 1-field add (needs real content resolution); in-process MAME core already covers arcade. Waits on its own slice. |
 
 ### B. Systems with NO usable in-process core — standalone REQUIRED
 
@@ -186,11 +197,14 @@ handle this (`CoreLauncherEditor` lists all supporting profiles in one
 dropdown; `ExternalEmulatorsSection` shows coherent per-profile selects) — no
 code change needed.
 
-### Per-OS binary names (schema-accretion data — not yet representable)
+### Per-OS binary names (schema-accretion data — NOW REPRESENTABLE, Slice 1)
 
-The schema's single `binary_name` is Windows-first (operator's platform; the
-field is only a soft warn-check). Verified names per OS, ready for when the
-schema grows a per-OS map (open question #1):
+**Update 2026-06-15 (Slice 1):** the schema now holds this — `binary_name`
+accepts a `{ windows, macos, linux }` map (untagged `BinaryName` enum in
+`emulator_profiles.rs`); a bare string still applies to every OS. The 9
+existing profiles keep their single string; `ares.yaml`/`bizhawk.yaml` use the
+map. The single `binary_name` is still only a soft warn-check (an OS the map
+omits → `resolve()` returns `None` → check skipped). Verified names per OS:
 
 | Emulator | Windows | macOS | Linux |
 | --- | --- | --- | --- |
@@ -282,8 +296,10 @@ installer + wiring), not something to bolt on ahead of it.
 
 ## Open questions for the research
 
-1. **OS coverage** — Win/macOS/Linux binaries + CLI differ; do profiles need
-   per-OS `binary_name` + `launch` (the schema should allow it).
+1. **OS coverage** — ✅ **RESOLVED (Slice 1, 2026-06-15).** `binary_name` now
+   accepts a per-OS `{ windows, macos, linux }` map; CLI args proved OS-agnostic
+   for the verified batch, so `launch_args_template` stays single. A per-OS
+   `launch` override remains an additive future option if a real case needs it.
 2. **Content resolution** — some want a folder / title-id, not a file path; our
    `{content}` substitution + archived-entry handling must account for that
    (C2 already errors clearly on archived externals).

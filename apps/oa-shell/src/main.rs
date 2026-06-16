@@ -11256,7 +11256,9 @@ fn list_emulator_profiles(state: tauri::State<'_, AppState>) -> Vec<EmulatorProf
             display_name: p.display_name.clone(),
             vendor: p.vendor.clone(),
             official_download_url: p.official_download_url.clone(),
-            binary_name: p.binary_name.clone(),
+            // Surface the current-OS name to the Settings UI; an OS the
+            // profile omits resolves to an empty string (no expected name).
+            binary_name: p.binary_name.resolve().unwrap_or("").to_string(),
             supported_systems: p.supported_systems.clone(),
             binary_path: emulator_profiles::effective_binary_path(p, &state.app_data_dir)
                 .map(|p| p.to_string_lossy().into_owned()),
@@ -11285,12 +11287,15 @@ fn set_emulator_binary_path(
             return Err(format!("not a file: {p}"));
         }
         let picked_name = pb.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if !picked_name.eq_ignore_ascii_case(&profile.binary_name) {
-            log::warn!(
-                "oa-shell: {} binary path set to '{picked_name}' (profile expects '{}') — accepting",
-                profile.display_name,
-                profile.binary_name
-            );
+        // Soft check only against the current-OS expected name; a profile
+        // that omits this OS (resolve() == None) skips the check entirely.
+        if let Some(expected) = profile.binary_name.resolve() {
+            if !picked_name.eq_ignore_ascii_case(expected) {
+                log::warn!(
+                    "oa-shell: {} binary path set to '{picked_name}' (profile expects '{expected}') — accepting",
+                    profile.display_name,
+                );
+            }
         }
     }
     let mut prefs = emulator_profiles::read_binary_path_prefs(&state.app_data_dir);
@@ -12188,7 +12193,7 @@ fn boot_without_game(
 /// the profile + its operator-set binary path decide everything.
 fn launch_rom_external(
     profile_id: &str,
-    path: String,
+    mut path: String,
     archive_inner_path: Option<String>,
     entry_id: Option<String>,
     system_id: String,
@@ -12202,14 +12207,31 @@ fn launch_rom_external(
         )
     })?;
     if archive_inner_path.is_some() {
-        // The libretro path extracts archives because OA controls the
-        // load; teaching the external path the same trick (plus temp
-        // cleanup tied to process exit) is Phase C3+ territory.
-        return Err(format!(
-            "archived games can't launch through {} yet — extract the archive or clear the \
-             per-system default launcher",
-            profile.display_name
-        ));
+        if profile.accepts_archives {
+            // Emulator opens archives itself (BizHawk, ares). `path` is the
+            // encoded `<archive>#<inner>` form (archive::encode_file_path);
+            // decode it down to the OUTER archive path and hand THAT to the
+            // emulator — it auto-loads the inner ROM (or shows its own
+            // picker for a multi-ROM archive). No extraction, no temp dir.
+            let (archive_path, _inner) = archive::decode_file_path(&path);
+            if !archive_path.is_file() {
+                return Err(format!("archive not found: {}", archive_path.display()));
+            }
+            path = archive_path.to_string_lossy().into_owned();
+            log::info!(
+                "oa-shell: external launch [{profile_id}] archive passthrough — {} opens {path} directly",
+                profile.display_name,
+            );
+        } else {
+            // OA does not yet extract-for-external (temp cleanup tied to
+            // process exit is Phase C3+ territory), and this emulator
+            // can't take an archive itself.
+            return Err(format!(
+                "archived games can't launch through {} yet — extract the archive or clear the \
+                 per-system default launcher",
+                profile.display_name
+            ));
+        }
     }
     let binary = emulator_profiles::effective_binary_path(profile, &state.app_data_dir)
         .ok_or_else(|| {
