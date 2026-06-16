@@ -36,6 +36,14 @@ export type ViewTransitionProps = {
   /// The resolved transition to play. Re-read on each trigger change (so a
   /// reduced-motion toggle takes effect on the next view change).
   transition: () => ResolvedViewTransition;
+  /// Optional CSS `animation-delay` (ms) before the visible part starts. With
+  /// `both` fill, the content is held at the FROM frame (hidden) during the
+  /// delay. M1 uses this for the entrance: the OS window isn't presented until
+  /// ~450 ms after mount, so a play at mount would finish while the window is
+  /// still hidden (the "nothing seen" report — confirmed by the log: one
+  /// `-> CSS-ANIMATE` at mount, invisible). Delaying the visible portion past
+  /// window-present makes the one play land on-screen. Default 0.
+  delayMs?: number;
   class?: string;
   children: JSX.Element;
 };
@@ -47,18 +55,20 @@ export default function ViewTransition(props: ViewTransitionProps): JSX.Element 
     const key = props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
+    const delay = props.delayMs ?? 0;
     const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
     console.log(
-      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} -> ${skip || "CSS-ANIMATE"}`,
+      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} delay=${delay} -> ${skip || "CSS-ANIMATE"}`,
     );
     if (!node || skip || t.preset === "none") return;
     const keyframe = KEYFRAME_NAME[t.preset];
     // Restart the CSS animation: clear it, force a reflow so the browser sees a
-    // genuine change, then re-apply. `both` holds the first frame before start
-    // and the last after end (so the content rests fully visible).
+    // genuine change, then re-apply. `both` holds the FROM frame during the
+    // delay (content hidden until the window is presented) and the TO frame
+    // after end (content at rest). Shorthand time order: duration, then delay.
     node.style.animation = "none";
     void node.offsetWidth; // reflow — required for the restart to take
-    node.style.animation = `${keyframe} ${t.durationMs}ms ${t.easing} both`;
+    node.style.animation = `${keyframe} ${t.durationMs}ms ${t.easing} ${delay}ms both`;
   });
 
   return (

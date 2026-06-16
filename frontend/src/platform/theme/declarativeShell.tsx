@@ -201,6 +201,7 @@ const DeclarativeShell: ThemeEntry = () => {
         class="relative z-10 min-h-0 flex-1"
         trigger={viewKey}
         transition={viewTransition}
+        delayMs={500}
       >
         <Show
           when={games().length > 0}
