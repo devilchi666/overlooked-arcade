@@ -11,8 +11,8 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **External Emulator Depth** — NEW arc opened 2026-06-15 (planning session;
-  no code yet). Deepens the shipped launcher abstraction (VL Phase C) along
+- **External Emulator Depth** — arc opened 2026-06-15; **Slice 1 shipped +
+  merged to main 2026-06-15**. Deepens the shipped launcher abstraction (VL Phase C) along
   three threads: (1) recipe-format upgrade + **independent recipe updates** so
   changed emulator CLI flags never force a whole-OA rebuild; (2) an **install
   pipeline** with a per-emulator **legal gate** (Green = OA may download+install,
@@ -26,10 +26,17 @@ spanned every system but was filed under whichever core happened to be active.
   [PLANS/external-emulator-depth.md](PLANS/external-emulator-depth.md); decisions
   ED1–ED6 in [features/external-emulators/DECISIONS.md](features/external-emulators/DECISIONS.md);
   feature folder [features/external-emulators/](features/external-emulators/).
-  - **Slice 1 ⬜ queued** ([NEXT.md](NEXT.md) HIGH band) — schema accretion
-    (per-OS `binary_name` map) + author `ares.yaml` + `bizhawk.yaml` (auto-detect
-    verified 2026-06-15, no `--system` needed) + MAME content-model call. Plan →
-    docs → /clear; execution is a fresh self-contained session.
+  - **Slice 1 ✅ shipped + playtested + merged to main 2026-06-15** — per-OS
+    `binary_name` map (untagged `BinaryName` enum); `ares.yaml` + `bizhawk.yaml`
+    (single positional auto-detect); `accepts_archives` recipe field (BizHawk/ares
+    open `.zip` natively → external path hands them the decoded outer archive
+    path); MAME deferred (content model not a clean 1-field add); `--system` seam
+    documented not built. Verified: EmuHawk launches an archived `coleco` game
+    from a tile. `cargo test -p oa-shell` green (849).
+  - **Slice 2 ⬜ next** — recipe-update delivery (refresh `config/emulators/*.yaml`
+    without an OA rebuild). **Dependency fork:** ride the full content-pack
+    distribution infra (design-only today) vs stand up a minimal profiles-only
+    updater first. Decision pending.
 
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most
