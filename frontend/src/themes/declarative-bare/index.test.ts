@@ -22,4 +22,13 @@ describe("bare-declarative dogfood", () => {
     // It re-states bare's scoped per-system palette demo.
     expect(bareDeclarative.perSystemTokens?.nes?.accent).toBeTruthy();
   });
+
+  it("declares an ARC 3 motion transition + motion tokens (still valid)", () => {
+    // The manifest motion field (preset selection) the resolver consumes.
+    expect(bareDeclarative.manifest.motion?.view_transition?.preset).toBe("fade");
+    // The motion-token override (durations/easings) App.tsx scoped-injects.
+    expect(bareDeclarative.motionTokens?.fast).toBeTruthy();
+    // Declaring motion must not break validation.
+    expect(validateTheme(bareDeclarative).ok).toBe(true);
+  });
 });

@@ -29,11 +29,12 @@
 // authors); built-in themes are reviewed. See THEME_CONTRACT.md §6.
 
 import type { ThemePackage } from "./types";
-import { TOKEN_VAR, type ThemeTokens } from "./tokens";
+import { TOKEN_VAR, MOTION_TOKEN_VAR, type ThemeTokens, type ThemeMotionTokens } from "./tokens";
 import {
   LAYOUT_PRIMITIVES,
   MAX_SCHEMA_VERSION,
   SUPPORTED_SCHEMA_VERSIONS,
+  VIEW_TRANSITION_PRESETS,
   VIEW_TYPES,
   type ThemeSurface,
 } from "./manifest";
@@ -76,6 +77,10 @@ export type ThemeIssueCode =
   | "INVALID_VIEWS" // views (or a view entry / per_system) is the wrong shape
   | "UNKNOWN_VIEW_TYPE" // a views key ∉ VIEW_TYPES
   | "INVALID_VIEW_LAYOUT" // a view layout (or per_system value) ∉ LAYOUT_PRIMITIVES
+  | "INVALID_MOTION" // motion (or a sub-field) is the wrong shape / a blank timing string
+  | "UNKNOWN_TRANSITION_PRESET" // motion.view_transition.preset ∉ VIEW_TRANSITION_PRESETS
+  | "UNKNOWN_MOTION_TOKEN_KEY" // a motionTokens key ∉ ThemeMotionTokens (MOTION_TOKEN_VAR)
+  | "EMPTY_MOTION_TOKEN_VALUE" // a motionTokens value is empty / blank
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
@@ -493,6 +498,78 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
             }
           }
         }
+      }
+    }
+  }
+
+  // --- motion (ARC 3 M1 / D52): declarative motion. M1 names one field,
+  //     `view_transition` { preset, duration?, easing? }. `preset` must be a
+  //     known transition preset; the optional timing strings must be non-empty
+  //     when present. Malformed = ERROR (a broken motion decl is worse than
+  //     none, like views / settings_schema). DATA only — no scripting (D50). ---
+  if (m?.motion != null) {
+    const motion: unknown = m.motion;
+    if (typeof motion !== "object" || Array.isArray(motion)) {
+      errors.push({
+        code: "INVALID_MOTION",
+        field: "motion",
+        message: "manifest.motion must be an object (e.g. { view_transition: { preset } })",
+      });
+    } else {
+      const vt = (motion as Record<string, unknown>).view_transition;
+      if (vt != null) {
+        if (typeof vt !== "object" || Array.isArray(vt)) {
+          errors.push({
+            code: "INVALID_MOTION",
+            field: "motion.view_transition",
+            message: "manifest.motion.view_transition must be an object { preset, duration?, easing? }",
+          });
+        } else {
+          const cfg = vt as Record<string, unknown>;
+          const preset = cfg.preset;
+          if (typeof preset !== "string" || !(VIEW_TRANSITION_PRESETS as readonly string[]).includes(preset)) {
+            errors.push({
+              code: "UNKNOWN_TRANSITION_PRESET",
+              field: "motion.view_transition.preset",
+              message: `motion.view_transition.preset must be one of ${VIEW_TRANSITION_PRESETS.join(", ")}`,
+            });
+          }
+          for (const timing of ["duration", "easing"] as const) {
+            const value = cfg[timing];
+            if (value != null && !isNonEmptyString(value)) {
+              errors.push({
+                code: "INVALID_MOTION",
+                field: `motion.view_transition.${timing}`,
+                message: `motion.view_transition.${timing} must be a non-empty CSS value string when present (omit to inherit the default)`,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // --- motionTokens (ARC 3 M1): durations/easings overrides. Keys ∈
+  //     ThemeMotionTokens (MOTION_TOKEN_VAR), values non-empty. Same data-half
+  //     rule as `tokens`: a theme can only set known, mount-scoped motion vars,
+  //     so even a hostile value injects a known CSS var. ---
+  if (pkg.motionTokens != null) {
+    for (const key of Object.keys(pkg.motionTokens)) {
+      if (!(key in MOTION_TOKEN_VAR)) {
+        errors.push({
+          code: "UNKNOWN_MOTION_TOKEN_KEY",
+          field: `motionTokens.${key}`,
+          message: `motionTokens.${key} is not a recognized motion token (see ThemeMotionTokens / MOTION_TOKEN_VAR)`,
+        });
+        continue;
+      }
+      const value = pkg.motionTokens[key as keyof ThemeMotionTokens];
+      if (value != null && !isNonEmptyString(value)) {
+        errors.push({
+          code: "EMPTY_MOTION_TOKEN_VALUE",
+          field: `motionTokens.${key}`,
+          message: `motionTokens.${key} must be a non-empty CSS value string (omit the key to inherit the :root default)`,
+        });
       }
     }
   }

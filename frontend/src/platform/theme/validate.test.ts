@@ -328,6 +328,62 @@ describe("validateTheme — views (ARC 2 L2 / D32)", () => {
   });
 });
 
+describe("validateTheme — motion (ARC 3 M1 / D52)", () => {
+  type Motion = ThemeManifest["motion"];
+
+  it("a valid view_transition (preset + timing) passes clean", () => {
+    const v = validateTheme(
+      pkg({ motion: { view_transition: { preset: "slide", duration: "300ms", easing: "ease-out" } } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("a preset-only view_transition passes (timing optional)", () => {
+    expect(validateTheme(pkg({ motion: { view_transition: { preset: "fade" } } })).ok).toBe(true);
+  });
+
+  it("omitting motion is fine (optional)", () => {
+    expect(validateTheme(pkg()).ok).toBe(true);
+  });
+
+  it("an unknown preset → UNKNOWN_TRANSITION_PRESET", () => {
+    const v = validateTheme(
+      pkg({ motion: { view_transition: { preset: "zoom" } } as unknown as Motion }),
+    );
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("UNKNOWN_TRANSITION_PRESET");
+  });
+
+  it("a blank timing string → INVALID_MOTION", () => {
+    const v = validateTheme(pkg({ motion: { view_transition: { preset: "fade", duration: "  " } } }));
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("motion as an array → INVALID_MOTION", () => {
+    const v = validateTheme(pkg({ motion: [] as unknown as Motion }));
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("a valid motionTokens override passes", () => {
+    const v = validateTheme(pkg({}, { motionTokens: { fast: "120ms", easeOut: "ease-in" } }));
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+  });
+
+  it("an unknown motion token key → UNKNOWN_MOTION_TOKEN_KEY", () => {
+    const v = validateTheme(
+      pkg({}, { motionTokens: { turbo: "1s" } as unknown as ThemePackage["motionTokens"] }),
+    );
+    expect(codes(v.errors)).toContain("UNKNOWN_MOTION_TOKEN_KEY");
+  });
+
+  it("an empty motion token value → EMPTY_MOTION_TOKEN_VALUE", () => {
+    const v = validateTheme(pkg({}, { motionTokens: { fast: "  " } }));
+    expect(codes(v.errors)).toContain("EMPTY_MOTION_TOKEN_VALUE");
+  });
+});
+
 describe("validateTheme — perSystemUiConfigs (ARC 2 L2b / D34)", () => {
   it("a well-formed per-system override map passes clean", () => {
     const v = validateTheme(

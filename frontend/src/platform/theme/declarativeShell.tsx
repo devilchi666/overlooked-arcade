@@ -36,6 +36,8 @@ import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
+import { resolveViewTransition, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import ViewTransition from "@oa/platform/theme/ViewTransition";
 import { CarouselNav, GridNav, ListNav, WheelNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
@@ -97,6 +99,19 @@ const DeclarativeShell: ThemeEntry = () => {
   // default `grid`). Per-system LAYOUT variation (D32) applies in a
   // system-scoped browse, not this flat list — see module header.
   const layout = useResolvedLayout("game-browse", () => null);
+
+  // Declarative motion (ARC 3 M1 / D52): resolve the active theme's declared
+  // view transition + the live reduced-motion preference into the transition
+  // the browse surface plays. Keyed on the resolved layout primitive — the
+  // "view content" axis (M2 varies it per-system, so the transition fires on
+  // each layout change; in this flat M1 browse it plays on the surface's enter,
+  // e.g. when this theme is activated). Reduced-motion downgrades to a short
+  // fade inside the resolver. The transition is purely visual + interruptible —
+  // it never gates browsing (see ViewTransition).
+  const reducedMotion = usePrefersReducedMotion();
+  const viewTransition = createMemo(() =>
+    resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
+  );
 
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
@@ -177,7 +192,11 @@ const DeclarativeShell: ThemeEntry = () => {
         </div>
       </header>
 
-      <div class="relative z-10 min-h-0 flex-1">
+      <ViewTransition
+        class="relative z-10 min-h-0 flex-1"
+        trigger={layout}
+        transition={viewTransition}
+      >
         <Show
           when={games().length > 0}
           fallback={
@@ -252,7 +271,7 @@ const DeclarativeShell: ThemeEntry = () => {
             </Match>
           </Switch>
         </Show>
-      </div>
+      </ViewTransition>
     </div>
   );
 };

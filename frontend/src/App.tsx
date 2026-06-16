@@ -91,7 +91,7 @@ import {
 } from "@oa/platform/theme/registry";
 import { mergeDiskThemes } from "@oa/platform/theme/diskTheme";
 import { listDiskThemes } from "@oa/platform/api/themesApi";
-import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
+import { themeTokensToCssVars, themeMotionTokensCss } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
 import { ThemeProvider } from "@oa/platform/theme/host";
 import { PlatformProvider } from "@oa/platform/platformContext";
@@ -1627,6 +1627,14 @@ const App: Component = () => {
                     ships no perSystemTokens → this renders nothing. */}
                 <Show when={theme.perSystemTokens}>
                   {(pst) => <style>{perSystemOverrideCss(".oa-theme-mount", pst())}</style>}
+                </Show>
+                {/* ARC 3 M1 — motion-token overrides (durations/easings). A
+                    scoped `<style>` rather than inline vars so it can re-assert
+                    the prefers-reduced-motion floor INSIDE the mount (a scoped
+                    duration override would otherwise out-specify the global
+                    :root reduced-motion reset). See themeMotionTokensCss. */}
+                <Show when={theme.motionTokens}>
+                  {(mt) => <style>{themeMotionTokensCss(".oa-theme-mount", mt())}</style>}
                 </Show>
                 <Dynamic component={theme.entry} surface="main" />
               </div>

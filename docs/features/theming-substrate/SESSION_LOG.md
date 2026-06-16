@@ -9,6 +9,53 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-16 — ARC 3 Thrust M, M1: declarative motion contract + reduced-motion + one interruptible view transition — ✅ shipped (branch `theme-arc3-motion-slice-1`, pre-merge)
+
+- **Shipped:** the first ARC 3 (Cinematic) slice — declarative motion, surface-split
+  (D51 UI/DOM layer), DATA-only (D50), flowing to disk themes (D52).
+  - **Motion token group activated** (`tokens.ts`): `ThemeMotionTokens` +
+    `MOTION_TOKEN_VAR` (the 7 reserved `--motion-*`/`--ease-*` vars) + a
+    `themeMotionTokensCss(scope, tokens)` helper. Kept a SEPARATE group (not
+    folded into `ThemeTokens`) because its injection must re-assert the
+    `prefers-reduced-motion` floor inside the mount — a scoped inline/class
+    duration override would otherwise out-specify the global `:root { --motion-*:
+    0ms }` a11y reset for theme-internal motion. App.tsx injects it as a scoped
+    `<style>` (next to the perSystemTokens style) that re-zeroes the duration
+    vars under reduced-motion. `ThemePackage.motionTokens` + `diskTheme.ts`
+    carry-through.
+  - **Manifest motion field** (`manifest.ts`): `manifest.motion.view_transition`
+    = `{ preset: none|fade|slide|scale, duration?, easing? }` +
+    `VIEW_TRANSITION_PRESETS`. `validateTheme` rules: unknown preset →
+    `UNKNOWN_TRANSITION_PRESET` (error), blank timing/shape → `INVALID_MOTION`,
+    plus motionTokens key/value checks. Carried through the **Rust disk loader**
+    (`theme_loader.rs`: `ThemeMotion` / `ViewTransitionConfig` structs) so a
+    `theme.toml` `[motion.view_transition]` table reaches the frontend (D52).
+  - **Resolver + primitive:** `motion.ts` — `resolveViewTransition(motion,
+    reducedMotion)` (pure; reduced-motion → short fade @120 ms, never a hard cut,
+    per the boot-anim a11y guidance) + `parseDurationMs` + `usePrefersReducedMotion`
+    (live matchMedia signal). `ViewTransition.tsx` — WAAPI primitive that plays
+    the enter keyframes on trigger change; **interruptible** (cancel-and-restart,
+    children always live → never blocks view switching, the BigBox bug). Degrades
+    to no-op where `element.animate` is absent (jsdom).
+  - **DeclarativeShell** wraps the browse content in `<ViewTransition>` keyed on
+    the resolved layout primitive (the M2 per-system axis); plays the declared
+    transition on the surface's enter / view change.
+  - **Dogfood:** `neon-list` (disk) declares `slide`; `bare-declarative` (built-in)
+    declares `fade` + motion-token overrides.
+- **Verified:** `npm run typecheck` + `npm run lint` green; `vitest run` =
+  **179 passed** (new `motion.test.ts` 9 + validate motion cases + dogfood);
+  `cargo test -p oa-shell theme_loader` = **10 passed** (full-theme + shipped
+  neon-list motion assertions). Not yet operator-playtested.
+- **Almost:** nothing — slice is contract + consumer + dogfood complete.
+- **Next:** **M2** — view/route transition presets with per-view/per-system
+  selection (the `ViewTransition` trigger keys on a per-system-varying layout, so
+  the transition fires on each layout change, not just enter); then M3 (parallax
+  + keyframe model + preset gallery). Disk motion-token sidecar support (motion
+  keys in `tokens.toml`) is a natural M2 accretion — the contract + `motionTokens`
+  field exist; only the Rust `tokens.toml` parse half is deferred.
+
+---
+
 ## 2026-06-16 — ARC 2 "P" P.1 S3: disk-theme registry merge + Appearance picker + `themes` pack type — ✅ shipped (branch; **P.1 complete**, pre-merge)
 
 > Branch `theme-oatheme-loader-slice-1`. Closes P.1: on-disk `.oatheme` themes

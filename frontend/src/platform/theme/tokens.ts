@@ -17,12 +17,18 @@
 // NEVER writes a global `:root` / `<style>` token override. (The S4 validator
 // will check that rule; for now it's documented in THEME_CONTRACT.md.)
 //
-// MOTION IS RESERVED. The `--motion-*` / `--ease-*` duration+easing tokens
-// exist, but ARC 1 does NOT let themes drive animation — the cinematic/motion
-// axis (transitions, video, attract, shader chrome) is ARC 2-3 (the BigBox-
-// style capability the substrate builds toward). Motion is documented in
-// THEME_CONTRACT.md as a reserved category so it slots in without a contract
-// break; it is intentionally NOT part of ThemeTokens yet.
+// MOTION (Theming ARC 3 Thrust M, M1). The `--motion-*` / `--ease-*`
+// duration+easing tokens were RESERVED through ARC 1-2 (documented, not
+// authorable). M1 ACTIVATES them as an authorable contract — see
+// `ThemeMotionTokens` / `MOTION_TOKEN_VAR` below — so a theme can tune the
+// global motion feel (the duration/easing every `var(--motion-*)`-reading CSS
+// consumes: nav primitives, focus ring, the declarative view transition's
+// defaults). They are a SEPARATE group from `ThemeTokens`, not folded in,
+// because their injection MUST re-assert the `prefers-reduced-motion` floor
+// inside the theme mount (the scoped override would otherwise out-specify the
+// global `:root { --motion-*: 0ms }` a11y reset for theme-internal motion) —
+// see `themeMotionTokensCss`. The view-transition PRESET selection is a
+// manifest field (`manifest.motion`), not a token — see manifest.ts.
 
 /// The theme-overridable token set. Each key maps to one CSS custom property
 /// (see TOKEN_VAR). All values are CSS value strings (e.g. an `oklch(...)`
@@ -96,4 +102,89 @@ export function themeTokensToCssVars(
     if (value != null) out[TOKEN_VAR[key]] = value;
   }
   return out;
+}
+
+// ===========================================================================
+// MOTION TOKENS (Theming ARC 3 Thrust M, M1)
+// ===========================================================================
+
+/// The motion half of the token contract — durations + easings a theme MAY
+/// override to tune the global motion feel. Each key maps to one of the
+/// `--motion-*` / `--ease-*` CSS custom properties index.css already defines
+/// (and the `prefers-reduced-motion` reset already collapses). All values are
+/// CSS value strings: durations (`"250ms"`, `"0.4s"`) for the `--motion-*`
+/// keys, easings (`"ease-out"`, `"cubic-bezier(...)"`) for the `--ease-*` keys.
+/// A theme provides any subset; omitted keys fall through to the `:root`
+/// defaults. Authorable contract, NOT folded into `ThemeTokens` — see the
+/// module header for why (the reduced-motion floor re-assertion).
+export type ThemeMotionTokens = {
+  /** Micro-interaction duration (taps/toggles). CSS: --motion-instant */
+  instant: string;
+  /** Fast transition duration. CSS: --motion-fast */
+  fast: string;
+  /** Standard transition duration. CSS: --motion-medium */
+  medium: string;
+  /** Deliberate / large-surface duration. CSS: --motion-slow */
+  slow: string;
+  /** Decelerate easing (enter / settle). CSS: --ease-out */
+  easeOut: string;
+  /** Symmetric easing (move). CSS: --ease-in-out */
+  easeInOut: string;
+  /** Overshoot easing (snap / pop). CSS: --ease-snap */
+  easeSnap: string;
+};
+
+/// Maps each motion token key to its CSS custom property. Parallel to
+/// `TOKEN_VAR`; the single source of truth tying the typed motion contract to
+/// the stylesheet vars.
+export const MOTION_TOKEN_VAR: Record<keyof ThemeMotionTokens, string> = {
+  instant: "--motion-instant",
+  fast: "--motion-fast",
+  medium: "--motion-medium",
+  slow: "--motion-slow",
+  easeOut: "--ease-out",
+  easeInOut: "--ease-in-out",
+  easeSnap: "--ease-snap",
+};
+
+/// The four duration vars — re-zeroed under `prefers-reduced-motion` so a
+/// theme's scoped duration overrides cannot defeat the a11y floor inside its
+/// own mount (see `themeMotionTokensCss`). Easings are excluded: an easing
+/// curve causes no motion on its own.
+const MOTION_DURATION_VARS: readonly string[] = [
+  "--motion-instant",
+  "--motion-fast",
+  "--motion-medium",
+  "--motion-slow",
+];
+
+/// Emit the CSS that injects a theme's motion-token overrides, SCOPED to the
+/// theme mount (the `scope` selector, e.g. `.oa-theme-mount`), plus a
+/// `prefers-reduced-motion` block that RE-ZEROES the duration vars inside that
+/// same scope. Why a `<style>` string and not the inline-var map
+/// `themeTokensToCssVars` uses: an inline (or plain class) scoped override
+/// out-specifies the global `:root { --motion-*: 0ms }` reduced-motion reset
+/// for the mount's descendants — so without re-asserting the floor here, a
+/// theme could re-enable token-driven motion for users who asked for none.
+/// Returns "" when there's nothing to inject (so a theme with no motion tokens
+/// emits no style). Easings pass through unchanged under reduced motion (they
+/// move nothing).
+export function themeMotionTokensCss(
+  scope: string,
+  tokens: Partial<ThemeMotionTokens> | undefined,
+): string {
+  if (!tokens) return "";
+  const decls: string[] = [];
+  for (const key of Object.keys(tokens) as (keyof ThemeMotionTokens)[]) {
+    const value = tokens[key];
+    if (value != null && value.trim().length > 0) {
+      decls.push(`${MOTION_TOKEN_VAR[key]}: ${value};`);
+    }
+  }
+  if (decls.length === 0) return "";
+  const reZero = MOTION_DURATION_VARS.map((v) => `${v}: 0ms;`).join(" ");
+  return (
+    `${scope} { ${decls.join(" ")} }\n` +
+    `@media (prefers-reduced-motion: reduce) { ${scope} { ${reZero} } }`
+  );
 }

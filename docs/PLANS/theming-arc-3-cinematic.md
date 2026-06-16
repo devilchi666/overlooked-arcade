@@ -82,10 +82,17 @@ real keyframe model**, not either alone. Avoid BigBox's blocking-storyboard bug 
 **all transitions interruptible** (settle-then-transition). `prefers-reduced-motion`
 is the a11y floor (downgrade to a short fade, per DECISIONS 2026 boot-anim entry).
 
-- **M1 `[SLICE 1 — QUEUED]`** — Motion token contract + reduced-motion plumbing +
-  one interruptible view transition, declared in `theme.toml` (motion fields →
-  `ThemeManifest` + `validateTheme`) and honored by `DeclarativeShell`. Smallest
-  valuable, disk-theme-flowing start; establishes the contract M2/M3 build on.
+- **M1 `[SLICE 1 — ✅ SHIPPED 2026-06-16]`** — Motion token contract +
+  reduced-motion plumbing + one interruptible view transition, declared in
+  `theme.toml` (motion fields → `ThemeManifest` + `validateTheme`) and honored by
+  `DeclarativeShell`. Smallest valuable, disk-theme-flowing start; establishes the
+  contract M2/M3 build on. Shipped: `ThemeMotionTokens`/`MOTION_TOKEN_VAR` +
+  scoped `<style>` injection (re-asserts the reduced-motion floor);
+  `manifest.motion.view_transition` (preset + timing) carried through the Rust
+  disk loader + `diskTheme.ts`; `motion.ts` resolver
+  (`resolveViewTransition`/`usePrefersReducedMotion`) + the WAAPI `ViewTransition`
+  primitive (interruptible). Reduced-motion → short fade. Dogfood: `neon-list`
+  (slide) + `bare-declarative` (fade + motion tokens).
 - **M2** — View/route transition presets (fade/slide/scale), interruptible;
   per-view/per-system selection via the ARC 2 resolver pattern.
 - **M3** — Parallax-by-depth primitive + the keyframe model + preset gallery.

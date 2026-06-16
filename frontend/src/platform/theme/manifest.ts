@@ -144,6 +144,50 @@ export type ThemeSettingControl =
  * a theme with nothing to configure omits it. */
 export type ThemeSettingsSchema = ReadonlyArray<ThemeSettingControl>;
 
+/** The view-transition presets the declarative shell can play when a view
+ * changes (Theming ARC 3 Thrust M, M1). `none` = no animation (the floor a
+ * theme that doesn't declare motion inherits); `fade` / `slide` / `scale` are
+ * the M1 starter set. The union widens (M2/M3) without a contract break — a
+ * theme declaring an unknown preset is a disqualifying validator ERROR, so a
+ * typo fails loud rather than silently rendering motionless. */
+export type ViewTransitionPreset = "none" | "fade" | "slide" | "scale";
+
+/** All view-transition presets the contract names — the validator's allow-list
+ * + the M1 resolver's recognized set. */
+export const VIEW_TRANSITION_PRESETS: readonly ViewTransitionPreset[] = [
+  "none",
+  "fade",
+  "slide",
+  "scale",
+];
+
+/** A declarative view-transition declaration (M1). DATA only (D50) — a preset
+ * selection plus optional timing; the engine `DeclarativeShell` honors it on
+ * the UI/DOM layer (D51), interruptibly, and downgrades to a short fade under
+ * `prefers-reduced-motion`. `duration` / `easing` are CSS value strings; when
+ * omitted the resolver falls back to the motion-token defaults
+ * (`--motion-medium` / a concrete decelerate curve). NOTE: `easing` should be a
+ * concrete CSS easing (a keyword or `cubic-bezier(...)`) — it drives the Web
+ * Animations API, which does not resolve `var()`. */
+export type ViewTransitionConfig = {
+  preset: ViewTransitionPreset;
+  /** CSS time string (e.g. "250ms", "0.4s"). Optional — defaults to the
+   * standard motion duration. */
+  duration?: string;
+  /** Concrete CSS easing (keyword or cubic-bezier). Optional — defaults to a
+   * decelerate curve. */
+  easing?: string;
+};
+
+/** A theme's declarative motion declaration (Theming ARC 3 Thrust M / D52).
+ * Optional — a theme that declares nothing animates nothing (the `none` floor).
+ * M1 names exactly one field (`view_transition`); the keyframe/parallax model
+ * (M3) widens this additively, like every other manifest contract. snake_case
+ * key mirrors the `theme.toml` `[motion.view_transition]` table. */
+export type ThemeMotion = {
+  view_transition?: ViewTransitionConfig;
+};
+
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */
   id: string;
@@ -215,4 +259,12 @@ export type ThemeManifest = {
    * a malformed control is a disqualifying ERROR (a broken options panel is
    * worse than none). */
   settings_schema?: ThemeSettingsSchema;
+  /** Declarative motion (Theming ARC 3 Thrust M / D52): DATA-only cinematic
+   * fields the `DeclarativeShell` honors on the UI/DOM layer (D51). M1 names
+   * one field — `view_transition` (the preset played on a view change,
+   * interruptible, reduced-motion-aware). Optional — omit to animate nothing.
+   * The validator checks the preset against `VIEW_TRANSITION_PRESETS` + the
+   * timing strings; a malformed declaration is a disqualifying ERROR (a broken
+   * motion decl is worse than none, like `views` / `settings_schema`). */
+  motion?: ThemeMotion;
 };
