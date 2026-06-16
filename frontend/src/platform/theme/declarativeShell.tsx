@@ -30,7 +30,7 @@
 // stays compiled-in (Retroverse) / ARC 3 (scripted). Documenting the floor is
 // the point ("low floor, high ceiling").
 
-import { createEffect, createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
@@ -110,17 +110,33 @@ const DeclarativeShell: ThemeEntry = () => {
     resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
+  // Window-focus replays (ARC 3 M1). The browse surface mounts + first-paints
+  // while the OS window is still settling its initial paint, so the one mount
+  // play finishes before the operator ever sees the shell ("appears instantly,
+  // no motion"). Re-entering the shell — alt-tabbing back to the window —
+  // re-plays the view transition: a real "returned to the view" moment, and the
+  // deterministic gesture to validate the transition independent of the boot
+  // race. Uses the reliable DOM `window` focus event (Tauri's native is_focused
+  // is unreliable; the DOM event is not).
+  const [focusTick, setFocusTick] = createSignal(0);
+  onMount(() => {
+    if (typeof window === "undefined") return;
+    const onFocus = (): void => {
+      setFocusTick((t) => t + 1);
+    };
+    window.addEventListener("focus", onFocus);
+    onCleanup(() => window.removeEventListener("focus", onFocus));
+  });
+
   // The transition's trigger — what counts as a "view change" for the browse
-  // surface to (re)play on. Two axes in M1:
+  // surface to (re)play on. Three axes in M1:
   //   • the resolved layout primitive — the per-view/per-system axis M2 will
   //     vary at runtime;
-  //   • content-readiness — the library async-loads, so the surface mounts with
-  //     `games()` still empty (the "No games yet" placeholder). Keying on
-  //     `hasGames` too means the REAL list animates IN when it populates a beat
-  //     after boot — without it the one play burns on the empty placeholder and
-  //     the list appears motionless (the "I see nothing" bug). This is the
-  //     browse view ENTERING once its data is ready.
-  const viewKey = createMemo(() => `${layout()}|${games().length > 0}`);
+  //   • content-readiness — the library async-loads, so the surface can mount
+  //     with `games()` empty (the "No games yet" placeholder); keying on
+  //     `hasGames` animates the REAL list in when it populates;
+  //   • window-focus tick — re-enter the shell to replay (see above).
+  const viewKey = createMemo(() => `${layout()}|${games().length > 0}|${focusTick()}`);
 
   // [oa-theme-motion] diagnostic — confirms the DeclarativeShell mounted (i.e. a
   // DECLARATIVE theme is active; Retroverse's compiled shell would NOT log this)

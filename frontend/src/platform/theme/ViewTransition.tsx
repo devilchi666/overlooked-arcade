@@ -26,11 +26,11 @@ import type { ResolvedViewTransition } from "./motion";
 const KEYFRAMES: Record<Exclude<ResolvedViewTransition["preset"], "none">, Keyframe[]> = {
   fade: [{ opacity: 0 }, { opacity: 1 }],
   slide: [
-    { opacity: 0, transform: "translateY(12px)" },
+    { opacity: 0, transform: "translateY(24px)" },
     { opacity: 1, transform: "translateY(0)" },
   ],
   scale: [
-    { opacity: 0, transform: "scale(0.98)" },
+    { opacity: 0, transform: "scale(0.96)" },
     { opacity: 1, transform: "scale(1)" },
   ],
 };
