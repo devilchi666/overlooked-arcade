@@ -149,11 +149,18 @@ knowledge is **updatable data**, refreshed without an OA rebuild (ED2).
 
 **Acceptance met + merged to main 2026-06-15.**
 
-**Next: Slice 2** — recipe update delivery (rides content-pack infra).
+**Slice 2 ✅ DELIVERED via oa-packs Slice 5 (merged to main 2026-06-16).**
+Recipe-update delivery (ED2) shipped as the `emulator-recipes` pack type:
+installed packs override the bundled `config/emulators/` baseline
+(whole-profile-by-id, last-wins), hot-reloaded on pack change (CP8/CP9). A
+changed CLI flag now ships as a recipe pack — no OA rebuild. See
+[features/content-packs/SESSION_LOG.md](features/content-packs/SESSION_LOG.md).
 
-**Note on sequencing:** Slice 2 (recipe-update delivery) depends on the
-content-pack distribution infra (design-only today); Phase 2 (install) builds on
-VL Phase D's `InstallableProfile` sketch; Phase 2 new-system wiring rides the
+**Next: Phase 2 (install pipeline)** — legal gate + "install this emulator
+for me" on one Green, already-wired emulator (Slice 3 in the arc plan).
+
+**Note on sequencing:** Phase 2 (install) builds on VL Phase D's
+`InstallableProfile` sketch; Phase 2 new-system wiring rides the
 per-system-descriptor loader.
 
 ### Theming ARC 2 — L1…L5 ✅ MERGED to main; L6 PARKED, P (loader) remaining

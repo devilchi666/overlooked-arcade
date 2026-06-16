@@ -4,6 +4,24 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
 
 ---
 
+## 2026-06-16 — Slice 2 (ED2 recipe-update delivery) DELIVERED via oa-packs Slice 5
+
+- **Shipped:** ED2's "update recipes without an OA rebuild" landed as the
+  `emulator-recipes` content-pack type, not a standalone updater (per CP5).
+  `EmulatorProfiles::load_default` overlays the bundled `config/emulators/`
+  baseline with installed packs from `<exe_dir>/emulator-recipes/community/`
+  (whole-profile-by-id, last-wins, conflict-recorded), hot-reloaded on pack
+  install/update/uninstall/rollback (CP8/CP9). A changed CLI flag now ships
+  as a recipe pack through the operator-initiated, sha256-verified pack
+  channel — no rebuild. Full detail in
+  [features/content-packs/SESSION_LOG.md](../content-packs/SESSION_LOG.md)
+  (Slice 5). Closes this arc's Phase 1 Slice 2.
+- **Almost:** n/a — delivered whole via the content-pack channel.
+- **Next:** Phase 2 — install pipeline (legal gate + "install for me" on one
+  Green, already-wired emulator; arc-plan Slice 3).
+
+---
+
 ## 2026-06-15 — Slice 1 shipped (schema accretion + ares/bizhawk)
 
 Branch `feat/external-emulator-depth`.
