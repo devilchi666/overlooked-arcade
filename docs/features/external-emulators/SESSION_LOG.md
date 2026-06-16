@@ -42,9 +42,17 @@ Branch `feat/external-emulator-depth`.
     instead of erroring (it auto-loads the inner ROM). Set true on
     `ares.yaml` + `bizhawk.yaml`. Other profiles stay false (safe). New
     test `archive_capable_profiles_opt_in` + default-false assertion.
-- **Almost:** MAME standalone profile — **deferred** (see Next). Operator
-  re-playtest of an ares/BizHawk launch from a real (archived) tile now
-  unblocked — pending confirmation EmuHawk boots the game.
+- **Playtested + MERGED (2026-06-15):** operator pointed OA at a real
+  BizHawk install, set it as the `coleco` default, and launched an
+  archived (`.zip`) game from a normal tile — **EmuHawk opened and tried
+  to boot** (it then wanted ColecoVision firmware `coleco.rom`, a
+  BizHawk-side setting OA never provides — legal posture intact). Slice 1
+  demoable acceptance met; branch `feat/external-emulator-depth` merged to
+  main. Two playtest follow-ups happened on the branch before merge:
+  (1) `accepts_archives` field; (2) decode `<archive>#<inner>` → outer
+  archive path on passthrough (the encoded form failed prepare()'s
+  is_file check).
+- **Almost:** MAME standalone profile — **deferred** (see Next).
 - **Next:**
   - **Operator smoke test** — point OA at a real ares/BizHawk install and
     launch a game from a normal tile (Slice 1 demoable acceptance).

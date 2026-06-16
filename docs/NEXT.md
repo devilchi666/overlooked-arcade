@@ -88,7 +88,7 @@ upgrade + independent updates · install pipeline (legal-gated) · OA-authored
 control toward window-wrapping. Load-bearing principle: per-emulator
 knowledge is **updatable data**, refreshed without an OA rebuild (ED2).
 
-**Slice 1 ✅ SHIPPED on `feat/external-emulator-depth` (2026-06-15; awaiting operator playtest + merge):**
+**Slice 1 ✅ SHIPPED + PLAYTESTED + MERGED to main (2026-06-15):**
 - ✅ Per-OS `binary_name` map — untagged `BinaryName` enum (`Single` | `PerOs
   { windows, macos, linux }`) + `resolve()` in `emulator_profiles.rs`; single
   string stays valid (all 9 existing profiles unchanged). Consumers in `main.rs`
@@ -101,11 +101,15 @@ knowledge is **updatable data**, refreshed without an OA rebuild (ED2).
   SESSION_LOG + RESEARCH doc.
 - ✅ Reserved `--system`/`{system}` seam documented (not built) on
   `launch_args_template`.
-- ✅ `all_shipped_profiles_parse_and_hold_invariants` extended + 2 new per-OS-map
-  tests; `cargo test -p oa-shell` green (848 passed).
+- ✅ `all_shipped_profiles_parse_and_hold_invariants` extended + per-OS-map tests;
+  `cargo test -p oa-shell` green (849 passed).
+- ✅ **Playtest follow-ups (merged on the branch):** `accepts_archives` recipe
+  field — BizHawk/ares load `.zip` natively, so the external path hands them the
+  decoded outer archive path instead of erroring on archived content (was a
+  pre-existing VL Phase C2 gap). Verified: EmuHawk opens + tries to boot an
+  archived `coleco` game (firmware is a BizHawk-side concern OA never provides).
 
-**Remaining before merge:** operator smoke test — point OA at a real ares/BizHawk
-install and launch a game from a normal tile (Slice 1 demoable acceptance).
+**Acceptance met + merged to main 2026-06-15.**
 
 **Next: Slice 2** — recipe update delivery (rides content-pack infra).
 
