@@ -2,50 +2,36 @@
 // transition when its trigger changes (Theming ARC 3 Thrust M, M1; D51 — UI
 // cinematics are CSS/DOM, never wgpu, never scripted).
 //
+// CSS-DRIVEN, not the Web Animations API. Single-window mode is a transparent
+// WebView2 composited over wgpu by DWM; WAAPI animations fire (confirmed via
+// the oa-theme-motion log: `-> ANIMATE`) but don't recomposite the transparent
+// surface, so nothing is seen. CSS animations run through the normal
+// style/layout/paint pipeline that DWM recomposites — the boot fade + focus
+// cards in this app prove CSS works here. We set the `animation` shorthand
+// inline (duration/easing resolved from the theme) naming a keyframe defined in
+// index.css (`oa-vt-fade|slide|scale`).
+//
 // INTERRUPTIBLE BY DESIGN (the BigBox blocking-storyboard bug, avoided). The
 // children render synchronously and are ALWAYS live — the animation is purely
-// visual, layered on top via the Web Animations API. When the trigger changes
-// mid-animation, the in-flight animation is cancelled and a fresh one starts
-// from the preset's "from" state ("settle-then-transition"): view switching is
-// never blocked waiting for an animation to finish. preset "none" (or a
-// zero/negative duration) → no animation at all.
-//
-// WAAPI (not CSS transitions) on purpose: `el.animate()` cancellation is the
-// clean interruption primitive, and it needs no from→to class-flip dance. The
-// trade-off is that `easing` must be a concrete curve (WAAPI can't resolve
-// `var()`) — the resolver guarantees that (see motion.ts). In non-DOM/older
-// contexts where `element.animate` is absent (vitest/jsdom), the component
-// degrades to rendering its children with no animation.
+// visual. On a trigger change mid-animation we clear `animation`, force a
+// reflow, and re-apply it ("settle-then-transition"): the standard CSS
+// animation-restart technique. View switching is never blocked. preset "none"
+// (or a zero/negative duration) → no animation.
 
-import { createEffect, onCleanup, type JSX } from "solid-js";
+import { createEffect, type JSX } from "solid-js";
 import type { ResolvedViewTransition } from "./motion";
 
-/// WAAPI keyframes per preset. `none` is handled by the caller (skipped), so it
-/// has no entry. Each animates an "enter": from a displaced/transparent state
-/// to the resting identity state.
-// NOTE: presets are TRANSFORM-led, not opacity-only. Single-window mode is a
-// transparent WebView2 composited over wgpu via DWM, where animating `opacity`
-// can fail to repaint (the 12:51 log showed animate() firing with nothing
-// visible). `transform` runs on the compositor and repaints reliably. `fade`
-// keeps a faint scale so even it has a transform channel to composite on.
-const KEYFRAMES: Record<Exclude<ResolvedViewTransition["preset"], "none">, Keyframe[]> = {
-  fade: [
-    { opacity: 0, transform: "scale(0.995)" },
-    { opacity: 1, transform: "scale(1)" },
-  ],
-  slide: [
-    { opacity: 0, transform: "translateY(48px)" },
-    { opacity: 1, transform: "translateY(0)" },
-  ],
-  scale: [
-    { opacity: 0, transform: "scale(0.92)" },
-    { opacity: 1, transform: "scale(1)" },
-  ],
+/// CSS @keyframes name per preset (defined in index.css). `none` is handled by
+/// the caller (skipped), so it has no entry.
+const KEYFRAME_NAME: Record<Exclude<ResolvedViewTransition["preset"], "none">, string> = {
+  fade: "oa-vt-fade",
+  slide: "oa-vt-slide",
+  scale: "oa-vt-scale",
 };
 
 export type ViewTransitionProps = {
   /// Tracked: when this accessor's value changes, the transition (re)plays.
-  /// Typically the resolved layout primitive / view key.
+  /// Typically the resolved layout/view key.
   trigger: () => unknown;
   /// The resolved transition to play. Re-read on each trigger change (so a
   /// reduced-motion toggle takes effect on the next view change).
@@ -56,41 +42,25 @@ export type ViewTransitionProps = {
 
 export default function ViewTransition(props: ViewTransitionProps): JSX.Element {
   let el: HTMLDivElement | undefined;
-  let anim: Animation | undefined;
 
   createEffect(() => {
     const key = props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
-    // [oa-theme-motion] diagnostic — lands in oa-current.log. Tells us, in one
-    // line, whether the effect runs and why it does/doesn't animate.
-    const reason =
-      !node
-        ? "no-node"
-        : t.preset === "none"
-          ? "preset-none"
-          : t.durationMs <= 0
-            ? "zero-duration"
-            : typeof node.animate !== "function"
-              ? "no-waapi"
-              : "ANIMATE";
+    const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
+    // [oa-theme-motion] diagnostic — one line per (re)play, lands in oa-current.log.
     console.log(
-      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} ease=${t.easing} -> ${reason}`,
+      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} ease=${t.easing} -> ${skip || "CSS-ANIMATE"}`,
     );
-    if (!node) return;
-    if (t.preset === "none" || t.durationMs <= 0) return;
-    if (typeof node.animate !== "function") return; // jsdom / unsupported → no-op
-    // Interruptible: drop any in-flight animation, start fresh. Never blocks
-    // the (already-rendered) children.
-    anim?.cancel();
-    anim = node.animate(KEYFRAMES[t.preset], {
-      duration: t.durationMs,
-      easing: t.easing,
-      fill: "backwards",
-    });
+    if (!node || skip || t.preset === "none") return;
+    const keyframe = KEYFRAME_NAME[t.preset];
+    // Restart the CSS animation: clear it, force a reflow so the browser sees a
+    // genuine change, then re-apply. `both` holds the first frame before start
+    // and the last after end (so the content rests fully visible).
+    node.style.animation = "none";
+    void node.offsetWidth; // reflow — required for the restart to take
+    node.style.animation = `${keyframe} ${t.durationMs}ms ${t.easing} both`;
   });
-
-  onCleanup(() => anim?.cancel());
 
   return (
     <div ref={el} class={props.class}>
