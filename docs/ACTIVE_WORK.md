@@ -111,10 +111,11 @@ spanned every system but was filed under whichever core happened to be active.
   split)** — major multi-arc planned 2026-06-06. **4 arcs (D35 renumber):**
   ARC 1 (Minimum Viable Substrate) complete; **ARC 2 = Per-System Layout
   Substrate** L1–L5 shipped + merged; its last thread **"P" (the `.oatheme`
-  runtime loader, declarative-first)** is **P.1 S1–S3 ✅ shipped on branch
-  `theme-oatheme-loader-slice-1` (pre-merge, playtesting)** — disk themes
-  discovered next to the exe, rendered by a built-in `DeclarativeShell`,
-  selectable in Appearance, distributable as the `themes` pack type; ARC 3 =
+  runtime loader, declarative-first)** is **P.1 S1–S3 ✅ MERGED to main
+  2026-06-16** (operator playtested) — disk themes discovered next to the exe
+  (or source tree), rendered by a built-in `DeclarativeShell`, selectable in
+  Appearance, distributable as the `themes` pack type. **ARC 2 now complete**
+  (L6 parked; P.2 custom-JS deferred). ARC 3 =
   Cinematic & Scripting (Rhai + WGSL + declarative motion); ARC 4 = Theme
   Studio. Plans at [PLANS/theming-substrate.md](PLANS/theming-substrate.md)
   + [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)
