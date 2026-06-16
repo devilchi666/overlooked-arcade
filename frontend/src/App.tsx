@@ -61,6 +61,7 @@ import {
   type ScanProgress,
 } from "@oa/platform/library/ingest";
 import { listenTo, listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
+import { markWindowShown } from "@oa/platform/theme/windowShown";
 import { allSupportedExtensions, resolveShaderPreset, systemForExtension, systemThemes } from "@oa/platform/themes/registry";
 import { launchRom, bootWithoutGame, type LaunchResult } from "@oa/platform/library/launch";
 import { MediaProvider } from "@oa/platform/library/media";
@@ -303,6 +304,21 @@ const App: Component = () => {
     void listenTo<boolean>(OA_EVENTS.gameFocusChanged, (e) => {
       setGameFocusSignal(!!e.payload);
     }).then((u) => { unlisten = u; });
+    onCleanup(() => unlisten?.());
+  });
+
+  // Window-present handshake (Theming ARC 3 M1). The backend created the window
+  // hidden; once we've actually painted a frame (double rAF), tell it to show
+  // the window. It emits `oa://window-shown` when shown (frontend-ready OR the
+  // timeout fallback) → mark the signal the DeclarativeShell entrance plays on.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listenTo(OA_EVENTS.windowShown, () => markWindowShown()).then((u) => { unlisten = u; });
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void shellApi.notifyShellReady();
+      }),
+    );
     onCleanup(() => unlisten?.());
   });
 

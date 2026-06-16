@@ -37,6 +37,14 @@ export function openDevtools(): Promise<void> {
   return invoke("open_devtools");
 }
 
+/// Tell the backend the shell has mounted + painted its first frame, so it can
+/// present the window (created hidden) — no white flash, and a real "on screen
+/// now" signal for the ARC 3 M1 entrance transition. The backend emits
+/// `oa://window-shown` once shown (a timeout fallback covers a missed call).
+export function notifyShellReady(): Promise<void> {
+  return invoke("oa_shell_ready");
+}
+
 /// Enable on-demand verbose backend logging for the given subsystems
 /// ("media" / "audio" / "render"); [] restores the base level. DevTools panel.
 export function setLogStreams(streams: string[]): Promise<void> {
