@@ -11,6 +11,23 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Theming ARC 3 — Cinematic (Thrust M / motion)** — 🚧 **M1 ATTEMPTED 2026-06-16,
+  PAUSED for a motion-FOUNDATION planning session** (operator's call). Branch
+  `theme-arc3-motion-slice-1` (NOT merged; diagnostics left in). The declarative
+  motion *contract* landed + is green (token group, `manifest.motion.view_transition`
+  through the Rust disk loader, resolver, **CSS-animation** `ViewTransition` — NOT
+  WAAPI, dogfood neon-list/bare) and a real **window-ready handshake** shipped
+  (Rust `.visible(false)` + `oa_shell_ready` → `oa://window-shown`). But getting
+  ONE entrance to render took a full day of round-trips on the transparent-WebView
+  build and the feel/reliability isn't there. **Next session = PLANNING, not M2.**
+  Agenda: [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
+  §"Motion foundation — open problems" (what composites on DWM/transparent
+  WebView2, a fast iteration loop vs full `cargo tauri build`, visual verification,
+  the window-ready pattern, whether single-surface `DeclarativeShell` is the right
+  dogfood, scrollbar interaction). Full story:
+  [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
+  (2026-06-16 M1 entry).
+
 - **External Emulator Depth** — arc opened 2026-06-15; **Slice 1 shipped +
   merged to main 2026-06-15**. Deepens the shipped launcher abstraction (VL Phase C) along
   three threads: (1) recipe-format upgrade + **independent recipe updates** so
