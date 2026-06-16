@@ -42,11 +42,20 @@ export type ViewTransitionProps = {
 
 export default function ViewTransition(props: ViewTransitionProps): JSX.Element {
   let el: HTMLDivElement | undefined;
+  // Skip the initial (mount) run: the children paint at rest, and we only
+  // animate on a SUBSEQUENT trigger change (the deferred entrance / a real view
+  // change). Without this the mount run + the entrance would both play → strobe.
+  let primed = false;
 
   createEffect(() => {
     const key = props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
+    if (!primed) {
+      primed = true;
+      console.log(`[oa-theme-motion] ViewTransition primed (no play on mount) key=${String(key)}`);
+      return;
+    }
     const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
     // [oa-theme-motion] diagnostic — one line per (re)play, lands in oa-current.log.
     console.log(

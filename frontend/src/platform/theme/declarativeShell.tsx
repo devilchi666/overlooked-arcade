@@ -114,49 +114,25 @@ const DeclarativeShell: ThemeEntry = () => {
     resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
-  // View-transition replays (ARC 3 M1). The browse surface mounts + first-paints
-  // while the OS window is still settling its initial paint, so the one mount
-  // play finishes before the operator ever sees the shell ("appears instantly,
-  // no motion" — confirmed via the oa-theme-motion log: `-> ANIMATE` fires at
-  // mount, unseen). We bump `replayTick` (folded into the trigger key) to re-run
-  // the transition at moments the shell IS on-screen:
-  //   • a one-shot timer shortly AFTER mount — a guaranteed visible entrance on
-  //     launch, landing past the first-paint settle;
-  //   • window `focus` AND document `visibilitychange` — re-entering the shell
-  //     (alt-tab back) re-plays it; two events because the bare `window` focus
-  //     event isn't reliably delivered in this WebView (the log showed no replay
-  //     on alt-tab), whereas visibilitychange is.
-  const [replayTick, setReplayTick] = createSignal(0);
-  const bumpReplay = (why: string): void => {
-    console.log(`[oa-theme-motion] replay bump (${why})`);
-    setReplayTick((t) => t + 1);
-  };
+  // Entrance play (ARC 3 M1). The surface mounts + first-paints while the OS
+  // window is still settling, so a play at mount is unseen. We flip `entered`
+  // ONCE, a beat after mount (past the window-present settle), and key the
+  // transition on it — so the browse view plays exactly one clean entrance when
+  // it's actually on-screen. (Earlier multi-trigger replays — mount + timer +
+  // focus + visibility — stacked into a strobe; one play is the fix.) M2 adds
+  // the runtime re-trigger axis (per-system/per-view layout changes); M1 is the
+  // single entrance.
+  const [entered, setEntered] = createSignal(false);
   onMount(() => {
     if (typeof window === "undefined") return;
-    const onFocus = (): void => bumpReplay("window-focus");
-    const onVisible = (): void => {
-      if (document.visibilityState === "visible") bumpReplay("visible");
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    // Guaranteed post-launch entrance: fire once after the window is presented.
-    const timer = window.setTimeout(() => bumpReplay("post-mount"), 450);
-    onCleanup(() => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.clearTimeout(timer);
-    });
+    const timer = window.setTimeout(() => setEntered(true), 350);
+    onCleanup(() => window.clearTimeout(timer));
   });
 
-  // The transition's trigger — what counts as a "view change" for the browse
-  // surface to (re)play on. Three axes in M1:
-  //   • the resolved layout primitive — the per-view/per-system axis M2 will
-  //     vary at runtime;
-  //   • content-readiness — the library async-loads, so the surface can mount
-  //     with `games()` empty (the "No games yet" placeholder); keying on
-  //     `hasGames` animates the REAL list in when it populates;
-  //   • replay tick — post-launch entrance + re-enter the shell (see above).
-  const viewKey = createMemo(() => `${layout()}|${games().length > 0}|${replayTick()}`);
+  // The transition's trigger — what counts as a "view change". M1: the resolved
+  // layout primitive (the per-view/per-system axis M2 varies at runtime) gated
+  // by `entered` so the FIRST play is the deferred, on-screen entrance.
+  const viewKey = createMemo(() => `${layout()}|${entered()}`);
 
   // [oa-theme-motion] diagnostic — confirms the DeclarativeShell mounted (i.e. a
   // DECLARATIVE theme is active; Retroverse's compiled shell would NOT log this)
