@@ -1,8 +1,11 @@
 # `.oatheme` runtime loader — declarative-first (Theming ARC 2 "P")
 
-**Status:** Planned 2026-06-16. No code yet. Direction **A (declarative-first)**
-locked by the operator 2026-06-16. P.1 Slice 1 queued in
-[NEXT.md](../NEXT.md) HIGH band.
+**Status:** **P.1 (declarative runtime themes) S1–S3 SHIPPED 2026-06-16** on
+branch `theme-oatheme-loader-slice-1` (pre-merge, operator playtesting).
+Direction **A (declarative-first)** locked by the operator 2026-06-16; decisions
+formalized as D45–D49 in
+[features/theming-substrate/DECISIONS.md](../features/theming-substrate/DECISIONS.md).
+P.2 (runtime custom-JS themes) remains DEFERRED.
 
 **Owner-of-decisions:** the operator.
 
@@ -100,7 +103,7 @@ implicit (`DeclarativeShell`); the loader supplies them.
 
 ## Slices — P.1 (declarative runtime themes)
 
-### P.1 S1 — on-disk format + Rust loader + discovery command `[QUEUED]`
+### P.1 S1 — on-disk format + Rust loader + discovery command `[SHIPPED 2026-06-16 — branch theme-oatheme-loader-slice-1]`
 
 - Define the `theme.toml` (+ optional `tokens.toml`/`per-system.toml`)
   schema as serde structs mirroring the TS `ThemeManifest`/`ThemeTokens`
@@ -115,7 +118,7 @@ implicit (`DeclarativeShell`); the loader supplies them.
 - **Acceptance:** a hand-placed `<exe_dir>/themes/community/foo/theme.toml`
   shows up in `oa_themes_list_disk` output; a malformed one is skipped.
 
-### P.1 S2 — `DeclarativeShell` generic theme component
+### P.1 S2 — `DeclarativeShell` generic theme component `[SHIPPED 2026-06-16 — branch theme-oatheme-loader-slice-1]`
 
 - A built-in shell (`themes/declarative/` or
   `platform/theme/declarativeShell.tsx`) — a Solid `ThemeEntry` that renders
@@ -132,7 +135,7 @@ implicit (`DeclarativeShell`); the loader supplies them.
 - **Acceptance:** the dogfood theme is visually equivalent to hand-coded
   `bare`; vitest covers the manifest→primitive mapping.
 
-### P.1 S3 — register disk themes + Appearance picker + the `themes` pack type
+### P.1 S3 — register disk themes + Appearance picker + the `themes` pack type `[SHIPPED 2026-06-16 — branch theme-oatheme-loader-slice-1; P.1 COMPLETE]`
 
 - App merges `oa_themes_list_disk` results (via `diskThemeToPackage`) into
   the registry alongside `BUILTIN_THEMES`; `validateTheme` runs on disk
@@ -181,15 +184,17 @@ Rhai sandboxing. Until then, custom-code shells are build-time built-ins.
   via the Packs panel.
 - One branch per arc/phase; merge at a playtestable milestone.
 
-## Open questions deferred to execution
+## Open questions — RESOLVED at execution
 
-- **TOML vs JSON for `theme.toml`.** Lean TOML (project convention for
-  `config/emulators/*.yaml` is YAML, but theme manifests were sketched as
-  TOML in §6 Phase 5; `serde`+`toml` is already a workspace dep). Decide at
-  S1 start; the format is an internal detail behind the loader.
-- **Hot-reload (loose-folder dev mode).** Reserve the path in S1; wire the
-  file-watch + re-register only if it earns its keep (swap-by-restart is the
-  shipped model, so hot-reload is pure dev ergonomics).
-- **How much `views`/`settings_schema` vocabulary the `DeclarativeShell`
-  needs** to feel non-trivial — settle the minimum at S2 against the bare
-  dogfood; accrete additively (CP3-style) rather than over-build up front.
+- **TOML vs JSON for `theme.toml`** — ✅ **TOML** (D46). `serde`+`toml` is a
+  workspace dep; manifests were sketched as TOML in §6 Phase 5; the format is an
+  internal detail behind the loader.
+- **Hot-reload (loose-folder dev mode)** — ✅ path **reserved**, not wired
+  (`resolve_themes_dev_dir` → `<exe_dir>/themes/dev/`, scanned at startup, no
+  file-watch). Swap-by-restart is the shipped model; hot-reload stays deferred
+  until it earns its keep (D46).
+- **`views`/`settings_schema` vocabulary the `DeclarativeShell` needs** — ✅
+  settled minimal (D49): the shell resolves `views["game-browse"].layout` via the
+  ARC 2 L3 resolver, and interprets one recognized setting (`compactRows` → list
+  density). Other declared controls render + persist but are inert in the generic
+  shell; the vocabulary accretes additively (CP3-style).

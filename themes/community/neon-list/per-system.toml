@@ -1,0 +1,6 @@
+# Optional per-system palette overrides (mirrors the TS perSystemTokens).
+# Scoped to this theme's mount — engine territory keeps the baseline palette.
+# Keys are OA system ids; sub-keys are accent / soft / glow.
+
+[per_system_tokens.nes]
+accent = "oklch(0.72 0.16 195)"

@@ -9,6 +9,142 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-16 — ARC 2 "P" P.1 S3: disk-theme registry merge + Appearance picker + `themes` pack type — ✅ shipped (branch; **P.1 complete**, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1`. Closes P.1: on-disk `.oatheme` themes
+> are now discovered, validated, selectable, and channel-distributable end to
+> end. Operator playtested S1+S2 (Bare vs Bare-declarative render identically).
+
+- **Shipped:**
+  - `platform/theme/diskTheme.ts::mergeDiskThemes(builtins, descriptors)` — maps
+    each descriptor via `diskThemeToPackage` and appends after the built-ins;
+    built-ins WIN any id collision (the bundled default stays a guaranteed,
+    un-overridable fallback floor, D44) — shadowed disk ids are logged + skipped.
+    Pure (takes builtins as a param → stays in platform/, no themes/ import).
+  - `platform/api/themesApi.ts::listDiskThemes()` — typed bridge to the S1
+    `oa_themes_list_disk` command.
+  - `App.tsx` — approach (b): the synchronous `registerThemes(BUILTIN_THEMES)`
+    stays (flash-free first paint); a new `onMount` async pass discovers disk
+    themes, RE-registers the merged set, THEN runs `initActiveTheme` so a
+    persisted disk-theme id resolves against the full valid set. Discovery
+    failure is non-fatal (built-ins stand). The Appearance picker already renders
+    `availableThemes()`, so disk themes appear with no picker change; `validateTheme`
+    runs on them at registration, excluding invalid ones exactly like a builtin.
+  - `crates/oa-packs` — `themes` added to `default_pack_type_specs`
+    (`has_bundled_baseline: false`, PD4). Pack `type` is an open string (CP3), so
+    a `themes` pack already installs to `<exe_dir>/themes/community/<id>/` via the
+    existing pipeline → the S1 loader discovers it → it's selectable. No install-
+    path change needed; the spec seed is the declarative home + is test-covered.
+  - **Sample theme** (`themes/community/neon-list/` — `theme.toml` +
+    `tokens.toml` + `per-system.toml`, distinct id so it isn't shadowed). A live
+    on-disk theme auto-discovered in dev; guarded by `shipped_sample_theme_parses`.
+  - **S3 follow-up fix (after operator playtest):** the loader's resolvers
+    shipped in S1 with NO source-tree fallback, so a repo-placed theme was never
+    found when running the workspace `target/release` exe (the operator's "not
+    showing up" report — log confirmed "no themes/community/ directory").
+    Diagnosed via the runtime log (`theme_loader: no themes/community/ directory`
+    + `system_registry: loaded … from …\config\systems` proving a source-tree
+    run). Fix: `resolve_themes_subdir` now walks `<exe_dir>/themes/<leaf>` →
+    `<repo>/themes/<leaf>`, matching every other resource loader; sample relocated
+    from `docs/` to the live `themes/community/`; `load_default` now logs the
+    scanned path + theme count. DECISIONS **D46 CORRECTION**.
+  - Tests: `diskTheme.test.ts` +3 (mergeDiskThemes: append/dedup/empty);
+    `theme_loader.rs` +1 (sample parses).
+- **Verified:** `tsc` + `eslint` clean; `npm run test` = **160 passed**;
+  `cargo test -p oa-packs` = **14**; `cargo test -p oa-shell theme_loader` = **10**
+  (clean rebuilds first). Operator smoke for S3 pending (hand-place `neon-list` →
+  restart → select).
+- **Almost:** the dogfood's source is still the inline builtin descriptor; the
+  plan's "swap bare-declarative's source from inline to disk" is optional polish.
+- **Next:** operator playtests the `neon-list` hand-place path; on confirmation,
+  **merge `theme-oatheme-loader-slice-1` → main** (P.1 complete = the playtestable
+  milestone). Beyond P.1: P.2 (runtime custom-JS themes) stays DEFERRED; system-ui
+  asset cascade (`system-ui/` backgrounds/sounds) for disk themes is a future
+  accretion.
+
+## 2026-06-16 — ARC 2 "P" P.1 S2: `DeclarativeShell` + `diskThemeToPackage` + `bare` dogfood — ✅ shipped (branch, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1` (P.1 continues on the one phase branch).
+> The frontend half of the declarative loader: a built-in shell that renders any
+> declarative theme from data, the descriptor→package mapper, and a zero-code
+> dogfood proving `bare` works with no theme component code.
+
+- **Shipped:**
+  - `platform/theme/declarativeShell.tsx` — the one built-in `ThemeEntry` (D47)
+    that renders EVERY declarative theme: reads the active manifest, resolves the
+    `game-browse` layout via `useResolvedLayout` (ARC 2 L3), and mounts the
+    matching nav primitive (List/Grid/Carousel/Wheel — all reused, none rebuilt).
+    Tokens/perSystemTokens/glyph_set need no code here (App's `.oa-theme-mount` +
+    glyph bridge already handle them); cards carry `data-system`; `ThemeBackground`
+    follows the focused game's system. List rows mirror `bare` exactly (accent dot
+    + title + system short + compact density).
+  - `platform/theme/diskTheme.ts` — `DiskThemeDescriptor` TS type (mirrors the
+    Rust struct 1:1) + `diskThemeToPackage(desc)`: injects `DeclarativeShell` as
+    the entry + synthetic non-empty `entry`/`entry_export` (satisfy the shared
+    `ThemeManifest` contract + `validateTheme`; never dereferenced — custom-JS is
+    deferred P.2).
+  - `themes/declarative-bare/` — the **dogfood**: `bare` re-expressed as a pure
+    `DiskThemeDescriptor` → `diskThemeToPackage` → registered in `BUILTIN_THEMES`
+    as "Bare (declarative)", beside hand-coded `bare` for A/B. Declares
+    `views["game-browse"].layout = "list"` so it renders a list, not the grid
+    default. Zero theme component code.
+  - **Recognized-settings seed vocabulary**: the shell interprets `compactRows`
+    (→ list density) from `settings_schema`; other declared controls still render
+    in Appearance + persist but are inert in the generic shell (accrete additively
+    — the plan's open-question, settled minimally).
+  - Tests: `platform/theme/diskTheme.test.ts` (6 — mapper carries fields,
+    validates like a builtin, rejects a bad token key, manifest→primitive
+    resolution) + `themes/declarative-bare/index.test.ts` (1 — dogfood is valid +
+    list-rendering + DeclarativeShell-backed).
+- **Verified:** `tsc` clean, `eslint` clean (incl. the platform↛theme boundary —
+  the dogfood test lives under `themes/`), `npm run test` = **157 passed** (18
+  files). The `oa-audio transformCallback` stderr is the harmless Tauri-absent
+  warning any nav-importing test prints.
+- **Almost:** disk themes don't auto-register yet — the dogfood is a builtin; the
+  `oa_themes_list_disk` → `diskThemeToPackage` → registry merge is S3.
+- **Next:** **P.1 S3** — App merges `oa_themes_list_disk` results into the
+  registry (validated like builtins), Appearance picker lists disk themes, and
+  `themes` joins `default_pack_type_specs` so a `themes` pack installs → restart →
+  selectable. Then swap the dogfood's source from inline to disk.
+
+## 2026-06-16 — ARC 2 "P" P.1 S1: `.oatheme` on-disk loader + discovery command — ✅ shipped (branch, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1`. First slice of the declarative-first
+> `.oatheme` runtime loader arc ([docs/PLANS/theming-oatheme-loader.md](../../PLANS/theming-oatheme-loader.md)).
+> The Rust half only — no frontend consumer, no `DeclarativeShell`, no rendering
+> (those are S2/S3). PD1–PD4 formalized as **D45–D48** (D44 was already taken;
+> see DECISIONS note).
+
+- **Shipped:**
+  - `apps/oa-shell/src/theme_loader.rs` — serde structs mirroring the TS
+    declarative contract: `DiskThemeManifest` (mirrors `ThemeManifest` **minus
+    `entry`/`entry_export`**, snake_case keys incl. `views` + the
+    `toggle/slider/select` `settings_schema` union), `DiskThemeTokens` (mirrors
+    `ThemeTokens`, camelCase keys), `DiskPerSystem`/`SystemPalettePartial`
+    (mirrors `perSystemTokens`). `DiskThemeDescriptor` = manifest + optional
+    tokens + optional per-system palette + absolute `base_path`.
+  - Discovery: `resolve_themes_community_dir()` (`<exe_dir>/themes/community/`,
+    the CP2 `<type>/community/<id>` pack layout) + a **reserved**
+    `resolve_themes_dev_dir()` (`<exe_dir>/themes/dev/`, scanned at startup; no
+    hot-reload). `load_from_parent_dir()` walks one subdir per theme;
+    skip-on-malformed + logged, never fatal — mirrors `emulator_profiles`/`packs`.
+    A malformed *optional* sidecar drops just that layer; an all-empty
+    `tokens`/`per-system` collapses to `None`.
+  - Tauri command `oa_themes_list_disk`, registered in `main.rs`
+    (mod + invoke_handler).
+  - 9 unit tests: full manifest (views + per_system + all 3 control kinds),
+    optional sidecars, camelCase token JSON, descriptor casing
+    (basePath camel / manifest snake), skip-malformed-keep-siblings,
+    bad-sidecar-not-fatal, empty→None, missing-dir→empty, base-path resolution.
+- **Verified:** `cargo test -p oa-shell` = **872 passed** (863 prior + 9 new),
+  clean `cargo clean -p oa-shell` build first (stale-fingerprint quirk).
+- **Almost:** the on-disk format is fully parsed but nothing renders it yet.
+- **Next:** **P.1 S2 — `DeclarativeShell`**: a built-in Solid `ThemeEntry` that
+  renders one browse surface from a manifest (resolve per-view/per-system layout
+  → mount the matching primitive, paint `ThemeBackground`, honor glyph set +
+  `settings_schema`), plus a `diskThemeToPackage(desc)` mapper, dogfooded by
+  re-expressing `bare` as pure `theme.toml` + tokens.
+
 ## 2026-06-15 — ARC 2 L5: end-user per-system layout override UI ("Layout" Hub domain card) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l5-layout-picker`. The D32 user-agency headline: a

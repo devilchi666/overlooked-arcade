@@ -109,11 +109,16 @@ spanned every system but was filed under whichever core happened to be active.
 
 - **Theming Substrate (BigBox-style themes + engine/theme territory
   split)** — major multi-arc planned 2026-06-06. **4 arcs (D35 renumber):**
-  ARC 1 (Minimum Viable Substrate) **complete** bar the `.oatheme` loader;
-  **ARC 2 = Per-System Layout Substrate** (planned, L1 queued); ARC 3 =
+  ARC 1 (Minimum Viable Substrate) complete; **ARC 2 = Per-System Layout
+  Substrate** L1–L5 shipped + merged; its last thread **"P" (the `.oatheme`
+  runtime loader, declarative-first)** is **P.1 S1–S3 ✅ shipped on branch
+  `theme-oatheme-loader-slice-1` (pre-merge, playtesting)** — disk themes
+  discovered next to the exe, rendered by a built-in `DeclarativeShell`,
+  selectable in Appearance, distributable as the `themes` pack type; ARC 3 =
   Cinematic & Scripting (Rhai + WGSL + declarative motion); ARC 4 = Theme
   Studio. Plans at [PLANS/theming-substrate.md](PLANS/theming-substrate.md)
-  + [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md);
+  + [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)
+  + [PLANS/theming-oatheme-loader.md](PLANS/theming-oatheme-loader.md);
   feature folder [features/theming-substrate/](features/theming-substrate/).
   - **Phase 1 ✅ shipped + merged 2026-06-06** (merge `870edb2`).
     Engine/theme surface separation: SETTINGS + Library Manager +

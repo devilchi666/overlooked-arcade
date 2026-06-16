@@ -1,0 +1,41 @@
+# Neon List — a live sample on-disk `.oatheme` theme (Theming ARC 2 "P").
+#
+# This folder lives at the repo's `themes/community/<id>/` — the SOURCE-TREE
+# location the loader discovers when running the workspace exe (cargo run /
+# tauri dev / target/release). In a real install it would instead sit at
+# `<exe_dir>/themes/community/neon-list/` (where the `themes` pack channel
+# installs). Either way it's discovered, validated, and selectable in
+# Settings → Appearance with NO theme code: it renders a vertical list (like
+# `bare`) with a neon palette + a NES accent recolour, all from data.
+#
+# It is NOT bundled into production installs (no tauri `resources` entry); it's
+# the dev dogfood + the canonical authoring example.
+#
+# theme.toml mirrors the declarative ThemeManifest surface (snake_case keys),
+# MINUS entry/entry_export (implicit — the built-in DeclarativeShell renders it).
+
+id = "neon-list"
+name = "Neon List"
+version = "1.0.0"
+schema_version = 1
+oa_version = "^0.x"
+default_route = "library"
+routes = ["library"]
+context_slots = ["library"]
+required_engine_capabilities = []
+reserves_corner = "top-right"
+surfaces = ["main"]
+glyph_set = "xbox"
+
+# Render a vertical list (the engine default for game-browse is grid).
+[views.game-browse]
+layout = "list"
+
+# One declarative option; the engine Appearance panel renders it and the
+# DeclarativeShell honors `compactRows` (the recognized seed vocabulary).
+[[settings_schema]]
+type = "toggle"
+key = "compactRows"
+label = "Compact rows"
+hint = "Tighter list spacing"
+default = false
