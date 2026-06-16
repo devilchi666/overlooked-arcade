@@ -82,17 +82,15 @@ real keyframe model**, not either alone. Avoid BigBox's blocking-storyboard bug 
 **all transitions interruptible** (settle-then-transition). `prefers-reduced-motion`
 is the a11y floor (downgrade to a short fade, per DECISIONS 2026 boot-anim entry).
 
-- **M1 `[SLICE 1 — ✅ SHIPPED 2026-06-16]`** — Motion token contract +
-  reduced-motion plumbing + one interruptible view transition, declared in
-  `theme.toml` (motion fields → `ThemeManifest` + `validateTheme`) and honored by
-  `DeclarativeShell`. Smallest valuable, disk-theme-flowing start; establishes the
-  contract M2/M3 build on. Shipped: `ThemeMotionTokens`/`MOTION_TOKEN_VAR` +
-  scoped `<style>` injection (re-asserts the reduced-motion floor);
-  `manifest.motion.view_transition` (preset + timing) carried through the Rust
-  disk loader + `diskTheme.ts`; `motion.ts` resolver
-  (`resolveViewTransition`/`usePrefersReducedMotion`) + the WAAPI `ViewTransition`
-  primitive (interruptible). Reduced-motion → short fade. Dogfood: `neon-list`
-  (slide) + `bare-declarative` (fade + motion tokens).
+- **M1 `[SLICE 1 — 🚧 ATTEMPTED 2026-06-16, PAUSED for foundation planning]`** —
+  Motion token contract + reduced-motion + one declarative view transition. The
+  declarative *contract* landed and is green (`ThemeMotionTokens`/`MOTION_TOKEN_VAR`
+  + scoped `<style>` injection; `manifest.motion.view_transition` through the Rust
+  disk loader + `diskTheme.ts`; `motion.ts` resolver; **CSS-animation**
+  `ViewTransition` primitive — NOT WAAPI; dogfood neon-list/bare). But rendering
+  it on the real transparent-WebView build was a day-long slog and the result
+  isn't satisfying → **paused; see "Motion foundation — open problems" below.**
+  Branch `theme-arc3-motion-slice-1`, not merged.
 - **M2** — View/route transition presets (fade/slide/scale), interruptible;
   per-view/per-system selection via the ARC 2 resolver pattern.
 - **M3** — Parallax-by-depth primitive + the keyframe model + preset gallery.
@@ -170,6 +168,53 @@ D44/D6). Out of scope for the first ARC 3 pass — documented as the escape hatc
   surface.
 - One branch per thrust (or per slice batch) per the branch workflow; merge at
   playtestable milestones.
+
+## Motion foundation — open problems `[PLANNING SESSION AGENDA, added 2026-06-16]`
+
+M1 (Slice 1) was attempted 2026-06-16 and revealed that **the motion foundation
+isn't solid enough to keep building on**. Getting a single declarative entrance
+transition to actually render took a full day of operator-in-the-loop round-trips
+against the real transparent-WebView build, and the result still isn't satisfying.
+The declarative *contract* (tokens, manifest field, validator, Rust carry-through,
+resolver, dogfood) is sound and green and worth keeping — but the *rendering +
+iteration substrate* needs deliberate design before S/V build on it. Branch
+`theme-arc3-motion-slice-1` holds the work (NOT merged); diagnostics left in.
+
+**Resolve these before resuming M1 acceptance / starting M2:**
+
+1. **What animation techniques actually composite on OA's surface?** The
+   single-window shell is a **transparent WebView2 composited over wgpu by DWM**.
+   Confirmed the hard way: **the Web Animations API (`element.animate`) fires but
+   never recomposites the transparent surface → invisible**; **CSS animations**
+   (keyframes / the boot-fade pattern) DO render. Need a definitive catalogue —
+   CSS transitions? transforms vs opacity vs filter? `will-change`/compositor
+   layers? — so we never again ship motion that silently doesn't paint. This
+   gates ALL of Thrust S/V too.
+2. **A fast iteration loop for motion.** Every tweak this session cost a full
+   `cargo tauri build`. Options to evaluate: `cargo tauri dev` (HMR + live
+   devtools console) as the standard motion-dev loop; a dedicated **motion
+   playground** route/page that exercises the primitives without a full boot;
+   storybook-ish harness. Pick one — the current loop is untenable for cinematic
+   work.
+3. **Verification so we can't ship invisible motion.** WAAPI/jsdom can't test the
+   real composite; our green vitest suite passed while nothing rendered. Need
+   some visual/integration check (screenshot diff? a manual smoke checklist? a
+   dev assertion that the animation actually painted?).
+4. **Window-present timing is foundational, now partly solved.** Entrance/boot
+   motion races the OS window reveal. M1 landed a real fix — Rust creates the
+   window `.visible(false)` and shows it on a frontend first-paint handshake
+   (`oa_shell_ready` → `oa://window-shown`, 5 s fallback). Decide if this is the
+   blessed pattern (it also kills the launch white-flash) and whether boot
+   animation / attract should ride the same signal.
+5. **Is `DeclarativeShell` the right place to prove "view transitions"?** It's a
+   SINGLE-surface browse shell with **no runtime view changes** — the only
+   trigger is the entrance, which made M1 an awkward first proof. M2's premise
+   (per-view/per-system transitions firing on layout change) needs an actual
+   navigable surface. Reconsider the slice ordering / where motion is dogfooded.
+6. **Scroll-container interaction.** Operator flagged the entrance interacting
+   oddly with the list scrollbar (transforming a container that holds an
+   `overflow-y-auto` child). Understand + decide the safe pattern (animate a
+   non-scrolling wrapper? opacity-only for scroll regions?).
 
 ## Open questions deferred to execution
 

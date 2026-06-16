@@ -9,10 +9,22 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-16 — ARC 3 Thrust M, M1: declarative motion contract + reduced-motion + one interruptible view transition — ✅ shipped (branch `theme-arc3-motion-slice-1`, pre-merge)
+## 2026-06-16 — ARC 3 Thrust M, M1: declarative motion — 🚧 IN PROGRESS / PAUSED for a motion-foundation planning session (branch `theme-arc3-motion-slice-1`, NOT merged)
 
-- **Shipped:** the first ARC 3 (Cinematic) slice — declarative motion, surface-split
-  (D51 UI/DOM layer), DATA-only (D50), flowing to disk themes (D52).
+> **Status, honestly:** the declarative contract (tokens + manifest field +
+> validator + Rust carry-through + resolver + dogfood) is solid and green. But
+> getting ONE entrance transition to actually render took an entire day of
+> operator-in-the-loop round-trips against the real transparent-WebView build,
+> and the result still isn't satisfying. The operator's call (correct): **stop,
+> wrap, and run a planning session on the motion FOUNDATION** before building the
+> harder cinematic thrusts (S shaders, V video) on top of it. If the simplest
+> animation is this hard, the substrate + our iteration loop need design. The
+> "Motion foundation — open problems" section in
+> [docs/PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md)
+> is the agenda. Do NOT treat M1 as shipped.
+
+- **Built (contract is sound, keep):** the declarative motion data path —
+  surface-split (D51 UI/DOM layer), DATA-only (D50), flowing to disk themes (D52).
   - **Motion token group activated** (`tokens.ts`): `ThemeMotionTokens` +
     `MOTION_TOKEN_VAR` (the 7 reserved `--motion-*`/`--ease-*` vars) + a
     `themeMotionTokensCss(scope, tokens)` helper. Kept a SEPARATE group (not
@@ -30,18 +42,17 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     plus motionTokens key/value checks. Carried through the **Rust disk loader**
     (`theme_loader.rs`: `ThemeMotion` / `ViewTransitionConfig` structs) so a
     `theme.toml` `[motion.view_transition]` table reaches the frontend (D52).
-  - **Resolver + primitive:** `motion.ts` — `resolveViewTransition(motion,
-    reducedMotion)` (pure; reduced-motion → short fade @120 ms) + `parseDurationMs`
-    + `usePrefersReducedMotion`. `ViewTransition.tsx` — **CSS-animation** primitive:
-    it sets the inline `animation` shorthand (theme duration/easing) naming a
-    keyframe from `index.css` (`oa-vt-fade|slide|scale`), restarted via the
-    standard clear-reflow-reapply (interruptible; children always live → never
-    blocks browsing). Skips its initial (mount) run so only a real trigger change
-    plays.
-  - **DeclarativeShell** wraps the browse content in `<ViewTransition>` keyed on
-    `${layout}|${entered}` — `entered` flips once ~350 ms after mount (past the
-    window-present settle) → exactly ONE clean entrance play when the shell is
-    actually on-screen.
+  - **Resolver + primitive:** `motion.ts` — `resolveViewTransition` + `parseDurationMs`
+    + `usePrefersReducedMotion`. `ViewTransition.tsx` — **CSS-animation** primitive
+    (NOT WAAPI — see findings): sets the inline `animation` shorthand naming a
+    keyframe from `index.css` (`oa-vt-fade|slide|scale`), restarted via
+    clear-reflow-reapply, optional `delayMs`.
+  - **Window-ready handshake** (the eventual fix for "nothing renders"): Rust
+    creates the shell window `.visible(false)`; `oa_shell_ready` command +
+    `present_shell_window` show it on frontend first-paint and emit
+    `oa://window-shown` (5 s timeout fallback so it can't stay black). Frontend
+    `windowShown.ts` signal; `DeclarativeShell` keys the entrance on it → the
+    transition plays the instant the window is actually on screen.
   - **Dogfood:** `neon-list` (disk) declares `slide` (600 ms); `bare-declarative`
     (built-in) declares `fade` (450 ms) + motion-token overrides.
   - **⚠️ HARD-WON FINDINGS (read before M2) — debugged live against the operator's
@@ -65,19 +76,26 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
        (index.css) wins over our inline `animation`, so view transitions go ~instant
        under reduced motion regardless. Acceptable a11y floor; the resolver branch
        is kept for correctness but the CSS reset is the actual gate.
-- **Verified:** `npm run typecheck` + `npm run lint` green; `vitest run` =
-  **179 passed** (new `motion.test.ts` 9 + validate motion cases + dogfood);
-  `cargo test -p oa-shell theme_loader` = **10 passed**. **Operator-confirmed
-  visible** on the transparent single-window build (after the WAAPI→CSS fix +
-  single-entrance + slowed durations).
-- **Almost:** nothing — slice is contract + consumer + dogfood complete + playtested.
-- **Next:** **M2** — view/route transition presets with per-view/per-system
-  selection (the `ViewTransition` trigger keys on a per-system-varying layout, so
-  the transition fires on each layout change, not just the entrance). **Keep CSS,
-  not WAAPI** (finding #1). Then M3 (parallax + keyframe model + preset gallery).
-  Disk motion-token sidecar support (motion keys in `tokens.toml`) is a natural
-  M2 accretion — the contract + `motionTokens` field exist; only the Rust
-  `tokens.toml` parse half is deferred.
+- **CI state:** `tsc` + `lint` + `vitest` (90 theme / 179 total) green;
+  `cargo clean -p oa-shell && cargo check` green. The entrance IS now visible on
+  the operator's build (after WAAPI→CSS + the window-ready handshake) but the
+  *feel/reliability* isn't there yet and the path to get here was far too costly.
+  **Diagnostics (`[oa-theme-motion]`, the `DeclarativeShell MOUNTED`/active-theme
+  markers) are intentionally LEFT IN — do not strip until the foundation is settled.**
+- **Almost / unresolved:** it renders, but: the timing/feel still needs tuning;
+  the scroll-container interaction the operator flagged isn't fully understood;
+  and every iteration cost a full `cargo tauri build`. These are foundation
+  issues, not polish.
+- **Next: a PLANNING session, not M2.** Agenda = the "Motion foundation — open
+  problems" section added to [PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md).
+  Headline problems: (1) what animation techniques actually composite on the
+  transparent WebView2/DWM surface (WAAPI doesn't; catalogue what does); (2) a
+  fast iteration loop for motion (dev-mode / a motion playground) so we're not
+  doing full release builds per tweak; (3) automated/visual verification so we
+  can't ship invisible motion again; (4) whether the single-surface
+  `DeclarativeShell` is even the right place to prove "view transitions" (it has
+  no runtime view changes — only the entrance). Settle these, THEN resume M1
+  acceptance and M2.
 
 ---
 

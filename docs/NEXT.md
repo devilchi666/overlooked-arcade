@@ -180,7 +180,7 @@ per-system-descriptor loader.
   - **P.1 S3 ✅ MERGED** — registry merge + Appearance picker + `themes` pack-type spec; source-tree fallback so themes resolve from `target/`; live sample `themes/community/neon-list/`.
   - **Optional follow-ons (unqueued):** swap the dogfood's source from the inline builtin to disk; `system-ui/` background/sound asset cascade for disk themes; P.2 (runtime custom-JS).
 
-### Theming ARC 3 — Cinematic & Scripting `[PLANNED 2026-06-16; M1 SHIPPED 2026-06-16, M2 next]`
+### Theming ARC 3 — Cinematic & Scripting `[PLANNED 2026-06-16; M1 ATTEMPTED — PAUSED for motion-foundation planning]`
 
 Make OA cinematic (motion · shaders · video · attract) while keeping the
 declarative-first spine, so the look flows into the disk `.oatheme` themes ARC 2
@@ -198,24 +198,22 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
   attract tiers 1–2 (tier 3 live-emulator deferred to V3).
 - **R — Rhai Scripting** ⏸ DEFERRED (D50): sandboxed event-driven behaviors,
   gated `scripting` capability, compiled-tier; couples to P.2.
-  - **M1 ✅ SHIPPED 2026-06-16 (Slice 1)** — Motion token contract + reduced-motion
-    plumbing + one interruptible view transition, declared in `theme.toml`
-    (motion fields → `ThemeManifest` + `validateTheme`) and honored by
-    `DeclarativeShell`. Activated the reserved `motion` token group as authorable
-    (`ThemeMotionTokens` / `MOTION_TOKEN_VAR` + scoped `<style>` injection that
-    re-asserts the reduced-motion floor). Added `manifest.motion.view_transition`
-    (preset `none`/`fade`/`slide`/`scale` + duration/easing), carried through the
-    Rust disk loader (`theme_loader.rs`) + `diskTheme.ts`. New `motion.ts`
-    resolver (`resolveViewTransition` + `usePrefersReducedMotion`) + `ViewTransition`
-    WAAPI primitive (interruptible: cancel-and-restart, never blocks the swap).
-    Reduced-motion downgrades any transition to a short fade (120 ms), never a
-    hard cut. Dogfood: `neon-list` declares `slide`, `bare-declarative` declares
-    `fade` + motion tokens. **Verified:** tsc + eslint + vitest (179) green;
-    `cargo test -p oa-shell theme_loader` (10) green.
-  - **M2 ⬜ NEXT** — View/route transition presets, interruptible; per-view/
-    per-system selection via the ARC 2 resolver pattern (the `ViewTransition`
-    trigger keys on a per-system-varying layout/view). M3 = parallax-by-depth +
-    keyframe model + preset gallery.
+  - **M1 🚧 ATTEMPTED 2026-06-16 — PAUSED (Slice 1, branch `theme-arc3-motion-slice-1`, NOT merged)**
+    — The declarative contract landed and is green (motion token group
+    `ThemeMotionTokens`/`MOTION_TOKEN_VAR`; `manifest.motion.view_transition`
+    preset+timing through the Rust disk loader + `diskTheme.ts`; `motion.ts`
+    resolver; `ViewTransition` **CSS-animation** primitive — NOT WAAPI; dogfood on
+    neon-list/bare). But getting one entrance to actually render took a full day
+    of round-trips against the transparent-WebView build (WAAPI doesn't composite;
+    window-present timing; scrollbar interaction), and the feel/reliability isn't
+    there. **Paused for a motion-FOUNDATION planning session** — agenda in
+    [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
+    §"Motion foundation — open problems": what composites on DWM/transparent
+    WebView, a fast iteration loop, visual verification, the window-ready
+    handshake (shipped this session), and whether the single-surface
+    `DeclarativeShell` is the right dogfood. Diagnostics left in.
+  - **M2 ⬜ BLOCKED on the foundation planning** — View/route transition presets,
+    per-view/per-system selection. M3 = parallax + keyframe model + preset gallery.
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).
