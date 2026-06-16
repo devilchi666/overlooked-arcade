@@ -142,3 +142,31 @@ plus the glue choices Slice 2 (network + Tauri commands) had to make.
   events + the Settings → Packs panel (Slice 3); the Privacy panel +
   network-log ring buffer (Slice 4). The allow-network *pref* + *gate* ship
   now (Slice 2) so the gate is testable; only its operator-facing UI waits.
+
+---
+
+## CP7 — Rollback retention lives under `<exe_dir>`, not `<data_dir>` (2026-06-16)
+
+**Decision:** Rollback retention (content-packs.md §8) stores prior pack
+versions under **`<exe_dir>/.packs-rollback/<id>-<version>/`** — the
+install's own volume — overriding §8's stated `<data_dir>/packs-rollback/`
+location.
+
+**Why (caught in Slice 3 playtest):** Retention works by `rename`-ing the
+pack directory out of `<exe_dir>/<type>/community/`. On Windows a `rename`
+**cannot cross volumes**, and `<exe_dir>` routinely sits on a different
+drive than `<data_dir>` (AppData) — the common case is the operator running
+from `G:\…\target\release\` (or a portable install on `D:`) while AppData is
+on `C:`. With retention under `<data_dir>`, every uninstall/update silently
+failed the move (the command errored; the pack stayed put). Keeping
+retention on the install's own volume makes the move atomic, exactly as
+Slice 1's `.staging/` dir does for installs. The leading-dot name keeps
+`.packs-rollback` from looking like a pack-type root to the installed-pack
+scan (it has no `community/` child).
+
+**How to apply:** `rollback_root(root)` joins `<root>/.packs-rollback` where
+`root` is the `PacksRoot` (`<exe_dir>`). A `move_dir` helper tries `rename`
+then falls back to recursive copy + remove, so even an unexpected
+cross-volume move degrades gracefully instead of failing. The download
+staging area (`<data_dir>/packs/.download/`) is unaffected — it's only ever
+*read*, never renamed across volumes.

@@ -24,6 +24,13 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
   (content-packs.md §3). `cargo test -p oa-shell packs` = 9 green (added
   retain→rollback test), clippy clean for the new files; frontend `tsc
   --noEmit` + eslint clean.
+- **Fix (same day, playtest):** uninstall did nothing — the confirm dialog
+  closed but the pack stayed. Cause: rollback retention was under
+  `<data_dir>` (AppData, often `C:`) while packs live under `<exe_dir>`
+  (often a different drive), and Windows `rename` can't cross volumes, so
+  the retain step errored. Moved retention to `<exe_dir>/.packs-rollback/`
+  (same volume → atomic move) + added a `move_dir` copy-fallback. Recorded
+  as **CP7**. The rollback commands now thread `PacksRoot`, not `AppDataDir`.
 - **Almost:** Progress events / a download progress bar (deferred — installs
   show a busy spinner, not a byte bar; graft `core_installer`'s
   `oa://…-progress` pattern when wanted). Conflict-warning surface (§7) not

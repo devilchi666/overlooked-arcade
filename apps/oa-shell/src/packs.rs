@@ -104,11 +104,17 @@ pub struct RollbackEntry {
 /// How long a retained version stays recoverable before GC (§8: 14 days).
 const ROLLBACK_RETENTION_DAYS: u64 = 14;
 
-/// `<data_dir>/packs-rollback/` — where uninstall + update park the prior
-/// version. Sits under the per-user data dir (not `<exe_dir>`) because it's
-/// recoverable user state, not installed content.
-fn rollback_root(data_dir: &Path) -> PathBuf {
-    data_dir.join("packs-rollback")
+/// `<exe_dir>/.packs-rollback/` — where uninstall + update park the prior
+/// version. **Deliberately under `<exe_dir>` (the [`PacksRoot`]), NOT
+/// `<data_dir>`**, even though content-packs.md §8 names `<data_dir>`:
+/// retention works by `rename`-ing the pack dir, and on Windows a rename
+/// can't cross volumes — `<exe_dir>` may sit on a different drive than
+/// AppData (the common portable case: exe on `D:`, AppData on `C:`). Keeping
+/// retention on the install's own volume guarantees the move is atomic, same
+/// as Slice 1's staging dir. The leading dot keeps it from looking like a
+/// pack-type root to [`scan_installed`] (no `community/` child). See CP7.
+fn rollback_root(root: &Path) -> PathBuf {
+    root.join(".packs-rollback")
 }
 
 /// RFC3339 of a path's mtime, for the "archived <date>" line.
@@ -119,29 +125,59 @@ fn mtime_rfc3339(path: &Path) -> Option<String> {
     odt.format(&Rfc3339).ok()
 }
 
+/// Recursively copy `src` into `dst` (used as the cross-volume fallback for
+/// [`move_dir`]).
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move a directory tree from `src` to `dst`. Tries an atomic `rename`
+/// first; on failure (notably a cross-volume rename on Windows) falls back
+/// to a recursive copy + remove so the move still succeeds, just not
+/// atomically. Rollback dirs live on the same volume as the packs (see
+/// [`rollback_root`]), so the fast path is the norm; the fallback is
+/// defense-in-depth.
+fn move_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    match std::fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            copy_dir_all(src, dst)?;
+            std::fs::remove_dir_all(src)?;
+            Ok(())
+        }
+    }
+}
+
 /// If `pack_id` is currently installed, MOVE its dir into rollback
 /// retention as `<id>-<version>/` (content-packs.md §8). No-op when the
 /// pack isn't installed. A same-id+version retention dir from a prior cycle
 /// is replaced (newest retained copy wins). Callers invoke this only after
 /// the replacement bytes are in hand, so a failed download never strands
 /// the active version.
-fn retain_installed_to_rollback(
-    data_dir: &Path,
-    root: &Path,
-    pack_id: &str,
-) -> Result<(), String> {
+fn retain_installed_to_rollback(root: &Path, pack_id: &str) -> Result<(), String> {
     let installed = scan_installed(root);
     let Some(current) = installed.iter().find(|p| p.id == pack_id) else {
         return Ok(());
     };
-    let dest = rollback_root(data_dir).join(format!("{pack_id}-{}", current.version));
+    let dest = rollback_root(root).join(format!("{pack_id}-{}", current.version));
     if dest.exists() {
         let _ = std::fs::remove_dir_all(&dest);
     }
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create rollback dir: {e}"))?;
     }
-    std::fs::rename(&current.path, &dest)
+    move_dir(Path::new(&current.path), &dest)
         .map_err(|e| format!("retain prior version of `{pack_id}`: {e}"))?;
     log::info!(
         "oa-packs: retained `{pack_id}` v{} → {}",
@@ -153,9 +189,9 @@ fn retain_installed_to_rollback(
 
 /// Delete retained versions older than [`ROLLBACK_RETENTION_DAYS`].
 /// Best-effort — a failure to remove one dir is logged, not fatal.
-fn gc_rollbacks(data_dir: &Path) {
-    let root = rollback_root(data_dir);
-    let Ok(rd) = std::fs::read_dir(&root) else {
+fn gc_rollbacks(root: &Path) {
+    let rollback = rollback_root(root);
+    let Ok(rd) = std::fs::read_dir(&rollback) else {
         return;
     };
     let now = std::time::SystemTime::now();
@@ -177,10 +213,10 @@ fn gc_rollbacks(data_dir: &Path) {
     }
 }
 
-/// Scan `<data_dir>/packs-rollback/*/manifest.yml` for recoverable versions.
-fn scan_rollbacks(data_dir: &Path) -> Vec<RollbackEntry> {
+/// Scan `<exe_dir>/.packs-rollback/*/manifest.yml` for recoverable versions.
+fn scan_rollbacks(root: &Path) -> Vec<RollbackEntry> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(rollback_root(data_dir)) else {
+    let Ok(rd) = std::fs::read_dir(rollback_root(root)) else {
         return out;
     };
     for entry in rd.flatten() {
@@ -386,14 +422,13 @@ pub fn oa_packs_list(packs_root: tauri::State<'_, PacksRoot>) -> Vec<InstalledPa
 #[tauri::command]
 pub fn oa_packs_uninstall(
     pack_id: String,
-    app_data_dir: tauri::State<'_, AppDataDir>,
     packs_root: tauri::State<'_, PacksRoot>,
 ) -> Result<(), String> {
     if !scan_installed(&packs_root.0).iter().any(|p| p.id == pack_id) {
         return Err(format!("pack `{pack_id}` is not installed"));
     }
-    retain_installed_to_rollback(&app_data_dir.0, &packs_root.0, &pack_id)?;
-    gc_rollbacks(&app_data_dir.0);
+    retain_installed_to_rollback(&packs_root.0, &pack_id)?;
+    gc_rollbacks(&packs_root.0);
     log::info!("oa-packs: uninstalled `{pack_id}` (retained for rollback)");
     Ok(())
 }
@@ -401,11 +436,9 @@ pub fn oa_packs_uninstall(
 /// List recoverable prior versions (the Rollback section of the panel).
 /// Runs a GC pass first so expired entries don't linger in the UI.
 #[tauri::command]
-pub fn oa_packs_list_rollbacks(
-    app_data_dir: tauri::State<'_, AppDataDir>,
-) -> Vec<RollbackEntry> {
-    gc_rollbacks(&app_data_dir.0);
-    scan_rollbacks(&app_data_dir.0)
+pub fn oa_packs_list_rollbacks(packs_root: tauri::State<'_, PacksRoot>) -> Vec<RollbackEntry> {
+    gc_rollbacks(&packs_root.0);
+    scan_rollbacks(&packs_root.0)
 }
 
 /// Restore a retained version into `community/`. No network. This is a
@@ -416,10 +449,9 @@ pub fn oa_packs_list_rollbacks(
 pub fn oa_packs_rollback(
     pack_id: String,
     version: String,
-    app_data_dir: tauri::State<'_, AppDataDir>,
     packs_root: tauri::State<'_, PacksRoot>,
 ) -> Result<InstalledPack, String> {
-    let rb_dir = rollback_root(&app_data_dir.0).join(format!("{pack_id}-{version}"));
+    let rb_dir = rollback_root(&packs_root.0).join(format!("{pack_id}-{version}"));
     let bytes = std::fs::read(rb_dir.join("manifest.yml"))
         .map_err(|e| format!("no retained version `{pack_id}` v{version}: {e}"))?;
     let manifest = oa_packs::Manifest::from_yaml_bytes(&bytes)
@@ -433,7 +465,7 @@ pub fn oa_packs_rollback(
         if active.version == version {
             return Err(format!("`{pack_id}` v{version} is already the active version"));
         }
-        retain_installed_to_rollback(&app_data_dir.0, &packs_root.0, &pack_id)?;
+        retain_installed_to_rollback(&packs_root.0, &pack_id)?;
     }
 
     if let Some(parent) = target.parent() {
@@ -442,7 +474,7 @@ pub fn oa_packs_rollback(
     if target.exists() {
         std::fs::remove_dir_all(&target).map_err(|e| format!("clear install target: {e}"))?;
     }
-    std::fs::rename(&rb_dir, &target).map_err(|e| format!("restore from rollback: {e}"))?;
+    move_dir(&rb_dir, &target).map_err(|e| format!("restore from rollback: {e}"))?;
     log::info!("oa-packs: rolled `{pack_id}` back to v{version}");
     Ok(InstalledPack {
         id: manifest.id,
@@ -459,9 +491,9 @@ pub fn oa_packs_rollback(
 pub fn oa_packs_discard_rollback(
     pack_id: String,
     version: String,
-    app_data_dir: tauri::State<'_, AppDataDir>,
+    packs_root: tauri::State<'_, PacksRoot>,
 ) -> Result<(), String> {
-    let rb_dir = rollback_root(&app_data_dir.0).join(format!("{pack_id}-{version}"));
+    let rb_dir = rollback_root(&packs_root.0).join(format!("{pack_id}-{version}"));
     std::fs::remove_dir_all(&rb_dir)
         .map_err(|e| format!("discard retained `{pack_id}` v{version}: {e}"))?;
     Ok(())
@@ -516,7 +548,7 @@ pub async fn oa_packs_install(
     // Retain any currently-installed version before we replace it — only now
     // that the new bytes are downloaded, so a failed download never strands
     // the active install (content-packs.md §8).
-    retain_installed_to_rollback(&app_data_dir.0, &dest_root, &pack_id)?;
+    retain_installed_to_rollback(&dest_root, &pack_id)?;
 
     // verify (sha256 vs entry) + manifest-vs-registry validation + atomic
     // install all happen inside the pure crate.
@@ -587,7 +619,7 @@ pub async fn oa_packs_update(
 
     // Retain the prior version before replacing it (§8), after the new bytes
     // are in hand.
-    retain_installed_to_rollback(&app_data_dir.0, &dest_root, &pack_id)?;
+    retain_installed_to_rollback(&dest_root, &pack_id)?;
 
     let result = oa_packs::install_from_local_zip(
         &download_path,
@@ -598,7 +630,7 @@ pub async fn oa_packs_update(
     .map_err(|e| format!("update `{pack_id}`: {e}"));
     let _ = std::fs::remove_file(&download_path);
     result?;
-    gc_rollbacks(&app_data_dir.0);
+    gc_rollbacks(&dest_root);
 
     log::info!("oa-packs: updated `{pack_id}` {from_version} → {}", entry.version);
     Ok(UpdateOutcome {
@@ -652,28 +684,28 @@ mod tests {
 
     #[test]
     fn retain_moves_installed_into_rollback_and_scan_finds_it() {
+        // Retention lives under the same root as the packs (same volume —
+        // see rollback_root / CP7), so this test uses one root for both.
         let root = unique_dir("retain-root");
-        let data = unique_dir("retain-data");
         let pack_dir = write_pack(&root, "editorial", "oa-ed", "1.2.0");
 
-        retain_installed_to_rollback(&data, &root, "oa-ed").unwrap();
+        retain_installed_to_rollback(&root, "oa-ed").unwrap();
 
         // The active install is gone…
         assert!(!pack_dir.exists());
         assert!(scan_installed(&root).is_empty());
-        // …and a recoverable version is parked under packs-rollback/.
-        let rb = scan_rollbacks(&data);
+        // …and a recoverable version is parked under .packs-rollback/.
+        let rb = scan_rollbacks(&root);
         assert_eq!(rb.len(), 1);
         assert_eq!(rb[0].id, "oa-ed");
         assert_eq!(rb[0].version, "1.2.0");
-        assert!(data.join("packs-rollback").join("oa-ed-1.2.0").is_dir());
+        assert!(root.join(".packs-rollback").join("oa-ed-1.2.0").is_dir());
 
         // Retaining a non-installed pack is a no-op.
-        retain_installed_to_rollback(&data, &root, "not-here").unwrap();
-        assert_eq!(scan_rollbacks(&data).len(), 1);
+        retain_installed_to_rollback(&root, "not-here").unwrap();
+        assert_eq!(scan_rollbacks(&root).len(), 1);
 
         let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&data);
     }
 
     #[test]
