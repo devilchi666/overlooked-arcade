@@ -23,14 +23,22 @@ import type { ResolvedViewTransition } from "./motion";
 /// WAAPI keyframes per preset. `none` is handled by the caller (skipped), so it
 /// has no entry. Each animates an "enter": from a displaced/transparent state
 /// to the resting identity state.
+// NOTE: presets are TRANSFORM-led, not opacity-only. Single-window mode is a
+// transparent WebView2 composited over wgpu via DWM, where animating `opacity`
+// can fail to repaint (the 12:51 log showed animate() firing with nothing
+// visible). `transform` runs on the compositor and repaints reliably. `fade`
+// keeps a faint scale so even it has a transform channel to composite on.
 const KEYFRAMES: Record<Exclude<ResolvedViewTransition["preset"], "none">, Keyframe[]> = {
-  fade: [{ opacity: 0 }, { opacity: 1 }],
+  fade: [
+    { opacity: 0, transform: "scale(0.995)" },
+    { opacity: 1, transform: "scale(1)" },
+  ],
   slide: [
-    { opacity: 0, transform: "translateY(24px)" },
+    { opacity: 0, transform: "translateY(48px)" },
     { opacity: 1, transform: "translateY(0)" },
   ],
   scale: [
-    { opacity: 0, transform: "scale(0.96)" },
+    { opacity: 0, transform: "scale(0.92)" },
     { opacity: 1, transform: "scale(1)" },
   ],
 };
