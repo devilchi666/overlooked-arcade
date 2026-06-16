@@ -100,7 +100,7 @@ implicit (`DeclarativeShell`); the loader supplies them.
 
 ## Slices — P.1 (declarative runtime themes)
 
-### P.1 S1 — on-disk format + Rust loader + discovery command `[QUEUED]`
+### P.1 S1 — on-disk format + Rust loader + discovery command `[SHIPPED 2026-06-16 — branch theme-oatheme-loader-slice-1]`
 
 - Define the `theme.toml` (+ optional `tokens.toml`/`per-system.toml`)
   schema as serde structs mirroring the TS `ThemeManifest`/`ThemeTokens`

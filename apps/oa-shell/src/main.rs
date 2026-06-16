@@ -61,6 +61,7 @@ mod system_descriptor;
 mod system_info;
 mod system_registry;
 mod system_settings;
+mod theme_loader;
 mod title_clean;
 mod title_parse;
 mod video_capture;
@@ -2781,6 +2782,7 @@ fn main() {
             packs::oa_packs_fetch_registry,
             packs::oa_packs_install,
             packs::oa_packs_update,
+            theme_loader::oa_themes_list_disk,
         ])
         .setup({
             let running = running.clone();

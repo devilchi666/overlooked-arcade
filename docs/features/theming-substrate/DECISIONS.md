@@ -1802,3 +1802,93 @@ isn't re-litigated.
 re-ask, and the answer (keep the default bundled; externalize for *community* themes;
 accept that doing so freezes the platform API into a contract + makes author-trust a
 real concern) is load-bearing for how P and ARC 3 are scoped.
+
+---
+
+## 2026-06-16 — ARC 2 "P" P.1 S1: `.oatheme` runtime loader (declarative-first)
+
+> Branch `theme-oatheme-loader-slice-1`. The four planning decisions locked
+> with the operator 2026-06-16 (PD1–PD4 in
+> [docs/PLANS/theming-oatheme-loader.md](../../PLANS/theming-oatheme-loader.md))
+> formalized here at execution. **Numbering note:** the plan reserved
+> "D44–D47" for these, but D44 was already taken by the 2026-06-15 P
+> forward-guidance entry above, so PD1–PD4 land as **D45–D48**.
+
+### D45 (= PD1) — Runtime `.oatheme` themes are declarative-only in ARC 2 (P.1); custom-JS loading is deferred (P.2)
+
+Disk-loaded themes are **data, never code** — no author-supplied JavaScript at
+runtime. A built-in generic `DeclarativeShell` (P.1 S2) renders every disk
+theme by interpreting its manifest + tokens + per-system palette. Custom-code
+shells (Retroverse-class) stay **build-time built-ins**; the scripted escape
+hatch is ARC 3 (Rhai).
+
+**Why:** sidesteps the three hard, deferred problems of loading author JS in the
+Tauri WebView — shared Solid/`@oa/platform` singletons (two Solid instances =
+broken reactivity), the CSP/import-map origin rules on dynamic `import()` off
+the asset protocol, and arbitrary-code-execution trust on a downloaded pack
+(sha256 only proves the bytes match the registry). It also matches ARC 2's own
+"fully declarative, no scripting" scope and the project's declarative-first
+philosophy. **Honest ceiling:** a declarative theme is a single-surface browse
+shell (layout primitive per view/system + palette + background + sounds + glyph
+set + settings); it cannot express Retroverse's multi-tab/detail-panel
+structure — that high ceiling stays compiled-in / ARC 3.
+
+**How applied (S1):** `theme.toml` mirrors `ThemeManifest` **minus
+`entry`/`entry_export`** — those are implicit (the loader supplies
+`DeclarativeShell`). See `apps/oa-shell/src/theme_loader.rs::DiskThemeManifest`.
+
+### D46 (= PD2) — On-disk manifest is `theme.toml`; themes live at `<exe_dir>/themes/community/<id>/`
+
+The on-disk theme definition is **TOML** (`theme.toml` + optional
+`tokens.toml` / `per-system.toml`), discovered under
+`<exe_dir>/themes/community/<id>/` — the same `<type>/community/<id>` shape the
+pack channel installs to (CP2), with `themes` as the pack `type` (CP3). A loose
+`<exe_dir>/themes/dev/<id>/` path is **reserved** for hand-dropped dev themes
+(scanned at startup; hot-reload deliberately NOT wired — swap-by-restart is the
+shipped model, so hot-reload is pure dev ergonomics, deferred until it earns its
+keep).
+
+**Why TOML:** `serde` + `toml` is already a workspace dep; theme manifests were
+sketched as TOML in the ARC 1 §6 Phase 5 plan; the format is an internal detail
+behind the loader. Manifest keys stay snake_case (matching `ThemeManifest`'s TS
+field names verbatim); token keys are camelCase (matching `ThemeTokens`) — the
+same casing split the TS contract already uses, so the parsed document maps 1:1
+onto the frontend types with no transform.
+
+**How applied (S1):** `resolve_themes_community_dir()` /
+`resolve_themes_dev_dir()` resolve the paths; `load_from_parent_dir()` walks one
+subdirectory per theme. No source-tree fallback — disk themes are an
+install-time artifact (mirrors `emulator_profiles`' recipe-pack path).
+
+### D47 (= PD3) — One built-in `DeclarativeShell` renders every declarative theme
+
+A single compiled-in shell interprets the manifest (`views` → layout primitive
+via the ARC 2 `resolveLayout`/`useResolvedLayout` machinery) + tokens +
+`ThemeBackground` + glyph set + `settings_schema`. Declarative themes ship
+**zero code**.
+
+**Why:** reuses every ARC 2 layout primitive + resolver + the S3/S5 token and
+per-system substrate + the S4 validator + the swap-by-restart registry — the
+disk theme is just new *data* feeding machinery that already exists.
+
+**Status:** the shell itself is **P.1 S2** (not in S1). S1 only parses + exposes
+the descriptor; there is no frontend consumer or rendering yet.
+
+### D48 (= PD4) — Themes distribute as the `themes` pack type; no bundled baseline
+
+Disk themes travel the oa-packs channel as a new `themes` pack `type`
+(`has_bundled_baseline: false` — built-ins are compiled in; community disk
+themes are purely additive, like editorial/CP4). A pack's `manifest.yml`
+(oa-packs identity layer) and the theme's `theme.toml` (theme-definition layer)
+coexist in the pack zip: the pack installer reads the former, the theme loader
+the latter.
+
+**Why:** install / verify / update / rollback / network-gate / Privacy-log all
+already work on the channel — `themes` rides them for free. No baseline to ship
+because the fallback floor is the *bundled* default theme (D44), not a disk one.
+
+**Status:** wiring `themes` into `default_pack_type_specs` + the Appearance
+picker is **P.1 S3**. S1's loader already discovers anything dropped at
+`<exe_dir>/themes/community/<id>/`, so a hand-placed folder works today; a
+channel-installed `themes` pack lands at the same path once S3 registers the
+type.

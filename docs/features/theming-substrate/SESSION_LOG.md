@@ -9,6 +9,44 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-16 — ARC 2 "P" P.1 S1: `.oatheme` on-disk loader + discovery command — ✅ shipped (branch, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1`. First slice of the declarative-first
+> `.oatheme` runtime loader arc ([docs/PLANS/theming-oatheme-loader.md](../../PLANS/theming-oatheme-loader.md)).
+> The Rust half only — no frontend consumer, no `DeclarativeShell`, no rendering
+> (those are S2/S3). PD1–PD4 formalized as **D45–D48** (D44 was already taken;
+> see DECISIONS note).
+
+- **Shipped:**
+  - `apps/oa-shell/src/theme_loader.rs` — serde structs mirroring the TS
+    declarative contract: `DiskThemeManifest` (mirrors `ThemeManifest` **minus
+    `entry`/`entry_export`**, snake_case keys incl. `views` + the
+    `toggle/slider/select` `settings_schema` union), `DiskThemeTokens` (mirrors
+    `ThemeTokens`, camelCase keys), `DiskPerSystem`/`SystemPalettePartial`
+    (mirrors `perSystemTokens`). `DiskThemeDescriptor` = manifest + optional
+    tokens + optional per-system palette + absolute `base_path`.
+  - Discovery: `resolve_themes_community_dir()` (`<exe_dir>/themes/community/`,
+    the CP2 `<type>/community/<id>` pack layout) + a **reserved**
+    `resolve_themes_dev_dir()` (`<exe_dir>/themes/dev/`, scanned at startup; no
+    hot-reload). `load_from_parent_dir()` walks one subdir per theme;
+    skip-on-malformed + logged, never fatal — mirrors `emulator_profiles`/`packs`.
+    A malformed *optional* sidecar drops just that layer; an all-empty
+    `tokens`/`per-system` collapses to `None`.
+  - Tauri command `oa_themes_list_disk`, registered in `main.rs`
+    (mod + invoke_handler).
+  - 9 unit tests: full manifest (views + per_system + all 3 control kinds),
+    optional sidecars, camelCase token JSON, descriptor casing
+    (basePath camel / manifest snake), skip-malformed-keep-siblings,
+    bad-sidecar-not-fatal, empty→None, missing-dir→empty, base-path resolution.
+- **Verified:** `cargo test -p oa-shell` = **872 passed** (863 prior + 9 new),
+  clean `cargo clean -p oa-shell` build first (stale-fingerprint quirk).
+- **Almost:** the on-disk format is fully parsed but nothing renders it yet.
+- **Next:** **P.1 S2 — `DeclarativeShell`**: a built-in Solid `ThemeEntry` that
+  renders one browse surface from a manifest (resolve per-view/per-system layout
+  → mount the matching primitive, paint `ThemeBackground`, honor glyph set +
+  `settings_schema`), plus a `diskThemeToPackage(desc)` mapper, dogfooded by
+  re-expressing `bare` as pure `theme.toml` + tokens.
+
 ## 2026-06-15 — ARC 2 L5: end-user per-system layout override UI ("Layout" Hub domain card) — ✅ shipped + MERGED to main (operator playtested)
 
 > Branch `feat/theming-arc2-l5-layout-picker`. The D32 user-agency headline: a
