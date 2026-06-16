@@ -273,6 +273,9 @@ fn per_type_baseline_is_modelled_not_global() {
     // (future) type defaults to no baseline — additive-safe.
     assert!(baseline_for_type(&specs, "emulator-recipes"));
     assert!(!baseline_for_type(&specs, "editorial"));
+    // Themes (PD4): no bundled baseline — built-ins are compiled in, disk
+    // themes are purely additive (like editorial).
+    assert!(!baseline_for_type(&specs, "themes"));
     assert!(!baseline_for_type(&specs, "some-future-type"));
 
     // The community install dir is the same shape regardless of type.

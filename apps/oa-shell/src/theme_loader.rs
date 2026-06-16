@@ -822,4 +822,37 @@ surfaces = ["main"]
         assert!(Path::new(&themes[0].base_path).is_absolute());
         let _ = std::fs::remove_dir_all(&parent);
     }
+
+    #[test]
+    fn shipped_sample_theme_parses() {
+        // The ready-to-copy `neon-list` sample under docs/ must round-trip
+        // through the loader so it can't drift from the schema (mirrors
+        // emulator_profiles' shipped-profile test). It's a doc artifact outside
+        // the install tree, so resolve it relative to the crate.
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("docs")
+            .join("features")
+            .join("theming-substrate")
+            .join("sample-themes");
+        let themes = load_from_parent_dir(&dir);
+        let neon = themes
+            .iter()
+            .find(|t| t.manifest.id == "neon-list")
+            .expect("neon-list sample parses");
+        assert_eq!(neon.manifest.name, "Neon List");
+        // Declares the list layout for game-browse.
+        assert_eq!(
+            neon.manifest
+                .views
+                .as_ref()
+                .and_then(|v| v.get("game-browse"))
+                .and_then(|c| c.layout.as_deref()),
+            Some("list")
+        );
+        // Both optional sidecars (tokens.toml + per-system.toml) load.
+        assert!(neon.tokens.as_ref().and_then(|t| t.accent.as_deref()).is_some());
+        assert!(neon.per_system_tokens.as_ref().and_then(|m| m.get("nes")).is_some());
+    }
 }

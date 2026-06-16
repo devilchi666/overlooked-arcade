@@ -3,10 +3,11 @@
 // on. Covers the S2 acceptance "vitest covers the manifest→primitive mapping".
 
 import { describe, it, expect } from "vitest";
-import { diskThemeToPackage, type DiskThemeDescriptor } from "./diskTheme";
+import { diskThemeToPackage, mergeDiskThemes, type DiskThemeDescriptor } from "./diskTheme";
 import DeclarativeShell from "./declarativeShell";
 import { validateTheme } from "./validate";
 import { resolveLayout } from "./layoutResolver";
+import type { ThemePackage } from "./types";
 
 /// A minimal valid on-disk descriptor (no entry/entry_export — those are
 /// implicit for a declarative theme, D45).
@@ -86,5 +87,33 @@ describe("manifest → layout primitive (what DeclarativeShell resolves)", () =>
     expect(
       resolveLayout({ themeViews: pkg.manifest.views, view: "game-browse" }),
     ).toBe("grid");
+  });
+});
+
+describe("mergeDiskThemes (S3 registry merge)", () => {
+  // A tiny stand-in built-in (we can't import themes/ from a platform/ test).
+  const builtin = {
+    manifest: { id: "retroverse", name: "Retroverse" },
+  } as unknown as ThemePackage;
+
+  it("appends disk themes after the built-ins (default stays index 0)", () => {
+    const merged = mergeDiskThemes([builtin], [descriptor({ manifest: { id: "neon" } as never })]);
+    expect(merged).toHaveLength(2);
+    expect(merged[0]).toBe(builtin);
+    expect(merged[1].manifest.id).toBe("neon");
+    expect(merged[1].entry).toBe(DeclarativeShell);
+  });
+
+  it("drops a disk theme whose id collides with a built-in (built-in wins)", () => {
+    const merged = mergeDiskThemes(
+      [builtin],
+      [descriptor({ manifest: { id: "retroverse" } as never })],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(builtin);
+  });
+
+  it("returns just the built-ins when there are no disk themes", () => {
+    expect(mergeDiskThemes([builtin], [])).toEqual([builtin]);
   });
 });

@@ -89,6 +89,8 @@ import {
   activeTheme,
   activeThemeResolved,
 } from "@oa/platform/theme/registry";
+import { mergeDiskThemes } from "@oa/platform/theme/diskTheme";
+import { listDiskThemes } from "@oa/platform/api/themesApi";
 import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
 import { ThemeProvider } from "@oa/platform/theme/host";
@@ -148,7 +150,27 @@ const App: Component = () => {
   // Seed the active theme id from LibraryPrefs (read at boot, before the
   // theme mounts). `activeThemeResolved()` gates the theme render below so we
   // paint the persisted theme on first frame rather than flashing the default.
-  onMount(() => void initActiveTheme());
+  //
+  // P.1 S3: before resolving the active id, discover on-disk `.oatheme` themes
+  // (the Rust loader) and RE-register the merged built-in + disk set. The
+  // synchronous `registerThemes(BUILTIN_THEMES)` above keeps built-ins available
+  // for any pre-mount render; this second pass adds disk themes (validated like
+  // built-ins; an invalid one is excluded) so a persisted disk-theme id resolves
+  // correctly. Discovery failure is non-fatal — built-ins stand. `initActiveTheme`
+  // runs only AFTER the merge so the boot seed sees the full valid set.
+  onMount(() => {
+    void (async () => {
+      try {
+        const disk = await listDiskThemes();
+        if (disk.length > 0) {
+          registerThemes(mergeDiskThemes(BUILTIN_THEMES, disk));
+        }
+      } catch (e) {
+        console.warn("[oa-theme] disk theme discovery failed; using built-ins only:", e);
+      }
+      await initActiveTheme();
+    })();
+  });
 
   // Fire `get_direct_launch_config` once at mount; both the library store
   // (to decide whether to bootstrap) and the resource below (to drive UI

@@ -9,6 +9,51 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-16 — ARC 2 "P" P.1 S3: disk-theme registry merge + Appearance picker + `themes` pack type — ✅ shipped (branch; **P.1 complete**, pre-merge)
+
+> Branch `theme-oatheme-loader-slice-1`. Closes P.1: on-disk `.oatheme` themes
+> are now discovered, validated, selectable, and channel-distributable end to
+> end. Operator playtested S1+S2 (Bare vs Bare-declarative render identically).
+
+- **Shipped:**
+  - `platform/theme/diskTheme.ts::mergeDiskThemes(builtins, descriptors)` — maps
+    each descriptor via `diskThemeToPackage` and appends after the built-ins;
+    built-ins WIN any id collision (the bundled default stays a guaranteed,
+    un-overridable fallback floor, D44) — shadowed disk ids are logged + skipped.
+    Pure (takes builtins as a param → stays in platform/, no themes/ import).
+  - `platform/api/themesApi.ts::listDiskThemes()` — typed bridge to the S1
+    `oa_themes_list_disk` command.
+  - `App.tsx` — approach (b): the synchronous `registerThemes(BUILTIN_THEMES)`
+    stays (flash-free first paint); a new `onMount` async pass discovers disk
+    themes, RE-registers the merged set, THEN runs `initActiveTheme` so a
+    persisted disk-theme id resolves against the full valid set. Discovery
+    failure is non-fatal (built-ins stand). The Appearance picker already renders
+    `availableThemes()`, so disk themes appear with no picker change; `validateTheme`
+    runs on them at registration, excluding invalid ones exactly like a builtin.
+  - `crates/oa-packs` — `themes` added to `default_pack_type_specs`
+    (`has_bundled_baseline: false`, PD4). Pack `type` is an open string (CP3), so
+    a `themes` pack already installs to `<exe_dir>/themes/community/<id>/` via the
+    existing pipeline → the S1 loader discovers it → it's selectable. No install-
+    path change needed; the spec seed is the declarative home + is test-covered.
+  - **Sample theme** (`docs/features/theming-substrate/sample-themes/neon-list/`)
+    — a ready-to-copy `theme.toml` + `tokens.toml` + `per-system.toml` (distinct
+    id so it isn't shadowed). Copy the folder to `<exe_dir>/themes/community/` →
+    restart → "Neon List" appears in Appearance. Guarded by a Rust test
+    (`shipped_sample_theme_parses`).
+  - Tests: `diskTheme.test.ts` +3 (mergeDiskThemes: append/dedup/empty);
+    `theme_loader.rs` +1 (sample parses).
+- **Verified:** `tsc` + `eslint` clean; `npm run test` = **160 passed**;
+  `cargo test -p oa-packs` = **14**; `cargo test -p oa-shell theme_loader` = **10**
+  (clean rebuilds first). Operator smoke for S3 pending (hand-place `neon-list` →
+  restart → select).
+- **Almost:** the dogfood's source is still the inline builtin descriptor; the
+  plan's "swap bare-declarative's source from inline to disk" is optional polish.
+- **Next:** operator playtests the `neon-list` hand-place path; on confirmation,
+  **merge `theme-oatheme-loader-slice-1` → main** (P.1 complete = the playtestable
+  milestone). Beyond P.1: P.2 (runtime custom-JS themes) stays DEFERRED; system-ui
+  asset cascade (`system-ui/` backgrounds/sounds) for disk themes is a future
+  accretion.
+
 ## 2026-06-16 — ARC 2 "P" P.1 S2: `DeclarativeShell` + `diskThemeToPackage` + `bare` dogfood — ✅ shipped (branch, pre-merge)
 
 > Branch `theme-oatheme-loader-slice-1` (P.1 continues on the one phase branch).

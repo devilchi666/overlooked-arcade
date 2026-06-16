@@ -1,0 +1,37 @@
+# Neon List — a sample on-disk `.oatheme` theme (Theming ARC 2 "P").
+#
+# This is a READY-TO-COPY example for validating the P.1 S3 disk-theme path. It
+# is NOT compiled into the build — copy the whole `neon-list/` folder to
+#   <exe_dir>/themes/community/neon-list/
+# (next to oa-shell.exe), restart, and pick "Neon List" in Settings → Appearance.
+# It renders a vertical list (like `bare`) with a neon palette + a NES accent
+# recolour, all from data — zero theme code.
+#
+# theme.toml mirrors the declarative ThemeManifest surface (snake_case keys),
+# MINUS entry/entry_export (implicit — the built-in DeclarativeShell renders it).
+
+id = "neon-list"
+name = "Neon List"
+version = "1.0.0"
+schema_version = 1
+oa_version = "^0.x"
+default_route = "library"
+routes = ["library"]
+context_slots = ["library"]
+required_engine_capabilities = []
+reserves_corner = "top-right"
+surfaces = ["main"]
+glyph_set = "xbox"
+
+# Render a vertical list (the engine default for game-browse is grid).
+[views.game-browse]
+layout = "list"
+
+# One declarative option; the engine Appearance panel renders it and the
+# DeclarativeShell honors `compactRows` (the recognized seed vocabulary).
+[[settings_schema]]
+type = "toggle"
+key = "compactRows"
+label = "Compact rows"
+hint = "Tighter list spacing"
+default = false

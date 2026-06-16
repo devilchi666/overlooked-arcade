@@ -61,3 +61,29 @@ export function diskThemeToPackage(desc: DiskThemeDescriptor): ThemePackage {
     perSystemTokens: desc.perSystemTokens,
   };
 }
+
+/// Merge discovered disk themes with the built-in set for registration
+/// (P.1 S3). Built-ins come first (so the default stays index 0) and WIN any id
+/// collision — a community disk theme cannot shadow or duplicate a built-in id
+/// (the bundled default must remain a guaranteed, un-overridable fallback floor,
+/// D44). Skipped collisions are logged. `validateTheme` still runs on the result
+/// at registration, so an invalid disk theme is excluded there, same as a
+/// built-in. Pure — takes the built-in list as a param so this stays in
+/// platform/ without importing themes/ (platform ↛ theme).
+export function mergeDiskThemes(
+  builtins: ThemePackage[],
+  descriptors: DiskThemeDescriptor[],
+): ThemePackage[] {
+  const builtinIds = new Set(builtins.map((b) => b.manifest.id));
+  const diskPackages: ThemePackage[] = [];
+  for (const desc of descriptors) {
+    if (builtinIds.has(desc.manifest.id)) {
+      console.warn(
+        `[oa-theme] disk theme "${desc.manifest.id}" shadows a built-in id; ignoring the disk copy`,
+      );
+      continue;
+    }
+    diskPackages.push(diskThemeToPackage(desc));
+  }
+  return [...builtins, ...diskPackages];
+}

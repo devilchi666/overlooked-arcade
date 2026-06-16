@@ -63,6 +63,10 @@ pub fn default_pack_type_specs() -> Vec<PackTypeSpec> {
         PackTypeSpec::new("emulator-recipes", true),
         // Editorial / DISCOVER content is empty until a pack is installed.
         PackTypeSpec::new("editorial", false),
+        // Themes (`.oatheme`, Theming ARC 2 "P" / PD4): community disk themes
+        // are additive — the built-in themes are compiled into the shell, so
+        // there is no bundled baseline beneath `community/` to override.
+        PackTypeSpec::new("themes", false),
     ]
 }
 

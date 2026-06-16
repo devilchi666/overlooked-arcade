@@ -1,0 +1,13 @@
+# Optional design-token overrides (mirrors the TS ThemeTokens — camelCase keys).
+# Injected by App's `.oa-theme-mount` wrapper as scoped CSS vars, so they restyle
+# this theme without touching engine territory (D2). Omit any key to inherit the
+# :root default.
+
+bg = "oklch(0.16 0.03 300)"
+bgDeep = "oklch(0.11 0.03 300)"
+ink = "oklch(0.96 0.02 300)"
+inkDim = "oklch(0.74 0.04 300)"
+accent = "oklch(0.78 0.18 330)"
+accentSoft = "oklch(0.92 0.06 330)"
+accentGlow = "oklch(0.78 0.18 330 / 0.3)"
+focusRing = "oklch(0.78 0.18 330)"
