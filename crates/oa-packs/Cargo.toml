@@ -1,0 +1,26 @@
+[package]
+name = "oa-packs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Pure content-pack core: schema types + sha256 verify + manifest validation +
+# install-from-local-zip. NO network, NO Tauri — those live in the shell
+# (apps/oa-shell), which reuses core_installer.rs / http_retry.rs for the
+# download half and calls into this crate to verify + install. Keeping this
+# crate I/O-light (temp dir only) is what makes the trust logic unit-testable.
+# See docs/PLANS/oa-packs-infrastructure.md (Slice 1) + content-packs.md.
+[dependencies]
+serde      = { workspace = true }
+serde_yaml = { workspace = true }
+sha2       = { workspace = true }
+zip        = { workspace = true }
+thiserror  = { workspace = true }
+log        = { workspace = true }
+
+[dev-dependencies]
+# Tests exercise registry parsing from its JSON wire format (the fetch
+# slice's responsibility at runtime; here only to prove the schema round-
+# trips + tolerates unknown future fields).
+serde_json = { workspace = true }

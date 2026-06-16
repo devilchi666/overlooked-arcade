@@ -3071,6 +3071,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "oa-packs"
+version = "0.0.1"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 1.0.69",
+ "zip",
+]
+
+[[package]]
 name = "oa-platform"
 version = "0.0.1"
 dependencies = [

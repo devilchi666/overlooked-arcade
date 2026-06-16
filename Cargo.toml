@@ -11,6 +11,7 @@ members = [
     "crates/oa-savestate",
     "crates/oa-cdrom",
     "crates/oa-libretro",
+    "crates/oa-packs",
 ]
 # Retired 2026-05-16 (pivoted to libretro dynamic loading). Source trees stay
 # in place under crates/oa-pce-sys/ + crates/oa-pce/ as a historical reference
@@ -40,6 +41,7 @@ oa-content   = { path = "crates/oa-content" }
 oa-savestate = { path = "crates/oa-savestate" }
 oa-cdrom     = { path = "crates/oa-cdrom" }
 oa-libretro  = { path = "crates/oa-libretro" }
+oa-packs     = { path = "crates/oa-packs" }
 
 # External
 tauri              = { version = "2", features = ["unstable", "protocol-asset"] }
@@ -94,6 +96,14 @@ rusqlite           = { version = "0.32", features = ["bundled", "backup"] }
 # pure-Rust readers are limited; we route those to a "convert to zip" error.
 zip                = { version = "2", default-features = false, features = ["deflate", "bzip2", "zstd"] }
 sevenz-rust        = "0.6"
+# Content-pack integrity (oa-packs crate) — sha256 verification of downloaded
+# pack zips against the registry-listed hash. Pure, no network. See
+# docs/PLANS/content-packs.md §5.
+sha2               = "0.10"
+# YAML parsing for content-pack `manifest.yml` (oa-packs). serde_yaml is
+# deprecated upstream but remains the de-facto serde YAML reader; oa-shell
+# already depends on the same 0.9 line for emulator profiles.
+serde_yaml         = "0.9"
 # Filesystem watcher for folders flagged watch_enabled — picks up newly-
 # dropped ROMs without an explicit rescan.
 notify             = { version = "8", default-features = false, features = ["macos_kqueue"] }
