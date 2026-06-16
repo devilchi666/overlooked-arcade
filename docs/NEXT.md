@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### oa-packs infrastructure — Slice 4 (Privacy panel + network log) `[ARC opened 2026-06-15]`
+### oa-packs infrastructure — Slice 5 (first consumers: emulator-recipes, editorial) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·
 **Design:** [PLANS/content-packs.md](PLANS/content-packs.md) ·
@@ -117,18 +117,28 @@ fold the External Emulator Depth recipe-update slice into this infra (CP5).
   progress bar (busy spinner only) + the §7 conflict-warning surface
   (manifest has no content-level ids yet).
 
-**Slice 4 scope (next — Privacy panel + network log, `frontend/` + small Rust):**
-- Settings → SYSTEM → Privacy category: disclose every URL OA hits + when
-  (content-packs.md §9); the allow-network master toggle relocates/mirrors
-  here (it currently lives in the Packs panel).
-- Per-call network-log ring buffer in `oa-packs`/shell state, persisted to
-  `<data_dir>/packs/network.log` (last ~100 entries), surfaced via a
-  "Show network log" view. Empty on first launch.
+- **Slice 4 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; with Slices 2+3,
+  awaiting playtest + merge):** `packs_netlog.rs` — last-100 network-call
+  audit ring at `appDataDir/packs/network.log`, logging pushed into the two
+  network helpers so every registry fetch + pack download is recorded; +2
+  commands (`get_network_log` newest-first / `clear_network_log`).
+  `engine/PrivacySettings.tsx` — new SYSTEM "Privacy" category: disclosure of
+  the only two call types (with the live registry URL), master allow-network
+  toggle (mirrors Packs panel), network-log view (ok/error chips, Clear). 12
+  Rust tests green; clippy + `tsc` + eslint clean.
 
-**Then:** Slice 5 (first consumers: `emulator-recipes` override tier on the
-bundled `config/emulators/` baseline, closing External Emulator Depth Slice 2;
-then `editorial` → DISCOVER). The §7 conflict-warning surface lands with the
-first consumer that defines content-level ids.
+**The channel is complete (Slices 1–4).** `oa-packs-slice-2` carries Slices
+2+3+4 → merge to main after playtest.
+
+**Slice 5 scope (next — first consumers, one at a time per CP3/CP5):**
+- **`emulator-recipes` pack type:** the override tier loads on top of the
+  bundled `config/emulators/` baseline (CP4) — recipe loader reads
+  `community/<pack>/` over the shipped baseline, last wins. Closes External
+  Emulator Depth Slice 2 (ED2 — "update recipes without an OA rebuild").
+- **`editorial` pack type:** OA Editorial Baseline → DISCOVER (content-packs.md
+  §10), zero-builtin (CP4).
+- The §7 conflict-warning surface lands here — the first consumer to define
+  content-level ids is what makes cross-pack collisions detectable.
 
 **Reuse note (still applies):** `apps/oa-shell/src/core_installer.rs` is the
 richer download cousin (job rows, resume, progress events) — graft its

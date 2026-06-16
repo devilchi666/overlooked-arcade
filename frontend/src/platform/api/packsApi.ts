@@ -141,6 +141,30 @@ export function update(packId: string): Promise<UpdateOutcome> {
   return invoke<UpdateOutcome>("oa_packs_update", { packId });
 }
 
+// --- Network audit log (local) ------------------------------------------
+
+/// One logged network call (content-packs.md §9). Newest-first from
+/// `getNetworkLog`.
+export type NetLogEntry = {
+  at?: string;
+  /// `registry` | `install:<id>` | `update:<id>`.
+  action: string;
+  url: string;
+  /// `ok` | `error`.
+  outcome: string;
+  detail?: string;
+};
+
+/// The per-call network audit trail, newest first. Local (no network).
+export function getNetworkLog(): Promise<NetLogEntry[]> {
+  return invoke<NetLogEntry[]>("oa_packs_get_network_log");
+}
+
+/// Erase the network audit log. Local.
+export function clearNetworkLog(): Promise<void> {
+  return invoke("oa_packs_clear_network_log");
+}
+
 /// True if `err` is the synchronous network-disabled refusal from any gated
 /// command — lets a panel route the operator to the network toggle instead
 /// of showing a raw error.

@@ -44,6 +44,7 @@ mod media;
 mod metadata;
 mod normalize;
 mod packs;
+mod packs_netlog;
 mod packs_prefs;
 mod patch;
 mod platform_media;
@@ -2770,6 +2771,8 @@ fn main() {
             packs::oa_packs_list_rollbacks,
             packs::oa_packs_rollback,
             packs::oa_packs_discard_rollback,
+            packs::oa_packs_get_network_log,
+            packs::oa_packs_clear_network_log,
             packs::oa_packs_fetch_registry,
             packs::oa_packs_install,
             packs::oa_packs_update,

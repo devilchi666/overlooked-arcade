@@ -264,16 +264,30 @@ fn build_client() -> Result<reqwest::Client, String> {
 }
 
 /// Fetch + parse the registry from `prefs.registry_url`. Network-gated by
-/// the caller. Shared by the fetch command and install/update.
+/// the caller. Shared by the fetch command and install/update. Records the
+/// call to the network log (content-packs.md §9) — every registry hit is
+/// audited, whichever command triggered it.
 async fn fetch_registry_inner(
     client: &reqwest::Client,
     prefs: &PacksPrefs,
+    data_dir: &Path,
 ) -> Result<oa_packs::Registry, String> {
-    let body = crate::http_retry::get_text_with_retry(client, &prefs.registry_url, USER_AGENT)
-        .await?
-        .ok_or_else(|| format!("registry not found (404) at {}", prefs.registry_url))?;
-    serde_json::from_str::<oa_packs::Registry>(&body)
-        .map_err(|e| format!("parse registry.json: {e}"))
+    let result: Result<oa_packs::Registry, String> = async {
+        let body = crate::http_retry::get_text_with_retry(client, &prefs.registry_url, USER_AGENT)
+            .await?
+            .ok_or_else(|| format!("registry not found (404) at {}", prefs.registry_url))?;
+        serde_json::from_str::<oa_packs::Registry>(&body)
+            .map_err(|e| format!("parse registry.json: {e}"))
+    }
+    .await;
+    crate::packs_netlog::record(
+        data_dir,
+        "registry",
+        &prefs.registry_url,
+        if result.is_ok() { "ok" } else { "error" },
+        result.as_ref().err().cloned(),
+    );
+    result
 }
 
 fn find_entry<'a>(
@@ -290,24 +304,39 @@ fn find_entry<'a>(
 /// Download `url` to `dest` (full-buffer; packs are small — tens of MB).
 /// Reuses the one-retry `http_retry` helper. The bytes are verified by
 /// `oa_packs::install_from_local_zip` against the registry sha256 *after*
-/// this returns, so a corrupt/short download is caught downstream.
+/// this returns, so a corrupt/short download is caught downstream. Records
+/// the call to the network log under `action` (content-packs.md §9).
 async fn download_to_file(
     client: &reqwest::Client,
     url: &str,
     dest: &Path,
+    data_dir: &Path,
+    action: &str,
 ) -> Result<(), String> {
-    let resp = crate::http_retry::get_with_retry(client, url, USER_AGENT)
-        .await?
-        .ok_or_else(|| format!("pack zip not found (404) at {url}"))?;
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("read pack body {url}: {e}"))?;
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create download dir: {e}"))?;
+    let result: Result<(), String> = async {
+        let resp = crate::http_retry::get_with_retry(client, url, USER_AGENT)
+            .await?
+            .ok_or_else(|| format!("pack zip not found (404) at {url}"))?;
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("read pack body {url}: {e}"))?;
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("create download dir: {e}"))?;
+        }
+        std::fs::write(dest, &bytes)
+            .map_err(|e| format!("write pack zip {}: {e}", dest.display()))?;
+        Ok(())
     }
-    std::fs::write(dest, &bytes).map_err(|e| format!("write pack zip {}: {e}", dest.display()))?;
-    Ok(())
+    .await;
+    crate::packs_netlog::record(
+        data_dir,
+        action,
+        url,
+        if result.is_ok() { "ok" } else { "error" },
+        result.as_ref().err().cloned(),
+    );
+    result
 }
 
 /// The running OA version, for `oa-packs`' `min_oa_version` gate. Sourced
@@ -499,6 +528,25 @@ pub fn oa_packs_discard_rollback(
     Ok(())
 }
 
+/// The network-call audit log, newest entry first (content-packs.md §9).
+/// Local — reads the persisted ring. The Privacy panel's "Show network log".
+#[tauri::command]
+pub fn oa_packs_get_network_log(
+    app_data_dir: tauri::State<'_, AppDataDir>,
+) -> Vec<crate::packs_netlog::NetLogEntry> {
+    let mut entries = crate::packs_netlog::read_log(&app_data_dir.0);
+    entries.reverse(); // persisted oldest-first; surface newest-first
+    entries
+}
+
+/// Erase the network-call audit log. Local.
+#[tauri::command]
+pub fn oa_packs_clear_network_log(
+    app_data_dir: tauri::State<'_, AppDataDir>,
+) -> Result<(), String> {
+    crate::packs_netlog::clear(&app_data_dir.0).map_err(|e| format!("clear network log: {e}"))
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands — network (all gated)
 // ---------------------------------------------------------------------------
@@ -511,7 +559,7 @@ pub async fn oa_packs_fetch_registry(
     let prefs = read_packs_prefs(&app_data_dir.0);
     ensure_network_allowed(&prefs)?;
     let client = build_client()?;
-    let registry = fetch_registry_inner(&client, &prefs).await?;
+    let registry = fetch_registry_inner(&client, &prefs, &app_data_dir.0).await?;
 
     // Best-effort: record when we last successfully checked. A write
     // failure here doesn't fail the fetch — the registry is already in hand.
@@ -534,7 +582,7 @@ pub async fn oa_packs_install(
     let prefs = read_packs_prefs(&app_data_dir.0);
     ensure_network_allowed(&prefs)?;
     let client = build_client()?;
-    let registry = fetch_registry_inner(&client, &prefs).await?;
+    let registry = fetch_registry_inner(&client, &prefs, &app_data_dir.0).await?;
     let entry = find_entry(&registry, &pack_id)?.clone();
 
     let dest_root = packs_root.0.clone();
@@ -543,7 +591,14 @@ pub async fn oa_packs_install(
         .join("packs")
         .join(".download")
         .join(format!("{pack_id}.zip"));
-    download_to_file(&client, &entry.url, &download_path).await?;
+    download_to_file(
+        &client,
+        &entry.url,
+        &download_path,
+        &app_data_dir.0,
+        &format!("install:{pack_id}"),
+    )
+    .await?;
 
     // Retain any currently-installed version before we replace it — only now
     // that the new bytes are downloaded, so a failed download never strands
@@ -594,7 +649,7 @@ pub async fn oa_packs_update(
     let from_version = current.version.clone();
 
     let client = build_client()?;
-    let registry = fetch_registry_inner(&client, &prefs).await?;
+    let registry = fetch_registry_inner(&client, &prefs, &app_data_dir.0).await?;
     let entry = find_entry(&registry, &pack_id)?.clone();
 
     // Only download when the registry is strictly newer than what's on disk.
@@ -615,7 +670,14 @@ pub async fn oa_packs_update(
         .join("packs")
         .join(".download")
         .join(format!("{pack_id}.zip"));
-    download_to_file(&client, &entry.url, &download_path).await?;
+    download_to_file(
+        &client,
+        &entry.url,
+        &download_path,
+        &app_data_dir.0,
+        &format!("update:{pack_id}"),
+    )
+    .await?;
 
     // Retain the prior version before replacing it (§8), after the new bytes
     // are in hand.

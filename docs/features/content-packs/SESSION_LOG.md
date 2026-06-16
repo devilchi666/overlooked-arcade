@@ -4,6 +4,38 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
 
 ---
 
+## 2026-06-16 — Slice 4: Privacy panel + network-call audit log
+
+- **Shipped (on `oa-packs-slice-2`, with Slices 2+3):** **Rust** — new
+  `packs_netlog.rs`: a bounded ring (last 100) of every network call,
+  persisted as a JSON array at `appDataDir/packs/network.log`, best-effort
+  (a write failure never breaks an install). Logging is pushed into the two
+  network helpers (`fetch_registry_inner`, `download_to_file`) so *every*
+  registry fetch + pack download is audited with action / url / outcome /
+  error-detail, whichever command triggered it (actions: `registry`,
+  `install:<id>`, `update:<id>`). +2 commands `oa_packs_get_network_log`
+  (newest-first) / `oa_packs_clear_network_log`. **Frontend** —
+  `engine/PrivacySettings.tsx` wired as a new SYSTEM category "Privacy" (🛡):
+  the "OA never contacts a server unless you ask / no telemetry" disclosure,
+  an explicit list of the only two call types with the actual configured
+  registry URL shown, the master allow-network toggle (mirrors the Packs
+  panel — same pref), and the network-log view (newest-first, ok/error
+  chips, Refresh + Clear). packsApi.ts gained `NetLogEntry` + the two
+  wrappers. 12 Rust tests green (added 3 netlog: empty / round-trip+clear /
+  ring-trims-to-100); clippy clean; frontend `tsc` + eslint clean.
+- **Almost:** Federation (operator-added custom registries) still deferred
+  (content-packs.md §11); the disclosure copy assumes the single OA registry.
+  Log writes aren't serialized against concurrent installs — acceptable for
+  an audit trail (documented in `packs_netlog.rs`).
+- **Next:** Slices 2+3+4 are a complete, self-contained channel — merge
+  `oa-packs-slice-2` to main after playtest. Then Slice 5, the first
+  consumers: `emulator-recipes` override tier on the bundled
+  `config/emulators/` baseline (closes External Emulator Depth Slice 2),
+  then `editorial` → DISCOVER. The §7 conflict-warning surface lands with
+  the first consumer that defines content-level ids.
+
+---
+
 ## 2026-06-16 — Slice 3: Settings → Content → Packs panel + lifecycle + rollback retention
 
 - **Shipped (on `oa-packs-slice-2`, bundling Slices 2+3 as one playtestable

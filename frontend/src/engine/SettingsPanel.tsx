@@ -43,6 +43,7 @@ import OrganizeLanding from "./OrganizeLanding";
 import ImportSetupLanding from "./ImportSetupLanding";
 import ExternalEmulatorsLanding from "./ExternalEmulatorsLanding";
 import PacksSettings from "./PacksSettings";
+import PrivacySettings from "./PrivacySettings";
 import { usePlatform } from "@oa/platform/platformContext";
 
 type CategoryGroup = "oa-wide" | "content" | "system";
@@ -65,6 +66,7 @@ type CategoryId =
   | "external-emulators"
   | "packs"
   | "system-health"
+  | "privacy"
   | "profile"
   | "about";
 
@@ -230,6 +232,15 @@ const CATEGORIES: readonly CategoryDef[] = [
     description: "Operational status of your OA install.",
     helpText:
       "Status rollup of Cores / BIOS / Readiness / Background jobs / Storage in one place. Internal tabs hold the deep-dive editors for each — the categories that used to live in the sidebar (BIOS / Cores / Storage / Background Jobs) all live here now.",
+  },
+  {
+    id: "privacy",
+    group: "system",
+    label: "Privacy",
+    glyph: "🛡",
+    description: "What OA sends, and when. Spoiler: nothing unless you ask.",
+    helpText:
+      "Full disclosure of every network call OA makes — only registry browse + pack download, both operator-initiated. Hosts the master Allow-network toggle and a per-call audit log. No telemetry, no analytics, no operator ID ever leaves your machine.",
   },
   {
     id: "profile",
@@ -437,6 +448,9 @@ const SettingsPanel: Component<Props> = (props) => {
           </Match>
           <Match when={activeCategoryId() === "system-health"}>
             <SystemHealthPage />
+          </Match>
+          <Match when={activeCategoryId() === "privacy"}>
+            <PrivacySettings />
           </Match>
           <Match when={activeCategoryId() === "profile"}>
             <ProfileSettings settings={ctx.settings} />
