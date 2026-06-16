@@ -36,7 +36,7 @@ layout = "list"
 # interruptibly, and downgrades to a short fade under prefers-reduced-motion.
 [motion.view_transition]
 preset = "slide"
-duration = "300ms"
+duration = "600ms"
 
 # One declarative option; the engine Appearance panel renders it and the
 # DeclarativeShell honors `compactRows` (the recognized seed vocabulary).

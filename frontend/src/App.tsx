@@ -90,7 +90,6 @@ import {
   activeThemeResolved,
 } from "@oa/platform/theme/registry";
 import { mergeDiskThemes } from "@oa/platform/theme/diskTheme";
-import DeclarativeShell from "@oa/platform/theme/declarativeShell";
 import { listDiskThemes } from "@oa/platform/api/themesApi";
 import { themeTokensToCssVars, themeMotionTokensCss } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
@@ -405,16 +404,6 @@ const App: Component = () => {
   // Theme content (Retroverse ships the pilots; CoverFlow/bare ship none →
   // BASELINE_UI). Mirrors the perSystemTokens / per_system_ui bridges.
   createEffect(() => setThemeSystemUiConfigs(activeTheme()?.perSystemUiConfigs));
-
-  // [oa-theme-motion] diagnostic — which theme is ACTUALLY active (vs. what the
-  // picker shows). If this logs id=retroverse while the operator believes they
-  // picked Neon List, the selection didn't take / fell back — and the
-  // DeclarativeShell (where M1 motion lives) never mounts.
-  createEffect(() => {
-    console.log(
-      `[oa-theme-motion] App active theme id=${activeTheme()?.manifest.id ?? "?"} resolved=${activeThemeResolved()} entryIsDeclarative=${activeTheme()?.entry === DeclarativeShell}`,
-    );
-  });
 
   // Legacy "Start button → open menu bar" handler removed alongside
   // the legacy Shell on 2026-05-31. RetroverseShell has no menu bar;

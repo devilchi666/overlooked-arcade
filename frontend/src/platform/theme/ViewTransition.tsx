@@ -48,20 +48,15 @@ export default function ViewTransition(props: ViewTransitionProps): JSX.Element 
   let primed = false;
 
   createEffect(() => {
-    const key = props.trigger(); // track — re-run on every view change
+    props.trigger(); // track — re-run on every view change
     const t = props.transition();
     const node = el;
     if (!primed) {
+      // Establish the baseline at rest; don't animate the initial mount.
       primed = true;
-      console.log(`[oa-theme-motion] ViewTransition primed (no play on mount) key=${String(key)}`);
       return;
     }
-    const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
-    // [oa-theme-motion] diagnostic — one line per (re)play, lands in oa-current.log.
-    console.log(
-      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} ease=${t.easing} -> ${skip || "CSS-ANIMATE"}`,
-    );
-    if (!node || skip || t.preset === "none") return;
+    if (!node || t.preset === "none" || t.durationMs <= 0) return;
     const keyframe = KEYFRAME_NAME[t.preset];
     // Restart the CSS animation: clear it, force a reflow so the browser sees a
     // genuine change, then re-apply. `both` holds the first frame before start

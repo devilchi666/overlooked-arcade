@@ -31,32 +31,53 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     (`theme_loader.rs`: `ThemeMotion` / `ViewTransitionConfig` structs) so a
     `theme.toml` `[motion.view_transition]` table reaches the frontend (D52).
   - **Resolver + primitive:** `motion.ts` — `resolveViewTransition(motion,
-    reducedMotion)` (pure; reduced-motion → short fade @120 ms, never a hard cut,
-    per the boot-anim a11y guidance) + `parseDurationMs` + `usePrefersReducedMotion`
-    (live matchMedia signal). `ViewTransition.tsx` — WAAPI primitive that plays
-    the enter keyframes on trigger change; **interruptible** (cancel-and-restart,
-    children always live → never blocks view switching, the BigBox bug). Degrades
-    to no-op where `element.animate` is absent (jsdom).
+    reducedMotion)` (pure; reduced-motion → short fade @120 ms) + `parseDurationMs`
+    + `usePrefersReducedMotion`. `ViewTransition.tsx` — **CSS-animation** primitive:
+    it sets the inline `animation` shorthand (theme duration/easing) naming a
+    keyframe from `index.css` (`oa-vt-fade|slide|scale`), restarted via the
+    standard clear-reflow-reapply (interruptible; children always live → never
+    blocks browsing). Skips its initial (mount) run so only a real trigger change
+    plays.
   - **DeclarativeShell** wraps the browse content in `<ViewTransition>` keyed on
-    `${layout}|${hasGames}` — the resolved layout primitive (the M2 per-system
-    axis) **plus content-readiness**. The library async-loads, so the surface
-    mounts with `games()` empty; without the `hasGames` axis the one play burns
-    on the "No games yet" placeholder and the real list appears motionless (the
-    initial "I see nothing" report). Keying on it animates the list IN when it
-    populates a beat after boot — the browse view entering once its data is ready.
-  - **Dogfood:** `neon-list` (disk) declares `slide`; `bare-declarative` (built-in)
-    declares `fade` + motion-token overrides.
+    `${layout}|${entered}` — `entered` flips once ~350 ms after mount (past the
+    window-present settle) → exactly ONE clean entrance play when the shell is
+    actually on-screen.
+  - **Dogfood:** `neon-list` (disk) declares `slide` (600 ms); `bare-declarative`
+    (built-in) declares `fade` (450 ms) + motion-token overrides.
+  - **⚠️ HARD-WON FINDINGS (read before M2) — debugged live against the operator's
+    transparent single-window build:**
+    1. **The Web Animations API does NOT visually composite in single-window
+       mode.** That shell is a transparent WebView2 composited over wgpu by DWM;
+       `element.animate()` fires (we confirmed `-> ANIMATE` in the log) but never
+       recomposites the transparent surface → invisible. **Use CSS animations**
+       (the `oa-vt-*` keyframes), which go through the normal paint pipeline DWM
+       recomposites — same as the working boot-fade / focus cards. M2/M3 motion
+       must stay CSS, not WAAPI.
+    2. **A mount-time play is unseen** — the OS window is presented AFTER the
+       WebView's first paint, so anything that plays at mount finishes before the
+       operator sees the shell. Hence the deferred `entered` flip. Multi-trigger
+       replays (mount + timer + window-focus + visibilitychange) stacked into a
+       **strobe** — one deferred play is the fix. (Bare `window` focus events also
+       proved unreliable in this WebView; `visibilitychange` worked but was
+       dropped with the rest.)
+    3. **The reduced-motion short-fade in the resolver is mostly moot** — the
+       global `* { animation-duration: 0.01ms !important }` reduced-motion reset
+       (index.css) wins over our inline `animation`, so view transitions go ~instant
+       under reduced motion regardless. Acceptable a11y floor; the resolver branch
+       is kept for correctness but the CSS reset is the actual gate.
 - **Verified:** `npm run typecheck` + `npm run lint` green; `vitest run` =
   **179 passed** (new `motion.test.ts` 9 + validate motion cases + dogfood);
-  `cargo test -p oa-shell theme_loader` = **10 passed** (full-theme + shipped
-  neon-list motion assertions). Not yet operator-playtested.
-- **Almost:** nothing — slice is contract + consumer + dogfood complete.
+  `cargo test -p oa-shell theme_loader` = **10 passed**. **Operator-confirmed
+  visible** on the transparent single-window build (after the WAAPI→CSS fix +
+  single-entrance + slowed durations).
+- **Almost:** nothing — slice is contract + consumer + dogfood complete + playtested.
 - **Next:** **M2** — view/route transition presets with per-view/per-system
   selection (the `ViewTransition` trigger keys on a per-system-varying layout, so
-  the transition fires on each layout change, not just enter); then M3 (parallax
-  + keyframe model + preset gallery). Disk motion-token sidecar support (motion
-  keys in `tokens.toml`) is a natural M2 accretion — the contract + `motionTokens`
-  field exist; only the Rust `tokens.toml` parse half is deferred.
+  the transition fires on each layout change, not just the entrance). **Keep CSS,
+  not WAAPI** (finding #1). Then M3 (parallax + keyframe model + preset gallery).
+  Disk motion-token sidecar support (motion keys in `tokens.toml`) is a natural
+  M2 accretion — the contract + `motionTokens` field exist; only the Rust
+  `tokens.toml` parse half is deferred.
 
 ---
 

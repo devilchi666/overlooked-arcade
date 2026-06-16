@@ -42,7 +42,7 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
     // DeclarativeShell plays it on a view change, interruptibly; reduced-motion
     // downgrades it to a short fade. Proves the manifest motion field → resolver
     // → ViewTransition path end-to-end with zero theme code.
-    motion: { view_transition: { preset: "fade", duration: "200ms" } },
+    motion: { view_transition: { preset: "fade", duration: "450ms" } },
     // Declared appearance option; the engine Appearance panel renders it and the
     // DeclarativeShell honors it (recognized `compactRows` → list density).
     settings_schema: [

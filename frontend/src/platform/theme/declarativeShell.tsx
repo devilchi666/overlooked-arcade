@@ -30,7 +30,7 @@
 // stays compiled-in (Retroverse) / ARC 3 (scripted). Documenting the floor is
 // the point ("low floor, high ceiling").
 
-import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
@@ -58,10 +58,6 @@ const RECOGNIZED_SETTINGS = {
 } as const;
 
 const DeclarativeShell: ThemeEntry = () => {
-  // [oa-theme-motion] unconditional mount marker — if this never appears in the
-  // log, the DeclarativeShell isn't being mounted (a non-declarative theme is
-  // active), which is the prerequisite for any M1 motion.
-  console.log("[oa-theme-motion] DeclarativeShell MOUNTED");
   const platform = usePlatform();
   const host = useTheme();
   const settings = useThemeSettings();
@@ -133,18 +129,6 @@ const DeclarativeShell: ThemeEntry = () => {
   // layout primitive (the per-view/per-system axis M2 varies at runtime) gated
   // by `entered` so the FIRST play is the deferred, on-screen entrance.
   const viewKey = createMemo(() => `${layout()}|${entered()}`);
-
-  // [oa-theme-motion] diagnostic — confirms the DeclarativeShell mounted (i.e. a
-  // DECLARATIVE theme is active; Retroverse's compiled shell would NOT log this)
-  // and shows whether the active theme's motion data arrived + how it resolved.
-  createEffect(() => {
-    const t = activeTheme();
-    console.log(
-      `[oa-theme-motion] shell theme=${t?.manifest.id ?? "?"} motion=${JSON.stringify(
-        t?.manifest.motion ?? null,
-      )} resolved=${JSON.stringify(viewTransition())} reducedMotion=${reducedMotion()} games=${games().length}`,
-    );
-  });
 
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
