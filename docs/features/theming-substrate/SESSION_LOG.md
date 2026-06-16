@@ -38,8 +38,12 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     children always live → never blocks view switching, the BigBox bug). Degrades
     to no-op where `element.animate` is absent (jsdom).
   - **DeclarativeShell** wraps the browse content in `<ViewTransition>` keyed on
-    the resolved layout primitive (the M2 per-system axis); plays the declared
-    transition on the surface's enter / view change.
+    `${layout}|${hasGames}` — the resolved layout primitive (the M2 per-system
+    axis) **plus content-readiness**. The library async-loads, so the surface
+    mounts with `games()` empty; without the `hasGames` axis the one play burns
+    on the "No games yet" placeholder and the real list appears motionless (the
+    initial "I see nothing" report). Keying on it animates the list IN when it
+    populates a beat after boot — the browse view entering once its data is ready.
   - **Dogfood:** `neon-list` (disk) declares `slide`; `bare-declarative` (built-in)
     declares `fade` + motion-token overrides.
 - **Verified:** `npm run typecheck` + `npm run lint` green; `vitest run` =

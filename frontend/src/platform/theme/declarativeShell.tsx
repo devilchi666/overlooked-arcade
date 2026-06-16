@@ -102,16 +102,25 @@ const DeclarativeShell: ThemeEntry = () => {
 
   // Declarative motion (ARC 3 M1 / D52): resolve the active theme's declared
   // view transition + the live reduced-motion preference into the transition
-  // the browse surface plays. Keyed on the resolved layout primitive — the
-  // "view content" axis (M2 varies it per-system, so the transition fires on
-  // each layout change; in this flat M1 browse it plays on the surface's enter,
-  // e.g. when this theme is activated). Reduced-motion downgrades to a short
-  // fade inside the resolver. The transition is purely visual + interruptible —
-  // it never gates browsing (see ViewTransition).
+  // the browse surface plays. Reduced-motion downgrades to a short fade inside
+  // the resolver. The transition is purely visual + interruptible — it never
+  // gates browsing (see ViewTransition).
   const reducedMotion = usePrefersReducedMotion();
   const viewTransition = createMemo(() =>
     resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
   );
+
+  // The transition's trigger — what counts as a "view change" for the browse
+  // surface to (re)play on. Two axes in M1:
+  //   • the resolved layout primitive — the per-view/per-system axis M2 will
+  //     vary at runtime;
+  //   • content-readiness — the library async-loads, so the surface mounts with
+  //     `games()` still empty (the "No games yet" placeholder). Keying on
+  //     `hasGames` too means the REAL list animates IN when it populates a beat
+  //     after boot — without it the one play burns on the empty placeholder and
+  //     the list appears motionless (the "I see nothing" bug). This is the
+  //     browse view ENTERING once its data is ready.
+  const viewKey = createMemo(() => `${layout()}|${games().length > 0}`);
 
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
@@ -194,7 +203,7 @@ const DeclarativeShell: ThemeEntry = () => {
 
       <ViewTransition
         class="relative z-10 min-h-0 flex-1"
-        trigger={layout}
+        trigger={viewKey}
         transition={viewTransition}
       >
         <Show
