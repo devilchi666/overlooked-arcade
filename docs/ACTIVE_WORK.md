@@ -485,10 +485,15 @@ spanned every system but was filed under whichever core happened to be active.
         "Copy from theme…" + "Set for all themes" convenience buttons (PARKING_LOT
         2026-06-15). **L6 (per-system character in Retroverse — pilot a console
         end-to-end; renamed from "re-home Stage 2/3") ⏸ PARKED 2026-06-15** (operator;
-        bigger priorities first — machinery is done + stable, so it can wait). **P**
-        (`.oatheme` runtime loader) remains the last ARC-2/ARC-1 thread; pick it up
-        independently when scheduled. ARC 2 is effectively at a rest point — see
-        NEXT.md HIGH band for the bigger arcs.
+        bigger priorities first — machinery is done + stable, so it can wait). **P
+        (`.oatheme` runtime loader) — PLANNED declarative-first 2026-06-16
+        (direction A locked); plan [PLANS/theming-oatheme-loader.md](PLANS/theming-oatheme-loader.md),
+        P.1 Slice 1 queued in [NEXT.md](NEXT.md) HIGH band.** Runtime themes are
+        data-only (no author JS, PD1): a built-in `DeclarativeShell` renders
+        `theme.toml`+tokens+assets via the ARC 2 primitives; themes distribute as
+        the `themes` pack type on the content-pack channel shipped 2026-06-16
+        (PD2–PD4). Custom-JS runtime loading + CSP allowlist deferred to P.2 (tees
+        up ARC 3 Rhai). ARC 2 is otherwise at a rest point — see NEXT.md HIGH band.
         **L1 (D33 consumption opt-in) ✅ MERGED to main, operator playtested**
         (DECISIONS **D36**): per-theme `per_system_ui?:
         {tiles?,sfx?}` manifest opt-in, App-bridged into the `LibraryTile`/grid/SFX
