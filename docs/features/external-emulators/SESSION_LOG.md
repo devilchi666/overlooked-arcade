@@ -32,8 +32,19 @@ Branch `feat/external-emulator-depth`.
     names ≥1 platform; on Windows every profile resolves a name; ares +
     bizhawk must be present) + 2 new tests for the per-OS map shape.
     `cargo test -p oa-shell` green (848 passed).
+  - **`accepts_archives` recipe field (playtest follow-up).** First BizHawk
+    playtest failed: every `coleco` launch hit the external path's
+    archived-content gate (`main.rs::launch_rom_external`) — a pre-existing
+    VL Phase C2 limitation, not new to this slice — because the ROMs are
+    `.zip`. BizHawk + ares both load archives natively, so added a
+    declarative `accepts_archives: bool` (default false, ED2-aligned): when
+    set, the external path hands the **outer archive path** to the emulator
+    instead of erroring (it auto-loads the inner ROM). Set true on
+    `ares.yaml` + `bizhawk.yaml`. Other profiles stay false (safe). New
+    test `archive_capable_profiles_opt_in` + default-false assertion.
 - **Almost:** MAME standalone profile — **deferred** (see Next). Operator
-  playtest of an ares/BizHawk launch from a real tile still pending.
+  re-playtest of an ares/BizHawk launch from a real (archived) tile now
+  unblocked — pending confirmation EmuHawk boots the game.
 - **Next:**
   - **Operator smoke test** — point OA at a real ares/BizHawk install and
     launch a game from a normal tile (Slice 1 demoable acceptance).

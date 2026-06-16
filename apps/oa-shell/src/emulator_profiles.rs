@@ -127,6 +127,15 @@ pub struct EmulatorProfile {
     /// it lands when a real ambiguous case surfaces, so the schema can
     /// accrete it additively rather than be reshaped.
     pub launch_args_template: Vec<String>,
+    /// Whether this emulator loads archive files (`.zip`/`.7z`) directly,
+    /// without OA extracting them first. When `true`, an archived game
+    /// launches by handing the **outer archive path** to the emulator (it
+    /// picks/auto-loads the inner ROM itself — BizHawk and ares both do).
+    /// When `false` (default), archived content is rejected on the
+    /// external path, since OA does not yet extract-for-external
+    /// (the in-process libretro path still extracts as before).
+    #[serde(default)]
+    pub accepts_archives: bool,
     /// What the external session supports of OA's QuickSettings
     /// surface. Omitted flags fail closed (all-false `Default`).
     #[serde(default)]
@@ -521,6 +530,30 @@ launch_args_template: ["{content}"]
         assert_eq!(p.capabilities, LauncherCapabilities::none());
         assert_eq!(p.binary_path, None);
         assert_eq!(p.vendor, "");
+        // accepts_archives defaults false — an emulator must opt in before
+        // OA hands it an archive instead of an extracted ROM.
+        assert!(!p.accepts_archives);
+    }
+
+    #[test]
+    fn archive_capable_profiles_opt_in() {
+        // The two emulators that load archives natively must declare it,
+        // or the external launch path will reject archived games (the
+        // operator's first BizHawk playtest hit exactly this).
+        let dir = resolve_config_emulators_dir().expect("config/emulators resolves in-tree");
+        let profiles = EmulatorProfiles::load_from_dir(&dir);
+        for id in ["ares", "bizhawk"] {
+            assert!(
+                profiles.get(id).expect("profile loads").accepts_archives,
+                "{id} must set accepts_archives: true (it opens archives natively)"
+            );
+        }
+        // The dedicated single-system emulators don't claim archive support
+        // here — left false until each is verified.
+        assert!(
+            !profiles.get("dolphin").expect("dolphin loads").accepts_archives,
+            "dolphin not opted into archive passthrough"
+        );
     }
 
     #[test]

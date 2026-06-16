@@ -49,6 +49,9 @@ supported_systems:
 - tg16
 - virtualboy
 - wonderswan
+# ares opens .zip/.7z archives directly, so OA hands it the outer archive
+# path and ares auto-loads the inner ROM -- no extraction needed.
+accepts_archives: true
 # Path is positional. ares boots the game and exits when its window
 # closes (single-window app) -- ties play time to process lifetime (D3).
 launch_args_template:

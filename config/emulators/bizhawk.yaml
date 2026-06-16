@@ -50,6 +50,10 @@ supported_systems:
 - tg16
 - virtualboy
 - wonderswan
+# BizHawk opens .zip/.7z archives directly, so OA hands it the outer
+# archive path and EmuHawk auto-loads the inner ROM (or shows its own
+# picker for a multi-ROM archive) -- no extraction needed.
+accepts_archives: true
 # Path is positional. EmuHawk boots the game and exits when its window
 # closes -- ties play time to process lifetime (D3).
 launch_args_template:

@@ -12207,14 +12207,26 @@ fn launch_rom_external(
         )
     })?;
     if archive_inner_path.is_some() {
-        // The libretro path extracts archives because OA controls the
-        // load; teaching the external path the same trick (plus temp
-        // cleanup tied to process exit) is Phase C3+ territory.
-        return Err(format!(
-            "archived games can't launch through {} yet — extract the archive or clear the \
-             per-system default launcher",
-            profile.display_name
-        ));
+        if profile.accepts_archives {
+            // Emulator opens archives itself (BizHawk, ares) — hand it the
+            // OUTER archive path (`path`); it auto-loads the inner ROM (or
+            // shows its own picker for multi-ROM archives). No extraction,
+            // no temp dir to clean up on exit.
+            log::info!(
+                "oa-shell: external launch [{profile_id}] archive passthrough — {} opens {} directly",
+                profile.display_name,
+                path
+            );
+        } else {
+            // OA does not yet extract-for-external (temp cleanup tied to
+            // process exit is Phase C3+ territory), and this emulator
+            // can't take an archive itself.
+            return Err(format!(
+                "archived games can't launch through {} yet — extract the archive or clear the \
+                 per-system default launcher",
+                profile.display_name
+            ));
+        }
     }
     let binary = emulator_profiles::effective_binary_path(profile, &state.app_data_dir)
         .ok_or_else(|| {
