@@ -3135,6 +3135,7 @@ dependencies = [
  "oa-core",
  "oa-input",
  "oa-libretro",
+ "oa-packs",
  "oa-platform",
  "oa-render",
  "oa-savestate",

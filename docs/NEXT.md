@@ -77,11 +77,11 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### oa-packs infrastructure — Slice 1 (pure verify + validate + local-zip install) `[NEW ARC — opened 2026-06-15]`
+### oa-packs infrastructure — Slice 3 (Settings → Packs panel + lifecycle) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·
 **Design:** [PLANS/content-packs.md](PLANS/content-packs.md) ·
-**Decisions:** [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md) (CP1–CP5).
+**Decisions:** [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md) (CP1–CP6).
 
 The single operator-initiated content-pack distribution channel — built
 **schema + verify + install first, hosting later** (CP1). Every future
@@ -91,29 +91,43 @@ bundles, cheats, metadata) rides this instead of N bespoke updaters. Pack
 per-type (CP4); emulator recipes are the first non-editorial consumer and
 fold the External Emulator Depth recipe-update slice into this infra (CP5).
 
-**Slice 1 scope (~small–medium, new `crates/oa-packs/`, pure — no network, no Tauri):**
-- Scaffold `crates/oa-packs/` + add to the workspace (deps: serde, `sha2`,
-  `zip` — `zip` already a workspace dep).
-- Registry + manifest serde types (`Registry`/`PackEntry`/`Manifest`) — the
-  schemas ARE the contract; review carefully (CP2). `type` is an open
-  string/enum (CP3).
-- `verify(zip_bytes, expected_sha256)` (sha256 mismatch rejects).
-- `validate_manifest_against_registry()` (id/version/type/name match +
-  `min_oa_version` gate).
-- `install_from_local_zip(zip, entry, dest_root)` — stage → verify → unzip
-  → validate → atomic move into `<dest_root>/<type>/community/<pack_id>/`.
-- Model bundled-baseline as a **per-type** flag/param, not a global "no
-  builtin" (CP4).
-- Unit tests (good/bad hash, manifest mismatch, atomic-move leaves no
-  partial, version compare). `cargo test -p oa-packs` green.
+- **Slice 1 ✅ SHIPPED + MERGED to main (2026-06-15):** `crates/oa-packs/` —
+  pure `Registry`/`PackEntry`/`Manifest` contract types, `verify`,
+  `validate_manifest_against_registry`, `install_from_local_zip` (atomic,
+  no-partial-on-failure), per-type `PackTypeSpec` baseline (CP4). 14 tests
+  green, no network.
+- **Slice 2 ✅ SHIPPED on `oa-packs-slice-2` (2026-06-16; awaiting
+  merge):** `apps/oa-shell/src/packs.rs` + `packs_prefs.rs` — `PacksPrefs`
+  at `appDataDir/packs/prefs.json` (config registry URL per CP1 + master
+  network toggle), `PacksRoot` (`<exe_dir>`), 8 Tauri commands
+  (`oa_packs_get_prefs`/`set_registry_url`/`set_allow_network`/`list`/
+  `uninstall`/`fetch_registry`/`install`/`update`), synchronous
+  `NETWORK_DISABLED` gate, reuses `http_retry` (no rebuilt downloader).
+  Decisions = CP6. 8 unit tests green.
 
-**Acceptance:** install a hand-built local pack zip from a path; a tampered
-zip (wrong sha256) and a manifest that disagrees with its registry entry
-are both rejected. **No network anywhere in this slice.**
+**Slice 3 scope (next — Settings UI + lifecycle, `frontend/` + small Rust):**
+- Settings → Content → Packs panel: **Installed / Available / Updates**
+  sections (content-packs.md §9) + `Check for updates` + `Last checked` +
+  `Registry URL` display.
+- `frontend/src/.../packs.ts` (or `platform/api/packsApi.ts`) wrapping the 8
+  Slice-2 commands.
+- 14-day rollback retention (§8): on update/uninstall move the prior version
+  to `<data_dir>/packs-rollback/<pack_id>-<version>/`; GC older than 14 days;
+  Rollback action in the Installed list.
+- Conflict warning surface when two packs declare the same content id (§7).
+- Network commands disabled in-panel with a tooltip when the master toggle
+  is OFF (depends on Slice 4's Privacy panel for the toggle UI; until then
+  the gate still enforces server-side).
 
-**Reuse note:** the download/extract/progress half already exists in
-`apps/oa-shell/src/core_installer.rs` + `http_retry.rs` (Slice 2 reuses it);
-do NOT rebuild a downloader.
+**Then:** Slice 4 (Privacy panel + allow-network toggle UI + network-log
+ring buffer) → Slice 5 (first consumers: `emulator-recipes` override tier on
+the bundled `config/emulators/` baseline, closing External Emulator Depth
+Slice 2; then `editorial` → DISCOVER).
+
+**Reuse note (still applies):** `apps/oa-shell/src/core_installer.rs` is the
+richer download cousin (job rows, resume, progress events) — Slice 3 can
+graft its progress-event pattern onto pack download when the UI needs a
+progress bar. Do NOT rebuild a downloader.
 
 ### External Emulator Depth — Slice 1 ✅ SHIPPED (schema accretion + ares/BizHawk profiles) `[ARC opened 2026-06-15]`
 

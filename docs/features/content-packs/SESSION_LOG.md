@@ -4,6 +4,43 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
 
 ---
 
+## 2026-06-16 — Slice 2: registry fetch + download + Tauri commands (network behind the gate)
+
+- **Shipped:** Shell-side network + Tauri glue around the pure `oa-packs`
+  crate (branch `oa-packs-slice-2`; Slice 1 merged to main first).
+  `apps/oa-shell/src/packs_prefs.rs` — `PacksPrefs` at
+  `appDataDir/packs/prefs.json` (`registry_url` seeded with the §4 default
+  but config-overridable per CP1; `allow_network` default ON; `last_checked`),
+  mirroring `library_prefs`. `apps/oa-shell/src/packs.rs` — `PacksRoot`
+  (`<exe_dir>`) managed at startup; 8 Tauri commands wired into
+  `generate_handler`: `oa_packs_get_prefs` / `set_registry_url` /
+  `set_allow_network` (local prefs), `oa_packs_list` / `oa_packs_uninstall`
+  (local fs scan of `<exe_dir>/*/community/*/manifest.yml`, type-agnostic per
+  CP3), `oa_packs_fetch_registry` / `oa_packs_install` / `oa_packs_update`
+  (network). Reuses `http_retry::get_*_with_retry` — did NOT rebuild a
+  downloader. Network gate: `ensure_network_allowed` returns a synchronous
+  `NETWORK_DISABLED:` sentinel before any request when the toggle is OFF
+  (§9). Backend-authoritative trust chain: install/update fetch the registry
+  + look up the entry by id themselves, never trusting a frontend sha256 →
+  `oa_packs::verify` → `install_from_local_zip` into
+  `<exe_dir>/<type>/community/<id>/` (CP2). `min_oa_version` gate sourced
+  from `CARGO_PKG_VERSION`. Decisions recorded as **CP6**. oa-shell compiles
+  clean (`cargo clean -p oa-shell` + check), 8 new unit tests green
+  (gate on/off, prefs round-trip/migrate/malformed, scan finds-packs/ignores
+  non-pack dirs), clippy clean for the new files.
+- **Almost:** No operator-facing surface yet — there's nothing to playtest
+  in-app until the Settings → Packs panel (Slice 3) renders these commands.
+  End-to-end install was not exercised against a live registry (no hosting
+  yet, CP1); the trust/install path itself is covered by Slice 1's crate
+  tests + this slice's gate/scan tests.
+- **Next:** Slice 3 — Settings → Content → Packs panel (Installed / Available
+  / Updates) + `lib/packs.ts` service wrapping these commands + 14-day
+  rollback retention + conflict warnings (content-packs.md §8–§9). Then
+  Slice 4 (Privacy panel + network log) and Slice 5 (first consumers:
+  `emulator-recipes`, then `editorial`).
+
+---
+
 ## 2026-06-15 — Slice 1: `oa-packs` crate (pure verify + validate + local-zip install)
 
 - **Shipped:** New `crates/oa-packs/` crate — pure, no network, no Tauri
