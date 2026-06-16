@@ -190,10 +190,17 @@ export type RecipeOverridesReport = {
   conflicts: RecipeConflict[];
 };
 
-/// The active emulator-recipe overrides + conflicts (reflects startup
-/// state; recipe pack changes apply on the next launch). Local, no network.
+/// The active emulator-recipe overrides + conflicts. Local, no network.
 export function recipeOverrides(): Promise<RecipeOverridesReport> {
   return invoke<RecipeOverridesReport>("oa_packs_recipe_overrides");
+}
+
+/// Hot-reload the recipe override tier after a pack change (re-reads the
+/// bundled baseline + installed `emulator-recipes` packs and swaps the
+/// in-memory snapshot), so overrides update without an app restart. Returns
+/// the refreshed report. Local, no network.
+export function reloadRecipes(): Promise<RecipeOverridesReport> {
+  return invoke<RecipeOverridesReport>("oa_packs_reload_recipes");
 }
 
 /// True if `err` is the synchronous network-disabled refusal from any gated

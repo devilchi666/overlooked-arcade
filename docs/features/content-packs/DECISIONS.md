@@ -208,3 +208,29 @@ calls `apply_recipe_overrides(<exe_dir>/emulator-recipes/community/)`.
 `oa_packs_recipe_overrides` exposes the active overrides + conflicts to the
 UI. New recipe-pack content is just data; no code change unless a genuinely
 new launch *mechanism* is needed (the ED2 data/code boundary).
+
+---
+
+## CP9 — Recipe overrides hot-reload on pack change (supersedes CP8's restart-to-apply, 2026-06-16)
+
+**Decision:** Reverses CP8's "applied at startup, restart to apply." A pack
+install/update/uninstall/rollback now **hot-reloads** the recipe override
+tier immediately — no app restart.
+
+**Why (playtest):** With restart-to-apply, uninstalling the test recipe pack
+moved it to rollback but left the "Emulator recipe overrides" panel + the
+External Emulators name still showing `oa-test-recipes` — a stale override
+referencing a pack that's no longer installed. That's confusing and reads as
+a bug; a "restart to apply" note doesn't fix the staleness. Per the
+no-band-aid principle, the proper fix is to make the snapshot reloadable.
+
+**How:** `AppState.emulator_profiles` is now `RwLock<EmulatorProfiles>`. New
+command `oa_packs_reload_recipes` re-runs `EmulatorProfiles::load_default`
+(re-reading the bundled baseline + every installed `emulator-recipes` pack)
+and swaps the snapshot under the write lock. The Packs panel calls it after
+each pack mutation, then refetches the overrides view, so the panel +
+External Emulators reflect the change at once. All read sites clone the
+profile out of a short-lived read lock; reload only happens on operator-
+initiated pack actions, never mid-launch, so lock contention is a non-issue.
+Launches started *after* a reload use the new recipes (the in-process
+launcher reads the snapshot at launch time).

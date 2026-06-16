@@ -23,10 +23,18 @@ Most recent entry first. Three lines each: **Shipped / Almost / Next.**
   Depth ED2 ("update recipes without an OA rebuild"). 11 emulator_profiles
   tests green (2 new: replace-baseline+add+conflict, empty-community-noop);
   clippy clean; frontend `tsc` + eslint clean.
-- **Almost:** Applied at **startup**, not hot-reloaded (CP8) — a recipe pack
-  install takes effect on next launch; the panel says so. `editorial` →
-  DISCOVER (the other planned Slice 5 consumer) not built yet — recipes-first
-  per the plan's lean.
+- **Hot-reload follow-up (same day, playtest, CP9 — supersedes CP8's
+  restart-to-apply):** playtest showed uninstalling the recipe pack left the
+  overrides panel + External Emulators still showing `oa-test-recipes` (a
+  stale snapshot referencing an uninstalled pack). Fixed properly:
+  `AppState.emulator_profiles` is now `RwLock<EmulatorProfiles>`; new command
+  `oa_packs_reload_recipes` re-runs `load_default` + swaps; the Packs panel
+  calls it after every install/update/uninstall/rollback and refetches the
+  overrides view, so changes apply with no restart. All `emulator_profiles`
+  read sites clone out of a short read lock. `cargo check -p oa-shell` clean;
+  11 emulator_profiles tests still green; frontend `tsc`+eslint clean.
+- **Almost:** `editorial` → DISCOVER (the other planned Slice 5 consumer)
+  not built yet — recipes-first per the plan's lean.
 - **Next:** Operator playtest — the hand-placed `oa-test-recipes` pack now
   carries `emulators/bizhawk.yaml` overriding the bundled BizHawk display
   name; after rebuild+restart, Settings → External Emulators shows "BizHawk

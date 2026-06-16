@@ -93,7 +93,7 @@ const PacksSettings: Component = () => {
       return null;
     }
   });
-  const [recipes] = createResource(async () => {
+  const [recipes, { refetch: refetchRecipes }] = createResource(async () => {
     try {
       return await packsApi.recipeOverrides();
     } catch (e) {
@@ -103,6 +103,17 @@ const PacksSettings: Component = () => {
   });
   const hasRecipeInfo = () =>
     (recipes()?.overrides.length ?? 0) > 0 || (recipes()?.conflicts.length ?? 0) > 0;
+
+  // After any pack change, hot-reload the recipe override tier so the
+  // overrides section (and External Emulators) reflect it without a restart.
+  async function syncRecipes() {
+    try {
+      await packsApi.reloadRecipes();
+    } catch (e) {
+      console.warn("[oa-packs] reload_recipes failed:", e);
+    }
+    void refetchRecipes();
+  }
 
   // --- Registry (operator-initiated only) ---
   const [registry, setRegistry] = createSignal<packsApi.Registry | null>(null);
@@ -185,6 +196,7 @@ const PacksSettings: Component = () => {
       pushToast("success", `Installed ${r.name} v${r.version}.`);
       void refetchInstalled();
       void refetchRollbacks();
+      void syncRecipes();
     } catch (e) {
       pushToast("error", `Install failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -203,6 +215,7 @@ const PacksSettings: Component = () => {
       );
       void refetchInstalled();
       void refetchRollbacks();
+      void syncRecipes();
     } catch (e) {
       pushToast("error", `Update failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -226,6 +239,7 @@ const PacksSettings: Component = () => {
       pushToast("success", `Uninstalled ${pack.name} (kept for rollback).`);
       void refetchInstalled();
       void refetchRollbacks();
+      void syncRecipes();
     } catch (e) {
       pushToast("error", `Uninstall failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -241,6 +255,7 @@ const PacksSettings: Component = () => {
       pushToast("success", `Restored ${r.name} v${r.version}.`);
       void refetchInstalled();
       void refetchRollbacks();
+      void syncRecipes();
     } catch (e) {
       pushToast("error", `Rollback failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -509,7 +524,7 @@ const PacksSettings: Component = () => {
       <Show when={hasRecipeInfo()}>
         <Card
           title="Emulator recipe overrides"
-          subtitle="Launch recipes supplied by installed emulator-recipes packs. Recipe changes apply on the next launch of OA."
+          subtitle="Launch recipes supplied by installed emulator-recipes packs. Changes apply as soon as you install or remove a pack — no restart needed."
         >
           <Show when={(recipes()?.conflicts.length ?? 0) > 0}>
             <div class="mb-2 flex flex-col gap-1 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2">
