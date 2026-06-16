@@ -1,0 +1,101 @@
+# Content packs (oa-packs) — decisions
+
+Append-only. Decision ids are **CP**-prefixed. These extend/refine the
+locked 2026-05-28 design in [PLANS/content-packs.md](../../PLANS/content-packs.md)
+with what the 2026-06-15 planning discussion added or changed.
+
+---
+
+## CP1 — Hosting is deferred; the registry URL is config, not a constant (2026-06-15)
+
+**Decision:** OA does not need to decide where packs are hosted now.
+Slice 1 (verify + manifest validation + install-from-local-zip) needs
+**zero hosting knowledge** — it runs fully offline. When the fetch slice
+lands, the registry URL is a **runtime config value**, never a
+compile-time constant, so OA can point at any host (a GitHub org, OA's
+own domain, a CDN, a self-host) without a code change. The
+`overlooked-arcade` GitHub org in content-packs.md §4 is a placeholder
+and need not exist until the first pack is published.
+
+**Why (operator):** "do we need to know where things are hosted now or is
+that a later thing? I dont want to lock Myself into anything." Hosting is
+the most deferrable decision; the contract is the JSON **shape**, not the
+URL. Treating the URL as data keeps every distribution choice reversible.
+
+**How to apply:** Build Slice 1 with no network. Store the registry URL in
+OA prefs (with the content-packs.md §4 default as a seed, overridable).
+Never hard-code it into `oa-packs`.
+
+---
+
+## CP2 — The early lock-in risk is the schemas + on-disk layout, not hosting (2026-06-15)
+
+**Decision:** The three things to get right early — because changing them
+later churns every already-published pack — are the **registry JSON
+schema**, the **`manifest.yml` schema**, and the **on-disk layout**
+(`<exe_dir>/<type>/community/<pack_id>/`). Everything else (hosting,
+signing, federation, the pack roster) is deferrable; the schema already
+reserves seams (`depends_on`, `min_oa_version`, a future `source` field).
+
+**Why:** Schemas are the contract between OA and every pack author.
+Hosting/signing/federation are swappable behind that contract. Spend the
+design care where reversal is expensive.
+
+**How to apply:** Review the serde types in Slice 1 as the load-bearing
+artifact. Keep them additive-friendly (optional fields, open `type`).
+
+---
+
+## CP3 — Pack `type` is additive data + a dispatch arm; never a schema break (2026-06-15)
+
+**Decision:** New pack kinds (emulator-recipes, themes, cheats, metadata,
+per-system assets) are added one at a time as a new `type` value + a
+dispatch arm for install location and loading. Adding a type is additive
+data, never a schema break.
+
+**Why (operator):** "Id like to discuss the packs and how we are adding
+these to this system as we go. I dont want to lock Myself into anything."
+This is the anti-lock-in mechanism and the native mode of the system —
+the same shape as adding the emulator `accepts_archives` field as
+declarative data. Cross-ref [[ED2]] (recipes are updatable data) and the
+theming "low floor / high ceiling, declarative-first" philosophy.
+
+---
+
+## CP4 — "Has a bundled baseline" is a per-pack-type property, not a global rule (2026-06-15)
+
+**Decision:** content-packs.md §7's "no `builtin/` tier — OA ships with
+zero pack content" is correct for **editorial** (DISCOVER is empty until a
+pack is installed) but **wrong for emulator recipes**, which ship bundled
+in the install (`config/emulators/*.yaml`) and treat pack updates as an
+**override** of a working baseline. So baseline-vs-empty is decided **per
+type**. The `oa-packs` core loader must NOT bake in the editorial-only
+"zero builtin" assumption.
+
+**Why:** OA must launch BizHawk out of the box with no pack download (the
+recipes shipped in the External Emulator Depth arc), yet still let a
+recipe update refresh a changed CLI flag. That's bundled-baseline +
+override tier — a different shape from editorial's empty-until-installed.
+Directly mirrors theming **D44** ("keep the default bundled;
+externalization is additive, version-gated").
+
+**How to apply:** Model baseline as a per-type flag/param in the loader.
+Recipe loading = bundled `config/emulators/` → `community/<pack>/` override
+(last wins). Editorial loading = `community/` only.
+
+---
+
+## CP5 — Emulator recipes become a pack type; the depth arc's Slice 2 rides this infra (2026-06-15)
+
+**Decision:** The External Emulator Depth arc's "update recipes without an
+OA rebuild" (ED2 / its Slice 2) is implemented as an `emulator-recipes`
+pack **type** in this system, not a standalone updater. It is the first
+real non-editorial consumer (oa-packs arc Slice 5) and the proof that the
+type-dispatch model (CP3) + per-type baseline (CP4) hold.
+
+**Why:** A one-off recipe updater would be throwaway; the recipe updater
+is just one consumer of the general channel content-packs.md already
+designed. Building the channel and making recipes a type avoids duplicate
+download/verify/install machinery.
+
+**Cross-ref:** [[external-emulator-depth]] Slice 2; this arc's Slice 5.

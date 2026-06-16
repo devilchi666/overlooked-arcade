@@ -34,9 +34,29 @@ spanned every system but was filed under whichever core happened to be active.
     documented not built. Verified: EmuHawk launches an archived `coleco` game
     from a tile. `cargo test -p oa-shell` green (849).
   - **Slice 2 ⬜ next** — recipe-update delivery (refresh `config/emulators/*.yaml`
-    without an OA rebuild). **Dependency fork:** ride the full content-pack
-    distribution infra (design-only today) vs stand up a minimal profiles-only
-    updater first. Decision pending.
+    without an OA rebuild). **Decision made 2026-06-15:** this rides the new
+    **oa-packs infrastructure** as an `emulator-recipes` pack type (CP5), not a
+    standalone updater. See the oa-packs stream below.
+
+- **oa-packs — content-pack distribution infrastructure** — NEW arc planned
+  2026-06-15 (planning discussion; no code yet). The single operator-initiated
+  channel for distributing optional content packs (emulator recipes, editorial
+  DISCOVER content, themes, per-system asset bundles, cheats, metadata) — one
+  foundation, many pack types, never N bespoke updaters. Built **schema + verify
+  + install first, hosting later** (CP1); the schemas + on-disk layout are the
+  early lock-in (CP2); pack `type` is additive data + a dispatch arm (CP3);
+  bundled-baseline is per-type — recipes ship a baseline + override tier,
+  editorial is empty-until-installed (CP4); emulator recipes are the first
+  non-editorial consumer (CP5). New `crates/oa-packs/` pure core; download/extract
+  half already exists in `core_installer.rs` + `http_retry.rs` (reuse, don't
+  rebuild). Arc plan: [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md);
+  design: [PLANS/content-packs.md](PLANS/content-packs.md); decisions CP1–CP5 in
+  [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md);
+  feature folder [features/content-packs/](features/content-packs/).
+  - **Slice 1 ⬜ queued** ([NEXT.md](NEXT.md) HIGH band) — `oa-packs` crate: pure
+    sha256 verify + manifest-vs-registry validation + install-from-local-zip, with
+    unit tests. No network, no Tauri. Plan → docs → /clear; execution is a fresh
+    self-contained session.
 
 - **Unified Navigation & Panel System** — pivoted 2026-06-14 from the per-panel
   Controller-Nav Coverage sweep (operator: per-panel wiring doesn't scale; most

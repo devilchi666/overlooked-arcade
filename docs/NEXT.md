@@ -77,6 +77,44 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### oa-packs infrastructure — Slice 1 (pure verify + validate + local-zip install) `[NEW ARC — opened 2026-06-15]`
+
+**Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·
+**Design:** [PLANS/content-packs.md](PLANS/content-packs.md) ·
+**Decisions:** [features/content-packs/DECISIONS.md](features/content-packs/DECISIONS.md) (CP1–CP5).
+
+The single operator-initiated content-pack distribution channel — built
+**schema + verify + install first, hosting later** (CP1). Every future
+pack-shaped stream (emulator recipes, editorial DISCOVER, themes, asset
+bundles, cheats, metadata) rides this instead of N bespoke updaters. Pack
+`type` is additive data + a dispatch arm (CP3); bundled-baseline is
+per-type (CP4); emulator recipes are the first non-editorial consumer and
+fold the External Emulator Depth recipe-update slice into this infra (CP5).
+
+**Slice 1 scope (~small–medium, new `crates/oa-packs/`, pure — no network, no Tauri):**
+- Scaffold `crates/oa-packs/` + add to the workspace (deps: serde, `sha2`,
+  `zip` — `zip` already a workspace dep).
+- Registry + manifest serde types (`Registry`/`PackEntry`/`Manifest`) — the
+  schemas ARE the contract; review carefully (CP2). `type` is an open
+  string/enum (CP3).
+- `verify(zip_bytes, expected_sha256)` (sha256 mismatch rejects).
+- `validate_manifest_against_registry()` (id/version/type/name match +
+  `min_oa_version` gate).
+- `install_from_local_zip(zip, entry, dest_root)` — stage → verify → unzip
+  → validate → atomic move into `<dest_root>/<type>/community/<pack_id>/`.
+- Model bundled-baseline as a **per-type** flag/param, not a global "no
+  builtin" (CP4).
+- Unit tests (good/bad hash, manifest mismatch, atomic-move leaves no
+  partial, version compare). `cargo test -p oa-packs` green.
+
+**Acceptance:** install a hand-built local pack zip from a path; a tampered
+zip (wrong sha256) and a manifest that disagrees with its registry entry
+are both rejected. **No network anywhere in this slice.**
+
+**Reuse note:** the download/extract/progress half already exists in
+`apps/oa-shell/src/core_installer.rs` + `http_retry.rs` (Slice 2 reuses it);
+do NOT rebuild a downloader.
+
 ### External Emulator Depth — Slice 1 ✅ SHIPPED (schema accretion + ares/BizHawk profiles) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/external-emulator-depth.md](PLANS/external-emulator-depth.md) ·
