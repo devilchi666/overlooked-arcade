@@ -1998,3 +1998,98 @@ themes, `DeclarativeShell`). If ARC 3 cinematics were compiled-tier only, the di
 themes we just shipped would stay visually plain forever and the "let others drop
 in rich themes" goal of the `.oatheme` loader would be hollow. The declarative
 selection-as-data pattern reuses the ARC 2 resolver cascade (`useResolvedLayout`).
+
+---
+
+## 2026-06-16 — Motion foundation planning session (ARC 3 Thrust M)
+
+The M1 attempt (Slice 1) shipped a sound declarative contract but cost a day to
+get one entrance to render on the transparent-WebView build. The operator paused
+for a foundation planning session; these resolve its agenda (see
+[PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md)
+§"Motion foundation"). They precede a new **M0 foundation slice** before M1
+acceptance / M2.
+
+### D53 — `cargo tauri dev` is the motion-dev loop; `cargo tauri build` is for playtest + final acceptance
+
+Motion/UI-visual iteration runs under `cargo tauri dev` (single-window): Vite HMR
++ live devtools, ~1 s per tweak. Real playtests, anything touching cores or the
+real install layout, and final sign-off on any motion still happen in a
+`cargo tauri build`. Discipline: **iterate in dev, accept in build.**
+
+**Why:** the day-long M1 tax was the full-build-per-tweak cost, NOT a behavioral
+gap between dev and build. The Rust window-builder is identical in both
+(`transparent(true)` + `.visible(false)` + DWM compositing — `main.rs`
+`setup_single_window`); only the WebView content source differs (devUrl+HMR vs
+bundled assets). So *how* an animation composites onto the transparent surface is
+byte-identical — WAAPI is invisible in dev too, CSS keyframes paint in both. The
+operator's standing build-only habit (see the `operator_uses_cargo_tauri_build`
+memory) is correct for gameplay playtests; motion is the one area the build loop
+actively fights, so dev is added as the inner loop there. A theoretical divergence
+is guarded by the "accept in build" step.
+
+**How to apply:** M0 step 1 is one confirming dev run that the entrance paints.
+Use dev for all M/V visual iteration. Caveats that DON'T affect compositing:
+custom URI schemes are blocked in the dev WebView (`tauri_custom_uri_schemes_blocked_in_dev`
+memory); disk themes resolve under `target/debug` in dev.
+
+### D54 — `oa://window-shown` is the canonical "shell presented" signal; entrance/boot/attract all ride it
+
+The M1 window-ready handshake (Rust creates the window `.visible(false)`; frontend
+`oa_shell_ready` → `present_shell_window` shows it + emits `oa://window-shown`; 5 s
+timeout fallback) is blessed as the standard pattern. Any entrance / boot / attract
+motion keys its first play on `oa://window-shown` rather than a guessed delay.
+
+**Why:** it solves a real ordering bug (the OS presents the window AFTER the
+WebView's first paint, so mount-time plays finish unseen) AND kills the launch
+white-flash for free. One signal beats per-feature timing guesses across the
+remaining cinematic thrusts.
+
+### D55 — Insert an M0 foundation slice; M2 dogfoods on a navigable surface; verification stays lightweight
+
+Before resuming M1 acceptance or starting M2, ship **M0**: the dev loop (D53), a
+hash-mounted motion-playground route, `MOTION.md` (compositing catalogue +
+scroll-safe rule + windowShown pattern), and an `animationend` dev assertion. Then:
+the M1 entrance stays good-enough on `DeclarativeShell`, but **M2 view-transitions
+are dogfooded on a navigable surface** (Retroverse routes/tabs, or playground
+toggles). Verification stays **lightweight** (playground smoke + the dev assertion);
+no screenshot-diff harness.
+
+**Why:** `DeclarativeShell` is single-surface with no runtime view changes — its
+only transition trigger is the entrance, so it can't exercise M2's premise
+(per-view/per-system transitions on view change). Proving M2 there would be the
+wrong archetype on the wrong surface. The scroll-container glitch (open problem #6)
+traces to `ViewTransition` wrapping the `overflow-y-auto` nav directly — animating a
+scroll container's parent creates a new containing block/stacking context; the rule
+is to animate an inner non-scrolling wrapper. Screenshot-diff can't catch "fired but
+DWM didn't composite" anyway (only the eye can), so the human-in-the-loop playground
+is the pragmatic guard for a one-person craft loop.
+
+### D56 — Motion foundation VALIDATED: no compositing ceiling; the M1 WAAPI finding is reversed (2026-06-17)
+
+The M0 bench (compositing probe + choreography + showcase + box-art FX,
+`frontend/src/dev/`) ran on the confirmed real surface and proved **every animation
+technique composites** on OA's transparent single-window WebView: CSS `@keyframes`,
+CSS transitions, rAF-driven transforms, **WAAPI**, GPU-layer promotion
+(`will-change`/`translate3d`), `filter`, and `backdrop-filter`. High-refresh
+confirmed (144 fps, no rAF cap). Operator playtested all four benches incl. real
+cover art with reflection/shadow + glass finish and called it the "true yes."
+
+**The M1 "WAAPI doesn't composite" finding (the basis for going CSS-only) is
+formally REVERSED.** It was a misdiagnosis: M1's WAAPI was a one-shot entrance
+played at mount, and the OS presents the window ~hundreds of ms after first paint,
+so it finished unseen. The fix that worked was the `oa://window-shown` handshake
+(D54), not the WAAPI→CSS switch. WAAPI is available; WAAPI-based libraries (Motion
+One, spring engines) are viable.
+
+**Consequences:** (a) "beat BigBox" motion is reachable on this stack — the
+program-halting risk is not present. (b) The toolkit is open; pick per need — CSS
+for declarative theme-authored transitions, rAF/springs for physics, WAAPI for
+computed/imperative moves. (c) `ViewTransition` stays CSS because it's *declarative
+data*, not because WAAPI is broken (comment corrected). (d) The dev bench is the
+ongoing motion-authoring surface; its keeper effects feed the declarative motion
+model (D52). Catalogue + interpretation: `MOTION.md`.
+
+**Open caveat:** the M1 declarative entrance still carries `[oa-theme-motion]`
+diagnostics and isn't feel-tuned — fold both into the declarative-motion-model work,
+not a separate pass.

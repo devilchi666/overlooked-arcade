@@ -111,6 +111,13 @@ pub struct DiskThemeManifest {
     /// Declarative appearance/options the engine renders generically.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<Vec<ThemeSettingControl>>,
+    /// Declarative motion (Theming ARC 3 Thrust M / D52) — DATA-only cinematic
+    /// fields the frontend `DeclarativeShell` honors. M1 carries the
+    /// `[motion.view_transition]` table through to the frontend, which
+    /// `validateTheme()` then checks. Loose strings here (like `glyph_set` /
+    /// `views`); the frontend is the authority on the preset allow-list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<ThemeMotion>,
 }
 
 fn default_reserved_corner() -> String {
@@ -124,6 +131,28 @@ pub struct PerSystemUiFlags {
     pub tiles: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sfx: Option<bool>,
+}
+
+/// Declarative motion (ARC 3 M1) — mirrors the TS `ThemeMotion`. M1 names one
+/// field, `view_transition`; the struct widens additively (M3) like the rest of
+/// the manifest contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeMotion {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_transition: Option<ViewTransitionConfig>,
+}
+
+/// One `[motion.view_transition]` declaration — a preset selection plus
+/// optional CSS timing (mirrors the TS `ViewTransitionConfig`). `preset` is a
+/// loose `String`; the frontend `validateTheme()` checks it against the
+/// recognized preset set (`none` | `fade` | `slide` | `scale`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ViewTransitionConfig {
+    pub preset: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub easing: Option<String>,
 }
 
 /// A `views` entry — a default `layout` and/or `per_system` overrides
@@ -546,6 +575,11 @@ layout = "carousel"
 tg16 = "wheel"
 lynx = "grid"
 
+[motion.view_transition]
+preset = "scale"
+duration = "280ms"
+easing = "ease-out"
+
 [[settings_schema]]
 type = "toggle"
 key = "reflections"
@@ -648,6 +682,17 @@ options = [
             }
             other => panic!("expected select, got {other:?}"),
         }
+
+        // --- motion (ARC 3 M1): the view_transition table parses through ---
+        let vt = t
+            .manifest
+            .motion
+            .as_ref()
+            .and_then(|m| m.view_transition.as_ref())
+            .expect("motion.view_transition parsed");
+        assert_eq!(vt.preset, "scale");
+        assert_eq!(vt.duration.as_deref(), Some("280ms"));
+        assert_eq!(vt.easing.as_deref(), Some("ease-out"));
 
         // --- base path resolves to the theme's own directory ---
         assert_eq!(t.base_path, dir.to_string_lossy());
@@ -892,5 +937,14 @@ surfaces = ["main"]
         // Both optional sidecars (tokens.toml + per-system.toml) load.
         assert!(neon.tokens.as_ref().and_then(|t| t.accent.as_deref()).is_some());
         assert!(neon.per_system_tokens.as_ref().and_then(|m| m.get("nes")).is_some());
+        // ARC 3 M1: it declares a slide view transition (carried to the frontend).
+        assert_eq!(
+            neon.manifest
+                .motion
+                .as_ref()
+                .and_then(|m| m.view_transition.as_ref())
+                .map(|vt| vt.preset.as_str()),
+            Some("slide")
+        );
     }
 }

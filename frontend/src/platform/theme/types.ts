@@ -17,7 +17,7 @@
 
 import type { Component } from "solid-js";
 import type { ThemeManifest, ThemeSurface } from "./manifest";
-import type { ThemeTokens } from "./tokens";
+import type { ThemeTokens, ThemeMotionTokens } from "./tokens";
 import type { PerSystemTokens } from "@oa/platform/themes/systemPalettes";
 import type { PerSystemUiConfigs } from "@oa/platform/themes/systemUIConfigs";
 
@@ -57,6 +57,13 @@ export type ThemePackage = {
   /// inherit the platform per-system palette wholesale (a system-agnostic theme
   /// ships none). See platform/themes/systemPalettes.ts.
   perSystemTokens?: PerSystemTokens;
+  /// Motion-token overrides (ARC 3 M1) — the durations/easings every
+  /// `var(--motion-*)`-reading CSS consumes. App.tsx injects them as a scoped
+  /// `<style>` (NOT the inline-var map `tokens` uses) so the injection can
+  /// re-assert the `prefers-reduced-motion` floor inside the mount — see
+  /// `themeMotionTokensCss`. Omit to inherit the `:root` motion defaults. The
+  /// view-transition PRESET is a manifest field (`manifest.motion`), not here.
+  motionTokens?: Partial<ThemeMotionTokens>;
   /// Per-system experiential UI overrides (ARC 2 L2b / D34) — a partial
   /// `SystemUIConfig` per system (audioProfile / interactionStyle / tileShape /
   /// …), merged over `BASELINE_UI` by `uiConfigFor`. THEME content (peer of

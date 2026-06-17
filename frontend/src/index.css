@@ -353,6 +353,26 @@
     70%  { opacity: 0.55; transform: scale(1); }
     100% { opacity: 0; transform: scale(1); }
   }
+  /* Declarative view-transition presets (Theming ARC 3 M1). Driven as CSS
+     animations (not the Web Animations API): in single-window mode the UI is a
+     transparent WebView2 composited over wgpu by DWM, where WAAPI animations
+     fire but don't recomposite the transparent surface — CSS animations run
+     through the normal paint pipeline and DO. The DeclarativeShell sets the
+     `animation` shorthand inline (duration/easing from the theme) and names one
+     of these. `both` fill holds the start frame before and the end after. The
+     global prefers-reduced-motion reset below collapses these to ~instant. */
+  @keyframes oa-vt-fade {
+    0%   { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes oa-vt-slide {
+    0%   { opacity: 0; transform: translateY(96px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes oa-vt-scale {
+    0%   { opacity: 0; transform: scale(0.88); }
+    100% { opacity: 1; transform: scale(1); }
+  }
   /* Now-playing equalizer bars in the HintBar. Three columns scale
      between 30% and 100% on staggered offsets so the chip reads as
      "audio playing." Honors prefers-reduced-motion: at-rule below

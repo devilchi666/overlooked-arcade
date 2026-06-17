@@ -43,6 +43,7 @@ export const OA_EVENTS = {
   romUnloaded: "oa://rom-unloaded",
   shaderPresetsChanged: "oa://shader-presets-changed",
   toast: "oa://toast",
+  windowShown: "oa://window-shown",
 } as const;
 
 /// One of the registered event-name strings.

@@ -180,7 +180,7 @@ per-system-descriptor loader.
   - **P.1 S3 ✅ MERGED** — registry merge + Appearance picker + `themes` pack-type spec; source-tree fallback so themes resolve from `target/`; live sample `themes/community/neon-list/`.
   - **Optional follow-ons (unqueued):** swap the dogfood's source from the inline builtin to disk; `system-ui/` background/sound asset cascade for disk themes; P.2 (runtime custom-JS).
 
-### Theming ARC 3 — Cinematic & Scripting `[PLANNED 2026-06-16; M1 = Slice 1 QUEUED]`
+### Theming ARC 3 — Cinematic & Scripting `[M0 FOUNDATION VALIDATED + MERGED 2026-06-17; declarative motion MODEL is next]`
 
 Make OA cinematic (motion · shaders · video · attract) while keeping the
 declarative-first spine, so the look flows into the disk `.oatheme` themes ARC 2
@@ -198,14 +198,34 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
   attract tiers 1–2 (tier 3 live-emulator deferred to V3).
 - **R — Rhai Scripting** ⏸ DEFERRED (D50): sandboxed event-driven behaviors,
   gated `scripting` capability, compiled-tier; couples to P.2.
-  - **M1 ⬜ QUEUED (Slice 1)** — Motion token contract + reduced-motion plumbing
-    + one interruptible view transition, declared in `theme.toml` (motion fields →
-    `ThemeManifest` + `validateTheme`) and honored by `DeclarativeShell`. The
-    smallest valuable, disk-theme-flowing start; establishes the contract M2/M3
-    build on. Activates the already-reserved `motion` token group (`tokens.ts`,
-    S3). **Acceptance:** a disk theme declaring a motion preset animates a view
-    transition; `prefers-reduced-motion` downgrades to a short fade; tsc/lint/
-    vitest green.
+  - **M1 🚧 ATTEMPTED 2026-06-16 — PAUSED (Slice 1, branch `theme-arc3-motion-slice-1`, NOT merged)**
+    — The declarative contract landed and is green (motion token group
+    `ThemeMotionTokens`/`MOTION_TOKEN_VAR`; `manifest.motion.view_transition`
+    preset+timing through the Rust disk loader + `diskTheme.ts`; `motion.ts`
+    resolver; `ViewTransition` **CSS-animation** primitive — NOT WAAPI; dogfood on
+    neon-list/bare). But getting one entrance to actually render took a full day
+    of round-trips against the transparent-WebView build (WAAPI doesn't composite;
+    window-present timing; scrollbar interaction), and the feel/reliability isn't
+    there. **Motion-foundation planning session ran 2026-06-16 — all 6 open
+    problems resolved** (D53–D55); see [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
+    §"Motion foundation — RESOLVED". Diagnostics left in until M0 settles them.
+  - **M0 ✅ SHIPPED + foundation VALIDATED + MERGED to main 2026-06-17** — the
+    program-halting question (can the surface carry rich motion?) is answered YES.
+    A dev-only 4-tab motion bench (`frontend/src/dev/`, F10 in `cargo tauri dev`,
+    gated `import.meta.env.DEV`): **compositing probe** (every technique paints incl.
+    WAAPI/GPU-promotion/rAF/filter/backdrop), **selection choreography** (rAF spring
+    + stagger + crossfade), **motion showcase** (5× grow-to-center, title swirl,
+    in/out pairs, ambient loops), **box-art FX** (real covers: reflection+shadow,
+    glass finish, pointer-tilt). `MOTION.md` = the catalogue. **WAAPI finding
+    reversed** (timing, not compositing; D54 was the real fix). 144 fps confirmed.
+    Decisions D53–D56.
+  - **NEXT motion work ⬜ — the declarative motion MODEL (D52)** — turn the bench
+    keepers into named, theme-authorable `theme.toml` motion presets + the keyframe/
+    physics vocabulary (selection choreography, in/out, ambient, box-art treatments).
+    Dogfood on a **navigable** surface (Retroverse routes/tabs), NOT the
+    single-surface `DeclarativeShell` (D55). Folds in M1 entrance feel-tuning +
+    stripping the `[oa-theme-motion]` diagnostics, and the original M2 (view/route
+    transition presets) / M3 (parallax + preset gallery).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

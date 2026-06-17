@@ -38,6 +38,11 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
     // The generic shell defaults to the engine `grid`; declare `list` so the
     // dogfood matches `bare`'s vertical list.
     views: { "game-browse": { layout: "list" } },
+    // ARC 3 M1 dogfood: declare a fade view transition (DATA only). The
+    // DeclarativeShell plays it on a view change, interruptibly; reduced-motion
+    // downgrades it to a short fade. Proves the manifest motion field → resolver
+    // → ViewTransition path end-to-end with zero theme code.
+    motion: { view_transition: { preset: "fade", duration: "450ms" } },
     // Declared appearance option; the engine Appearance panel renders it and the
     // DeclarativeShell honors it (recognized `compactRows` → list density).
     settings_schema: [
@@ -55,6 +60,14 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
   perSystemTokens: {
     nes: { accent: "oklch(0.72 0.16 195)" },
     psx: { accent: "oklch(0.65 0.22 340)" },
+  },
+  // ARC 3 M1 dogfood: motion-token override (a slightly snappier "fast" + a
+  // custom decelerate easing). App.tsx injects these as a scoped <style> that
+  // re-asserts the reduced-motion floor inside the mount — proving the motion
+  // token group is authorable without defeating a11y.
+  motionTokens: {
+    fast: "120ms",
+    easeOut: "cubic-bezier(0.22, 1, 0.36, 1)",
   },
   // No bundled assets → no `basePath` to resolve against.
   basePath: "",

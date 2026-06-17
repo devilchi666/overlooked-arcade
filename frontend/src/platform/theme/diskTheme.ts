@@ -23,20 +23,26 @@
 import DeclarativeShell from "./declarativeShell";
 import type { ThemeManifest } from "./manifest";
 import type { ThemePackage } from "./types";
-import type { ThemeTokens } from "./tokens";
+import type { ThemeTokens, ThemeMotionTokens } from "./tokens";
 import type { PerSystemTokens } from "@oa/platform/themes/systemPalettes";
 
 /// The manifest as it exists ON DISK — the full `ThemeManifest` declarative
 /// surface MINUS `entry`/`entry_export` (implicit for declarative themes, D45).
+/// The ARC 3 `motion` field rides through here for free (it's part of
+/// `ThemeManifest`), so a disk theme declares `[motion.view_transition]` in
+/// `theme.toml` and the Rust loader carries it across (D52).
 export type DiskThemeManifest = Omit<ThemeManifest, "entry" | "entry_export">;
 
 /// One discovered on-disk theme, mirroring the Rust `DiskThemeDescriptor`.
-/// `tokens` / `perSystemTokens` are the parsed optional sidecars; `basePath` is
-/// the theme's absolute directory (for resolving its own assets later).
+/// `tokens` / `perSystemTokens` / `motionTokens` are the parsed optional
+/// sidecars; `basePath` is the theme's absolute directory (for resolving its
+/// own assets later).
 export type DiskThemeDescriptor = {
   manifest: DiskThemeManifest;
   tokens?: Partial<ThemeTokens>;
   perSystemTokens?: PerSystemTokens;
+  /// Motion-token overrides (ARC 3 M1) parsed from `tokens.toml`'s motion keys.
+  motionTokens?: Partial<ThemeMotionTokens>;
   basePath: string;
 };
 
@@ -59,6 +65,7 @@ export function diskThemeToPackage(desc: DiskThemeDescriptor): ThemePackage {
     entry: DeclarativeShell,
     tokens: desc.tokens,
     perSystemTokens: desc.perSystemTokens,
+    motionTokens: desc.motionTokens,
   };
 }
 

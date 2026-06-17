@@ -2783,6 +2783,7 @@ fn main() {
             packs::oa_packs_install,
             packs::oa_packs_update,
             theme_loader::oa_themes_list_disk,
+            oa_shell_ready,
         ])
         .setup({
             let running = running.clone();
@@ -2967,6 +2968,24 @@ fn main() {
                     ShellMode::TwoWindow => setup_two_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle, bootstrap_hint.clone())?,
                     ShellMode::SingleWindow => setup_single_window(app, running.clone(), rom_path.clone(), cmd_rx, app_data_dir.clone(), game_focused.clone(), ui_intercepting.clone(), game_focus.clone(), rewind_state.clone(), tas_state.clone(), video_state.clone(), memory_snapshot.clone(), disc_state.clone(), perf_stats.clone(), app_handle, bootstrap_hint.clone())?,
                 };
+
+                // The shell window is created hidden (`.visible(false)`); the
+                // frontend shows it via `oa_shell_ready` once painted (ARC 3 M1).
+                // SAFETY NET: if that signal never arrives (frontend error, no
+                // declarative shell, etc.), present the window anyway after a
+                // short timeout so a bug can never leave a permanently-black
+                // window. `present_shell_window` is idempotent, so whichever
+                // fires first wins.
+                {
+                    let fallback = app.handle().clone();
+                    std::thread::Builder::new()
+                        .name("oa-window-present-fallback".into())
+                        .spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            present_shell_window(&fallback, "timeout-fallback");
+                        })
+                        .ok();
+                }
 
                 // MediaState: shared in-memory MediaDb + region prefs, hydrated
                 // from disk once at startup. The protocol handler reads through
@@ -3532,6 +3551,49 @@ fn apply_persisted_window_geometry<'a>(
     builder
 }
 
+/// Guards the one-shot "present the shell window" so the frontend `ready`
+/// signal and the timeout fallback can't double-show / double-emit.
+static SHELL_WINDOW_PRESENTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Show + focus the user-facing shell window (single-window `"main"` or
+/// two-window `"library"`) and emit `oa://window-shown`. The window is created
+/// hidden (`.visible(false)`) so the frontend can paint into it off-screen and
+/// the WHOLE shell appears at once with no white flash — and so the declarative
+/// view transition has a real "window is on screen now" signal to play on
+/// (ARC 3 M1; replaces the guessed `animation-delay`). Idempotent: the first
+/// caller (the frontend `oa_shell_ready` command, normally; the timeout
+/// fallback otherwise) wins; later calls no-op.
+fn present_shell_window(app: &tauri::AppHandle, reason: &str) {
+    use std::sync::atomic::Ordering;
+    if SHELL_WINDOW_PRESENTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let label = if app.get_webview_window("main").is_some() {
+        "main"
+    } else {
+        "library"
+    };
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = w.show();
+        let _ = w.set_focus();
+        log::info!("oa-shell: shell window '{label}' presented ({reason})");
+    } else {
+        log::warn!("oa-shell: present_shell_window — no '{label}' window found ({reason})");
+    }
+    if let Err(e) = app.emit("oa://window-shown", ()) {
+        log::warn!("oa-shell: emit oa://window-shown failed: {e:?}");
+    }
+}
+
+/// Frontend → backend: the shell has mounted + painted its first frame; present
+/// the (hidden) window now. The frontend calls this from `onMount` after a
+/// double `requestAnimationFrame` (so the content is actually painted).
+#[tauri::command]
+fn oa_shell_ready(app: tauri::AppHandle) {
+    present_shell_window(&app, "frontend-ready");
+}
+
 fn setup_two_window(
     app: &mut tauri::App,
     running: Arc<AtomicBool>,
@@ -3557,7 +3619,10 @@ fn setup_two_window(
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("Overlooked Arcade")
-    .inner_size(960.0, 640.0);
+    .inner_size(960.0, 640.0)
+    // Created hidden; shown by `present_shell_window` on frontend-ready /
+    // fallback (ARC 3 M1 — see the single-window builder).
+    .visible(false);
     library_builder = apply_persisted_webview_geometry(library_builder, prefs.windows.get("library"), /* default_maximize */ true);
     let _library = library_builder.build()?;
     log::info!("oa-shell: library WebviewWindow built (two-window)");
@@ -3637,7 +3702,11 @@ fn setup_single_window(
     )
     .title("Overlooked Arcade")
     .inner_size(960.0, 640.0)
-    .transparent(true);
+    .transparent(true)
+    // Created hidden; shown by `present_shell_window` once the frontend paints
+    // (oa_shell_ready) or the timeout fallback fires. No white flash + gives the
+    // declarative view transition a real "on screen now" signal (ARC 3 M1).
+    .visible(false);
     sw_builder = apply_persisted_webview_geometry(sw_builder, prefs.windows.get("main"), /* default_maximize */ true);
     let window = sw_builder.build()?;
     log::info!("oa-shell: single transparent WebviewWindow built (single-window)");

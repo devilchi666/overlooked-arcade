@@ -31,6 +31,13 @@ glyph_set = "xbox"
 [views.game-browse]
 layout = "list"
 
+# Declarative motion (ARC 3 M1 / D52): slide the browse surface in on a view
+# change. DATA only — the built-in DeclarativeShell honors it on the DOM layer,
+# interruptibly, and downgrades to a short fade under prefers-reduced-motion.
+[motion.view_transition]
+preset = "slide"
+duration = "600ms"
+
 # One declarative option; the engine Appearance panel renders it and the
 # DeclarativeShell honors `compactRows` (the recognized seed vocabulary).
 [[settings_schema]]

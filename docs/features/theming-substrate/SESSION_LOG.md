@@ -9,6 +9,173 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-17 — ARC 3 Thrust M, M0: motion bench BUILT + foundation VALIDATED (the "true yes") — ✅ on branch `theme-arc3-motion-slice-1`
+
+> **Headline: there is NO compositing ceiling on OA's transparent surface, and
+> BigBox-tier motion is reachable.** The probe answered the program-halting
+> question (can the surface even carry rich motion?) with an unqualified yes, and
+> the choreography/showcase/box-art benches proved we can make it FEEL premium on
+> real cover art. Operator playtested all four benches and called it.
+
+- **Built (dev-only, gated behind `import.meta.env.DEV`; F10 in `cargo tauri dev`):**
+  a 4-tab **motion bench** at `frontend/src/dev/` (App.tsx mounts it; never ships):
+  - **`MotionPlayground.tsx` — compositing probe.** 12 cells, same motion via
+    different techniques on the real surface. **Every cell PAINTS**, incl. WAAPI,
+    `will-change`/`translate3d` GPU promotion, rAF transforms, filter,
+    backdrop-filter, scroll-container. Live fps meter.
+  - **`SelectionChoreography.tsx`.** Selection-driven choreography (art scales in,
+    title rises w/ overshoot, metadata staggers), fanart crossfade, **rAF-spring**
+    list momentum, interruptible. Live tuning sliders (entrance/stagger/overshoot/
+    spring k/damping).
+  - **`MotionShowcase.tsx`.** Big moments (WAAPI: art grows 5× to viewport center
+    + return; title orbit/swirl), in/out transition pairs (fade/slide/scale/flip/
+    blur, 720 ms), ambient-loop grid (float/glow/breathe/tilt/hue/shimmer/…).
+  - **`BoxArtFX.tsx`.** REAL covers via `useMedia().coverUrl` (cycle with Next art):
+    reflection + grounded shadow, glass/gloss finish (backdrop-filter frost +
+    specular sweep), pointer-tilt.
+- **Findings → `MOTION.md`** (results table + interpretation). **WAAPI finding
+  REVERSED:** M1's "WAAPI invisible" was a misdiagnosis — the real bug was
+  window-present *timing* (one-shot played before the window was shown), already
+  fixed by the `oa://window-shown` handshake (D54). The probe's WAAPI loops
+  forever → visible. Corrected: `MOTION.md`, the `ViewTransition.tsx` header, and
+  the WAAPI memory.
+- **High-refresh: confirmed.** Probe showed 60 fps only because the operator's
+  panel was set to 60; at 144 Hz the program runs **144 fps** — no rAF cap.
+- **Loop validated (D53):** the whole session iterated via `cargo tauri dev` + HMR;
+  benches hot-loaded with no rebuild. The day-long M1 tax is gone.
+- **CI:** `tsc` + `lint` + `vitest` (179) green; frontend-only.
+- **Almost:** the M1 declarative entrance still carries `[oa-theme-motion]`
+  diagnostics + isn't feel-tuned (revisit when the real motion model lands). The
+  bench's keeper effects need promoting from dev demos into declarative
+  `theme.toml` presets (the actual Thrust M work, now unblocked + de-risked).
+- **Next:** with the foundation validated, build the **declarative motion model**
+  (D52) — turn the bench keepers into named, theme-authorable presets + the
+  keyframe vocabulary, dogfooded on a navigable surface (D55). Decide the entrance
+  diagnostics cleanup at that point.
+
+---
+
+## 2026-06-16 — ARC 3 Thrust M: motion-foundation PLANNING session (no code; decisions D53–D55, M0 slice queued)
+
+> The planning session the M1 entry below called for. **Outcome: all 6 open
+> problems in [PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md)
+> §"Motion foundation" resolved**; a new **M0 foundation slice** is queued before
+> M1 acceptance / M2. No code this session — docs only.
+
+- **The reframe that unlocked it:** dev and build are NOT far apart in *behavior* —
+  the M1 day-long tax was *iteration speed* (full `cargo tauri build` per tweak),
+  not a dev/build compositing gap. The Rust window-builder is identical in both
+  (`main.rs setup_single_window`: `transparent(true)` + `.visible(false)` + DWM);
+  only the WebView content source differs (devUrl+HMR vs bundled). So WAAPI is
+  invisible in dev too, CSS keyframes paint in both — and `cargo tauri dev`
+  reproduces the real surface with ~1 s HMR + live devtools.
+- **Decisions (operator signed off each fork in prose, then 2 structured):**
+  - **D53** — `cargo tauri dev` (single-window) is the motion-dev loop; build is for
+    playtest + final acceptance. Operator agreed to run dev for motion work.
+  - **D54** — `oa://window-shown` (the M1 handshake) is THE canonical "shell
+    presented" signal; entrance/boot/attract all ride it.
+  - **D55** — insert M0; M2 dogfoods on a navigable surface (Retroverse/playground),
+    NOT `DeclarativeShell` (it has no runtime view changes — wrong archetype for M2);
+    verification lightweight (playground smoke + `animationend` assert, no
+    screenshot-diff); scroll-safe rule = never animate the scroll container.
+- **M0 (queued, next motion work):** (1) confirm entrance paints under dev;
+  (2) hash-mounted motion-playground route; (3) `MOTION.md` compositing catalogue +
+  scroll-safe rule + windowShown pattern; (4) `animationend` dev assertion;
+  (5) bless `oa://window-shown`. Branch `theme-arc3-motion-slice-1` is the base.
+- **Almost:** nothing built — planning only. **Next:** M0 (run dev confirm first).
+
+---
+
+## 2026-06-16 — ARC 3 Thrust M, M1: declarative motion — 🚧 IN PROGRESS / PAUSED for a motion-foundation planning session (branch `theme-arc3-motion-slice-1`, NOT merged)
+
+> **Status, honestly:** the declarative contract (tokens + manifest field +
+> validator + Rust carry-through + resolver + dogfood) is solid and green. But
+> getting ONE entrance transition to actually render took an entire day of
+> operator-in-the-loop round-trips against the real transparent-WebView build,
+> and the result still isn't satisfying. The operator's call (correct): **stop,
+> wrap, and run a planning session on the motion FOUNDATION** before building the
+> harder cinematic thrusts (S shaders, V video) on top of it. If the simplest
+> animation is this hard, the substrate + our iteration loop need design. The
+> "Motion foundation — open problems" section in
+> [docs/PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md)
+> is the agenda. Do NOT treat M1 as shipped.
+
+- **Built (contract is sound, keep):** the declarative motion data path —
+  surface-split (D51 UI/DOM layer), DATA-only (D50), flowing to disk themes (D52).
+  - **Motion token group activated** (`tokens.ts`): `ThemeMotionTokens` +
+    `MOTION_TOKEN_VAR` (the 7 reserved `--motion-*`/`--ease-*` vars) + a
+    `themeMotionTokensCss(scope, tokens)` helper. Kept a SEPARATE group (not
+    folded into `ThemeTokens`) because its injection must re-assert the
+    `prefers-reduced-motion` floor inside the mount — a scoped inline/class
+    duration override would otherwise out-specify the global `:root { --motion-*:
+    0ms }` a11y reset for theme-internal motion. App.tsx injects it as a scoped
+    `<style>` (next to the perSystemTokens style) that re-zeroes the duration
+    vars under reduced-motion. `ThemePackage.motionTokens` + `diskTheme.ts`
+    carry-through.
+  - **Manifest motion field** (`manifest.ts`): `manifest.motion.view_transition`
+    = `{ preset: none|fade|slide|scale, duration?, easing? }` +
+    `VIEW_TRANSITION_PRESETS`. `validateTheme` rules: unknown preset →
+    `UNKNOWN_TRANSITION_PRESET` (error), blank timing/shape → `INVALID_MOTION`,
+    plus motionTokens key/value checks. Carried through the **Rust disk loader**
+    (`theme_loader.rs`: `ThemeMotion` / `ViewTransitionConfig` structs) so a
+    `theme.toml` `[motion.view_transition]` table reaches the frontend (D52).
+  - **Resolver + primitive:** `motion.ts` — `resolveViewTransition` + `parseDurationMs`
+    + `usePrefersReducedMotion`. `ViewTransition.tsx` — **CSS-animation** primitive
+    (NOT WAAPI — see findings): sets the inline `animation` shorthand naming a
+    keyframe from `index.css` (`oa-vt-fade|slide|scale`), restarted via
+    clear-reflow-reapply, optional `delayMs`.
+  - **Window-ready handshake** (the eventual fix for "nothing renders"): Rust
+    creates the shell window `.visible(false)`; `oa_shell_ready` command +
+    `present_shell_window` show it on frontend first-paint and emit
+    `oa://window-shown` (5 s timeout fallback so it can't stay black). Frontend
+    `windowShown.ts` signal; `DeclarativeShell` keys the entrance on it → the
+    transition plays the instant the window is actually on screen.
+  - **Dogfood:** `neon-list` (disk) declares `slide` (600 ms); `bare-declarative`
+    (built-in) declares `fade` (450 ms) + motion-token overrides.
+  - **⚠️ HARD-WON FINDINGS (read before M2) — debugged live against the operator's
+    transparent single-window build:**
+    1. **The Web Animations API does NOT visually composite in single-window
+       mode.** That shell is a transparent WebView2 composited over wgpu by DWM;
+       `element.animate()` fires (we confirmed `-> ANIMATE` in the log) but never
+       recomposites the transparent surface → invisible. **Use CSS animations**
+       (the `oa-vt-*` keyframes), which go through the normal paint pipeline DWM
+       recomposites — same as the working boot-fade / focus cards. M2/M3 motion
+       must stay CSS, not WAAPI.
+    2. **A mount-time play is unseen** — the OS window is presented AFTER the
+       WebView's first paint, so anything that plays at mount finishes before the
+       operator sees the shell. Hence the deferred `entered` flip. Multi-trigger
+       replays (mount + timer + window-focus + visibilitychange) stacked into a
+       **strobe** — one deferred play is the fix. (Bare `window` focus events also
+       proved unreliable in this WebView; `visibilitychange` worked but was
+       dropped with the rest.)
+    3. **The reduced-motion short-fade in the resolver is mostly moot** — the
+       global `* { animation-duration: 0.01ms !important }` reduced-motion reset
+       (index.css) wins over our inline `animation`, so view transitions go ~instant
+       under reduced motion regardless. Acceptable a11y floor; the resolver branch
+       is kept for correctness but the CSS reset is the actual gate.
+- **CI state:** `tsc` + `lint` + `vitest` (90 theme / 179 total) green;
+  `cargo clean -p oa-shell && cargo check` green. The entrance IS now visible on
+  the operator's build (after WAAPI→CSS + the window-ready handshake) but the
+  *feel/reliability* isn't there yet and the path to get here was far too costly.
+  **Diagnostics (`[oa-theme-motion]`, the `DeclarativeShell MOUNTED`/active-theme
+  markers) are intentionally LEFT IN — do not strip until the foundation is settled.**
+- **Almost / unresolved:** it renders, but: the timing/feel still needs tuning;
+  the scroll-container interaction the operator flagged isn't fully understood;
+  and every iteration cost a full `cargo tauri build`. These are foundation
+  issues, not polish.
+- **Next: a PLANNING session, not M2.** Agenda = the "Motion foundation — open
+  problems" section added to [PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md).
+  Headline problems: (1) what animation techniques actually composite on the
+  transparent WebView2/DWM surface (WAAPI doesn't; catalogue what does); (2) a
+  fast iteration loop for motion (dev-mode / a motion playground) so we're not
+  doing full release builds per tweak; (3) automated/visual verification so we
+  can't ship invisible motion again; (4) whether the single-surface
+  `DeclarativeShell` is even the right place to prove "view transitions" (it has
+  no runtime view changes — only the entrance). Settle these, THEN resume M1
+  acceptance and M2.
+
+---
+
 ## 2026-06-16 — ARC 2 "P" P.1 S3: disk-theme registry merge + Appearance picker + `themes` pack type — ✅ shipped (branch; **P.1 complete**, pre-merge)
 
 > Branch `theme-oatheme-loader-slice-1`. Closes P.1: on-disk `.oatheme` themes

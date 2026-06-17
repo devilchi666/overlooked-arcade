@@ -34,6 +34,7 @@ import TileContextMenu from "./platform/components/TileContextMenu";
 import NewCollectionDialog from "./platform/components/NewCollectionDialog";
 import ToastStack from "./platform/components/ToastStack";
 import ConfirmHost from "./platform/components/ConfirmHost";
+import MotionPlayground from "./dev/MotionPlayground";
 import { type SidebarView } from "@oa/platform/layout/types";
 import { createViewsStore } from "@oa/platform/views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -61,6 +62,7 @@ import {
   type ScanProgress,
 } from "@oa/platform/library/ingest";
 import { listenTo, listenScoped, OA_EVENTS } from "@oa/platform/api/eventsApi";
+import { markWindowShown } from "@oa/platform/theme/windowShown";
 import { allSupportedExtensions, resolveShaderPreset, systemForExtension, systemThemes } from "@oa/platform/themes/registry";
 import { launchRom, bootWithoutGame, type LaunchResult } from "@oa/platform/library/launch";
 import { MediaProvider } from "@oa/platform/library/media";
@@ -91,7 +93,7 @@ import {
 } from "@oa/platform/theme/registry";
 import { mergeDiskThemes } from "@oa/platform/theme/diskTheme";
 import { listDiskThemes } from "@oa/platform/api/themesApi";
-import { themeTokensToCssVars } from "@oa/platform/theme/tokens";
+import { themeTokensToCssVars, themeMotionTokensCss } from "@oa/platform/theme/tokens";
 import { perSystemOverrideCss } from "@oa/platform/themes/systemPalettes";
 import { ThemeProvider } from "@oa/platform/theme/host";
 import { PlatformProvider } from "@oa/platform/platformContext";
@@ -303,6 +305,21 @@ const App: Component = () => {
     void listenTo<boolean>(OA_EVENTS.gameFocusChanged, (e) => {
       setGameFocusSignal(!!e.payload);
     }).then((u) => { unlisten = u; });
+    onCleanup(() => unlisten?.());
+  });
+
+  // Window-present handshake (Theming ARC 3 M1). The backend created the window
+  // hidden; once we've actually painted a frame (double rAF), tell it to show
+  // the window. It emits `oa://window-shown` when shown (frontend-ready OR the
+  // timeout fallback) → mark the signal the DeclarativeShell entrance plays on.
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    void listenTo(OA_EVENTS.windowShown, () => markWindowShown()).then((u) => { unlisten = u; });
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void shellApi.notifyShellReady();
+      }),
+    );
     onCleanup(() => unlisten?.());
   });
 
@@ -660,6 +677,9 @@ const App: Component = () => {
     });
   });
 
+  // Dev-only motion compositing probe overlay (ARC 3 M0; toggled by F10 in dev).
+  const [motionPlaygroundOpen, setMotionPlaygroundOpen] = createSignal(false);
+
   // Keyboard handling — same gate-by-focus rules as before.
   // F1 reset, F2 pause, F3 frame-advance, F5 save, F6 fast-forward,
   // F7 slow-motion, F8 load, F12 screenshot — all consumed by the emu
@@ -672,6 +692,17 @@ const App: Component = () => {
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
   ]);
   const keydownHandler = (e: KeyboardEvent) => {
+    // F10 toggles the dev-only motion compositing probe (ARC 3 M0). Gated to
+    // `cargo tauri dev` builds — absent entirely from release. See
+    // frontend/src/dev/MotionPlayground.tsx.
+    if (import.meta.env.DEV && e.key === "F10") {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        setMotionPlaygroundOpen((v) => !v);
+        return;
+      }
+    }
     if (SUPPRESS_DEFAULT.has(e.key)) {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       // BUTTON + SELECT are interactive — Enter on a focused button is THE
@@ -1628,6 +1659,14 @@ const App: Component = () => {
                 <Show when={theme.perSystemTokens}>
                   {(pst) => <style>{perSystemOverrideCss(".oa-theme-mount", pst())}</style>}
                 </Show>
+                {/* ARC 3 M1 — motion-token overrides (durations/easings). A
+                    scoped `<style>` rather than inline vars so it can re-assert
+                    the prefers-reduced-motion floor INSIDE the mount (a scoped
+                    duration override would otherwise out-specify the global
+                    :root reduced-motion reset). See themeMotionTokensCss. */}
+                <Show when={theme.motionTokens}>
+                  {(mt) => <style>{themeMotionTokensCss(".oa-theme-mount", mt())}</style>}
+                </Show>
                 <Dynamic component={theme.entry} surface="main" />
               </div>
             )}
@@ -1935,6 +1974,11 @@ const App: Component = () => {
       <BackgroundJobsBar />
       <ResumePromptDialog />
       <HintBar />
+      {/* Dev-only motion compositing probe (ARC 3 M0). F10 toggles it; gated to
+          `cargo tauri dev` so it never renders in release. */}
+      <Show when={import.meta.env.DEV && motionPlaygroundOpen()}>
+        <MotionPlayground onClose={() => setMotionPlaygroundOpen(false)} />
+      </Show>
       {/* Per-page HintRegion providers inside each Retroverse page own
           the hint content now. The legacy top-level fallback that
           mapped left-sidebar / library-grid / right-sidebar focus
