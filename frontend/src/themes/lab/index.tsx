@@ -21,7 +21,7 @@
 // theme — so stripping it leaves nothing dangling but the four touch-points in
 // the strip checklist.
 
-import { createMemo, createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useMedia } from "@oa/platform/library/media";
@@ -61,6 +61,10 @@ const LAB_MANIFEST: ThemeManifest = {
 };
 
 const GRID_COLUMNS = 5;
+// GridNav is NOT virtualized (it renders one DOM cell + <img> per item). The lab
+// is a motion testbed, not the shipping library view, so cap the grid — a cheap
+// first mount keeps grid-build work from janking the route-transition animation.
+const LAB_GRID_CAP = 60;
 
 const LabEntry: ThemeEntry = (_props) => {
   const platform = usePlatform();
@@ -77,6 +81,15 @@ const LabEntry: ThemeEntry = (_props) => {
   const transition = (): ReturnType<typeof resolveViewTransition> =>
     resolveViewTransition(LAB_MANIFEST.motion, reducedMotion());
 
+  // Mount-once-keep latch for the grid: the heavy GridNav mounts on the first
+  // Library visit and then STAYS in the DOM (display-toggled below), so later
+  // Home↔Library switches never rebuild/teardown it — that rebuild was the
+  // route-switch delay AND the frame-drop that turned the slide into a hiccup.
+  const [libVisited, setLibVisited] = createSignal(false);
+  createEffect(() => {
+    if (route() === "library") setLibVisited(true);
+  });
+
   // Real, deduped library (one row per identity), sorted by title — same
   // contract bare/CoverFlow use, so the lab reconciles against stable refs.
   const games = createMemo<RomEntry[]>(() => {
@@ -90,7 +103,7 @@ const LabEntry: ThemeEntry = (_props) => {
       out.push(e);
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
-    return out;
+    return out.slice(0, LAB_GRID_CAP);
   });
 
   const coverFor = (e: RomEntry): string | null =>
@@ -133,21 +146,26 @@ const LabEntry: ThemeEntry = (_props) => {
           probe's `scroll/transform-parent` case, which did not break; if a
           scrollbar glitch shows on slide, switch the preset to `fade`. */}
       <ViewTransition class="relative min-h-0 flex-1" trigger={route} transition={transition}>
-        <Show when={route() === "home"}>
-          <section class="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <h1 class="text-3xl font-black tracking-tight">Graphics Lab</h1>
-            <p class="max-w-lg text-sm leading-relaxed text-white/55">
-              In-flight rendering testbed. Switch to <b class="text-white/80">Library</b>{" "}
-              to exercise the cover grid; motion, shaders, and video land here as the
-              declarative model grows. Nothing here ships.
-            </p>
-            <p class="text-[0.6rem] uppercase tracking-[0.3em] text-white/30">
-              {games().length} games in library
-            </p>
-          </section>
-        </Show>
+        {/* Home — cheap, kept mounted; display-toggled so the switch never rebuilds. */}
+        <section
+          class="h-full flex-col items-center justify-center gap-3 px-8 text-center"
+          classList={{ flex: route() === "home", hidden: route() !== "home" }}
+        >
+          <h1 class="text-3xl font-black tracking-tight">Graphics Lab</h1>
+          <p class="max-w-lg text-sm leading-relaxed text-white/55">
+            In-flight rendering testbed. Switch to <b class="text-white/80">Library</b>{" "}
+            to exercise the cover grid; motion, shaders, and video land here as the
+            declarative model grows. Nothing here ships.
+          </p>
+          <p class="text-[0.6rem] uppercase tracking-[0.3em] text-white/30">
+            {games().length} games shown (capped at {LAB_GRID_CAP})
+          </p>
+        </section>
 
-        <Show when={route() === "library"}>
+        {/* Library — mounts on first visit (libVisited latch) and STAYS; only its
+            display toggles after that, so Home↔Library never rebuilds the grid. */}
+        <Show when={libVisited()}>
+          <div class="h-full" classList={{ block: route() === "library", hidden: route() !== "library" }}>
           <GridNav
             id="lab-library"
             class="h-full overflow-y-auto p-6"
@@ -186,6 +204,7 @@ const LabEntry: ThemeEntry = (_props) => {
               );
             }}
           </GridNav>
+          </div>
         </Show>
       </ViewTransition>
 
