@@ -54,10 +54,19 @@ const LAB_MANIFEST: ThemeManifest = {
   surfaces: ["main"],
   // [GRAPHICS-LAB] MOTION (M-mod.1): the lab DECLARES a view-transition preset
   // as data (D50/D52) — the engine resolver + `ViewTransition` play it on every
-  // Home↔Library swap below. This is the first visible dogfood of the declarative
-  // motion model on a navigable surface (D55). `slide` = translateY(96px)+fade
-  // (index.css `oa-vt-slide`); swap to `fade`/`scale` here to compare feel.
-  motion: { view_transition: { preset: "slide", duration: "320ms" } },
+  // Home↔Library swap below. First visible dogfood of the declarative motion
+  // model on a navigable surface (D55). `slide` = translateY(96px)+fade
+  // (index.css `oa-vt-slide`). Readability tuning (after the 2026-06-17 "can't
+  // tell it's a slide" report — log confirmed it fired, reduced-motion OFF): the
+  // shell-default easing `cubic-bezier(0.16,1,0.3,1)` front-loads ~90% of the
+  // travel into the first third (pop-then-settle, hard to read over only 96px),
+  // so the lab overrides to a gentler easeOutCubic + a longer 450ms so the glide
+  // actually spreads across the duration. The 96px distance is fixed in shared
+  // index.css; making distance/easing fully authorable is the §2 basis widening
+  // next. Swap preset to `fade`/`scale` here to compare feel.
+  motion: {
+    view_transition: { preset: "slide", duration: "450ms", easing: "cubic-bezier(0.33, 1, 0.68, 1)" },
+  },
 };
 
 const GRID_COLUMNS = 5;
