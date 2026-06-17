@@ -133,7 +133,12 @@ const LabEntry: ThemeEntry = (_props) => {
   );
 
   return (
-    <div class="flex h-full w-full flex-col bg-[#0b0d12] text-white">
+    // `overflow-hidden` clips the view-transition's translateY overshoot so it
+    // can't extend an ancestor's scroll area → no transient second scrollbar
+    // during the slide (the M0 MOTION.md rule #2 scroll-container interaction,
+    // confirmed live 2026-06-17). A shell root never scrolls as a whole; the
+    // library's own grid keeps its inner overflow-y-auto scrollbar.
+    <div class="flex h-full w-full flex-col overflow-hidden bg-[#0b0d12] text-white">
       <header class="flex items-center justify-between border-b border-white/10 px-6 py-3">
         <div class="flex items-center gap-1">
           <span class="mr-4 text-sm font-black tracking-tight">

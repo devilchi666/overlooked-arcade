@@ -94,13 +94,18 @@ entry still carry the old WAAPI claim — correct them when next editing.)
 1. **Don't play motion before the window is shown.** Key entrance/boot/attract
    motion on `oa://window-shown` (D54). This — not a WAAPI ban — was the real M1
    lesson. (WAAPI/CSS/rAF all composite; see results above.)
-2. **Scroll container — REVISIT, not a confirmed rule.** The probe animated a
-   scroll container's parent *and* scrolled it with no obvious break, so M1's
-   "transforming a scroll-container parent disturbs the scrollbar" claim did not
-   reproduce in isolation. The real `ViewTransition` in `declarativeShell.tsx`
-   wraps the `overflow-y-auto` nav with a `flex-1 min-h-0` transform — if a glitch
-   shows up there, prefer animating an inner non-scrolling wrapper. Confirm on the
-   real surface before treating as a rule.
+2. **A transform-translate over a scroll container needs a clipping ancestor —
+   CONFIRMED 2026-06-17 (Graphics Lab).** The probe didn't reproduce it in
+   isolation, but the real `ViewTransition` did: `oa-vt-slide` translates the
+   routed wrapper `translateY(96px)` at the start, and a transformed element still
+   contributes to its ANCESTOR's scrollable overflow — so the overshoot makes an
+   ancestor briefly overflow → a transient second scrollbar that vanishes when the
+   slide settles to `translateY(0)`. Fix: give the transform a **clipping
+   ancestor** (`overflow-hidden` on the shell root — it never scrolls as a whole;
+   the inner `overflow-y-auto` grid keeps its own scrollbar). Clipping the
+   wrapper's *own* overflow is NOT enough — the wrapper's translated box still
+   extends the ancestor's scroll area. (Alternative per M1: animate an inner
+   non-scrolling wrapper instead of one that contains the scroll container.)
 3. _(more to come as real choreography teaches us)_
 
 ## The motion archetypes we're actually chasing (so the bench tests the right thing)
