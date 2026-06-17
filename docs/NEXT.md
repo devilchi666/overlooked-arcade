@@ -225,7 +225,12 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
     Dogfood on a **navigable** surface (Retroverse routes/tabs), NOT the
     single-surface `DeclarativeShell` (D55). Folds in M1 entrance feel-tuning +
     stripping the `[oa-theme-motion]` diagnostics, and the original M2 (view/route
-    transition presets) / M3 (parallax + preset gallery).
+    transition presets) / M3 (parallax + preset gallery). **Add to the seed
+    catalog: `path-move` (bezier-waypoint position channel) + a keyframe-timeline
+    escape hatch** — the one HyperSpin Tier-1 ask (`MotionPath`/`timeline`) not yet
+    in the D57 vocabulary, additive to the keyframe/spring basis (see
+    [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md)
+    §3).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).
@@ -664,6 +669,27 @@ Plan: [docs/PLANS/guided-setup.md](PLANS/guided-setup.md) §7 + §13.
 
 
 ## MEDIUM — Phase 3+ polish
+
+### ARC-3+ theme candidates — net-new asks from the wishlist audit (2026-06-17)
+The Tier-1 "good ideas never built" surfaced by
+[features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md)
+§2 that have **no home elsewhere on this queue** (the motion-path/timeline ask is
+already folded into the ARC 3 declarative-motion MODEL bullet above; Thrust V/S
+already cover video/shaders). Each is net-new for OA — parked here so they survive
+session resets, none scheduled yet:
+- ⬜ **Declarative conditional / reactive theming** — visibility/variant bound to
+  metadata + UI state (e.g. "menu open", "no dedicated theme"), as a **pre-Rhai
+  declarative subset** of the deferred Thrust R. Covers ~80% of the cross-community
+  conditional asks without scripting. Lands near the manifest/contract layer.
+- ⬜ **Color extracted from box art** — ambient glow / background tint derived from
+  the selected game's cover, exposed as a derived color token feeding the motion
+  `fanart-crossfade` / `ThemeBackground` tiers. Wanted across every community,
+  shipped by none (today everyone hand-authors per-system palettes — OA's S5.2
+  `SYSTEM_PALETTES` is the same workaround). Genuine differentiator.
+- ⬜ **Hot-reload of disk themes while authoring** — watch
+  `<exe_dir>/themes/community/<id>/` and re-apply on change for the declarative
+  loader (extends our `cargo tauri dev` HMR to end-user disk themes). Cheap;
+  large authoring-UX payoff; ARC 4 Theme Studio territory but pullable earlier.
 
 ~~**2026-06-08 — Audio quality pass: clipping + clicking on some cores (NES confirmed).**~~
 **ROOT CAUSE FIXED 2026-06-08** on `feat/audio-quality` (commit `0bb4e89`).
