@@ -14,6 +14,16 @@ synthesized here and cross-checked against our own
 [MOTION.md](MOTION.md) (what actually composites on OA's transparent surface).
 Numbers marked _inferred_ come from reference re-implementations, not vendor specs.
 
+> **Companion audit — read alongside this one.**
+> [THEME_BUILDER_WISHLIST_2026-06-17.md](THEME_BUILDER_WISHLIST_2026-06-17.md) is the
+> sibling pass: where this doc derives the **motion** vocabulary to build, the wishlist
+> mines the **broader theme features** authors across BigBox / ES-DE / HyperSpin /
+> RetroArch / Playnite / Pegasus repeatedly asked for but never got. Its motion-relevant
+> carry-overs we still want added — **motion paths (bezier position curves)** and a
+> **keyframe-timeline escape hatch** (HyperSpin's Tier-1 `MotionPath` / `timeline`) — are
+> additive to the D57 seed catalog in §3 below. Treat the two docs as one "what to build"
+> set: this for motion, the wishlist for everything else.
+
 ---
 
 ## 1. The competitive landscape in one read

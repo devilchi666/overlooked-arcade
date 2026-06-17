@@ -6,6 +6,15 @@ The first pass cataloged what these frontends _can_ do; this one mines what thei
 theme authors **repeatedly asked for and never got** — the good ideas left on the
 table — so OA can adopt the best of them deliberately.
 
+> **Companion audit — read alongside this one.**
+> [MOTION_VOCABULARY_AUDIT_2026-06-17.md](MOTION_VOCABULARY_AUDIT_2026-06-17.md) is the
+> sibling pass: it derives the **motion** vocabulary to build (named effects + their
+> parameter basis, locked as D57), where this doc covers the **broader theme features**
+> we still want added. The two overlap only at motion — the Tier-1 **motion paths +
+> keyframe-timeline** ask in §2/§3 here is the addition that feeds back into that doc's
+> seed catalog. Treat the two as one "what to build" set: that for motion, this for
+> everything else.
+
 **Method.** Three parallel passes over feature-request boards + issue trackers +
 forums: **BigBox/LaunchBox** (featurebase + forums + reddit), **ES-DE / HyperSpin
 / RetroArch** (GitLab/GitHub issues + forums + roadmaps), **Playnite / Pegasus +
