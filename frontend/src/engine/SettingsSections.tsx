@@ -602,6 +602,34 @@ export const ExperimentalSettings: Component = () => {
         />
       </SettingsCard>
 
+      {/* [GRAPHICS-LAB] strip-on-ship: the only door to the experimental Graphics
+          Lab testbed theme (hidden from the Appearance picker). Activating it
+          persists the choice + relaunches (setActiveTheme), same as any theme
+          switch. See docs/features/theming-substrate/GRAPHICS_LAB_TESTBED.md. */}
+      <SettingsCard
+        title="Graphics Lab"
+        description="Internal rendering testbed (motion / shaders / video). Not a shipping theme — activating it restarts the shell into the lab. Switch back via Settings → Themes (or the engine-summon icon)."
+      >
+        <SettingRow
+          label="Graphics Lab theme"
+          inherited={null}
+          overridden={activeThemeId() === "lab"}
+          description={
+            activeThemeId() === "lab"
+              ? "Currently active. Pick another theme under Settings → Themes to leave the lab."
+              : "Activate to restart the shell into the experimental testbed surface."
+          }
+        >
+          <button
+            class="rounded border border-amber-400/50 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-400/20 disabled:opacity-40"
+            disabled={activeThemeId() === "lab"}
+            onClick={() => void setActiveTheme("lab")}
+          >
+            {activeThemeId() === "lab" ? "Active" : "Activate (restarts)"}
+          </button>
+        </SettingRow>
+      </SettingsCard>
+
       {/* Dev tools — collapsed-by-default disclosure for affordances only
           developers ever need. Lives behind a click so it doesn't add
           noise for normal operators. The Background Jobs test spawner

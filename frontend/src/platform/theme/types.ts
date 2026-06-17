@@ -74,4 +74,11 @@ export type ThemePackage = {
   /// ships the gb/nes/vectrex pilots; CoverFlow / bare ship none. (Factual
   /// per-system data like touch-support stays platform — `systemSupportsTouch`.)
   perSystemUiConfigs?: PerSystemUiConfigs;
+  /// Hidden-theme flag: when true the theme is registered + valid + activatable,
+  /// but the normal Appearance picker omits it (see `availableThemes()`). A
+  /// generic concept (any preview/internal theme can use it). Today's only
+  /// consumer is the strip-on-ship Graphics Lab testbed, reachable solely via
+  /// Settings → Experimental → Graphics Lab. See
+  /// docs/features/theming-substrate/GRAPHICS_LAB_TESTBED.md.
+  experimental?: boolean;
 };

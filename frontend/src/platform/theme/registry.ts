@@ -68,8 +68,14 @@ function validThemes(): ThemePackage[] {
 }
 
 /// The picker's option list (id + display name per VALID registered theme).
+/// [GRAPHICS-LAB] strip-on-ship: experimental themes stay registered + valid +
+/// activatable, but are omitted here so the normal Appearance picker hides them
+/// (they're reached only via Settings → Experimental). See
+/// docs/features/theming-substrate/GRAPHICS_LAB_TESTBED.md.
 export function availableThemes(): ThemeChoice[] {
-  return validThemes().map((t) => ({ id: t.manifest.id, name: t.manifest.name }));
+  return validThemes()
+    .filter((t) => !t.experimental)
+    .map((t) => ({ id: t.manifest.id, name: t.manifest.name }));
 }
 
 /// The persisted active theme id (`null` until the boot seed resolves, or
