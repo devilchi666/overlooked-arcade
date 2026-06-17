@@ -1,5 +1,12 @@
 # Motion — what composites on OA's surface (Theming ARC 3 Thrust M)
 
+> **Sibling doc:** [MOTION_VOCABULARY_AUDIT_2026-06-17.md](MOTION_VOCABULARY_AUDIT_2026-06-17.md)
+> — the competitive audit (BigBox / HyperSpin / ES-DE / Pegasus / Playnite /
+> tvOS / PS5 / Switch / Netflix / Plex) deriving **which named presets to build**
+> (a ~21-preset seed catalog) and **the shared parameter basis** every preset is
+> defaults over. Read it before locking the Thrust-M preset registry. This doc =
+> what _paints_ here; that doc = what to _author_.
+
 OA's single-window shell is a **transparent WebView2 composited over wgpu by
 Windows DWM** (`main.rs setup_single_window`). That composition has a quirk: some
 animation techniques fire but never recomposite the transparent surface, so they
