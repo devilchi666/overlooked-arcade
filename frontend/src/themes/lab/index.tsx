@@ -26,8 +26,9 @@ import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useMedia } from "@oa/platform/library/media";
 import { GridNav } from "@oa/platform/nav";
-import ViewTransition from "@oa/platform/theme/ViewTransition";
-import { resolveViewTransition, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import SpecTransition from "@oa/platform/theme/SpecTransition";
+import { usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import type { MotionSpec } from "@oa/platform/theme/motionSpec";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { ThemeEntry, ThemePackage } from "@oa/platform/theme/types";
@@ -52,21 +53,23 @@ const LAB_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
-  // [GRAPHICS-LAB] MOTION (M-mod.1): the lab DECLARES a view-transition preset
-  // as data (D50/D52) — the engine resolver + `ViewTransition` play it on every
-  // Home↔Library swap below. First visible dogfood of the declarative motion
-  // model on a navigable surface (D55). `slide` = translateY(96px)+fade
-  // (index.css `oa-vt-slide`). Readability tuning (after the 2026-06-17 "can't
-  // tell it's a slide" report — log confirmed it fired, reduced-motion OFF): the
-  // shell-default easing `cubic-bezier(0.16,1,0.3,1)` front-loads ~90% of the
-  // travel into the first third (pop-then-settle, hard to read over only 96px),
-  // so the lab overrides to a gentler easeOutCubic + a longer 450ms so the glide
-  // actually spreads across the duration. The 96px distance is fixed in shared
-  // index.css; making distance/easing fully authorable is the §2 basis widening
-  // next. Swap preset to `fade`/`scale` here to compare feel.
-  motion: {
-    view_transition: { preset: "slide", duration: "450ms", easing: "cubic-bezier(0.33, 1, 0.68, 1)" },
-  },
+  // [GRAPHICS-LAB] MOTION (M-mod.1): the lab now drives the route swap through the
+  // §2 BASIS (MotionSpec + SpecTransition/WAAPI), not the M1 fixed-preset path —
+  // so distance/duration/easing are real authorable data (see LAB_VIEW_SPEC). The
+  // M1 `motion.view_transition` manifest field is intentionally absent; the basis
+  // spec lives lab-local for now and graduates into the manifest/theme.toml
+  // contract once its shape settles (the additive widening, next).
+};
+
+// [GRAPHICS-LAB] The authored view-transition spec. This is the §2 basis as DATA:
+// separate channels (opacity + y travel) over timing primitives. Tuned past the
+// fixed M1 preset to address the 2026-06-17 "a little fast" note — 560ms + 140px
+// of travel with an even easeOutCubic, so the glide is unmistakable. Edit freely;
+// the SpecTransition player compiles this to WAAPI keyframes.
+const LAB_VIEW_SPEC: MotionSpec = {
+  duration: 560,
+  easing: "cubic-bezier(0.33, 1, 0.68, 1)",
+  channels: { opacity: [0, 1], y: [140, 0] },
 };
 
 const GRID_COLUMNS = 5;
@@ -87,8 +90,6 @@ const LabEntry: ThemeEntry = (_props) => {
   // (+ live reduced-motion floor) once; `ViewTransition` replays it whenever the
   // route changes. Reduced-motion downgrades any preset to a short fade.
   const reducedMotion = usePrefersReducedMotion();
-  const transition = (): ReturnType<typeof resolveViewTransition> =>
-    resolveViewTransition(LAB_MANIFEST.motion, reducedMotion());
 
   // Mount-once-keep latch for the grid: the heavy GridNav mounts on the first
   // Library visit and then STAYS in the DOM (display-toggled below), so later
@@ -153,13 +154,17 @@ const LabEntry: ThemeEntry = (_props) => {
       </header>
 
       {/* [GRAPHICS-LAB] MOTION (M-mod.1) — LIVE: the routed region IS the
-          `ViewTransition` host. `trigger={route}` replays the declared preset
-          (manifest.motion.view_transition) on every Home↔Library swap; children
-          render synchronously so switching is never blocked (interruptible). The
-          library's scroll container lives INSIDE the animated wrapper — the M0
-          probe's `scroll/transform-parent` case, which did not break; if a
-          scrollbar glitch shows on slide, switch the preset to `fade`. */}
-      <ViewTransition class="relative min-h-0 flex-1" trigger={route} transition={transition}>
+          `SpecTransition` host. `trigger={route}` replays LAB_VIEW_SPEC (the §2
+          basis, WAAPI) on every Home↔Library swap; children render synchronously
+          so switching is never blocked (interruptible). The slide's translateY
+          overshoot is clipped by the shell root's `overflow-hidden` (no transient
+          scrollbar — MOTION.md rule #2). */}
+      <SpecTransition
+        class="relative min-h-0 flex-1"
+        trigger={route}
+        spec={() => LAB_VIEW_SPEC}
+        reducedMotion={reducedMotion}
+      >
         {/* Home — cheap, kept mounted; display-toggled so the switch never rebuilds. */}
         <section
           class="h-full flex-col items-center justify-center gap-3 px-8 text-center"
@@ -220,7 +225,7 @@ const LabEntry: ThemeEntry = (_props) => {
           </GridNav>
           </div>
         </Show>
-      </ViewTransition>
+      </SpecTransition>
 
       {/* Selection echo — a stand-in for the hero/detail panel the selection
           choreography (M-mod.2) will animate. Static for now. */}
