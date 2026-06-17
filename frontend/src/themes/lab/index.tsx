@@ -26,6 +26,8 @@ import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useMedia } from "@oa/platform/library/media";
 import { GridNav } from "@oa/platform/nav";
+import ViewTransition from "@oa/platform/theme/ViewTransition";
+import { resolveViewTransition, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { ThemeEntry, ThemePackage } from "@oa/platform/theme/types";
@@ -50,9 +52,12 @@ const LAB_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
-  // [GRAPHICS-LAB] MOTION (M-mod.1): `motion.view_transition` will be declared
-  // here once the resolver widens past M1's preset set — the lab is where we
-  // prove a declared preset drives the route swap below on a real surface.
+  // [GRAPHICS-LAB] MOTION (M-mod.1): the lab DECLARES a view-transition preset
+  // as data (D50/D52) — the engine resolver + `ViewTransition` play it on every
+  // Home↔Library swap below. This is the first visible dogfood of the declarative
+  // motion model on a navigable surface (D55). `slide` = translateY(96px)+fade
+  // (index.css `oa-vt-slide`); swap to `fade`/`scale` here to compare feel.
+  motion: { view_transition: { preset: "slide", duration: "320ms" } },
 };
 
 const GRID_COLUMNS = 5;
@@ -64,6 +69,13 @@ const LabEntry: ThemeEntry = (_props) => {
 
   const [route, setRoute] = createSignal<LabRoute>("home");
   const [selected, setSelected] = createSignal<RomEntry | null>(null);
+
+  // [GRAPHICS-LAB] MOTION (M-mod.1): resolve the manifest's declared transition
+  // (+ live reduced-motion floor) once; `ViewTransition` replays it whenever the
+  // route changes. Reduced-motion downgrades any preset to a short fade.
+  const reducedMotion = usePrefersReducedMotion();
+  const transition = (): ReturnType<typeof resolveViewTransition> =>
+    resolveViewTransition(LAB_MANIFEST.motion, reducedMotion());
 
   // Real, deduped library (one row per identity), sorted by title — same
   // contract bare/CoverFlow use, so the lab reconciles against stable refs.
@@ -113,10 +125,14 @@ const LabEntry: ThemeEntry = (_props) => {
         <EngineSummonIcon />
       </header>
 
-      {/* [GRAPHICS-LAB] MOTION (M-mod.1): this region wraps the routed content and
-          becomes the `ViewTransition` host — the route swap below is what the
-          declarative view-transition preset will animate. */}
-      <main class="relative min-h-0 flex-1">
+      {/* [GRAPHICS-LAB] MOTION (M-mod.1) — LIVE: the routed region IS the
+          `ViewTransition` host. `trigger={route}` replays the declared preset
+          (manifest.motion.view_transition) on every Home↔Library swap; children
+          render synchronously so switching is never blocked (interruptible). The
+          library's scroll container lives INSIDE the animated wrapper — the M0
+          probe's `scroll/transform-parent` case, which did not break; if a
+          scrollbar glitch shows on slide, switch the preset to `fade`. */}
+      <ViewTransition class="relative min-h-0 flex-1" trigger={route} transition={transition}>
         <Show when={route() === "home"}>
           <section class="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
             <h1 class="text-3xl font-black tracking-tight">Graphics Lab</h1>
@@ -171,7 +187,7 @@ const LabEntry: ThemeEntry = (_props) => {
             }}
           </GridNav>
         </Show>
-      </main>
+      </ViewTransition>
 
       {/* Selection echo — a stand-in for the hero/detail panel the selection
           choreography (M-mod.2) will animate. Static for now. */}
