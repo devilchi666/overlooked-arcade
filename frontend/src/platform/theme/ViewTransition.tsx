@@ -2,14 +2,15 @@
 // transition when its trigger changes (Theming ARC 3 Thrust M, M1; D51 — UI
 // cinematics are CSS/DOM, never wgpu, never scripted).
 //
-// CSS-DRIVEN, not the Web Animations API. Single-window mode is a transparent
-// WebView2 composited over wgpu by DWM; WAAPI animations fire (confirmed via
-// the oa-theme-motion log: `-> ANIMATE`) but don't recomposite the transparent
-// surface, so nothing is seen. CSS animations run through the normal
-// style/layout/paint pipeline that DWM recomposites — the boot fade + focus
-// cards in this app prove CSS works here. We set the `animation` shorthand
-// inline (duration/easing resolved from the theme) naming a keyframe defined in
-// index.css (`oa-vt-fade|slide|scale`).
+// CSS-DRIVEN. NOTE (corrected 2026-06-17, ARC 3 M0 probe): the earlier claim
+// that the Web Animations API "doesn't composite" on OA's transparent surface
+// was a MISDIAGNOSIS — WAAPI paints fine here; M1's invisible entrance was a
+// window-present *timing* bug (a one-shot played before the window was shown),
+// fixed by the `oa://window-shown` handshake. See docs/.../MOTION.md. We keep
+// this primitive CSS-based anyway because the transition is declarative,
+// theme-authored data (duration/easing resolved from the theme, naming a keyframe
+// in index.css: `oa-vt-fade|slide|scale`) — CSS is the right fit for that. WAAPI
+// is reserved for computed/imperative motion (the M0 benches use it).
 //
 // INTERRUPTIBLE BY DESIGN (the BigBox blocking-storyboard bug, avoided). The
 // children render synchronously and are ALWAYS live — the animation is purely

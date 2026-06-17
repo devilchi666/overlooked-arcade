@@ -11,22 +11,36 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Theming ARC 3 — Cinematic (Thrust M / motion)** — 🚧 **M1 ATTEMPTED 2026-06-16,
-  PAUSED for a motion-FOUNDATION planning session** (operator's call). Branch
-  `theme-arc3-motion-slice-1` (NOT merged; diagnostics left in). The declarative
-  motion *contract* landed + is green (token group, `manifest.motion.view_transition`
-  through the Rust disk loader, resolver, **CSS-animation** `ViewTransition` — NOT
-  WAAPI, dogfood neon-list/bare) and a real **window-ready handshake** shipped
-  (Rust `.visible(false)` + `oa_shell_ready` → `oa://window-shown`). But getting
-  ONE entrance to render took a full day of round-trips on the transparent-WebView
-  build and the feel/reliability isn't there. **Next session = PLANNING, not M2.**
-  Agenda: [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
-  §"Motion foundation — open problems" (what composites on DWM/transparent
-  WebView2, a fast iteration loop vs full `cargo tauri build`, visual verification,
-  the window-ready pattern, whether single-surface `DeclarativeShell` is the right
-  dogfood, scrollbar interaction). Full story:
-  [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
-  (2026-06-16 M1 entry).
+- **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 FOUNDATION VALIDATED
+  + MERGED to main 2026-06-17 (the "true yes").** The compositing probe + motion
+  benches proved there is **no compositing ceiling** on OA's transparent surface
+  and **BigBox-tier motion is reachable** (operator playtested probe/choreography/
+  showcase/box-art-FX). Key correction: M1's "WAAPI invisible" was a MISDIAGNOSIS
+  (real bug = window-present timing, already fixed by `oa://window-shown` D54);
+  WAAPI/CSS/rAF/GPU-promotion/filter/backdrop-filter all paint. 144 fps confirmed
+  (no rAF cap). Dev-only 4-tab bench at `frontend/src/dev/` (F10 in `cargo tauri
+  dev`, gated `import.meta.env.DEV`, never ships). Decisions D53–D56;
+  [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md) is
+  the catalogue. **Next motion work = the declarative motion MODEL** (turn bench
+  keepers into theme-authorable `theme.toml` presets, D52, dogfooded on a navigable
+  surface per D55). _History below: branch `theme-arc3-motion-slice-1` (merged)._
+  The declarative motion *contract* landed + is green (token group,
+  `manifest.motion.view_transition` through the Rust disk loader, resolver,
+  **CSS-animation** `ViewTransition` — NOT WAAPI, dogfood neon-list/bare) and a real
+  **window-ready handshake** shipped (Rust `.visible(false)` + `oa_shell_ready` →
+  `oa://window-shown`). The planning session resolved all 6 open problems
+  (**D53–D55**): **`cargo tauri dev` is the motion loop** (compositing is identical
+  to a build — only iteration speed differed; iterate in dev, accept in build);
+  `oa://window-shown` blessed as THE entrance/boot/attract signal; insert an **M0**
+  foundation slice (dev loop + motion-playground route + `MOTION.md` compositing
+  catalogue + scroll-safe rule + `animationend` dev assertion); **M2 dogfoods on a
+  navigable surface** (Retroverse/playground), NOT the single-surface
+  `DeclarativeShell`; verification stays lightweight (no screenshot-diff). Plan:
+  [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
+  §"Motion foundation — RESOLVED" + Thrust M (M0); decisions D53–D55 in
+  [features/theming-substrate/DECISIONS.md](features/theming-substrate/DECISIONS.md).
+  Full story: [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
+  (2026-06-16 entries).
 
 - **External Emulator Depth** — arc opened 2026-06-15; **Slice 1 shipped +
   merged to main 2026-06-15**. Deepens the shipped launcher abstraction (VL Phase C) along

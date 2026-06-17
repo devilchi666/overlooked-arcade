@@ -34,6 +34,7 @@ import TileContextMenu from "./platform/components/TileContextMenu";
 import NewCollectionDialog from "./platform/components/NewCollectionDialog";
 import ToastStack from "./platform/components/ToastStack";
 import ConfirmHost from "./platform/components/ConfirmHost";
+import MotionPlayground from "./dev/MotionPlayground";
 import { type SidebarView } from "@oa/platform/layout/types";
 import { createViewsStore } from "@oa/platform/views/store";
 import { platformNodeIdFor, parsePlatformNodeId } from "@oa/platform/views/defaults";
@@ -676,6 +677,9 @@ const App: Component = () => {
     });
   });
 
+  // Dev-only motion compositing probe overlay (ARC 3 M0; toggled by F10 in dev).
+  const [motionPlaygroundOpen, setMotionPlaygroundOpen] = createSignal(false);
+
   // Keyboard handling — same gate-by-focus rules as before.
   // F1 reset, F2 pause, F3 frame-advance, F5 save, F6 fast-forward,
   // F7 slow-motion, F8 load, F12 screenshot — all consumed by the emu
@@ -688,6 +692,17 @@ const App: Component = () => {
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
   ]);
   const keydownHandler = (e: KeyboardEvent) => {
+    // F10 toggles the dev-only motion compositing probe (ARC 3 M0). Gated to
+    // `cargo tauri dev` builds — absent entirely from release. See
+    // frontend/src/dev/MotionPlayground.tsx.
+    if (import.meta.env.DEV && e.key === "F10") {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        setMotionPlaygroundOpen((v) => !v);
+        return;
+      }
+    }
     if (SUPPRESS_DEFAULT.has(e.key)) {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       // BUTTON + SELECT are interactive — Enter on a focused button is THE
@@ -1959,6 +1974,11 @@ const App: Component = () => {
       <BackgroundJobsBar />
       <ResumePromptDialog />
       <HintBar />
+      {/* Dev-only motion compositing probe (ARC 3 M0). F10 toggles it; gated to
+          `cargo tauri dev` so it never renders in release. */}
+      <Show when={import.meta.env.DEV && motionPlaygroundOpen()}>
+        <MotionPlayground onClose={() => setMotionPlaygroundOpen(false)} />
+      </Show>
       {/* Per-page HintRegion providers inside each Retroverse page own
           the hint content now. The legacy top-level fallback that
           mapped left-sidebar / library-grid / right-sidebar focus

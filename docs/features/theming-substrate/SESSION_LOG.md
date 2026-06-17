@@ -9,6 +9,83 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-17 — ARC 3 Thrust M, M0: motion bench BUILT + foundation VALIDATED (the "true yes") — ✅ on branch `theme-arc3-motion-slice-1`
+
+> **Headline: there is NO compositing ceiling on OA's transparent surface, and
+> BigBox-tier motion is reachable.** The probe answered the program-halting
+> question (can the surface even carry rich motion?) with an unqualified yes, and
+> the choreography/showcase/box-art benches proved we can make it FEEL premium on
+> real cover art. Operator playtested all four benches and called it.
+
+- **Built (dev-only, gated behind `import.meta.env.DEV`; F10 in `cargo tauri dev`):**
+  a 4-tab **motion bench** at `frontend/src/dev/` (App.tsx mounts it; never ships):
+  - **`MotionPlayground.tsx` — compositing probe.** 12 cells, same motion via
+    different techniques on the real surface. **Every cell PAINTS**, incl. WAAPI,
+    `will-change`/`translate3d` GPU promotion, rAF transforms, filter,
+    backdrop-filter, scroll-container. Live fps meter.
+  - **`SelectionChoreography.tsx`.** Selection-driven choreography (art scales in,
+    title rises w/ overshoot, metadata staggers), fanart crossfade, **rAF-spring**
+    list momentum, interruptible. Live tuning sliders (entrance/stagger/overshoot/
+    spring k/damping).
+  - **`MotionShowcase.tsx`.** Big moments (WAAPI: art grows 5× to viewport center
+    + return; title orbit/swirl), in/out transition pairs (fade/slide/scale/flip/
+    blur, 720 ms), ambient-loop grid (float/glow/breathe/tilt/hue/shimmer/…).
+  - **`BoxArtFX.tsx`.** REAL covers via `useMedia().coverUrl` (cycle with Next art):
+    reflection + grounded shadow, glass/gloss finish (backdrop-filter frost +
+    specular sweep), pointer-tilt.
+- **Findings → `MOTION.md`** (results table + interpretation). **WAAPI finding
+  REVERSED:** M1's "WAAPI invisible" was a misdiagnosis — the real bug was
+  window-present *timing* (one-shot played before the window was shown), already
+  fixed by the `oa://window-shown` handshake (D54). The probe's WAAPI loops
+  forever → visible. Corrected: `MOTION.md`, the `ViewTransition.tsx` header, and
+  the WAAPI memory.
+- **High-refresh: confirmed.** Probe showed 60 fps only because the operator's
+  panel was set to 60; at 144 Hz the program runs **144 fps** — no rAF cap.
+- **Loop validated (D53):** the whole session iterated via `cargo tauri dev` + HMR;
+  benches hot-loaded with no rebuild. The day-long M1 tax is gone.
+- **CI:** `tsc` + `lint` + `vitest` (179) green; frontend-only.
+- **Almost:** the M1 declarative entrance still carries `[oa-theme-motion]`
+  diagnostics + isn't feel-tuned (revisit when the real motion model lands). The
+  bench's keeper effects need promoting from dev demos into declarative
+  `theme.toml` presets (the actual Thrust M work, now unblocked + de-risked).
+- **Next:** with the foundation validated, build the **declarative motion model**
+  (D52) — turn the bench keepers into named, theme-authorable presets + the
+  keyframe vocabulary, dogfooded on a navigable surface (D55). Decide the entrance
+  diagnostics cleanup at that point.
+
+---
+
+## 2026-06-16 — ARC 3 Thrust M: motion-foundation PLANNING session (no code; decisions D53–D55, M0 slice queued)
+
+> The planning session the M1 entry below called for. **Outcome: all 6 open
+> problems in [PLANS/theming-arc-3-cinematic.md](../../PLANS/theming-arc-3-cinematic.md)
+> §"Motion foundation" resolved**; a new **M0 foundation slice** is queued before
+> M1 acceptance / M2. No code this session — docs only.
+
+- **The reframe that unlocked it:** dev and build are NOT far apart in *behavior* —
+  the M1 day-long tax was *iteration speed* (full `cargo tauri build` per tweak),
+  not a dev/build compositing gap. The Rust window-builder is identical in both
+  (`main.rs setup_single_window`: `transparent(true)` + `.visible(false)` + DWM);
+  only the WebView content source differs (devUrl+HMR vs bundled). So WAAPI is
+  invisible in dev too, CSS keyframes paint in both — and `cargo tauri dev`
+  reproduces the real surface with ~1 s HMR + live devtools.
+- **Decisions (operator signed off each fork in prose, then 2 structured):**
+  - **D53** — `cargo tauri dev` (single-window) is the motion-dev loop; build is for
+    playtest + final acceptance. Operator agreed to run dev for motion work.
+  - **D54** — `oa://window-shown` (the M1 handshake) is THE canonical "shell
+    presented" signal; entrance/boot/attract all ride it.
+  - **D55** — insert M0; M2 dogfoods on a navigable surface (Retroverse/playground),
+    NOT `DeclarativeShell` (it has no runtime view changes — wrong archetype for M2);
+    verification lightweight (playground smoke + `animationend` assert, no
+    screenshot-diff); scroll-safe rule = never animate the scroll container.
+- **M0 (queued, next motion work):** (1) confirm entrance paints under dev;
+  (2) hash-mounted motion-playground route; (3) `MOTION.md` compositing catalogue +
+  scroll-safe rule + windowShown pattern; (4) `animationend` dev assertion;
+  (5) bless `oa://window-shown`. Branch `theme-arc3-motion-slice-1` is the base.
+- **Almost:** nothing built — planning only. **Next:** M0 (run dev confirm first).
+
+---
+
 ## 2026-06-16 — ARC 3 Thrust M, M1: declarative motion — 🚧 IN PROGRESS / PAUSED for a motion-foundation planning session (branch `theme-arc3-motion-slice-1`, NOT merged)
 
 > **Status, honestly:** the declarative contract (tokens + manifest field +
