@@ -227,7 +227,9 @@ const App: Component = () => {
     const cfg = directLaunchConfig();
     return cfg !== undefined && cfg !== null;
   });
-  const [busy, setBusy] = createSignal<Busy>("idle");
+  // Write-only scanning/launching flag (drove the old drag-drop fallback hint,
+  // now removed). Kept as a setter-only seam for a future busy indicator.
+  const [, setBusy] = createSignal<Busy>("idle");
   // Status reader stays unused after legacy toolbarCenter dropped on
   // 2026-05-31. setStatus calls scattered through scan / launch /
   // import handlers are dead writes for now — Retroverse home for
@@ -1363,23 +1365,20 @@ const App: Component = () => {
     onCleanup(() => window.removeEventListener("click", onAnyClick, { capture: true }));
   });
 
-  // Window-level folder drag-drop. Two layers:
+  // Window-level external drag-drop (drop ROM files/folders from Explorer).
+  // Confirmed working again 2026-06-17 via the dev drag-drop probe (F10): the
+  // window is now shown before any drop arrives, so WebView2's drop target is
+  // registered and Tauri's `onDragDropEvent` delivers real OS paths. Was parked
+  // "Won't fix" 2026-05-20 under the wry hidden-window registration bug (#1639 /
+  // tauri#14643) — no longer triggered.
   //
-  //   1) DOM-level dragover/dragleave listeners that call preventDefault to
-  //      tell WebView2 "yes, we accept drops" — without this Chromium shows
-  //      a no-entry cursor and never fires drop events upstream. These also
-  //      drive the overlay UI.
-  //
-  //   2) Tauri's onDragDropEvent which carries the OS-native paths the
-  //      browser File API never exposes (Chromium removed the `.path`
-  //      property). When Tauri's OS handler intercepts the drop, it emits
-  //      events here.
-  //
-  // External drag-drop is **known unreliable** on this build (see
-  // `docs/PARKING_LOT.md` 2026-05-19 entry) — neither shell mode delivers
-  // paths consistently. The DOM listeners give visual feedback + a
-  // fallback hint pointing at the Import Wizard. Internal HTML5
-  // drag-drop (sidebar reorder, region priority drag) is unaffected.
+  // Tauri's OS handler is the only layer that carries paths: when enabled it
+  // intercepts the drop before the DOM sees it (the probe measured zero DOM
+  // drag events), so there are no DOM listeners here. A dropped file ingests
+  // its PARENT folder (classify_drop_path); a dropped folder ingests itself;
+  // multiple dropped paths are deduped by folder. Internal HTML5 drag-drop
+  // (sidebar reorder, region priority drag) is a separate Chromium-only path,
+  // unaffected.
   /// Kick off the canonical-title sync for each system that received
   /// fresh games. Fire-and-forget — the resolve flow emits its own
   /// progress events + the library auto-refreshes on completion via
@@ -1453,82 +1452,52 @@ const App: Component = () => {
     }
   }
 
-  async function commitDroppedPath(path: string) {
-    setBusy("scanning");
-    setStatus(`Scanning ${path}…`);
-    const result = await ingestFolderPath(library, path, scanProgressReporter);
-    setStatus(ingestStatus(result));
-    if (result.kind === "ingested" || result.kind === "empty") {
-      await settings.addLibraryFolderPath(result.folder);
+  async function commitDroppedPaths(paths: readonly string[]) {
+    // Map each dropped path to the folder to scan — a folder ingests itself,
+    // a file ingests its parent (operator decision 2026-06-17) — and dedupe
+    // so dropping several files from one folder scans it once.
+    const folders: string[] = [];
+    for (const p of paths) {
+      try {
+        const info = await shellApi.classifyDropPath(p);
+        if (!folders.includes(info.folder)) folders.push(info.folder);
+      } catch (e) {
+        console.warn("[oa-drop] classify failed for", p, e);
+      }
     }
-    if (result.kind === "ingested" && result.added > 0) {
-      void autoSyncAfterIngest(result.systemIds, result.entries);
+    if (folders.length === 0) return;
+
+    setBusy("scanning");
+    const touchedSystems = new Set<SystemId>();
+    const aggregatedEntries: RomEntry[] = [];
+    let totalAdded = 0;
+    for (const folder of folders) {
+      setStatus(`Scanning ${folder}…`);
+      const result = await ingestFolderPath(library, folder, scanProgressReporter);
+      setStatus(ingestStatus(result));
+      if (result.kind === "ingested" || result.kind === "empty") {
+        await settings.addLibraryFolderPath(result.folder);
+      }
+      if (result.kind === "ingested") {
+        totalAdded += result.added;
+        result.systemIds.forEach((s) => touchedSystems.add(s));
+        aggregatedEntries.push(...result.entries);
+      }
+    }
+    if (totalAdded > 0) {
+      void autoSyncAfterIngest([...touchedSystems], aggregatedEntries);
     }
     setBusy("idle");
   }
 
   onMount(async () => {
-    // DOM events. preventDefault on dragover is the load-bearing one:
-    // it overrides WebView2's default "no drop allowed" cursor. The
-    // main shell is now opaque in both shell modes — Tauri's
-    // drag-drop hook fires reliably on this window so we no longer
-    // need any overlay-window workaround.
-
-    const onDragEnter = (e: DragEvent) => {
-      e.preventDefault();
-      setDropOverlayVisible(true);
-    };
-    const onDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      setDropOverlayVisible(true);
-    };
-    const onDragLeave = (e: DragEvent) => {
-      // Only clear when leaving the window itself, not when dragging across
-      // child elements (which fire dragleave on the parent).
-      if ((e as any).target === document.documentElement || (e as any).fromElement === null) {
-        setDropOverlayVisible(false);
-      }
-    };
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault();
-      setDropOverlayVisible(false);
-      console.log("[oa-drop] DOM drop fired. files=", e.dataTransfer?.files?.length, "items=", e.dataTransfer?.items?.length);
-      // We don't try to extract paths here — WebView2 doesn't expose them.
-      // In two-window mode Tauri's onDragDropEvent fires with the real
-      // OS paths; in single-window mode the drop-overlay window catches
-      // it and emits `oa://overlay-drop` (see the listener below).
-      // If neither path lands within 500ms, surface a fallback hint.
-      if ((e.dataTransfer?.files?.length ?? 0) > 0) {
-        setStatus("Drop received — waiting for Tauri to deliver the path…");
-        setTimeout(() => {
-          if (busy() !== "scanning") {
-            setStatus("Drag-drop not delivering paths — use ⋯ → Import folder, or Settings → Library → Add.");
-          }
-        }, 500);
-      }
-    };
-    window.addEventListener("dragenter", onDragEnter);
-    window.addEventListener("dragover", onDragOver);
-    window.addEventListener("dragleave", onDragLeave);
-    window.addEventListener("drop", onDrop);
-    onCleanup(() => {
-      window.removeEventListener("dragenter", onDragEnter);
-      window.removeEventListener("dragover", onDragOver);
-      window.removeEventListener("dragleave", onDragLeave);
-      window.removeEventListener("drop", onDrop);
-    });
-
-    // Layer 2 — Tauri OS-level drag-drop. This is what actually gives us
-    // file paths when it works. Currently unreliable across shell modes
-    // (parking-lot item from 2026-05-19); the listener is wired up
-    // anyway so any successful drops still ingest, and the DOM listener
-    // above shows the fallback hint when paths don't arrive.
+    // Tauri's OS-level drag-drop is the only layer that carries real paths;
+    // it intercepts the drop before the DOM, so no DOM listeners are needed
+    // (see the comment above commitDroppedPaths). enter/over/leave drive the
+    // drop overlay; drop ingests every delivered path.
     let unlisten: (() => void) | undefined;
-    console.log("[oa-drop] registering onDragDropEvent listener");
     try {
       unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-        console.log("[oa-drop] tauri event:", event.payload.type, event.payload);
         switch (event.payload.type) {
           case "enter":
           case "over":
@@ -1540,17 +1509,11 @@ const App: Component = () => {
           case "drop": {
             setDropOverlayVisible(false);
             const paths = event.payload.paths;
-            console.log("[oa-drop] tauri paths received:", paths);
-            if (paths.length === 0) {
-              console.warn("[oa-drop] drop event had empty paths array");
-              break;
-            }
-            await commitDroppedPath(paths[0]);
+            if (paths.length > 0) await commitDroppedPaths(paths);
             break;
           }
         }
       });
-      console.log("[oa-drop] listener registered OK");
     } catch (e) {
       console.warn("[oa-drop] onDragDropEvent setup failed:", e);
     }

@@ -328,10 +328,10 @@ export async function pickFolderAndIngest(
 /// resolves, and by Settings → Library → Add folder. Runs the scan in
 /// Rust on a tokio blocking task; the optional `onProgress` callback
 /// fires throttled progress events while the walk is in flight (~12 Hz
-/// max). The window-level onDragDropEvent listener in App.tsx also
-/// calls this when a drop succeeds, but external drag-drop is parking-
-/// lotted Won't fix (docs/PARKING_LOT.md 2026-05-20) — listener stays
-/// wired in case any drop lands, but it's not an operator-facing path.
+/// max). The window-level onDragDropEvent listener in App.tsx also calls
+/// this for each dropped path (a dropped file resolves to its parent folder
+/// via classify_drop_path first) — external drag-drop confirmed working again
+/// 2026-06-17 (was parked "Won't fix" 2026-05-20; PARKING_LOT.md updated).
 export async function ingestFolderPath(
   store: LibraryStore,
   folder: string,

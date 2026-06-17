@@ -2515,6 +2515,7 @@ fn main() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            classify_drop_path,
             scan_rom_folder,
             launch_rom,
             set_scaling_mode,
@@ -8910,6 +8911,38 @@ fn open_video_clip_folder(clip_dir: String) -> Result<(), String> {
         let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
     }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DropPathInfo {
+    /// The folder to scan: the dropped path itself when it's a directory,
+    /// else its parent directory.
+    folder: String,
+    /// True when the dropped path was itself a directory.
+    is_dir: bool,
+}
+
+/// Classify a dropped OS path for the window-level drag-drop ingest flow.
+/// `onDragDropEvent` delivers raw paths (files or folders); per the
+/// 2026-06-17 decision a dropped FILE ingests its parent folder while a
+/// dropped folder ingests itself. Filesystem truth (is-this-a-dir) lives
+/// here in Rust rather than fragile JS path parsing. External drag-drop was
+/// confirmed working again 2026-06-17 (parked "Won't fix" 2026-05-20 under the
+/// wry hidden-window registration bug #1639 / tauri#14643, no longer triggered
+/// now that the window is shown before drops arrive).
+#[tauri::command]
+fn classify_drop_path(path: String) -> Result<DropPathInfo, String> {
+    let p = std::path::Path::new(&path);
+    if p.is_dir() {
+        return Ok(DropPathInfo { folder: path, is_dir: true });
+    }
+    let parent = p
+        .parent()
+        .map(|x| x.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("dropped path has no parent folder: {path}"))?;
+    Ok(DropPathInfo { folder: parent, is_dir: false })
 }
 
 /// Reveal `<exe_dir>/system/` in the OS file manager so operators can

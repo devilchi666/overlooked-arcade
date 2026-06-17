@@ -111,6 +111,23 @@ export function revealGameFileInFolder(filePath: string): Promise<void> {
   return invoke("reveal_game_file_in_folder", { filePath });
 }
 
+// --- Drag-drop ----------------------------------------------------------
+
+export interface DropPathInfo {
+  /// The folder to ingest: the dropped path itself when it's a directory,
+  /// else its parent directory (a dropped file ingests its parent).
+  folder: string;
+  /// True when the dropped path was itself a directory.
+  isDir: boolean;
+}
+
+/// Classify a dropped OS path for the window-level drag-drop ingest flow:
+/// returns the folder to scan (the path itself if a directory, else its
+/// parent). Filesystem truth lives in Rust, not JS path parsing.
+export function classifyDropPath(path: string): Promise<DropPathInfo> {
+  return invoke<DropPathInfo>("classify_drop_path", { path });
+}
+
 // --- ScummVM detection --------------------------------------------------
 
 /// Locate a ScummVM CLI on PATH / common install dirs; null if not found.

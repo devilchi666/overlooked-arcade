@@ -24,6 +24,7 @@ import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js";
 import SelectionChoreography from "./SelectionChoreography";
 import MotionShowcase from "./MotionShowcase";
 import BoxArtFX from "./BoxArtFX";
+import DragDropProbe from "./DragDropProbe";
 
 const AMP = 180; // px of horizontal travel
 const DUR = 1600; // ms per one-way sweep
@@ -92,7 +93,7 @@ export default function MotionPlayground(props: { onClose: () => void }): JSX.El
   const [ticks, setTicks] = createSignal(0);
   const [fps, setFps] = createSignal(0);
   const [fpsMin, setFpsMin] = createSignal(999);
-  const [tab, setTab] = createSignal<"probe" | "choreo" | "showcase" | "boxart">("probe");
+  const [tab, setTab] = createSignal<"probe" | "choreo" | "showcase" | "boxart" | "dragdrop">("probe");
 
   onMount(() => {
     let raf = 0;
@@ -207,7 +208,18 @@ export default function MotionPlayground(props: { onClose: () => void }): JSX.El
           >
             Box art FX
           </button>
+          <button
+            class="-mb-px border-b-2 px-3 py-1.5 text-xs font-semibold"
+            classList={{ "border-cyan-400 text-white": tab() === "dragdrop", "border-transparent text-white/45 hover:text-white/70": tab() !== "dragdrop" }}
+            onClick={() => setTab("dragdrop")}
+          >
+            Drag &amp; drop probe
+          </button>
         </div>
+
+        <Show when={tab() === "dragdrop"}>
+          <DragDropProbe />
+        </Show>
 
         <Show when={tab() === "choreo"}>
           <div class="min-h-0 flex-1">
