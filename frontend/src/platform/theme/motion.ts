@@ -136,6 +136,22 @@ export function resolveMotionRef(
   return ref; // already a MotionSpec
 }
 
+/// Read the global `--motion-scale` accessibility/feel multiplier off an
+/// element's computed style (default 1). WAAPI can't resolve `var()`, so the
+/// players read it here and fold it into the numeric timing they hand to
+/// `element.animate` (see motionSpec `scaleMotionTiming`) — the WAAPI counterpart
+/// of CSS reading `var(--motion-*)`. Reads off the ELEMENT (not `:root`) so a
+/// theme's scoped override is honored via the cascade. Clamped to [0.1, 5] so a
+/// malformed token can't freeze or vanish motion. Returns 1 in non-DOM contexts.
+export function readGlobalMotionScale(el: Element): number {
+  if (typeof getComputedStyle !== "function") return 1;
+  const raw = getComputedStyle(el).getPropertyValue("--motion-scale").trim();
+  if (raw === "") return 1;
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.min(Math.max(n, 0.1), 5);
+}
+
 /// Read the OS "reduce motion" preference once (non-reactive). Guards for
 /// non-DOM contexts (vitest/SSR) → `false`.
 function prefersReducedMotion(): boolean {

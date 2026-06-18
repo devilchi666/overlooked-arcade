@@ -28,14 +28,19 @@ spanned every system but was filed under whichever core happened to be active.
     `motion.transition|selection|ambient` = `MotionRef` (preset name | inline spec),
     resolved by `resolveMotionRef`, validated by name+KIND. Deferred: `push-hero`,
     attract (Thrust V).
-  - **Remaining "wire it up right" (next session — see the resume plan):** ① lab
-    refactor onto the treatment components + named ambient; ② migrate
-    `declarativeShell` (the no-code renderer) onto the new players — ⚠️ MUST port the
-    `oa://window-shown` boot-delay (D54) or it reintroduces the M1 timing bug; ③ Rust
-    `theme_loader` widening for the disk-theme `[motion.*]` tables; ④ global
-    `--motion-*` retime reaching the WAAPI players; ⑤ a Settings → Experimental →
-    Dev-tools on/off toggle for the `[oa-theme-motion]` diagnostics (default off,
-    persisted) — strip the code only at final ship (D58.9).
+  - **"Wire it up right" ✅ DONE on `feat/motion-wire-consumers`** (5 commits, NOT
+    merged — awaiting operator playtest): ⑤ diagnostics dev-tools toggle
+    (`motionDebug.ts`, default off, persisted; D58.9 — toggled, not stripped); ①
+    lab refactored onto `<Gloss>`/`<Reflection>`/`<FanartCrossfade>` + the named
+    `ambient: "breathe"` slot; ② `declarativeShell` migrated onto `SpecTransition` +
+    `resolveThemeMotionSpec` — D54 ported via a new opt-in `SpecTransition.skipInitial`
+    (no masked mount play) + the existing `windowShown`-keyed trigger, so no M1
+    regression; ③ Rust `theme_loader` widened (`transition`/`selection`/`ambient` =
+    `MotionRef` = preset string | inline-spec table); ④ global `--motion-scale`
+    token folded into the WAAPI players' numeric timing. tsc/eslint/182 vitest +
+    10 cargo theme_loader green. Deferred: the declarative selection/ambient hook
+    (flat-browse renderer needs its own design). `ViewTransition`/`resolveViewTransition`
+    now have no runtime consumer (kept as tested product code per testbed doc).
   - Decisions D53–D58; catalogue [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md);
     full story [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md).
   (2026-06-16 entries).

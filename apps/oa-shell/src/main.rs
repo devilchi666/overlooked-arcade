@@ -2718,6 +2718,7 @@ fn main() {
             restart_app,
             open_devtools,
             set_log_streams,
+            set_muted_prefixes,
             get_system_status,
             get_bios_status,
             unload_rom,
@@ -11731,6 +11732,23 @@ fn set_log_streams(streams: Vec<String>) {
         }
     }
     logger::set_verbose_prefixes(prefixes);
+}
+
+/// Mute the ROUTINE (info/debug/trace) logging of specific backend subsystems on
+/// demand, driven by the DevTools panel's "general logging" toggle. Warnings +
+/// errors from a muted subsystem STILL log — muting silences spam, not
+/// diagnostics. Maps friendly names to log-target prefixes; an empty list
+/// un-mutes everything. Today: "app" → `oa_shell` (the app crate's own chatter,
+/// muted by default in `logger::init_early`).
+#[tauri::command]
+fn set_muted_prefixes(muted: Vec<String>) {
+    let mut prefixes: Vec<String> = Vec::new();
+    for m in &muted {
+        if m.as_str() == "app" {
+            prefixes.push("oa_shell".to_string());
+        }
+    }
+    logger::set_muted_prefixes(prefixes);
 }
 
 /// Open the WebView inspector (DevTools) for the dev-tools panel in

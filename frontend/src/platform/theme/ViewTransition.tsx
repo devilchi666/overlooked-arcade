@@ -21,6 +21,7 @@
 
 import { createEffect, type JSX } from "solid-js";
 import type { ResolvedViewTransition } from "./motion";
+import { motionDebugEnabled } from "./motionDebug";
 
 /// CSS @keyframes name per preset (defined in index.css). `none` is handled by
 /// the caller (skipped), so it has no entry.
@@ -58,9 +59,10 @@ export default function ViewTransition(props: ViewTransitionProps): JSX.Element 
     const node = el;
     const delay = props.delayMs ?? 0;
     const skip = !node ? "no-node" : t.preset === "none" ? "preset-none" : t.durationMs <= 0 ? "zero-duration" : "";
-    console.log(
-      `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} delay=${delay} -> ${skip || "CSS-ANIMATE"}`,
-    );
+    if (motionDebugEnabled())
+      console.log(
+        `[oa-theme-motion] ViewTransition key=${String(key)} preset=${t.preset} dur=${t.durationMs} delay=${delay} -> ${skip || "CSS-ANIMATE"}`,
+      );
     if (!node || skip || t.preset === "none") return;
     const keyframe = KEYFRAME_NAME[t.preset];
     // Restart the CSS animation: clear it, force a reflow so the browser sees a

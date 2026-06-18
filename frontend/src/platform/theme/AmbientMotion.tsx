@@ -13,7 +13,9 @@
 // SpecTransition (whose reduced path is a one-shot fade, wrong for a loop).
 
 import { createEffect, onCleanup, type JSX } from "solid-js";
-import { compileMotionSpec, type MotionSpec } from "./motionSpec";
+import { compileMotionSpec, scaleMotionTiming, type MotionSpec } from "./motionSpec";
+import { readGlobalMotionScale } from "./motion";
+import { motionDebugEnabled } from "./motionDebug";
 
 export type AmbientMotionProps = {
   /// The looping spec (typically `repeat: "infinite"`). Re-read reactively, so a
@@ -34,10 +36,25 @@ export default function AmbientMotion(props: AmbientMotionProps): JSX.Element {
     const spec = props.spec();
     const node = el;
     anim?.cancel(); // drop any prior loop before (re)starting
+    const skip = reduced
+      ? "reduced"
+      : !node
+        ? "no-node"
+        : typeof node.animate !== "function"
+          ? "no-waapi"
+          : !spec
+            ? "no-op"
+            : "";
+    if (motionDebugEnabled())
+      console.log(
+        `[oa-theme-motion] AmbientMotion dur=${spec?.duration ?? 0} repeat=${spec?.repeat ?? "1"} -> ${skip || "WAAPI-LOOP"}`,
+      );
     if (reduced || !node || typeof node.animate !== "function" || !spec) return;
     const compiled = compileMotionSpec(spec);
     if (!compiled) return;
-    anim = node.animate(compiled.keyframes, compiled.options);
+    // Fold the global --motion-scale into the loop timing (WAAPI can't read var()).
+    const scaled = scaleMotionTiming(compiled, readGlobalMotionScale(node));
+    anim = node.animate(scaled.keyframes, scaled.options);
   });
 
   onCleanup(() => anim?.cancel());
