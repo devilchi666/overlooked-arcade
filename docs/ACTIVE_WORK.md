@@ -33,8 +33,9 @@ spanned every system but was filed under whichever core happened to be active.
     `declarativeShell` (the no-code renderer) onto the new players — ⚠️ MUST port the
     `oa://window-shown` boot-delay (D54) or it reintroduces the M1 timing bug; ③ Rust
     `theme_loader` widening for the disk-theme `[motion.*]` tables; ④ global
-    `--motion-*` retime reaching the WAAPI players; ⑤ final cleanup = strip the
-    `[oa-theme-motion]` diagnostics (KEPT until then — debugging asset).
+    `--motion-*` retime reaching the WAAPI players; ⑤ a Settings → Experimental →
+    Dev-tools on/off toggle for the `[oa-theme-motion]` diagnostics (default off,
+    persisted) — strip the code only at final ship (D58.9).
   - Decisions D53–D58; catalogue [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md);
     full story [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md).
   (2026-06-16 entries).

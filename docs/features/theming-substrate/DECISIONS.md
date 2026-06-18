@@ -2179,6 +2179,9 @@ preset registry + contract on `feat/motion-presets-and-wiring`). The shape that 
    transform-translate over a scroll container needs a clipping ANCESTOR
    (`overflow-hidden` on the shell root) or the overshoot spawns a transient scrollbar.
 
-9. **`[oa-theme-motion]` diagnostics stay through the motion wiring** (a per-play
-   `console.log` into the unified log — it diagnosed the reduced-motion question this
-   session); strip only in a final pre-ship cleanup, not mid-build.
+9. **`[oa-theme-motion]` diagnostics get a runtime on/off toggle** in Settings →
+   Experimental → Dev tools (default OFF, persisted), gating the per-play
+   `console.log` in the players. The debug stream (it diagnosed the reduced-motion
+   question this session) is then available on demand without shipping log spam —
+   strip the *code* only at final ship. (Operator call 2026-06-18: a toggle beats
+   always-on-then-strip — flip it as needed until everything's perfected.)

@@ -244,8 +244,10 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
          choreography without custom render code.
       3. **Rust `theme_loader`** widen for `[motion.transition|selection|ambient]`
          (disk-theme authoring; safe — no `deny_unknown_fields`).
-      4. Global `--motion-*` retime reaching the WAAPI players; strip `[oa-theme-motion]`
-         diagnostics.
+      4. Global `--motion-*` retime reaching the WAAPI players.
+      5. **Dev-tools toggle for the `[oa-theme-motion]` diagnostics** (Settings →
+         Experimental → Dev tools; default off, persisted; gates the per-play
+         `console.log` in the players) — strip the code only at final ship (D58.9).
     - ⬜ Deferred catalog: `push-hero` (shared-element), `attract-scroll`/`screensaver`
       (Thrust V), and the wishlist **`path-move` + keyframe-timeline** carry-over
       (HyperSpin `MotionPath`/`timeline`; see
