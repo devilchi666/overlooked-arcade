@@ -64,13 +64,20 @@ surface structure.
   `theme_loader::theme_package_dir` resolves it, the asset-protocol scope covers the
   themes dir, and `svg` joined `STATIC_EXTS` so a theme can ship a text-authored vector
   backdrop. Aurora ships `system-ui/_baseline/backgrounds/default.svg`.
-- **S2b — author-controlled layout/motion ⬜ DESIGN NEXT (operator's point 2).** A
-  hardcoded detail strip undercuts authorship — the focused-game elements (title /
-  metadata / logo) + their motion should be **author-declared**, not engine-fixed. The
-  fork to settle before coding: **bounded element slots** (author picks which elements
-  show + a per-element motion preset; engine arranges) vs. the **full free-form canvas**
-  (author places everything, BigBox-creator-style — that's Theme Studio / ARC 4 + the
-  deferred `path-move`/keyframe-timeline). The answer sets the size of the rest of the arc.
+- **S2b — author-controlled layout/motion: bounded element slots ✅ (branch
+  `feat/self-contained-theme-assets`, needs rebuild).** The focused-game composition is
+  author-declared (operator's point 2), designed as a **canvas subset** (chosen over
+  jumping straight to the free-form canvas — DECISIONS D59). `ThemeElement`
+  (`kind` + `motion`, RESERVED `position`/`size`/`ambient`) + `ThemeManifest.detail` +
+  `ELEMENT_KINDS`; Rust loose `detail` pass-through; validator (`INVALID_DETAIL` /
+  `UNKNOWN_ELEMENT_KIND` / `UNKNOWN_ELEMENT_MOTION`). `DeclarativeShell` renders an
+  engine-arranged focused-detail overlay on carousel/wheel, bound to game data, keyed
+  entrance motion. Aurora authors logo/system/title/year/genre/developer + a reserved
+  `position` proving the canvas stub round-trips inert.
+- **Free-form canvas ⬜ FUTURE (additive — Theme Studio / ARC 4).** The element
+  descriptor + reserved `position`/`size` + the loose round-trip are now in place, so
+  the canvas is: honor `position`, add a layout engine, add the Studio authoring UI. No
+  contract rewrite. (Per D59 — the stub + contract shipped with the floor.)
 - **S3 — list/row polish + metadata.** Cover thumbnails + metadata chips
   (year/genre/players) on list rows; richer settings_schema vocabulary the
   `DeclarativeShell` recognizes (density, card size, reflections…).

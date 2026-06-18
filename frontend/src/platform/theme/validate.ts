@@ -31,6 +31,7 @@
 import type { ThemePackage } from "./types";
 import { TOKEN_VAR, MOTION_TOKEN_VAR, type ThemeTokens, type ThemeMotionTokens } from "./tokens";
 import {
+  ELEMENT_KINDS,
   LAYOUT_PRIMITIVES,
   MAX_SCHEMA_VERSION,
   SUPPORTED_SCHEMA_VERSIONS,
@@ -82,11 +83,14 @@ export type ThemeIssueCode =
   | "UNKNOWN_TRANSITION_PRESET" // motion.view_transition.preset ∉ VIEW_TRANSITION_PRESETS
   | "UNKNOWN_MOTION_TOKEN_KEY" // a motionTokens key ∉ ThemeMotionTokens (MOTION_TOKEN_VAR)
   | "EMPTY_MOTION_TOKEN_VALUE" // a motionTokens value is empty / blank
+  | "INVALID_DETAIL" // detail (or an element) is the wrong shape / missing kind
   // --- warnings ---
   | "INVALID_ID" // id is not lowercase / directory-safe
   | "DEFAULT_ROUTE_NOT_IN_ROUTES" // default_route ∉ routes
   | "UNKNOWN_GLYPH_SET" // glyph_set ∉ GLYPH_SETS (hints fall back to default)
-  | "INVALID_PER_SYSTEM_UI"; // per_system_ui not { tiles?, sfx? } booleans (→ OFF)
+  | "INVALID_PER_SYSTEM_UI" // per_system_ui not { tiles?, sfx? } booleans (→ OFF)
+  | "UNKNOWN_ELEMENT_KIND" // a detail element kind ∉ ELEMENT_KINDS (renders nothing)
+  | "UNKNOWN_ELEMENT_MOTION"; // a detail element motion preset ∉ MOTION_PRESETS (no entrance)
 
 export type ThemeIssue = {
   code: ThemeIssueCode;
@@ -657,6 +661,58 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
           code: "EMPTY_MOTION_TOKEN_VALUE",
           field: `motionTokens.${key}`,
           message: `motionTokens.${key} must be a non-empty CSS value string (omit the key to inherit the :root default)`,
+        });
+      }
+    }
+  }
+
+  // --- detail composition (ARC 3 — the declarative element model): a list of
+  //     element descriptors the DeclarativeShell renders in a focused-detail
+  //     region. STRUCTURAL problems are ERRORs (a broken composition is worse
+  //     than none, like `views`); an unknown element `kind` or `motion` preset is
+  //     a WARNING (it renders nothing / without motion — the vocabulary accretes).
+  //     The reserved `position`/`size`/`ambient` fields (the canvas stub) are
+  //     accepted but not validated here — they round-trip inert until the
+  //     free-form canvas honors them. ---
+  const detail = m?.detail;
+  if (detail != null) {
+    if (typeof detail !== "object" || Array.isArray(detail)) {
+      errors.push({ code: "INVALID_DETAIL", field: "detail", message: "manifest.detail must be an object { elements: [...] }" });
+    } else {
+      const elements = (detail as Record<string, unknown>).elements;
+      if (!Array.isArray(elements)) {
+        errors.push({
+          code: "INVALID_DETAIL",
+          field: "detail.elements",
+          message: "manifest.detail.elements must be an array of element descriptors",
+        });
+      } else {
+        elements.forEach((el, i) => {
+          const field = `detail.elements[${i}]`;
+          if (el == null || typeof el !== "object" || Array.isArray(el)) {
+            errors.push({ code: "INVALID_DETAIL", field, message: `${field} must be an object { kind, motion? }` });
+            return;
+          }
+          const e = el as Record<string, unknown>;
+          if (typeof e.kind !== "string" || e.kind.length === 0) {
+            errors.push({ code: "INVALID_DETAIL", field: `${field}.kind`, message: `${field}.kind must be a non-empty string` });
+          } else if (!(ELEMENT_KINDS as readonly string[]).includes(e.kind)) {
+            warnings.push({
+              code: "UNKNOWN_ELEMENT_KIND",
+              field: `${field}.kind`,
+              message: `"${e.kind}" is not a known element kind (one of ${ELEMENT_KINDS.join(", ")}) — it renders nothing`,
+            });
+          }
+          // `motion` is a MotionRef: a string preset (checked against the catalog)
+          // or an inline spec (passed through). An unknown preset is a warning —
+          // the element simply shows without entrance motion.
+          if (typeof e.motion === "string" && !MOTION_PRESETS[e.motion]) {
+            warnings.push({
+              code: "UNKNOWN_ELEMENT_MOTION",
+              field: `${field}.motion`,
+              message: `"${e.motion}" is not a known motion preset (one of ${MOTION_PRESET_NAMES.join(", ")}) — the element shows without entrance motion`,
+            });
+          }
         });
       }
     }

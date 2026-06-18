@@ -475,3 +475,59 @@ describe("validateTheme — motion ref slots (transition/selection/ambient)", ()
     expect(codes(bad.errors)).toContain("INVALID_MOTION");
   });
 });
+
+describe("validateTheme — detail composition (the declarative element model)", () => {
+  it("a composition of known kinds + motion is valid", () => {
+    const v = validateTheme(
+      pkg({
+        detail: {
+          elements: [
+            { kind: "title", motion: "title-rise" },
+            { kind: "system" },
+            { kind: "year" },
+            { kind: "logo", motion: "art-grow-in" },
+          ],
+        },
+      }),
+    );
+    expect(v.ok, JSON.stringify(v.errors)).toBe(true);
+  });
+
+  it("reserved canvas fields (position/size/ambient) are accepted + inert", () => {
+    const v = validateTheme(
+      pkg({
+        detail: {
+          elements: [
+            { kind: "title", position: { anchor: "top-left", x: 40, y: 24 }, size: { w: 600 }, ambient: "float" },
+          ],
+        },
+      }),
+    );
+    expect(v.ok, JSON.stringify(v.errors)).toBe(true);
+  });
+
+  it("an unknown element kind is a non-fatal WARNING (renders nothing)", () => {
+    const v = validateTheme(
+      pkg({ detail: { elements: [{ kind: "marquee" as unknown as "title" }] } }),
+    );
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("UNKNOWN_ELEMENT_KIND");
+  });
+
+  it("an unknown element motion preset is a non-fatal WARNING", () => {
+    const v = validateTheme(pkg({ detail: { elements: [{ kind: "title", motion: "wobble" }] } }));
+    expect(v.ok).toBe(true);
+    expect(codes(v.warnings)).toContain("UNKNOWN_ELEMENT_MOTION");
+  });
+
+  it("a structurally malformed composition is an ERROR", () => {
+    const notObj = validateTheme(pkg({ detail: "nope" as unknown as ThemeManifest["detail"] }));
+    expect(codes(notObj.errors)).toContain("INVALID_DETAIL");
+
+    const noArray = validateTheme(pkg({ detail: { elements: "x" } as unknown as ThemeManifest["detail"] }));
+    expect(codes(noArray.errors)).toContain("INVALID_DETAIL");
+
+    const noKind = validateTheme(pkg({ detail: { elements: [{} as unknown as { kind: "title" }] } }));
+    expect(codes(noKind.errors)).toContain("INVALID_DETAIL");
+  });
+});

@@ -213,6 +213,69 @@ export type ThemeMotion = {
  * `[motion.transition]` table. */
 export type MotionRef = string | MotionSpec;
 
+/** The focused-game element composition (Theming ARC 3 — the declarative element
+ * model). A list of element descriptors the `DeclarativeShell` renders in an
+ * engine-arranged focused-detail region (title / metadata / logo over the browse).
+ *
+ * THE DURABLE CANVAS CONTRACT (DECISIONS — low-floor-now / high-ceiling-reserved):
+ * the SAME `ThemeElement` descriptors gain free `position` / `size` under the future
+ * free-form canvas (Theme Studio / ARC 4). Bounded slots now (engine arranges by
+ * declared order); author-placed canvas later — purely additive. */
+export type ThemeDetail = {
+  /** Ordered element descriptors. The engine arranges them now; the canvas places
+   * them by `position` later. */
+  elements: ThemeElement[];
+};
+
+/** One placeable element. `kind` binds to focused-game data; `motion` is its
+ * entrance, played when the focused game changes. `ambient` / `position` / `size`
+ * are RESERVED for the free-form canvas — parsed, round-tripped, and validated as
+ * optional now, but IGNORED by the engine-arranged slot renderer (the high-ceiling
+ * stub that keeps the canvas a purely additive future step). */
+export type ThemeElement = {
+  /** What this element shows — bound to RomEntry + MediaDb metadata + identity
+   * stats. Unknown kinds render nothing + warn (accreting, like `glyph_set`). */
+  kind: ElementKind;
+  /** Entrance motion played when the focused game changes (a `selection`- or
+   * `transition`-kind `MotionRef`). Omit for no entrance. */
+  motion?: MotionRef;
+  /** RESERVED (canvas): per-element idle loop. Inert in the slot renderer. */
+  ambient?: MotionRef;
+  /** RESERVED (canvas): free-form placement (anchor + px offset). The slot
+   * renderer arranges by declared order and ignores this; the canvas honors it. */
+  position?: ElementPosition;
+  /** RESERVED (canvas): free-form size. Inert in the slot renderer. */
+  size?: ElementSize;
+};
+
+/** RESERVED canvas placement (the high-ceiling stub). Anchor keyword + px offset
+ * relative to the surface. Inert until the free-form canvas (ARC 4) lands. */
+export type ElementPosition = { anchor?: string; x?: number; y?: number };
+/** RESERVED canvas size. Inert until the free-form canvas lands. */
+export type ElementSize = { w?: number; h?: number };
+
+/** The element vocabulary — every `kind` an element may bind to. Each maps to a
+ * value on the focused game (RomEntry / MediaDb metadata / identity stats); an
+ * element whose data is absent renders nothing. Unknown kinds warn + render
+ * nothing (the renderer accretes support, like the `settings_schema` vocabulary). */
+export const ELEMENT_KINDS = [
+  "title",
+  "system",
+  "year",
+  "genre",
+  "players",
+  "developer",
+  "publisher",
+  "description",
+  "logo",
+  "cover",
+  "rating",
+  "play-count",
+  "last-played",
+  "favorite",
+] as const;
+export type ElementKind = (typeof ELEMENT_KINDS)[number];
+
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */
   id: string;
@@ -292,4 +355,12 @@ export type ThemeManifest = {
    * timing strings; a malformed declaration is a disqualifying ERROR (a broken
    * motion decl is worse than none, like `views` / `settings_schema`). */
   motion?: ThemeMotion;
+  /** Focused-game element composition (Theming ARC 3 — the declarative element
+   * model). The `DeclarativeShell` renders these in an engine-arranged detail
+   * region; the same descriptors become author-placed under the future canvas
+   * (`ThemeDetail`). Optional — omit for no detail region (low floor). The
+   * validator checks each element's `kind` (unknown → WARN, accreting) + `motion`
+   * (valid `MotionRef`); the reserved `position`/`size`/`ambient` fields are
+   * accepted but inert. */
+  detail?: ThemeDetail;
 };

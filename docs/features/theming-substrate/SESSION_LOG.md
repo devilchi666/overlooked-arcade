@@ -9,6 +9,44 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — Declarative Showcase S2b: the declarative element model (bounded slots, canvas-subset) — 🚧 on `feat/self-contained-theme-assets` (needs operator rebuild)
+
+> The author's focused-game composition, designed deliberately as a SUBSET of the
+> future free-form canvas (operator's point 2). Bounded element slots now (engine
+> arranges); author-placed canvas later (Theme Studio / ARC 4), purely additive.
+> Captured the governing principle as DECISIONS **D59** (low-floor-now /
+> high-ceiling-reserved — every theming feature ships its floor with the ceiling's
+> contract + stubs in place).
+
+- **The contract — `ThemeElement`** (`manifest.ts`): `{ kind, motion?, + RESERVED
+  ambient/position/size }` + `ThemeManifest.detail.elements` + the `ELEMENT_KINDS`
+  vocabulary (title/system/year/genre/players/developer/publisher/description/logo/
+  cover/stats). The SAME descriptor the canvas will place freely later — `position`
+  is reserved (parsed, round-tripped, validated-optional, **ignored** by the slot
+  renderer).
+- **Rust** carries `detail` as a loose `toml::Value` pass-through (like `MotionRef::Spec`)
+  — reserved fields round-trip for free, so the loader never needs widening as the
+  vocabulary/canvas grow. Frontend owns the typed contract + validator + renderer.
+- **Validator:** `INVALID_DETAIL` (structural error) · `UNKNOWN_ELEMENT_KIND` +
+  `UNKNOWN_ELEMENT_MOTION` (accretion warnings — render nothing / no motion).
+- **`DeclarativeShell`** renders the declared elements in an engine-arranged
+  **focused-detail overlay** across the top of the carousel/wheel layouts (the cards
+  sit in the vertical middle; `pointer-events-none`). Each element binds to the
+  focused game's data and replays its entrance `motion` via a keyed `SpecTransition`
+  (`skipInitial`, so boot is quiet + post-window-shown). Absent data → renders nothing.
+- **Aurora** authors a composition (logo · system · title · year · genre · developer)
+  over its coverflow, incl. a **reserved `position`** on one element to prove the
+  canvas stub round-trips inert.
+- **CI:** tsc + eslint + 188 vitest (+5 element-validation) green; cargo `theme_loader`
+  12 (+1 detail round-trip incl. reserved position) green.
+- **Needs a REBUILD** (Rust change). Then Aurora shows title/logo/metadata over the
+  coverflow, animating in on focus change.
+- **Next:** S3 (list-row thumbnails + metadata + richer recognized settings vocab), or
+  begin the **free-form canvas** (honor `position` + a layout engine + Theme Studio) —
+  the contract + stubs are now in place for it to be additive.
+
+---
+
 ## 2026-06-18 — Declarative Showcase S2a: self-contained theme asset packages — 🚧 on `feat/self-contained-theme-assets` (needs operator rebuild)
 
 > Operator point: a theme should pull its background + all assets from its OWN
