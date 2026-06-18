@@ -57,10 +57,27 @@ surface structure.
     fallback, so a **stale `target/release/themes/`** silently shadowed the repo themes
     (Aurora invisible). Removed it (a one-off leftover; the build doesn't create it). If
     it recurs, harden the loader to merge both candidates (deduped) instead of first-wins.
-- **S2 — background + now-focused detail (next).** A theme-supplied background through
-  `ThemeBackground` (needs the disk-asset `basePath` → `convertFileSrc` plumbing — the
-  S5.1 cascade already resolves theme/system asset bases); optionally a focused-game
-  detail strip (title/metadata/logo) so the browse reads less like a bare grid.
+- **S2a — self-contained theme asset packages ✅ (branch `feat/self-contained-theme-assets`,
+  needs rebuild).** A disk theme pulls its assets from its OWN package dir first
+  (operator's point 1): a **tier-0** `themes/<community|dev>/<id>/system-ui/…` was added
+  to the asset cascade (above the bundled `<exe_dir>/assets/themes/<id>/` tier),
+  `theme_loader::theme_package_dir` resolves it, the asset-protocol scope covers the
+  themes dir, and `svg` joined `STATIC_EXTS` so a theme can ship a text-authored vector
+  backdrop. Aurora ships `system-ui/_baseline/backgrounds/default.svg`.
+- **S2b — author-controlled layout/motion: bounded element slots ✅ (branch
+  `feat/self-contained-theme-assets`, needs rebuild).** The focused-game composition is
+  author-declared (operator's point 2), designed as a **canvas subset** (chosen over
+  jumping straight to the free-form canvas — DECISIONS D59). `ThemeElement`
+  (`kind` + `motion`, RESERVED `position`/`size`/`ambient`) + `ThemeManifest.detail` +
+  `ELEMENT_KINDS`; Rust loose `detail` pass-through; validator (`INVALID_DETAIL` /
+  `UNKNOWN_ELEMENT_KIND` / `UNKNOWN_ELEMENT_MOTION`). `DeclarativeShell` renders an
+  engine-arranged focused-detail overlay on carousel/wheel, bound to game data, keyed
+  entrance motion. Aurora authors logo/system/title/year/genre/developer + a reserved
+  `position` proving the canvas stub round-trips inert.
+- **Free-form canvas ⬜ FUTURE (additive — Theme Studio / ARC 4).** The element
+  descriptor + reserved `position`/`size` + the loose round-trip are now in place, so
+  the canvas is: honor `position`, add a layout engine, add the Studio authoring UI. No
+  contract rewrite. (Per D59 — the stub + contract shipped with the floor.)
 - **S3 — list/row polish + metadata.** Cover thumbnails + metadata chips
   (year/genre/players) on list rows; richer settings_schema vocabulary the
   `DeclarativeShell` recognizes (density, card size, reflections…).

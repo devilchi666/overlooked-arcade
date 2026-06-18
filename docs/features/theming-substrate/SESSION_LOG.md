@@ -9,6 +9,87 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — Declarative Showcase S2b: the declarative element model (bounded slots, canvas-subset) — ✅ MERGED to main (branch `feat/self-contained-theme-assets`; operator playtested)
+
+> The author's focused-game composition, designed deliberately as a SUBSET of the
+> future free-form canvas (operator's point 2). Bounded element slots now (engine
+> arranges); author-placed canvas later (Theme Studio / ARC 4), purely additive.
+> Captured the governing principle as DECISIONS **D59** (low-floor-now /
+> high-ceiling-reserved — every theming feature ships its floor with the ceiling's
+> contract + stubs in place).
+
+- **The contract — `ThemeElement`** (`manifest.ts`): `{ kind, motion?, + RESERVED
+  ambient/position/size }` + `ThemeManifest.detail.elements` + the `ELEMENT_KINDS`
+  vocabulary (title/system/year/genre/players/developer/publisher/description/logo/
+  cover/stats). The SAME descriptor the canvas will place freely later — `position`
+  is reserved (parsed, round-tripped, validated-optional, **ignored** by the slot
+  renderer).
+- **Rust** carries `detail` as a loose `toml::Value` pass-through (like `MotionRef::Spec`)
+  — reserved fields round-trip for free, so the loader never needs widening as the
+  vocabulary/canvas grow. Frontend owns the typed contract + validator + renderer.
+- **Validator:** `INVALID_DETAIL` (structural error) · `UNKNOWN_ELEMENT_KIND` +
+  `UNKNOWN_ELEMENT_MOTION` (accretion warnings — render nothing / no motion).
+- **`DeclarativeShell`** renders the declared elements in an engine-arranged
+  **focused-detail overlay** across the top of the carousel/wheel layouts (the cards
+  sit in the vertical middle; `pointer-events-none`). Each element binds to the
+  focused game's data and replays its entrance `motion` via a keyed `SpecTransition`
+  (`skipInitial`, so boot is quiet + post-window-shown). Absent data → renders nothing.
+- **Aurora** authors a composition (logo · system · title · year · genre · developer)
+  over its coverflow, incl. a **reserved `position`** on one element to prove the
+  canvas stub round-trips inert.
+- **CI:** tsc + eslint + 188 vitest (+5 element-validation) green; cargo `theme_loader`
+  12 (+1 detail round-trip incl. reserved position) green.
+- **Playtest fixes (rode along, operator confirmed):**
+  - **Metadata key bug** — the detail elements (and the Lab hero) showed only
+    title+system; year/genre/developer were blank though Retroverse showed them.
+    Cause: metadata is keyed by the **rom id**, but `declarativeShell`/`lab` looked
+    it up by `identityId ?? id` (the identity key has cover ART but no metadata).
+    Fixed both to `media.media(entry.id)` (matching every other consumer); cover/logo
+    art stays identity-keyed.
+  - **BigBox polish + 2× art** — the detail reads like a hero: big title, system
+    accent label, metadata as **pill chips on a wrapping row** (chip kinds auto-width,
+    block kinds full-line — engine arrangement preserves declared order), bigger logo;
+    coverflow card doubled (210→420). Positioning fine-tune deferred to the canvas axis.
+- **Next:** S3 (list-row thumbnails + metadata + richer recognized settings vocab), or
+  begin the **free-form canvas** (honor `position` + a layout engine + Theme Studio) —
+  the contract + stubs are now in place for it to be additive.
+
+---
+
+## 2026-06-18 — Declarative Showcase S2a: self-contained theme asset packages — ✅ MERGED to main (branch `feat/self-contained-theme-assets`; operator playtested)
+
+> Operator point: a theme should pull its background + all assets from its OWN
+> package/directory first, falling back only if nothing's there. Today the S5.1
+> cascade resolved theme assets from a SEPARATE `<exe_dir>/assets/themes/<id>/`
+> location, so a disk `.oatheme` wasn't actually self-contained. This makes it so.
+
+- **Shipped on the branch:**
+  - **Tier 0 — the theme's own package dir** added to the asset cascade
+    (`system_ui_assets::candidate_asset_bases`): `themes/<community|dev>/<id>/system-ui/
+    <system|_baseline>/<backgrounds|sounds>/` is checked FIRST, beating the bundled
+    `<exe_dir>/assets/themes/<id>/` tier and the platform tiers. So a disk theme ships
+    its assets beside its `theme.toml` and they win; built-in themes (no package dir)
+    are unchanged.
+  - `theme_loader::theme_package_dir(id)` resolves the on-disk theme dir (community then
+    dev, path-safe) — both `resolve_background_asset` + `resolve_ui_sound` look it up
+    from the active theme id and pass it as tier 0.
+  - **Asset-protocol scope widened** to the themes dir(s) (`main.rs`) so a package asset
+    loads via `convertFileSrc` instead of 403ing.
+  - **`svg` added to `STATIC_EXTS`** — a theme can ship a single text-authored vector
+    backdrop (no binary). **Aurora ships one:** `themes/community/aurora/system-ui/
+    _baseline/backgrounds/default.svg` (a dark aurora-borealis wash), so Aurora now has
+    its OWN self-contained backdrop instead of borrowing the platform per-system art.
+  - Rust tests: `theme_package_dir_wins_over_bundled_and_platform` (+ svg) +
+    `no_theme_package_dir_falls_back_to_bundled_theme_tier`; existing cascade tests
+    updated for the new arg. system_ui_assets 14 / audio_player 17 / theme_loader 11 green.
+- **Needs a REBUILD** (Rust change — `cargo tauri build`, not just relaunch): then
+  Aurora shows its own SVG backdrop.
+- **Next:** the **author-controlled layout/motion** design (the operator's 2nd point —
+  bounded element slots vs. a full free-form canvas) before the detail strip; that
+  decides the altitude of the rest of the arc.
+
+---
+
 ## 2026-06-18 — Declarative selection/ambient hook + the Declarative Showcase arc S1 — ✅ MERGED to main (branch `feat/motion-selection-ambient-hook`)
 
 > Started as the deferred selection/ambient hook; mid-session the operator reframed it

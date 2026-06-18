@@ -30,11 +30,11 @@
 // stays compiled-in (Retroverse) / ARC 3 (scripted). Documenting the floor is
 // the point ("low floor, high ceiling").
 
-import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
-import { useMedia } from "@oa/platform/library/media";
+import { useMedia, type GameMetadata } from "@oa/platform/library/media";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
 import { resolveMotionRef, resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
@@ -49,6 +49,7 @@ import type { RomEntry } from "@oa/platform/library/types";
 import type { SystemId } from "@oa/platform/themes/registry";
 import type { NavItemContext } from "@oa/platform/nav";
 import type { ThemeEntry } from "@oa/platform/theme/types";
+import type { ThemeElement } from "@oa/platform/theme/manifest";
 
 /// The settings_schema keys the DeclarativeShell itself interprets (the seed
 /// vocabulary, P.1 S2). A theme's other declared controls still surface in the
@@ -253,6 +254,137 @@ const DeclarativeShell: ThemeEntry = () => {
     );
   };
 
+  // --- focused-game detail composition (ARC 3 — the declarative element model) ---
+  // A theme's `[[detail.elements]]` render in an engine-arranged focused-detail
+  // region (carousel/wheel layouts). Each element binds to the focused game's data
+  // and plays its entrance `motion` (a keyed SpecTransition) on focus change. The
+  // reserved `position`/`size`/`ambient` fields are IGNORED here — the slot
+  // renderer arranges by declared order; the future free-form canvas honors them.
+  const detailElements = createMemo<ThemeElement[]>(
+    () => activeTheme()?.manifest.detail?.elements ?? [],
+  );
+  const focusedMeta = (): GameMetadata | undefined => {
+    const g = focusedEntry();
+    // Metadata is keyed by the ROM id (where enrichment writes it) — NOT the
+    // identity id. Every working consumer (Retroverse GameDetailPanel,
+    // GameInfoModal, DetailListView, LibraryView) uses `entry.id`. (Cover/logo
+    // ART is identity-keyed — the identity's canonical art slot — hence
+    // `coverFor`/`logoFor` prefer `identityId`; metadata is not. Don't "unify"
+    // these or metadata silently vanishes.)
+    return g ? media.media(g.id)?.metadata : undefined;
+  };
+  const logoFor = (entry: RomEntry): string | null =>
+    (entry.identityId ? media.coverUrl(entry.systemId as SystemId, entry.identityId, "clear-logo") : null) ??
+    media.coverUrl(entry.systemId as SystemId, entry.id, "clear-logo");
+
+  // Bind one element kind to the focused game (reactive). Absent data → nothing
+  // (graceful); a reserved/unbound kind → nothing (the vocabulary accretes).
+  const elementContent = (kind: string): JSX.Element => {
+    const meta = (): GameMetadata | undefined => focusedMeta();
+    // A metadata pill (BigBox-style chip). Renders nothing when the value is absent.
+    const chip = (text: () => string | number | undefined): JSX.Element => (
+      <Show when={text() != null && text() !== ""}>
+        <span class="rounded-full border border-white/15 bg-white/10 px-3.5 py-1 text-[0.7rem] font-semibold uppercase tracking-wider text-white/85 backdrop-blur-sm">
+          {String(text())}
+        </span>
+      </Show>
+    );
+    switch (kind) {
+      case "title":
+        return (
+          <h2 class="max-w-4xl text-5xl font-black leading-[1.04] tracking-tight text-(--color-oa-ink) drop-shadow-[0_2px_24px_rgba(0,0,0,.7)]">
+            {focusedEntry()?.title}
+          </h2>
+        );
+      case "system":
+        return (
+          <span class="text-xs font-bold uppercase tracking-[0.4em] text-(--color-system-accent) drop-shadow">
+            {focusedEntry() ? sysShort(focusedEntry()!) : ""}
+          </span>
+        );
+      case "year":
+        return chip(() => meta()?.year);
+      case "genre":
+        return chip(() => meta()?.genre);
+      case "developer":
+        return chip(() => meta()?.developer);
+      case "publisher":
+        return chip(() => meta()?.publisher);
+      case "players":
+        return chip(() => (meta()?.players != null ? `${meta()!.players}P` : undefined));
+      case "description":
+        return (
+          <Show when={meta()?.description}>
+            {(d) => (
+              <p class="line-clamp-3 max-w-2xl text-sm leading-relaxed text-(--color-oa-ink-dim) drop-shadow">
+                {d()}
+              </p>
+            )}
+          </Show>
+        );
+      case "logo":
+        return (
+          <Show when={focusedEntry() && logoFor(focusedEntry()!)}>
+            {(u) => (
+              <img src={u()} alt="" class="max-h-28 w-auto max-w-lg object-contain drop-shadow-[0_4px_24px_rgba(0,0,0,.6)]" />
+            )}
+          </Show>
+        );
+      case "cover":
+        return (
+          <Show when={focusedEntry() && coverFor(focusedEntry()!)}>
+            {(u) => <img src={u()} alt="" class="max-h-56 w-auto rounded-lg object-contain shadow-2xl" />}
+          </Show>
+        );
+      default:
+        // Reserved / not-yet-bound kind (rating / stats / …) — renders nothing.
+        return <></>;
+    }
+  };
+
+  // Metadata "chip" kinds flow together on one wrapping row; everything else
+  // (logo / system / title / description / cover) takes its own line. The engine
+  // arranges this for the bounded-slot model — the free-form canvas places by
+  // `position` later (D59). Declared order is preserved within the flow.
+  const CHIP_KINDS = new Set(["year", "genre", "players", "developer", "publisher", "rating"]);
+
+  // The detail region: each declared element wrapped in a keyed SpecTransition so
+  // its entrance `motion` replays when the focused game changes. `skipInitial`
+  // keeps it quiet at boot (the browse-level transition covers that entrance, and
+  // the first focus move is post-window-shown — D54 landmine covered).
+  const renderDetail = (): JSX.Element => (
+    <For each={detailElements()}>
+      {(el) => {
+        const spec = resolveMotionRef(el.motion);
+        // Block kinds take a full row (`w-full` → flex-wrap break); chip kinds stay
+        // auto-width so consecutive ones flow together on a row.
+        return (
+          <SpecTransition
+            class={CHIP_KINDS.has(el.kind) ? "" : "w-full"}
+            trigger={() => focusedEntry()?.id ?? ""}
+            spec={() => spec}
+            skipInitial
+            reducedMotion={reducedMotion}
+          >
+            {elementContent(el.kind)}
+          </SpecTransition>
+        );
+      }}
+    </For>
+  );
+
+  // Overlay the detail region across the top of a hero-style (carousel/wheel)
+  // browse — the coverflow/wheel cards sit in the vertical middle, leaving the top
+  // band for the focused game's title/logo/metadata. `pointer-events-none` so it
+  // never blocks card interaction. Renders nothing when no `detail` is declared.
+  const detailOverlay = (): JSX.Element => (
+    <Show when={detailElements().length > 0}>
+      <div class="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 px-14 pt-12">
+        {renderDetail()}
+      </div>
+    </Show>
+  );
+
   return (
     // `overflow-hidden` is the MOTION.md rule #2 clipping ancestor: the shell root
     // never scrolls as a whole (the inner nav primitive owns its own
@@ -327,36 +459,42 @@ const DeclarativeShell: ThemeEntry = () => {
             </Match>
 
             <Match when={layout() === "carousel"}>
-              <CarouselNav
-                id="declarative-library"
-                class="h-full w-full"
-                items={games}
-                cardWidth={210}
-                pitch={168}
-                focusedIndex={focusedIndex}
-                setFocusedIndex={setFocusedIndex}
-                hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
-                onConfirm={(_i, entry) => void host.onLaunch(entry)}
-                onSecondary={(_i, entry) => host.onShowInfo(entry)}
-              >
-                {(entry, ctx) => <div class="aspect-[3/4] w-[210px]">{renderCard(entry, ctx)}</div>}
-              </CarouselNav>
+              <div class="relative h-full w-full">
+                {detailOverlay()}
+                <CarouselNav
+                  id="declarative-library"
+                  class="h-full w-full"
+                  items={games}
+                  cardWidth={420}
+                  pitch={336}
+                  focusedIndex={focusedIndex}
+                  setFocusedIndex={setFocusedIndex}
+                  hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
+                  onConfirm={(_i, entry) => void host.onLaunch(entry)}
+                  onSecondary={(_i, entry) => host.onShowInfo(entry)}
+                >
+                  {(entry, ctx) => <div class="aspect-[3/4] w-[420px]">{renderCard(entry, ctx)}</div>}
+                </CarouselNav>
+              </div>
             </Match>
 
             <Match when={layout() === "wheel"}>
-              <WheelNav
-                id="declarative-library"
-                class="h-full w-full"
-                items={games}
-                radius={520}
-                focusedIndex={focusedIndex}
-                setFocusedIndex={setFocusedIndex}
-                hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
-                onConfirm={(_i, entry) => void host.onLaunch(entry)}
-                onSecondary={(_i, entry) => host.onShowInfo(entry)}
-              >
-                {(entry, ctx) => <div class="aspect-[3/4] w-[200px]">{renderCard(entry, ctx)}</div>}
-              </WheelNav>
+              <div class="relative h-full w-full">
+                {detailOverlay()}
+                <WheelNav
+                  id="declarative-library"
+                  class="h-full w-full"
+                  items={games}
+                  radius={520}
+                  focusedIndex={focusedIndex}
+                  setFocusedIndex={setFocusedIndex}
+                  hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
+                  onConfirm={(_i, entry) => void host.onLaunch(entry)}
+                  onSecondary={(_i, entry) => host.onShowInfo(entry)}
+                >
+                  {(entry, ctx) => <div class="aspect-[3/4] w-[200px]">{renderCard(entry, ctx)}</div>}
+                </WheelNav>
+              </div>
             </Match>
           </Switch>
         </Show>

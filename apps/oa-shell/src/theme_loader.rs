@@ -119,6 +119,14 @@ pub struct DiskThemeManifest {
     /// `glyph_set` / `views`); the frontend is the authority on the allow-list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<ThemeMotion>,
+    /// Focused-game element composition (Theming ARC 3 — the declarative element
+    /// model). Loose `toml::Value` pass-through (same philosophy as a
+    /// `MotionRef::Spec`): the frontend owns the typed `ThemeElement` + validator +
+    /// renderer, and the RESERVED canvas fields (`position` / `size` / `ambient`)
+    /// round-trip for free — so this field never needs widening as the element
+    /// vocabulary or the free-form canvas grows (low-floor-now / high-ceiling-reserved).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<toml::Value>,
 }
 
 fn default_reserved_corner() -> String {
@@ -394,6 +402,27 @@ pub fn resolve_themes_community_dir() -> Option<PathBuf> {
 /// (swap-by-restart is the shipped model, PD2).
 pub fn resolve_themes_dev_dir() -> Option<PathBuf> {
     resolve_themes_subdir("dev")
+}
+
+/// The on-disk package directory for a theme `id` — `themes/community/<id>/`
+/// (then the loose `themes/dev/<id>/`), if it exists. A declarative theme is a
+/// **self-contained package**: its assets (`system-ui/backgrounds|sounds/…`) live
+/// here, so the asset resolver checks this directory FIRST and only falls back to
+/// the bundled / platform tiers when the theme ships nothing (decision PD2 — the
+/// `system-ui/` dir the on-disk layout reserves). Returns `None` for an unknown id,
+/// or a path-unsafe id (no separators / `..` — the value reaches an `fs` join). The
+/// loaded `DiskThemeDescriptor` also carries this as `base_path`; this resolves it
+/// fresh by id for the asset commands, which only know the active theme's id.
+pub fn theme_package_dir(theme_id: &str) -> Option<PathBuf> {
+    if theme_id.is_empty() || theme_id.contains('/') || theme_id.contains('\\') || theme_id == ".." {
+        return None;
+    }
+    for root in [resolve_themes_community_dir(), resolve_themes_dev_dir()] {
+        if let Some(dir) = root.map(|r| r.join(theme_id)).filter(|d| d.is_dir()) {
+            return Some(dir);
+        }
+    }
+    None
 }
 
 /// Discover every theme directly under `parent` (one subdirectory per theme,
@@ -1042,5 +1071,58 @@ surfaces = ["main"]
         // Premium palette + per-system accents (both sidecars load).
         assert!(aurora.tokens.as_ref().and_then(|t| t.accent.as_deref()).is_some());
         assert!(aurora.per_system_tokens.as_ref().and_then(|m| m.get("psx")).is_some());
+    }
+
+    #[test]
+    fn parses_detail_composition_with_reserved_canvas_fields() {
+        // The declarative element model: `[[detail.elements]]` round-trips to the
+        // frontend as a loose value, INCLUDING the reserved canvas `position` (the
+        // high-ceiling stub) — the Rust loader never needs to know the element
+        // vocabulary, so it doesn't grow as the vocabulary / canvas do.
+        let parent = fresh_tmp_dir("detail");
+        write_theme(
+            &parent,
+            "withdetail",
+            r#"
+id = "withdetail"
+name = "With Detail"
+version = "1.0.0"
+schema_version = 1
+oa_version = "^0.x"
+default_route = "library"
+surfaces = ["main"]
+
+[[detail.elements]]
+kind = "title"
+motion = "title-rise"
+
+[[detail.elements]]
+kind = "year"
+position = { anchor = "top-left", x = 40, y = 24 }
+"#,
+        );
+        let themes = load_from_parent_dir(&parent);
+        let t = themes
+            .iter()
+            .find(|t| t.manifest.id == "withdetail")
+            .expect("theme parses");
+        let detail = t.manifest.detail.as_ref().expect("detail parsed");
+        let elements = detail
+            .get("elements")
+            .and_then(|e| e.as_array())
+            .expect("elements array");
+        assert_eq!(elements.len(), 2);
+        assert_eq!(elements[0].get("kind").and_then(|k| k.as_str()), Some("title"));
+        assert_eq!(elements[0].get("motion").and_then(|m| m.as_str()), Some("title-rise"));
+        // The RESERVED canvas `position` survives the round-trip (frontend-owned).
+        let pos = elements[1].get("position").expect("reserved position round-trips");
+        assert_eq!(pos.get("x").and_then(|x| x.as_integer()), Some(40));
+
+        // And it serializes to the JSON the frontend reads.
+        let json = serde_json::to_string(&t.manifest).expect("manifest -> json");
+        assert!(json.contains(r#""detail""#), "detail in json: {json}");
+        assert!(json.contains(r#""kind":"title""#), "element kind in json: {json}");
+
+        let _ = std::fs::remove_dir_all(&parent);
     }
 }

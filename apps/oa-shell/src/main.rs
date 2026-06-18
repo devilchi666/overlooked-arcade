@@ -2887,6 +2887,26 @@ fn main() {
                     }
                 }
 
+                // Self-contained disk themes ship their own assets under
+                // `themes/<community|dev>/<id>/system-ui/…` (the package-dir tier of
+                // the S5.1 cascade). Those resolve to absolute paths the frontend
+                // loads via convertFileSrc, so the asset-protocol scope must cover
+                // the themes dir(s) too — otherwise a theme-supplied background 403s.
+                for themes_dir in [
+                    theme_loader::resolve_themes_community_dir(),
+                    theme_loader::resolve_themes_dev_dir(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if let Err(e) = app.asset_protocol_scope().allow_directory(&themes_dir, true) {
+                        log::error!(
+                            "oa-shell: failed to widen asset-protocol scope to {}: {e}",
+                            themes_dir.display()
+                        );
+                    }
+                }
+
                 // Phase E — multi-core boot. Fan out the four boot-time
                 // I/O loads to background workers and let them run while
                 // the main thread continues with shell-mode resolution +

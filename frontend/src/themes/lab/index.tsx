@@ -132,7 +132,10 @@ const LabEntry: ThemeEntry = (_props) => {
 
   const sysName = (e: RomEntry): string => systemThemes[e.systemId]?.shortName ?? e.systemId;
   const metaChips = (e: RomEntry): string[] => {
-    const m = media.media(e.identityId ?? e.id)?.metadata;
+    // Metadata is keyed by the ROM id (not the identity id) — see declarativeShell
+    // `focusedMeta`. The identity key has cover ART but no metadata, so
+    // `identityId ?? id` came up empty.
+    const m = media.media(e.id)?.metadata;
     const chips: string[] = [];
     if (m?.year) chips.push(String(m.year));
     if (m?.genre) chips.push(m.genre);

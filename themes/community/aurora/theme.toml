@@ -48,3 +48,35 @@ layout = "carousel"
 transition = "slide"
 selection = "lift"
 ambient = "breathe"
+
+# Focused-game detail composition (the declarative element model). The
+# DeclarativeShell renders these over the coverflow, bound to the focused game's
+# data, each playing its entrance `motion` when the selection changes. Elements
+# whose data is absent (no logo / no metadata) simply don't show.
+#
+# The reserved `position` / `size` fields are the high-ceiling STUB: parsed,
+# round-tripped, and validated as optional now, but the engine arranges by declared
+# order and IGNORES them — the free-form canvas (Theme Studio / ARC 4) will honor
+# them later, additively, with no contract change.
+[[detail.elements]]
+kind = "logo"
+motion = "art-grow-in"
+
+[[detail.elements]]
+kind = "system"
+motion = "title-rise"
+
+[[detail.elements]]
+kind = "title"
+motion = "title-rise"
+# reserved (canvas) — inert today; the slot renderer arranges by declared order.
+position = { anchor = "top-left", x = 48, y = 132 }
+
+[[detail.elements]]
+kind = "year"
+
+[[detail.elements]]
+kind = "genre"
+
+[[detail.elements]]
+kind = "developer"

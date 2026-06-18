@@ -2209,3 +2209,37 @@ preset registry + contract on `feat/motion-presets-and-wiring`). The shape that 
     move is necessarily post-window-shown it covers the D54 "before window shown"
     landmine with no per-card `windowShown` wiring. The lab's hero stays on its
     physics spring (D58.4 escape hatch) — not collapsed into the declarative hook.
+
+### D59 — Low-floor-now / high-ceiling-reserved: every theming feature ships its floor with the ceiling's contract + stubs in place (2026-06-18)
+
+Standing principle (operator, 2026-06-18): **every theming feature is built so the
+low ceiling ships now and the high ceiling lands later — but the contract and the
+stubs for the high ceiling must be present from day one, so the ceiling is a purely
+ADDITIVE step, never a rewrite or a migration.** A feature's durable contract spans
+the full ambition; only the renderer/consumer grows. This is why the substrate can
+ship a usable floor every slice without painting itself into a corner.
+
+The mechanics that make this real (apply to new theming features):
+
+1. **Design the data shape as a subset of the eventual one**, reserving the fields the
+   ceiling needs rather than inventing a throwaway shape. The validator accepts the
+   reserved fields as optional; today's renderer ignores them.
+2. **Round-trip the reserved fields through the whole pipeline** — crucially the Rust
+   disk loader carries them (loose `toml::Value` pass-through, like `MotionRef::Spec`),
+   so a disk theme can author the ceiling's data before the engine honors it, and the
+   Rust side never needs touching as the feature grows. The frontend owns the typed
+   contract + validation + rendering.
+3. **Vocabulary accretes by warning, not erroring** — an unknown enum value (element
+   kind, glyph set, motion preset) is a non-fatal warning that renders nothing, so the
+   contract can name more than the renderer yet implements.
+
+First applications (all this principle in action): the **MotionRef** slots (name = low
+floor, inline spec = ceiling escape hatch, D58.5); the **declarative element model**
+(`ThemeElement`: `kind` + `motion` now, `position`/`size`/`ambient` reserved for the
+free-form **canvas** = Theme Studio / ARC 4 — bounded element slots now, author-placed
+canvas later, additively); **self-contained theme asset packages** (tier-0 package dir
+now, the same cascade serving richer asset kinds later). The element descriptor is the
+durable canvas contract: the engine arranges declared elements by order today; the
+canvas honors their reserved `position` later, with no contract change. Validator codes
+`INVALID_DETAIL` (structural error) / `UNKNOWN_ELEMENT_KIND` + `UNKNOWN_ELEMENT_MOTION`
+(accretion warnings). Rust carries `detail` as loose `toml::Value`.
