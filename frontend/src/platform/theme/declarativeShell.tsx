@@ -34,10 +34,12 @@ import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-j
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
+import { useMedia } from "@oa/platform/library/media";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
-import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import { resolveMotionRef, resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
+import SelectionMotion from "@oa/platform/theme/SelectionMotion";
 import { windowShown } from "@oa/platform/theme/windowShown";
 import { CarouselNav, GridNav, ListNav, WheelNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
@@ -58,10 +60,16 @@ const RECOGNIZED_SETTINGS = {
   compactRows: "compactRows",
 } as const;
 
+/// BIOS / boot-ROM title rule — a standalone `[BIOS]` / `(BIOS)` annotation,
+/// case-insensitive. Mirrors the Rust `title_parse::is_bios_flag` rule so the
+/// no-code browse hides BIOS files the same way the backend tags them.
+const BIOS_TITLE = /[[(]\s*bios\s*[\])]/i;
+
 const DeclarativeShell: ThemeEntry = () => {
   const platform = usePlatform();
   const host = useTheme();
   const settings = useThemeSettings();
+  const media = useMedia();
 
   // The recognized density setting (inert if the theme doesn't declare it).
   const compact = (): boolean =>
@@ -76,7 +84,13 @@ const DeclarativeShell: ThemeEntry = () => {
     const seen = new Set<string>();
     const out: RomEntry[] = [];
     for (const e of platform.library.state.entries) {
-      if (e.seed) continue;
+      // Skip seed rows + BIOS/boot-ROM files. `RomEntry` (the raw per-file browse
+      // list) doesn't carry the backend `is_bios` flag — that lives on the grouped
+      // `VariantInfo` (`list_game_groups`) — so we derive it from the title using
+      // the SAME pure rule the Rust `title_parse` uses (a standalone `[BIOS]` /
+      // `(BIOS)` annotation). Proper long-term home: surface `is_bios` onto
+      // `RomEntry`, or wire `casual_view_defaults` into the live browse (VL Phase F).
+      if (e.seed || BIOS_TITLE.test(e.title)) continue;
       const key = e.identityId ?? e.id;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -113,6 +127,17 @@ const DeclarativeShell: ThemeEntry = () => {
     resolveThemeMotionSpec(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
+  // Per-item selection + ambient choreography (ARC 3 — the declarative
+  // selection/ambient hook). The theme's `[motion.selection]` / `[motion.ambient]`
+  // slots resolve (preset name OR inline spec) to §2 specs the FOCUSED card plays
+  // via <SelectionMotion>: an entrance pop on focus-gain + an idle loop on the
+  // focused card only. Both are `null` when the theme declares neither — then
+  // SelectionMotion is inert and the browse looks exactly as before (so a bare
+  // theme stays bare). Reduced-motion is floored by the players (D58.6), so these
+  // resolve the RAW spec (no `reducedMotion` arg, unlike `viewSpec`).
+  const selectionSpec = createMemo(() => resolveMotionRef(activeTheme()?.manifest.motion?.selection));
+  const ambientSpec = createMemo(() => resolveMotionRef(activeTheme()?.manifest.motion?.ambient));
+
   // The transition's trigger — what counts as a "view change". The resolved
   // layout primitive (the per-view/per-system axis varies at runtime) gated by
   // `windowShown` — the backend's real "window is on screen now" signal (Rust
@@ -127,6 +152,14 @@ const DeclarativeShell: ThemeEntry = () => {
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
 
+  // Box-art cover for a card (identity-keyed first, then the raw rom id — the
+  // same lookup the lab/coverflow use). Returns null when the library has no art
+  // for this game, so the card falls back to its system-tinted panel. An accessor
+  // (not a captured value) so it re-renders when the media store finishes loading.
+  const coverFor = (entry: RomEntry): string | null =>
+    (entry.identityId ? media.coverUrl(entry.systemId as SystemId, entry.identityId) : null) ??
+    media.coverUrl(entry.systemId as SystemId, entry.id);
+
   // --- card renderers ---------------------------------------------------------
 
   // List row — mirrors `bare`: per-system accent dot + title + system short,
@@ -134,55 +167,99 @@ const DeclarativeShell: ThemeEntry = () => {
   // `--color-system-accent` resolve to this game's (possibly theme-overridden)
   // palette.
   const renderRow = (entry: RomEntry, ctx: NavItemContext): JSX.Element => (
-    <div
-      data-system={entry.systemId}
-      class="flex items-center justify-between gap-4 rounded-md px-4"
-      classList={{
-        "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
-        "text-(--color-oa-ink-dim)": !ctx.focused(),
-        "py-1": compact(),
-        "py-2.5": !compact(),
-      }}
+    <SelectionMotion
+      focused={ctx.focused}
+      selection={selectionSpec}
+      ambient={ambientSpec}
+      reducedMotion={reducedMotion}
     >
-      <div class="flex min-w-0 items-center gap-3">
-        <span
-          class="size-2 shrink-0 rounded-full"
-          style={{ "background-color": "var(--color-system-accent)" }}
-          aria-hidden="true"
-        />
-        <span class="truncate text-sm">{entry.title}</span>
+      <div
+        data-system={entry.systemId}
+        class="flex items-center justify-between gap-4 rounded-md px-4"
+        classList={{
+          "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
+          "text-(--color-oa-ink-dim)": !ctx.focused(),
+          "py-1": compact(),
+          "py-2.5": !compact(),
+        }}
+      >
+        <div class="flex min-w-0 items-center gap-3">
+          <span
+            class="size-2 shrink-0 rounded-full"
+            style={{ "background-color": "var(--color-system-accent)" }}
+            aria-hidden="true"
+          />
+          <span class="truncate text-sm">{entry.title}</span>
+        </div>
+        <span class="shrink-0 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+          {sysShort(entry)}
+        </span>
       </div>
-      <span class="shrink-0 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
-        {sysShort(entry)}
-      </span>
-    </div>
+    </SelectionMotion>
   );
 
-  // Tile card for grid/carousel/wheel — a system-tinted panel with the title +
-  // system label. Cover-art rendering is a deliberate later accretion (the
-  // dogfood surface is the list); a text tile keeps S2 correct + risk-free.
-  const renderCard = (entry: RomEntry, ctx: NavItemContext): JSX.Element => (
-    <div
-      data-system={entry.systemId}
-      class="flex h-full w-full flex-col justify-end gap-1 overflow-hidden rounded-xl border p-3 transition-[transform,border-color] duration-200"
-      classList={{
-        "border-(--color-system-accent) scale-[1.02]": ctx.focused(),
-        "border-white/5": !ctx.focused(),
-      }}
-      style={{
-        "background-image":
-          "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
-      }}
-    >
-      <span class="line-clamp-2 text-sm font-medium text-(--color-oa-ink)">{entry.title}</span>
-      <span class="text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
-        {sysShort(entry)}
-      </span>
-    </div>
-  );
+  // Tile card for grid/carousel/wheel — box art when the library has a cover,
+  // else a system-tinted panel (so a library with no art still reads cleanly). A
+  // bottom gradient scrim keeps the title legible over any cover. Focus emphasis
+  // is the accent border + an accent glow shadow (the static, no-motion baseline);
+  // when the theme declares a `selection` preset, SelectionMotion's animated pop
+  // adds the motion on top (centred cards scale symmetrically — MOTION.md #3).
+  // h-full/w-full passes through both SelectionMotion transform carriers so the
+  // card still fills its aspect box.
+  const renderCard = (entry: RomEntry, ctx: NavItemContext): JSX.Element => {
+    const cover = (): string | null => coverFor(entry);
+    return (
+      <SelectionMotion
+        class="h-full w-full"
+        focused={ctx.focused}
+        selection={selectionSpec}
+        ambient={ambientSpec}
+        reducedMotion={reducedMotion}
+      >
+        <div
+          data-system={entry.systemId}
+          class="relative flex h-full w-full flex-col justify-end overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-200"
+          classList={{
+            "border-(--color-system-accent)": ctx.focused(),
+            "border-white/10": !ctx.focused(),
+          }}
+          style={{
+            "box-shadow": ctx.focused()
+              ? "0 18px 40px rgba(0,0,0,.55), 0 0 38px -8px var(--color-system-accent)"
+              : "0 6px 16px rgba(0,0,0,.4)",
+          }}
+        >
+          <Show
+            when={cover()}
+            fallback={
+              <div
+                class="absolute inset-0"
+                style={{
+                  "background-image":
+                    "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
+                }}
+              />
+            }
+          >
+            {(u) => <img src={u()} alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" />}
+          </Show>
+          {/* title plate — gradient scrim so the text stays legible over art */}
+          <div class="relative z-10 flex flex-col gap-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-3 pb-2.5 pt-7">
+            <span class="line-clamp-2 text-sm font-medium text-white drop-shadow">{entry.title}</span>
+            <span class="text-[0.55rem] uppercase tracking-[0.3em] text-white/65">{sysShort(entry)}</span>
+          </div>
+        </div>
+      </SelectionMotion>
+    );
+  };
 
   return (
-    <div class="relative flex h-full w-full flex-col bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
+    // `overflow-hidden` is the MOTION.md rule #2 clipping ancestor: the shell root
+    // never scrolls as a whole (the inner nav primitive owns its own
+    // `overflow-y-auto`), so clipping here keeps a per-item selection transform (a
+    // `title-rise` y-translate, or a card scale) from briefly extending an
+    // ancestor's scroll area and spawning a transient scrollbar.
+    <div class="relative flex h-full w-full flex-col overflow-hidden bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
       {/* Per-system backdrop, following focus. Renders nothing when the theme
           ships no background assets (S5.1 cascade → null), so a bare theme
           stays bare. */}

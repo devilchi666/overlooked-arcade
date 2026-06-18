@@ -1,0 +1,27 @@
+# Aurora per-system palette overrides (mirrors perSystemTokens — accent / soft /
+# glow per system id, layered over the global SYSTEM_PALETTES cascade). A vivid
+# neon accent per system, so a card's border + focus glow take on that system's
+# colour and the showcase re-themes as you browse across systems.
+[per_system_tokens.nes]
+accent = "oklch(0.70 0.20 25)"
+glow = "oklch(0.70 0.20 25 / 0.40)"
+
+[per_system_tokens.snes]
+accent = "oklch(0.68 0.18 300)"
+glow = "oklch(0.68 0.18 300 / 0.40)"
+
+[per_system_tokens.genesis]
+accent = "oklch(0.72 0.16 250)"
+glow = "oklch(0.72 0.16 250 / 0.40)"
+
+[per_system_tokens.tg16]
+accent = "oklch(0.77 0.17 60)"
+glow = "oklch(0.77 0.17 60 / 0.40)"
+
+[per_system_tokens.psx]
+accent = "oklch(0.66 0.21 340)"
+glow = "oklch(0.66 0.21 340 / 0.40)"
+
+[per_system_tokens.saturn]
+accent = "oklch(0.74 0.15 230)"
+glow = "oklch(0.74 0.15 230 / 0.40)"

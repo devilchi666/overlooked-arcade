@@ -9,6 +9,60 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — Declarative selection/ambient hook + the Declarative Showcase arc S1 — ✅ MERGED to main (branch `feat/motion-selection-ambient-hook`)
+
+> Started as the deferred selection/ambient hook; mid-session the operator reframed it
+> into a new arc: the Graphics Lab proves what the ENGINE can do *via code*, but a
+> distributable file theme ships **no code** (PD1) — so the only honest proof that
+> *loadable file themes can use everything* is a showcase on the **declarative path**
+> (`theme.toml` → `DeclarativeShell`), not the code Lab. New arc:
+> [PLANS/declarative-showcase.md](../../PLANS/declarative-showcase.md). Operator
+> playtested **Aurora** (build) — looks premium.
+
+- **The hook — `platform/theme/SelectionMotion.tsx`** (the no-code consumer of the
+  `[motion.selection]`/`[motion.ambient]` slots; D58.10). A treatment-style wrapper the
+  `DeclarativeShell` wraps every card in — NOT nav-primitive props (blast radius) nor a
+  bare hook (the two-transform nesting footgun). Two nested elements (selection +
+  ambient both animate `transform`); inner reuses `<AmbientMotion>` gated to `focused()`
+  (≤1 live loop); outer inlines the selection one-shot and **cancels on focus-loss**
+  (because `compileMotionSpec` uses `fill:both`, a sustained-emphasis `lift` would stay
+  popped otherwise — so it can't be a plain `SpecTransition`). `skipInitial` keeps boot
+  quiet (D54). Reduced-motion floored by the players (D58.6). No-hero reframing: in a
+  flat browse `selection` = the focused item plays its preset **in place**.
+- **Declarative Showcase S1:**
+  - **`DeclarativeShell` renders cover art** on cards (was text-only) via
+    `useMedia().coverUrl`: box art fills the card + a bottom gradient scrim for title
+    legibility; system-tinted fallback when the library has no art; focus = accent
+    border + accent glow. (`lift` owns the animated pop; centred cards scale
+    symmetrically — MOTION.md #3.)
+  - **`aurora` on-disk showcase theme** (`themes/community/aurora/{theme.toml,
+    tokens.toml,per-system.toml}`) — the declarative counterpart to the code Lab:
+    coverflow layout, premium dark palette, 6 vivid per-system accents, PlayStation
+    glyphs, full motion (slide / lift / breathe, named presets). Discovered by the disk
+    loader, selectable in Appearance, **zero theme code**.
+  - **`bare-declarative` reverted to the minimal floor** (fade only) — it mirrors `bare`;
+    selection/ambient lives on `aurora`.
+  - **BIOS files hidden from the declarative browse** — `RomEntry` (the raw browse list)
+    doesn't carry the backend `is_bios` flag (that's on the grouped `VariantInfo`), and
+    `casual_view_defaults` is still unwired (VL Phase F), so the games memo applies the
+    same pure title rule the backend uses (`[BIOS]`/`(BIOS)` annotation).
+  - Rust `theme_loader` test `shipped_showcase_theme_parses` (aurora round-trips).
+- **MOTION.md rules added** (from a playtest round): #3 scale presets ↔ centred cards /
+  full-width rows use y·opacity·glow (a centred scale flings left-aligned row content);
+  #4 a per-item transform needs the shell-root clipping ancestor (`overflow-hidden`).
+- **Ops finding (no code):** a **stale `target/release/themes/community/`** (Jun 16,
+  neon-list only) shadowed the repo themes — the loader prefers `<exe_dir>/themes` over
+  the source-tree fallback, so Aurora (repo-only) was invisible until the stale dir was
+  removed. Nothing in the build creates it; it was a one-off leftover. (Latent footgun:
+  any stray `themes/` next to the exe hides repo themes — harden the loader to merge
+  both candidates if it recurs.)
+- **CI:** tsc + eslint + 183 vitest green; cargo `theme_loader` 11 green.
+- **Next:** S2 — theme-supplied backgrounds (a file theme ships its own backdrop;
+  needs the disk-asset `basePath` → `convertFileSrc` plumbing) + a now-focused detail
+  strip. Then S3 (list thumbnails + metadata + richer recognized settings vocabulary).
+
+---
+
 ## 2026-06-18 — ARC 3 Thrust M: wire the motion model into the consumers — ✅ MERGED to main (`60af185`)
 
 > The "wire it up right" tail from the preset-registry entry below. The model +

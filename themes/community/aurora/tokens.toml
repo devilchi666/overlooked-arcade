@@ -1,0 +1,13 @@
+# Aurora design tokens (mirrors Partial<ThemeTokens>; camelCase keys). A deep,
+# cool, premium base — the shell chrome + the fallback accent. Per-element accents
+# come from per-system.toml layered over the global palette cascade, so the whole
+# coverflow re-tints as you move between systems.
+bg = "oklch(0.17 0.03 255)"
+bgDeep = "oklch(0.11 0.025 260)"
+ink = "oklch(0.96 0.01 250)"
+inkDim = "oklch(0.70 0.02 255)"
+accent = "oklch(0.80 0.15 175)"
+accentSoft = "oklch(0.90 0.09 175)"
+accentGlow = "oklch(0.80 0.15 175 / 0.35)"
+focusRing = "oklch(0.84 0.14 165)"
+tileRadius = "14px"

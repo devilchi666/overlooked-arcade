@@ -31,4 +31,11 @@ describe("bare-declarative dogfood", () => {
     // Declaring motion must not break validation.
     expect(validateTheme(bareDeclarative).ok).toBe(true);
   });
+
+  it("stays minimal — no selection/ambient slots (those live on the aurora showcase)", () => {
+    // bare-declarative mirrors the hand-coded `bare` (the floor); the per-item
+    // selection/ambient choreography is exercised on the on-disk aurora theme.
+    expect(bareDeclarative.manifest.motion?.selection).toBeUndefined();
+    expect(bareDeclarative.manifest.motion?.ambient).toBeUndefined();
+  });
 });

@@ -11,6 +11,27 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Declarative Showcase — make the file-theme path capable & beautiful** — NEW arc
+  opened 2026-06-18 (operator reframing); branch `feat/motion-selection-ambient-hook`
+  (broadened from the selection/ambient hook). The Graphics Lab proves what the ENGINE
+  can do *via code*, but a distributable `.oatheme` ships **no code** (PD1) — so the
+  only honest proof that *loadable file themes can use everything* is a showcase on the
+  **declarative path** (`theme.toml` → `DeclarativeShell`), not the code Lab. Each time
+  the showcase wants to look better, the fix lands in `DeclarativeShell` (data-driven)
+  and unlocks that capability for **every** file theme. **S1 ✅ MERGED to main
+  2026-06-18 (operator playtested Aurora — premium):** `DeclarativeShell` renders
+  **cover art** on cards (was text-only) + the **selection/ambient hook**
+  (`SelectionMotion`, D58.10) + a new on-disk **`aurora`** showcase theme
+  (`themes/community/aurora/`) — coverflow, premium dark palette, 6 per-system neon
+  accents, full motion (slide/lift/breathe); **BIOS files hidden** from the declarative
+  browse (title rule mirroring `title_parse`). `bare-declarative` kept as the minimal
+  floor. Honest ceiling: `DeclarativeShell` is a single-surface flat browse (no
+  multi-tab/detail structure). Plan +
+  slices: [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md); log
+  [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
+  2026-06-18. **Next: S2 — theme-supplied backgrounds (`basePath` → `convertFileSrc`) +
+  a now-focused detail strip. S3 — list thumbnails + metadata + richer settings vocab.**
+
 - **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 foundation + the
   declarative motion MODEL (M-mod.1–.4) + the cinematic Graphics Lab showcase all
   MERGED to main 2026-06-18** (`6b89f50` model, `ce6bff6` showcase). The model is
@@ -38,12 +59,18 @@ spanned every system but was filed under whichever core happened to be active.
     regression; ③ Rust `theme_loader` widened (`transition`/`selection`/`ambient` =
     `MotionRef` = preset string | inline-spec table); ④ global `--motion-scale`
     token folded into the WAAPI players' numeric timing. tsc/eslint/182 vitest +
-    10 cargo theme_loader green. Deferred: the declarative selection/ambient hook
-    (flat-browse renderer needs its own design). `ViewTransition`/`resolveViewTransition`
+    10 cargo theme_loader green. `ViewTransition`/`resolveViewTransition`
     now have no runtime consumer (kept as tested product code per testbed doc).
+  - **Declarative selection/ambient hook ✅ MERGED to main 2026-06-18** (with the
+    Declarative Showcase arc above, branch `feat/motion-selection-ambient-hook`): a
+    `SelectionMotion` wrapper (`platform/theme/SelectionMotion.tsx`, D58.10) the no-code
+    `declarativeShell` wraps every card in, so a data theme declaring
+    `[motion.selection]` / `[motion.ambient]` gets a focused-item pop + idle loop with
+    zero render code (cancel-on-defocus + `skipInitial`; ≤1 live ambient loop). Now
+    exercised on `aurora`. MOTION.md rules #3/#4 added.
   - **🔭 Thrust M is at a REST POINT** — model + showcase + preset registry +
-    consumer wiring all merged. Remaining motion work is all deferred (declarative
-    selection/ambient hook · `push-hero` shared-element · attract = Thrust V ·
+    consumer wiring + the selection/ambient hook all merged. Remaining
+    motion work is all deferred (`push-hero` shared-element · attract = Thrust V ·
     `path-move`/keyframe-timeline). Next ARC 3 move is the operator's call: pick up a
     deferred motion item, or advance to **Thrust S** (game-surface shader chrome). See
     NEXT.md ARC 3 band.

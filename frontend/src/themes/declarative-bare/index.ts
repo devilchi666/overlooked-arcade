@@ -41,7 +41,10 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
     // ARC 3 M1 dogfood: declare a fade view transition (DATA only). The
     // DeclarativeShell plays it on a view change, interruptibly; reduced-motion
     // downgrades it to a short fade. Proves the manifest motion field → resolver
-    // → ViewTransition path end-to-end with zero theme code.
+    // → SpecTransition path end-to-end with zero theme code. Kept MINIMAL on
+    // purpose: this theme mirrors the hand-coded `bare` (the floor). Selection +
+    // ambient choreography is exercised on the on-disk `aurora` showcase theme,
+    // not here.
     motion: { view_transition: { preset: "fade", duration: "450ms" } },
     // Declared appearance option; the engine Appearance panel renders it and the
     // DeclarativeShell honors it (recognized `compactRows` → list density).

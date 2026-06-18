@@ -1,0 +1,50 @@
+# Aurora — the declarative SHOWCASE theme (Theming ARC 3).
+#
+# The data-only counterpart to the code "Graphics Lab": where the Lab proves what
+# the ENGINE can do via bespoke TSX, Aurora proves what a *loadable file theme*
+# can do with ZERO code — a coverflow of box art, per-system neon accents, a
+# premium dark palette, and the full motion vocabulary, all authored as data and
+# rendered by the built-in DeclarativeShell. If it looks good here, distributable
+# `.oatheme` themes can look good.
+#
+# On disk at `themes/community/aurora/` (the source-tree path the loader discovers
+# when running the workspace exe; a real install puts it under `<exe_dir>/themes/
+# community/`, where the `themes` pack channel installs). Discovered, validated,
+# and selectable in Settings → Appearance with no theme code.
+#
+# theme.toml mirrors the declarative ThemeManifest (snake_case), MINUS
+# entry/entry_export (implicit — DeclarativeShell renders it). tokens.toml +
+# per-system.toml carry the palette.
+
+id = "aurora"
+name = "Aurora"
+version = "1.0.0"
+schema_version = 1
+oa_version = "^0.x"
+default_route = "library"
+routes = ["library"]
+context_slots = ["library"]
+required_engine_capabilities = []
+reserves_corner = "top-right"
+surfaces = ["main"]
+glyph_set = "playstation"
+
+# Coverflow browse — a horizontal carousel of box art. DeclarativeShell renders
+# the `carousel` primitive and pulls each game's cover from the media layer
+# (falling back to a system-tinted panel where the library has no art).
+[views.game-browse]
+layout = "carousel"
+
+# The full motion vocabulary, authored as named presets (the low floor — a theme
+# references effects BY NAME):
+#  • transition — the browse slides up when the window is first shown; the shell
+#    keys it on window-shown so it can't play before the window is on screen (D54),
+#    and reduced-motion downgrades it to a short fade.
+#  • selection  — the focused cover lifts (a back-ease scale pop) on focus change.
+#  • ambient    — the focused cover breathes (a gentle idle loop); reduced-motion
+#    drops it entirely. Scale presets are correct here because carousel cards are
+#    centred, so they scale symmetrically rather than flinging content (MOTION.md #3).
+[motion]
+transition = "slide"
+selection = "lift"
+ambient = "breathe"
