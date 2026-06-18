@@ -26,7 +26,7 @@
 // (motionSpec/spring/springValue/SpecTransition/AmbientMotion/tilt) are PRODUCT
 // code that STAYS — only this folder strips.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useMedia } from "@oa/platform/library/media";
@@ -35,7 +35,12 @@ import { systemThemes } from "@oa/platform/themes/registry";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
 import AmbientMotion from "@oa/platform/theme/AmbientMotion";
 import { useTilt } from "@oa/platform/theme/tilt";
-import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import { Gloss, Reflection, FanartCrossfade } from "@oa/platform/theme/treatments";
+import {
+  resolveMotionRef,
+  resolveThemeMotionSpec,
+  usePrefersReducedMotion,
+} from "@oa/platform/theme/motion";
 import { createSpringValue } from "@oa/platform/theme/springValue";
 import { BENCH_SELECTION_SPRING } from "@oa/platform/theme/spring";
 import type { MotionSpec } from "@oa/platform/theme/motionSpec";
@@ -46,20 +51,12 @@ import type { ThemeManifest } from "@oa/platform/theme/manifest";
 
 type LabRoute = "home" | "library";
 
-// The §2 view-transition spec (authored as manifest data, below).
+// The §2 view-transition spec (authored as manifest data, below — the `transition`
+// slot's inline-spec escape hatch, exercising MotionRef's non-preset arm).
 const LAB_VIEW_SPEC: MotionSpec = {
   duration: 520,
   easing: "cubic-bezier(0.33, 1, 0.68, 1)",
   channels: { opacity: [0, 1], y: [120, 0] },
-};
-
-// Ambient breathe for the hero cover (subtle infinite scale pulse).
-const LAB_BREATHE_SPEC: MotionSpec = {
-  duration: 3000,
-  easing: "ease-in-out",
-  repeat: "infinite",
-  direction: "alternate",
-  channels: { scale: [1, 1.025] },
 };
 
 const LAB_MANIFEST: ThemeManifest = {
@@ -76,9 +73,11 @@ const LAB_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
-  // [GRAPHICS-LAB] MOTION: route transition authored as manifest DATA; played by
-  // SpecTransition via resolveThemeMotionSpec (the same path a real theme uses).
-  motion: { view_transition_spec: LAB_VIEW_SPEC },
+  // [GRAPHICS-LAB] MOTION: authored as manifest DATA via the M-mod unified slots
+  // (the same `MotionRef` path a real theme uses). `transition` = an inline spec
+  // (escape hatch); `ambient` = the NAMED "breathe" preset (low floor). Resolved
+  // by resolveThemeMotionSpec / resolveMotionRef and played by the engine players.
+  motion: { transition: LAB_VIEW_SPEC, ambient: "breathe" },
 };
 
 // Coverflow card geometry.
@@ -86,25 +85,14 @@ const CARD_W = 132;
 const PITCH = 104; // < CARD_W → cards overlap (depth)
 const LAB_CAP = 80; // CarouselNav windows the DOM, but keep the testbed modest
 
-// Lab-local keyframes (self-contained, like the F10 bench). Ken-burns + gloss
-// sweep are continuous background treatments (CSS is the right fit); the title/
-// meta rise uses the bench's back-ease overshoot.
+// Lab-local keyframe: the staggered title/meta rise (back-ease overshoot — the
+// bench's actual entrance easing). The fanart fade/ken-burns + gloss sweep are now
+// the shared <FanartCrossfade>/<Gloss> treatments (index.css keyframes), so the
+// only lab-private keyframe left is this one.
 const LAB_KEYFRAMES = `
-@keyframes oa-lab-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
 @keyframes oa-lab-rise {
   from { opacity: 0; transform: translateY(22px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes oa-lab-kenburns {
-  0%   { transform: scale(1.18) translate(0, 0); }
-  100% { transform: scale(1.32) translate(-2.5%, -2%); }
-}
-@keyframes oa-lab-gloss {
-  0%   { background-position: -160% 0; }
-  100% { background-position: 260% 0; }
 }
 `;
 const LAB_RISE_EASE = "cubic-bezier(.34, 1.7, .64, 1)";
@@ -166,22 +154,13 @@ const LabEntry: ThemeEntry = (_props) => {
     artScale.set(1);
   });
 
-  // Fanart backdrop crossfade (audit `fanart-crossfade`): keep a tiny stack of
-  // layers; the new cover fades in OVER the old, which is removed after the fade
-  // → a true crossfade, no flash. Keyed so each new layer replays its fade-in.
-  const [bgLayers, setBgLayers] = createSignal<{ key: number; url: string }[]>([]);
-  let bgKey = 0;
-  createEffect<string | null>((prevUrl) => {
+  // Fanart backdrop crossfade (audit `fanart-crossfade`) is now the shared
+  // <FanartCrossfade> treatment (below) — it owns the keyed layer stack + the
+  // crossfade + ken-burns. The lab just hands it the focused cover URL.
+  const fanartUrl = (): string | null => {
     const g = focusedGame();
-    const url = g ? coverFor(g) : null;
-    if (!url || url === prevUrl) return url ?? prevUrl ?? null;
-    bgKey += 1;
-    const k = bgKey;
-    setBgLayers((ls) => [...ls.slice(-1), { key: k, url }]);
-    const id = window.setTimeout(() => setBgLayers((ls) => ls.filter((l) => l.key === k)), 900);
-    onCleanup(() => clearTimeout(id));
-    return url;
-  });
+    return g ? coverFor(g) : null;
+  };
 
   const tab = (id: LabRoute, label: string): JSX.Element => (
     <button
@@ -245,22 +224,16 @@ const LabEntry: ThemeEntry = (_props) => {
             class="relative h-full overflow-hidden"
             classList={{ block: route() === "library", hidden: route() !== "library" }}
           >
-            {/* Fanart backdrop: blurred focused cover, ken-burns, crossfading. */}
+            {/* Fanart backdrop: blurred focused cover, ken-burns, crossfading —
+                the shared <FanartCrossfade> treatment (de-dups the lab's old
+                inline layer stack). */}
             <div class="pointer-events-none absolute inset-0 bg-[#06070a]">
-              <For each={bgLayers()}>
-                {(layer) => (
-                  <div
-                    class="absolute inset-0 bg-cover bg-center"
-                    style={{
-                      "background-image": `url("${layer.url}")`,
-                      filter: "blur(48px) saturate(1.3) brightness(0.42)",
-                      animation: `oa-lab-fade-in 900ms ease forwards${
-                        reducedMotion() ? "" : ", oa-lab-kenburns 26s ease-in-out infinite alternate"
-                      }`,
-                    }}
-                  />
-                )}
-              </For>
+              <FanartCrossfade
+                url={fanartUrl}
+                reducedMotion={reducedMotion}
+                kenBurns
+                filter="blur(48px) saturate(1.3) brightness(0.42)"
+              />
               {/* legibility scrim + accent wash */}
               <div class="absolute inset-0 bg-gradient-to-t from-[#06070a] via-[#06070a]/70 to-[#06070a]/30" />
               <div
@@ -291,7 +264,10 @@ const LabEntry: ThemeEntry = (_props) => {
                           onPointerMove={heroTilt.onPointerMove}
                           onPointerLeave={heroTilt.onPointerLeave}
                         >
-                          <AmbientMotion spec={() => LAB_BREATHE_SPEC} reducedMotion={reducedMotion}>
+                          <AmbientMotion
+                            spec={() => resolveMotionRef(LAB_MANIFEST.motion?.ambient)}
+                            reducedMotion={reducedMotion}
+                          >
                             <div style={{ transform: `scale(${artScale.value()})`, "transform-origin": "bottom center" }}>
                               <div
                                 class="relative aspect-[3/4] w-56 overflow-hidden rounded-xl"
@@ -310,42 +286,13 @@ const LabEntry: ThemeEntry = (_props) => {
                                 >
                                   {(u) => <img src={u()} alt="" class="h-full w-full object-cover" />}
                                 </Show>
-                                {/* gloss: frost edge + moving specular sweep */}
-                                <div
-                                  class="pointer-events-none absolute inset-0 rounded-xl"
-                                  style={{
-                                    "background-image":
-                                      "linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,0) 38%, rgba(255,255,255,.04) 60%, rgba(255,255,255,.18))",
-                                    "box-shadow": "inset 0 1px 0 rgba(255,255,255,.4), inset 0 0 0 1px rgba(255,255,255,.12)",
-                                  }}
-                                />
-                                <div
-                                  class="pointer-events-none absolute inset-0 rounded-xl"
-                                  style={{
-                                    "background-image":
-                                      "linear-gradient(110deg, transparent 38%, rgba(255,255,255,.45) 50%, transparent 62%)",
-                                    "background-size": "250% 100%",
-                                    animation: reducedMotion() ? "none" : "oa-lab-gloss 4.5s linear infinite",
-                                  }}
-                                />
+                                {/* gloss: frost edge + moving specular sweep — the
+                                    shared <Gloss> treatment (rounded-xl = 0.75rem). */}
+                                <Gloss reducedMotion={reducedMotion} />
                               </div>
-                              {/* grounded reflection */}
-                              <div class="pointer-events-none absolute left-0 top-full h-24 w-56 overflow-hidden" aria-hidden="true">
-                                <Show when={coverFor(g)}>
-                                  {(u) => (
-                                    <img
-                                      src={u()}
-                                      alt=""
-                                      class="w-56 -scale-y-100 object-cover"
-                                      style={{
-                                        opacity: "0.28",
-                                        "mask-image": "linear-gradient(to bottom, rgba(0,0,0,.7), transparent 70%)",
-                                        "-webkit-mask-image": "linear-gradient(to bottom, rgba(0,0,0,.7), transparent 70%)",
-                                      }}
-                                    />
-                                  )}
-                                </Show>
-                              </div>
+                              {/* grounded reflection — the shared <Reflection>
+                                  treatment; width matches the cover (w-56 = 14rem). */}
+                              <Reflection src={() => coverFor(g)} width="14rem" height="6rem" />
                             </div>
                           </AmbientMotion>
                         </div>
