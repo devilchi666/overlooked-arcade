@@ -12,22 +12,27 @@
 // F10 `frontend/src/dev/` bench, which is import.meta.env.DEV-gated and so
 // absent from the `cargo tauri build` the operator playtests).
 //
-// FOUNDATION STATE (2026-06-17): the shell is navigable but static — the motion
-// model (M-mod.1) has not landed yet. Every spot motion will wire into is marked
-// `// [GRAPHICS-LAB] MOTION:` so the M-mod.1 pass is a fill-in, not a search.
+// STATE (2026-06-17): LIVE motion. M-mod.1 = the §2 basis drives the Home↔Library
+// route swap (SpecTransition/WAAPI, LAB_VIEW_SPEC). M-mod.2 = selection
+// choreography — a focus-driven hero whose cover springs in (createSpringValue +
+// BENCH_SELECTION_SPRING) and whose title/meta rise staggered. Each motion site is
+// tagged `// [GRAPHICS-LAB] MOTION (M-mod.N)`.
 //
 // Like every theme it consumes ONLY the platform layer (usePlatform stores +
 // useTheme host + @oa/platform/nav + media), never engine/ and never another
 // theme — so stripping it leaves nothing dangling but the four touch-points in
 // the strip checklist.
 
-import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useMedia } from "@oa/platform/library/media";
 import { GridNav } from "@oa/platform/nav";
+import { systemThemes } from "@oa/platform/themes/registry";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
 import { usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import { createSpringValue } from "@oa/platform/theme/springValue";
+import { BENCH_SELECTION_SPRING } from "@oa/platform/theme/spring";
 import type { MotionSpec } from "@oa/platform/theme/motionSpec";
 import EngineSummonIcon from "@oa/platform/components/EngineSummonIcon";
 import type { RomEntry } from "@oa/platform/library/types";
@@ -72,11 +77,24 @@ const LAB_VIEW_SPEC: MotionSpec = {
   channels: { opacity: [0, 1], y: [140, 0] },
 };
 
-const GRID_COLUMNS = 5;
+const GRID_COLUMNS = 4; // narrower now that the hero panel takes the right column
 // GridNav is NOT virtualized (it renders one DOM cell + <img> per item). The lab
 // is a motion testbed, not the shipping library view, so cap the grid — a cheap
 // first mount keeps grid-build work from janking the route-transition animation.
 const LAB_GRID_CAP = 60;
+
+// [GRAPHICS-LAB] MOTION (M-mod.2): the selection-choreography entrance keyframes,
+// lab-local (self-contained, like the F10 bench). `oa-lab-rise` = the title/meta
+// rise-with-overshoot; the back-ease `cubic-bezier(.34,1.7,.64,1)` (overshoot 1.7)
+// is the bench's tuned entrance curve. The hero ART scale-in is spring-driven
+// instead (createSpringValue), not a keyframe — that's where the §2 spring shows.
+const LAB_CHOREO_KEYFRAMES = `
+@keyframes oa-lab-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+`;
+const LAB_RISE_EASE = "cubic-bezier(.34, 1.7, .64, 1)";
 
 const LabEntry: ThemeEntry = (_props) => {
   const platform = usePlatform();
@@ -84,12 +102,30 @@ const LabEntry: ThemeEntry = (_props) => {
   const media = useMedia();
 
   const [route, setRoute] = createSignal<LabRoute>("home");
-  const [selected, setSelected] = createSignal<RomEntry | null>(null);
-
-  // [GRAPHICS-LAB] MOTION (M-mod.1): resolve the manifest's declared transition
-  // (+ live reduced-motion floor) once; `ViewTransition` replays it whenever the
-  // route changes. Reduced-motion downgrades any preset to a short fade.
   const reducedMotion = usePrefersReducedMotion();
+
+  // [GRAPHICS-LAB] MOTION (M-mod.2): selection choreography. The grid runs in
+  // CONTROLLED focus mode so the lab knows the focused item and can drive a hero
+  // panel off it (BigBox-style: the hero re-plays an entrance on every focus move,
+  // not just on click).
+  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  const focusedGame = (): RomEntry | undefined => games()[focusedIndex()];
+
+  // The hero ART scale-in is SPRING-driven (the §2 spring finally driving pixels):
+  // on each focus change we snap to 0.9 then spring to 1 → an alive grow-in with
+  // the bench-validated {bounce:0.13,duration:456} feel (BENCH_SELECTION_SPRING,
+  // the F10 k=190/damping=24 back-solve). restDelta tightened for a unit-scale
+  // value. Reduced motion holds it at 1 (no grow).
+  const artScale = createSpringValue(1, BENCH_SELECTION_SPRING, { restDelta: 0.002, restVelocity: 0.004 });
+  createEffect(() => {
+    focusedIndex(); // re-run on every focus move
+    if (reducedMotion()) {
+      artScale.snap(1);
+      return;
+    }
+    artScale.snap(0.9);
+    artScale.set(1);
+  });
 
   // Mount-once-keep latch for the grid: the heavy GridNav mounts on the first
   // Library visit and then STAYS in the DOM (display-toggled below), so later
@@ -120,6 +156,18 @@ const LabEntry: ThemeEntry = (_props) => {
     (e.identityId ? media.coverUrl(e.systemId, e.identityId) : null) ??
     media.coverUrl(e.systemId, e.id);
 
+  // Real per-game metadata chips for the hero's staggered entrance (year / genre /
+  // players, from MediaDb — the games table never carries these). System short
+  // name always leads so there's at least one chip.
+  const metaChips = (e: RomEntry): string[] => {
+    const m = media.media(e.identityId ?? e.id)?.metadata;
+    const chips: string[] = [systemThemes[e.systemId]?.shortName ?? e.systemId];
+    if (m?.year) chips.push(String(m.year));
+    if (m?.genre) chips.push(m.genre);
+    if (m?.players) chips.push(`${m.players}P`);
+    return chips;
+  };
+
   const tab = (id: LabRoute, label: string): JSX.Element => (
     <button
       class="border-b-2 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] transition-colors"
@@ -140,6 +188,7 @@ const LabEntry: ThemeEntry = (_props) => {
     // confirmed live 2026-06-17). A shell root never scrolls as a whole; the
     // library's own grid keeps its inner overflow-y-auto scrollbar.
     <div class="flex h-full w-full flex-col overflow-hidden bg-[#0b0d12] text-white">
+      <style>{LAB_CHOREO_KEYFRAMES}</style>
       <header class="flex items-center justify-between border-b border-white/10 px-6 py-3">
         <div class="flex items-center gap-1">
           <span class="mr-4 text-sm font-black tracking-tight">
@@ -182,60 +231,108 @@ const LabEntry: ThemeEntry = (_props) => {
         </section>
 
         {/* Library — mounts on first visit (libVisited latch) and STAYS; only its
-            display toggles after that, so Home↔Library never rebuilds the grid. */}
+            display toggles after that, so Home↔Library never rebuilds the grid.
+            Two columns: the focusable grid (left) + the choreographed hero (right). */}
         <Show when={libVisited()}>
-          <div class="h-full" classList={{ block: route() === "library", hidden: route() !== "library" }}>
-          <GridNav
-            id="lab-library"
-            class="h-full overflow-y-auto p-6"
-            items={games}
-            columns={GRID_COLUMNS}
-            hints={{ dpad: "Move", stick: "Move", Confirm: "Launch", Secondary: "Details" }}
-            onConfirm={(_i, entry) => void host.onLaunch(entry)}
-            onSecondary={(_i, entry) => {
-              setSelected(entry);
-              host.onShowInfo(entry);
-            }}
+          <div
+            class="grid h-full grid-cols-[1fr_22rem] gap-4 p-6"
+            classList={{ grid: route() === "library", hidden: route() !== "library" }}
           >
-            {(entry, ctx) => {
-              const cover = coverFor(entry);
-              // [GRAPHICS-LAB] MOTION (M-mod.1): `ctx.focused()` is the trigger
-              // for selection choreography (lift / art-grow / title-rise). Today
-              // it's a static scale+ring; M-mod.2 swaps in the spring presets.
-              return (
-                <div
-                  class="m-1.5 flex flex-col gap-1 rounded-lg p-1.5 transition-transform duration-150"
-                  style={{ transform: ctx.focused() ? "scale(1.06)" : "scale(1)" }}
-                  classList={{ "ring-2 ring-cyan-400": ctx.focused() }}
-                >
+            <GridNav
+              id="lab-library"
+              class="min-h-0 overflow-y-auto pr-2"
+              items={games}
+              columns={GRID_COLUMNS}
+              focusedIndex={focusedIndex}
+              setFocusedIndex={setFocusedIndex}
+              hints={{ dpad: "Move", stick: "Move", Confirm: "Launch", Secondary: "Details" }}
+              onConfirm={(_i, entry) => void host.onLaunch(entry)}
+              onSecondary={(_i, entry) => host.onShowInfo(entry)}
+            >
+              {(entry, ctx) => {
+                const cover = coverFor(entry);
+                // Per-tile focus lift = a cheap CSS scale (one transition per tile,
+                // not a spring — the spring drives the single hero art below, the
+                // bench's split: CSS for the row, spring for the hero/track).
+                return (
+                  <div
+                    class="m-1.5 flex flex-col gap-1 rounded-lg p-1.5 transition-transform duration-150"
+                    style={{ transform: ctx.focused() ? "scale(1.06)" : "scale(1)" }}
+                    classList={{ "ring-2 ring-cyan-400": ctx.focused() }}
+                  >
+                    <Show
+                      when={cover}
+                      fallback={
+                        <div class="grid aspect-[3/4] w-full place-items-center rounded bg-white/[0.06] p-2 text-center text-[0.6rem] text-white/50">
+                          {entry.title}
+                        </div>
+                      }
+                    >
+                      {(u) => <img src={u()} alt="" class="aspect-[3/4] w-full rounded object-cover" />}
+                    </Show>
+                    <span class="truncate text-[0.6rem] text-white/60">{entry.title}</span>
+                  </div>
+                );
+              }}
+            </GridNav>
+
+            {/* [GRAPHICS-LAB] MOTION (M-mod.2) — the choreographed hero. Keyed on
+                the focused game so the title/meta entrance REPLAYS on every focus
+                move; the cover scale is spring-driven (artScale) for an alive
+                grow-in. This is the selection-choreography "soul" (MOTION.md). */}
+            <Show
+              when={focusedGame()}
+              fallback={
+                <aside class="grid min-h-0 place-items-center rounded-xl border border-white/10 bg-black/30 p-6 text-center text-xs text-white/40">
+                  No games in library
+                </aside>
+              }
+              keyed
+            >
+              {(g) => (
+                <aside class="flex min-h-0 flex-col items-center justify-center gap-4 rounded-xl border border-white/10 bg-black/30 p-6">
                   <Show
-                    when={cover}
+                    when={coverFor(g)}
                     fallback={
-                      <div class="grid aspect-[3/4] w-full place-items-center rounded bg-white/[0.06] p-2 text-center text-[0.6rem] text-white/50">
-                        {entry.title}
-                      </div>
+                      <div
+                        class="aspect-[3/4] w-44 rounded-lg bg-white/[0.06]"
+                        style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                      />
                     }
                   >
-                    {(u) => <img src={u()} alt="" class="aspect-[3/4] w-full rounded object-cover" />}
+                    {(u) => (
+                      <img
+                        src={u()}
+                        alt=""
+                        class="aspect-[3/4] w-44 rounded-lg object-cover shadow-2xl"
+                        style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                      />
+                    )}
                   </Show>
-                  <span class="truncate text-[0.6rem] text-white/60">{entry.title}</span>
-                </div>
-              );
-            }}
-          </GridNav>
+                  <h2
+                    class="text-center text-xl font-black leading-tight tracking-tight"
+                    style={{ animation: `oa-lab-rise 420ms ${LAB_RISE_EASE} both` }}
+                  >
+                    {g.title}
+                  </h2>
+                  <div class="flex flex-wrap justify-center gap-2">
+                    <For each={metaChips(g)}>
+                      {(chip, i) => (
+                        <span
+                          class="rounded-full border border-white/20 bg-black/40 px-3 py-1 text-[0.6rem] uppercase tracking-wider text-white/80"
+                          style={{ animation: `oa-lab-rise 420ms ${LAB_RISE_EASE} ${120 + i() * 70}ms both` }}
+                        >
+                          {chip}
+                        </span>
+                      )}
+                    </For>
+                  </div>
+                </aside>
+              )}
+            </Show>
           </div>
         </Show>
       </SpecTransition>
-
-      {/* Selection echo — a stand-in for the hero/detail panel the selection
-          choreography (M-mod.2) will animate. Static for now. */}
-      <Show when={selected()}>
-        {(g) => (
-          <footer class="border-t border-white/10 px-6 py-2 text-[0.65rem] text-white/50">
-            Last selected: <span class="text-white/80">{g().title}</span>
-          </footer>
-        )}
-      </Show>
     </div>
   );
 };
