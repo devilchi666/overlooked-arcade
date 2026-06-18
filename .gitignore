@@ -5,9 +5,11 @@
 Cargo.lock.bak
 
 # Node / pnpm
+/node_modules
 /frontend/node_modules
 /frontend/dist
 /frontend/.vite
+**/node_modules/.vite
 **/.pnpm-store
 
 # Tauri build output
