@@ -9,6 +9,58 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — ARC 3 Thrust M: wire the motion model into the consumers — 🔄 on `feat/motion-wire-consumers` (NOT merged; awaiting operator playtest)
+
+> The "wire it up right" tail from the preset-registry entry below. The model +
+> registry + contract were merged; almost nothing real consumed them (only the lab
+> + dev bench). This branch makes the declarative path consume the model and adds
+> the diagnostics toggle + disk-theme authoring + global retime. 5 commits, in order.
+
+- **Shipped on the branch (5 commits):**
+  1. **Motion-diagnostics dev-tools toggle** (D58.9) — `platform/theme/motionDebug.ts`
+     (localStorage signal, default OFF, persisted across the restart-based swap);
+     the per-play `[oa-theme-motion]` logs in `SpecTransition`/`ViewTransition` are
+     gated on it, and `AmbientMotion` gained a parallel gated line (surfaces
+     reduced-motion suppression). Toggle at Settings → Experimental → Dev tools.
+     Code NOT stripped — toggled.
+  2. **Lab refactor** — inline gloss/reflection/fanart → `<Gloss>`/`<Reflection>`/
+     `<FanartCrossfade>`; manifest motion authored via the M-mod slots
+     (`transition` = inline-spec escape hatch, `ambient: "breathe"` = named preset)
+     resolved via `resolveThemeMotionSpec`/`resolveMotionRef`; lab-private keyframes
+     shrink to just the title/meta rise. Physics hero spring kept.
+  3. **`declarativeShell` migrated** off `resolveViewTransition`+`ViewTransition`
+     onto `resolveThemeMotionSpec`+`SpecTransition`. D54 LANDMINE handled: added an
+     opt-in `skipInitial` to SpecTransition (suppresses the masked mount play) so
+     the `windowShown`-keyed trigger fires the entrance exactly when the OS presents
+     the window — no M1 "entrance before window shown" regression. (`delayMs` lived
+     only inside `ViewTransition`; declarativeShell always gated via the windowShown
+     trigger, so the migration preserved D54 by keeping that trigger + skipInitial.)
+     `bareDeclarative`'s legacy `view_transition` fade still resolves + animates (now
+     WAAPI). **`ViewTransition` + `resolveViewTransition` now have NO runtime
+     consumer** — kept as tested product code per GRAPHICS_LAB_TESTBED.md.
+  4. **Rust `theme_loader` widened** — `ThemeMotion` gains `transition`/`selection`/
+     `ambient: Option<MotionRef>`; new `MotionRef` = untagged `Preset(String)` |
+     `Spec(toml::Value)` (loose pass-through; frontend stays the allow-list/shape
+     authority; additive, no `deny_unknown_fields`). Disk themes can now author the
+     slots. `diskTheme.ts` carries them for free (DiskThemeManifest = Omit<…>).
+  5. **Global `--motion-scale`** reaches the WAAPI players — new `--motion-scale`
+     token (index.css, default 1); pure `scaleMotionTiming` (motionSpec) + DOM
+     `readGlobalMotionScale` (motion.ts) fold it into the duration/delay both
+     players hand to `element.animate` (WAAPI can't read `var()`).
+  - **CI:** tsc + eslint clean; 182 vitest green (12 new across motionDebug/
+    scaleMotionTiming); `cargo test -p oa-shell theme_loader` green (10).
+- **Almost / NOT done:** a declarative **selection/ambient hook** so data themes get
+  selection choreography without custom render code — deliberately DEFERRED (the
+  no-code renderer is a flat browse; per-item entrance choreography deserves its own
+  design, not a rushed add). The motion FEEL of the migrated declarativeShell is
+  eye-unvalidated (operator hasn't built since this branch).
+- **Next:** operator playtest (cargo tauri build → switch to a declarative/disk
+  theme + Graphics Lab; flip the diagnostics toggle on to trace) → merge. Then the
+  selection/ambient declarative hook, and the deferred catalog (`push-hero`,
+  attract/Thrust V, `path-move`/keyframe-timeline).
+
+---
+
 ## 2026-06-18 — ARC 3 Thrust M: the named preset registry + contract wiring — 🔄 on `feat/motion-presets-and-wiring` (NOT merged)
 
 > Finished the audit §3 seed catalog as a NAMED registry themes pick from, and

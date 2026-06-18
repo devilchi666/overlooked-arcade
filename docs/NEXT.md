@@ -234,20 +234,26 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       Basis grew `rotateX/Y` + `filter`/`boxShadow` channels.
     - ✅ **Contract:** `ThemeMotion.transition|selection|ambient` slots = `MotionRef`
       (preset name | inline spec); `resolveMotionRef`; validator enforces name+KIND.
-    - ⬜ **Remaining wiring (the "wire it up right" tail):**
-      1. **Lab refactor** — consume the `treatments.tsx` components + author `ambient`
-         by name (low-risk; de-dups the lab, proves the path).
-      2. **Migrate `declarativeShell` (no-code renderer) onto the new model** — the
-         biggest gap. ⚠️ MUST port `ViewTransition`'s `delayMs`/`oa://window-shown`
-         boot-entrance timing (D54) or it reintroduces the M1 "plays before window
-         shown" bug. Also a platform nav motion-hook so data themes get selection
-         choreography without custom render code.
-      3. **Rust `theme_loader`** widen for `[motion.transition|selection|ambient]`
-         (disk-theme authoring; safe — no `deny_unknown_fields`).
-      4. Global `--motion-*` retime reaching the WAAPI players.
-      5. **Dev-tools toggle for the `[oa-theme-motion]` diagnostics** (Settings →
-         Experimental → Dev tools; default off, persisted; gates the per-play
-         `console.log` in the players) — strip the code only at final ship (D58.9).
+    - ✅ **Wiring tail DONE on `feat/motion-wire-consumers`** (5 commits; NOT merged —
+      awaiting operator playtest):
+      1. ✅ **Lab refactor** — consumes `<Gloss>`/`<Reflection>`/`<FanartCrossfade>` +
+         authors `ambient: "breathe"` by name (in `themes/lab/index.tsx`).
+      2. ✅ **`declarativeShell` migrated** onto `SpecTransition` +
+         `resolveThemeMotionSpec`. D54 ported via a new opt-in
+         `SpecTransition.skipInitial` (suppresses the masked mount play) + the
+         existing `windowShown`-keyed trigger — no M1 "plays before window shown"
+         regression. (`delayMs` lived only inside `ViewTransition`, never used by
+         declarativeShell.) ⬜ The platform nav **selection/ambient hook** (data
+         themes get choreography without custom render code) is DEFERRED — the flat
+         no-code browse renderer needs its own design.
+      3. ✅ **Rust `theme_loader`** widened — `ThemeMotion` gains `transition`/
+         `selection`/`ambient: Option<MotionRef>` (`MotionRef` = untagged
+         `Preset(String)` | `Spec(toml::Value)`; additive, no `deny_unknown_fields`).
+      4. ✅ Global **`--motion-scale`** token folded into the WAAPI players' numeric
+         timing (`scaleMotionTiming` + `readGlobalMotionScale`).
+      5. ✅ **Dev-tools toggle for `[oa-theme-motion]`** (`platform/theme/motionDebug.ts`;
+         Settings → Experimental → Dev tools; default off, persisted; gates all three
+         players' per-play log) — code NOT stripped, toggled (D58.9).
     - ⬜ Deferred catalog: `push-hero` (shared-element), `attract-scroll`/`screensaver`
       (Thrust V), and the wishlist **`path-move` + keyframe-timeline** carry-over
       (HyperSpin `MotionPath`/`timeline`; see
