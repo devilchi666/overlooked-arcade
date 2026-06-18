@@ -133,3 +133,11 @@ export const MOTION_PRESET_NAMES: readonly string[] = Object.keys(MOTION_PRESETS
 export function buildPreset(name: string, opts?: PresetOpts): MotionSpec | null {
   return MOTION_PRESETS[name]?.build(opts) ?? null;
 }
+
+/// `lift-stagger` / staggered entrance (audit §3): the per-child delay (ms) for
+/// cascading a selection preset across a list's children — apply `title-rise`
+/// (or `lift`) to each child with this delay and the row settles in sequence.
+/// `base` is the lead-in before the first child; `step` the gap between children.
+export function staggerMs(index: number, step = 70, base = 0): number {
+  return base + index * step;
+}
