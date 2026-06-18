@@ -252,8 +252,9 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       4. ✅ Global **`--motion-scale`** token folded into the WAAPI players' numeric
          timing (`scaleMotionTiming` + `readGlobalMotionScale`).
       5. ✅ **Dev-tools toggle for `[oa-theme-motion]`** (`platform/theme/motionDebug.ts`;
-         Settings → Experimental → Dev tools; default off, persisted; gates all three
-         players' per-play log) — code NOT stripped, toggled (D58.9).
+         Settings → About → Developer tools, with the other logging buttons; default
+         off, persisted; gates all three players' per-play log) — code NOT stripped,
+         toggled (D58.9).
     - ⬜ Deferred catalog: `push-hero` (shared-element), `attract-scroll`/`screensaver`
       (Thrust V), and the wishlist **`path-move` + keyframe-timeline** carry-over
       (HyperSpin `MotionPath`/`timeline`; see

@@ -10,12 +10,14 @@
 // work is perfected).
 //
 // SHAPE: a localStorage-backed boolean signal (default OFF), mirroring the
-// frontend-owned, per-install pref pattern of `themeSettings.ts` — survives the
-// restart-based theme swap. Lives in `platform/` so BOTH the players (platform)
-// AND the engine Settings toggle (engine → platform is an allowed import) share
-// one source of truth. The Settings UI flips it live; the players read it lazily
-// at log time (not reactively — a `console.log` gate needs no reactivity), so the
-// toggle takes effect on the next play with no restart.
+// frontend-owned, per-install pref pattern of `themeSettings.ts`. PERSISTED on
+// purpose: theme swaps RESTART the app, so a session-only flag would reset on
+// every swap and never survive long enough to debug theme motion. Lives in
+// `platform/` so BOTH the players (platform) AND the toggle UI (the engine
+// Settings → About → Developer tools "Logging streams" group; engine → platform
+// is an allowed import) share one source of truth. The toggle flips it live; the
+// players read it lazily at log time (not reactively — a `console.log` gate needs
+// no reactivity), so it takes effect on the next play with no restart.
 
 import { createSignal } from "solid-js";
 

@@ -21,8 +21,9 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
      (localStorage signal, default OFF, persisted across the restart-based swap);
      the per-play `[oa-theme-motion]` logs in `SpecTransition`/`ViewTransition` are
      gated on it, and `AmbientMotion` gained a parallel gated line (surfaces
-     reduced-motion suppression). Toggle at Settings → Experimental → Dev tools.
-     Code NOT stripped — toggled.
+     reduced-motion suppression). Toggle at Settings → About → Developer tools
+     (with the other logging on/off buttons — operator correction; kept persisted
+     because theme swaps restart the app). Code NOT stripped — toggled.
   2. **Lab refactor** — inline gloss/reflection/fanart → `<Gloss>`/`<Reflection>`/
      `<FanartCrossfade>`; manifest motion authored via the M-mod slots
      (`transition` = inline-spec escape hatch, `ambient: "breathe"` = named preset)
