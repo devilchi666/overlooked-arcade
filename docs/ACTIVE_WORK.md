@@ -11,35 +11,32 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 FOUNDATION VALIDATED
-  + MERGED to main 2026-06-17 (the "true yes").** The compositing probe + motion
-  benches proved there is **no compositing ceiling** on OA's transparent surface
-  and **BigBox-tier motion is reachable** (operator playtested probe/choreography/
-  showcase/box-art-FX). Key correction: M1's "WAAPI invisible" was a MISDIAGNOSIS
-  (real bug = window-present timing, already fixed by `oa://window-shown` D54);
-  WAAPI/CSS/rAF/GPU-promotion/filter/backdrop-filter all paint. 144 fps confirmed
-  (no rAF cap). Dev-only 4-tab bench at `frontend/src/dev/` (F10 in `cargo tauri
-  dev`, gated `import.meta.env.DEV`, never ships). Decisions D53–D56;
-  [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md) is
-  the catalogue. **Next motion work = the declarative motion MODEL** (turn bench
-  keepers into theme-authorable `theme.toml` presets, D52, dogfooded on a navigable
-  surface per D55). _History below: branch `theme-arc3-motion-slice-1` (merged)._
-  The declarative motion *contract* landed + is green (token group,
-  `manifest.motion.view_transition` through the Rust disk loader, resolver,
-  **CSS-animation** `ViewTransition` — NOT WAAPI, dogfood neon-list/bare) and a real
-  **window-ready handshake** shipped (Rust `.visible(false)` + `oa_shell_ready` →
-  `oa://window-shown`). The planning session resolved all 6 open problems
-  (**D53–D55**): **`cargo tauri dev` is the motion loop** (compositing is identical
-  to a build — only iteration speed differed; iterate in dev, accept in build);
-  `oa://window-shown` blessed as THE entrance/boot/attract signal; insert an **M0**
-  foundation slice (dev loop + motion-playground route + `MOTION.md` compositing
-  catalogue + scroll-safe rule + `animationend` dev assertion); **M2 dogfoods on a
-  navigable surface** (Retroverse/playground), NOT the single-surface
-  `DeclarativeShell`; verification stays lightweight (no screenshot-diff). Plan:
-  [PLANS/theming-arc-3-cinematic.md](PLANS/theming-arc-3-cinematic.md)
-  §"Motion foundation — RESOLVED" + Thrust M (M0); decisions D53–D55 in
-  [features/theming-substrate/DECISIONS.md](features/theming-substrate/DECISIONS.md).
-  Full story: [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
+- **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 foundation + the
+  declarative motion MODEL (M-mod.1–.4) + the cinematic Graphics Lab showcase all
+  MERGED to main 2026-06-18** (`6b89f50` model, `ce6bff6` showcase). The model is
+  real, theme-authorable motion (D57/D58): spring `{bounce,duration}` engine, the §2
+  basis + WAAPI players (`SpecTransition`/`AmbientMotion`/`useTilt`), the
+  `view_transition_spec` contract + resolver + validator. Dogfooded on the
+  strip-on-ship **Graphics Lab** theme (Settings → Experimental → Graphics Lab) —
+  fanart backdrop + hero box-art FX + coverflow + system-accent theming; operator
+  feel = "good for now". 🔑 the F10 `frontend/src/dev/` bench is superseded by the
+  lab (which lives in RELEASE builds).
+  - **In flight: named preset registry + contract wiring** — branch
+    `feat/motion-presets-and-wiring` (MERGE STATUS: see SESSION_LOG). **17/21 audit
+    presets packaged** (`motionPresets.ts` registry + `treatments.tsx` + `staggerMs`),
+    basis grew `rotateX/Y` + `filter`/`boxShadow`, and the contract gained
+    `motion.transition|selection|ambient` = `MotionRef` (preset name | inline spec),
+    resolved by `resolveMotionRef`, validated by name+KIND. Deferred: `push-hero`,
+    attract (Thrust V).
+  - **Remaining "wire it up right" (next session — see the resume plan):** ① lab
+    refactor onto the treatment components + named ambient; ② migrate
+    `declarativeShell` (the no-code renderer) onto the new players — ⚠️ MUST port the
+    `oa://window-shown` boot-delay (D54) or it reintroduces the M1 timing bug; ③ Rust
+    `theme_loader` widening for the disk-theme `[motion.*]` tables; ④ global
+    `--motion-*` retime reaching the WAAPI players; ⑤ final cleanup = strip the
+    `[oa-theme-motion]` diagnostics (KEPT until then — debugging asset).
+  - Decisions D53–D58; catalogue [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md);
+    full story [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md).
   (2026-06-16 entries).
 
 - **External Emulator Depth** — arc opened 2026-06-15; **Slice 1 shipped +

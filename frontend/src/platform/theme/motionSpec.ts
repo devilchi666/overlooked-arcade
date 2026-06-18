@@ -23,13 +23,29 @@ export type MotionChannel = readonly [from: number, to: number];
 /// The compositor-cheap quartet (audit §2 — validated as the BigBox-tier set in
 /// MOTION.md): `opacity`, `translate {x,y}` (px), `scale`, `rotate` (deg). The
 /// depth/3D and filter tiers widen this later, gated as "high ceiling".
+/// A string channel `[from, to]` for CSS properties whose values aren't single
+/// numbers (filter, box-shadow). Used by the cinematic tier (glow-pulse, etc.).
+export type MotionStringChannel = readonly [from: string, to: string];
+
 export type MotionChannels = {
+  // Compositor-cheap quartet (off the main thread):
   opacity?: MotionChannel;
   x?: MotionChannel;
   y?: MotionChannel;
   scale?: MotionChannel;
   rotate?: MotionChannel;
+  // Depth / 3D tier (degrees) — a `perspective()` is auto-prepended when either
+  // is present so the rotation reads as depth (flip, tilt):
+  rotateX?: MotionChannel;
+  rotateY?: MotionChannel;
+  // Cinematic tier (string-valued, more expensive — gate as "high ceiling"):
+  filter?: MotionStringChannel; // e.g. drop-shadow / blur / brightness
+  boxShadow?: MotionStringChannel; // glow-pulse
 };
+
+/// Perspective (px) prepended to the transform when a 3D rotation channel is
+/// present — without it `rotateX/Y` look flat.
+const PERSPECTIVE_PX = 800;
 
 /// A resolved, ready-to-play motion spec: timing primitives over a channel set.
 /// `duration`/`delay` in ms; `easing` is a concrete CSS easing (keyword or
@@ -68,10 +84,14 @@ export const REDUCED_MOTION_SPEC: MotionSpec = {
 /// transform key emitted, so unrelated transforms aren't clobbered).
 function transformAt(ch: MotionChannels, which: 0 | 1): string | undefined {
   const parts: string[] = [];
+  // perspective() must come FIRST to apply to this element's own 3D space.
+  if (ch.rotateX || ch.rotateY) parts.push(`perspective(${PERSPECTIVE_PX}px)`);
   if (ch.x) parts.push(`translateX(${ch.x[which]}px)`);
   if (ch.y) parts.push(`translateY(${ch.y[which]}px)`);
   if (ch.scale) parts.push(`scale(${ch.scale[which]})`);
   if (ch.rotate) parts.push(`rotate(${ch.rotate[which]}deg)`);
+  if (ch.rotateX) parts.push(`rotateX(${ch.rotateX[which]}deg)`);
+  if (ch.rotateY) parts.push(`rotateY(${ch.rotateY[which]}deg)`);
   return parts.length ? parts.join(" ") : undefined;
 }
 
@@ -88,19 +108,28 @@ export type CompiledMotion = {
 /// content rests at its end state.
 export function compileMotionSpec(spec: MotionSpec): CompiledMotion | null {
   if (spec.duration <= 0) return null;
-  const fromT = transformAt(spec.channels, 0);
-  const toT = transformAt(spec.channels, 1);
-  const hasOpacity = spec.channels.opacity != null;
-  if (!fromT && !toT && !hasOpacity) return null;
+  const c = spec.channels;
+  const fromT = transformAt(c, 0);
+  const toT = transformAt(c, 1);
+  const hasOpacity = c.opacity != null;
+  if (!fromT && !toT && !hasOpacity && c.filter == null && c.boxShadow == null) return null;
 
   const from: Keyframe = {};
   const to: Keyframe = {};
   if (hasOpacity) {
-    from.opacity = spec.channels.opacity![0];
-    to.opacity = spec.channels.opacity![1];
+    from.opacity = c.opacity![0];
+    to.opacity = c.opacity![1];
   }
   if (fromT) from.transform = fromT;
   if (toT) to.transform = toT;
+  if (c.filter) {
+    from.filter = c.filter[0];
+    to.filter = c.filter[1];
+  }
+  if (c.boxShadow) {
+    from.boxShadow = c.boxShadow[0];
+    to.boxShadow = c.boxShadow[1];
+  }
 
   return {
     keyframes: [from, to],

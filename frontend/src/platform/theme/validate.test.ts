@@ -449,3 +449,29 @@ describe("validateTheme — motion.view_transition_spec (M-mod.1 §2 basis)", ()
     expect(codes(v.errors)).toContain("INVALID_MOTION");
   });
 });
+
+describe("validateTheme — motion ref slots (transition/selection/ambient)", () => {
+  it("known presets of the right kind pass", () => {
+    expect(validateTheme(pkg({ motion: { transition: "slide", selection: "lift", ambient: "breathe" } })).ok).toBe(true);
+  });
+
+  it("an unknown preset name is an error", () => {
+    const v = validateTheme(pkg({ motion: { transition: "wobblefade" } }));
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("a preset of the wrong KIND for the slot is an error", () => {
+    // `breathe` is an ambient preset; it can't fill the transition slot.
+    const v = validateTheme(pkg({ motion: { transition: "breathe" } }));
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("an inline spec in a slot is validated as a spec", () => {
+    const ok = validateTheme(pkg({ motion: { selection: { duration: 300, channels: { scale: [1, 1.1] } } } }));
+    expect(ok.ok).toBe(true);
+    const bad = validateTheme(pkg({ motion: { selection: { duration: 0, channels: { scale: [1, 1.1] } } } }));
+    expect(codes(bad.errors)).toContain("INVALID_MOTION");
+  });
+});

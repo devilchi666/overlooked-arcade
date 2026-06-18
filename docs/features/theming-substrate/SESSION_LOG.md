@@ -9,7 +9,46 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-18 — ARC 3 Thrust M, M-mod.1–.4: the declarative motion MODEL — ✅ on `feat/theming-arc3-motion-model` (NOT merged; operator hasn't built it yet)
+## 2026-06-18 — ARC 3 Thrust M: the named preset registry + contract wiring — 🔄 on `feat/motion-presets-and-wiring` (NOT merged)
+
+> Finished the audit §3 seed catalog as a NAMED registry themes pick from, and
+> wired it into the theme contract (motion as data). Follows the M-mod.1–.4 model,
+> which is now MERGED to main (`6b89f50`/`ce6bff6` incl. the showcase).
+
+- **Shipped on the branch:**
+  - **Spec-preset registry** (`motionPresets.ts`): 11 named presets across 3 kinds —
+    transition (fade/slide/scale/**flip**), selection (lift/art-grow-in/title-rise,
+    back-ease overshoot), ambient (breathe/float/**glow-pulse**/ken-burns). Each =
+    defaults over the §2 basis + author overrides; `buildPreset`/`MOTION_PRESET_NAMES`.
+  - **Basis extensions** (`motionSpec.ts`): `rotateX/rotateY` (3D, perspective auto-
+    prepended → flip) + string channels `filter`/`boxShadow` (cinematic → glow-pulse).
+  - **Treatments + composites** (`treatments.tsx` + `index.css` keyframes):
+    `<Gloss>` `<Shimmer>` `<Reflection>` `<FanartCrossfade>` (+ `useTilt` = parallax-
+    tilt) + `staggerMs()` (lift-stagger). Extracted from the lab's inline code →
+    reusable by any theme.
+  - **Contract wiring** (`manifest.ts`/`motion.ts`/`validate.ts`): `ThemeMotion`
+    gains `transition`/`selection`/`ambient` slots, each a `MotionRef` = a preset
+    NAME or an inline spec. `resolveMotionRef` (name→buildPreset / spec→passthrough);
+    `resolveThemeMotionSpec` prefers `transition`. Validator: ref must be a known
+    preset of the right KIND, or a valid spec (`validateSpec` now covers the new
+    channels). 162 vitest green; typecheck + lint green.
+  - **Catalog status: 17/21 packaged.** Deferred: `push-hero` (shared-element morph),
+    `attract-scroll`/`screensaver` (Thrust V).
+- **Almost / NOT done (the remaining "wire it up right"):**
+  - **`declarativeShell` (the no-code renderer) still on the OLD M1 path** — biggest
+    gap. ⚠️ It relies on `ViewTransition`'s `delayMs`/`oa://window-shown` boot-entrance
+    timing (D54); migrating it to `SpecTransition` MUST port that or it reintroduces
+    the M1 "entrance plays before the window is shown" bug.
+  - **Lab still uses inline gloss/reflection/fanart** — refactor to consume the new
+    `treatments.tsx` components + author `ambient: "breathe"` by name (proof + de-dup).
+  - **Rust `theme_loader` not widened** for `[motion.transition|selection|ambient]`
+    (disk themes can't author them yet; built-ins can. No `deny_unknown_fields`, safe).
+- **Next:** lab refactor (low-risk) → declarativeShell migration (carefully, port the
+  window-shown delay) → Rust widening → fill `glow-pulse`/treatments into the showcase.
+
+---
+
+## 2026-06-18 — ARC 3 Thrust M, M-mod.1–.4: the declarative motion MODEL — ✅ MERGED to main (`6b89f50`); showcase merged (`ce6bff6`)
 
 > The M0 bench keepers are now a real, theme-authorable motion model, dogfooded on
 > a new **strip-on-ship Graphics Lab** testbed theme (Settings → Experimental →

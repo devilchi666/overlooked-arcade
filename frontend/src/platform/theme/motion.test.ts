@@ -11,6 +11,7 @@ import {
   parseDurationMs,
   resolveViewTransition,
   resolveThemeMotionSpec,
+  resolveMotionRef,
 } from "./motion";
 import { REDUCED_MOTION_SPEC } from "./motionSpec";
 import type { ThemeMotion } from "./manifest";
@@ -110,5 +111,28 @@ describe("resolveThemeMotionSpec — manifest → §2 spec (M-mod.1)", () => {
   it("reduced motion → the short-fade spec regardless of what was declared", () => {
     const m: ThemeMotion = { view_transition_spec: { duration: 560, channels: { y: [140, 0] } } };
     expect(resolveThemeMotionSpec(m, true)).toBe(REDUCED_MOTION_SPEC);
+  });
+
+  it("the unified `transition` slot (a named preset) wins over the legacy fields", () => {
+    const m: ThemeMotion = { transition: "slide", view_transition: { preset: "fade" } };
+    const r = resolveThemeMotionSpec(m, false)!;
+    expect(r.channels.y).toEqual([96, 0]); // the slide preset, not fade
+  });
+});
+
+describe("resolveMotionRef — name | spec → spec (no reduced floor)", () => {
+  it("resolves a named preset", () => {
+    expect(resolveMotionRef("lift")!.channels.scale).toEqual([1, 1.08]);
+  });
+  it("passes an inline spec through", () => {
+    const spec = { duration: 400, channels: { opacity: [0, 1] as const } };
+    expect(resolveMotionRef(spec)).toBe(spec);
+  });
+  it("applies overrides to a named preset", () => {
+    expect(resolveMotionRef("slide", { distance: 200 })!.channels.y).toEqual([200, 0]);
+  });
+  it("unknown name / undefined → null", () => {
+    expect(resolveMotionRef("nope")).toBeNull();
+    expect(resolveMotionRef(undefined)).toBeNull();
   });
 });

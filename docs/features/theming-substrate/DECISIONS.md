@@ -2128,3 +2128,57 @@ have no spring solver). Operator signed off all five forks:
 Seed catalog = ~21 presets across view-transition / selection-choreography / ambient /
 box-art / attract, each tagged Parity (competitor table-stakes) or Surpass (premium
 idiom BigBox can't do). This is the spec the Thrust-M preset registry implements.
+
+### D58 — Motion model M-mod: implementation shape, the Graphics Lab testbed, MotionRef contract (2026-06-18)
+
+Implemented D57 across M-mod.1–.4 (model + showcase MERGED to main `6b89f50`/`ce6bff6`;
+preset registry + contract on `feat/motion-presets-and-wiring`). The shape that fell out:
+
+1. **Engine vs. demo split is load-bearing.** The model is product code — `spring.ts`
+   (pure `{bounce,duration}`↔physics, Apple closed form) + `springValue.ts` (rAF
+   integrator), `motionSpec.ts` (the §2 basis + WAAPI compiler), `motionPresets.ts`
+   (the named catalog), the players `SpecTransition`/`AmbientMotion` + `useTilt`, and
+   `treatments.tsx`. The **Graphics Lab** theme (`themes/lab/`) is a permanent
+   **strip-on-ship** showcase that only *exercises* it — cordoned behind a generic
+   `experimental` theme flag (hidden from the Appearance picker; reached via Settings →
+   Experimental → Graphics Lab) and removable via one folder + four `// [GRAPHICS-LAB]`
+   touch-points (manifest `GRAPHICS_LAB_TESTBED.md`). The lab is the home for ALL
+   in-flight graphical work (motion → shaders → video) until ship — it lives in RELEASE
+   builds, unlike the `import.meta.env.DEV` F10 bench it supersedes.
+
+2. **WAAPI is the player, not CSS @keyframes.** A spec's channels/timing are arbitrary
+   author data, so minting a named `@keyframes` per spec is wrong; `element.animate`
+   takes them directly and is natively interruptible. MOTION.md already proved WAAPI
+   composites here (the M1 "invisible" finding was a window-timing misdiagnosis).
+
+3. **Default feel is the F10 back-solve, not a guess.** `BENCH_SELECTION_SPRING` =
+   `{bounce:0.13,duration:456}` reproduces the operator-tuned bench `k=190/damping=24`,
+   asserted by test, so the shipped default == what was signed off at F10.
+
+4. **Selection presets use a back-ease overshoot curve, not physics** (`lift`/
+   `art-grow-in`/`title-rise` via `cubic-bezier(.34,1.7,.64,1)` — the bench's actual
+   entrance easing); the true physics spring (`createSpringValue`) is the higher-
+   fidelity escape hatch. Keeps the named presets pure-WAAPI/declarative.
+
+5. **Authoring surface = `MotionRef` per slot.** Refining D57's `[motion.*]` plan:
+   each slot (`transition`/`selection`/`ambient`) takes a `MotionRef` = a **preset
+   name** (low floor) OR an **inline spec** (escape hatch), one shape covering both.
+   `resolveMotionRef` resolves it; the validator requires a known preset of the
+   matching KIND (an ambient preset can't fill the transition slot) or a valid spec.
+
+6. **Reduced-motion is a PLAYER concern, not the resolver's** — so a transition can
+   drop to a short fade while an ambient drops to nothing. `resolveMotionRef` returns
+   the raw spec; `SpecTransition`/`AmbientMotion` each apply their own floor.
+
+7. **Catalog reality: 17/21 packaged.** 11 spec presets + 4 treatments + 2 composites.
+   Deferred: `push-hero` (shared-element morph — genuinely hard), `attract-scroll`/
+   `screensaver` (Thrust V). The basis grew `rotateX/Y` (3D → flip/tilt) + string
+   channels `filter`/`boxShadow` (cinematic tier → glow-pulse).
+
+8. **Scroll-container rule CONFIRMED** (MOTION.md rule #2, promoted from REVISIT): a
+   transform-translate over a scroll container needs a clipping ANCESTOR
+   (`overflow-hidden` on the shell root) or the overshoot spawns a transient scrollbar.
+
+9. **`[oa-theme-motion]` diagnostics stay through the motion wiring** (a per-play
+   `console.log` into the unified log — it diagnosed the reduced-motion question this
+   session); strip only in a final pre-ship cleanup, not mid-build.

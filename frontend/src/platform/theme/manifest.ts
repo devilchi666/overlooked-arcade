@@ -197,7 +197,21 @@ export type ThemeMotion = {
    * `[motion.view_transition_spec]` table (disk-theme deserialization widens the
    * Rust `theme_loader` additively — deferred until a disk theme authors one). */
   view_transition_spec?: MotionSpec;
+  /** Unified motion slots (M-mod): each is a `MotionRef` — a NAMED preset from the
+   * catalog (the low floor, e.g. `"slide"` / `"lift"` / `"breathe"`) OR an inline
+   * `MotionSpec` (the escape hatch). Resolved by `resolveMotionRef`; reduced-motion
+   * is applied by the players. `transition` supersedes `view_transition*` (kept for
+   * back-compat). */
+  transition?: MotionRef; // route/view change (a `transition`-kind preset)
+  selection?: MotionRef; // focused-item entrance (a `selection`-kind preset)
+  ambient?: MotionRef; // idle loop (an `ambient`-kind preset)
 };
+
+/** A motion reference: a NAMED preset (string, from `MOTION_PRESETS`) or an inline
+ * `MotionSpec`. Strings are the low floor; specs are the high-ceiling escape hatch.
+ * In `theme.toml` a string is `transition = "slide"`; a spec is the
+ * `[motion.transition]` table. */
+export type MotionRef = string | MotionSpec;
 
 export type ThemeManifest = {
   /** Stable identifier — directory-safe, lowercase (e.g. "retroverse"). */

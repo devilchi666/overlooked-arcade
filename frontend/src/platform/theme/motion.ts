@@ -17,8 +17,9 @@
 // wants a short fade, not 0ms — so the floor is encoded here as a fixed value.
 
 import { createSignal, onCleanup, type Accessor } from "solid-js";
-import type { ThemeMotion, ViewTransitionPreset } from "./manifest";
+import type { MotionRef, ThemeMotion, ViewTransitionPreset } from "./manifest";
 import { presetToSpec, REDUCED_MOTION_SPEC, type MotionSpec } from "./motionSpec";
+import { buildPreset, type PresetOpts } from "./motionPresets";
 
 /// The standard transition duration when a theme declares a preset but no
 /// `duration`. Matches `--motion-medium` (index.css) numerically — but is a
@@ -107,6 +108,8 @@ export function resolveThemeMotionSpec(
   reducedMotion: boolean,
 ): MotionSpec | null {
   if (reducedMotion) return REDUCED_MOTION_SPEC;
+  // M-mod unified slot wins; falls back to the legacy view_transition* fields.
+  if (motion?.transition != null) return resolveMotionRef(motion.transition);
   if (motion?.view_transition_spec) return motion.view_transition_spec;
   const vt = motion?.view_transition;
   if (!vt || vt.preset === "none") return null;
@@ -116,6 +119,21 @@ export function resolveThemeMotionSpec(
     duration: duration ?? undefined,
     easing,
   });
+}
+
+/// Resolve a `MotionRef` (a named preset string OR an inline spec) to a concrete
+/// `MotionSpec` (M-mod). The unified path for the `transition`/`selection`/
+/// `ambient` slots. A string is looked up in `MOTION_PRESETS` (with optional
+/// author overrides); a spec passes through; anything unresolved → null. Does NOT
+/// apply the reduced-motion floor — the players (SpecTransition / AmbientMotion)
+/// do, so an ambient can drop to nothing while a transition drops to a fade.
+export function resolveMotionRef(
+  ref: MotionRef | undefined,
+  opts?: PresetOpts,
+): MotionSpec | null {
+  if (ref == null) return null;
+  if (typeof ref === "string") return buildPreset(ref, opts);
+  return ref; // already a MotionSpec
 }
 
 /// Read the OS "reduce motion" preference once (non-reactive). Guards for

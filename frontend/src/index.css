@@ -373,6 +373,22 @@
     0%   { opacity: 0; transform: scale(0.88); }
     100% { opacity: 1; transform: scale(1); }
   }
+  /* Box-art treatment sweep (gloss / shimmer specular highlight crossing a
+     surface). The overlay carries a diagonal white-gradient background sized
+     wider than the element; this slides it across. ARC 3 Thrust M treatments. */
+  @keyframes oa-sweep {
+    from { background-position: -160% 0; }
+    to   { background-position: 260% 0; }
+  }
+  @keyframes oa-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  /* Slow pan+zoom for fanart backdrops (Ken Burns). */
+  @keyframes oa-ken-burns {
+    0%   { transform: scale(1.18) translate(0, 0); }
+    100% { transform: scale(1.32) translate(-2.5%, -2%); }
+  }
   /* Now-playing equalizer bars in the HintBar. Three columns scale
      between 30% and 100% on staggered offsets so the chip reads as
      "audio playing." Honors prefers-reduced-motion: at-rule below
