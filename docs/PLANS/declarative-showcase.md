@@ -57,10 +57,20 @@ surface structure.
     fallback, so a **stale `target/release/themes/`** silently shadowed the repo themes
     (Aurora invisible). Removed it (a one-off leftover; the build doesn't create it). If
     it recurs, harden the loader to merge both candidates (deduped) instead of first-wins.
-- **S2 — background + now-focused detail (next).** A theme-supplied background through
-  `ThemeBackground` (needs the disk-asset `basePath` → `convertFileSrc` plumbing — the
-  S5.1 cascade already resolves theme/system asset bases); optionally a focused-game
-  detail strip (title/metadata/logo) so the browse reads less like a bare grid.
+- **S2a — self-contained theme asset packages ✅ (branch `feat/self-contained-theme-assets`,
+  needs rebuild).** A disk theme pulls its assets from its OWN package dir first
+  (operator's point 1): a **tier-0** `themes/<community|dev>/<id>/system-ui/…` was added
+  to the asset cascade (above the bundled `<exe_dir>/assets/themes/<id>/` tier),
+  `theme_loader::theme_package_dir` resolves it, the asset-protocol scope covers the
+  themes dir, and `svg` joined `STATIC_EXTS` so a theme can ship a text-authored vector
+  backdrop. Aurora ships `system-ui/_baseline/backgrounds/default.svg`.
+- **S2b — author-controlled layout/motion ⬜ DESIGN NEXT (operator's point 2).** A
+  hardcoded detail strip undercuts authorship — the focused-game elements (title /
+  metadata / logo) + their motion should be **author-declared**, not engine-fixed. The
+  fork to settle before coding: **bounded element slots** (author picks which elements
+  show + a per-element motion preset; engine arranges) vs. the **full free-form canvas**
+  (author places everything, BigBox-creator-style — that's Theme Studio / ARC 4 + the
+  deferred `path-move`/keyframe-timeline). The answer sets the size of the rest of the arc.
 - **S3 — list/row polish + metadata.** Cover thumbnails + metadata chips
   (year/genre/players) on list rows; richer settings_schema vocabulary the
   `DeclarativeShell` recognizes (density, card size, reflections…).

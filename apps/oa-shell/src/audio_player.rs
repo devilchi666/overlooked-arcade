@@ -489,8 +489,10 @@ pub fn resolve_ui_sound(
         return Ok(Some(p.to_string_lossy().to_string()));
     }
     let assets_dir = resolve_assets_dir();
+    // Tier 0: the disk theme's own package dir (self-contained sounds).
+    let theme_pkg = themeId.as_deref().and_then(crate::theme_loader::theme_package_dir);
     Ok(
-        find_bundled_ui_sound_in_dir(&assets_dir, themeId.as_deref(), &systemId, &event)
+        find_bundled_ui_sound_in_dir(&assets_dir, theme_pkg.as_deref(), themeId.as_deref(), &systemId, &event)
             .map(|pb| pb.to_string_lossy().to_string()),
     )
 }
@@ -536,6 +538,7 @@ pub fn resolve_completion_chime() -> Option<String> {
 /// unit tests can drop a tempdir's contents in and verify the cascade.
 fn find_bundled_ui_sound_in_dir(
     assets_dir: &Path,
+    theme_pkg_dir: Option<&Path>,
     theme_id: Option<&str>,
     system_id: &str,
     event: &str,
@@ -548,7 +551,8 @@ fn find_bundled_ui_sound_in_dir(
     if !crate::system_ui_assets::asset_slug_is_safe(system_id) {
         return None;
     }
-    for base in crate::system_ui_assets::candidate_asset_bases(assets_dir, theme_id, system_id, "sounds")
+    for base in
+        crate::system_ui_assets::candidate_asset_bases(assets_dir, theme_pkg_dir, theme_id, system_id, "sounds")
     {
         for ext in BUNDLED_UI_SOUND_EXTS {
             let p = base.join(format!("{event}.{ext}"));
@@ -665,7 +669,7 @@ mod tests {
         let per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
         let _baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
     }
 
@@ -674,14 +678,14 @@ mod tests {
         let tmp = tempdir_for("baseline-fallback");
         let baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(baseline.as_path()));
     }
 
     #[test]
     fn bundled_resolver_returns_none_when_nothing_on_disk() {
         let tmp = tempdir_for("empty");
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,"nes", "navigate");
         assert!(resolved.is_none());
     }
 
@@ -695,7 +699,7 @@ mod tests {
         let ogg = drop_sound(&tmp, "nes", "navigate", "ogg");
         let _wav = drop_sound(&tmp, "nes", "navigate", "wav");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(ogg.as_path()));
     }
 
@@ -703,7 +707,7 @@ mod tests {
     fn bundled_resolver_walks_extension_list_when_ogg_missing() {
         let tmp = tempdir_for("ext-walk");
         let wav = drop_sound(&tmp, "_baseline", "click", "wav");
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, "nes", "click");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,"nes", "click");
         assert_eq!(resolved.as_deref(), Some(wav.as_path()));
     }
 
@@ -717,7 +721,7 @@ mod tests {
         drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
         for evil in ["../nes", "..\\nes", "..", "nes/../etc", "nes\\..\\etc"] {
-            let resolved = find_bundled_ui_sound_in_dir(&tmp, None, evil, "navigate");
+            let resolved = find_bundled_ui_sound_in_dir(&tmp, None, None,evil, "navigate");
             assert!(resolved.is_none(), "expected None for slug {evil:?}, got {resolved:?}");
         }
     }
@@ -731,7 +735,7 @@ mod tests {
         let _per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
         let _baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, Some("coverflow"),"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(theme.as_path()));
     }
 
@@ -743,7 +747,7 @@ mod tests {
         let theme_wide = drop_theme_sound(&tmp, "coverflow", "_baseline", "navigate", "ogg");
         let _per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, Some("coverflow"),"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(theme_wide.as_path()));
     }
 
@@ -752,7 +756,7 @@ mod tests {
         let tmp = tempdir_for("theme-fallthrough");
         let per_system = drop_sound(&tmp, "nes", "navigate", "ogg");
 
-        let resolved = find_bundled_ui_sound_in_dir(&tmp, Some("coverflow"), "nes", "navigate");
+        let resolved = find_bundled_ui_sound_in_dir(&tmp, None, Some("coverflow"),"nes", "navigate");
         assert_eq!(resolved.as_deref(), Some(per_system.as_path()));
     }
 
@@ -764,7 +768,7 @@ mod tests {
         let baseline = drop_sound(&tmp, "_baseline", "navigate", "ogg");
 
         for evil in ["../x", "..\\x", "..", "a/b"] {
-            let resolved = find_bundled_ui_sound_in_dir(&tmp, Some(evil), "nes", "navigate");
+            let resolved = find_bundled_ui_sound_in_dir(&tmp, None, Some(evil), "nes", "navigate");
             assert_eq!(
                 resolved.as_deref(),
                 Some(baseline.as_path()),

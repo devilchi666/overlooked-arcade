@@ -396,6 +396,27 @@ pub fn resolve_themes_dev_dir() -> Option<PathBuf> {
     resolve_themes_subdir("dev")
 }
 
+/// The on-disk package directory for a theme `id` — `themes/community/<id>/`
+/// (then the loose `themes/dev/<id>/`), if it exists. A declarative theme is a
+/// **self-contained package**: its assets (`system-ui/backgrounds|sounds/…`) live
+/// here, so the asset resolver checks this directory FIRST and only falls back to
+/// the bundled / platform tiers when the theme ships nothing (decision PD2 — the
+/// `system-ui/` dir the on-disk layout reserves). Returns `None` for an unknown id,
+/// or a path-unsafe id (no separators / `..` — the value reaches an `fs` join). The
+/// loaded `DiskThemeDescriptor` also carries this as `base_path`; this resolves it
+/// fresh by id for the asset commands, which only know the active theme's id.
+pub fn theme_package_dir(theme_id: &str) -> Option<PathBuf> {
+    if theme_id.is_empty() || theme_id.contains('/') || theme_id.contains('\\') || theme_id == ".." {
+        return None;
+    }
+    for root in [resolve_themes_community_dir(), resolve_themes_dev_dir()] {
+        if let Some(dir) = root.map(|r| r.join(theme_id)).filter(|d| d.is_dir()) {
+            return Some(dir);
+        }
+    }
+    None
+}
+
 /// Discover every theme directly under `parent` (one subdirectory per theme,
 /// each holding a `theme.toml`). Unreadable / malformed themes are logged and
 /// skipped — never fatal. A missing `parent` (read_dir fails) yields an empty

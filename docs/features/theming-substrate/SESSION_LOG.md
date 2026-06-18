@@ -9,6 +9,40 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — Declarative Showcase S2a: self-contained theme asset packages — 🚧 on `feat/self-contained-theme-assets` (needs operator rebuild)
+
+> Operator point: a theme should pull its background + all assets from its OWN
+> package/directory first, falling back only if nothing's there. Today the S5.1
+> cascade resolved theme assets from a SEPARATE `<exe_dir>/assets/themes/<id>/`
+> location, so a disk `.oatheme` wasn't actually self-contained. This makes it so.
+
+- **Shipped on the branch:**
+  - **Tier 0 — the theme's own package dir** added to the asset cascade
+    (`system_ui_assets::candidate_asset_bases`): `themes/<community|dev>/<id>/system-ui/
+    <system|_baseline>/<backgrounds|sounds>/` is checked FIRST, beating the bundled
+    `<exe_dir>/assets/themes/<id>/` tier and the platform tiers. So a disk theme ships
+    its assets beside its `theme.toml` and they win; built-in themes (no package dir)
+    are unchanged.
+  - `theme_loader::theme_package_dir(id)` resolves the on-disk theme dir (community then
+    dev, path-safe) — both `resolve_background_asset` + `resolve_ui_sound` look it up
+    from the active theme id and pass it as tier 0.
+  - **Asset-protocol scope widened** to the themes dir(s) (`main.rs`) so a package asset
+    loads via `convertFileSrc` instead of 403ing.
+  - **`svg` added to `STATIC_EXTS`** — a theme can ship a single text-authored vector
+    backdrop (no binary). **Aurora ships one:** `themes/community/aurora/system-ui/
+    _baseline/backgrounds/default.svg` (a dark aurora-borealis wash), so Aurora now has
+    its OWN self-contained backdrop instead of borrowing the platform per-system art.
+  - Rust tests: `theme_package_dir_wins_over_bundled_and_platform` (+ svg) +
+    `no_theme_package_dir_falls_back_to_bundled_theme_tier`; existing cascade tests
+    updated for the new arg. system_ui_assets 14 / audio_player 17 / theme_loader 11 green.
+- **Needs a REBUILD** (Rust change — `cargo tauri build`, not just relaunch): then
+  Aurora shows its own SVG backdrop.
+- **Next:** the **author-controlled layout/motion** design (the operator's 2nd point —
+  bounded element slots vs. a full free-form canvas) before the detail strip; that
+  decides the altitude of the rest of the arc.
+
+---
+
 ## 2026-06-18 — Declarative selection/ambient hook + the Declarative Showcase arc S1 — ✅ MERGED to main (branch `feat/motion-selection-ambient-hook`)
 
 > Started as the deferred selection/ambient hook; mid-session the operator reframed it
