@@ -61,3 +61,10 @@ Removing the lab is this list, top to bottom:
 - **2026-06-17** — Foundation laid on `feat/theming-arc3-motion-model`: the
   `experimental` theme flag, the lab navigable shell skeleton, the Experimental
   launcher, and this strip manifest. Motion model (M-mod.1) lands next.
+- **2026-06-18** — Motion model M-mod.1–.4 dogfooded here: Home↔Library view
+  transition (`SpecTransition`), selection-choreography hero (spring grow-in +
+  staggered title/meta), breathe ambient (`AmbientMotion`), pointer-tilt
+  (`useTilt`). The lab now exercises all four audit motion categories. The strip
+  checklist is unchanged (still one folder + the same 4 touch-points) — all the new
+  engine modules (`motionSpec`/`spring`/`springValue`/`SpecTransition`/
+  `AmbientMotion`/`tilt`) are PRODUCT code that stays; only `themes/lab/` strips.

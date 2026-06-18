@@ -219,18 +219,27 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
     glass finish, pointer-tilt). `MOTION.md` = the catalogue. **WAAPI finding
     reversed** (timing, not compositing; D54 was the real fix). 144 fps confirmed.
     Decisions D53–D56.
-  - **NEXT motion work ⬜ — the declarative motion MODEL (D52)** — turn the bench
-    keepers into named, theme-authorable `theme.toml` motion presets + the keyframe/
-    physics vocabulary (selection choreography, in/out, ambient, box-art treatments).
-    Dogfood on a **navigable** surface (Retroverse routes/tabs), NOT the
-    single-surface `DeclarativeShell` (D55). Folds in M1 entrance feel-tuning +
-    stripping the `[oa-theme-motion]` diagnostics, and the original M2 (view/route
-    transition presets) / M3 (parallax + preset gallery). **Add to the seed
-    catalog: `path-move` (bezier-waypoint position channel) + a keyframe-timeline
-    escape hatch** — the one HyperSpin Tier-1 ask (`MotionPath`/`timeline`) not yet
-    in the D57 vocabulary, additive to the keyframe/spring basis (see
-    [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md)
-    §3).
+  - **declarative motion MODEL (D52) — M-mod.1–.4 🔄 BUILT, NOT MERGED, eye-UNVALIDATED**
+    (branch `feat/theming-arc3-motion-model`; SESSION_LOG 2026-06-18). The bench
+    keepers are now a real theme-authorable model, dogfooded on the new strip-on-ship
+    **Graphics Lab** testbed theme (Settings → Experimental → Graphics Lab):
+    - ✅ Spring `{bounce,duration}` converter + integrator (`spring.ts`/`springValue.ts`;
+      default = the F10 k=190/damping=24 back-solve).
+    - ✅ §2 basis (`motionSpec.ts`: channels × timing + `repeat`/`direction`) + WAAPI
+      compiler; presets re-expressed as defaults over it.
+    - ✅ Players: `SpecTransition` (transitions) + `AmbientMotion` (loops) + `useTilt`.
+    - ✅ Contract: `ThemeMotion.view_transition_spec` + `resolveThemeMotionSpec` +
+      validator. Lab dogfoods all four audit categories (view / selection / ambient /
+      box-art) on one navigable surface (D55).
+    - ⬜ **Operator build + feel-tune** (choreography/breathe/tilt timings are best-guess).
+    - ⬜ Graduate the spring/selection + ambient config into the manifest contract
+      (only `view_transition_spec` graduated); Rust `theme_loader` widening for
+      `[motion.view_transition_spec]` (disk themes); migrate `declarativeShell`
+      presets onto `SpecTransition`; strip the `[oa-theme-motion]` diagnostics.
+    - ⬜ Audit §3 leftovers: ken-burns / glow-pulse / gloss / reflection, and the
+      wishlist carry-over **`path-move` (bezier position channel) + keyframe-timeline
+      escape hatch** (HyperSpin `MotionPath`/`timeline`; see
+      [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md) §3).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

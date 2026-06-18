@@ -9,6 +9,46 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — ARC 3 Thrust M, M-mod.1–.4: the declarative motion MODEL — ✅ on `feat/theming-arc3-motion-model` (NOT merged; operator hasn't built it yet)
+
+> The M0 bench keepers are now a real, theme-authorable motion model, dogfooded on
+> a new **strip-on-ship Graphics Lab** testbed theme (Settings → Experimental →
+> Graphics Lab; hidden from the Appearance picker via an `experimental` flag; one
+> folder + 4 `// [GRAPHICS-LAB]` touch-points to strip — see
+> `GRAPHICS_LAB_TESTBED.md`). Engine code stays on ship; only the lab demo strips.
+
+- **Shipped (engine first, then the lab dogfood):**
+  - **Spring** — `spring.ts` (pure D57 `{bounce,duration}` ↔ `{stiffness,damping,mass}`,
+    Apple closed form; default `BENCH_SELECTION_SPRING` is the F10 k=190/damping=24
+    back-solve so the default feel == what was signed off at the bench) +
+    `springValue.ts` (the bench's rAF integrator, generalized).
+  - **§2 basis** — `motionSpec.ts`: separate channels (opacity/x/y/scale/rotate)
+    over timing primitives (duration/delay/easing/repeat/direction);
+    `compileMotionSpec` → WAAPI; `presetToSpec` (M1 fade/slide/scale = named defaults
+    over the basis).
+  - **Players** — `SpecTransition` (trigger-driven, interruptible, WAAPI),
+    `AmbientMotion` (loops; no-op under reduced motion), `useTilt` (pointer-tilt).
+  - **Contract** — `ThemeMotion.view_transition_spec` (spec wins over the preset);
+    `resolveThemeMotionSpec` unifies preset+spec; validator covers the spec shape.
+    Lab authors its transition in `LAB_MANIFEST.motion` (manifest-as-data path).
+  - **Lab dogfood** — all four audit categories on one surface: Home↔Library
+    view-transition (140px/560ms slide), selection choreography (spring cover
+    grow-in + staggered title/meta on every focus move), breathe ambient,
+    pointer-tilt — composed via nested transforms.
+  - **Fixes** — route-switch delay (GridNav keep-mounted + capped 60), transient
+    2nd scrollbar during the slide (clip ancestor; **MOTION.md rule #2 promoted to
+    CONFIRMED**), slide readability (authorable distance/duration).
+  - 156 vitest green; typecheck + lint green.
+- **Almost:** the FEEL is eye-unvalidated — operator has not built since the first
+  slide; choreography/breathe/tilt timings are best-guess.
+- **Next:** operator build + feel tune; graduate the spring/selection + ambient
+  config into the manifest contract (only `view_transition_spec` graduated so far);
+  Rust `theme_loader` widening for `[motion.view_transition_spec]` (disk themes —
+  deferred, no `deny_unknown_fields`); audit §3 leftovers (ken-burns / glow-pulse /
+  gloss / reflection); migrate `declarativeShell` presets onto `SpecTransition`.
+
+---
+
 ## 2026-06-17 — ARC 3 Thrust M, M0: motion bench BUILT + foundation VALIDATED (the "true yes") — ✅ on branch `theme-arc3-motion-slice-1`
 
 > **Headline: there is NO compositing ceiling on OA's transparent surface, and
