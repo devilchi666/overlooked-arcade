@@ -1514,3 +1514,49 @@ un-park); `docs/RESEARCH/external-emulators.md` (verified ares/BizHawk
 auto-detect resolves schema question #1).
 
 ---
+
+## 2026-06-18 — Logger gains a mute path; `oa_shell` routine logging muted by default
+
+**Decision:** Extended the three-output logger (2026-05-18 entry above) with
+a **mute** mechanism — the inverse of the existing on-demand verbose opt-in —
+and **muted the `oa_shell` target by default**. A muted target's routine
+records (Info/Debug/Trace) are dropped from all three outputs (stderr + file +
+ring), but its **Warn/Error always pass** — muting silences spam, never
+diagnostics. An explicit verbose opt-in (the DevTools "backend log streams":
+`oa_shell::media` / `audio` / `render`) still overrides the mute for that
+subsystem. Implementation: `MUTED_PREFIXES` + `set_muted_prefixes` +
+`target_is_muted` in `apps/oa-shell/src/logger.rs`; the `set_muted_prefixes`
+Tauri command (`"app"` → `oa_shell`); `logger::init_early` seeds the default
+mute. Operator-facing toggle: **Settings → About → Developer tools → General
+app logging → "App (oa_shell)"** (off by default each launch; flip On for the
+full trail).
+
+**Why:** `oa_shell` info/debug is constant spam during normal operation, which
+buries the signal in `oa-current.log` and the in-app Debug log. The operator
+asked for it off by default with an on-demand re-enable. Keeping Warn/Error
+unconditionally means errors are never hidden, and the default is **session-
+level (not persisted)** because the Rust default IS muted — every launch starts
+quiet for free, so no persisted pref / startup re-apply is needed (unlike the
+[oa-theme-motion] toggle, which persists precisely because theme swaps restart).
+
+**⚠️ Debugging note (supersedes the assumption in CLAUDE.md "Debugging — where
+the logs live"):** `oa-current.log` no longer contains `oa_shell` Info/Debug by
+default — only its Warn/Error, plus everything from other targets. When
+investigating a bug that needs the app crate's routine trail (launch flow,
+media, core lifecycle at info level), first flip **General app logging → On**
+(or enable the relevant verbose stream), then reproduce.
+
+**Considered and rejected:** raising the base level / `RUST_LOG` (a blunt global
+knob — would also silence other crates, and isn't runtime-togglable from the
+UI); per-module mute granularity finer than the `oa_shell` prefix (the prefix
+match already covers submodules, and the verbose streams provide the opt-back-in
+at submodule granularity — finer mute control isn't worth the surface yet);
+persisting the toggle (unnecessary — the Rust default-mute already delivers
+quiet-by-default across restarts).
+
+**Cross-ref:** `apps/oa-shell/src/logger.rs`; `apps/oa-shell/src/main.rs`
+(`set_log_streams` / `set_muted_prefixes`); `frontend/src/engine/DevToolsPanel.tsx`;
+2026-05-18 "Three-output logger" entry above; CLAUDE.md "Debugging — where the
+logs live".
+
+---
