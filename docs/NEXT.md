@@ -266,15 +266,17 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md) §3).
 
 **Declarative Showcase — make the file-theme path capable & beautiful** `[arc opened
-2026-06-18; S1 ✅ MERGED to main]`. The Graphics Lab proves the ENGINE via code; a
+2026-06-18; S1 + S2 ✅ MERGED to main]`. The Graphics Lab proves the ENGINE via code; a
 distributable `.oatheme` ships no code (PD1), so the only honest proof that **loadable
 file themes can use everything** is a showcase on the declarative path (`theme.toml` →
 `DeclarativeShell`). Each enrichment lands in `DeclarativeShell` (data-driven) → unlocks
 it for every file theme. **S1 ✅:** cover art on cards + the selection/ambient hook + the
-on-disk **`aurora`** showcase (coverflow · per-system neon · slide/lift/breathe motion) +
-BIOS hidden from the declarative browse; `bare-declarative` kept as the minimal floor.
-**S2 (next):** theme-supplied backgrounds (`basePath` → `convertFileSrc`) + a now-focused
-detail strip. **S3:** list thumbnails + metadata + richer recognized settings vocabulary.
+on-disk **`aurora`** showcase + BIOS hidden; `bare-declarative` kept as the minimal floor.
+**S2 ✅:** self-contained theme asset packages (tier-0 package-dir + `svg` backdrops) +
+the declarative **element model** (`ThemeElement`, reserved `position`/`size` for the
+future canvas — D59; engine-arranged hero with chip-row metadata + keyed entrance motion).
+**Next — S3** (list-row thumbnails + metadata + richer recognized settings vocab) **OR the
+free-form canvas** (honor `position` + layout engine + Theme Studio — now an additive step).
 Plan: [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned

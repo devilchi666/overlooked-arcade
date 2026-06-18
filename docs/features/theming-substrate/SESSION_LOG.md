@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-18 — Declarative Showcase S2b: the declarative element model (bounded slots, canvas-subset) — 🚧 on `feat/self-contained-theme-assets` (needs operator rebuild)
+## 2026-06-18 — Declarative Showcase S2b: the declarative element model (bounded slots, canvas-subset) — ✅ MERGED to main (branch `feat/self-contained-theme-assets`; operator playtested)
 
 > The author's focused-game composition, designed deliberately as a SUBSET of the
 > future free-form canvas (operator's point 2). Bounded element slots now (engine
@@ -39,15 +39,24 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
   canvas stub round-trips inert.
 - **CI:** tsc + eslint + 188 vitest (+5 element-validation) green; cargo `theme_loader`
   12 (+1 detail round-trip incl. reserved position) green.
-- **Needs a REBUILD** (Rust change). Then Aurora shows title/logo/metadata over the
-  coverflow, animating in on focus change.
+- **Playtest fixes (rode along, operator confirmed):**
+  - **Metadata key bug** — the detail elements (and the Lab hero) showed only
+    title+system; year/genre/developer were blank though Retroverse showed them.
+    Cause: metadata is keyed by the **rom id**, but `declarativeShell`/`lab` looked
+    it up by `identityId ?? id` (the identity key has cover ART but no metadata).
+    Fixed both to `media.media(entry.id)` (matching every other consumer); cover/logo
+    art stays identity-keyed.
+  - **BigBox polish + 2× art** — the detail reads like a hero: big title, system
+    accent label, metadata as **pill chips on a wrapping row** (chip kinds auto-width,
+    block kinds full-line — engine arrangement preserves declared order), bigger logo;
+    coverflow card doubled (210→420). Positioning fine-tune deferred to the canvas axis.
 - **Next:** S3 (list-row thumbnails + metadata + richer recognized settings vocab), or
   begin the **free-form canvas** (honor `position` + a layout engine + Theme Studio) —
   the contract + stubs are now in place for it to be additive.
 
 ---
 
-## 2026-06-18 — Declarative Showcase S2a: self-contained theme asset packages — 🚧 on `feat/self-contained-theme-assets` (needs operator rebuild)
+## 2026-06-18 — Declarative Showcase S2a: self-contained theme asset packages — ✅ MERGED to main (branch `feat/self-contained-theme-assets`; operator playtested)
 
 > Operator point: a theme should pull its background + all assets from its OWN
 > package/directory first, falling back only if nothing's there. Today the S5.1

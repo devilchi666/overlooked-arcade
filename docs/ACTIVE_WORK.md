@@ -29,8 +29,15 @@ spanned every system but was filed under whichever core happened to be active.
   multi-tab/detail structure). Plan +
   slices: [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md); log
   [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
-  2026-06-18. **Next: S2 — theme-supplied backgrounds (`basePath` → `convertFileSrc`) +
-  a now-focused detail strip. S3 — list thumbnails + metadata + richer settings vocab.**
+  2026-06-18. **S2 ✅ MERGED to main 2026-06-18** (branch `feat/self-contained-theme-assets`;
+  operator playtested): **S2a** self-contained theme asset packages (tier-0 package-dir
+  in the asset cascade + `svg` backdrops; Aurora ships its own); **S2b** the declarative
+  **element model** (`ThemeElement` = `kind`+`motion` now, reserved `position`/`size`/
+  `ambient` for the future free-form canvas — DECISIONS **D59** low-floor-now/
+  high-ceiling-reserved; engine-arranged focused-detail hero with chip-row metadata +
+  keyed entrance motion). Metadata-key bug fixed (rom-id, not identity-id). **Next: S3
+  (list-row thumbnails + metadata + richer recognized settings vocab) OR the free-form
+  canvas (honor `position` + layout engine + Theme Studio — now an additive step).**
 
 - **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 foundation + the
   declarative motion MODEL (M-mod.1–.4) + the cinematic Graphics Lab showcase all
