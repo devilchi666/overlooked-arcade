@@ -40,19 +40,20 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
     views: { "game-browse": { layout: "list" } },
     // ARC 3 dogfood: motion authored as pure DATA, zero theme code.
     //  • view_transition — a fade played on each view change (M1 path).
-    //  • selection — the `lift` preset (a selection-kind spec): the focused row
-    //    pops in place on focus-gain and drops back when focus leaves. `lift` is
-    //    deliberately the sustained-emphasis case, so it exercises
-    //    SelectionMotion's cancel-on-defocus path (without it, fill:both would
-    //    leave the row stuck at scale 1.08). Reduced-motion floors it to a fade.
-    //  • ambient — the `breathe` preset: a gentle idle loop on the FOCUSED row
-    //    only (exactly one live loop). Reduced-motion floors it to nothing.
+    //  • selection — `title-rise` (a selection-kind spec): on focus-gain the row's
+    //    content rises into place. A `y` entrance, NOT a `scale` preset (`lift`/
+    //    `breathe`) — this theme renders a FULL-WIDTH list row, and a centred scale
+    //    grows the row's width and flings left-aligned content off the left edge
+    //    (MOTION.md rule #3). Scale presets are for centred cards (box-art); rows
+    //    use y/opacity/glow. Reduced-motion floors it to a fade.
+    //  • ambient — `glow-pulse`: a pulsing accent glow on the FOCUSED row only (one
+    //    live loop). No geometry change, so it's row-safe. Reduced-motion → nothing.
     // Proves the manifest selection/ambient slots → resolveMotionRef →
     // DeclarativeShell's per-card SelectionMotion path end-to-end with no code.
     motion: {
       view_transition: { preset: "fade", duration: "450ms" },
-      selection: "lift",
-      ambient: "breathe",
+      selection: "title-rise",
+      ambient: "glow-pulse",
     },
     // Declared appearance option; the engine Appearance panel renders it and the
     // DeclarativeShell honors it (recognized `compactRows` → list density).

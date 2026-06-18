@@ -41,9 +41,19 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     spec, no reduced arg) and wraps both `renderRow` + `renderCard` in `SelectionMotion`.
     The card's static `scale-[1.02]` CSS stays as the no-motion baseline; the preset
     composes on top.
-  - Dogfood: `bare-declarative` declares `selection: "lift"` + `ambient: "breathe"`
-    (a list, so the focused row pops + breathes — `lift` deliberately exercises the
-    cancel-on-defocus path). +1 test asserting the slots resolve + are correct-kind.
+  - Dogfood: `bare-declarative` declares `selection: "title-rise"` + `ambient:
+    "glow-pulse"`. +1 test asserting the slots resolve + are correct-kind.
+  - **Playtest fix (operator: list game-names "bounced back and forth / flew off the
+    left side, out of the highlight"):** the dogfood originally used `lift`/`breathe`
+    (both `scale`) on a FULL-WIDTH row — a centred scale shifts the left edge out by
+    `(scale−1)·width/2`, flinging left-aligned content left + oscillating it. Root
+    cause is architectural, not a SelectionMotion bug → fixed PROPERLY (no origin
+    band-aid): scale presets are for centred CARDS; full-width ROWS use
+    non-width-changing motion. Switched the list dogfood to `title-rise` (y) +
+    `glow-pulse`; added `overflow-hidden` to the DeclarativeShell root (MOTION.md #2
+    clipping ancestor, so the y-rise can't spawn a transient scrollbar). New MOTION.md
+    rules #3 (scale↔cards / y·opacity·glow↔rows) + #4 (per-item transform clipping).
+    The grid/carousel/wheel card path still uses scale presets (centred → symmetric).
   - **No Rust:** `theme_loader`'s `ThemeMotion` already carries the slots (prior merge);
     contract didn't widen.
   - **CI:** tsc + eslint clean; **183 vitest** green (+1; `ViewTransition` path untouched).

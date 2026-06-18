@@ -106,7 +106,26 @@ entry still carry the old WAAPI claim — correct them when next editing.)
    wrapper's *own* overflow is NOT enough — the wrapper's translated box still
    extends the ancestor's scroll area. (Alternative per M1: animate an inner
    non-scrolling wrapper instead of one that contains the scroll container.)
-3. _(more to come as real choreography teaches us)_
+3. **Scale presets are for centred cards, not full-width rows — CONFIRMED
+   2026-06-18 (declarative selection/ambient hook playtest).** A `scale()` grows a
+   box about its transform-origin (default centre), so on a FULL-WIDTH, left-aligned
+   list row a centred scale shifts the left edge out by `(scale−1)·width/2`: `lift`
+   (1.08) flung the title ~4% of the row width off the left edge and out of the focus
+   highlight, and `breathe` (alternating 1↔1.03) made it oscillate horizontally
+   ("bounce back and forth"). Anchoring the origin (`origin-left`) only trades the
+   left fling for right-edge clipping + vertical neighbour-overlap. So: **box-art /
+   centred CARDS use scale presets (`lift`/`art-grow-in`/`breathe`) — they grow
+   symmetrically about their centre; full-width ROWS use non-width-changing motion —
+   `title-rise` (y), opacity, or `glow-pulse` (box-shadow).** The `DeclarativeShell`
+   picks accordingly: its list dogfood (`bare-declarative`) uses `title-rise` +
+   `glow-pulse`; the grid/carousel/wheel card path is where scale presets belong.
+4. **A per-item selection transform needs the same clipping ancestor as a
+   route transition (rule #2 generalised).** A `title-rise` y-translate (or a card
+   scale) on an item inside a scroll container can briefly extend the container's /
+   an ancestor's scrollable overflow → a transient scrollbar. Fix is the same:
+   `overflow-hidden` on the shell root (it never scrolls as a whole; the inner nav
+   primitive keeps its own `overflow-y-auto`). The `DeclarativeShell` root carries it.
+5. _(more to come as real choreography teaches us)_
 
 ## The motion archetypes we're actually chasing (so the bench tests the right thing)
 

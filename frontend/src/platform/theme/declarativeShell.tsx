@@ -214,7 +214,12 @@ const DeclarativeShell: ThemeEntry = () => {
   );
 
   return (
-    <div class="relative flex h-full w-full flex-col bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
+    // `overflow-hidden` is the MOTION.md rule #2 clipping ancestor: the shell root
+    // never scrolls as a whole (the inner nav primitive owns its own
+    // `overflow-y-auto`), so clipping here keeps a per-item selection transform (a
+    // `title-rise` y-translate, or a card scale) from briefly extending an
+    // ancestor's scroll area and spawning a transient scrollbar.
+    <div class="relative flex h-full w-full flex-col overflow-hidden bg-(--color-oa-bg-deep) text-(--color-oa-ink)">
       {/* Per-system backdrop, following focus. Renders nothing when the theme
           ships no background assets (S5.1 cascade → null), so a bare theme
           stays bare. */}

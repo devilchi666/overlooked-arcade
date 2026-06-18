@@ -36,14 +36,16 @@ describe("bare-declarative dogfood", () => {
 
   it("declares the ARC 3 selection + ambient slots, resolvable + correct-kind", () => {
     const motion = bareDeclarative.manifest.motion;
-    // The slots the DeclarativeShell's per-card SelectionMotion consumes.
-    expect(motion?.selection).toBe("lift");
-    expect(motion?.ambient).toBe("breathe");
+    // The slots the DeclarativeShell's per-card SelectionMotion consumes. A
+    // FULL-WIDTH list row uses non-width-changing motion (a `y` rise + a glow), NOT
+    // a centred `scale` preset — those fling left-aligned content (MOTION.md #3).
+    expect(motion?.selection).toBe("title-rise");
+    expect(motion?.ambient).toBe("glow-pulse");
     // Each must resolve to a concrete spec (preset name → §2 spec).
     expect(resolveMotionRef(motion?.selection)).not.toBeNull();
     expect(resolveMotionRef(motion?.ambient)).not.toBeNull();
     // …and be the kind its slot expects (the validator's name+KIND rule, D58.5).
-    expect(MOTION_PRESETS["lift"]?.kind).toBe("selection");
-    expect(MOTION_PRESETS["breathe"]?.kind).toBe("ambient");
+    expect(MOTION_PRESETS["title-rise"]?.kind).toBe("selection");
+    expect(MOTION_PRESETS["glow-pulse"]?.kind).toBe("ambient");
   });
 });
