@@ -51,6 +51,13 @@ export function setLogStreams(streams: string[]): Promise<void> {
   return invoke("set_log_streams", { streams });
 }
 
+/// Mute the routine (info/debug) logging of the given subsystems ("app" →
+/// `oa_shell`); [] un-mutes. Warnings + errors still log. `oa_shell` is muted by
+/// default (constant spam); this re-enables it on demand. DevTools panel.
+export function setMutedPrefixes(muted: string[]): Promise<void> {
+  return invoke("set_muted_prefixes", { muted });
+}
+
 /// The resolved OA data dir (portable `<exe_dir>/settings/` or AppData).
 export function getOaDataDir(): Promise<string> {
   return invoke<string>("get_oa_data_dir");

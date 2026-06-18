@@ -46,6 +46,29 @@ use time::OffsetDateTime;
 static VERBOSE_PREFIXES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static BASE_LEVEL: OnceLock<log::LevelFilter> = OnceLock::new();
 
+/// Targets whose ROUTINE logging (Info/Debug/Trace) is suppressed (DevTools →
+/// "general logging" off). Warnings + errors from a muted target STILL log —
+/// muting silences spam, never diagnostics. Driven by `set_muted_prefixes`;
+/// `init_early` seeds it with `oa_shell` (the app crate's own chatter is on by
+/// default off, the operator re-enables when needed). A verbose opt-in
+/// (`set_verbose_prefixes`) overrides muting for a specific subsystem.
+static MUTED_PREFIXES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Replace the muted target-prefix set. Empty = nothing muted (everything at the
+/// base level logs again). Driven by the `set_muted_prefixes` command.
+pub fn set_muted_prefixes(prefixes: Vec<String>) {
+    if let Ok(mut v) = MUTED_PREFIXES.lock() {
+        *v = prefixes;
+    }
+}
+
+fn target_is_muted(target: &str) -> bool {
+    MUTED_PREFIXES
+        .lock()
+        .map(|v| v.iter().any(|p| target.starts_with(p.as_str())))
+        .unwrap_or(false)
+}
+
 /// Replace the verbose target-prefix set (e.g. `["oa_shell::media"]`). Empty =
 /// back to the base level. Adjusts the global max level so the macros emit.
 pub fn set_verbose_prefixes(prefixes: Vec<String>) {
@@ -140,7 +163,17 @@ pub struct MultiLogger {
 
 impl log::Log for MultiLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= self.min_level || target_is_verbose(metadata.target())
+        let target = metadata.target();
+        // Explicit per-subsystem verbose opt-in always wins.
+        if target_is_verbose(target) {
+            return true;
+        }
+        // A muted subsystem drops its routine chatter (Info/Debug/Trace) but
+        // NEVER its warnings/errors (`Level::Warn` and more severe pass).
+        if metadata.level() > log::Level::Warn && target_is_muted(target) {
+            return false;
+        }
+        metadata.level() <= self.min_level
     }
 
     fn log(&self, record: &log::Record) {
@@ -238,6 +271,10 @@ pub fn init_early() -> LoggerHandle {
     };
     let _ = LOGGER.set(logger);
     let _ = BASE_LEVEL.set(min_level);
+    // Quiet the app crate's routine chatter by default — it's constant spam
+    // during normal operation. Warnings + errors still pass; the operator
+    // re-enables the Info/Debug stream on demand via DevTools → general logging.
+    set_muted_prefixes(vec!["oa_shell".to_string()]);
     let static_ref: &'static MultiLogger = LOGGER.get().expect("logger just installed");
     let _ = log::set_logger(static_ref).map(|()| log::set_max_level(min_level));
 

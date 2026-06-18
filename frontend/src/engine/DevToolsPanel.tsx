@@ -22,6 +22,7 @@ import {
   restartApp,
   revealLogsFolder,
   setLogStreams,
+  setMutedPrefixes,
 } from "@oa/platform/api/shellApi";
 import { motionDebug, setMotionDebug } from "@oa/platform/theme/motionDebug";
 
@@ -80,6 +81,17 @@ const DevToolsPanel: Component = () => {
     const next = streamOn(id) ? streams().filter((s) => s !== id) : [...streams(), id];
     setStreams(next);
     void setLogStreams(next).catch((e) => setLogMsg(String(e)));
+  };
+
+  // General app logging — the `oa_shell` crate's routine info/debug is MUTED by
+  // default (constant spam; the Rust default in logger::init_early). This flips
+  // it back on. Session-only + seeded to the Rust default (off), so each launch
+  // starts quiet; warnings/errors always log regardless.
+  const [appLogOn, setAppLogOn] = createSignal(false);
+  const toggleAppLog = (): void => {
+    const next = !appLogOn();
+    setAppLogOn(next);
+    void setMutedPrefixes(next ? [] : ["app"]).catch((e) => setLogMsg(String(e)));
   };
 
   const [logMsg, setLogMsg] = createSignal<string>("");
@@ -245,6 +257,41 @@ const DevToolsPanel: Component = () => {
             </div>
           )}
         </For>
+      </div>
+
+      {/* General app logging — the inverse of the verbose streams: the app
+          crate's own routine chatter is muted by default (constant spam); flip
+          this On to surface it. Warnings/errors always log regardless. */}
+      <p class="mb-2 mt-4 text-[0.7rem] text-(--color-oa-ink-dim)">
+        General app logging (off by default — silences <code class="font-mono">oa_shell</code>{" "}
+        info/debug spam; warnings + errors always log):
+      </p>
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+          <div class="min-w-0">
+            <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">App (oa_shell)</p>
+            <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+              The app crate's routine info/debug. Muted by default each launch; turn On
+              when you need the full trail.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              toggleAppLog();
+            }}
+            aria-pressed={appLogOn()}
+            class="shrink-0 rounded-md border px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            classList={{
+              "border-emerald-400/40 bg-emerald-500/15 text-emerald-200": appLogOn(),
+              "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                !appLogOn(),
+            }}
+          >
+            {appLogOn() ? "On" : "Off"}
+          </button>
+        </div>
       </div>
 
       {/* Actions */}
