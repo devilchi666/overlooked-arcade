@@ -8,6 +8,8 @@ import { bareDeclarative } from "./index";
 import DeclarativeShell from "@oa/platform/theme/declarativeShell";
 import { validateTheme } from "@oa/platform/theme/validate";
 import { resolveLayout } from "@oa/platform/theme/layoutResolver";
+import { resolveMotionRef } from "@oa/platform/theme/motion";
+import { MOTION_PRESETS } from "@oa/platform/theme/motionPresets";
 
 describe("bare-declarative dogfood", () => {
   it("is a valid, list-rendering, DeclarativeShell-backed package", () => {
@@ -30,5 +32,18 @@ describe("bare-declarative dogfood", () => {
     expect(bareDeclarative.motionTokens?.fast).toBeTruthy();
     // Declaring motion must not break validation.
     expect(validateTheme(bareDeclarative).ok).toBe(true);
+  });
+
+  it("declares the ARC 3 selection + ambient slots, resolvable + correct-kind", () => {
+    const motion = bareDeclarative.manifest.motion;
+    // The slots the DeclarativeShell's per-card SelectionMotion consumes.
+    expect(motion?.selection).toBe("lift");
+    expect(motion?.ambient).toBe("breathe");
+    // Each must resolve to a concrete spec (preset name → §2 spec).
+    expect(resolveMotionRef(motion?.selection)).not.toBeNull();
+    expect(resolveMotionRef(motion?.ambient)).not.toBeNull();
+    // …and be the kind its slot expects (the validator's name+KIND rule, D58.5).
+    expect(MOTION_PRESETS["lift"]?.kind).toBe("selection");
+    expect(MOTION_PRESETS["breathe"]?.kind).toBe("ambient");
   });
 });

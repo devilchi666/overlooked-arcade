@@ -9,6 +9,56 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — ARC 3 Thrust M: the declarative selection/ambient hook — 🚧 on `feat/motion-selection-ambient-hook` (awaiting operator playtest)
+
+> The one piece the "wire it up right" branch deferred: the `selection`/`ambient`
+> slots resolved + validated + passed through, but nothing in the no-code path
+> consumed them. This closes that — a data-only theme that declares
+> `[motion.selection]` / `[motion.ambient]` now gets per-item choreography with
+> zero render code.
+
+- **Design (settled in prose before code, operator confirmed):** the THREE forks —
+  (1) where the hook lives → a **treatment-style wrapper component** (`SelectionMotion`),
+  NOT nav-primitive props (blast radius onto the focus/geometry layer) nor a bare
+  hook (re-exposes the two-transform nesting footgun); (2) what ambient applies to in
+  a heroless flat browse → the **focused card only** (one live loop; ThemeBackground
+  ambient is a deferred separate surface); (3) trigger granularity → **newly-focused
+  only**, entrance-on-focus-gain (animate-out-previous is push-hero-adjacent, deferred).
+  Load-bearing reframing: with no hero, `selection` = the focused card plays its preset
+  **in place** (a pop), resting/exit owned by CSS — not a faked hero entrance.
+- **Shipped on the branch:**
+  - `platform/theme/SelectionMotion.tsx` — wraps each card; two nested elements
+    (selection scale + ambient breathe both animate `transform`, can't share one).
+    Inner reuses `<AmbientMotion>` gated to `focused()` (≤1 live loop). Outer inlines
+    the selection one-shot — **NOT** a `SpecTransition`, because of `compileMotionSpec`'s
+    `fill:both`: a sustained-emphasis preset (`lift`→scale 1.08) would stay popped after
+    focus left, so the player **cancels on focus-loss** → CSS rest (SpecTransition's
+    null-spec path returns *without* cancelling). `skipInitial` semantics (skip the
+    mount run) keep boot quiet — and the first focus move is necessarily post-window-shown,
+    so no per-card `windowShown` wiring needed (D54 landmine covered). Reduced-motion
+    floored by the players (D58.6), not re-implemented.
+  - `declarativeShell` resolves `motion.selection|ambient` via `resolveMotionRef` (raw
+    spec, no reduced arg) and wraps both `renderRow` + `renderCard` in `SelectionMotion`.
+    The card's static `scale-[1.02]` CSS stays as the no-motion baseline; the preset
+    composes on top.
+  - Dogfood: `bare-declarative` declares `selection: "lift"` + `ambient: "breathe"`
+    (a list, so the focused row pops + breathes — `lift` deliberately exercises the
+    cancel-on-defocus path). +1 test asserting the slots resolve + are correct-kind.
+  - **No Rust:** `theme_loader`'s `ThemeMotion` already carries the slots (prior merge);
+    contract didn't widen.
+  - **CI:** tsc + eslint clean; **183 vitest** green (+1; `ViewTransition` path untouched).
+- **Almost / NOT done:** eye-unvalidated (operator hasn't built since this branch) —
+  feel of the row pop + breathe on the flat list is the playtest question. Lab NOT
+  refactored onto the hook (its hero is the physics-spring escape hatch, D58.4 —
+  marginal de-dup, left alone).
+- **Next:** operator playtest (`cargo tauri build` → switch to **Bare (declarative)**;
+  flip About → Developer tools → motion diagnostics on to trace the `[oa-theme-motion]
+  SelectionMotion …` lines) → merge. Then the still-deferred catalog (`push-hero`
+  shared-element · attract = Thrust V · `path-move`/keyframe-timeline), or advance to
+  Thrust S (game-surface shaders).
+
+---
+
 ## 2026-06-18 — ARC 3 Thrust M: wire the motion model into the consumers — ✅ MERGED to main (`60af185`)
 
 > The "wire it up right" tail from the preset-registry entry below. The model +

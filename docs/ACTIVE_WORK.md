@@ -38,12 +38,21 @@ spanned every system but was filed under whichever core happened to be active.
     regression; ③ Rust `theme_loader` widened (`transition`/`selection`/`ambient` =
     `MotionRef` = preset string | inline-spec table); ④ global `--motion-scale`
     token folded into the WAAPI players' numeric timing. tsc/eslint/182 vitest +
-    10 cargo theme_loader green. Deferred: the declarative selection/ambient hook
-    (flat-browse renderer needs its own design). `ViewTransition`/`resolveViewTransition`
+    10 cargo theme_loader green. `ViewTransition`/`resolveViewTransition`
     now have no runtime consumer (kept as tested product code per testbed doc).
-  - **🔭 Thrust M is at a REST POINT** — model + showcase + preset registry +
-    consumer wiring all merged. Remaining motion work is all deferred (declarative
-    selection/ambient hook · `push-hero` shared-element · attract = Thrust V ·
+  - **Declarative selection/ambient hook — 🚧 on `feat/motion-selection-ambient-hook`
+    (2026-06-18; awaiting operator playtest).** The last deferred wiring piece: a
+    `SelectionMotion` wrapper (`platform/theme/SelectionMotion.tsx`) the no-code
+    `declarativeShell` wraps every card in, so a data theme declaring
+    `[motion.selection]` / `[motion.ambient]` gets a focused-card entrance pop
+    (cancel-on-defocus + `skipInitial`, reusing `AmbientMotion` gated to focus for ≤1
+    live loop) with zero render code. No-hero reframing: `selection` = the focused card
+    pops in place, resting via CSS. Dogfood: `bare-declarative` → `selection: "lift"` +
+    `ambient: "breathe"`. tsc/eslint/183 vitest green; no Rust (contract already carried
+    the slots). SESSION_LOG 2026-06-18.
+  - **🔭 Thrust M is near a REST POINT** — model + showcase + preset registry +
+    consumer wiring + the selection/ambient hook (pending playtest) all done. Remaining
+    motion work is all deferred (`push-hero` shared-element · attract = Thrust V ·
     `path-move`/keyframe-timeline). Next ARC 3 move is the operator's call: pick up a
     deferred motion item, or advance to **Thrust S** (game-surface shader chrome). See
     NEXT.md ARC 3 band.

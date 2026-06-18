@@ -36,8 +36,9 @@ import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
-import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import { resolveMotionRef, resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
+import SelectionMotion from "@oa/platform/theme/SelectionMotion";
 import { windowShown } from "@oa/platform/theme/windowShown";
 import { CarouselNav, GridNav, ListNav, WheelNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
@@ -113,6 +114,17 @@ const DeclarativeShell: ThemeEntry = () => {
     resolveThemeMotionSpec(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
+  // Per-item selection + ambient choreography (ARC 3 — the declarative
+  // selection/ambient hook). The theme's `[motion.selection]` / `[motion.ambient]`
+  // slots resolve (preset name OR inline spec) to §2 specs the FOCUSED card plays
+  // via <SelectionMotion>: an entrance pop on focus-gain + an idle loop on the
+  // focused card only. Both are `null` when the theme declares neither — then
+  // SelectionMotion is inert and the browse looks exactly as before (so a bare
+  // theme stays bare). Reduced-motion is floored by the players (D58.6), so these
+  // resolve the RAW spec (no `reducedMotion` arg, unlike `viewSpec`).
+  const selectionSpec = createMemo(() => resolveMotionRef(activeTheme()?.manifest.motion?.selection));
+  const ambientSpec = createMemo(() => resolveMotionRef(activeTheme()?.manifest.motion?.ambient));
+
   // The transition's trigger — what counts as a "view change". The resolved
   // layout primitive (the per-view/per-system axis varies at runtime) gated by
   // `windowShown` — the backend's real "window is on screen now" signal (Rust
@@ -134,51 +146,71 @@ const DeclarativeShell: ThemeEntry = () => {
   // `--color-system-accent` resolve to this game's (possibly theme-overridden)
   // palette.
   const renderRow = (entry: RomEntry, ctx: NavItemContext): JSX.Element => (
-    <div
-      data-system={entry.systemId}
-      class="flex items-center justify-between gap-4 rounded-md px-4"
-      classList={{
-        "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
-        "text-(--color-oa-ink-dim)": !ctx.focused(),
-        "py-1": compact(),
-        "py-2.5": !compact(),
-      }}
+    <SelectionMotion
+      focused={ctx.focused}
+      selection={selectionSpec}
+      ambient={ambientSpec}
+      reducedMotion={reducedMotion}
     >
-      <div class="flex min-w-0 items-center gap-3">
-        <span
-          class="size-2 shrink-0 rounded-full"
-          style={{ "background-color": "var(--color-system-accent)" }}
-          aria-hidden="true"
-        />
-        <span class="truncate text-sm">{entry.title}</span>
+      <div
+        data-system={entry.systemId}
+        class="flex items-center justify-between gap-4 rounded-md px-4"
+        classList={{
+          "bg-white/[0.06] text-(--color-oa-ink)": ctx.focused(),
+          "text-(--color-oa-ink-dim)": !ctx.focused(),
+          "py-1": compact(),
+          "py-2.5": !compact(),
+        }}
+      >
+        <div class="flex min-w-0 items-center gap-3">
+          <span
+            class="size-2 shrink-0 rounded-full"
+            style={{ "background-color": "var(--color-system-accent)" }}
+            aria-hidden="true"
+          />
+          <span class="truncate text-sm">{entry.title}</span>
+        </div>
+        <span class="shrink-0 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+          {sysShort(entry)}
+        </span>
       </div>
-      <span class="shrink-0 text-[0.6rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
-        {sysShort(entry)}
-      </span>
-    </div>
+    </SelectionMotion>
   );
 
   // Tile card for grid/carousel/wheel — a system-tinted panel with the title +
   // system label. Cover-art rendering is a deliberate later accretion (the
   // dogfood surface is the list); a text tile keeps S2 correct + risk-free.
+  // The focused card's static CSS emphasis (`scale-[1.02]` + accent border) is the
+  // NO-MOTION baseline; when the theme declares a `selection` preset, SelectionMotion's
+  // animated pop composes ON TOP of it (a mild stack — fine, the CSS is the resting
+  // indicator, the preset the flourish). h-full/w-full passes through both transform
+  // carriers so the card still fills its aspect box.
   const renderCard = (entry: RomEntry, ctx: NavItemContext): JSX.Element => (
-    <div
-      data-system={entry.systemId}
-      class="flex h-full w-full flex-col justify-end gap-1 overflow-hidden rounded-xl border p-3 transition-[transform,border-color] duration-200"
-      classList={{
-        "border-(--color-system-accent) scale-[1.02]": ctx.focused(),
-        "border-white/5": !ctx.focused(),
-      }}
-      style={{
-        "background-image":
-          "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
-      }}
+    <SelectionMotion
+      class="h-full w-full"
+      focused={ctx.focused}
+      selection={selectionSpec}
+      ambient={ambientSpec}
+      reducedMotion={reducedMotion}
     >
-      <span class="line-clamp-2 text-sm font-medium text-(--color-oa-ink)">{entry.title}</span>
-      <span class="text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
-        {sysShort(entry)}
-      </span>
-    </div>
+      <div
+        data-system={entry.systemId}
+        class="flex h-full w-full flex-col justify-end gap-1 overflow-hidden rounded-xl border p-3 transition-[transform,border-color] duration-200"
+        classList={{
+          "border-(--color-system-accent) scale-[1.02]": ctx.focused(),
+          "border-white/5": !ctx.focused(),
+        }}
+        style={{
+          "background-image":
+            "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
+        }}
+      >
+        <span class="line-clamp-2 text-sm font-medium text-(--color-oa-ink)">{entry.title}</span>
+        <span class="text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
+          {sysShort(entry)}
+        </span>
+      </div>
+    </SelectionMotion>
   );
 
   return (

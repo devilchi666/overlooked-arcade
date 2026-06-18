@@ -2185,3 +2185,27 @@ preset registry + contract on `feat/motion-presets-and-wiring`). The shape that 
    question this session) is then available on demand without shipping log spam —
    strip the *code* only at final ship. (Operator call 2026-06-18: a toggle beats
    always-on-then-strip — flip it as needed until everything's perfected.)
+
+10. **The declarative selection/ambient hook is a wrapper component, and in a
+    heroless flat browse `selection` plays IN PLACE** (2026-06-18, operator confirmed
+    the reframing before code). The `selection`/`ambient` slots' no-code consumer is
+    `platform/theme/SelectionMotion.tsx` — a treatment-style wrapper the
+    `DeclarativeShell` wraps every card in — NOT props on the nav primitives (would
+    push WAAPI motion into the focus/geometry layer with a blast radius across every
+    primitive + theme + engine surface) and NOT a bare hook (would re-expose the
+    two-transform nesting footgun). The load-bearing semantic call: the audit's
+    "selection choreography" assumes a HERO whose content swaps on focus (the Graphics
+    Lab), but the DeclarativeShell is a flat grid/list of PERSISTENT cards with no
+    hero — so there `selection` = the focused card plays its preset **in place** (a
+    pop), with the resting + un-focus state owned by CSS, **not** a faked hero
+    entrance and **not** an authored animate-out of the previous item (that's
+    push-hero-adjacent, deferred). Three sub-calls fall out: (a) ambient applies to
+    the **focused card only** (≤1 live loop; ThemeBackground ambient is a deferred
+    separate surface); (b) the selection player must **cancel on focus-loss** because
+    `compileMotionSpec` uses `fill:both` — a sustained-emphasis preset (`lift`→1.08)
+    would otherwise stay popped forever (this is why it inlines the one-shot rather
+    than reuse `SpecTransition`, whose null-spec path returns without cancelling); (c)
+    `skipInitial` (skip the mount effect) keeps boot quiet, and since the first focus
+    move is necessarily post-window-shown it covers the D54 "before window shown"
+    landmine with no per-card `windowShown` wiring. The lab's hero stays on its
+    physics spring (D58.4 escape hatch) — not collapsed into the declarative hook.

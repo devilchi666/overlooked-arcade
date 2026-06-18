@@ -243,9 +243,13 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
          `SpecTransition.skipInitial` (suppresses the masked mount play) + the
          existing `windowShown`-keyed trigger — no M1 "plays before window shown"
          regression. (`delayMs` lived only inside `ViewTransition`, never used by
-         declarativeShell.) ⬜ The platform nav **selection/ambient hook** (data
-         themes get choreography without custom render code) is DEFERRED — the flat
-         no-code browse renderer needs its own design.
+         declarativeShell.) ✅ The declarative **selection/ambient hook** (data themes
+         get choreography without custom render code) shipped on
+         `feat/motion-selection-ambient-hook` (2026-06-18; awaiting operator playtest):
+         a `SelectionMotion` wrapper (in `platform/theme/SelectionMotion.tsx`) the
+         `declarativeShell` wraps every card in — focused-card entrance pop
+         (cancel-on-defocus, `skipInitial`) + one ambient loop on the focused card.
+         Dogfood: `bare-declarative` declares `selection: "lift"` + `ambient: "breathe"`.
       3. ✅ **Rust `theme_loader`** widened — `ThemeMotion` gains `transition`/
          `selection`/`ambient: Option<MotionRef>` (`MotionRef` = untagged
          `Preset(String)` | `Spec(toml::Value)`; additive, no `deny_unknown_fields`).
