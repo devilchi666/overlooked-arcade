@@ -9,99 +9,57 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-18 — Declarative Showcase arc S1: cover art + the Aurora showcase theme — 🚧 on `feat/motion-selection-ambient-hook` (awaiting operator playtest)
+## 2026-06-18 — Declarative selection/ambient hook + the Declarative Showcase arc S1 — ✅ MERGED to main (branch `feat/motion-selection-ambient-hook`)
 
-> Operator reframing: the Graphics Lab proves what the ENGINE can do *via code*, but a
-> distributable file theme can't ship code (PD1) — so the only honest proof that
-> *loadable file themes can use everything* is a showcase on the DECLARATIVE path
-> (theme.toml → DeclarativeShell), not the code Lab. New arc:
-> [PLANS/declarative-showcase.md](../../PLANS/declarative-showcase.md). The
-> selection/ambient hook (below) becomes S1's first feature, exercised on box-art cards.
+> Started as the deferred selection/ambient hook; mid-session the operator reframed it
+> into a new arc: the Graphics Lab proves what the ENGINE can do *via code*, but a
+> distributable file theme ships **no code** (PD1) — so the only honest proof that
+> *loadable file themes can use everything* is a showcase on the **declarative path**
+> (`theme.toml` → `DeclarativeShell`), not the code Lab. New arc:
+> [PLANS/declarative-showcase.md](../../PLANS/declarative-showcase.md). Operator
+> playtested **Aurora** (build) — looks premium.
 
-- **Shipped on the branch (S1):**
-  - **`DeclarativeShell` renders cover art** on cards (grid/carousel/wheel) via
-    `useMedia().coverUrl` (was text-only — "deferred accretion" closed): box art fills
-    the card with a bottom gradient scrim for title legibility; system-tinted panel
-    fallback when the library has no art; focus = accent border + accent glow shadow.
-    Dropped the static `scale-[1.02]` (SelectionMotion's `lift` owns the animated pop
-    now; cards are centred → symmetric scale, MOTION.md #3).
+- **The hook — `platform/theme/SelectionMotion.tsx`** (the no-code consumer of the
+  `[motion.selection]`/`[motion.ambient]` slots; D58.10). A treatment-style wrapper the
+  `DeclarativeShell` wraps every card in — NOT nav-primitive props (blast radius) nor a
+  bare hook (the two-transform nesting footgun). Two nested elements (selection +
+  ambient both animate `transform`); inner reuses `<AmbientMotion>` gated to `focused()`
+  (≤1 live loop); outer inlines the selection one-shot and **cancels on focus-loss**
+  (because `compileMotionSpec` uses `fill:both`, a sustained-emphasis `lift` would stay
+  popped otherwise — so it can't be a plain `SpecTransition`). `skipInitial` keeps boot
+  quiet (D54). Reduced-motion floored by the players (D58.6). No-hero reframing: in a
+  flat browse `selection` = the focused item plays its preset **in place**.
+- **Declarative Showcase S1:**
+  - **`DeclarativeShell` renders cover art** on cards (was text-only) via
+    `useMedia().coverUrl`: box art fills the card + a bottom gradient scrim for title
+    legibility; system-tinted fallback when the library has no art; focus = accent
+    border + accent glow. (`lift` owns the animated pop; centred cards scale
+    symmetrically — MOTION.md #3.)
   - **`aurora` on-disk showcase theme** (`themes/community/aurora/{theme.toml,
     tokens.toml,per-system.toml}`) — the declarative counterpart to the code Lab:
-    carousel/coverflow layout, premium dark palette, 6 vivid per-system accents,
-    PlayStation glyphs, full motion (slide transition + lift selection + breathe
-    ambient, all named presets). Discovered by the disk loader (source-tree path) →
-    selectable in Appearance, zero theme code.
-  - **`bare-declarative` reverted to the minimal floor** (fade view_transition only) —
-    it mirrors `bare`; selection/ambient now lives on `aurora`. Dogfood test updated.
-  - Rust `theme_loader` test `shipped_showcase_theme_parses` (aurora round-trips:
-    carousel + 3 motion preset slots + tokens + per-system).
-- **Almost / NOT done:** eye-unvalidated (operator hasn't built since). The
-  selection/ambient *feel* on box-art cards is the playtest question.
-- **Next:** operator playtest (`cargo tauri build` → Appearance → **Aurora**) → merge.
-  Then S2 (theme background + now-focused detail strip).
-
----
-
-## 2026-06-18 — ARC 3 Thrust M: the declarative selection/ambient hook — 🚧 on `feat/motion-selection-ambient-hook` (awaiting operator playtest)
-
-> The one piece the "wire it up right" branch deferred: the `selection`/`ambient`
-> slots resolved + validated + passed through, but nothing in the no-code path
-> consumed them. This closes that — a data-only theme that declares
-> `[motion.selection]` / `[motion.ambient]` now gets per-item choreography with
-> zero render code.
-
-- **Design (settled in prose before code, operator confirmed):** the THREE forks —
-  (1) where the hook lives → a **treatment-style wrapper component** (`SelectionMotion`),
-  NOT nav-primitive props (blast radius onto the focus/geometry layer) nor a bare
-  hook (re-exposes the two-transform nesting footgun); (2) what ambient applies to in
-  a heroless flat browse → the **focused card only** (one live loop; ThemeBackground
-  ambient is a deferred separate surface); (3) trigger granularity → **newly-focused
-  only**, entrance-on-focus-gain (animate-out-previous is push-hero-adjacent, deferred).
-  Load-bearing reframing: with no hero, `selection` = the focused card plays its preset
-  **in place** (a pop), resting/exit owned by CSS — not a faked hero entrance.
-- **Shipped on the branch:**
-  - `platform/theme/SelectionMotion.tsx` — wraps each card; two nested elements
-    (selection scale + ambient breathe both animate `transform`, can't share one).
-    Inner reuses `<AmbientMotion>` gated to `focused()` (≤1 live loop). Outer inlines
-    the selection one-shot — **NOT** a `SpecTransition`, because of `compileMotionSpec`'s
-    `fill:both`: a sustained-emphasis preset (`lift`→scale 1.08) would stay popped after
-    focus left, so the player **cancels on focus-loss** → CSS rest (SpecTransition's
-    null-spec path returns *without* cancelling). `skipInitial` semantics (skip the
-    mount run) keep boot quiet — and the first focus move is necessarily post-window-shown,
-    so no per-card `windowShown` wiring needed (D54 landmine covered). Reduced-motion
-    floored by the players (D58.6), not re-implemented.
-  - `declarativeShell` resolves `motion.selection|ambient` via `resolveMotionRef` (raw
-    spec, no reduced arg) and wraps both `renderRow` + `renderCard` in `SelectionMotion`.
-    The card's static `scale-[1.02]` CSS stays as the no-motion baseline; the preset
-    composes on top.
-  - Dogfood: `bare-declarative` declares `selection: "title-rise"` + `ambient:
-    "glow-pulse"`. +1 test asserting the slots resolve + are correct-kind.
-  - **Playtest fix (operator: list game-names "bounced back and forth / flew off the
-    left side, out of the highlight"):** the dogfood originally used `lift`/`breathe`
-    (both `scale`) on a FULL-WIDTH row — a centred scale shifts the left edge out by
-    `(scale−1)·width/2`, flinging left-aligned content left + oscillating it. Root
-    cause is architectural, not a SelectionMotion bug → fixed PROPERLY (no origin
-    band-aid): scale presets are for centred CARDS; full-width ROWS use
-    non-width-changing motion. Switched the list dogfood to `title-rise` (y) +
-    `glow-pulse`; added `overflow-hidden` to the DeclarativeShell root (MOTION.md #2
-    clipping ancestor, so the y-rise can't spawn a transient scrollbar). New MOTION.md
-    rules #3 (scale↔cards / y·opacity·glow↔rows) + #4 (per-item transform clipping).
-    The grid/carousel/wheel card path still uses scale presets (centred → symmetric).
-    **(Superseded by the Declarative Showcase S1 entry above:** `bare-declarative`
-    reverted to the minimal floor; the selection/ambient demo moved to the `aurora`
-    carousel, where `lift`/`breathe` on centred covers is the right surface.**)**
-  - **No Rust:** `theme_loader`'s `ThemeMotion` already carries the slots (prior merge);
-    contract didn't widen.
-  - **CI:** tsc + eslint clean; **183 vitest** green (+1; `ViewTransition` path untouched).
-- **Almost / NOT done:** eye-unvalidated (operator hasn't built since this branch) —
-  feel of the row pop + breathe on the flat list is the playtest question. Lab NOT
-  refactored onto the hook (its hero is the physics-spring escape hatch, D58.4 —
-  marginal de-dup, left alone).
-- **Next:** operator playtest (`cargo tauri build` → switch to **Bare (declarative)**;
-  flip About → Developer tools → motion diagnostics on to trace the `[oa-theme-motion]
-  SelectionMotion …` lines) → merge. Then the still-deferred catalog (`push-hero`
-  shared-element · attract = Thrust V · `path-move`/keyframe-timeline), or advance to
-  Thrust S (game-surface shaders).
+    coverflow layout, premium dark palette, 6 vivid per-system accents, PlayStation
+    glyphs, full motion (slide / lift / breathe, named presets). Discovered by the disk
+    loader, selectable in Appearance, **zero theme code**.
+  - **`bare-declarative` reverted to the minimal floor** (fade only) — it mirrors `bare`;
+    selection/ambient lives on `aurora`.
+  - **BIOS files hidden from the declarative browse** — `RomEntry` (the raw browse list)
+    doesn't carry the backend `is_bios` flag (that's on the grouped `VariantInfo`), and
+    `casual_view_defaults` is still unwired (VL Phase F), so the games memo applies the
+    same pure title rule the backend uses (`[BIOS]`/`(BIOS)` annotation).
+  - Rust `theme_loader` test `shipped_showcase_theme_parses` (aurora round-trips).
+- **MOTION.md rules added** (from a playtest round): #3 scale presets ↔ centred cards /
+  full-width rows use y·opacity·glow (a centred scale flings left-aligned row content);
+  #4 a per-item transform needs the shell-root clipping ancestor (`overflow-hidden`).
+- **Ops finding (no code):** a **stale `target/release/themes/community/`** (Jun 16,
+  neon-list only) shadowed the repo themes — the loader prefers `<exe_dir>/themes` over
+  the source-tree fallback, so Aurora (repo-only) was invisible until the stale dir was
+  removed. Nothing in the build creates it; it was a one-off leftover. (Latent footgun:
+  any stray `themes/` next to the exe hides repo themes — harden the loader to merge
+  both candidates if it recurs.)
+- **CI:** tsc + eslint + 183 vitest green; cargo `theme_loader` 11 green.
+- **Next:** S2 — theme-supplied backgrounds (a file theme ships its own backdrop;
+  needs the disk-asset `basePath` → `convertFileSrc` plumbing) + a now-focused detail
+  strip. Then S3 (list thumbnails + metadata + richer recognized settings vocabulary).
 
 ---
 

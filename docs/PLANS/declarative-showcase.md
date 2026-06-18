@@ -43,13 +43,20 @@ surface structure.
 
 ## Slices
 
-- **S1 — cover art + Aurora + motion ✅ (this branch).** `DeclarativeShell` renders
-  box-art covers on cards (was text-only) with a system-tinted fallback + a legibility
-  scrim + a focus glow. New `aurora` theme: carousel layout, premium dark palette, vivid
-  per-system accents, glyph set, full motion (slide transition + lift selection + breathe
-  ambient). The selection/ambient hook (built earlier on this branch) is exercised here
-  on box-art cards (where scale presets belong). `bare-declarative` reverted to its
-  minimal floor.
+- **S1 — cover art + Aurora + motion ✅ MERGED to main 2026-06-18** (operator
+  playtested — premium). `DeclarativeShell` renders box-art covers on cards (was
+  text-only) with a system-tinted fallback + a legibility scrim + a focus glow. New
+  `aurora` theme: carousel layout, premium dark palette, vivid per-system accents, glyph
+  set, full motion (slide transition + lift selection + breathe ambient). The
+  selection/ambient hook (`SelectionMotion`, built earlier on this branch) is exercised
+  here on box-art cards (where scale presets belong). **BIOS files hidden** from the
+  declarative browse (a title rule mirroring `title_parse` — `RomEntry` doesn't carry
+  `is_bios`, and `casual_view_defaults` is unwired till VL Phase F). `bare-declarative`
+  reverted to its minimal floor.
+  - **Footgun found:** the disk loader prefers `<exe_dir>/themes` over the source-tree
+    fallback, so a **stale `target/release/themes/`** silently shadowed the repo themes
+    (Aurora invisible). Removed it (a one-off leftover; the build doesn't create it). If
+    it recurs, harden the loader to merge both candidates (deduped) instead of first-wins.
 - **S2 — background + now-focused detail (next).** A theme-supplied background through
   `ThemeBackground` (needs the disk-asset `basePath` → `convertFileSrc` plumbing — the
   S5.1 cascade already resolves theme/system asset bases); optionally a focused-game

@@ -244,13 +244,13 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
          existing `windowShown`-keyed trigger — no M1 "plays before window shown"
          regression. (`delayMs` lived only inside `ViewTransition`, never used by
          declarativeShell.) ✅ The declarative **selection/ambient hook** (data themes
-         get choreography without custom render code) shipped on
-         `feat/motion-selection-ambient-hook` (2026-06-18; awaiting operator playtest):
-         a `SelectionMotion` wrapper (in `platform/theme/SelectionMotion.tsx`) the
-         `declarativeShell` wraps every card in — focused-card entrance pop
-         (cancel-on-defocus, `skipInitial`) + one ambient loop on the focused card.
-         Now exercised on the on-disk **`aurora`** showcase (`bare-declarative` reverted
-         to the minimal floor) — see the **Declarative Showcase** arc below.
+         get choreography without custom render code) **MERGED to main 2026-06-18**
+         (`feat/motion-selection-ambient-hook`; operator playtested): a `SelectionMotion`
+         wrapper (`platform/theme/SelectionMotion.tsx`, D58.10) the `declarativeShell`
+         wraps every card in — focused-item pop (cancel-on-defocus, `skipInitial`) + one
+         ambient loop on the focused item. Exercised on the on-disk **`aurora`** showcase
+         (`bare-declarative` kept as the minimal floor) — see the **Declarative Showcase**
+         arc below.
       3. ✅ **Rust `theme_loader`** widened — `ThemeMotion` gains `transition`/
          `selection`/`ambient: Option<MotionRef>` (`MotionRef` = untagged
          `Preset(String)` | `Spec(toml::Value)`; additive, no `deny_unknown_fields`).
@@ -266,16 +266,16 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md) §3).
 
 **Declarative Showcase — make the file-theme path capable & beautiful** `[arc opened
-2026-06-18; S1 🚧 awaiting playtest on feat/motion-selection-ambient-hook]`. The Graphics
-Lab proves the ENGINE via code; a distributable `.oatheme` ships no code (PD1), so the
-only honest proof that **loadable file themes can use everything** is a showcase on the
-declarative path (`theme.toml` → `DeclarativeShell`). Each enrichment lands in
-`DeclarativeShell` (data-driven) → unlocks it for every file theme. **S1:** cover art on
-cards + the on-disk **`aurora`** showcase (coverflow · per-system neon · slide/lift/breathe
-motion); `bare-declarative` kept as the minimal floor. **S2 (next):** theme background +
-now-focused detail strip. **S3:** list thumbnails + metadata + richer recognized
-settings vocabulary. Plan:
-[PLANS/declarative-showcase.md](PLANS/declarative-showcase.md).
+2026-06-18; S1 ✅ MERGED to main]`. The Graphics Lab proves the ENGINE via code; a
+distributable `.oatheme` ships no code (PD1), so the only honest proof that **loadable
+file themes can use everything** is a showcase on the declarative path (`theme.toml` →
+`DeclarativeShell`). Each enrichment lands in `DeclarativeShell` (data-driven) → unlocks
+it for every file theme. **S1 ✅:** cover art on cards + the selection/ambient hook + the
+on-disk **`aurora`** showcase (coverflow · per-system neon · slide/lift/breathe motion) +
+BIOS hidden from the declarative browse; `bare-declarative` kept as the minimal floor.
+**S2 (next):** theme-supplied backgrounds (`basePath` → `convertFileSrc`) + a now-focused
+detail strip. **S3:** list thumbnails + metadata + richer recognized settings vocabulary.
+Plan: [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).
