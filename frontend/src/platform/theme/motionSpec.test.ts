@@ -71,6 +71,27 @@ describe("compileMotionSpec — channels → WAAPI keyframes", () => {
     expect(compileMotionSpec({ duration: 300, repeat: 3, channels: { opacity: [0, 1] } })!.options.iterations).toBe(3);
   });
 
+  it("prepends perspective() for 3D rotate channels (flip/tilt)", () => {
+    const c = compileMotionSpec({ duration: 400, channels: { rotateY: [-90, 0] } })!;
+    expect(c.keyframes[0].transform).toBe("perspective(800px) rotateY(-90deg)");
+    expect(c.keyframes[1].transform).toBe("perspective(800px) rotateY(0deg)");
+  });
+
+  it("emits string channels (filter, box-shadow) as their own keyframe props", () => {
+    const c = compileMotionSpec({
+      duration: 500,
+      channels: { filter: ["blur(0px)", "blur(6px)"], boxShadow: ["0 0 0 #000", "0 0 20px #f0f"] },
+    })!;
+    expect(c.keyframes[0].filter).toBe("blur(0px)");
+    expect(c.keyframes[1].filter).toBe("blur(6px)");
+    expect(c.keyframes[0].boxShadow).toBe("0 0 0 #000");
+    expect(c.keyframes[1].boxShadow).toBe("0 0 20px #f0f");
+  });
+
+  it("a spec with only string channels still compiles (not a no-op)", () => {
+    expect(compileMotionSpec({ duration: 300, channels: { boxShadow: ["a", "b"] } })).not.toBeNull();
+  });
+
   it("returns null for a no-op (no channels, or non-positive duration)", () => {
     expect(compileMotionSpec({ duration: 300, channels: {} })).toBeNull();
     expect(compileMotionSpec({ duration: 0, channels: { opacity: [0, 1] } })).toBeNull();
