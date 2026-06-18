@@ -77,6 +77,19 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
+### ⭐ START HERE — Declarative Showcase S3 (list-row thumbnails + metadata + richer recognized settings vocab)
+
+The chosen next slice (operator, 2026-06-18). Full self-contained kickoff —
+files to load, the task, the design forks to settle first, the landmines, the
+verify/branch/merge steps — is in **[PLANS/declarative-showcase.md](PLANS/declarative-showcase.md)
+§"S3 kickoff — start here"**. S1 + S2 of the arc are MERGED to main; S3 is
+DATA-driven on the `DeclarativeShell` (no per-theme code), built D59-style
+(recognized/wired now, declared-but-unknown persists + inert). **Design first
+(prose, then AskUserQuestion) — don't jump to code.** Three parts: (1) list-row
+cover thumbnails (`renderRow`); (2) compact row metadata (`media.media(entry.id)?.metadata`
+— rom-id key, NOT identity); (3) turn `RECOGNIZED_SETTINGS` into a curated,
+documented contract of keys the shell honors. Dogfood on `neon-list` (list theme).
+
 ### oa-packs infrastructure — Slice 5 tail (`editorial` consumer) `[ARC opened 2026-06-15]`
 
 **Plan:** [PLANS/oa-packs-infrastructure.md](PLANS/oa-packs-infrastructure.md) ·

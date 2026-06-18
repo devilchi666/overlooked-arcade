@@ -94,3 +94,76 @@ code Lab.
 Select **Aurora** in Settings → Appearance (`cargo tauri build`): a coverflow of real
 box art, each focused cover lifting + breathing with a system-coloured glow, the whole
 shell re-tinting per system — all from data, no theme code. That's the proof.
+
+## S3 kickoff — start here
+
+**The chosen next slice (operator, 2026-06-18).** S1 + S2 are MERGED to main; this is
+the self-contained brief — a fresh session can start from this section alone.
+
+**Startup:** normal session start (CLAUDE.md → docs/INDEX.md → docs/ACTIVE_WORK.md "In
+flight"), then load: this plan; SESSION_LOG top entries (S2a/S2b ✅ MERGED, incl. the
+metadata-key fix + BigBox polish); DECISIONS **D59** (low-floor-now / high-ceiling-
+reserved — the governing principle S3 must follow).
+
+**Code to load:**
+- `frontend/src/platform/theme/declarativeShell.tsx` — `RECOGNIZED_SETTINGS` (today
+  recognizes ONLY `compactRows`), `renderRow` (LIST layout, currently text-only:
+  accent dot + title + system short), `renderCard` (cards already have cover art), the
+  `games` memo, `coverFor`/`logoFor`/`focusedMeta`, the S2b detail composition
+  (`elementContent`/`renderDetail`/`CHIP_KINDS`).
+- `frontend/src/platform/theme/themeSettings.ts` — `useThemeSettings().get<T>(key, default)`.
+- `frontend/src/platform/theme/manifest.ts` — `ThemeSettingsSchema`/`ThemeSettingControl`,
+  `ELEMENT_KINDS`. `frontend/src/platform/theme/validate.ts` — settings_schema validation.
+- `frontend/src/platform/library/media.tsx` — ⚠️ cover/logo ART is identity-keyed
+  (`coverUrl(systemId, identityId ?? id, …)`); per-game METADATA is rom-id-keyed
+  (`media.media(entry.id)?.metadata`). Use `entry.id` for metadata; don't unify.
+- Dogfood themes: `themes/community/neon-list/theme.toml` (LIST — the natural vehicle for
+  row thumbnails), `themes/community/aurora/theme.toml` (carousel),
+  `frontend/src/themes/declarative-bare/index.ts` (minimal list floor — keep minimal).
+- The engine Appearance panel already renders `settings_schema` generically + persists
+  per theme (grep `engine/`); S3 adds RECOGNIZED keys the shell ACTS on, not new panel
+  plumbing.
+
+**Task — three parts, all DATA-driven on `DeclarativeShell` (no per-theme code), each
+built D59-style (recognized/wired now; declared-but-unknown persists + stays inert):**
+1. **List-row thumbnails** — `renderRow` gains a small leading cover thumbnail (reuse
+   `coverFor`; text fallback when no art).
+2. **Row metadata** — compact metadata on rows via `media.media(entry.id)?.metadata`
+   (rom-id key!).
+3. **Richer recognized settings vocabulary** — turn `RECOGNIZED_SETTINGS` from the single
+   `compactRows` into a curated, documented contract of keys the shell honors (candidates:
+   row thumbnails on/off, row metadata on/off, density, card/tile size). Other declared
+   `settings_schema` keys keep persisting + rendering in Appearance but stay inert.
+
+**Design first (operator workflow):** discuss + push back in PROSE, settle the shape,
+only THEN fire AskUserQuestion if a real fork remains — don't jump to code. Forks to
+settle: the recognized-settings contract (which keys / types / defaults / how
+"recognized vs declared-inert" is expressed — a typed registry?); row anatomy (thumbnail
+size/aspect/position; which metadata, how compact; gated by recognized toggles?); any
+high-ceiling stub needed per D59; dogfood (neon-list authors thumbnails+metadata on;
+bare-declarative stays minimal).
+
+**Landmines / conventions:**
+- Metadata = rom id; art = identity id (see media.tsx note).
+- DON'T run `cargo fmt -p oa-shell` — it reformats the whole crate (~8000-line churn
+  once). Match style by hand or fmt only touched files.
+- Operator playtests with `cargo tauri build` → `target/release/oa-shell.exe`. A stale
+  `<exe_dir>/themes/community/` SHADOWS the repo themes (first-match-wins in
+  `theme_loader`) — if a theme/asset doesn't show, delete the stale exe-dir copy before
+  debugging.
+- MOTION.md rules #3 (scale↔cards / y·opacity·glow↔rows) + #4 (clipping ancestor) if
+  motion is added; reduced-motion is the players' floor (D58.6).
+
+**Verify per step:** `cd frontend && ./node_modules/.bin/tsc --noEmit && npm run lint &&
+./node_modules/.bin/vitest run src/platform/theme src/themes`. Rust only if a NEW
+manifest field needs round-tripping (settings_schema + `detail` already round-trip — a
+curated recognized-key set is frontend-only); if so `cargo test -p oa-shell theme_loader`.
+
+**Branch/merge:** one branch (e.g. `feat/declarative-showcase-s3`); commit each coherent
+step; operator playtests on `neon-list` (Settings → Appearance) + Aurora; flip
+SESSION_LOG/ACTIVE_WORK/NEXT/this-plan statuses + `--no-ff` merge at a playtestable
+milestone (same as S1/S2).
+
+**NOT S3 (deferred):** the free-form **canvas** (honor element `position`/`size` + a
+layout engine + Theme Studio = ARC 4 — contract + stubs already in place per D59, so
+it's additive); `push-hero`/attract (Thrust V); the per-element `ambient` slot.
