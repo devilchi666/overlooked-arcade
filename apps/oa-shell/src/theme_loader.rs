@@ -112,10 +112,11 @@ pub struct DiskThemeManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<Vec<ThemeSettingControl>>,
     /// Declarative motion (Theming ARC 3 Thrust M / D52) — DATA-only cinematic
-    /// fields the frontend `DeclarativeShell` honors. M1 carries the
-    /// `[motion.view_transition]` table through to the frontend, which
-    /// `validateTheme()` then checks. Loose strings here (like `glyph_set` /
-    /// `views`); the frontend is the authority on the preset allow-list.
+    /// fields the frontend `DeclarativeShell` honors. Carries the legacy
+    /// `[motion.view_transition]` table AND the M-mod `transition` / `selection` /
+    /// `ambient` `MotionRef` slots (string preset or inline spec table) through to
+    /// the frontend, which `validateTheme()` then checks. Loose strings here (like
+    /// `glyph_set` / `views`); the frontend is the authority on the allow-list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<ThemeMotion>,
 }
@@ -133,13 +134,41 @@ pub struct PerSystemUiFlags {
     pub sfx: Option<bool>,
 }
 
-/// Declarative motion (ARC 3 M1) — mirrors the TS `ThemeMotion`. M1 names one
-/// field, `view_transition`; the struct widens additively (M3) like the rest of
-/// the manifest contract.
+/// Declarative motion (ARC 3 Thrust M) — mirrors the TS `ThemeMotion`. M1 named
+/// one field, `view_transition`; M-mod added the unified `transition` /
+/// `selection` / `ambient` slots, each a `MotionRef`. The struct widens
+/// additively (no `deny_unknown_fields`), so a `theme.toml` that declares any
+/// subset parses, and the frontend (`resolveMotionRef` + `validateTheme`) stays
+/// the authority on preset names + the spec shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ThemeMotion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view_transition: Option<ViewTransitionConfig>,
+    /// Route/view-change motion — a `transition`-kind `MotionRef` (preset name or
+    /// inline spec). Supersedes `view_transition` on the frontend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<MotionRef>,
+    /// Focused-item entrance — a `selection`-kind `MotionRef`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<MotionRef>,
+    /// Idle loop — an `ambient`-kind `MotionRef`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ambient: Option<MotionRef>,
+}
+
+/// A `MotionRef` (M-mod) — either a NAMED preset (`transition = "slide"`) or an
+/// inline `[motion.transition]` spec table. Loose pass-through: the inline arm is
+/// an opaque `toml::Value` carried verbatim into the JSON the frontend reads, so
+/// there is no Rust `MotionSpec` mirror to drift out of sync with the TS one.
+/// `validateTheme()` + `resolveMotionRef()` on the frontend remain the authority
+/// on the preset allow-list and the spec shape (same philosophy as the loose
+/// `view_transition.preset` / `glyph_set` / `views` strings). `Preset` is listed
+/// first so a string deserializes to it; only a table falls through to `Spec`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MotionRef {
+    Preset(String),
+    Spec(toml::Value),
 }
 
 /// One `[motion.view_transition]` declaration — a preset selection plus
@@ -575,10 +604,22 @@ layout = "carousel"
 tg16 = "wheel"
 lynx = "grid"
 
+[motion]
+transition = "slide"
+
 [motion.view_transition]
 preset = "scale"
 duration = "280ms"
 easing = "ease-out"
+
+[motion.ambient]
+duration = 2600
+easing = "ease-in-out"
+repeat = "infinite"
+direction = "alternate"
+
+[motion.ambient.channels]
+scale = [1.0, 1.03]
 
 [[settings_schema]]
 type = "toggle"
@@ -693,6 +734,27 @@ options = [
         assert_eq!(vt.preset, "scale");
         assert_eq!(vt.duration.as_deref(), Some("280ms"));
         assert_eq!(vt.easing.as_deref(), Some("ease-out"));
+
+        // --- motion (ARC 3 M-mod): the unified MotionRef slots parse through ---
+        let motion = t.manifest.motion.as_ref().expect("motion parsed");
+        // `transition = "slide"` → the named-preset arm.
+        assert_eq!(motion.transition, Some(MotionRef::Preset("slide".to_string())));
+        // `[motion.ambient]` table → the inline-spec arm (opaque toml::Value).
+        match motion.ambient.as_ref().expect("motion.ambient parsed") {
+            MotionRef::Spec(v) => {
+                assert_eq!(v.get("duration").and_then(|d| d.as_integer()), Some(2600));
+                assert_eq!(v.get("repeat").and_then(|r| r.as_str()), Some("infinite"));
+                assert!(v.get("channels").and_then(|c| c.get("scale")).is_some());
+            }
+            other => panic!("expected ambient inline spec, got {other:?}"),
+        }
+        assert!(motion.selection.is_none()); // not declared
+
+        // The whole point: it must round-trip to the JSON the frontend reads.
+        // A string ref stays a JSON string; an inline spec stays a JSON object.
+        let json = serde_json::to_string(&t.manifest).expect("manifest -> json");
+        assert!(json.contains(r#""transition":"slide""#), "transition ref in json: {json}");
+        assert!(json.contains(r#""ambient":{"#), "ambient inline spec in json: {json}");
 
         // --- base path resolves to the theme's own directory ---
         assert_eq!(t.base_path, dir.to_string_lossy());
