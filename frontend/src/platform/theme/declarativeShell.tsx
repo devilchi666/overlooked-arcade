@@ -281,52 +281,59 @@ const DeclarativeShell: ThemeEntry = () => {
   // (graceful); a reserved/unbound kind → nothing (the vocabulary accretes).
   const elementContent = (kind: string): JSX.Element => {
     const meta = (): GameMetadata | undefined => focusedMeta();
-    const metaLine = (text: () => string | number | undefined): JSX.Element => (
+    // A metadata pill (BigBox-style chip). Renders nothing when the value is absent.
+    const chip = (text: () => string | number | undefined): JSX.Element => (
       <Show when={text() != null && text() !== ""}>
-        <span class="text-sm text-(--color-oa-ink-dim)">{String(text())}</span>
+        <span class="rounded-full border border-white/15 bg-white/10 px-3.5 py-1 text-[0.7rem] font-semibold uppercase tracking-wider text-white/85 backdrop-blur-sm">
+          {String(text())}
+        </span>
       </Show>
     );
     switch (kind) {
       case "title":
         return (
-          <h2 class="max-w-3xl text-4xl font-black leading-tight tracking-tight drop-shadow">
+          <h2 class="max-w-4xl text-5xl font-black leading-[1.04] tracking-tight text-(--color-oa-ink) drop-shadow-[0_2px_24px_rgba(0,0,0,.7)]">
             {focusedEntry()?.title}
           </h2>
         );
       case "system":
         return (
-          <span class="text-xs font-bold uppercase tracking-[0.4em] text-(--color-system-accent)">
+          <span class="text-xs font-bold uppercase tracking-[0.4em] text-(--color-system-accent) drop-shadow">
             {focusedEntry() ? sysShort(focusedEntry()!) : ""}
           </span>
         );
       case "year":
-        return metaLine(() => meta()?.year);
+        return chip(() => meta()?.year);
       case "genre":
-        return metaLine(() => meta()?.genre);
+        return chip(() => meta()?.genre);
       case "developer":
-        return metaLine(() => meta()?.developer);
+        return chip(() => meta()?.developer);
       case "publisher":
-        return metaLine(() => meta()?.publisher);
+        return chip(() => meta()?.publisher);
       case "players":
-        return metaLine(() => (meta()?.players != null ? `${meta()!.players}P` : undefined));
+        return chip(() => (meta()?.players != null ? `${meta()!.players}P` : undefined));
       case "description":
         return (
           <Show when={meta()?.description}>
             {(d) => (
-              <p class="line-clamp-3 max-w-2xl text-sm leading-relaxed text-(--color-oa-ink-dim)">{d()}</p>
+              <p class="line-clamp-3 max-w-2xl text-sm leading-relaxed text-(--color-oa-ink-dim) drop-shadow">
+                {d()}
+              </p>
             )}
           </Show>
         );
       case "logo":
         return (
           <Show when={focusedEntry() && logoFor(focusedEntry()!)}>
-            {(u) => <img src={u()} alt="" class="max-h-24 w-auto max-w-md object-contain drop-shadow-lg" />}
+            {(u) => (
+              <img src={u()} alt="" class="max-h-28 w-auto max-w-lg object-contain drop-shadow-[0_4px_24px_rgba(0,0,0,.6)]" />
+            )}
           </Show>
         );
       case "cover":
         return (
           <Show when={focusedEntry() && coverFor(focusedEntry()!)}>
-            {(u) => <img src={u()} alt="" class="max-h-48 w-auto rounded-lg object-contain shadow-xl" />}
+            {(u) => <img src={u()} alt="" class="max-h-56 w-auto rounded-lg object-contain shadow-2xl" />}
           </Show>
         );
       default:
@@ -334,6 +341,12 @@ const DeclarativeShell: ThemeEntry = () => {
         return <></>;
     }
   };
+
+  // Metadata "chip" kinds flow together on one wrapping row; everything else
+  // (logo / system / title / description / cover) takes its own line. The engine
+  // arranges this for the bounded-slot model — the free-form canvas places by
+  // `position` later (D59). Declared order is preserved within the flow.
+  const CHIP_KINDS = new Set(["year", "genre", "players", "developer", "publisher", "rating"]);
 
   // The detail region: each declared element wrapped in a keyed SpecTransition so
   // its entrance `motion` replays when the focused game changes. `skipInitial`
@@ -343,8 +356,11 @@ const DeclarativeShell: ThemeEntry = () => {
     <For each={detailElements()}>
       {(el) => {
         const spec = resolveMotionRef(el.motion);
+        // Block kinds take a full row (`w-full` → flex-wrap break); chip kinds stay
+        // auto-width so consecutive ones flow together on a row.
         return (
           <SpecTransition
+            class={CHIP_KINDS.has(el.kind) ? "" : "w-full"}
             trigger={() => focusedEntry()?.id ?? ""}
             spec={() => spec}
             skipInitial
@@ -363,7 +379,7 @@ const DeclarativeShell: ThemeEntry = () => {
   // never blocks card interaction. Renders nothing when no `detail` is declared.
   const detailOverlay = (): JSX.Element => (
     <Show when={detailElements().length > 0}>
-      <div class="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-start gap-2 px-12 pt-10">
+      <div class="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 px-14 pt-12">
         {renderDetail()}
       </div>
     </Show>
@@ -449,15 +465,15 @@ const DeclarativeShell: ThemeEntry = () => {
                   id="declarative-library"
                   class="h-full w-full"
                   items={games}
-                  cardWidth={210}
-                  pitch={168}
+                  cardWidth={420}
+                  pitch={336}
                   focusedIndex={focusedIndex}
                   setFocusedIndex={setFocusedIndex}
                   hints={{ dpad: "Browse", stick: "Browse", Confirm: "Launch", Secondary: "Game info" }}
                   onConfirm={(_i, entry) => void host.onLaunch(entry)}
                   onSecondary={(_i, entry) => host.onShowInfo(entry)}
                 >
-                  {(entry, ctx) => <div class="aspect-[3/4] w-[210px]">{renderCard(entry, ctx)}</div>}
+                  {(entry, ctx) => <div class="aspect-[3/4] w-[420px]">{renderCard(entry, ctx)}</div>}
                 </CarouselNav>
               </div>
             </Match>
