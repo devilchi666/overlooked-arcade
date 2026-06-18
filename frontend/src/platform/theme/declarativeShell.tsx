@@ -60,6 +60,11 @@ const RECOGNIZED_SETTINGS = {
   compactRows: "compactRows",
 } as const;
 
+/// BIOS / boot-ROM title rule — a standalone `[BIOS]` / `(BIOS)` annotation,
+/// case-insensitive. Mirrors the Rust `title_parse::is_bios_flag` rule so the
+/// no-code browse hides BIOS files the same way the backend tags them.
+const BIOS_TITLE = /[[(]\s*bios\s*[\])]/i;
+
 const DeclarativeShell: ThemeEntry = () => {
   const platform = usePlatform();
   const host = useTheme();
@@ -79,7 +84,13 @@ const DeclarativeShell: ThemeEntry = () => {
     const seen = new Set<string>();
     const out: RomEntry[] = [];
     for (const e of platform.library.state.entries) {
-      if (e.seed) continue;
+      // Skip seed rows + BIOS/boot-ROM files. `RomEntry` (the raw per-file browse
+      // list) doesn't carry the backend `is_bios` flag — that lives on the grouped
+      // `VariantInfo` (`list_game_groups`) — so we derive it from the title using
+      // the SAME pure rule the Rust `title_parse` uses (a standalone `[BIOS]` /
+      // `(BIOS)` annotation). Proper long-term home: surface `is_bios` onto
+      // `RomEntry`, or wire `casual_view_defaults` into the live browse (VL Phase F).
+      if (e.seed || BIOS_TITLE.test(e.title)) continue;
       const key = e.identityId ?? e.id;
       if (seen.has(key)) continue;
       seen.add(key);
