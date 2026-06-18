@@ -34,6 +34,7 @@ import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-j
 import { usePlatform } from "@oa/platform/platformContext";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
+import { useMedia } from "@oa/platform/library/media";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
 import { resolveMotionRef, resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
@@ -63,6 +64,7 @@ const DeclarativeShell: ThemeEntry = () => {
   const platform = usePlatform();
   const host = useTheme();
   const settings = useThemeSettings();
+  const media = useMedia();
 
   // The recognized density setting (inert if the theme doesn't declare it).
   const compact = (): boolean =>
@@ -139,6 +141,14 @@ const DeclarativeShell: ThemeEntry = () => {
   const sysShort = (entry: RomEntry): string =>
     systemThemes[entry.systemId as SystemId]?.shortName ?? entry.systemId;
 
+  // Box-art cover for a card (identity-keyed first, then the raw rom id — the
+  // same lookup the lab/coverflow use). Returns null when the library has no art
+  // for this game, so the card falls back to its system-tinted panel. An accessor
+  // (not a captured value) so it re-renders when the media store finishes loading.
+  const coverFor = (entry: RomEntry): string | null =>
+    (entry.identityId ? media.coverUrl(entry.systemId as SystemId, entry.identityId) : null) ??
+    media.coverUrl(entry.systemId as SystemId, entry.id);
+
   // --- card renderers ---------------------------------------------------------
 
   // List row — mirrors `bare`: per-system accent dot + title + system short,
@@ -177,41 +187,60 @@ const DeclarativeShell: ThemeEntry = () => {
     </SelectionMotion>
   );
 
-  // Tile card for grid/carousel/wheel — a system-tinted panel with the title +
-  // system label. Cover-art rendering is a deliberate later accretion (the
-  // dogfood surface is the list); a text tile keeps S2 correct + risk-free.
-  // The focused card's static CSS emphasis (`scale-[1.02]` + accent border) is the
-  // NO-MOTION baseline; when the theme declares a `selection` preset, SelectionMotion's
-  // animated pop composes ON TOP of it (a mild stack — fine, the CSS is the resting
-  // indicator, the preset the flourish). h-full/w-full passes through both transform
-  // carriers so the card still fills its aspect box.
-  const renderCard = (entry: RomEntry, ctx: NavItemContext): JSX.Element => (
-    <SelectionMotion
-      class="h-full w-full"
-      focused={ctx.focused}
-      selection={selectionSpec}
-      ambient={ambientSpec}
-      reducedMotion={reducedMotion}
-    >
-      <div
-        data-system={entry.systemId}
-        class="flex h-full w-full flex-col justify-end gap-1 overflow-hidden rounded-xl border p-3 transition-[transform,border-color] duration-200"
-        classList={{
-          "border-(--color-system-accent) scale-[1.02]": ctx.focused(),
-          "border-white/5": !ctx.focused(),
-        }}
-        style={{
-          "background-image":
-            "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
-        }}
+  // Tile card for grid/carousel/wheel — box art when the library has a cover,
+  // else a system-tinted panel (so a library with no art still reads cleanly). A
+  // bottom gradient scrim keeps the title legible over any cover. Focus emphasis
+  // is the accent border + an accent glow shadow (the static, no-motion baseline);
+  // when the theme declares a `selection` preset, SelectionMotion's animated pop
+  // adds the motion on top (centred cards scale symmetrically — MOTION.md #3).
+  // h-full/w-full passes through both SelectionMotion transform carriers so the
+  // card still fills its aspect box.
+  const renderCard = (entry: RomEntry, ctx: NavItemContext): JSX.Element => {
+    const cover = (): string | null => coverFor(entry);
+    return (
+      <SelectionMotion
+        class="h-full w-full"
+        focused={ctx.focused}
+        selection={selectionSpec}
+        ambient={ambientSpec}
+        reducedMotion={reducedMotion}
       >
-        <span class="line-clamp-2 text-sm font-medium text-(--color-oa-ink)">{entry.title}</span>
-        <span class="text-[0.55rem] uppercase tracking-[0.3em] text-(--color-oa-ink-dim)">
-          {sysShort(entry)}
-        </span>
-      </div>
-    </SelectionMotion>
-  );
+        <div
+          data-system={entry.systemId}
+          class="relative flex h-full w-full flex-col justify-end overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-200"
+          classList={{
+            "border-(--color-system-accent)": ctx.focused(),
+            "border-white/10": !ctx.focused(),
+          }}
+          style={{
+            "box-shadow": ctx.focused()
+              ? "0 18px 40px rgba(0,0,0,.55), 0 0 38px -8px var(--color-system-accent)"
+              : "0 6px 16px rgba(0,0,0,.4)",
+          }}
+        >
+          <Show
+            when={cover()}
+            fallback={
+              <div
+                class="absolute inset-0"
+                style={{
+                  "background-image":
+                    "linear-gradient(160deg, var(--color-system-glow), color-mix(in oklch, var(--color-oa-bg-deep) 80%, transparent))",
+                }}
+              />
+            }
+          >
+            {(u) => <img src={u()} alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" />}
+          </Show>
+          {/* title plate — gradient scrim so the text stays legible over art */}
+          <div class="relative z-10 flex flex-col gap-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-3 pb-2.5 pt-7">
+            <span class="line-clamp-2 text-sm font-medium text-white drop-shadow">{entry.title}</span>
+            <span class="text-[0.55rem] uppercase tracking-[0.3em] text-white/65">{sysShort(entry)}</span>
+          </div>
+        </div>
+      </SelectionMotion>
+    );
+  };
 
   return (
     // `overflow-hidden` is the MOTION.md rule #2 clipping ancestor: the shell root

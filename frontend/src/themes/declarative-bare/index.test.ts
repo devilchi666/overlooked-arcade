@@ -8,8 +8,6 @@ import { bareDeclarative } from "./index";
 import DeclarativeShell from "@oa/platform/theme/declarativeShell";
 import { validateTheme } from "@oa/platform/theme/validate";
 import { resolveLayout } from "@oa/platform/theme/layoutResolver";
-import { resolveMotionRef } from "@oa/platform/theme/motion";
-import { MOTION_PRESETS } from "@oa/platform/theme/motionPresets";
 
 describe("bare-declarative dogfood", () => {
   it("is a valid, list-rendering, DeclarativeShell-backed package", () => {
@@ -34,18 +32,10 @@ describe("bare-declarative dogfood", () => {
     expect(validateTheme(bareDeclarative).ok).toBe(true);
   });
 
-  it("declares the ARC 3 selection + ambient slots, resolvable + correct-kind", () => {
-    const motion = bareDeclarative.manifest.motion;
-    // The slots the DeclarativeShell's per-card SelectionMotion consumes. A
-    // FULL-WIDTH list row uses non-width-changing motion (a `y` rise + a glow), NOT
-    // a centred `scale` preset — those fling left-aligned content (MOTION.md #3).
-    expect(motion?.selection).toBe("title-rise");
-    expect(motion?.ambient).toBe("glow-pulse");
-    // Each must resolve to a concrete spec (preset name → §2 spec).
-    expect(resolveMotionRef(motion?.selection)).not.toBeNull();
-    expect(resolveMotionRef(motion?.ambient)).not.toBeNull();
-    // …and be the kind its slot expects (the validator's name+KIND rule, D58.5).
-    expect(MOTION_PRESETS["title-rise"]?.kind).toBe("selection");
-    expect(MOTION_PRESETS["glow-pulse"]?.kind).toBe("ambient");
+  it("stays minimal — no selection/ambient slots (those live on the aurora showcase)", () => {
+    // bare-declarative mirrors the hand-coded `bare` (the floor); the per-item
+    // selection/ambient choreography is exercised on the on-disk aurora theme.
+    expect(bareDeclarative.manifest.motion?.selection).toBeUndefined();
+    expect(bareDeclarative.manifest.motion?.ambient).toBeUndefined();
   });
 });

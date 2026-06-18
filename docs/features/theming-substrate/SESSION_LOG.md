@@ -9,6 +9,39 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
+## 2026-06-18 — Declarative Showcase arc S1: cover art + the Aurora showcase theme — 🚧 on `feat/motion-selection-ambient-hook` (awaiting operator playtest)
+
+> Operator reframing: the Graphics Lab proves what the ENGINE can do *via code*, but a
+> distributable file theme can't ship code (PD1) — so the only honest proof that
+> *loadable file themes can use everything* is a showcase on the DECLARATIVE path
+> (theme.toml → DeclarativeShell), not the code Lab. New arc:
+> [PLANS/declarative-showcase.md](../../PLANS/declarative-showcase.md). The
+> selection/ambient hook (below) becomes S1's first feature, exercised on box-art cards.
+
+- **Shipped on the branch (S1):**
+  - **`DeclarativeShell` renders cover art** on cards (grid/carousel/wheel) via
+    `useMedia().coverUrl` (was text-only — "deferred accretion" closed): box art fills
+    the card with a bottom gradient scrim for title legibility; system-tinted panel
+    fallback when the library has no art; focus = accent border + accent glow shadow.
+    Dropped the static `scale-[1.02]` (SelectionMotion's `lift` owns the animated pop
+    now; cards are centred → symmetric scale, MOTION.md #3).
+  - **`aurora` on-disk showcase theme** (`themes/community/aurora/{theme.toml,
+    tokens.toml,per-system.toml}`) — the declarative counterpart to the code Lab:
+    carousel/coverflow layout, premium dark palette, 6 vivid per-system accents,
+    PlayStation glyphs, full motion (slide transition + lift selection + breathe
+    ambient, all named presets). Discovered by the disk loader (source-tree path) →
+    selectable in Appearance, zero theme code.
+  - **`bare-declarative` reverted to the minimal floor** (fade view_transition only) —
+    it mirrors `bare`; selection/ambient now lives on `aurora`. Dogfood test updated.
+  - Rust `theme_loader` test `shipped_showcase_theme_parses` (aurora round-trips:
+    carousel + 3 motion preset slots + tokens + per-system).
+- **Almost / NOT done:** eye-unvalidated (operator hasn't built since). The
+  selection/ambient *feel* on box-art cards is the playtest question.
+- **Next:** operator playtest (`cargo tauri build` → Appearance → **Aurora**) → merge.
+  Then S2 (theme background + now-focused detail strip).
+
+---
+
 ## 2026-06-18 — ARC 3 Thrust M: the declarative selection/ambient hook — 🚧 on `feat/motion-selection-ambient-hook` (awaiting operator playtest)
 
 > The one piece the "wire it up right" branch deferred: the `selection`/`ambient`
@@ -54,6 +87,9 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
     clipping ancestor, so the y-rise can't spawn a transient scrollbar). New MOTION.md
     rules #3 (scale↔cards / y·opacity·glow↔rows) + #4 (per-item transform clipping).
     The grid/carousel/wheel card path still uses scale presets (centred → symmetric).
+    **(Superseded by the Declarative Showcase S1 entry above:** `bare-declarative`
+    reverted to the minimal floor; the selection/ambient demo moved to the `aurora`
+    carousel, where `lift`/`breathe` on centred covers is the right surface.**)**
   - **No Rust:** `theme_loader`'s `ThemeMotion` already carries the slots (prior merge);
     contract didn't widen.
   - **CI:** tsc + eslint clean; **183 vitest** green (+1; `ViewTransition` path untouched).

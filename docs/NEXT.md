@@ -249,7 +249,8 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
          a `SelectionMotion` wrapper (in `platform/theme/SelectionMotion.tsx`) the
          `declarativeShell` wraps every card in — focused-card entrance pop
          (cancel-on-defocus, `skipInitial`) + one ambient loop on the focused card.
-         Dogfood: `bare-declarative` declares `selection: "lift"` + `ambient: "breathe"`.
+         Now exercised on the on-disk **`aurora`** showcase (`bare-declarative` reverted
+         to the minimal floor) — see the **Declarative Showcase** arc below.
       3. ✅ **Rust `theme_loader`** widened — `ThemeMotion` gains `transition`/
          `selection`/`ambient: Option<MotionRef>` (`MotionRef` = untagged
          `Preset(String)` | `Spec(toml::Value)`; additive, no `deny_unknown_fields`).
@@ -263,6 +264,18 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       (Thrust V), and the wishlist **`path-move` + keyframe-timeline** carry-over
       (HyperSpin `MotionPath`/`timeline`; see
       [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md) §3).
+
+**Declarative Showcase — make the file-theme path capable & beautiful** `[arc opened
+2026-06-18; S1 🚧 awaiting playtest on feat/motion-selection-ambient-hook]`. The Graphics
+Lab proves the ENGINE via code; a distributable `.oatheme` ships no code (PD1), so the
+only honest proof that **loadable file themes can use everything** is a showcase on the
+declarative path (`theme.toml` → `DeclarativeShell`). Each enrichment lands in
+`DeclarativeShell` (data-driven) → unlocks it for every file theme. **S1:** cover art on
+cards + the on-disk **`aurora`** showcase (coverflow · per-system neon · slide/lift/breathe
+motion); `bare-declarative` kept as the minimal floor. **S2 (next):** theme background +
+now-focused detail strip. **S3:** list thumbnails + metadata + richer recognized
+settings vocabulary. Plan:
+[PLANS/declarative-showcase.md](PLANS/declarative-showcase.md).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
 2026-06-15; [PLANS/theming-arc-2-per-system-layout.md](PLANS/theming-arc-2-per-system-layout.md)).

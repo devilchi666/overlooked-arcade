@@ -1009,4 +1009,38 @@ surfaces = ["main"]
             Some("slide")
         );
     }
+
+    #[test]
+    fn shipped_showcase_theme_parses() {
+        // The `aurora` showcase at `<repo>/themes/community/` is the data-only
+        // proof that a loadable file theme can use the full vocabulary — it must
+        // round-trip through the loader so it can't drift from the schema.
+        let dir = resolve_themes_community_dir()
+            .expect("themes/community resolves in-tree via the source-tree fallback");
+        let themes = load_from_parent_dir(&dir);
+        let aurora = themes
+            .iter()
+            .find(|t| t.manifest.id == "aurora")
+            .expect("aurora showcase parses");
+        assert_eq!(aurora.manifest.name, "Aurora");
+        // Coverflow browse.
+        assert_eq!(
+            aurora
+                .manifest
+                .views
+                .as_ref()
+                .and_then(|v| v.get("game-browse"))
+                .and_then(|c| c.layout.as_deref()),
+            Some("carousel")
+        );
+        // All three M-mod motion slots, authored as named presets (the
+        // MotionRef::Preset arm) — transition + selection + ambient.
+        let motion = aurora.manifest.motion.as_ref().expect("motion declared");
+        assert_eq!(motion.transition, Some(MotionRef::Preset("slide".into())));
+        assert_eq!(motion.selection, Some(MotionRef::Preset("lift".into())));
+        assert_eq!(motion.ambient, Some(MotionRef::Preset("breathe".into())));
+        // Premium palette + per-system accents (both sidecars load).
+        assert!(aurora.tokens.as_ref().and_then(|t| t.accent.as_deref()).is_some());
+        assert!(aurora.per_system_tokens.as_ref().and_then(|m| m.get("psx")).is_some());
+    }
 }

@@ -38,23 +38,14 @@ const BARE_DECLARATIVE_DESC: DiskThemeDescriptor = {
     // The generic shell defaults to the engine `grid`; declare `list` so the
     // dogfood matches `bare`'s vertical list.
     views: { "game-browse": { layout: "list" } },
-    // ARC 3 dogfood: motion authored as pure DATA, zero theme code.
-    //  • view_transition — a fade played on each view change (M1 path).
-    //  • selection — `title-rise` (a selection-kind spec): on focus-gain the row's
-    //    content rises into place. A `y` entrance, NOT a `scale` preset (`lift`/
-    //    `breathe`) — this theme renders a FULL-WIDTH list row, and a centred scale
-    //    grows the row's width and flings left-aligned content off the left edge
-    //    (MOTION.md rule #3). Scale presets are for centred cards (box-art); rows
-    //    use y/opacity/glow. Reduced-motion floors it to a fade.
-    //  • ambient — `glow-pulse`: a pulsing accent glow on the FOCUSED row only (one
-    //    live loop). No geometry change, so it's row-safe. Reduced-motion → nothing.
-    // Proves the manifest selection/ambient slots → resolveMotionRef →
-    // DeclarativeShell's per-card SelectionMotion path end-to-end with no code.
-    motion: {
-      view_transition: { preset: "fade", duration: "450ms" },
-      selection: "title-rise",
-      ambient: "glow-pulse",
-    },
+    // ARC 3 M1 dogfood: declare a fade view transition (DATA only). The
+    // DeclarativeShell plays it on a view change, interruptibly; reduced-motion
+    // downgrades it to a short fade. Proves the manifest motion field → resolver
+    // → SpecTransition path end-to-end with zero theme code. Kept MINIMAL on
+    // purpose: this theme mirrors the hand-coded `bare` (the floor). Selection +
+    // ambient choreography is exercised on the on-disk `aurora` showcase theme,
+    // not here.
+    motion: { view_transition: { preset: "fade", duration: "450ms" } },
     // Declared appearance option; the engine Appearance panel renders it and the
     // DeclarativeShell honors it (recognized `compactRows` → list density).
     settings_schema: [

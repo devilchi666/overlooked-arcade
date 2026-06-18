@@ -11,6 +11,23 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
+- **Declarative Showcase — make the file-theme path capable & beautiful** — NEW arc
+  opened 2026-06-18 (operator reframing); branch `feat/motion-selection-ambient-hook`
+  (broadened from the selection/ambient hook). The Graphics Lab proves what the ENGINE
+  can do *via code*, but a distributable `.oatheme` ships **no code** (PD1) — so the
+  only honest proof that *loadable file themes can use everything* is a showcase on the
+  **declarative path** (`theme.toml` → `DeclarativeShell`), not the code Lab. Each time
+  the showcase wants to look better, the fix lands in `DeclarativeShell` (data-driven)
+  and unlocks that capability for **every** file theme. **S1 🚧 (awaiting playtest):**
+  `DeclarativeShell` now renders **cover art** on cards (was text-only) + a new on-disk
+  **`aurora`** showcase theme (`themes/community/aurora/`) — coverflow, premium dark
+  palette, 6 per-system neon accents, full motion (slide/lift/breathe). `bare-declarative`
+  reverted to the minimal floor. Honest ceiling: `DeclarativeShell` is a single-surface
+  flat browse (no multi-tab/detail structure). Plan +
+  slices: [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md); log
+  [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md)
+  2026-06-18. **Next: operator playtest → merge → S2 (theme background + now-focused detail).**
+
 - **Theming ARC 3 — Cinematic (Thrust M / motion)** — ✅ **M0 foundation + the
   declarative motion MODEL (M-mod.1–.4) + the cinematic Graphics Lab showcase all
   MERGED to main 2026-06-18** (`6b89f50` model, `ce6bff6` showcase). The model is
