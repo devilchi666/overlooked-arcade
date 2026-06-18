@@ -48,6 +48,29 @@ describe("compileMotionSpec — channels → WAAPI keyframes", () => {
     expect(c.options.easing).toBe("linear");
   });
 
+  it("defaults to a single normal-direction iteration", () => {
+    const c = compileMotionSpec({ duration: 300, channels: { opacity: [0, 1] } })!;
+    expect(c.options.iterations).toBe(1);
+    expect(c.options.direction).toBe("normal");
+  });
+
+  it("compiles an ambient loop: repeat infinite + alternate (a breathe/float)", () => {
+    const c = compileMotionSpec({
+      duration: 2600,
+      repeat: "infinite",
+      direction: "alternate",
+      channels: { scale: [1, 1.04] },
+    })!;
+    expect(c.options.iterations).toBe(Infinity);
+    expect(c.options.direction).toBe("alternate");
+    expect(c.keyframes[0].transform).toBe("scale(1)");
+    expect(c.keyframes[1].transform).toBe("scale(1.04)");
+  });
+
+  it("honors a finite repeat count", () => {
+    expect(compileMotionSpec({ duration: 300, repeat: 3, channels: { opacity: [0, 1] } })!.options.iterations).toBe(3);
+  });
+
   it("returns null for a no-op (no channels, or non-positive duration)", () => {
     expect(compileMotionSpec({ duration: 300, channels: {} })).toBeNull();
     expect(compileMotionSpec({ duration: 0, channels: { opacity: [0, 1] } })).toBeNull();

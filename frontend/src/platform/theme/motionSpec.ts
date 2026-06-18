@@ -33,11 +33,18 @@ export type MotionChannels = {
 
 /// A resolved, ready-to-play motion spec: timing primitives over a channel set.
 /// `duration`/`delay` in ms; `easing` is a concrete CSS easing (keyword or
-/// `cubic-bezier(...)`) — WAAPI can't resolve `var()`.
+/// `cubic-bezier(...)`) — WAAPI can't resolve `var()`. `repeat`/`direction` (audit
+/// §2) turn a one-shot into an ambient loop: `repeat: "infinite"` +
+/// `direction: "alternate"` over a `[rest, peak]` channel = a breathe/float pulse.
 export type MotionSpec = {
   duration: number;
   delay?: number;
   easing?: string;
+  /// Iteration count; `"infinite"` for ambient loops. Default 1 (one-shot).
+  repeat?: number | "infinite";
+  /// Playback direction. `"alternate"` ping-pongs (the natural pulse/bob). Default
+  /// `"normal"`.
+  direction?: "normal" | "reverse" | "alternate";
   channels: MotionChannels;
 };
 
@@ -101,6 +108,8 @@ export function compileMotionSpec(spec: MotionSpec): CompiledMotion | null {
       duration: spec.duration,
       delay: spec.delay ?? 0,
       easing: spec.easing ?? DEFAULT_SPEC_EASING,
+      iterations: spec.repeat === "infinite" ? Infinity : (spec.repeat ?? 1),
+      direction: spec.direction ?? "normal",
       fill: "both",
     },
   };

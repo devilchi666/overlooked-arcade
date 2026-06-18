@@ -30,6 +30,7 @@ import { useMedia } from "@oa/platform/library/media";
 import { GridNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
+import AmbientMotion from "@oa/platform/theme/AmbientMotion";
 import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import { createSpringValue } from "@oa/platform/theme/springValue";
 import { BENCH_SELECTION_SPRING } from "@oa/platform/theme/spring";
@@ -54,6 +55,18 @@ const LAB_VIEW_SPEC: MotionSpec = {
   duration: 560,
   easing: "cubic-bezier(0.33, 1, 0.68, 1)",
   channels: { opacity: [0, 1], y: [140, 0] },
+};
+
+// [GRAPHICS-LAB] MOTION (M-mod.3) — the ambient "breathe": a gentle infinite scale
+// pulse (audit §3 category C). repeat:"infinite" + direction:"alternate" over a
+// [rest, peak] scale channel = the loop. Played by AmbientMotion (which no-ops
+// under reduced motion). Subtle (3%) so it reads as life, not a throb.
+const LAB_BREATHE_SPEC: MotionSpec = {
+  duration: 2600,
+  easing: "ease-in-out",
+  repeat: "infinite",
+  direction: "alternate",
+  channels: { scale: [1, 1.03] },
 };
 
 const LAB_MANIFEST: ThemeManifest = {
@@ -292,24 +305,30 @@ const LabEntry: ThemeEntry = (_props) => {
             >
               {(g) => (
                 <aside class="flex min-h-0 flex-col items-center justify-center gap-4 rounded-xl border border-white/10 bg-black/30 p-6">
-                  <Show
-                    when={coverFor(g)}
-                    fallback={
-                      <div
-                        class="aspect-[3/4] w-44 rounded-lg bg-white/[0.06]"
-                        style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
-                      />
-                    }
-                  >
-                    {(u) => (
-                      <img
-                        src={u()}
-                        alt=""
-                        class="aspect-[3/4] w-44 rounded-lg object-cover shadow-2xl"
-                        style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
-                      />
-                    )}
-                  </Show>
+                  {/* [GRAPHICS-LAB] MOTION (M-mod.3) — AMBIENT: the outer layer
+                      breathes (scale loop) so the hero has idle life; the inner
+                      cover independently springs in on focus (M-mod.2). Nested
+                      transforms compose — two effects, no conflict. */}
+                  <AmbientMotion spec={() => LAB_BREATHE_SPEC} reducedMotion={reducedMotion}>
+                    <Show
+                      when={coverFor(g)}
+                      fallback={
+                        <div
+                          class="aspect-[3/4] w-44 rounded-lg bg-white/[0.06]"
+                          style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                        />
+                      }
+                    >
+                      {(u) => (
+                        <img
+                          src={u()}
+                          alt=""
+                          class="aspect-[3/4] w-44 rounded-lg object-cover shadow-2xl"
+                          style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                        />
+                      )}
+                    </Show>
+                  </AmbientMotion>
                   <h2
                     class="text-center text-xl font-black leading-tight tracking-tight"
                     style={{ animation: `oa-lab-rise 420ms ${LAB_RISE_EASE} both` }}
