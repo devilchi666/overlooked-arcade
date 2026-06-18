@@ -30,7 +30,7 @@ import { useMedia } from "@oa/platform/library/media";
 import { GridNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
-import { usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import { createSpringValue } from "@oa/platform/theme/springValue";
 import { BENCH_SELECTION_SPRING } from "@oa/platform/theme/spring";
 import type { MotionSpec } from "@oa/platform/theme/motionSpec";
@@ -43,6 +43,18 @@ import type { ThemeManifest } from "@oa/platform/theme/manifest";
 // platform router) so the whole theme is one strippable unit. Two routes is
 // enough to dogfood view-transitions; more get added as the model grows.
 type LabRoute = "home" | "library";
+
+// [GRAPHICS-LAB] The authored view-transition spec — the §2 basis as DATA:
+// separate channels (opacity + y travel) over timing primitives. Tuned past the
+// fixed M1 preset to address the 2026-06-17 "a little fast" note — 560ms + 140px
+// of travel with an even easeOutCubic. It now lives in the manifest (below), so
+// this is what a real theme would author; the SpecTransition player compiles it
+// to WAAPI keyframes via resolveThemeMotionSpec.
+const LAB_VIEW_SPEC: MotionSpec = {
+  duration: 560,
+  easing: "cubic-bezier(0.33, 1, 0.68, 1)",
+  channels: { opacity: [0, 1], y: [140, 0] },
+};
 
 const LAB_MANIFEST: ThemeManifest = {
   id: "lab",
@@ -58,23 +70,13 @@ const LAB_MANIFEST: ThemeManifest = {
   required_engine_capabilities: [],
   reserves_corner: "top-right",
   surfaces: ["main"],
-  // [GRAPHICS-LAB] MOTION (M-mod.1): the lab now drives the route swap through the
-  // §2 BASIS (MotionSpec + SpecTransition/WAAPI), not the M1 fixed-preset path —
-  // so distance/duration/easing are real authorable data (see LAB_VIEW_SPEC). The
-  // M1 `motion.view_transition` manifest field is intentionally absent; the basis
-  // spec lives lab-local for now and graduates into the manifest/theme.toml
-  // contract once its shape settles (the additive widening, next).
-};
-
-// [GRAPHICS-LAB] The authored view-transition spec. This is the §2 basis as DATA:
-// separate channels (opacity + y travel) over timing primitives. Tuned past the
-// fixed M1 preset to address the 2026-06-17 "a little fast" note — 560ms + 140px
-// of travel with an even easeOutCubic, so the glide is unmistakable. Edit freely;
-// the SpecTransition player compiles this to WAAPI keyframes.
-const LAB_VIEW_SPEC: MotionSpec = {
-  duration: 560,
-  easing: "cubic-bezier(0.33, 1, 0.68, 1)",
-  channels: { opacity: [0, 1], y: [140, 0] },
+  // [GRAPHICS-LAB] MOTION (M-mod.1): motion authored as manifest DATA (graduated
+  // off the former lab-inline usage). `view_transition_spec` is the §2 basis;
+  // `resolveThemeMotionSpec` turns it (or, for other themes, a `view_transition`
+  // preset) into the spec SpecTransition plays. Disk themes get the same path once
+  // the Rust theme_loader widens for `[motion.view_transition_spec]` (deferred —
+  // no disk theme authors one yet).
+  motion: { view_transition_spec: LAB_VIEW_SPEC },
 };
 
 const GRID_COLUMNS = 4; // narrower now that the hero panel takes the right column
@@ -211,8 +213,7 @@ const LabEntry: ThemeEntry = (_props) => {
       <SpecTransition
         class="relative min-h-0 flex-1"
         trigger={route}
-        spec={() => LAB_VIEW_SPEC}
-        reducedMotion={reducedMotion}
+        spec={() => resolveThemeMotionSpec(LAB_MANIFEST.motion, reducedMotion())}
       >
         {/* Home — cheap, kept mounted; display-toggled so the switch never rebuilds. */}
         <section

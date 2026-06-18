@@ -10,7 +10,9 @@ import {
   REDUCED_MOTION_FADE_MS,
   parseDurationMs,
   resolveViewTransition,
+  resolveThemeMotionSpec,
 } from "./motion";
+import { REDUCED_MOTION_SPEC } from "./motionSpec";
 import type { ThemeMotion } from "./manifest";
 
 describe("parseDurationMs", () => {
@@ -75,5 +77,38 @@ describe("resolveViewTransition", () => {
   it("reduced motion still yields no transition when none was declared", () => {
     expect(resolveViewTransition(undefined, true).preset).toBe("none");
     expect(resolveViewTransition({ view_transition: { preset: "none" } }, true).preset).toBe("none");
+  });
+});
+
+describe("resolveThemeMotionSpec — manifest → §2 spec (M-mod.1)", () => {
+  it("no motion → null", () => {
+    expect(resolveThemeMotionSpec(undefined, false)).toBeNull();
+    expect(resolveThemeMotionSpec({ view_transition: { preset: "none" } }, false)).toBeNull();
+  });
+
+  it("an authored view_transition_spec wins verbatim", () => {
+    const spec = { duration: 560, easing: "ease", channels: { opacity: [0, 1] as const, y: [140, 0] as const } };
+    const m: ThemeMotion = { view_transition_spec: spec };
+    expect(resolveThemeMotionSpec(m, false)).toBe(spec);
+  });
+
+  it("the spec wins even when a preset is also declared", () => {
+    const spec = { duration: 400, channels: { opacity: [0, 1] as const } };
+    const m: ThemeMotion = { view_transition: { preset: "slide" }, view_transition_spec: spec };
+    expect(resolveThemeMotionSpec(m, false)).toBe(spec);
+  });
+
+  it("falls back to mapping a preset (with its timing) to the basis", () => {
+    const m: ThemeMotion = { view_transition: { preset: "slide", duration: "600ms", easing: "linear" } };
+    const r = resolveThemeMotionSpec(m, false)!;
+    expect(r.duration).toBe(600);
+    expect(r.easing).toBe("linear");
+    expect(r.channels.y).toEqual([96, 0]); // slide default travel
+    expect(r.channels.opacity).toEqual([0, 1]);
+  });
+
+  it("reduced motion → the short-fade spec regardless of what was declared", () => {
+    const m: ThemeMotion = { view_transition_spec: { duration: 560, channels: { y: [140, 0] } } };
+    expect(resolveThemeMotionSpec(m, true)).toBe(REDUCED_MOTION_SPEC);
   });
 });

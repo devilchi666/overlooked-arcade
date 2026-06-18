@@ -405,3 +405,47 @@ describe("validateTheme — perSystemUiConfigs (ARC 2 L2b / D34)", () => {
     expect(validateTheme(pkg()).ok).toBe(true);
   });
 });
+
+describe("validateTheme — motion.view_transition_spec (M-mod.1 §2 basis)", () => {
+  it("a well-formed spec passes", () => {
+    const v = validateTheme(
+      pkg({ motion: { view_transition_spec: { duration: 560, easing: "ease", channels: { opacity: [0, 1], y: [140, 0] } } } }),
+    );
+    expect(v.ok).toBe(true);
+  });
+
+  it("a non-positive / non-number duration is an error", () => {
+    expect(
+      codes(validateTheme(pkg({ motion: { view_transition_spec: { duration: 0, channels: { opacity: [0, 1] } } } })).errors),
+    ).toContain("INVALID_MOTION");
+    expect(
+      codes(
+        validateTheme(
+          pkg({ motion: { view_transition_spec: { duration: "x" as unknown as number, channels: { opacity: [0, 1] } } } }),
+        ).errors,
+      ),
+    ).toContain("INVALID_MOTION");
+  });
+
+  it("a channel that isn't a [from,to] number pair is an error", () => {
+    const v = validateTheme(
+      pkg({ motion: { view_transition_spec: { duration: 300, channels: { y: [140] as unknown as [number, number] } } } }),
+    );
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("missing channels is an error", () => {
+    const motion = { view_transition_spec: { duration: 300 } } as unknown as ThemeManifest["motion"];
+    const v = validateTheme(pkg({ motion }));
+    expect(v.ok).toBe(false);
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+
+  it("a blank easing string is an error", () => {
+    const v = validateTheme(
+      pkg({ motion: { view_transition_spec: { duration: 300, easing: "  ", channels: { opacity: [0, 1] } } } }),
+    );
+    expect(codes(v.errors)).toContain("INVALID_MOTION");
+  });
+});
