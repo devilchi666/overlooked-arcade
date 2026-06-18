@@ -265,7 +265,13 @@ const DeclarativeShell: ThemeEntry = () => {
   );
   const focusedMeta = (): GameMetadata | undefined => {
     const g = focusedEntry();
-    return g ? media.media(g.identityId ?? g.id)?.metadata : undefined;
+    // Metadata is keyed by the ROM id (where enrichment writes it) — NOT the
+    // identity id. Every working consumer (Retroverse GameDetailPanel,
+    // GameInfoModal, DetailListView, LibraryView) uses `entry.id`. (Cover/logo
+    // ART is identity-keyed — the identity's canonical art slot — hence
+    // `coverFor`/`logoFor` prefer `identityId`; metadata is not. Don't "unify"
+    // these or metadata silently vanishes.)
+    return g ? media.media(g.id)?.metadata : undefined;
   };
   const logoFor = (entry: RomEntry): string | null =>
     (entry.identityId ? media.coverUrl(entry.systemId as SystemId, entry.identityId, "clear-logo") : null) ??
