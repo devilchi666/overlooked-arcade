@@ -30,6 +30,15 @@ export type SpecTransitionProps = {
   spec: () => MotionSpec | null;
   /// Live reduced-motion state; when true the spec collapses to a short fade.
   reducedMotion?: () => boolean;
+  /// When true, the FIRST (mount) effect run is recorded but NOT played — only
+  /// subsequent `trigger` changes play. For a boot entrance the caller keys
+  /// `trigger` on `oa://window-shown` (D54): the OS presents the window ~hundreds
+  /// of ms after first paint, so a play at mount would run (and finish, given
+  /// `fill: both`) while the window is still hidden — the M1 "entrance played
+  /// before the window was shown" bug. Skipping the mount run means the only play
+  /// is the windowShown flip, i.e. the instant the window is actually on screen.
+  /// Default false (the lab + runtime transitions want the mount play).
+  skipInitial?: boolean;
   class?: string;
   children: JSX.Element;
 };
@@ -37,6 +46,7 @@ export type SpecTransitionProps = {
 export default function SpecTransition(props: SpecTransitionProps): JSX.Element {
   let el: HTMLDivElement | undefined;
   let anim: Animation | undefined;
+  let isFirstRun = true;
 
   createEffect(() => {
     const key = props.trigger(); // track — re-run on every view change
@@ -44,13 +54,17 @@ export default function SpecTransition(props: SpecTransitionProps): JSX.Element 
     const spec: MotionSpec | null = reduced ? REDUCED_MOTION_SPEC : props.spec();
     const node = el;
     const compiled = spec ? compileMotionSpec(spec) : null;
-    const skip = !node
-      ? "no-node"
-      : typeof node.animate !== "function"
-        ? "no-waapi"
-        : !compiled
-          ? "no-op"
-          : "";
+    const wasFirst = isFirstRun;
+    isFirstRun = false;
+    const skip = props.skipInitial && wasFirst
+      ? "skip-initial"
+      : !node
+        ? "no-node"
+        : typeof node.animate !== "function"
+          ? "no-waapi"
+          : !compiled
+            ? "no-op"
+            : "";
     if (motionDebugEnabled())
       console.log(
         `[oa-theme-motion] SpecTransition key=${String(key)} reduced=${reduced} dur=${spec?.duration ?? 0} -> ${skip || "WAAPI-PLAY"}`,

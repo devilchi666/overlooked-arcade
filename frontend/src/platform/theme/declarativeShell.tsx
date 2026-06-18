@@ -36,8 +36,8 @@ import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import { activeTheme } from "@oa/platform/theme/registry";
 import { useResolvedLayout } from "@oa/platform/theme/layoutResolver";
-import { resolveViewTransition, usePrefersReducedMotion } from "@oa/platform/theme/motion";
-import ViewTransition from "@oa/platform/theme/ViewTransition";
+import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
+import SpecTransition from "@oa/platform/theme/SpecTransition";
 import { windowShown } from "@oa/platform/theme/windowShown";
 import { CarouselNav, GridNav, ListNav, WheelNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
@@ -101,24 +101,27 @@ const DeclarativeShell: ThemeEntry = () => {
   // system-scoped browse, not this flat list — see module header.
   const layout = useResolvedLayout("game-browse", () => null);
 
-  // Declarative motion (ARC 3 M1 / D52): resolve the active theme's declared
-  // view transition + the live reduced-motion preference into the transition
-  // the browse surface plays. Reduced-motion downgrades to a short fade inside
-  // the resolver. The transition is purely visual + interruptible — it never
-  // gates browsing (see ViewTransition).
+  // Declarative motion (ARC 3 M-mod / D52): resolve the active theme's declared
+  // motion (the `transition` slot — preset name or inline spec — falling back to
+  // the legacy `view_transition*` fields) + the live reduced-motion preference
+  // into the §2 `MotionSpec` the browse surface plays via `SpecTransition` (the
+  // basis-driven WAAPI player; M-mod.1). Reduced-motion downgrades to a short
+  // fade inside the resolver. The motion is purely visual + interruptible — it
+  // never gates browsing (see SpecTransition).
   const reducedMotion = usePrefersReducedMotion();
-  const viewTransition = createMemo(() =>
-    resolveViewTransition(activeTheme()?.manifest.motion, reducedMotion()),
+  const viewSpec = createMemo(() =>
+    resolveThemeMotionSpec(activeTheme()?.manifest.motion, reducedMotion()),
   );
 
-  // The transition's trigger — what counts as a "view change". M1: the resolved
-  // layout primitive (the per-view/per-system axis M2 varies at runtime) gated
-  // by `windowShown` — the backend's real "window is on screen now" signal
-  // (Rust shows the hidden window on frontend-ready; see windowShown.ts). The
-  // mount play is masked (window not composited yet); keying on `windowShown`
-  // fires the entrance the instant the window is actually presented — no guessed
-  // delay. ViewTransition skips its initial run, so the only play is the
-  // windowShown flip.
+  // The transition's trigger — what counts as a "view change". The resolved
+  // layout primitive (the per-view/per-system axis varies at runtime) gated by
+  // `windowShown` — the backend's real "window is on screen now" signal (Rust
+  // shows the hidden window on frontend-ready; see windowShown.ts). D54 LANDMINE:
+  // the OS presents the window ~hundreds of ms after first paint, so a play at
+  // mount would finish (`fill: both`) while the window is still hidden — the M1
+  // "entrance before window shown" bug. `SpecTransition skipInitial` suppresses
+  // that mount play; keying the trigger on `windowShown` then fires the entrance
+  // exactly when the window is presented (the false→true flip is the only play).
   const viewKey = createMemo(() => `${layout()}|${windowShown()}`);
 
   const sysShort = (entry: RomEntry): string =>
@@ -200,10 +203,11 @@ const DeclarativeShell: ThemeEntry = () => {
         </div>
       </header>
 
-      <ViewTransition
+      <SpecTransition
         class="relative z-10 min-h-0 flex-1"
         trigger={viewKey}
-        transition={viewTransition}
+        spec={viewSpec}
+        skipInitial
       >
         <Show
           when={games().length > 0}
@@ -279,7 +283,7 @@ const DeclarativeShell: ThemeEntry = () => {
             </Match>
           </Switch>
         </Show>
-      </ViewTransition>
+      </SpecTransition>
     </div>
   );
 };
