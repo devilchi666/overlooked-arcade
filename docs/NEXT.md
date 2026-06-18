@@ -219,26 +219,36 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
     glass finish, pointer-tilt). `MOTION.md` = the catalogue. **WAAPI finding
     reversed** (timing, not compositing; D54 was the real fix). 144 fps confirmed.
     Decisions D53–D56.
-  - **declarative motion MODEL (D52) — M-mod.1–.4 🔄 BUILT, NOT MERGED, eye-UNVALIDATED**
-    (branch `feat/theming-arc3-motion-model`; SESSION_LOG 2026-06-18). The bench
-    keepers are now a real theme-authorable model, dogfooded on the new strip-on-ship
-    **Graphics Lab** testbed theme (Settings → Experimental → Graphics Lab):
-    - ✅ Spring `{bounce,duration}` converter + integrator (`spring.ts`/`springValue.ts`;
-      default = the F10 k=190/damping=24 back-solve).
-    - ✅ §2 basis (`motionSpec.ts`: channels × timing + `repeat`/`direction`) + WAAPI
-      compiler; presets re-expressed as defaults over it.
-    - ✅ Players: `SpecTransition` (transitions) + `AmbientMotion` (loops) + `useTilt`.
-    - ✅ Contract: `ThemeMotion.view_transition_spec` + `resolveThemeMotionSpec` +
-      validator. Lab dogfoods all four audit categories (view / selection / ambient /
-      box-art) on one navigable surface (D55).
-    - ⬜ **Operator build + feel-tune** (choreography/breathe/tilt timings are best-guess).
-    - ⬜ Graduate the spring/selection + ambient config into the manifest contract
-      (only `view_transition_spec` graduated); Rust `theme_loader` widening for
-      `[motion.view_transition_spec]` (disk themes); migrate `declarativeShell`
-      presets onto `SpecTransition`; strip the `[oa-theme-motion]` diagnostics.
-    - ⬜ Audit §3 leftovers: ken-burns / glow-pulse / gloss / reflection, and the
-      wishlist carry-over **`path-move` (bezier position channel) + keyframe-timeline
-      escape hatch** (HyperSpin `MotionPath`/`timeline`; see
+  - **declarative motion MODEL (D52) — M-mod.1–.4 ✅ MERGED to main** (`6b89f50`)
+    + the cinematic **Graphics Lab showcase** ✅ MERGED (`ce6bff6`). Spring engine
+    (`spring.ts`/`springValue.ts`, default = F10 k=190/damping=24 back-solve), §2
+    basis + WAAPI compiler, players (`SpecTransition`/`AmbientMotion`/`useTilt`),
+    `view_transition_spec` contract + resolver + validator. Reachable via Settings →
+    Experimental → Graphics Lab. (Feel is operator-eye-validated as "good for now".)
+  - **named preset registry + contract wiring 🔄 NOT MERGED** (branch
+    `feat/motion-presets-and-wiring`; SESSION_LOG 2026-06-18):
+    - ✅ **17/21 of the audit §3 catalog packaged.** Registry `motionPresets.ts` (11
+      named spec presets: fade/slide/scale/flip · lift/art-grow-in/title-rise ·
+      breathe/float/glow-pulse/ken-burns) + treatments `treatments.tsx`
+      (Gloss/Shimmer/Reflection/FanartCrossfade + useTilt) + `staggerMs` (lift-stagger).
+      Basis grew `rotateX/Y` + `filter`/`boxShadow` channels.
+    - ✅ **Contract:** `ThemeMotion.transition|selection|ambient` slots = `MotionRef`
+      (preset name | inline spec); `resolveMotionRef`; validator enforces name+KIND.
+    - ⬜ **Remaining wiring (the "wire it up right" tail):**
+      1. **Lab refactor** — consume the `treatments.tsx` components + author `ambient`
+         by name (low-risk; de-dups the lab, proves the path).
+      2. **Migrate `declarativeShell` (no-code renderer) onto the new model** — the
+         biggest gap. ⚠️ MUST port `ViewTransition`'s `delayMs`/`oa://window-shown`
+         boot-entrance timing (D54) or it reintroduces the M1 "plays before window
+         shown" bug. Also a platform nav motion-hook so data themes get selection
+         choreography without custom render code.
+      3. **Rust `theme_loader`** widen for `[motion.transition|selection|ambient]`
+         (disk-theme authoring; safe — no `deny_unknown_fields`).
+      4. Global `--motion-*` retime reaching the WAAPI players; strip `[oa-theme-motion]`
+         diagnostics.
+    - ⬜ Deferred catalog: `push-hero` (shared-element), `attract-scroll`/`screensaver`
+      (Thrust V), and the wishlist **`path-move` + keyframe-timeline** carry-over
+      (HyperSpin `MotionPath`/`timeline`; see
       [theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md](features/theming-substrate/THEME_BUILDER_WISHLIST_2026-06-17.md) §3).
 
 The keystone slice of **Theming ARC 2 — Per-System Layout Substrate** (planned
