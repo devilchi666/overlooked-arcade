@@ -9,7 +9,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-18 — ARC 3 Thrust M: wire the motion model into the consumers — 🔄 on `feat/motion-wire-consumers` (NOT merged; awaiting operator playtest)
+## 2026-06-18 — ARC 3 Thrust M: wire the motion model into the consumers — ✅ MERGED to main (`60af185`)
 
 > The "wire it up right" tail from the preset-registry entry below. The model +
 > registry + contract were merged; almost nothing real consumed them (only the lab
@@ -62,7 +62,7 @@ Phase 3 build arc: S1 nav foundation / S2 walking skeleton / S3 token layer).
 
 ---
 
-## 2026-06-18 — ARC 3 Thrust M: the named preset registry + contract wiring — 🔄 on `feat/motion-presets-and-wiring` (NOT merged)
+## 2026-06-18 — ARC 3 Thrust M: the named preset registry + contract wiring — ✅ MERGED to main (`b0ca076`)
 
 > Finished the audit §3 seed catalog as a NAMED registry themes pick from, and
 > wired it into the theme contract (motion as data). Follows the M-mod.1–.4 model,

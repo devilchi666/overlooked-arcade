@@ -21,15 +21,15 @@ spanned every system but was filed under whichever core happened to be active.
   fanart backdrop + hero box-art FX + coverflow + system-accent theming; operator
   feel = "good for now". 🔑 the F10 `frontend/src/dev/` bench is superseded by the
   lab (which lives in RELEASE builds).
-  - **In flight: named preset registry + contract wiring** — branch
-    `feat/motion-presets-and-wiring` (MERGE STATUS: see SESSION_LOG). **17/21 audit
+  - **Named preset registry + contract wiring ✅ MERGED to main** (`b0ca076`).
+    **17/21 audit
     presets packaged** (`motionPresets.ts` registry + `treatments.tsx` + `staggerMs`),
     basis grew `rotateX/Y` + `filter`/`boxShadow`, and the contract gained
     `motion.transition|selection|ambient` = `MotionRef` (preset name | inline spec),
     resolved by `resolveMotionRef`, validated by name+KIND. Deferred: `push-hero`,
     attract (Thrust V).
-  - **"Wire it up right" ✅ DONE on `feat/motion-wire-consumers`** (5 commits, NOT
-    merged — awaiting operator playtest): ⑤ diagnostics dev-tools toggle
+  - **"Wire it up right" ✅ MERGED to main (`60af185`, 2026-06-18)** — branch
+    `feat/motion-wire-consumers` (5 commits): ⑤ diagnostics dev-tools toggle
     (`motionDebug.ts`, default off, persisted; D58.9 — toggled, not stripped); ①
     lab refactored onto `<Gloss>`/`<Reflection>`/`<FanartCrossfade>` + the named
     `ambient: "breathe"` slot; ② `declarativeShell` migrated onto `SpecTransition` +
@@ -41,6 +41,12 @@ spanned every system but was filed under whichever core happened to be active.
     10 cargo theme_loader green. Deferred: the declarative selection/ambient hook
     (flat-browse renderer needs its own design). `ViewTransition`/`resolveViewTransition`
     now have no runtime consumer (kept as tested product code per testbed doc).
+  - **🔭 Thrust M is at a REST POINT** — model + showcase + preset registry +
+    consumer wiring all merged. Remaining motion work is all deferred (declarative
+    selection/ambient hook · `push-hero` shared-element · attract = Thrust V ·
+    `path-move`/keyframe-timeline). Next ARC 3 move is the operator's call: pick up a
+    deferred motion item, or advance to **Thrust S** (game-surface shader chrome). See
+    NEXT.md ARC 3 band.
   - Decisions D53–D58; catalogue [features/theming-substrate/MOTION.md](features/theming-substrate/MOTION.md);
     full story [features/theming-substrate/SESSION_LOG.md](features/theming-substrate/SESSION_LOG.md).
   (2026-06-16 entries).

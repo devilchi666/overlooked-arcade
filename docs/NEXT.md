@@ -180,7 +180,7 @@ per-system-descriptor loader.
   - **P.1 S3 ✅ MERGED** — registry merge + Appearance picker + `themes` pack-type spec; source-tree fallback so themes resolve from `target/`; live sample `themes/community/neon-list/`.
   - **Optional follow-ons (unqueued):** swap the dogfood's source from the inline builtin to disk; `system-ui/` background/sound asset cascade for disk themes; P.2 (runtime custom-JS).
 
-### Theming ARC 3 — Cinematic & Scripting `[M0 FOUNDATION VALIDATED + MERGED 2026-06-17; declarative motion MODEL is next]`
+### Theming ARC 3 — Cinematic & Scripting `[Thrust M (motion) MERGED + at a rest point 2026-06-18; next = a deferred motion item or Thrust S (shaders)]`
 
 Make OA cinematic (motion · shaders · video · attract) while keeping the
 declarative-first spine, so the look flows into the disk `.oatheme` themes ARC 2
@@ -225,8 +225,8 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
     basis + WAAPI compiler, players (`SpecTransition`/`AmbientMotion`/`useTilt`),
     `view_transition_spec` contract + resolver + validator. Reachable via Settings →
     Experimental → Graphics Lab. (Feel is operator-eye-validated as "good for now".)
-  - **named preset registry + contract wiring 🔄 NOT MERGED** (branch
-    `feat/motion-presets-and-wiring`; SESSION_LOG 2026-06-18):
+  - **named preset registry + contract wiring ✅ MERGED to main** (`b0ca076`;
+    SESSION_LOG 2026-06-18):
     - ✅ **17/21 of the audit §3 catalog packaged.** Registry `motionPresets.ts` (11
       named spec presets: fade/slide/scale/flip · lift/art-grow-in/title-rise ·
       breathe/float/glow-pulse/ken-burns) + treatments `treatments.tsx`
@@ -234,8 +234,8 @@ data** (D52). Thrusts (sequenced M→S→V→R-deferred):
       Basis grew `rotateX/Y` + `filter`/`boxShadow` channels.
     - ✅ **Contract:** `ThemeMotion.transition|selection|ambient` slots = `MotionRef`
       (preset name | inline spec); `resolveMotionRef`; validator enforces name+KIND.
-    - ✅ **Wiring tail DONE on `feat/motion-wire-consumers`** (5 commits; NOT merged —
-      awaiting operator playtest):
+    - ✅ **Wiring tail MERGED to main** (`60af185`; branch `feat/motion-wire-consumers`,
+      5 commits):
       1. ✅ **Lab refactor** — consumes `<Gloss>`/`<Reflection>`/`<FanartCrossfade>` +
          authors `ambient: "breathe"` by name (in `themes/lab/index.tsx`).
       2. ✅ **`declarativeShell` migrated** onto `SpecTransition` +
