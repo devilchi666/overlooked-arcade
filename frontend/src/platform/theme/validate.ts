@@ -44,6 +44,7 @@ import {
   type SystemPalette,
 } from "@oa/platform/themes/systemPalettes";
 import { GLYPH_SETS } from "@oa/platform/nav";
+import { MOTION_PRESETS, MOTION_PRESET_NAMES, type MotionPresetKind } from "./motionPresets";
 
 /// Surfaces the shell honors today. ARC 1 = exactly `main` (D20b). The named
 /// surfaces seam widens this when multi-monitor lands; a theme declaring a
@@ -549,65 +550,91 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
     }
   }
 
-  // --- view_transition_spec (M-mod.1 / D52): the §2 motion BASIS authored as
-  //     data. Optional; when present it must be a well-formed spec — `duration` a
-  //     positive number, `delay` a number, `easing` a non-empty string, and each
-  //     present channel a `[from, to]` pair of finite numbers. Malformed = ERROR
-  //     (a broken motion decl is worse than none). ---
+  // --- motion specs + refs (M-mod / D52): the §2 motion authored as data.
+  //     `view_transition_spec` (legacy explicit spec) + the unified slots
+  //     `transition`/`selection`/`ambient`, each a MotionRef = a known preset name
+  //     of the right KIND, or an inline spec. Malformed = ERROR (a broken motion
+  //     decl is worse than none). ---
   const motionObj = m?.motion;
   if (motionObj != null && typeof motionObj === "object" && !Array.isArray(motionObj)) {
-    const spec = (motionObj as Record<string, unknown>).view_transition_spec;
-    if (spec != null) {
-      const bad = (field: string, message: string): void => {
-        errors.push({ code: "INVALID_MOTION", field, message });
-      };
-      if (typeof spec !== "object" || Array.isArray(spec)) {
-        bad(
-          "motion.view_transition_spec",
-          "manifest.motion.view_transition_spec must be an object { duration, easing?, delay?, channels }",
-        );
+    const mo = motionObj as Record<string, unknown>;
+    const bad = (field: string, message: string): void => {
+      errors.push({ code: "INVALID_MOTION", field, message });
+    };
+
+    // Validate an inline §2 spec object at `prefix`.
+    const validateSpec = (spec: Record<string, unknown>, prefix: string): void => {
+      if (typeof spec.duration !== "number" || !Number.isFinite(spec.duration) || spec.duration <= 0) {
+        bad(`${prefix}.duration`, "duration must be a positive number (ms)");
+      }
+      if (spec.delay != null && (typeof spec.delay !== "number" || !Number.isFinite(spec.delay))) {
+        bad(`${prefix}.delay`, "delay must be a number (ms) when present");
+      }
+      if (spec.easing != null && !isNonEmptyString(spec.easing)) {
+        bad(`${prefix}.easing`, "easing must be a non-empty CSS easing string when present");
+      }
+      if (
+        spec.repeat != null &&
+        spec.repeat !== "infinite" &&
+        (typeof spec.repeat !== "number" || !Number.isFinite(spec.repeat) || spec.repeat <= 0)
+      ) {
+        bad(`${prefix}.repeat`, 'repeat must be a positive number or "infinite" when present');
+      }
+      if (spec.direction != null && !["normal", "reverse", "alternate"].includes(spec.direction as string)) {
+        bad(`${prefix}.direction`, "direction must be normal | reverse | alternate when present");
+      }
+      const channels = spec.channels;
+      if (channels == null || typeof channels !== "object" || Array.isArray(channels)) {
+        bad(`${prefix}.channels`, "channels must be an object of [from, to] pairs");
       } else {
-        const s = spec as Record<string, unknown>;
-        if (typeof s.duration !== "number" || !Number.isFinite(s.duration) || s.duration <= 0) {
-          bad("motion.view_transition_spec.duration", "duration must be a positive number (ms)");
+        const ch = channels as Record<string, unknown>;
+        for (const key of ["opacity", "x", "y", "scale", "rotate", "rotateX", "rotateY"] as const) {
+          const v = ch[key];
+          if (v == null) continue;
+          if (!Array.isArray(v) || v.length !== 2 || !v.every((n) => typeof n === "number" && Number.isFinite(n))) {
+            bad(`${prefix}.channels.${key}`, `${key} must be a [from, to] pair of finite numbers`);
+          }
         }
-        if (s.delay != null && (typeof s.delay !== "number" || !Number.isFinite(s.delay))) {
-          bad("motion.view_transition_spec.delay", "delay must be a number (ms) when present");
-        }
-        if (s.easing != null && !isNonEmptyString(s.easing)) {
-          bad("motion.view_transition_spec.easing", "easing must be a non-empty CSS easing string when present");
-        }
-        if (
-          s.repeat != null &&
-          s.repeat !== "infinite" &&
-          (typeof s.repeat !== "number" || !Number.isFinite(s.repeat) || s.repeat <= 0)
-        ) {
-          bad("motion.view_transition_spec.repeat", 'repeat must be a positive number or "infinite" when present');
-        }
-        if (s.direction != null && !["normal", "reverse", "alternate"].includes(s.direction as string)) {
-          bad("motion.view_transition_spec.direction", "direction must be normal | reverse | alternate when present");
-        }
-        const channels = s.channels;
-        if (channels == null || typeof channels !== "object" || Array.isArray(channels)) {
-          bad("motion.view_transition_spec.channels", "channels must be an object of [from, to] number pairs");
-        } else {
-          for (const key of ["opacity", "x", "y", "scale", "rotate"] as const) {
-            const ch = (channels as Record<string, unknown>)[key];
-            if (ch == null) continue;
-            if (
-              !Array.isArray(ch) ||
-              ch.length !== 2 ||
-              typeof ch[0] !== "number" ||
-              typeof ch[1] !== "number" ||
-              !Number.isFinite(ch[0]) ||
-              !Number.isFinite(ch[1])
-            ) {
-              bad(`motion.view_transition_spec.channels.${key}`, `${key} must be a [from, to] pair of finite numbers`);
-            }
+        for (const key of ["filter", "boxShadow"] as const) {
+          const v = ch[key];
+          if (v == null) continue;
+          if (!Array.isArray(v) || v.length !== 2 || !v.every((s) => typeof s === "string")) {
+            bad(`${prefix}.channels.${key}`, `${key} must be a [from, to] pair of strings`);
           }
         }
       }
+    };
+
+    // Validate a MotionRef (preset name OR inline spec) for a slot expecting `kind`.
+    const validateRef = (ref: unknown, slot: string, kind: MotionPresetKind): void => {
+      if (ref == null) return;
+      if (typeof ref === "string") {
+        const preset = MOTION_PRESETS[ref];
+        if (!preset) {
+          bad(`motion.${slot}`, `"${ref}" is not a known motion preset (one of ${MOTION_PRESET_NAMES.join(", ")})`);
+        } else if (preset.kind !== kind) {
+          bad(`motion.${slot}`, `preset "${ref}" is a ${preset.kind} preset; motion.${slot} expects a ${kind} preset`);
+        }
+      } else if (typeof ref === "object" && !Array.isArray(ref)) {
+        validateSpec(ref as Record<string, unknown>, `motion.${slot}`);
+      } else {
+        bad(`motion.${slot}`, `motion.${slot} must be a preset name (string) or an inline spec (object)`);
+      }
+    };
+
+    // legacy explicit spec
+    const vSpec = mo.view_transition_spec;
+    if (vSpec != null) {
+      if (typeof vSpec !== "object" || Array.isArray(vSpec)) {
+        bad("motion.view_transition_spec", "must be an object { duration, easing?, delay?, channels }");
+      } else {
+        validateSpec(vSpec as Record<string, unknown>, "motion.view_transition_spec");
+      }
     }
+    // unified slots
+    validateRef(mo.transition, "transition", "transition");
+    validateRef(mo.selection, "selection", "selection");
+    validateRef(mo.ambient, "ambient", "ambient");
   }
 
   // --- motionTokens (ARC 3 M1): durations/easings overrides. Keys ∈
