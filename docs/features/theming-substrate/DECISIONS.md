@@ -2093,3 +2093,38 @@ model (D52). Catalogue + interpretation: `MOTION.md`.
 **Open caveat:** the M1 declarative entrance still carries `[oa-theme-motion]`
 diagnostics and isn't feel-tuned — fold both into the declarative-motion-model work,
 not a separate pass.
+
+### D57 — Motion-model parameter contract: shared basis + `{bounce,duration}` springs (2026-06-17)
+
+Locked after the motion-vocabulary audit (`MOTION_VOCABULARY_AUDIT_2026-06-17.md`,
+four parallel research passes over BigBox / HyperSpin / ES-DE / Pegasus / Playnite /
+tvOS / PS5 / Switch / Netflix / Plex / WAAPI / Motion / GSAP / CSS). The audit
+answers "which named effects + how many params" by **derivation, not invention**:
+the competitor union is the must-cover floor, the console/streaming idioms are the
+ceiling, and the gap is spring physics + depth + interruptible choreography — exactly
+what BigBox structurally lacks (its built-in transitions expose no timing/easing and
+have no spring solver). Operator signed off all five forks:
+
+1. **Spring author surface = `{ bounce, duration }`** (escape hatch `{ stiffness,
+   damping, mass, velocity }`, converted internally). Orthogonal + predictable;
+   matches iOS `UISpringTimingParameters` / SwiftUI / modern Motion + the low-floor/
+   high-ceiling north star.
+2. **Animatable channels are SEPARATE primitives** (`x`/`y`/`scale`/`rotate`/
+   `opacity`/…), not one `transform` string — composes, allows per-channel
+   easing/spring, maps to WAAPI `composite: add`.
+3. **One shared ~8-primitive parameter basis** (`duration, delay, easing, spring,
+   repeat, direction, fill, stagger` + `keyframes/offsets` + `composite`). Every
+   named preset = curated defaults over the basis + the subset it exposes. No
+   bespoke per-effect params.
+4. **`theme.toml [motion]` widens** from the shipped single `view_transition` table
+   to `[motion.selection]` / `[motion.ambient]` / `[motion.boxart]` tables, each
+   `preset = "…"` + exposed params, validated by `validateTheme` (malformed =
+   disqualifying error, like `views`).
+5. **Tiered build:** Thrust M ships the compositor-cheap core (opacity/translate/
+   scale/rotate — the quartet MOTION.md validated); 3D-tilt + filter presets are a
+   fenced second pass; attract/screensaver defers to Thrust V. Dogfood on Retroverse
+   routes (real view/selection changes), NOT `DeclarativeShell` (D55).
+
+Seed catalog = ~21 presets across view-transition / selection-choreography / ambient /
+box-art / attract, each tagged Parity (competitor table-stakes) or Surpass (premium
+idiom BigBox can't do). This is the spec the Thrust-M preset registry implements.

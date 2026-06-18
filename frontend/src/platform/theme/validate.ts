@@ -549,6 +549,67 @@ export function validateTheme(pkg: ThemePackage): ThemeValidation {
     }
   }
 
+  // --- view_transition_spec (M-mod.1 / D52): the §2 motion BASIS authored as
+  //     data. Optional; when present it must be a well-formed spec — `duration` a
+  //     positive number, `delay` a number, `easing` a non-empty string, and each
+  //     present channel a `[from, to]` pair of finite numbers. Malformed = ERROR
+  //     (a broken motion decl is worse than none). ---
+  const motionObj = m?.motion;
+  if (motionObj != null && typeof motionObj === "object" && !Array.isArray(motionObj)) {
+    const spec = (motionObj as Record<string, unknown>).view_transition_spec;
+    if (spec != null) {
+      const bad = (field: string, message: string): void => {
+        errors.push({ code: "INVALID_MOTION", field, message });
+      };
+      if (typeof spec !== "object" || Array.isArray(spec)) {
+        bad(
+          "motion.view_transition_spec",
+          "manifest.motion.view_transition_spec must be an object { duration, easing?, delay?, channels }",
+        );
+      } else {
+        const s = spec as Record<string, unknown>;
+        if (typeof s.duration !== "number" || !Number.isFinite(s.duration) || s.duration <= 0) {
+          bad("motion.view_transition_spec.duration", "duration must be a positive number (ms)");
+        }
+        if (s.delay != null && (typeof s.delay !== "number" || !Number.isFinite(s.delay))) {
+          bad("motion.view_transition_spec.delay", "delay must be a number (ms) when present");
+        }
+        if (s.easing != null && !isNonEmptyString(s.easing)) {
+          bad("motion.view_transition_spec.easing", "easing must be a non-empty CSS easing string when present");
+        }
+        if (
+          s.repeat != null &&
+          s.repeat !== "infinite" &&
+          (typeof s.repeat !== "number" || !Number.isFinite(s.repeat) || s.repeat <= 0)
+        ) {
+          bad("motion.view_transition_spec.repeat", 'repeat must be a positive number or "infinite" when present');
+        }
+        if (s.direction != null && !["normal", "reverse", "alternate"].includes(s.direction as string)) {
+          bad("motion.view_transition_spec.direction", "direction must be normal | reverse | alternate when present");
+        }
+        const channels = s.channels;
+        if (channels == null || typeof channels !== "object" || Array.isArray(channels)) {
+          bad("motion.view_transition_spec.channels", "channels must be an object of [from, to] number pairs");
+        } else {
+          for (const key of ["opacity", "x", "y", "scale", "rotate"] as const) {
+            const ch = (channels as Record<string, unknown>)[key];
+            if (ch == null) continue;
+            if (
+              !Array.isArray(ch) ||
+              ch.length !== 2 ||
+              typeof ch[0] !== "number" ||
+              typeof ch[1] !== "number" ||
+              !Number.isFinite(ch[0]) ||
+              !Number.isFinite(ch[1])
+            ) {
+              bad(`motion.view_transition_spec.channels.${key}`, `${key} must be a [from, to] pair of finite numbers`);
+            }
+          }
+        }
+      }
+    }
+  }
+
   // --- motionTokens (ARC 3 M1): durations/easings overrides. Keys ∈
   //     ThemeMotionTokens (MOTION_TOKEN_VAR), values non-empty. Same data-half
   //     rule as `tokens`: a theme can only set known, mount-scoped motion vars,

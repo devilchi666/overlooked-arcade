@@ -18,6 +18,7 @@
 
 import { createSignal, onCleanup, type Accessor } from "solid-js";
 import type { ThemeMotion, ViewTransitionPreset } from "./manifest";
+import { presetToSpec, REDUCED_MOTION_SPEC, type MotionSpec } from "./motionSpec";
 
 /// The standard transition duration when a theme declares a preset but no
 /// `duration`. Matches `--motion-medium` (index.css) numerically — but is a
@@ -90,6 +91,31 @@ export function resolveViewTransition(
     durationMs: duration ?? DEFAULT_TRANSITION_MS,
     easing,
   };
+}
+
+/// Resolve a theme's declared motion to a §2 `MotionSpec` for the `SpecTransition`
+/// player (M-mod.1). The unified manifest→spec path: a theme may author the full
+/// basis (`view_transition_spec`, which WINS) or the shortcut preset
+/// (`view_transition`, mapped to the same basis via `presetToSpec`). Pure.
+///
+///   • `prefers-reduced-motion` → REDUCED_MOTION_SPEC (a short fade), regardless.
+///   • `view_transition_spec` present → that spec.
+///   • else `view_transition` preset → `presetToSpec` with its duration/easing.
+///   • else (no motion / `preset: "none"`) → null (no animation).
+export function resolveThemeMotionSpec(
+  motion: ThemeMotion | undefined,
+  reducedMotion: boolean,
+): MotionSpec | null {
+  if (reducedMotion) return REDUCED_MOTION_SPEC;
+  if (motion?.view_transition_spec) return motion.view_transition_spec;
+  const vt = motion?.view_transition;
+  if (!vt || vt.preset === "none") return null;
+  const duration = parseDurationMs(vt.duration);
+  const easing = vt.easing != null && vt.easing.trim().length > 0 ? vt.easing : undefined;
+  return presetToSpec(vt.preset, {
+    duration: duration ?? undefined,
+    easing,
+  });
 }
 
 /// Read the OS "reduce motion" preference once (non-reactive). Guards for

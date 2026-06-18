@@ -9,6 +9,8 @@
 //
 // Schema source of truth: docs/PLANS/theming-substrate.md §Phase 2.
 
+import type { MotionSpec } from "./motionSpec";
+
 /** Context slices a theme can declare it consumes. Mirrors the
  * top-level store keys on `ThemeContextValue` (routes/retroverse/
  * context.tsx — extracted to platform in Phase 5/6). */
@@ -186,6 +188,15 @@ export type ViewTransitionConfig = {
  * key mirrors the `theme.toml` `[motion.view_transition]` table. */
 export type ThemeMotion = {
   view_transition?: ViewTransitionConfig;
+  /** The §2 motion BASIS for a view transition, authored as data (M-mod.1): full
+   * channel/timing control (`{ duration, easing?, delay?, channels }`) instead of
+   * the fixed `view_transition` preset. When present it WINS over `view_transition`
+   * (the preset is the shortcut; the spec is the escape hatch). Played by
+   * `SpecTransition` via `resolveThemeMotionSpec`. snake_case-free here because the
+   * spec mirrors the engine `MotionSpec` 1:1; in `theme.toml` it's the
+   * `[motion.view_transition_spec]` table (disk-theme deserialization widens the
+   * Rust `theme_loader` additively — deferred until a disk theme authors one). */
+  view_transition_spec?: MotionSpec;
 };
 
 export type ThemeManifest = {

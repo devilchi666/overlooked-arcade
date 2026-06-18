@@ -20,10 +20,15 @@ import { retroverse } from "./retroverse";
 import { coverflow } from "./coverflow";
 import { bare } from "./bare";
 import { bareDeclarative } from "./declarative-bare";
+// [GRAPHICS-LAB] strip-on-ship testbed theme — hidden from the picker via its
+// `experimental` flag; see docs/features/theming-substrate/GRAPHICS_LAB_TESTBED.md.
+import { lab } from "./lab";
 
 // Order: first = default (Retroverse). `bare` is the minimal valid reference
 // theme added in S4 — operator-selectable (the lowest-floor shell, browse +
 // launch + engine access, no tokens) and the validator's canonical fixture.
 // `bareDeclarative` (P.1 S2 dogfood) re-expresses `bare` as pure data rendered
 // by the built-in DeclarativeShell — the zero-code proof, beside `bare` for A/B.
-export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow, bare, bareDeclarative];
+// [GRAPHICS-LAB] `lab` appended last so it never displaces the default (first =
+// Retroverse); its `experimental` flag keeps it out of the Appearance picker.
+export const BUILTIN_THEMES: ThemePackage[] = [retroverse, coverflow, bare, bareDeclarative, lab];
