@@ -21,6 +21,7 @@
 
 import { createEffect, onCleanup, type JSX } from "solid-js";
 import { compileMotionSpec, REDUCED_MOTION_SPEC, type MotionSpec } from "./motionSpec";
+import { motionDebugEnabled } from "./motionDebug";
 
 export type SpecTransitionProps = {
   /// Tracked: when this changes, the spec (re)plays. Typically the route/view key.
@@ -50,9 +51,10 @@ export default function SpecTransition(props: SpecTransitionProps): JSX.Element 
         : !compiled
           ? "no-op"
           : "";
-    console.log(
-      `[oa-theme-motion] SpecTransition key=${String(key)} reduced=${reduced} dur=${spec?.duration ?? 0} -> ${skip || "WAAPI-PLAY"}`,
-    );
+    if (motionDebugEnabled())
+      console.log(
+        `[oa-theme-motion] SpecTransition key=${String(key)} reduced=${reduced} dur=${spec?.duration ?? 0} -> ${skip || "WAAPI-PLAY"}`,
+      );
     if (!node || skip || !compiled) return;
     anim?.cancel(); // interruptible — drop any in-flight play before the new one
     anim = node.animate(compiled.keyframes, compiled.options);

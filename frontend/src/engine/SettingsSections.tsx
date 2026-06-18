@@ -42,6 +42,7 @@ import {
   activeThemeId,
   setActiveTheme,
 } from "@oa/platform/theme/registry";
+import { motionDebug, setMotionDebug } from "@oa/platform/theme/motionDebug";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
 import {
   refreshMameSystemInfo,
@@ -635,6 +636,24 @@ export const ExperimentalSettings: Component = () => {
           noise for normal operators. The Background Jobs test spawner
           moved here from Settings → Library on 2026-06-03. */}
       <SettingsCard title="Dev tools">
+        {/* Theming ARC 3 Thrust M (D58.9): runtime gate for the per-play
+            `[oa-theme-motion]` diagnostics emitted by the motion players
+            (SpecTransition / AmbientMotion / ViewTransition). Default OFF so
+            normal use is quiet; flip ON to trace whether a play fired, its
+            spec, and reduced-motion downgrades. Persisted (localStorage),
+            survives the restart-based theme swap. The code is NOT stripped
+            until final ship — this toggles it. */}
+        <SettingRow
+          label="Motion diagnostics log"
+          inherited={null}
+          overridden={motionDebug()}
+          toggle={{
+            checked: motionDebug(),
+            onChange: (v) => setMotionDebug(v),
+          }}
+          description="When ON, the motion players print a per-play [oa-theme-motion] line to the console (and the debug log) — useful for diagnosing theme transitions, selection choreography, ambient loops, and reduced-motion downgrades. Default OFF; no effect on what the user sees, only on log verbosity."
+        />
+
         <button
           type="button"
           data-setting-action
