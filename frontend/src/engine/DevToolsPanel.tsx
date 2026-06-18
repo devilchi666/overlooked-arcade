@@ -7,6 +7,11 @@
 // (platform/nav/spatial.tsx, platform/nav/focus.ts). Toggling writes the global
 // and mirrors it into a local signal for the button state. Add a new entry to
 // DEBUG_FLAGS to surface another stream — no other wiring needed.
+//
+// EXCEPTION — the "Theme motion" toggle is the one PERSISTED logging flag
+// (platform/theme/motionDebug.ts, localStorage): theme swaps restart the app, so
+// a session-only global would reset on every swap and never survive long enough
+// to debug theme motion (ARC 3 Thrust M, D58.9).
 
 import { createSignal, For, onMount, Show, type Component } from "solid-js";
 import { spawnTestJob } from "@oa/platform/api/jobsApi";
@@ -18,6 +23,7 @@ import {
   revealLogsFolder,
   setLogStreams,
 } from "@oa/platform/api/shellApi";
+import { motionDebug, setMotionDebug } from "@oa/platform/theme/motionDebug";
 
 type FlagDef = { key: string; label: string; hint: string };
 
@@ -174,6 +180,38 @@ const DevToolsPanel: Component = () => {
             </div>
           )}
         </For>
+
+        {/* Motion diagnostics (ARC 3 Thrust M, D58.9) — the per-play
+            [oa-theme-motion] stream from the motion players (SpecTransition /
+            AmbientMotion / ViewTransition). Unlike the session-only flags above,
+            this one PERSISTS (localStorage) — theme swaps RESTART the app, so a
+            non-persisted flag would reset on every swap, defeating motion
+            debugging. Code is toggled, not stripped (D58.9). */}
+        <div class="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+          <div class="min-w-0">
+            <p class="text-[0.8rem] font-semibold text-(--color-oa-ink)">Theme motion</p>
+            <p class="text-[0.65rem] text-(--color-oa-ink-dim)">
+              Log every motion play (transition / selection / ambient) + reduced-motion
+              downgrades. Persists across the restart-based theme swap.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setMotionDebug(!motionDebug());
+            }}
+            aria-pressed={motionDebug()}
+            class="shrink-0 rounded-md border px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wider transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
+            classList={{
+              "border-emerald-400/40 bg-emerald-500/15 text-emerald-200": motionDebug(),
+              "border-white/10 bg-white/[0.04] text-(--color-oa-ink-dim) hover:bg-white/[0.08] hover:text-(--color-oa-ink)":
+                !motionDebug(),
+            }}
+          >
+            {motionDebug() ? "On" : "Off"}
+          </button>
+        </div>
       </div>
 
       {/* Backend (Rust) log streams */}
