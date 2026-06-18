@@ -31,6 +31,7 @@ import { GridNav } from "@oa/platform/nav";
 import { systemThemes } from "@oa/platform/themes/registry";
 import SpecTransition from "@oa/platform/theme/SpecTransition";
 import AmbientMotion from "@oa/platform/theme/AmbientMotion";
+import { useTilt } from "@oa/platform/theme/tilt";
 import { resolveThemeMotionSpec, usePrefersReducedMotion } from "@oa/platform/theme/motion";
 import { createSpringValue } from "@oa/platform/theme/springValue";
 import { BENCH_SELECTION_SPRING } from "@oa/platform/theme/spring";
@@ -132,6 +133,8 @@ const LabEntry: ThemeEntry = (_props) => {
   // the F10 k=190/damping=24 back-solve). restDelta tightened for a unit-scale
   // value. Reduced motion holds it at 1 (no grow).
   const artScale = createSpringValue(1, BENCH_SELECTION_SPRING, { restDelta: 0.002, restVelocity: 0.004 });
+  // [GRAPHICS-LAB] MOTION (M-mod.4): pointer-tilt for the hero cover (box-art tier).
+  const heroTilt = useTilt(14);
   createEffect(() => {
     focusedIndex(); // re-run on every focus move
     if (reducedMotion()) {
@@ -305,30 +308,38 @@ const LabEntry: ThemeEntry = (_props) => {
             >
               {(g) => (
                 <aside class="flex min-h-0 flex-col items-center justify-center gap-4 rounded-xl border border-white/10 bg-black/30 p-6">
-                  {/* [GRAPHICS-LAB] MOTION (M-mod.3) — AMBIENT: the outer layer
-                      breathes (scale loop) so the hero has idle life; the inner
-                      cover independently springs in on focus (M-mod.2). Nested
-                      transforms compose — two effects, no conflict. */}
-                  <AmbientMotion spec={() => LAB_BREATHE_SPEC} reducedMotion={reducedMotion}>
-                    <Show
-                      when={coverFor(g)}
-                      fallback={
-                        <div
-                          class="aspect-[3/4] w-44 rounded-lg bg-white/[0.06]"
-                          style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
-                        />
-                      }
-                    >
-                      {(u) => (
-                        <img
-                          src={u()}
-                          alt=""
-                          class="aspect-[3/4] w-44 rounded-lg object-cover shadow-2xl"
-                          style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
-                        />
-                      )}
-                    </Show>
-                  </AmbientMotion>
+                  {/* [GRAPHICS-LAB] MOTION — three composed effects on the hero
+                      cover, each on its own nested element so the transforms
+                      multiply with no conflict:
+                        • M-mod.4 tilt   (outer) — 3D rotate following the pointer
+                        • M-mod.3 breathe (mid)  — subtle infinite scale pulse
+                        • M-mod.2 spring  (inner) — grow-in on every focus change */}
+                  <div
+                    style={{ transform: heroTilt.transform(), transition: "transform 160ms ease-out" }}
+                    onPointerMove={heroTilt.onPointerMove}
+                    onPointerLeave={heroTilt.onPointerLeave}
+                  >
+                    <AmbientMotion spec={() => LAB_BREATHE_SPEC} reducedMotion={reducedMotion}>
+                      <Show
+                        when={coverFor(g)}
+                        fallback={
+                          <div
+                            class="aspect-[3/4] w-44 rounded-lg bg-white/[0.06]"
+                            style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                          />
+                        }
+                      >
+                        {(u) => (
+                          <img
+                            src={u()}
+                            alt=""
+                            class="aspect-[3/4] w-44 rounded-lg object-cover shadow-2xl"
+                            style={{ transform: `scale(${artScale.value()})`, "transform-origin": "center" }}
+                          />
+                        )}
+                      </Show>
+                    </AmbientMotion>
+                  </div>
                   <h2
                     class="text-center text-xl font-black leading-tight tracking-tight"
                     style={{ animation: `oa-lab-rise 420ms ${LAB_RISE_EASE} both` }}
