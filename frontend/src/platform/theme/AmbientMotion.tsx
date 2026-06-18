@@ -13,7 +13,8 @@
 // SpecTransition (whose reduced path is a one-shot fade, wrong for a loop).
 
 import { createEffect, onCleanup, type JSX } from "solid-js";
-import { compileMotionSpec, type MotionSpec } from "./motionSpec";
+import { compileMotionSpec, scaleMotionTiming, type MotionSpec } from "./motionSpec";
+import { readGlobalMotionScale } from "./motion";
 import { motionDebugEnabled } from "./motionDebug";
 
 export type AmbientMotionProps = {
@@ -51,7 +52,9 @@ export default function AmbientMotion(props: AmbientMotionProps): JSX.Element {
     if (reduced || !node || typeof node.animate !== "function" || !spec) return;
     const compiled = compileMotionSpec(spec);
     if (!compiled) return;
-    anim = node.animate(compiled.keyframes, compiled.options);
+    // Fold the global --motion-scale into the loop timing (WAAPI can't read var()).
+    const scaled = scaleMotionTiming(compiled, readGlobalMotionScale(node));
+    anim = node.animate(scaled.keyframes, scaled.options);
   });
 
   onCleanup(() => anim?.cancel());

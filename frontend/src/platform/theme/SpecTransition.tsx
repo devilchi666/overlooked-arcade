@@ -20,7 +20,8 @@
 // `presetToSpec` — is the cleanup once the spec path is validated on the lab.
 
 import { createEffect, onCleanup, type JSX } from "solid-js";
-import { compileMotionSpec, REDUCED_MOTION_SPEC, type MotionSpec } from "./motionSpec";
+import { compileMotionSpec, scaleMotionTiming, REDUCED_MOTION_SPEC, type MotionSpec } from "./motionSpec";
+import { readGlobalMotionScale } from "./motion";
 import { motionDebugEnabled } from "./motionDebug";
 
 export type SpecTransitionProps = {
@@ -71,7 +72,9 @@ export default function SpecTransition(props: SpecTransitionProps): JSX.Element 
       );
     if (!node || skip || !compiled) return;
     anim?.cancel(); // interruptible — drop any in-flight play before the new one
-    anim = node.animate(compiled.keyframes, compiled.options);
+    // Fold the global --motion-scale into the timing (WAAPI can't read var()).
+    const scaled = scaleMotionTiming(compiled, readGlobalMotionScale(node));
+    anim = node.animate(scaled.keyframes, scaled.options);
   });
 
   onCleanup(() => anim?.cancel());

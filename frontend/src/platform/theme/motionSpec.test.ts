@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest";
 import {
   compileMotionSpec,
   presetToSpec,
+  scaleMotionTiming,
   DEFAULT_SPEC_EASING,
   type MotionSpec,
 } from "./motionSpec";
@@ -121,5 +122,30 @@ describe("presetToSpec — a preset is named defaults over the basis", () => {
     const c = compileMotionSpec(presetToSpec("slide", { distance: 140, duration: 560 })!)!;
     expect(c.keyframes[0].transform).toBe("translateY(140px)");
     expect(c.options.duration).toBe(560);
+  });
+
+  describe("scaleMotionTiming (global --motion-scale fold)", () => {
+    const base = (): NonNullable<ReturnType<typeof compileMotionSpec>> =>
+      compileMotionSpec({ duration: 400, delay: 100, channels: { opacity: [0, 1] } })!;
+
+    it("scale 2 doubles duration + delay; keyframes untouched", () => {
+      const c = base();
+      const s = scaleMotionTiming(c, 2);
+      expect(s.options.duration).toBe(800);
+      expect(s.options.delay).toBe(200);
+      expect(s.keyframes).toBe(c.keyframes); // shared, not re-allocated
+    });
+
+    it("scale < 1 speeds up", () => {
+      expect(scaleMotionTiming(base(), 0.5).options.duration).toBe(200);
+    });
+
+    it("scale 1 / invalid scale is an identity no-op (same object)", () => {
+      const c = base();
+      expect(scaleMotionTiming(c, 1)).toBe(c);
+      expect(scaleMotionTiming(c, 0)).toBe(c);
+      expect(scaleMotionTiming(c, Number.NaN)).toBe(c);
+      expect(scaleMotionTiming(c, -2)).toBe(c);
+    });
   });
 });

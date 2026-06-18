@@ -102,6 +102,27 @@ export type CompiledMotion = {
   options: KeyframeAnimationOptions;
 };
 
+/// Fold a global motion-scale multiplier into a compiled spec's TIMING (duration
+/// + delay), returning a retimed copy (keyframes shared, untouched). The WAAPI
+/// counterpart of CSS reading `var(--motion-*)`: `element.animate` takes literal
+/// numbers, so a global accessibility/feel retime can't reach it through CSS —
+/// the players read `--motion-scale` off the DOM (motion.ts
+/// `readGlobalMotionScale`) and apply it here. `scale === 1` (or a non-positive /
+/// non-finite scale) is a no-op identity, so the common path allocates nothing.
+/// Pure.
+export function scaleMotionTiming(compiled: CompiledMotion, scale: number): CompiledMotion {
+  if (scale === 1 || !Number.isFinite(scale) || scale <= 0) return compiled;
+  const { duration, delay } = compiled.options;
+  return {
+    keyframes: compiled.keyframes,
+    options: {
+      ...compiled.options,
+      duration: typeof duration === "number" ? duration * scale : duration,
+      delay: typeof delay === "number" ? delay * scale : delay,
+    },
+  };
+}
+
 /// Compile a spec to a WAAPI keyframe set + options. Returns `null` for a no-op
 /// (no channels, or non-positive duration) so the player can skip cleanly.
 /// `fill: "both"` holds the FROM frame before and the TO frame after, so the
