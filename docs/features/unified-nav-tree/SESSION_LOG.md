@@ -127,3 +127,34 @@ the `layoutOverrides` key `(themeId, systemId, view)` → `(themeId, nodeId, vie
 "change view" control (generalize the shipped L5 system-keyed Layout editor). OR **Slice 4** —
 drag-to-curate + the `filterWithinParent` toggle UI + real in-tree filter/collection nodes (makes NT4
 narrowing operator-clickable) + retire the Collections tab.
+
+## 2026-06-19 — Arc RE-ANCHORED as "Navigation Structure" + full program planned (no new code)
+
+Mid-session, the operator flagged that the arc had drifted into theme framing ("this was not meant to
+be a theme thing… it's supposed to be in the settings system"). Investigation confirmed it: the actual
+2026-06-18 BigBox research + vision lived **only in a `/clear`ed planning conversation**, so the *plan*
+survived but the *intent* didn't — the recurring drift. Recovered it from the transcript and persisted
+it as the anti-drift artifact **[RESEARCH.md](RESEARCH.md)**.
+
+**Shipped (docs only):**
+- **RESEARCH.md** — the vision (collections ARE the navigation layer; user-authored nested tree), the
+  BigBox study (4 levels, view-per-level, change-on-the-fly, remembered, playlists as nodes), how we
+  outdo it (arbitrary user nesting), and the two-layer drift diagnosis.
+- **Two Explore audits** mapped reality: the **authoring** surface (Settings → "Organize My
+  Collection" already hosts the View Editor + Collections Manager + show/hide-systems; full container
+  CRUD; drag is leaf-only) and the **settings/override** surface (`SettingsPanel` categories;
+  `layoutOverrides` keyed `theme/system/view`; only `game-browse` has a renderer). **Verdict:
+  reconnect + enrich, not rebuild.**
+- **Re-anchored the arc** (DECISIONS **NT7**): Navigation Structure = Settings-level, user-authored;
+  themes only style. Operator chose to **plan the whole arc up front** and **unify the three editor
+  cards into one "Navigation Structure" editor**. Rewrote `PLANS/unified-nav-tree.md` to the 7-slice
+  program (authoring-richness first → unify → per-node views → drill-through levels → polish); README
+  reframed; VIEW_MODEL.md demoted to the subordinate styling-cascade reference.
+
+**Almost:** Slice 2 (filter nodes + NT4) is green on `feat/unified-nav-tree-s2` but unmerged — it
+merges as *substrate*; its read-only sidebar sections are transitional (replaced by real authored
+nodes in arc Slice 1).
+
+**Next:** **Arc Slice 1** — make collections & smart-lists real, authored, draggable tree nodes via
+the View Editor + sidebar (wire the reserved `collection`/`filter` rules into the authoring UI). Decide
+the Slice 2 branch fate (merge as substrate) first.

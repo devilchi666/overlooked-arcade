@@ -11,9 +11,18 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Unified Navigation Tree — systems + collections + filters as one node tree, each
-  rendered by a per-node view** — NEW arc, operator-approved 2026-06-18; **Slice 1 ✅ SHIPPED +
-  MERGED to main 2026-06-19** (`1c9a493`). Branch `feat/unified-nav-tree`. Reunites the two
+- **Navigation Structure — a Settings-level, user-authored tree (systems · groups · smart lists ·
+  curated collections · folders), nested any depth, each node's view selectable + remembered** —
+  **RE-ANCHORED 2026-06-19** from the earlier theme-led "Unified Navigation Tree" framing (which
+  drifted into jargon). 🔑 Vision + BigBox research + drift history:
+  [features/unified-nav-tree/RESEARCH.md](features/unified-nav-tree/RESEARCH.md) (read first); full
+  7-slice program in [PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md); decision NT7. Themes only
+  *style* views; the structure is the user's, authored in **Settings → Navigation Structure** (Slice 4
+  unifies the three "Organize My Collection" cards + renames). **Reconnect + enrich, not rebuild** —
+  the home, data model, resolver, predicates, and view-cascade substrate already exist.
+  Slice 1 ✅ MERGED (`1c9a493`); Slice 2 green on `feat/unified-nav-tree-s2` (merges as substrate).
+
+  _Original 2026-06-18 framing + slice detail below — superseded by NT7, kept for history:_ Branch `feat/unified-nav-tree`. Reunites the two
   systems that drifted apart — the systems-only `views` sidebar tree and the separate flat
   `Collections` tab — into one user-authored tree of nodes (system / group / collection /
   filter), each rendered by a per-node view (the BigBox per-level-per-node,

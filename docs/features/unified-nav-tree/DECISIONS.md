@@ -103,3 +103,26 @@ Multi-Player. It's **deferred** (the `dumpQuality` spec kind is recognized-as-un
 
 Wire it once those are decided (operator call) — likely as a small typed spec arm `{ kind: "dumpQuality";
 exclude: … }` reusing the `VariantFilters` flag set, projected onto tiles via the default variant.
+
+## NT7 — Re-anchored as "Navigation Structure" (Settings-level, user-authored); themes only style (2026-06-19)
+
+The arc is **Navigation Structure**: a Settings-level, **user-authored** feature for how the library
+is organized and walked. Themes contribute *only* default styling for a node's view (the cascade in
+[VIEW_MODEL.md](VIEW_MODEL.md)); they never own the structure. This **supersedes the theme-led
+framing** of the original plan (the "theme view model" centerpiece + work filed under `themes/`
+paths), which buried the feature under jargon and caused recurring drift.
+
+**Why:** the operator's vision (captured in [RESEARCH.md](RESEARCH.md)) is "collections ARE the
+navigation layer — a tree you build and arrange." The audit confirmed the *structure* logic lives in
+`platform/` (theme-agnostic) and is authored in Settings; only the optional *styling* touches themes.
+Leading with themes inverted the emphasis. RESEARCH.md is now the source of truth; VIEW_MODEL.md is
+the subordinate *styling-cascade* reference.
+
+**Consequences (operator-approved 2026-06-19):**
+- **One editor:** the three "Organize My Collection" cards (Sidebar layouts / Collections / Sidebar
+  systems) unify into a single **"Navigation Structure"** editor; the Settings category is renamed
+  (arc Slice 4). The separate Collections tab (`themes/retroverse/CollectionsPage.tsx`) retires.
+- **Whole arc planned up front** — 7 slices, authoring-richness first (lists-as-nodes → deep nesting →
+  builder), then unify, then per-node views, then drill-through levels, then polish. See the plan.
+- **Slice 2 (`feat/unified-nav-tree-s2`) merges as substrate;** its read-only sidebar sections are
+  transitional, replaced by real authored nodes in arc Slice 1.
