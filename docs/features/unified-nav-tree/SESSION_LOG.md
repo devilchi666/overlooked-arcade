@@ -24,9 +24,11 @@ read-only "Collections" section into the sidebar so a collection is clickable an
 Frontend-heavy + small Rust types mirror. Verify: tsc + lint + vitest (`platform/views`,
 `platform/library`) + `cargo test -p oa-shell views`. See the plan's "Slice 1" section.
 
-## 2026-06-18 — Slice 1 (keystone) — code-complete, awaiting operator playtest
+## 2026-06-18/19 — Slice 1 (keystone) — ✅ SHIPPED + MERGED to main (`1c9a493`)
 
-**Shipped (branch `feat/unified-nav-tree`, all 5 steps; tsc + lint + 261 vitest + 869 cargo green):**
+**Merged 2026-06-19** — operator chose to merge (branch `feat/unified-nav-tree` pushed for backup).
+
+**Shipped (all 5 steps; tsc + lint + 261 vitest + 869 cargo green):**
 
 1. **`collection` rule kind + reserved inert `filter` (D59).** `ContainerRule` in
    `platform/views/types.ts` gained `{ kind: "collection"; collectionId }` and the
@@ -59,8 +61,25 @@ Frontend-heavy + small Rust types mirror. Verify: tsc + lint + vitest (`platform
 (step 4/5 say `themes/retroverse/LibraryView.tsx`; the real homes are `platform/components/`
 LibraryView + LeftSidebar, consumed by `themes/retroverse/LibraryPage.tsx`).
 
-**Next:** operator playtest via `cargo tauri build` (acceptance: a "Collections" section appears in the
-Retroverse sidebar; clicking a collection shows exactly its member games; system/group nodes
-unchanged — watch the stale `<exe_dir>/themes/` shadow landmine). Then merge to main. After that,
-**Slice 2** (filter / smart-list nodes — wire the reserved `filter` rule to the existing smart-list
-predicates + `VariantFilters`).
+**Next:** **Slice 2** — filter / smart-list nodes + the NT4 composition model. (a) Wire the reserved
+`filter` rule to the existing smart-list predicates + `VariantFilters` (Favorites / Recently Played /
+Multi-Player / dump-quality as tree nodes; predicate AST per
+`_archive/PLANS/collections-tab-retroverse.md` §12, evaluated at render). (b) **NT4** — reserve a
+per-node `filterWithinParent?: boolean` on `ContainerNode` (TS + Rust mirror, default off) and make
+`resolveNodeMembership` **ancestry-aware** (fold parent ∩ child up the path from root, stopping at the
+nearest off ancestor). The load-bearing change: a node can no longer be resolved by id in isolation.
+
+## 2026-06-18 — NT4 decided (node membership composition)
+
+**Shipped:** Recorded decision **NT4** + folded it into the plan (Slice 2) after the operator asked
+whether a node can contain other nodes "and go even deeper." Outcome: **both** folder-organization
+and narrowing, chosen per node by a "filter within parent" toggle (default off). Off = independent
+"standard" set; on = intersect with parent; consecutive on-nodes chain up to the nearest off
+ancestor. Cross-axis (game-set ∩ system-group) intersection falls out for free. The load-bearing
+consequence — resolution becomes ancestry-aware — is captured so it's designed in, not retrofitted.
+Kept on the **membership** axis, deliberately separate from VIEW_MODEL's **layout** axis (conflation
+is what drifted before).
+
+**Almost:** n/a (decision + docs).
+
+**Next:** as above — Slice 2 builds NT4 + the filter nodes together.

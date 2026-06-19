@@ -12,24 +12,37 @@ spanned every system but was filed under whichever core happened to be active.
 ## In flight
 
 - **Unified Navigation Tree — systems + collections + filters as one node tree, each
-  rendered by a per-node view** — NEW arc, operator-approved 2026-06-18. Branch
-  `feat/unified-nav-tree` (suggested). Reunites the two systems that drifted apart — the
-  systems-only `views` sidebar tree and the separate flat `Collections` tab — into one
-  user-authored tree of nodes (system / group / collection / filter), each rendered by a
-  per-node view (the BigBox per-level-per-node, change-on-the-fly, remembered model, built
-  declaratively). Same foundation that fixes "file themes can't do per-system views."
-  Discovered when "Declarative Showcase S3" surfaced the gap; six parallel audits + BigBox
-  research grounded it. **Keystone (Slice 1):** every node resolves to `SystemId[]` today
-  (`platform/views/resolver.ts:55`); collections/filters resolve to games directly —
-  generalize node resolution + the library filter from systems-only to systems-OR-game-set,
-  then collections/filters are just new node kinds in the existing tree. 🔑 The authoritative
-  view model is [features/unified-nav-tree/VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md)
-  (the anti-drift artifact — read before touching view/layout code). Plan:
-  [PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md); decisions NT1–NT3 in
+  rendered by a per-node view** — NEW arc, operator-approved 2026-06-18; **Slice 1 ✅ SHIPPED +
+  MERGED to main 2026-06-19** (`1c9a493`). Branch `feat/unified-nav-tree`. Reunites the two
+  systems that drifted apart — the systems-only `views` sidebar tree and the separate flat
+  `Collections` tab — into one user-authored tree of nodes (system / group / collection /
+  filter), each rendered by a per-node view (the BigBox per-level-per-node,
+  change-on-the-fly, remembered model, built declaratively). Same foundation that fixes "file
+  themes can't do per-system views." Discovered when "Declarative Showcase S3" surfaced the
+  gap; six parallel audits + BigBox research grounded it. 🔑 The authoritative view model is
+  [features/unified-nav-tree/VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md) (the
+  anti-drift artifact — read before touching view/layout code). Plan:
+  [PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md); decisions NT1–**NT4** in
   [features/unified-nav-tree/DECISIONS.md](features/unified-nav-tree/DECISIONS.md); log
-  [features/unified-nav-tree/SESSION_LOG.md](features/unified-nav-tree/SESSION_LOG.md). **Slice 1
-  queued in [NEXT.md](NEXT.md) HIGH band — not yet started.** Supersedes Declarative Showcase S3
-  (parks; resumes inside this arc's Slice 5).
+  [features/unified-nav-tree/SESSION_LOG.md](features/unified-nav-tree/SESSION_LOG.md).
+  Supersedes Declarative Showcase S3 (parks; resumes inside this arc's Slice 5).
+  - **Slice 1 (keystone) ✅ MERGED 2026-06-19** (operator chose to merge). Generalized node
+    resolution + the library filter from systems-only to systems-OR-game-set: `collection`
+    `ContainerRule` kind (+ reserved-inert `filter`, D59) mirrored in Rust `views.rs`;
+    `resolveNodeMembership` (systems | games); `filterEntries` `viewRomIds` seam; read-only
+    "Collections" section in the Retroverse sidebar → click a collection, its games fill the
+    grid; system/group nodes unchanged. **Path note:** LibraryView/LeftSidebar live in
+    `platform/components/` (consumed by `themes/retroverse/LibraryPage.tsx`), NOT
+    `themes/retroverse/` as the plan text said — recorded in the SESSION_LOG. tsc + lint + 261
+    vitest (14 new) + 869 cargo (1 new round-trip) green.
+  - **NT4 decided 2026-06-18 — node membership composition.** Per-node "filter within parent"
+    toggle (default off): off = independent "standard" set; on = intersect with parent, chaining
+    up to the nearest off ancestor. Delivers both folder-organization AND narrowing from one
+    switch. Load-bearing consequence: resolution becomes **ancestry-aware**. Folded into Slice 2.
+  - **Slice 2 ⬜ next (START HERE in [NEXT.md](NEXT.md) HIGH band):** wire the reserved `filter`
+    rule to the existing smart-list predicates + `VariantFilters` (Favorites / Recently Played /
+    Multi-Player / dump-quality as tree nodes) **and** land NT4 (reserve `filterWithinParent` on
+    `ContainerNode` + ancestry-aware `resolveNodeMembership`).
 
 - **Declarative Showcase — make the file-theme path capable & beautiful** — ⏸ **PARKED
   2026-06-18 — superseded by the Unified Navigation Tree arc above** (S3 polishes the *flat*

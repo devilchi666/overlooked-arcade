@@ -77,32 +77,34 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### ⭐ START HERE — Unified Navigation Tree · Slice 1 (keystone: node→games + collections navigable)
+### ⭐ START HERE — Unified Navigation Tree · Slice 2 (filter / smart-list nodes + NT4 composition)
 
-**New arc, operator-approved 2026-06-18.** Plan +
-[VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md) (read the view model first):
-**[PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md)** · feature folder
-[features/unified-nav-tree/](features/unified-nav-tree/) · decisions NT1–NT3.
+**Arc operator-approved 2026-06-18. Slice 1 ✅ SHIPPED + MERGED to main 2026-06-19**
+(`1c9a493`). Plan + [VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md) (read the view
+model first): **[PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md)** · feature folder
+[features/unified-nav-tree/](features/unified-nav-tree/) · decisions NT1–**NT4**.
 
-Reunites the two systems that drifted apart — the systems-only `views` sidebar tree and
-the separate flat `Collections` tab — into **one user-authored tree of nodes (system /
-group / collection / filter), each rendered by a per-node view** (the BigBox model,
-declaratively). This is the same foundation that fixes "file themes can't do per-system
-views." **Supersedes the queued Declarative Showcase S3** (which parks and resumes inside
-this arc's Slice 5).
+The arc reunites the systems-only `views` sidebar tree and the separate flat `Collections`
+tab into **one user-authored tree of nodes (system / group / collection / filter), each
+rendered by a per-node view** (the BigBox model, declaratively). **Supersedes Declarative
+Showcase S3** (parks; resumes inside this arc's Slice 5).
 
-**Slice 1 keystone — the one architectural change:** every node resolves to `SystemId[]`
-today (`platform/views/resolver.ts:55`); collections/filters resolve to **games directly**.
-Generalize node resolution + the library filter from systems-only to systems-OR-game-set.
-Five steps (see the plan's "Slice 1" section): (1) add `{ kind: "collection"; collectionId }`
-to `ContainerRule` (TS `platform/views/types.ts:81` + Rust `views.rs` mirror + round-trip
-test); (2) `resolveNodeMembership` (systems | games) in `platform/views/resolver.ts`;
-(3) widen `filterEntries` with `viewRomIds` (`platform/library/filter.ts:33` — seam already
-reserved in its doc comment); (4) consume membership in `themes/retroverse/LibraryView.tsx`;
-(5) inject a read-only "Collections" section into the sidebar so a collection is clickable
-and shows its games. Frontend-heavy + small Rust mirror. **Acceptance:** click a collection
-in the Retroverse sidebar → its games appear in the grid; system/group nodes unchanged.
-Verify: tsc + lint + `vitest run src/platform/views src/platform/library` +
+**Slice 1 (done):** `collection` ContainerRule kind (+ reserved-inert `filter`, D59) mirrored
+in Rust; `resolveNodeMembership` (systems | games); `filterEntries` `viewRomIds` seam;
+read-only "Collections" sidebar section in Retroverse. LibraryView lives at
+`platform/components/LibraryView.tsx` (not `themes/retroverse/` as the original plan text
+said) — it's a platform component the theme renders via `LibraryPage.tsx`.
+
+**Slice 2 (next) — filter / smart-list nodes + the NT4 composition model.** Two threads:
+(a) wire the reserved `filter` rule kind to the existing smart-list predicates +
+`VariantFilters` (Favorites / Recently Played / Multi-Player / dump-quality as tree nodes;
+predicate AST per `_archive/PLANS/collections-tab-retroverse.md` §12, evaluated at render);
+(b) **NT4 composition** — reserve a per-node `filterWithinParent?: boolean` on `ContainerNode`
+(TS + Rust mirror, default off) and make `resolveNodeMembership` **ancestry-aware** (fold
+parent ∩ child intersections up the path from root, stopping at the nearest off ancestor).
+Off = independent "standard" set (today); on = narrow within parent; chains arbitrarily deep.
+This is the load-bearing change flagged in NT4 — a node can no longer be resolved by id in
+isolation. Verify: tsc + lint + `vitest run src/platform/views src/platform/library` +
 `cargo test -p oa-shell views` (do NOT `cargo fmt -p oa-shell`).
 
 ### ⏸ PARKED (resumes in Unified Nav Tree Slice 5) — Declarative Showcase S3
