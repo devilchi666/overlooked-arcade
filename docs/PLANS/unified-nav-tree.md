@@ -57,9 +57,15 @@ an explicit game set OR a predicate."** Everything else is additive on top.
 ## The arc — slices (each playtestable; D59-style: reserve the contract, wire incrementally)
 
 - **Slice 1 — Keystone: node→games resolution + collections navigable in the sidebar.** *(detail below)*
-- **Slice 2 — Filter / smart-list nodes.** A `filter` rule kind backed by the existing smart-list
-  predicates + `VariantFilters` (Favorites / Recently Played / Multi-Player / dump-quality as tree
-  nodes). Reserve the rule shape in Slice 1, wire it here.
+- **Slice 2 — Filter / smart-list nodes + membership composition.** A `filter` rule kind backed by
+  the existing smart-list predicates + `VariantFilters` (Favorites / Recently Played / Multi-Player /
+  dump-quality as tree nodes). Reserve the rule shape in Slice 1 (done), wire it here. **Also lands
+  the NT4 composition model:** reserve a per-node `filterWithinParent?: boolean` on `ContainerNode`
+  (TS + Rust mirror, default off) and make resolution **ancestry-aware** — `resolveNodeMembership`
+  grows to fold parent ∩ child intersections up the path from root (stopping at the nearest off
+  ancestor). Off = independent "standard" membership (today's behaviour); on = narrow within parent.
+  This is the load-bearing change flagged in NT4: a node can no longer be resolved by id in
+  isolation. Cross-axis (game-set ∩ system-group) intersection falls out once membership composes.
 - **Slice 3 — Per-node view cascade (the BigBox behavior).** Implements the full
   [VIEW_MODEL.md](../features/unified-nav-tree/VIEW_MODEL.md): the cascade per node, the
   `layoutOverrides` key generalized `(themeId, systemId, view)` → `(themeId, nodeId, view)`, and the
@@ -123,6 +129,9 @@ arbitrary nesting/reordering of collections in the tree (S4/S6).
 
 ## Open design forks to settle in later slices (NOT Slice 1)
 
+- ✅ **SETTLED 2026-06-18 (NT4) — node membership composition.** Both folder-organization AND
+  narrowing, via a per-node "filter within parent" toggle (default off). Resolution becomes
+  ancestry-aware; lands in Slice 2. See DECISIONS NT4.
 - View-memory granularity & "change view on the fly" UI (S3) — operator's rule is known
   (default-for-all + per-node override, per-game later); the UI surface + override-key shape is the fork.
 - Do collections auto-appear in every view, or become operator-arranged nodes? (S1 = auto section;

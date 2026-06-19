@@ -36,3 +36,36 @@ only in the operator's head.
 
 **Why record it:** so the history is honest. This arc is a *join of two never-joined halves*, not a
 regression fix — nothing to "restore," everything additive on a strong foundation.
+
+## NT4 — Node membership composes via a per-node "filter within parent" toggle (2026-06-18)
+
+A node's membership can either stand alone or **narrow its parent**, chosen per node by a single
+boolean (default **off**). Operator's words: "a checkmark box on a collection or node that says
+filter; if you don't filter it just shows the standard."
+
+- **Off (default) — independent / "standard":** the node resolves on its own membership regardless
+  of where it sits. A "2-player" node shows *all* 2-player games; its parent is purely visual
+  organization. No surprises, no implicit coupling.
+- **On — "filter within parent":** the node's membership is intersected with its parent's effective
+  membership. "2-player" (on) under "Favorites" = *favorite ∧ 2-player*.
+- **Chaining:** consecutive on-nodes compose up the chain — `gun (on) ⊂ 2-player (on) ⊂ Favorites`
+  = *favorite ∧ 2-player ∧ gun*. The accumulation stops at the nearest **off** ancestor, which is the
+  base set (and at the root, which is "all games"). This is what makes "go even deeper" behave as
+  expected.
+- **Cross-axis intersection falls out for free:** a game-set/filter node set to "on" under a
+  **system group** intersects with that group's games (e.g. "2-player" on, under "Nintendo" =
+  2-player Nintendo games). Membership is the common currency, so systems ∩ games composes once
+  resolution is ancestry-aware.
+
+**Why this shape:** it delivers *both* models the operator wants (folder-organization AND
+narrowing) from one orthogonal switch, rather than two node kinds or a global mode. It's additive —
+default-off means existing flat nodes are unchanged.
+
+**Architectural consequence (load-bearing):** composition makes membership **ancestry-dependent** —
+a node can no longer be resolved by id in isolation (`resolveNodeMembership(view, nodeId, …)` today).
+The composing resolver needs the node's **path from root** to fold the intersections. Build this into
+the resolver when filter nodes + real nesting land (Slices 2–4); reserve the per-node boolean on
+`ContainerNode` (TS + Rust mirror) at the start of Slice 2 (D59-style reserve-then-wire). Note this
+is the **membership** axis (which games a node contains), kept deliberately separate from the
+**view/layout** axis in [VIEW_MODEL.md](VIEW_MODEL.md) — conflating the two is exactly what drifted
+before.
