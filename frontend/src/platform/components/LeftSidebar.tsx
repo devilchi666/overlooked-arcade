@@ -15,6 +15,7 @@ import type { ContainerNode, PlatformNode, ViewNode } from "@oa/platform/views/t
 import type { CustomCollection } from "@oa/platform/library/customCollections";
 import {
   collectionNodeIdFor,
+  filterNodeIdFor,
   parsePlatformNodeId,
   platformNodeIdFor,
 } from "@oa/platform/views/defaults";
@@ -62,6 +63,24 @@ type Props = {
   /// Drag-into-tree placement + reordering is Slice 4; this is the cheapest
   /// proof that a collection is navigable as a node.
   collections?: () => CustomCollection[];
+  /// Unified Navigation Tree Slice 2 — built-in smart-list filter nodes
+  /// (Favorites / Recently Played / …), surfaced as a read-only "Smart
+  /// Lists" section. Each row navigates to a synthesized `filter:<kind>`
+  /// view-node that `resolveNodeMembership` evaluates to its predicate
+  /// matches. Supplied by LibraryPage (which has the live entries to count
+  /// matches); omitted by the legacy Shell → no section. Like Collections,
+  /// real in-tree nodes + the "filter within parent" toggle are Slice 4.
+  filterNodes?: () => FilterNodeRow[];
+};
+
+/// One built-in smart-list row for the sidebar's Smart Lists section.
+/// `kind` is a `SmartListKind`; kept as a string here so this platform
+/// component doesn't need the library registry types.
+export type FilterNodeRow = {
+  kind: string;
+  label: string;
+  glyph: string;
+  count: number;
 };
 
 /**
@@ -444,6 +463,19 @@ const LeftSidebar: Component<Props> = (props) => {
 
   const collectionList = createMemo<CustomCollection[]>(() => props.collections?.() ?? []);
 
+  /// Unified Navigation Tree Slice 2 — is the given smart-list filter the
+  /// active view-node? Matches against the synthesized `filter:<kind>` id.
+  const isFilterActive = (kind: string): boolean => {
+    const cv = props.currentView;
+    return (
+      cv.kind === "view-node" &&
+      cv.viewId === activeViewId() &&
+      cv.nodeId === filterNodeIdFor(kind)
+    );
+  };
+
+  const filterNodeList = createMemo<FilterNodeRow[]>(() => props.filterNodes?.() ?? []);
+
   const beginResize = (event: PointerEvent) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -585,6 +617,37 @@ const LeftSidebar: Component<Props> = (props) => {
                       kind: "view-node",
                       viewId: activeViewId(),
                       nodeId: collectionNodeIdFor(collection.id),
+                    })
+                  }
+                />
+              )}
+            </For>
+          </ul>
+        </Show>
+
+        {/* Smart Lists — built-in filtered game-sets as navigable nodes
+            (Unified Navigation Tree Slice 2). Read-only here: each row
+            navigates to a synthesized `filter:<kind>` view-node the library
+            resolves to its predicate matches. Hidden in collapsed mode and
+            when the host theme doesn't supply them (legacy Shell). Real
+            in-tree filter nodes + the "filter within parent" toggle are
+            Slice 4. */}
+        <Show when={!isCollapsed() && filterNodeList().length > 0}>
+          <SectionHeader label="Smart Lists" collapsed={isCollapsed()} />
+          <ul class="space-y-0.5">
+            <For each={filterNodeList()}>
+              {(filter) => (
+                <QuickItem
+                  icon={filter.glyph}
+                  label={filter.label}
+                  badge={filter.count > 0 ? String(filter.count) : undefined}
+                  active={isFilterActive(filter.kind)}
+                  collapsed={isCollapsed()}
+                  onClick={() =>
+                    props.onNavigate({
+                      kind: "view-node",
+                      viewId: activeViewId(),
+                      nodeId: filterNodeIdFor(filter.kind),
                     })
                   }
                 />

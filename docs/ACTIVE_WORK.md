@@ -39,10 +39,20 @@ spanned every system but was filed under whichever core happened to be active.
     toggle (default off): off = independent "standard" set; on = intersect with parent, chaining
     up to the nearest off ancestor. Delivers both folder-organization AND narrowing from one
     switch. Load-bearing consequence: resolution becomes **ancestry-aware**. Folded into Slice 2.
-  - **Slice 2 ⬜ next (START HERE in [NEXT.md](NEXT.md) HIGH band):** wire the reserved `filter`
-    rule to the existing smart-list predicates + `VariantFilters` (Favorites / Recently Played /
-    Multi-Player / dump-quality as tree nodes) **and** land NT4 (reserve `filterWithinParent` on
-    `ContainerNode` + ancestry-aware `resolveNodeMembership`).
+  - **Slice 2 ✅ SHIPPED on `feat/unified-nav-tree-s2` 2026-06-19 (awaiting playtest + merge).**
+    Shared smart-list registry (`platform/library/smartLists.ts`, six pure predicates, one source for
+    the COLLECTIONS tab AND the nav tree); `filter`-rule nodes wired (was inert) → `{ games }` via
+    `filter:<kind>` synthesized ids + a read-only "Smart Lists" sidebar section; **NT4 landed** —
+    `filterWithinParent` reserved on `ContainerNode` (TS + Rust serde-default) + `resolveNodeMembership`
+    is now **ancestry-aware** (`findNodePath` + a `MembershipContext`, folds parent ∩ child, cross-axis
+    games ∩ systems falls out). **dump-quality deferred** (NT6 — needs node-meaning + variant-vs-default
+    semantics). NT4 narrowing is resolver/test-level this slice; the toggle + nesting UI are Slice 4.
+    Decisions NT5 (named built-ins; AST reserved) + NT6 (dump-quality reserved). tsc + lint + 31 vitest
+    + 10 cargo `views` green.
+  - **Slice 3 ⬜ next:** per-node view cascade (BigBox change-view-on-the-fly) — generalize the
+    `layoutOverrides` key `(themeId, systemId, view)` → `(themeId, nodeId, view)` + live in-context
+    "change view" control. OR **Slice 4** — drag-to-curate + the `filterWithinParent` toggle UI + real
+    in-tree filter/collection nodes (makes NT4 narrowing operator-clickable) + retire the Collections tab.
 
 - **Declarative Showcase — make the file-theme path capable & beautiful** — ⏸ **PARKED
   2026-06-18 — superseded by the Unified Navigation Tree arc above** (S3 polishes the *flat*

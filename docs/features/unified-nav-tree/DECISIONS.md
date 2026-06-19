@@ -69,3 +69,37 @@ the resolver when filter nodes + real nesting land (Slices 2–4); reserve the p
 is the **membership** axis (which games a node contains), kept deliberately separate from the
 **view/layout** axis in [VIEW_MODEL.md](VIEW_MODEL.md) — conflating the two is exactly what drifted
 before.
+
+## NT5 — Filter specs are named built-ins now; the general predicate AST is a reserved future arm (2026-06-19)
+
+**Built in Slice 2.** A `filter`-rule node's `spec` carries a **named built-in kind**
+(`{ kind: "favorites" | "recentlyPlayed" | "completed" | "multiPlayer" | "hiddenGems" | "lastPlayed" }`),
+evaluated frontend-side at render via the shared `platform/library/smartLists.ts` registry — the exact
+predicates the COLLECTIONS tab already shipped, now lifted to a single source both consumers share.
+
+**Why not the full smart-query AST yet** (the `_archive/PLANS/collections-tab-retroverse.md` §12 "all
+PS1 RPGs < 1998" builder): it's a much larger surface (field vocabulary, boolean ops, a builder UI) and
+nothing this slice needs. The persisted `spec` stays **opaque JSON** (`Record<string, unknown>` in TS /
+`serde_json::Value` in Rust, as reserved in Slice 1), so a `{ kind: "query"; ast: … }` arm is purely
+**additive** later with no schema migration — the same low-floor/high-ceiling D59 discipline used across
+the project. `asSmartListKind` returns `null` for any unrecognized spec, so unknown/future kinds resolve
+to an empty set rather than throwing.
+
+**Eval home:** frontend, at render, over live library state (plan §12 + Slice 1's "frontend store, cheap;
+revisit for a backend query only if perf needs it"). Predicates are pure (`nowSecs` injected) so the
+resolver is deterministic + unit-testable.
+
+## NT6 — Dump-quality is reserved, not wired, pending node semantics (2026-06-19)
+
+The Slice 2 brief listed **dump-quality** as a target filter node alongside Favorites / Recently Played /
+Multi-Player. It's **deferred** (the `dumpQuality` spec kind is recognized-as-unknown → resolves inert):
+
+- **Data lives variant-side, not on `RomEntry`.** Dump-quality (`dumpStatus`/`isHack`/…) is on
+  `VariantInfo` inside `groupsByVariantId()`; the canonical predicate is Rust's `variant_passes_filters`.
+  The other three filters are clean `RomEntry`-field reads.
+- **The node's *meaning* is a genuine product question.** As navigation, does "dump-quality" show *bad*
+  dumps (preservation triage), *verified only*, or something else? And is a tile a "bad dump" if its
+  **default** variant is bad, or if **any** variant is? Inventing that silently would be a band-aid.
+
+Wire it once those are decided (operator call) — likely as a small typed spec arm `{ kind: "dumpQuality";
+exclude: … }` reusing the `VariantFilters` flag set, projected onto tiles via the default variant.

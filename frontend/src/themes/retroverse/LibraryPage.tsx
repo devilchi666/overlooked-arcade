@@ -34,8 +34,15 @@ import {
 } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
-import { parseCollectionNodeId } from "@oa/platform/views/defaults";
+import { parseCollectionNodeId, parseFilterNodeId } from "@oa/platform/views/defaults";
 import type { ContainerNode } from "@oa/platform/views/types";
+import type { FilterNodeRow } from "@oa/platform/components/LeftSidebar";
+import {
+  SMART_LISTS,
+  SMART_LISTS_BY_KIND,
+  evaluateSmartList,
+  type SmartListKind,
+} from "@oa/platform/library/smartLists";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import type { LibraryAppearance } from "@oa/platform/components/LibraryView";
@@ -138,11 +145,38 @@ const LibraryPage: Component = () => {
   const collectionName = (collectionId: string): string | undefined =>
     ctx.customCollections.state.collections.find((c) => c.id === collectionId)?.name;
 
+  // Unified Navigation Tree Slice 2 — the active smart-list filter node, if
+  // any. Only the synthesized `filter:<kind>` ids (from the sidebar's Smart
+  // Lists section) are surfaced this slice; real in-tree filter nodes land
+  // in Slice 4. Narrowed to a known kind so the header lookups are safe.
+  const activeFilterKind = createMemo<SmartListKind | null>(() => {
+    const cv = ctx.currentView();
+    if (cv.kind !== "view-node") return null;
+    const kind = parseFilterNodeId(cv.nodeId);
+    return kind !== null && kind in SMART_LISTS_BY_KIND ? (kind as SmartListKind) : null;
+  });
+
+  // The built-in smart lists, decorated with live match counts, handed to
+  // LeftSidebar's read-only "Smart Lists" section. LibraryPage owns this
+  // (not the platform sidebar) because it has the live entries to count.
+  const filterNodeRows = createMemo<FilterNodeRow[]>(() => {
+    const entries = ctx.library.state.entries.filter((e) => !e.seed);
+    const evalCtx = { nowSecs: Math.floor(Date.now() / 1000) };
+    return SMART_LISTS.map((l) => ({
+      kind: l.kind,
+      label: l.label,
+      glyph: l.glyph,
+      count: evaluateSmartList(l.kind, entries, evalCtx).size,
+    }));
+  });
+
   const headerTitle = createMemo(() => {
     const sys = headerSystemId();
     if (sys) return systemThemes[sys]?.displayName ?? sys;
     const id = activeCollectionId();
     if (id) return collectionName(id) ?? "Collection";
+    const filter = activeFilterKind();
+    if (filter) return SMART_LISTS_BY_KIND[filter].label;
     return "All games";
   });
 
@@ -154,6 +188,12 @@ const LibraryPage: Component = () => {
     if (id) {
       const set = collectionMembers().get(id);
       return set ? entries.filter((e) => set.has(e.id)).length : 0;
+    }
+    const filter = activeFilterKind();
+    if (filter) {
+      return evaluateSmartList(filter, entries, {
+        nowSecs: Math.floor(Date.now() / 1000),
+      }).size;
     }
     return entries.length;
   });
@@ -312,6 +352,8 @@ const LibraryPage: Component = () => {
           }
           // Unified Navigation Tree Slice 1 — read-only Collections section.
           collections={() => ctx.customCollections.state.collections}
+          // Unified Navigation Tree Slice 2 — read-only Smart Lists section.
+          filterNodes={filterNodeRows}
         />
       </aside>
 

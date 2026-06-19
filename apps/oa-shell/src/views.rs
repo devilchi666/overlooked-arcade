@@ -109,6 +109,17 @@ pub struct ContainerNode {
     pub art: Option<serde_json::Value>,
     #[serde(default)]
     pub hidden: bool,
+    /// Unified Navigation Tree NT4 — node-membership composition toggle.
+    /// `false` (the default) = the node resolves on its own membership
+    /// regardless of tree position ("standard"); `true` = intersect with
+    /// the parent's effective membership ("filter within parent"),
+    /// chaining up to the nearest off ancestor. Rust only stores +
+    /// round-trips it; the frontend resolver does the ancestry-aware
+    /// fold. Reserved D59-style in Slice 2 (no UI sets it yet). serde
+    /// default keeps older configs (and the v1/v2 schema) hydrating with
+    /// `false`, so no schema bump.
+    #[serde(default)]
+    pub filter_within_parent: bool,
     #[serde(default)]
     pub children: Vec<ViewNode>,
 }
@@ -217,6 +228,7 @@ mod tests {
                     accent: None,
                     art: None,
                     hidden: false,
+                    filter_within_parent: false,
                     children: vec![ViewNode::Container(ContainerNode {
                         id: "container:console".to_string(),
                         label: "Consoles".to_string(),
@@ -226,6 +238,7 @@ mod tests {
                         accent: None,
                         art: None,
                         hidden: false,
+                        filter_within_parent: false,
                         children: vec![ViewNode::Platform(PlatformNode {
                             id: "platform:nes".to_string(),
                             system_id: "nes".to_string(),
@@ -352,6 +365,7 @@ mod tests {
             accent: None,
             art: None,
             hidden: false,
+            filter_within_parent: false,
             children: vec![
                 ViewNode::Container(ContainerNode {
                     id: "collection:favorites".to_string(),
@@ -362,6 +376,7 @@ mod tests {
                     accent: None,
                     art: None,
                     hidden: false,
+                    filter_within_parent: false,
                     children: vec![],
                 }),
                 ViewNode::Container(ContainerNode {
@@ -373,6 +388,7 @@ mod tests {
                     accent: None,
                     art: None,
                     hidden: false,
+                    filter_within_parent: false,
                     children: vec![],
                 }),
             ],
@@ -426,5 +442,32 @@ mod tests {
         assert_eq!(read.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(read.views[0].explicitly_removed, vec!["nes".to_string(), "snes".to_string()]);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn views_filter_within_parent_round_trips_and_defaults_false() {
+        // Unified Navigation Tree NT4 — the reserved `filterWithinParent`
+        // toggle round-trips when set, and absent-in-JSON hydrates to
+        // `false` (serde default), so existing saves + the v1/v2 schema
+        // need no migration.
+        let mut cfg = sample_config();
+        cfg.views[0].root.filter_within_parent = true;
+        let tmp =
+            std::env::temp_dir().join(format!("oa-views-fwp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        write_views(&tmp, &cfg).expect("write");
+        // JSON uses the camelCase key the TS mirror expects.
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(json.contains("\"filterWithinParent\":true"));
+        let read = read_views(&tmp).expect("read");
+        assert!(read.views[0].root.filter_within_parent);
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // A container JSON lacking the field hydrates to false.
+        let node: ContainerNode = serde_json::from_str(
+            r#"{ "id": "x", "label": "X", "rule": null, "children": [] }"#,
+        )
+        .expect("parse without filterWithinParent");
+        assert!(!node.filter_within_parent);
     }
 }

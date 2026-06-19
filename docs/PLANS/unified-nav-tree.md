@@ -57,7 +57,9 @@ an explicit game set OR a predicate."** Everything else is additive on top.
 ## The arc — slices (each playtestable; D59-style: reserve the contract, wire incrementally)
 
 - **Slice 1 — Keystone: node→games resolution + collections navigable in the sidebar.** *(detail below)*
-- **Slice 2 — Filter / smart-list nodes + membership composition.** A `filter` rule kind backed by
+- **Slice 2 — Filter / smart-list nodes + membership composition. ✅ SHIPPED 2026-06-19**
+  (`feat/unified-nav-tree-s2`, awaiting playtest + merge; dump-quality deferred per **NT6** — needs a
+  node-meaning + variant-vs-default call). A `filter` rule kind backed by
   the existing smart-list predicates + `VariantFilters` (Favorites / Recently Played / Multi-Player /
   dump-quality as tree nodes). Reserve the rule shape in Slice 1 (done), wire it here. **Also lands
   the NT4 composition model:** reserve a per-node `filterWithinParent?: boolean` on `ContainerNode`

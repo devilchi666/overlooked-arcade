@@ -32,107 +32,20 @@ import {
 } from "@oa/platform/nav";
 import type { EntryGroup } from "@oa/platform/library/filter";
 import type { RomEntry } from "@oa/platform/library/types";
+import { SMART_LISTS, type SmartListKind } from "@oa/platform/library/smartLists";
 import { useTheme } from "@oa/platform/theme/host";
-
-type SmartListId =
-  | "favorites"
-  | "recent"
-  | "completed"
-  | "multi-player"
-  | "hidden-gems"
-  | "last-played";
 
 /// Slice 12 — the active sidebar entry now spans two kinds: the
 /// existing built-in smart-list set OR a custom collection by id.
 /// `kind` discriminates; `id` is the matching identifier in each
-/// case (SmartListId vs the SQLite-side collection row id).
+/// case (SmartListKind vs the SQLite-side collection row id).
+///
+/// Unified Navigation Tree Slice 2 — the smart-list predicates +
+/// metadata now live in the shared `@oa/platform/library/smartLists`
+/// registry (one source for this tab AND the nav-tree `filter` nodes).
 type ActiveList =
-  | { kind: "smart"; id: SmartListId }
+  | { kind: "smart"; id: SmartListKind }
   | { kind: "custom"; id: string };
-
-type SmartListDef = {
-  id: SmartListId;
-  label: string;
-  glyph: string;
-  /// Description shown on the header card when this list is active.
-  description: string;
-  /// Predicate over a library entry — returns true to include it. When
-  /// `null` the list is a placeholder (Hidden Gems / Last Played); UI
-  /// shows a "wired-in-a-follow-up" empty state.
-  predicate: ((entry: RomEntry) => boolean) | null;
-};
-
-// 30-day recency window — matches the design doc's "rolling window."
-const RECENT_WINDOW_SECONDS = 30 * 24 * 60 * 60;
-
-// Hidden Gems "barely touched" threshold. Under 30 minutes of total
-// play time across all sessions is the "you sampled it but never
-// really got into it" zone — the operator's existing rating /
-// favoriting then becomes the "this deserves another look" signal.
-const HIDDEN_GEM_PLAY_THRESHOLD_SECS = 30 * 60;
-// Hidden Gems rating cutoff. 4.0 / 5.0 covers "great" and above when
-// the metadata enrichment populates the rating field; libraries
-// without rating data fall back to the favorite-flagged half of the
-// OR (so the list still surfaces something useful).
-const HIDDEN_GEM_RATING_CUTOFF = 4.0;
-
-const SMART_LISTS: readonly SmartListDef[] = [
-  {
-    id: "favorites",
-    label: "Favorites",
-    glyph: "❤",
-    description: "Games you've ♥-tagged from any tile or context menu.",
-    predicate: (entry) => Boolean(entry.favorite),
-  },
-  {
-    id: "recent",
-    label: "Recently played",
-    glyph: "🕘",
-    description: "Played within the last 30 days. Sorted by most recent.",
-    predicate: (entry) => {
-      if (!entry.lastPlayedAt) return false;
-      const nowSecs = Math.floor(Date.now() / 1000);
-      return nowSecs - entry.lastPlayedAt < RECENT_WINDOW_SECONDS;
-    },
-  },
-  {
-    id: "completed",
-    label: "Completed",
-    glyph: "✓",
-    description: "Marked complete via the tile context menu.",
-    predicate: (entry) => Boolean(entry.completed),
-  },
-  {
-    id: "multi-player",
-    label: "Multi-player",
-    glyph: "👥",
-    description: "Two-player or more (metadata-driven).",
-    predicate: (entry) => (entry.players ?? 1) >= 2,
-  },
-  {
-    id: "hidden-gems",
-    label: "Hidden gems",
-    glyph: "💎",
-    description:
-      "Highly rated or favorited, but you've barely touched them (< 30 minutes total).",
-    predicate: (entry) => {
-      const playTime = entry.playTimeSecs ?? 0;
-      if (playTime >= HIDDEN_GEM_PLAY_THRESHOLD_SECS) return false;
-      const highlyRated =
-        typeof entry.rating === "number" &&
-        entry.rating >= HIDDEN_GEM_RATING_CUTOFF;
-      return highlyRated || Boolean(entry.favorite);
-    },
-  },
-  {
-    id: "last-played",
-    label: "Last played",
-    glyph: "🏁",
-    description:
-      "Every game you've ever launched, most recent first. The full play history — Recently played is the 30-day rolling subset.",
-    predicate: (entry) => Boolean(entry.lastPlayedAt),
-  },
-];
 
 const CollectionsPage: Component = () => {
   const ctx = useTheme();
@@ -202,7 +115,7 @@ const CollectionsPage: Component = () => {
   const activeSmartList = () => {
     const cur = activeList();
     if (cur.kind !== "smart") return null;
-    return SMART_LISTS.find((l) => l.id === cur.id) ?? null;
+    return SMART_LISTS.find((l) => l.kind === cur.id) ?? null;
   };
 
   const activeCustomCollection = () => {
@@ -224,12 +137,13 @@ const CollectionsPage: Component = () => {
     const cur = activeList();
     if (cur.kind === "smart") {
       const list = activeSmartList();
-      if (!list || !list.predicate) return [];
-      const matches = ctx.library.state.entries.filter(list.predicate);
-      if (list.id === "recent" || list.id === "last-played") {
+      if (!list) return [];
+      const evalCtx = { nowSecs: Math.floor(Date.now() / 1000) };
+      const matches = ctx.library.state.entries.filter((e) => list.predicate(e, evalCtx));
+      if (list.kind === "recentlyPlayed" || list.kind === "lastPlayed") {
         return [...matches].sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0));
       }
-      if (list.id === "hidden-gems") {
+      if (list.kind === "hiddenGems") {
         return [...matches].sort((a, b) => {
           const ra = a.rating ?? 0;
           const rb = b.rating ?? 0;
@@ -454,35 +368,34 @@ const CollectionsPage: Component = () => {
               {(list) => {
                 const isActive = () => {
                   const cur = activeList();
-                  return cur.kind === "smart" && cur.id === list.id;
+                  return cur.kind === "smart" && cur.id === list.kind;
                 };
-                const isPlaceholder = () => list.predicate === null;
-                const count = createMemo(() =>
-                  list.predicate
-                    ? ctx.library.state.entries.filter(list.predicate).length
-                    : 0,
-                );
+                const count = createMemo(() => {
+                  const evalCtx = { nowSecs: Math.floor(Date.now() / 1000) };
+                  return ctx.library.state.entries.filter((e) =>
+                    list.predicate(e, evalCtx),
+                  ).length;
+                });
                 return (
                   <li>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.currentTarget.blur();
-                        setActiveList({ kind: "smart", id: list.id });
+                        setActiveList({ kind: "smart", id: list.kind });
                       }}
                       class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-system-accent)"
                       classList={{
                         "bg-(--color-system-accent)/15 text-(--color-oa-ink)": isActive(),
                         "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)":
                           !isActive(),
-                        "opacity-60": isPlaceholder(),
                       }}
                       aria-current={isActive() ? "page" : undefined}
                     >
                       <span class="w-4 text-center text-sm">{list.glyph}</span>
                       <span class="truncate">{list.label}</span>
                       <span class="ml-auto text-[0.6rem] text-(--color-oa-ink-dim)">
-                        {isPlaceholder() ? "—" : count()}
+                        {count()}
                       </span>
                     </button>
                   </li>
@@ -549,11 +462,11 @@ const CollectionsPage: Component = () => {
                         ? "Heart a game from any tile (or the right-click menu) to add it to Favorites."
                         : id === "completed"
                           ? "Mark a game complete from the tile context menu to add it here."
-                          : id === "recent"
+                          : id === "recentlyPlayed"
                             ? "Play a game to populate this list. Sessions are tracked from launch to exit."
-                            : id === "last-played"
+                            : id === "lastPlayed"
                               ? "Play any game to start tracking your history. Once a session ends the game shows up here."
-                              : id === "hidden-gems"
+                              : id === "hiddenGems"
                                 ? "Either heart a few games you've barely played, or run Sync metadata to enrich ratings — entries you've spent < 30 minutes with will surface here."
                                 : "No games match this filter yet.";
                     })()}
