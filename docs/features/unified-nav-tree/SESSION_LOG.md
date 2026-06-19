@@ -159,7 +159,7 @@ nodes in arc Slice 1).
 the View Editor + sidebar (wire the reserved `collection`/`filter` rules into the authoring UI). Decide
 the Slice 2 branch fate (merge as substrate) first.
 
-## 2026-06-19 — Arc Slice 1 (collections & smart-lists as real authored nodes) — ✅ SHIPPED on `feat/nav-structure-s1` (awaiting playtest + merge)
+## 2026-06-19 — Arc Slice 1 (collections & smart-lists as real authored nodes) — ✅ MERGED to main (`ff23e80`, operator playtested)
 
 Frontend-only — the Rust side was already complete (the `collection`/`filter` rules + `filterWithinParent`
 round-trip; substrate merged in `cb28285`). Key realization: **`LibraryView` already resolves any real

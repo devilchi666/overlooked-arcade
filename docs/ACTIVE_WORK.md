@@ -22,7 +22,7 @@ spanned every system but was filed under whichever core happened to be active.
   the home, data model, resolver, predicates, and view-cascade substrate already exist.
   Pre-re-anchor substrate ✅ MERGED (`cb28285` = old Slices 1+2: collection/filter rules,
   `filterWithinParent`, ancestry-aware resolver, shared smart-list registry).
-  **Arc Slice 1 ✅ SHIPPED on `feat/nav-structure-s1` (awaiting playtest + merge)** — collections &
+  **Arc Slice 1 ✅ MERGED to main (`ff23e80`, operator playtested)** — collections &
   smart-lists are now real, authored, draggable **leaf-style tree nodes**: "+ Smart List ▾" /
   "+ Collection ▾" pickers in the View Editor (+ properties-pane identify/re-pick); sidebar renders
   them via a new `GameSetRow` (membership count badge — collections off `memberCount`, smart-lists off
