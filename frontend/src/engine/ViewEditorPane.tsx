@@ -14,7 +14,7 @@ import {
   SortableLeafNode,
   type SidebarTreeContext,
 } from "@oa/platform/components/SidebarTreeNode";
-import { findNode } from "@oa/platform/views/resolver";
+import { countGameSetNode, findNode, isGameSetNode } from "@oa/platform/views/resolver";
 import type { ViewsStore } from "@oa/platform/views/store";
 import type {
   ContainerNode,
@@ -24,10 +24,18 @@ import type {
   ViewNode,
 } from "@oa/platform/views/types";
 import { DEFAULT_VIEW_ID, LEGACY_VIEW_ID, MANUFACTURER_VIEW_ID, ROOT_NODE_ID } from "@oa/platform/views/defaults";
+import type { CustomCollection, CustomCollectionsStore } from "@oa/platform/library/customCollections";
+import {
+  asSmartListKind,
+  SMART_LISTS,
+  SMART_LISTS_BY_KIND,
+  type SmartListKind,
+} from "@oa/platform/library/smartLists";
 
 type Props = {
   views: ViewsStore;
   library: LibraryStore;
+  customCollections: CustomCollectionsStore;
   view: View;
   onBack: () => void;
 };
@@ -60,9 +68,13 @@ const ViewEditorPane: Component<Props> = (props) => {
 
   /// Default target for [+ Add ...] buttons: the selected container if
   /// any, else root. Leaves can't be a target — they're not containers.
+  /// Game-set nodes (collection / smart-list filter) are containers in the
+  /// data model but their children are ignored by the resolver + unrendered
+  /// in the tree, so they aren't valid add-targets either — adding into one
+  /// falls back to root rather than silently orphaning the new node.
   const addTargetId = createMemo<string>(() => {
     const sel = selectedNode();
-    if (sel && "children" in sel) return sel.id;
+    if (sel && "children" in sel && !isGameSetNode(sel)) return sel.id;
     return ROOT_NODE_ID;
   });
 
@@ -75,6 +87,41 @@ const ViewEditorPane: Component<Props> = (props) => {
     const newId = props.views.addPlatformLeaf(addTargetId(), systemId);
     if (newId) setSelectedNodeId(newId);
   }
+
+  /// Unified Navigation Tree Slice 1 — add a smart-list filter node. One of
+  /// the six built-ins, persisted as a `filter`-rule container; the resolver
+  /// evaluates its predicate at render. The label defaults to the built-in's
+  /// name (operator can rename it in the properties pane).
+  function handleAddSmartList(kind: SmartListKind) {
+    const def = SMART_LISTS_BY_KIND[kind];
+    const newId = props.views.addContainer(addTargetId(), def.label, {
+      kind: "filter",
+      spec: { kind },
+    });
+    if (newId) setSelectedNodeId(newId);
+  }
+
+  /// Unified Navigation Tree Slice 1 — add a curated-collection node. The
+  /// `collection`-rule container resolves to the collection's member set.
+  function handleAddCollection(collection: CustomCollection) {
+    const newId = props.views.addContainer(addTargetId(), collection.name, {
+      kind: "collection",
+      collectionId: collection.id,
+    });
+    if (newId) setSelectedNodeId(newId);
+  }
+
+  /// Membership count for game-set rows in the editor tree. Collections read
+  /// the eager `memberCount`; smart-list filters evaluate over the entries.
+  const collectionCounts = createMemo(
+    () => new Map(props.customCollections.state.collections.map((c) => [c.id, c.memberCount])),
+  );
+  const gameSetCount = (node: ContainerNode): number =>
+    countGameSetNode(node, {
+      entries: props.library.state.entries.filter((e) => !e.seed),
+      collectionMemberCounts: collectionCounts(),
+      nowSecs: Math.floor(Date.now() / 1000),
+    }) ?? 0;
 
   function handleRemove(nodeId: string) {
     props.views.removeNode(nodeId);
@@ -92,6 +139,7 @@ const ViewEditorPane: Component<Props> = (props) => {
     isActiveNode: (nodeId: string) => selectedNodeId() === nodeId,
     onToggleExpanded: (nodeId: string) => props.views.toggleExpanded(nodeId),
     onNavigateToNode: (nodeId: string) => setSelectedNodeId(nodeId),
+    gameSetCount,
   };
 
   // Drag-reorder reuses γ.2 + v2.2.1's logic — same as LeftSidebar's
@@ -242,6 +290,11 @@ const ViewEditorPane: Component<Props> = (props) => {
               + Container
             </button>
             <AddLeafPicker view={props.view} onPick={handleAddLeaf} />
+            <AddSmartListPicker onPick={handleAddSmartList} />
+            <AddCollectionPicker
+              customCollections={props.customCollections}
+              onPick={handleAddCollection}
+            />
           </div>
         </div>
 
@@ -269,6 +322,7 @@ const ViewEditorPane: Component<Props> = (props) => {
                   container={node() as ContainerNode}
                   isRoot={node().id === ROOT_NODE_ID}
                   views={props.views}
+                  customCollections={props.customCollections}
                   onRemove={() => handleRemove(node().id)}
                 />
               </Show>
@@ -286,9 +340,16 @@ const ContainerProperties: Component<{
   container: ContainerNode;
   isRoot: boolean;
   views: ViewsStore;
+  customCollections: CustomCollectionsStore;
   onRemove: () => void;
 }> = (props) => {
   const ruleKind = () => props.container.rule?.kind ?? "none";
+  /// Game-set nodes (collection / smart-list filter) are authored via the
+  /// dedicated "+ Smart List" / "+ Collection" buttons, not the system-rule
+  /// radio. Their properties pane identifies the kind + lets the operator
+  /// re-pick the target, rather than offering the system-keyed rule radio.
+  const isGameSet = () =>
+    ruleKind() === "collection" || ruleKind() === "filter";
 
   function setKind(kind: "none" | ContainerRule["kind"]) {
     if (kind === "none") {
@@ -327,6 +388,15 @@ const ContainerProperties: Component<{
           </p>
         }
       >
+        <Show when={isGameSet()}>
+          <GameSetRuleEditor
+            container={props.container}
+            views={props.views}
+            customCollections={props.customCollections}
+          />
+        </Show>
+
+        <Show when={!isGameSet()}>
         <fieldset class="space-y-1">
           <legend class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
             Rule
@@ -402,6 +472,7 @@ const ContainerProperties: Component<{
               props.views.setContainerRule(props.container.id, { kind: "systemIds", values })
             }
           />
+        </Show>
         </Show>
       </Show>
 
@@ -647,6 +718,197 @@ const AddLeafPicker: Component<{
               </For>
             </Show>
           </ul>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
+/// Properties editor for a game-set node — identifies the rule kind and
+/// lets the operator re-pick the target (which built-in smart list, or which
+/// collection). Unified Navigation Tree Slice 1: deliberately separate from
+/// the system-rule radio so the two authoring models don't blur.
+const GameSetRuleEditor: Component<{
+  container: ContainerNode;
+  views: ViewsStore;
+  customCollections: CustomCollectionsStore;
+}> = (props) => {
+  const rule = () => props.container.rule;
+  const currentSmartList = (): SmartListKind | "" => {
+    const r = rule();
+    if (r?.kind !== "filter") return "";
+    return asSmartListKind(r.spec) ?? "";
+  };
+  const currentCollectionId = (): string => {
+    const r = rule();
+    return r?.kind === "collection" ? r.collectionId : "";
+  };
+  const collections = () => props.customCollections.state.collections;
+  return (
+    <div class="space-y-2">
+      <p class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+        {rule()?.kind === "collection" ? "Collection" : "Smart list"} — a set of
+        games, not systems
+      </p>
+      <Show when={rule()?.kind === "filter"}>
+        <label class="block">
+          <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+            Built-in list
+          </span>
+          <select
+            value={currentSmartList()}
+            onChange={(e) =>
+              props.views.setContainerRule(props.container.id, {
+                kind: "filter",
+                spec: { kind: e.currentTarget.value },
+              })
+            }
+            class="mt-1 block w-full rounded border border-white/15 bg-(--color-oa-bg-deep) px-2 py-1 text-(--color-oa-ink) outline-none focus:border-(--color-system-accent)"
+          >
+            <For each={SMART_LISTS}>
+              {(l) => <option value={l.kind}>{l.glyph} {l.label}</option>}
+            </For>
+          </select>
+        </label>
+      </Show>
+      <Show when={rule()?.kind === "collection"}>
+        <Show
+          when={collections().length > 0}
+          fallback={
+            <p class="text-[0.7rem] text-(--color-oa-ink-dim)">
+              No collections yet. Create one in the Collections section, then
+              re-pick it here.
+            </p>
+          }
+        >
+          <label class="block">
+            <span class="text-[0.6rem] uppercase tracking-widest text-(--color-oa-ink-dim)">
+              Collection
+            </span>
+            <select
+              value={currentCollectionId()}
+              onChange={(e) =>
+                props.views.setContainerRule(props.container.id, {
+                  kind: "collection",
+                  collectionId: e.currentTarget.value,
+                })
+              }
+              class="mt-1 block w-full rounded border border-white/15 bg-(--color-oa-bg-deep) px-2 py-1 text-(--color-oa-ink) outline-none focus:border-(--color-system-accent)"
+            >
+              <For each={collections()}>
+                {(c) => <option value={c.id}>{c.name}</option>}
+              </For>
+            </select>
+          </label>
+        </Show>
+      </Show>
+    </div>
+  );
+};
+
+/// Toolbar dropdown to add a smart-list filter node — one of the six
+/// built-ins. Mirrors AddLeafPicker's open/filter/pick shape.
+const AddSmartListPicker: Component<{
+  onPick: (kind: SmartListKind) => void;
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <div class="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          setOpen(!open());
+        }}
+        class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-system-accent)/15 hover:text-(--color-oa-ink)"
+      >
+        + Smart List {open() ? "▴" : "▾"}
+      </button>
+      <Show when={open()}>
+        <div class="absolute left-0 z-30 mt-1 w-64 rounded border border-white/10 bg-(--color-oa-bg-deep)/95 p-2 shadow-2xl backdrop-blur">
+          <ul class="space-y-0.5">
+            <For each={SMART_LISTS}>
+              {(l) => (
+                <li>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      props.onPick(l.kind);
+                      setOpen(false);
+                    }}
+                    class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[0.7rem] text-(--color-oa-ink) transition hover:bg-white/[0.05]"
+                  >
+                    <span class="text-sm leading-none">{l.glyph}</span>
+                    <span class="flex-1 truncate">{l.label}</span>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
+/// Toolbar dropdown to add a curated-collection node. Lists the operator's
+/// custom collections; empty-state nudges them to create one first.
+const AddCollectionPicker: Component<{
+  customCollections: CustomCollectionsStore;
+  onPick: (collection: CustomCollection) => void;
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+  const collections = () => props.customCollections.state.collections;
+  return (
+    <div class="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          setOpen(!open());
+        }}
+        class="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.6rem] uppercase tracking-wider text-(--color-oa-ink-dim) transition hover:bg-(--color-system-accent)/15 hover:text-(--color-oa-ink)"
+      >
+        + Collection {open() ? "▴" : "▾"}
+      </button>
+      <Show when={open()}>
+        <div class="absolute left-0 z-30 mt-1 w-64 rounded border border-white/10 bg-(--color-oa-bg-deep)/95 p-2 shadow-2xl backdrop-blur">
+          <Show
+            when={collections().length > 0}
+            fallback={
+              <p class="px-2 py-1 text-[0.7rem] text-(--color-oa-ink-dim)">
+                No collections yet — create one in the Collections section
+                below.
+              </p>
+            }
+          >
+            <ul class="max-h-72 space-y-0.5 overflow-y-auto">
+              <For each={collections()}>
+                {(c) => (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        props.onPick(c);
+                        setOpen(false);
+                      }}
+                      class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[0.7rem] text-(--color-oa-ink) transition hover:bg-white/[0.05]"
+                    >
+                      <span class="text-sm leading-none">★</span>
+                      <span class="flex-1 truncate">{c.name}</span>
+                      <Show when={c.memberCount > 0}>
+                        <span class="text-[0.55rem] tabular-nums uppercase tracking-widest text-(--color-oa-ink-dim)">
+                          {c.memberCount}
+                        </span>
+                      </Show>
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
         </div>
       </Show>
     </div>

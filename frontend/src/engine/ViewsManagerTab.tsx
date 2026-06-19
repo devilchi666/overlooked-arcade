@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show, type Component } from "solid-js";
 
 import type { LibraryStore } from "@oa/platform/library/store";
+import type { CustomCollectionsStore } from "@oa/platform/library/customCollections";
 import type { ViewsStore, NewViewTemplate } from "@oa/platform/views/store";
 import {
   DEFAULT_VIEW_ID,
@@ -12,6 +13,7 @@ import ViewEditorPane from "./ViewEditorPane";
 type Props = {
   views: ViewsStore;
   library: LibraryStore;
+  customCollections: CustomCollectionsStore;
 };
 
 /// Library Manager → Views tab body. Per VIEW_EDITOR_PLAN.md §1, ships
@@ -121,6 +123,7 @@ const ViewsManagerTab: Component<Props> = (props) => {
         <ViewEditorPane
           views={props.views}
           library={props.library}
+          customCollections={props.customCollections}
           view={editingView()!}
           onBack={() => setEditingViewId(null)}
         />

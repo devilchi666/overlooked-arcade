@@ -10,7 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  countGameSetNode,
   findNodePath,
+  isGameSetNode,
   resolveNodeMembership,
   resolveNodeSystemIds,
 } from "./resolver";
@@ -284,5 +286,89 @@ describe("resolveNodeSystemIds (unchanged sibling)", () => {
 
   it("returns no systems for a collection rule (game-set node, not system-keyed)", () => {
     expect(resolveNodeSystemIds(makeView(), "container:fav")).toEqual([]);
+  });
+});
+
+describe("isGameSetNode (Slice 1)", () => {
+  const view = makeView();
+  it("is true for collection + filter rule containers", () => {
+    expect(isGameSetNode(view.root.children[1])).toBe(true); // container:fav
+    expect(isGameSetNode(view.root.children[2])).toBe(true); // container:recent
+  });
+  it("is false for platform leaves, the root, and system/group containers", () => {
+    expect(isGameSetNode(view.root.children[0])).toBe(false); // platform:nes
+    expect(isGameSetNode(view.root)).toBe(false); // null-rule root
+    const group: ContainerNode = {
+      id: "g",
+      label: "G",
+      rule: { kind: "manufacturer", value: "nintendo" },
+      accent: null,
+      art: null,
+      hidden: false,
+      children: [],
+    };
+    expect(isGameSetNode(group)).toBe(false);
+  });
+});
+
+describe("countGameSetNode (Slice 1)", () => {
+  function collectionNode(collectionId: string): ContainerNode {
+    return {
+      id: "c",
+      label: "C",
+      rule: { kind: "collection", collectionId },
+      accent: null,
+      art: null,
+      hidden: false,
+      children: [],
+    };
+  }
+  function filterNode(kind: string): ContainerNode {
+    return {
+      id: "f",
+      label: "F",
+      rule: { kind: "filter", spec: { kind } },
+      accent: null,
+      art: null,
+      hidden: false,
+      children: [],
+    };
+  }
+
+  it("counts a collection from the eager memberCount map (not the lazy member set)", () => {
+    const n = countGameSetNode(collectionNode("fav"), {
+      entries,
+      collectionMemberCounts: new Map([["fav", 7]]),
+    });
+    expect(n).toBe(7);
+  });
+
+  it("counts an unknown / unloaded collection as 0", () => {
+    expect(countGameSetNode(collectionNode("nope"), { entries })).toBe(0);
+  });
+
+  it("counts a smart-list filter by evaluating its predicate over the entries", () => {
+    // multi-player = {g1, g3} from the shared fixtures.
+    expect(countGameSetNode(filterNode("multiPlayer"), { entries })).toBe(2);
+    // favorites = {g1, g2}.
+    expect(countGameSetNode(filterNode("favorites"), { entries })).toBe(2);
+  });
+
+  it("counts a reserved/unknown filter kind as 0 (e.g. dumpQuality)", () => {
+    expect(countGameSetNode(filterNode("dumpQuality"), { entries })).toBe(0);
+  });
+
+  it("returns null for a non-game-set node so callers fall back to countGamesUnder", () => {
+    const group: ContainerNode = {
+      id: "g",
+      label: "G",
+      rule: { kind: "formFactor", value: "console" },
+      accent: null,
+      art: null,
+      hidden: false,
+      children: [],
+    };
+    expect(countGameSetNode(group, { entries })).toBeNull();
+    expect(countGameSetNode(makeView().root, { entries })).toBeNull();
   });
 });

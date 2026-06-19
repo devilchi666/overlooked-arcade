@@ -33,16 +33,8 @@ import {
   useDomQueryFocusGroup,
 } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
-import { findNode } from "@oa/platform/views/resolver";
-import { parseCollectionNodeId, parseFilterNodeId } from "@oa/platform/views/defaults";
+import { countGameSetNode, findNode } from "@oa/platform/views/resolver";
 import type { ContainerNode } from "@oa/platform/views/types";
-import type { FilterNodeRow } from "@oa/platform/components/LeftSidebar";
-import {
-  SMART_LISTS,
-  SMART_LISTS_BY_KIND,
-  evaluateSmartList,
-  type SmartListKind,
-} from "@oa/platform/library/smartLists";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import type { LibraryAppearance } from "@oa/platform/components/LibraryView";
@@ -101,25 +93,31 @@ const LibraryPage: Component = () => {
     return null;
   });
 
-  // Unified Navigation Tree Slice 1 — when the active view-node is a
-  // collection (a synthesized `collection:<id>` node from the sidebar's
-  // Collections section, or — from Slice 4 — a real collection-rule node in
-  // the tree), surface its id so the header + LibraryView resolve to its
-  // member games.
-  const activeCollectionId = createMemo<string | null>(() => {
+  // Unified Navigation Tree Slice 1 — the active view-node when it's a real
+  // in-tree game-set node (a `collection` / smart-list `filter` container
+  // authored into the tree via the View Editor; they render as leaf-style
+  // sidebar rows). Drives the header title/count; the grid resolves to its
+  // games via LibraryView's resolveNodeMembership.
+  const activeGameSetNode = createMemo<ContainerNode | null>(() => {
     const cv = ctx.currentView();
     if (cv.kind !== "view-node") return null;
-    const synth = parseCollectionNodeId(cv.nodeId);
-    if (synth !== null) return synth;
     const active = ctx.views.activeView();
-    if (active && active.id === cv.viewId) {
-      const node = findNode(active, cv.nodeId);
-      if (node && !("kind" in node && node.kind === "platform")) {
-        const rule = (node as ContainerNode).rule;
-        if (rule?.kind === "collection") return rule.collectionId;
+    if (!active || active.id !== cv.viewId) return null;
+    const node = findNode(active, cv.nodeId);
+    if (node && !("kind" in node && node.kind === "platform")) {
+      const rule = (node as ContainerNode).rule;
+      if (rule?.kind === "collection" || rule?.kind === "filter") {
+        return node as ContainerNode;
       }
     }
     return null;
+  });
+
+  // When the active node is a collection, surface its collectionId so members
+  // lazy-load + LibraryView resolves the grid to the member set.
+  const activeCollectionId = createMemo<string | null>(() => {
+    const node = activeGameSetNode();
+    return node && node.rule?.kind === "collection" ? node.rule.collectionId : null;
   });
 
   // Lazy-load member ids when a collection becomes active — the store
@@ -145,38 +143,23 @@ const LibraryPage: Component = () => {
   const collectionName = (collectionId: string): string | undefined =>
     ctx.customCollections.state.collections.find((c) => c.id === collectionId)?.name;
 
-  // Unified Navigation Tree Slice 2 — the active smart-list filter node, if
-  // any. Only the synthesized `filter:<kind>` ids (from the sidebar's Smart
-  // Lists section) are surfaced this slice; real in-tree filter nodes land
-  // in Slice 4. Narrowed to a known kind so the header lookups are safe.
-  const activeFilterKind = createMemo<SmartListKind | null>(() => {
-    const cv = ctx.currentView();
-    if (cv.kind !== "view-node") return null;
-    const kind = parseFilterNodeId(cv.nodeId);
-    return kind !== null && kind in SMART_LISTS_BY_KIND ? (kind as SmartListKind) : null;
-  });
-
-  // The built-in smart lists, decorated with live match counts, handed to
-  // LeftSidebar's read-only "Smart Lists" section. LibraryPage owns this
-  // (not the platform sidebar) because it has the live entries to count.
-  const filterNodeRows = createMemo<FilterNodeRow[]>(() => {
-    const entries = ctx.library.state.entries.filter((e) => !e.seed);
-    const evalCtx = { nowSecs: Math.floor(Date.now() / 1000) };
-    return SMART_LISTS.map((l) => ({
-      kind: l.kind,
-      label: l.label,
-      glyph: l.glyph,
-      count: evaluateSmartList(l.kind, entries, evalCtx).size,
-    }));
-  });
+  // Membership count for game-set sidebar rows + the header. Collections read
+  // the eager `memberCount`; smart-list filters evaluate over the entries.
+  const collectionCounts = createMemo(
+    () => new Map(ctx.customCollections.state.collections.map((c) => [c.id, c.memberCount])),
+  );
+  const gameSetCount = (node: ContainerNode): number =>
+    countGameSetNode(node, {
+      entries: ctx.library.state.entries.filter((e) => !e.seed),
+      collectionMemberCounts: collectionCounts(),
+      nowSecs: Math.floor(Date.now() / 1000),
+    }) ?? 0;
 
   const headerTitle = createMemo(() => {
     const sys = headerSystemId();
     if (sys) return systemThemes[sys]?.displayName ?? sys;
-    const id = activeCollectionId();
-    if (id) return collectionName(id) ?? "Collection";
-    const filter = activeFilterKind();
-    if (filter) return SMART_LISTS_BY_KIND[filter].label;
+    const node = activeGameSetNode();
+    if (node) return node.label;
     return "All games";
   });
 
@@ -184,17 +167,8 @@ const LibraryPage: Component = () => {
     const entries = ctx.library.state.entries.filter((e) => !e.seed);
     const sys = headerSystemId();
     if (sys) return entries.filter((e) => e.systemId === sys).length;
-    const id = activeCollectionId();
-    if (id) {
-      const set = collectionMembers().get(id);
-      return set ? entries.filter((e) => set.has(e.id)).length : 0;
-    }
-    const filter = activeFilterKind();
-    if (filter) {
-      return evaluateSmartList(filter, entries, {
-        nowSecs: Math.floor(Date.now() / 1000),
-      }).size;
-    }
+    const node = activeGameSetNode();
+    if (node) return gameSetCount(node);
     return entries.length;
   });
 
@@ -350,10 +324,10 @@ const LibraryPage: Component = () => {
           onContainerContext={(container, position) =>
             setContainerContextFor({ container, position })
           }
-          // Unified Navigation Tree Slice 1 — read-only Collections section.
-          collections={() => ctx.customCollections.state.collections}
-          // Unified Navigation Tree Slice 2 — read-only Smart Lists section.
-          filterNodes={filterNodeRows}
+          // Unified Navigation Tree Slice 1 — game-set nodes (collections /
+          // smart-list filters) authored into the tree render leaf-style with
+          // a membership count badge supplied here.
+          gameSetCount={gameSetCount}
         />
       </aside>
 
