@@ -36,7 +36,11 @@ export const OrganizeLanding: Component = () => {
           title="Sidebar layouts"
           hint="Group your systems into a custom left-sidebar tree (by manufacturer, form factor, era, or your own hierarchy). This is navigation structure — it doesn't change how tiles look."
         />
-        <ViewsManagerTab views={platform.views} library={platform.library} />
+        <ViewsManagerTab
+          views={platform.views}
+          library={platform.library}
+          customCollections={platform.customCollections}
+        />
       </section>
 
       <section class="space-y-3 border-t border-white/5 pt-6">

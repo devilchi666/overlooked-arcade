@@ -12,14 +12,11 @@ import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { LayoutStore } from "@oa/platform/layout/state";
 import { type SidebarView } from "@oa/platform/layout/types";
 import type { ContainerNode, PlatformNode, ViewNode } from "@oa/platform/views/types";
-import type { CustomCollection } from "@oa/platform/library/customCollections";
 import {
-  collectionNodeIdFor,
-  filterNodeIdFor,
   parsePlatformNodeId,
   platformNodeIdFor,
 } from "@oa/platform/views/defaults";
-import { flattenLeaves } from "@oa/platform/views/resolver";
+import { flattenLeaves, isGameSetNode } from "@oa/platform/views/resolver";
 import type { ViewsStore } from "@oa/platform/views/store";
 import {
   SortableContainerNode,
@@ -55,32 +52,13 @@ type Props = {
   /// to the Retroverse center pane (which then delegates to the grid
   /// via LibraryPage's effect).
   focusGroupNeighbours?: { left?: string; right?: string };
-  /// Unified Navigation Tree Slice 1 — operator-built collections, surfaced
-  /// as a read-only "Collections" section below the Platforms tree. Each row
-  /// navigates to a synthesized `collection:<id>` view-node; the library
-  /// resolves its member games via `resolveNodeMembership`. Optional —
-  /// omitted by the legacy Shell, supplied by Retroverse's LibraryPage.
-  /// Drag-into-tree placement + reordering is Slice 4; this is the cheapest
-  /// proof that a collection is navigable as a node.
-  collections?: () => CustomCollection[];
-  /// Unified Navigation Tree Slice 2 — built-in smart-list filter nodes
-  /// (Favorites / Recently Played / …), surfaced as a read-only "Smart
-  /// Lists" section. Each row navigates to a synthesized `filter:<kind>`
-  /// view-node that `resolveNodeMembership` evaluates to its predicate
-  /// matches. Supplied by LibraryPage (which has the live entries to count
-  /// matches); omitted by the legacy Shell → no section. Like Collections,
-  /// real in-tree nodes + the "filter within parent" toggle are Slice 4.
-  filterNodes?: () => FilterNodeRow[];
-};
-
-/// One built-in smart-list row for the sidebar's Smart Lists section.
-/// `kind` is a `SmartListKind`; kept as a string here so this platform
-/// component doesn't need the library registry types.
-export type FilterNodeRow = {
-  kind: string;
-  label: string;
-  glyph: string;
-  count: number;
+  /// Unified Navigation Tree Slice 1 — membership count for a game-set node
+  /// (a collection / smart-list filter node authored into the tree via the
+  /// View Editor). Returns the game count for such a node; the tree renders
+  /// it as a leaf-style row with this badge. Supplied by LibraryPage (which
+  /// has the customCollections store + live entries to count); omitted by the
+  /// legacy Shell → game-set nodes render without a count badge.
+  gameSetCount?: (node: ContainerNode) => number;
 };
 
 /**
@@ -349,6 +327,9 @@ const LeftSidebar: Component<Props> = (props) => {
     onDirection: (direction, currentIndex) => {
       const item = navItems()[currentIndex];
       if (!item || item.kind !== "container") return false;
+      // Game-set nodes render leaf-style (no twisty) — don't consume
+      // left/right as expand/collapse; let them spill normally.
+      if (isGameSetNode(item.container)) return false;
       if (direction === "left") {
         // Collapse if expanded; no-op if already collapsed (the tree
         // has no parent-container concept in v1).
@@ -434,6 +415,7 @@ const LeftSidebar: Component<Props> = (props) => {
       props.onNavigate({ kind: "view-node", viewId: activeViewId(), nodeId }),
     onLeafContextMenu: (systemId, position) => props.onSystemContext?.(systemId, position),
     onContainerContextMenu: (container, position) => props.onContainerContext?.(container, position),
+    gameSetCount: props.gameSetCount,
     focusBindingFor,
   };
 
@@ -449,32 +431,6 @@ const LeftSidebar: Component<Props> = (props) => {
     }
     return true;
   };
-
-  /// Unified Navigation Tree Slice 1 — is the given collection the active
-  /// view-node? Matches against the synthesized `collection:<id>` node id.
-  const isCollectionActive = (collectionId: string): boolean => {
-    const cv = props.currentView;
-    return (
-      cv.kind === "view-node" &&
-      cv.viewId === activeViewId() &&
-      cv.nodeId === collectionNodeIdFor(collectionId)
-    );
-  };
-
-  const collectionList = createMemo<CustomCollection[]>(() => props.collections?.() ?? []);
-
-  /// Unified Navigation Tree Slice 2 — is the given smart-list filter the
-  /// active view-node? Matches against the synthesized `filter:<kind>` id.
-  const isFilterActive = (kind: string): boolean => {
-    const cv = props.currentView;
-    return (
-      cv.kind === "view-node" &&
-      cv.viewId === activeViewId() &&
-      cv.nodeId === filterNodeIdFor(kind)
-    );
-  };
-
-  const filterNodeList = createMemo<FilterNodeRow[]>(() => props.filterNodes?.() ?? []);
 
   const beginResize = (event: PointerEvent) => {
     event.preventDefault();
@@ -595,66 +551,11 @@ const LeftSidebar: Component<Props> = (props) => {
           </Show>
         </Show>
 
-        {/* Collections — operator-built game sets (Unified Navigation Tree
-            Slice 1). Read-only here: each row navigates to a synthesized
-            `collection:<id>` view-node that the library resolves to its
-            member games. Hidden in collapsed mode (no room for labelled
-            rows) and when the operator has no collections yet. Drag-into-
-            tree placement + reordering is Slice 4. */}
-        <Show when={!isCollapsed() && collectionList().length > 0}>
-          <SectionHeader label="Collections" collapsed={isCollapsed()} />
-          <ul class="space-y-0.5">
-            <For each={collectionList()}>
-              {(collection) => (
-                <QuickItem
-                  icon="★"
-                  label={collection.name}
-                  badge={collection.memberCount > 0 ? String(collection.memberCount) : undefined}
-                  active={isCollectionActive(collection.id)}
-                  collapsed={isCollapsed()}
-                  onClick={() =>
-                    props.onNavigate({
-                      kind: "view-node",
-                      viewId: activeViewId(),
-                      nodeId: collectionNodeIdFor(collection.id),
-                    })
-                  }
-                />
-              )}
-            </For>
-          </ul>
-        </Show>
-
-        {/* Smart Lists — built-in filtered game-sets as navigable nodes
-            (Unified Navigation Tree Slice 2). Read-only here: each row
-            navigates to a synthesized `filter:<kind>` view-node the library
-            resolves to its predicate matches. Hidden in collapsed mode and
-            when the host theme doesn't supply them (legacy Shell). Real
-            in-tree filter nodes + the "filter within parent" toggle are
-            Slice 4. */}
-        <Show when={!isCollapsed() && filterNodeList().length > 0}>
-          <SectionHeader label="Smart Lists" collapsed={isCollapsed()} />
-          <ul class="space-y-0.5">
-            <For each={filterNodeList()}>
-              {(filter) => (
-                <QuickItem
-                  icon={filter.glyph}
-                  label={filter.label}
-                  badge={filter.count > 0 ? String(filter.count) : undefined}
-                  active={isFilterActive(filter.kind)}
-                  collapsed={isCollapsed()}
-                  onClick={() =>
-                    props.onNavigate({
-                      kind: "view-node",
-                      viewId: activeViewId(),
-                      nodeId: filterNodeIdFor(filter.kind),
-                    })
-                  }
-                />
-              )}
-            </For>
-          </ul>
-        </Show>
+        {/* Collections + smart lists are now first-class, draggable nodes
+            authored into the tree via the View Editor (Unified Navigation
+            Tree Slice 1) — they render inline in the Platforms tree above as
+            leaf-style rows, so the old read-only synthesized sections are
+            retired. */}
 
         {/* Playlists (placeholder — feature lands later) */}
         <SectionHeader label="Playlists" collapsed={isCollapsed()} />
@@ -730,6 +631,13 @@ function filterTree(node: ContainerNode | ViewNode, ctx: FilterCtx): ContainerNo
     return leaf;
   }
   const container = (node as ContainerNode);
+  // Game-set nodes (collection / smart-list filter) have no platform-leaf
+  // children — their contents are games resolved via membership. Treat them
+  // as leaf-like here: respect an explicit hide, but never auto-hide-empty
+  // (they're not empty) and don't recurse into (absent) children.
+  if (isGameSetNode(container)) {
+    return container.hidden ? null : container;
+  }
   if (container.hidden) {
     // Hidden container — but if it contains the active leaf, surface
     // the active leaf at this position so navigation doesn't strand.

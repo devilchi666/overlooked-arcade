@@ -20,7 +20,15 @@ spanned every system but was filed under whichever core happened to be active.
   *style* views; the structure is the user's, authored in **Settings → Navigation Structure** (Slice 4
   unifies the three "Organize My Collection" cards + renames). **Reconnect + enrich, not rebuild** —
   the home, data model, resolver, predicates, and view-cascade substrate already exist.
-  Slice 1 ✅ MERGED (`1c9a493`); Slice 2 green on `feat/unified-nav-tree-s2` (merges as substrate).
+  Pre-re-anchor substrate ✅ MERGED (`cb28285` = old Slices 1+2: collection/filter rules,
+  `filterWithinParent`, ancestry-aware resolver, shared smart-list registry).
+  **Arc Slice 1 ✅ SHIPPED on `feat/nav-structure-s1` (awaiting playtest + merge)** — collections &
+  smart-lists are now real, authored, draggable **leaf-style tree nodes**: "+ Smart List ▾" /
+  "+ Collection ▾" pickers in the View Editor (+ properties-pane identify/re-pick); sidebar renders
+  them via a new `GameSetRow` (membership count badge — collections off `memberCount`, smart-lists off
+  the predicate); the transitional read-only sidebar sections are retired. Frontend-only (Rust already
+  done). tsc + lint + 38 vitest + 10 cargo `views` green. **Next: arc Slice 2 — deep nesting +
+  `filterWithinParent` toggle UI.**
 
   _Original 2026-06-18 framing + slice detail below — superseded by NT7, kept for history:_ Branch `feat/unified-nav-tree`. Reunites the two
   systems that drifted apart — the systems-only `views` sidebar tree and the separate flat

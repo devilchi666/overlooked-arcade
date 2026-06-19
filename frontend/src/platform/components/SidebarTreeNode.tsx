@@ -4,7 +4,8 @@ import { createSortable, SortableProvider, transformStyle } from "@thisbeyond/so
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { RomEntry } from "@oa/platform/library/types";
 import type { ContainerNode, PlatformNode } from "@oa/platform/views/types";
-import { countGamesUnder } from "@oa/platform/views/resolver";
+import { countGamesUnder, isGameSetNode } from "@oa/platform/views/resolver";
+import { asSmartListKind, SMART_LISTS_BY_KIND } from "@oa/platform/library/smartLists";
 
 /// Recursive node renderer for the PR-γ sidebar tree, with solid-dnd
 /// drag-reorder wiring. Per SIDEBAR_TIER_PLAN.md §3.1 + §3.5.
@@ -38,6 +39,13 @@ export type SidebarTreeContext = {
   onNavigateToNode: (nodeId: string) => void;
   onLeafContextMenu?: (systemId: SystemId, position: { x: number; y: number }) => void;
   onContainerContextMenu?: (container: ContainerNode, position: { x: number; y: number }) => void;
+  /// Unified Navigation Tree Slice 1 — membership count for a game-set node
+  /// (collection / smart-list filter). Returns the game count, or null /
+  /// undefined when the host doesn't wire counts. System containers + leaves
+  /// keep using the entries-based `countGamesUnder`; this is the
+  /// membership-based count host (LeftSidebar / ViewEditorPane) supplies for
+  /// nodes whose contents are games, not child leaves.
+  gameSetCount?: (node: ContainerNode) => number;
   /// Controller-nav binding for a given leaf id. Returns a small handle
   /// the leaf row uses to (a) register its DOM element with the focus
   /// manager and (b) reactively expose its focus state via data attrs.
@@ -66,8 +74,40 @@ export const SortableContainerNode: Component<{
   );
   const leafIds = createMemo(() => leafChildren().map((c) => c.id));
   const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.container.id) ?? null);
+  const isGameSet = createMemo(() => isGameSetNode(props.container));
 
+  // Game-set nodes (collection / smart-list filter) render leaf-style — no
+  // twisty, no child recursion — but stay sortable + focusable like any other
+  // top-level row. Their "contents" are games resolved via membership, not
+  // child leaves. (Unified Navigation Tree Slice 1.)
   return (
+    <Show
+      when={!isGameSet()}
+      fallback={
+        <li
+          ref={(el) => {
+            sortable.ref(el);
+            focusBinding()?.bind(el);
+          }}
+          style={transformStyle(sortable.transform)}
+          data-oa-focus={focusBinding()?.focused() ? "true" : undefined}
+          data-oa-focus-active={focusBinding()?.active() ? "true" : undefined}
+          class="relative"
+          classList={{ "z-10": sortable.isActiveDraggable }}
+        >
+          <GameSetRow
+            container={props.container}
+            depth={props.depth}
+            active={props.ctx.isActiveNode(props.container.id)}
+            count={props.ctx.gameSetCount?.(props.container)}
+            onNavigate={() => props.ctx.onNavigateToNode(props.container.id)}
+            onContextMenu={(pos) => props.ctx.onContainerContextMenu?.(props.container, pos)}
+            dragActivators={sortable.dragActivators}
+            isDragging={sortable.isActiveDraggable}
+          />
+        </li>
+      }
+    >
     <li
       ref={(el) => {
         sortable.ref(el);
@@ -125,6 +165,7 @@ export const SortableContainerNode: Component<{
         </SortableProvider>
       </Show>
     </li>
+    </Show>
   );
 };
 
@@ -173,6 +214,27 @@ const StaticContainerNode: Component<{
 }> = (props) => {
   const expanded = createMemo(() => props.ctx.isExpanded(props.container.id));
   const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.container.id) ?? null);
+  // Game-set nodes nested inside a container render leaf-style (no twisty /
+  // children). Nested reorder is Slice 2, so these aren't sortable here.
+  if (isGameSetNode(props.container)) {
+    return (
+      <li
+        ref={(el) => focusBinding()?.bind(el)}
+        data-oa-focus={focusBinding()?.focused() ? "true" : undefined}
+        data-oa-focus-active={focusBinding()?.active() ? "true" : undefined}
+        class="relative"
+      >
+        <GameSetRow
+          container={props.container}
+          depth={props.depth}
+          active={props.ctx.isActiveNode(props.container.id)}
+          count={props.ctx.gameSetCount?.(props.container)}
+          onNavigate={() => props.ctx.onNavigateToNode(props.container.id)}
+          onContextMenu={(pos) => props.ctx.onContainerContextMenu?.(props.container, pos)}
+        />
+      </li>
+    );
+  }
   return (
     <li
       ref={(el) => focusBinding()?.bind(el)}
@@ -397,6 +459,106 @@ const LeafRow: Component<{
           role="button"
           tabindex="-1"
           aria-label={`Drag handle for ${theme()?.displayName ?? props.leaf.systemId}`}
+          {...props.dragActivators!}
+        >
+          ⋮⋮
+        </span>
+      </Show>
+    </div>
+  );
+};
+
+// ── Game-set row (collection / smart-list filter) ────────────────────
+
+/// Glyph for a game-set node. Smart-list filters reuse the registry glyph
+/// (❤ favorites, 🕘 recently-played, …); collections use a generic star.
+/// A reserved/unknown filter spec falls back to a neutral list glyph.
+function gameSetGlyph(container: ContainerNode): string {
+  const rule = container.rule;
+  if (rule?.kind === "collection") return "★";
+  if (rule?.kind === "filter") {
+    const kind = asSmartListKind(rule.spec);
+    return kind ? SMART_LISTS_BY_KIND[kind].glyph : "▦";
+  }
+  return "▦";
+}
+
+/// Leaf-style row for a game-set node. Mirrors LeafRow's chrome (accent
+/// active-bar, count badge, optional drag handle) but is driven by a
+/// ContainerNode + a host-supplied membership count rather than a single
+/// system. No twisty — its contents are games resolved via membership, not
+/// child leaves. (Unified Navigation Tree Slice 1.)
+const GameSetRow: Component<{
+  container: ContainerNode;
+  depth: number;
+  active: boolean;
+  count?: number;
+  onNavigate: () => void;
+  onContextMenu?: (position: { x: number; y: number }) => void;
+  dragActivators?: DragActivators;
+  isDragging?: boolean;
+}> = (props) => {
+  const indentRem = () => 0.5 + props.depth * 0.75;
+  const rowStyle = () => {
+    const base: Record<string, string> = { "padding-left": `${indentRem()}rem` };
+    if (props.container.accent) base["--color-system-accent"] = props.container.accent;
+    return base;
+  };
+  return (
+    <div
+      class="group relative flex w-full items-center gap-2 rounded-md py-2 pr-1 text-left text-xs font-medium transition"
+      classList={{
+        "bg-(--color-system-accent)/15 text-(--color-oa-ink)": props.active,
+        "text-(--color-oa-ink-dim) hover:bg-white/[0.04] hover:text-(--color-oa-ink)":
+          !props.active && !props.isDragging,
+        "bg-(--color-system-accent)/10 shadow-lg": props.isDragging === true,
+      }}
+      style={rowStyle()}
+    >
+      <Show when={props.active}>
+        <span
+          class="pointer-events-none absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-(--color-system-accent)"
+          aria-hidden="true"
+        />
+      </Show>
+      <button
+        type="button"
+        data-oa-sidebar-row
+        data-oa-tree-node-id={props.container.id}
+        data-oa-tree-node-kind="game-set"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          props.onNavigate();
+        }}
+        onContextMenu={(e) => {
+          if (!props.onContextMenu) return;
+          e.preventDefault();
+          props.onContextMenu({ x: e.clientX, y: e.clientY });
+        }}
+        aria-pressed={props.active}
+        title={props.container.label}
+        class="flex flex-1 items-center gap-2 text-left"
+      >
+        <span class="text-sm leading-none" aria-hidden="true">
+          {gameSetGlyph(props.container)}
+        </span>
+        <span class="flex-1 truncate">{props.container.label}</span>
+        <Show when={(props.count ?? 0) > 0}>
+          <span class="text-[0.6rem] tabular-nums uppercase tracking-widest text-(--color-oa-ink-dim)">
+            {props.count}
+          </span>
+        </Show>
+      </button>
+      <Show when={props.dragActivators}>
+        <span
+          class="select-none px-1 text-[0.7rem] text-(--color-oa-ink-dim) opacity-0 transition group-hover:opacity-100"
+          classList={{
+            "cursor-grab": !props.isDragging,
+            "cursor-grabbing opacity-100": props.isDragging === true,
+          }}
+          role="button"
+          tabindex="-1"
+          aria-label={`Drag handle for ${props.container.label}`}
           {...props.dragActivators!}
         >
           ⋮⋮

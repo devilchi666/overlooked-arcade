@@ -158,3 +158,56 @@ nodes in arc Slice 1).
 **Next:** **Arc Slice 1** — make collections & smart-lists real, authored, draggable tree nodes via
 the View Editor + sidebar (wire the reserved `collection`/`filter` rules into the authoring UI). Decide
 the Slice 2 branch fate (merge as substrate) first.
+
+## 2026-06-19 — Arc Slice 1 (collections & smart-lists as real authored nodes) — ✅ SHIPPED on `feat/nav-structure-s1` (awaiting playtest + merge)
+
+Frontend-only — the Rust side was already complete (the `collection`/`filter` rules + `filterWithinParent`
+round-trip; substrate merged in `cb28285`). Key realization: **`LibraryView` already resolves any real
+in-tree node** via `resolveNodeMembership({collectionMembers, entries, nowSecs})`, so once a node exists +
+renders, clicking it fills the grid for free — Slice 1 was author + render + count + retire, no resolver work.
+
+Forks discussed in prose + operator-settled before code:
+- **Add-node UX** → dedicated **"+ Smart List ▾" / "+ Collection ▾"** picker buttons (create) + the
+  **properties pane identifies** the kind & lets you re-pick the target (edit). Deliberately **not** folded
+  into the system-rule radio (that radio stays system-keyed; game-set nodes are their own add path).
+- **Transition** → **remove the transitional read-only sidebar sections outright, no import affordance**
+  (operator: "no users but me"). The synthesized `collection:<id>`/`filter:<kind>` *resolver* paths +
+  `defaults.ts` helpers stay (harmless substrate); only the LeftSidebar sections + their LibraryPage/
+  LeftSidebar wiring were retired.
+- **Counts** → host-supplied `gameSetCount`; **collections read the eager `memberCount`** (no lazy
+  `ensureMembers` just for a badge), **smart-lists evaluate the shared predicate** over the entries.
+- **Scope** → 6 built-in smart lists only; the predicate **builder is Slice 3**; **dump-quality stays
+  reserved** (NT6).
+
+**Shipped (tsc + lint + 38 vitest [+7] + 10 cargo `views` green):**
+1. **Resolver helpers** (`platform/views/resolver.ts`): `isGameSetNode(node)` (collection/filter rule
+   ⇒ true) + `countGameSetNode(node, ctx)` (collection→memberCount map; filter→`evaluateSmartList`;
+   non-game-set→null so callers fall back to `countGamesUnder`). 7 new unit tests.
+2. **Sidebar renders game-set nodes leaf-style** (`SidebarTreeNode.tsx`): a new `GameSetRow` (glyph +
+   label + membership-count badge + drag handle, **no twisty / no child recursion**). `SortableContainerNode`
+   (top-level, stays sortable) + `StaticContainerNode` (nested) early-return it; `SidebarTreeContext`
+   grew `gameSetCount?`. Glyph = smart-list registry glyph for filters, ★ for collections.
+3. **LeftSidebar** (`LeftSidebar.tsx`): `filterTree` no longer auto-hides game-set nodes as "empty"
+   containers (they have no leaf children but aren't empty); controller-nav `onDirection` skips
+   expand/collapse on them; new `gameSetCount?` prop threaded into the tree context. **Retired** the
+   read-only "Collections" + "Smart Lists" sections + the `collections`/`filterNodes` props +
+   `FilterNodeRow` type + the four helper memos.
+4. **View Editor authoring** (`ViewEditorPane.tsx`): **"+ Smart List ▾"** (the 6 built-ins) +
+   **"+ Collection ▾"** (custom collections) toolbar pickers → `addContainer` + game-set `ContainerRule`;
+   `ContainerProperties` shows a `GameSetRuleEditor` (re-pick the built-in / collection) instead of the
+   system-rule radio for game-set nodes; `addTargetId` refuses to nest into a game-set node (would
+   orphan); editor tree shows membership counts. `customCollections` threaded
+   `OrganizeLanding → ViewsManagerTab → ViewEditorPane`.
+5. **LibraryPage** (`themes/retroverse/LibraryPage.tsx`): generalized header to a single
+   `activeGameSetNode` memo (real in-tree collection/filter nodes → node label + `gameSetCount`); kept
+   `collectionMembers`/`collectionName`/`ensureMembers` (real collection nodes still lazy-load + resolve);
+   dropped the synthesized-id header paths + `filterNodeRows`; passes `gameSetCount` to LeftSidebar.
+
+**Almost:** nothing partial — all five steps complete + green.
+
+**Next:** operator playtest (`cargo tauri build`) — acceptance: Settings → Organize My Collection → View
+Editor → add a Smart List (e.g. Favorites) + a Collection into the tree → they appear as draggable
+leaf-style sidebar rows, persist across restart, click fills the grid; system/group nodes unchanged.
+Then merge as the playtestable milestone. After that, **Slice 2 of the arc — deep nesting + the
+`filterWithinParent` toggle UI** (drag game-set nodes into containers at any depth; `moveNode` already
+supports it). Watch the stale `<exe_dir>/themes/` shadow landmine.

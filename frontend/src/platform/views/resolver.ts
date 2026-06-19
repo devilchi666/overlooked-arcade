@@ -312,6 +312,57 @@ function membershipToRomIds(
   return out;
 }
 
+/// True when a node is a game-set node — a container whose rule resolves to
+/// an explicit set of games (`collection`) or a predicate over games
+/// (`filter`) rather than to systems. Unified Navigation Tree Slice 1: such
+/// nodes are authored in the View Editor and render leaf-style in the
+/// sidebar (icon + membership count, no expand twisty, no children) since
+/// their "contents" are games resolved via `resolveNodeMembership`, not
+/// child leaves. Platform leaves + system/group/root containers return
+/// false.
+export function isGameSetNode(node: ViewNode | ContainerNode): boolean {
+  if ("kind" in node && node.kind === "platform") return false;
+  const rule = (node as ContainerNode).rule;
+  return rule?.kind === "collection" || rule?.kind === "filter";
+}
+
+/// Inputs for `countGameSetNode`. Collections count off the eagerly-hydrated
+/// `memberCount` (no lazy member-set load just to show a badge); smart-list
+/// filters evaluate their predicate over the live entries.
+export type GameSetCountContext = {
+  /// Library entries to evaluate filter predicates against. The caller
+  /// should pre-exclude seed/placeholder tiles.
+  entries: ReadonlyArray<RomEntry>;
+  /// `collectionId → memberCount` from the customCollections store. Drives
+  /// `collection`-rule node counts without forcing `ensureMembers`.
+  collectionMemberCounts?: ReadonlyMap<string, number>;
+  /// Unix seconds for time-dependent predicates (Recently Played).
+  nowSecs?: number;
+};
+
+/// Count the games a game-set node contains, for the sidebar / editor count
+/// badge. Returns `null` for nodes that aren't game-set nodes (the caller
+/// uses `countGamesUnder` for those). Unified Navigation Tree Slice 1 — the
+/// cheapest correct count per rule kind (operator decision 2026-06-19):
+/// collections read the eager `memberCount`; smart-list filters evaluate the
+/// shared predicate over the entries. Unknown filter specs (reserved kinds
+/// like `dumpQuality`) count 0, matching their inert resolution.
+export function countGameSetNode(
+  node: ContainerNode,
+  ctx: GameSetCountContext,
+): number | null {
+  const rule = node.rule;
+  if (rule?.kind === "collection") {
+    return ctx.collectionMemberCounts?.get(rule.collectionId) ?? 0;
+  }
+  if (rule?.kind === "filter") {
+    const kind = asSmartListKind(rule.spec);
+    if (kind === null) return 0;
+    return evaluateSmartList(kind, ctx.entries, { nowSecs: ctx.nowSecs ?? 0 }).size;
+  }
+  return null;
+}
+
 /// Count library entries under a node (recursive for containers; direct
 /// for platforms). The PR-γ tree render uses this for per-node count
 /// badges — wrapped in `createMemo` so reactive updates only re-evaluate
