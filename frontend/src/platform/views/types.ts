@@ -69,6 +69,17 @@ export type ContainerNode = {
   /// art shape lands in vN.
   art: unknown | null;
   hidden: boolean;
+  /// Unified Navigation Tree NT4 — node-membership composition.
+  /// `false`/absent (the default) = the node resolves on its OWN
+  /// membership regardless of where it sits in the tree ("standard");
+  /// `true` = the node's membership is intersected with its parent's
+  /// effective membership ("filter within parent"), chaining up to the
+  /// nearest off ancestor. Reserved D59-style in Slice 2: the resolver
+  /// honors it, but no UI sets it yet (drag-to-nest + the toggle land in
+  /// Slice 4). Optional + absent-means-false so existing flat nodes are
+  /// unchanged and older saves hydrate cleanly. Mirrored by Rust
+  /// `ContainerNode::filter_within_parent` (serde default).
+  filterWithinParent?: boolean;
   children: ViewNode[];
 };
 

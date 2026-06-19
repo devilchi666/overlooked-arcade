@@ -22,6 +22,7 @@ export const ROOT_NODE_ID = "root";
 const CONTAINER_ID_PREFIX = "container:";
 const PLATFORM_ID_PREFIX = "platform:";
 const COLLECTION_ID_PREFIX = "collection:";
+const FILTER_ID_PREFIX = "filter:";
 
 /// Stable encoding of a leaf node id. Mirrored by the resolver's
 /// synthesized-leaf fallback and by App.tsx's viewForSystem helper —
@@ -68,6 +69,26 @@ export function collectionNodeIdFor(collectionId: string): string {
 export function parseCollectionNodeId(nodeId: string): string | null {
   if (!nodeId.startsWith(COLLECTION_ID_PREFIX)) return null;
   return nodeId.slice(COLLECTION_ID_PREFIX.length);
+}
+
+/// Stable encoding of a smart-list filter node id (Unified Navigation
+/// Tree Slice 2). Exact twin of `collectionNodeIdFor`: the sidebar's
+/// read-only "Smart Lists" section navigates to `filter:<kind>` (the
+/// `kind` is a `SmartListKind` — favorites / recentlyPlayed / …), and the
+/// resolver's membership path parses it back out to evaluate the matching
+/// predicate over the library. Like the collection ids, these are
+/// synthesized — the built-in filter nodes aren't persisted in the view
+/// tree (Slice 4 adds drag-into-tree + real `filter`-rule nodes; both
+/// shapes resolve through the same membership path).
+export function filterNodeIdFor(kind: string): string {
+  return `${FILTER_ID_PREFIX}${kind}`;
+}
+
+/// Inverse of `filterNodeIdFor`. Returns the smart-list kind, or null
+/// when `nodeId` isn't a filter node id.
+export function parseFilterNodeId(nodeId: string): string | null {
+  if (!nodeId.startsWith(FILTER_ID_PREFIX)) return null;
+  return nodeId.slice(FILTER_ID_PREFIX.length);
 }
 
 const BUCKETS: { tag: FormFactorTag; label: string }[] = [

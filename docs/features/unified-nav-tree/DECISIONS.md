@@ -69,3 +69,60 @@ the resolver when filter nodes + real nesting land (Slices 2–4); reserve the p
 is the **membership** axis (which games a node contains), kept deliberately separate from the
 **view/layout** axis in [VIEW_MODEL.md](VIEW_MODEL.md) — conflating the two is exactly what drifted
 before.
+
+## NT5 — Filter specs are named built-ins now; the general predicate AST is a reserved future arm (2026-06-19)
+
+**Built in Slice 2.** A `filter`-rule node's `spec` carries a **named built-in kind**
+(`{ kind: "favorites" | "recentlyPlayed" | "completed" | "multiPlayer" | "hiddenGems" | "lastPlayed" }`),
+evaluated frontend-side at render via the shared `platform/library/smartLists.ts` registry — the exact
+predicates the COLLECTIONS tab already shipped, now lifted to a single source both consumers share.
+
+**Why not the full smart-query AST yet** (the `_archive/PLANS/collections-tab-retroverse.md` §12 "all
+PS1 RPGs < 1998" builder): it's a much larger surface (field vocabulary, boolean ops, a builder UI) and
+nothing this slice needs. The persisted `spec` stays **opaque JSON** (`Record<string, unknown>` in TS /
+`serde_json::Value` in Rust, as reserved in Slice 1), so a `{ kind: "query"; ast: … }` arm is purely
+**additive** later with no schema migration — the same low-floor/high-ceiling D59 discipline used across
+the project. `asSmartListKind` returns `null` for any unrecognized spec, so unknown/future kinds resolve
+to an empty set rather than throwing.
+
+**Eval home:** frontend, at render, over live library state (plan §12 + Slice 1's "frontend store, cheap;
+revisit for a backend query only if perf needs it"). Predicates are pure (`nowSecs` injected) so the
+resolver is deterministic + unit-testable.
+
+## NT6 — Dump-quality is reserved, not wired, pending node semantics (2026-06-19)
+
+The Slice 2 brief listed **dump-quality** as a target filter node alongside Favorites / Recently Played /
+Multi-Player. It's **deferred** (the `dumpQuality` spec kind is recognized-as-unknown → resolves inert):
+
+- **Data lives variant-side, not on `RomEntry`.** Dump-quality (`dumpStatus`/`isHack`/…) is on
+  `VariantInfo` inside `groupsByVariantId()`; the canonical predicate is Rust's `variant_passes_filters`.
+  The other three filters are clean `RomEntry`-field reads.
+- **The node's *meaning* is a genuine product question.** As navigation, does "dump-quality" show *bad*
+  dumps (preservation triage), *verified only*, or something else? And is a tile a "bad dump" if its
+  **default** variant is bad, or if **any** variant is? Inventing that silently would be a band-aid.
+
+Wire it once those are decided (operator call) — likely as a small typed spec arm `{ kind: "dumpQuality";
+exclude: … }` reusing the `VariantFilters` flag set, projected onto tiles via the default variant.
+
+## NT7 — Re-anchored as "Navigation Structure" (Settings-level, user-authored); themes only style (2026-06-19)
+
+The arc is **Navigation Structure**: a Settings-level, **user-authored** feature for how the library
+is organized and walked. Themes contribute *only* default styling for a node's view (the cascade in
+[VIEW_MODEL.md](VIEW_MODEL.md)); they never own the structure. This **supersedes the theme-led
+framing** of the original plan (the "theme view model" centerpiece + work filed under `themes/`
+paths), which buried the feature under jargon and caused recurring drift.
+
+**Why:** the operator's vision (captured in [RESEARCH.md](RESEARCH.md)) is "collections ARE the
+navigation layer — a tree you build and arrange." The audit confirmed the *structure* logic lives in
+`platform/` (theme-agnostic) and is authored in Settings; only the optional *styling* touches themes.
+Leading with themes inverted the emphasis. RESEARCH.md is now the source of truth; VIEW_MODEL.md is
+the subordinate *styling-cascade* reference.
+
+**Consequences (operator-approved 2026-06-19):**
+- **One editor:** the three "Organize My Collection" cards (Sidebar layouts / Collections / Sidebar
+  systems) unify into a single **"Navigation Structure"** editor; the Settings category is renamed
+  (arc Slice 4). The separate Collections tab (`themes/retroverse/CollectionsPage.tsx`) retires.
+- **Whole arc planned up front** — 7 slices, authoring-richness first (lists-as-nodes → deep nesting →
+  builder), then unify, then per-node views, then drill-through levels, then polish. See the plan.
+- **Slice 2 (`feat/unified-nav-tree-s2`) merges as substrate;** its read-only sidebar sections are
+  transitional, replaced by real authored nodes in arc Slice 1.

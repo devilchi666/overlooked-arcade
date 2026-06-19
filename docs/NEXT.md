@@ -77,43 +77,39 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### ⭐ START HERE — Unified Navigation Tree · Slice 2 (filter / smart-list nodes + NT4 composition)
+### ⭐ START HERE — Navigation Structure · Arc Slice 1 (collections & smart-lists as real authored nodes)
 
-**Arc operator-approved 2026-06-18. Slice 1 ✅ SHIPPED + MERGED to main 2026-06-19**
-(`1c9a493`). Plan + [VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md) (read the view
-model first): **[PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md)** · feature folder
-[features/unified-nav-tree/](features/unified-nav-tree/) · decisions NT1–**NT4**.
+**Arc RE-ANCHORED 2026-06-19** from the theme-led "Unified Navigation Tree" framing → **Navigation
+Structure**: a Settings-level, user-authored tree (systems · groups · smart lists · curated
+collections · folders), nested any depth, each node's view selectable + remembered. 🔑 read
+**[features/unified-nav-tree/RESEARCH.md](features/unified-nav-tree/RESEARCH.md)** first (vision +
+BigBox study + drift history), then the 7-slice program in
+**[PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md)** · decisions NT1–**NT7**. Themes only
+*style* views; the structure is the user's. **Reconnect + enrich, not rebuild** — the home
+(Settings → "Organize My Collection"), data model, resolver, predicates, and view-cascade substrate
+already exist.
 
-The arc reunites the systems-only `views` sidebar tree and the separate flat `Collections`
-tab into **one user-authored tree of nodes (system / group / collection / filter), each
-rendered by a per-node view** (the BigBox model, declaratively). **Supersedes Declarative
-Showcase S3** (parks; resumes inside this arc's Slice 5).
+**Substrate done:** Slice-1 merged (`1c9a493`); **Slice-2** (filter nodes wired to the
+`smartLists.ts` predicates + NT4 ancestry-aware `resolveNodeMembership` + `filterWithinParent`
+reserved) is green on `feat/unified-nav-tree-s2` — **merges as plumbing**; its read-only sidebar
+sections are transitional.
 
-**Slice 1 (done):** `collection` ContainerRule kind (+ reserved-inert `filter`, D59) mirrored
-in Rust; `resolveNodeMembership` (systems | games); `filterEntries` `viewRomIds` seam;
-read-only "Collections" sidebar section in Retroverse. LibraryView lives at
-`platform/components/LibraryView.tsx` (not `themes/retroverse/` as the original plan text
-said) — it's a platform component the theme renders via `LibraryPage.tsx`.
+**Arc Slice 1 (next) — collections & smart-lists as real, authored tree nodes.** Wire the reserved
+`collection`/`filter` rules into the **View Editor** (`engine/ViewEditorPane.tsx`: "+ Smart List" /
+"+ Collection" → `addContainer` + `setContainerRule`) and render them as normal draggable rows in the
+sidebar (`LeftSidebar.tsx` / `SidebarTreeNode.tsx`); retire the synthesized read-only sections.
+Reuse `resolveNodeMembership` (handles both rules) + `evaluateSmartList` (counts). Playtest: add
+Favorites + a custom collection into your tree, drag them, they persist + fill the grid. Verify: tsc
++ lint + `vitest run src/platform/views src/platform/library` + `cargo test -p oa-shell views` (do
+NOT `cargo fmt -p oa-shell`). First, decide the Slice-2 branch fate (merge as substrate).
 
-**Slice 2 (next) — filter / smart-list nodes + the NT4 composition model.** Two threads:
-(a) wire the reserved `filter` rule kind to the existing smart-list predicates +
-`VariantFilters` (Favorites / Recently Played / Multi-Player / dump-quality as tree nodes;
-predicate AST per `_archive/PLANS/collections-tab-retroverse.md` §12, evaluated at render);
-(b) **NT4 composition** — reserve a per-node `filterWithinParent?: boolean` on `ContainerNode`
-(TS + Rust mirror, default off) and make `resolveNodeMembership` **ancestry-aware** (fold
-parent ∩ child intersections up the path from root, stopping at the nearest off ancestor).
-Off = independent "standard" set (today); on = narrow within parent; chains arbitrarily deep.
-This is the load-bearing change flagged in NT4 — a node can no longer be resolved by id in
-isolation. Verify: tsc + lint + `vitest run src/platform/views src/platform/library` +
-`cargo test -p oa-shell views` (do NOT `cargo fmt -p oa-shell`).
+### ⏸ PARKED (resumes in Navigation Structure Slice 7) — Declarative Showcase S3
 
-### ⏸ PARKED (resumes in Unified Nav Tree Slice 5) — Declarative Showcase S3
-
-Was the START-HERE until 2026-06-18; **superseded** by the Unified Navigation Tree arc above.
+Was the START-HERE until 2026-06-18; **superseded** by the Navigation Structure arc above.
 S3 would polish the *flat* `DeclarativeShell` browse (list-row thumbnails / metadata / richer
 `RECOGNIZED_SETTINGS`) — but that's below the real gap: file themes need the *hierarchy*
-first. S3's polish resumes as render detail inside Nav-Tree Slice 5 (declarative shell renders
-the unified tree). Kickoff still in [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md)
+first. S3's polish resumes as render detail inside Navigation Structure Slice 7 (declarative shell
+renders the unified tree). Kickoff still in [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md)
 §"S3 kickoff".
 
 ### oa-packs infrastructure — Slice 5 tail (`editorial` consumer) `[ARC opened 2026-06-15]`

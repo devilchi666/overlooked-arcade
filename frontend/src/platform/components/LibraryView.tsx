@@ -17,7 +17,8 @@ import { useDeclaredLayout } from "@oa/platform/theme/layoutResolver";
 import { CarouselNav, WheelNav } from "@oa/platform/nav";
 import type { ViewsStore } from "@oa/platform/views/store";
 import { findNode, resolveNodeMembership, type NodeMembership } from "@oa/platform/views/resolver";
-import { parseCollectionNodeId, parsePlatformNodeId } from "@oa/platform/views/defaults";
+import { parseCollectionNodeId, parseFilterNodeId, parsePlatformNodeId } from "@oa/platform/views/defaults";
+import { SMART_LISTS_BY_KIND, type SmartListKind } from "@oa/platform/library/smartLists";
 import DetailListView from "./DetailListView";
 import GridControls from "./GridControls";
 import SystemHeader from "./SystemHeader";
@@ -120,7 +121,15 @@ const LibraryView: Component<Props> = (props) => {
     const active = props.views.activeView();
     const members = props.collectionMembers?.() ?? EMPTY_COLLECTION_MEMBERS;
     if (active && active.id === cv.viewId) {
-      return resolveNodeMembership(active, cv.nodeId, members);
+      // Slice 2 — the resolver now also evaluates `filter`-rule nodes
+      // (needs the live entries + clock) and folds NT4 cross-axis
+      // intersections (needs entries to map rom→system). Pass them all in
+      // one context object.
+      return resolveNodeMembership(active, cv.nodeId, {
+        collectionMembers: members,
+        entries: props.library.state.entries,
+        nowSecs: Math.floor(Date.now() / 1000),
+      });
     }
     // Active-view mismatch (rare — could happen mid-view-switch with a
     // stale deep-link). Fall back to synthesized-leaf interpretation.
@@ -283,6 +292,12 @@ const LibraryView: Component<Props> = (props) => {
         const collectionId = parseCollectionNodeId(cv.nodeId);
         if (collectionId !== null) {
           return props.collectionName?.(collectionId) ?? "Collection";
+        }
+        // Smart-list filter node (synthesized `filter:<kind>` from the
+        // sidebar's Smart Lists section) — show the built-in's label.
+        const filterKind = parseFilterNodeId(cv.nodeId);
+        if (filterKind !== null) {
+          return SMART_LISTS_BY_KIND[filterKind as SmartListKind]?.label ?? "Smart list";
         }
         // Container selection (PR-γ surface) — fall back to the node's
         // label by looking it up in the active view. If lookup fails,
