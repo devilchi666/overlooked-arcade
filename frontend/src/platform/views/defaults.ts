@@ -21,6 +21,7 @@ export const ROOT_NODE_ID = "root";
 
 const CONTAINER_ID_PREFIX = "container:";
 const PLATFORM_ID_PREFIX = "platform:";
+const COLLECTION_ID_PREFIX = "collection:";
 
 /// Stable encoding of a leaf node id. Mirrored by the resolver's
 /// synthesized-leaf fallback and by App.tsx's viewForSystem helper —
@@ -47,6 +48,26 @@ export function manufacturerNodeIdFor(manufacturer: ManufacturerTag): string {
 export function parsePlatformNodeId(nodeId: string): SystemId | null {
   if (!nodeId.startsWith(PLATFORM_ID_PREFIX)) return null;
   return nodeId.slice(PLATFORM_ID_PREFIX.length) as SystemId;
+}
+
+/// Stable encoding of a collection node id (Unified Navigation Tree
+/// Slice 1). Mirrors `platformNodeIdFor`: the sidebar's read-only
+/// Collections section navigates to `collection:<collectionId>`, and the
+/// resolver's membership path parses it back out so a collection node
+/// resolves to its member rom-id set even though it isn't (yet) a
+/// persisted node in the view tree — exactly the synthesized-leaf pattern
+/// platform nodes already use for deep-links outside the active view.
+/// Slice 4 (drag-into-tree) adds real persisted collection nodes; both
+/// shapes resolve through the same membership path.
+export function collectionNodeIdFor(collectionId: string): string {
+  return `${COLLECTION_ID_PREFIX}${collectionId}`;
+}
+
+/// Inverse of `collectionNodeIdFor`. Returns the collection id, or null
+/// when `nodeId` isn't a collection node id.
+export function parseCollectionNodeId(nodeId: string): string | null {
+  if (!nodeId.startsWith(COLLECTION_ID_PREFIX)) return null;
+  return nodeId.slice(COLLECTION_ID_PREFIX.length);
 }
 
 const BUCKETS: { tag: FormFactorTag; label: string }[] = [

@@ -77,18 +77,42 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### ⭐ START HERE — Declarative Showcase S3 (list-row thumbnails + metadata + richer recognized settings vocab)
+### ⭐ START HERE — Unified Navigation Tree · Slice 1 (keystone: node→games + collections navigable)
 
-The chosen next slice (operator, 2026-06-18). Full self-contained kickoff —
-files to load, the task, the design forks to settle first, the landmines, the
-verify/branch/merge steps — is in **[PLANS/declarative-showcase.md](PLANS/declarative-showcase.md)
-§"S3 kickoff — start here"**. S1 + S2 of the arc are MERGED to main; S3 is
-DATA-driven on the `DeclarativeShell` (no per-theme code), built D59-style
-(recognized/wired now, declared-but-unknown persists + inert). **Design first
-(prose, then AskUserQuestion) — don't jump to code.** Three parts: (1) list-row
-cover thumbnails (`renderRow`); (2) compact row metadata (`media.media(entry.id)?.metadata`
-— rom-id key, NOT identity); (3) turn `RECOGNIZED_SETTINGS` into a curated,
-documented contract of keys the shell honors. Dogfood on `neon-list` (list theme).
+**New arc, operator-approved 2026-06-18.** Plan +
+[VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md) (read the view model first):
+**[PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md)** · feature folder
+[features/unified-nav-tree/](features/unified-nav-tree/) · decisions NT1–NT3.
+
+Reunites the two systems that drifted apart — the systems-only `views` sidebar tree and
+the separate flat `Collections` tab — into **one user-authored tree of nodes (system /
+group / collection / filter), each rendered by a per-node view** (the BigBox model,
+declaratively). This is the same foundation that fixes "file themes can't do per-system
+views." **Supersedes the queued Declarative Showcase S3** (which parks and resumes inside
+this arc's Slice 5).
+
+**Slice 1 keystone — the one architectural change:** every node resolves to `SystemId[]`
+today (`platform/views/resolver.ts:55`); collections/filters resolve to **games directly**.
+Generalize node resolution + the library filter from systems-only to systems-OR-game-set.
+Five steps (see the plan's "Slice 1" section): (1) add `{ kind: "collection"; collectionId }`
+to `ContainerRule` (TS `platform/views/types.ts:81` + Rust `views.rs` mirror + round-trip
+test); (2) `resolveNodeMembership` (systems | games) in `platform/views/resolver.ts`;
+(3) widen `filterEntries` with `viewRomIds` (`platform/library/filter.ts:33` — seam already
+reserved in its doc comment); (4) consume membership in `themes/retroverse/LibraryView.tsx`;
+(5) inject a read-only "Collections" section into the sidebar so a collection is clickable
+and shows its games. Frontend-heavy + small Rust mirror. **Acceptance:** click a collection
+in the Retroverse sidebar → its games appear in the grid; system/group nodes unchanged.
+Verify: tsc + lint + `vitest run src/platform/views src/platform/library` +
+`cargo test -p oa-shell views` (do NOT `cargo fmt -p oa-shell`).
+
+### ⏸ PARKED (resumes in Unified Nav Tree Slice 5) — Declarative Showcase S3
+
+Was the START-HERE until 2026-06-18; **superseded** by the Unified Navigation Tree arc above.
+S3 would polish the *flat* `DeclarativeShell` browse (list-row thumbnails / metadata / richer
+`RECOGNIZED_SETTINGS`) — but that's below the real gap: file themes need the *hierarchy*
+first. S3's polish resumes as render detail inside Nav-Tree Slice 5 (declarative shell renders
+the unified tree). Kickoff still in [PLANS/declarative-showcase.md](PLANS/declarative-showcase.md)
+§"S3 kickoff".
 
 ### oa-packs infrastructure — Slice 5 tail (`editorial` consumer) `[ARC opened 2026-06-15]`
 

@@ -34,6 +34,8 @@ import {
 } from "@oa/platform/nav";
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { findNode } from "@oa/platform/views/resolver";
+import { parseCollectionNodeId } from "@oa/platform/views/defaults";
+import type { ContainerNode } from "@oa/platform/views/types";
 import { useTheme } from "@oa/platform/theme/host";
 import { useThemeSettings } from "@oa/platform/theme/themeSettings";
 import type { LibraryAppearance } from "@oa/platform/components/LibraryView";
@@ -92,17 +94,68 @@ const LibraryPage: Component = () => {
     return null;
   });
 
+  // Unified Navigation Tree Slice 1 — when the active view-node is a
+  // collection (a synthesized `collection:<id>` node from the sidebar's
+  // Collections section, or — from Slice 4 — a real collection-rule node in
+  // the tree), surface its id so the header + LibraryView resolve to its
+  // member games.
+  const activeCollectionId = createMemo<string | null>(() => {
+    const cv = ctx.currentView();
+    if (cv.kind !== "view-node") return null;
+    const synth = parseCollectionNodeId(cv.nodeId);
+    if (synth !== null) return synth;
+    const active = ctx.views.activeView();
+    if (active && active.id === cv.viewId) {
+      const node = findNode(active, cv.nodeId);
+      if (node && !("kind" in node && node.kind === "platform")) {
+        const rule = (node as ContainerNode).rule;
+        if (rule?.kind === "collection") return rule.collectionId;
+      }
+    }
+    return null;
+  });
+
+  // Lazy-load member ids when a collection becomes active — the store
+  // hydrates collections eagerly but members on demand (Slice 12 design).
+  createEffect(() => {
+    const id = activeCollectionId();
+    if (id) void ctx.customCollections.ensureMembers(id);
+  });
+
+  // Membership map (id → member rom-id set) handed to LibraryView + used by
+  // the header count. Rebuilds reactively when the store's member sets load
+  // or change.
+  const collectionMembers = createMemo<ReadonlyMap<string, ReadonlySet<string>>>(() => {
+    const map = new Map<string, ReadonlySet<string>>();
+    const members = ctx.customCollections.state.members;
+    for (const id of Object.keys(members)) {
+      const set = members[id];
+      if (set) map.set(id, set);
+    }
+    return map;
+  });
+
+  const collectionName = (collectionId: string): string | undefined =>
+    ctx.customCollections.state.collections.find((c) => c.id === collectionId)?.name;
+
   const headerTitle = createMemo(() => {
     const sys = headerSystemId();
-    if (!sys) return "All games";
-    return systemThemes[sys]?.displayName ?? sys;
+    if (sys) return systemThemes[sys]?.displayName ?? sys;
+    const id = activeCollectionId();
+    if (id) return collectionName(id) ?? "Collection";
+    return "All games";
   });
 
   const headerCount = createMemo(() => {
     const entries = ctx.library.state.entries.filter((e) => !e.seed);
     const sys = headerSystemId();
-    if (!sys) return entries.length;
-    return entries.filter((e) => e.systemId === sys).length;
+    if (sys) return entries.filter((e) => e.systemId === sys).length;
+    const id = activeCollectionId();
+    if (id) {
+      const set = collectionMembers().get(id);
+      return set ? entries.filter((e) => set.has(e.id)).length : 0;
+    }
+    return entries.length;
   });
 
   // Page-level region focus groups — same pattern as HOME /
@@ -257,6 +310,8 @@ const LibraryPage: Component = () => {
           onContainerContext={(container, position) =>
             setContainerContextFor({ container, position })
           }
+          // Unified Navigation Tree Slice 1 — read-only Collections section.
+          collections={() => ctx.customCollections.state.collections}
         />
       </aside>
 
@@ -300,6 +355,9 @@ const LibraryPage: Component = () => {
             showSystemHeader
             onBootWithoutGame={(id) => ctx.onBootWithoutGame(id)}
             gridFocusNeighbours={{ left: LEFT_ID, right: RIGHT_ID }}
+            // Unified Navigation Tree Slice 1 — collection node resolution.
+            collectionMembers={collectionMembers}
+            collectionName={collectionName}
           />
         </div>
       </section>
