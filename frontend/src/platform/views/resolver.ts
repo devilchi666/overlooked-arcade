@@ -8,7 +8,15 @@
 
 import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { ContainerNode, ContainerRule, PlatformNode, View, ViewNode } from "./types";
-import { parsePlatformNodeId, platformNodeIdFor } from "./defaults";
+import {
+  parseCollectionNodeId,
+  parsePlatformNodeId,
+  platformNodeIdFor,
+} from "./defaults";
+
+/// Shared empty member set so the "no members yet / unknown collection"
+/// path never allocates. ReadonlySet so callers can't mutate it.
+const EMPTY_ROM_SET: ReadonlySet<string> = new Set<string>();
 
 /// DFS for a node by id. Returns null if not found. Search starts from
 /// the view's root container (root itself is matchable — `nodeId = "root"`
@@ -81,9 +89,67 @@ function systemIdsMatchingRule(rule: ContainerRule): SystemId[] {
       case "systemIds":
         if (rule.values.includes(theme.id)) out.push(theme.id);
         break;
+      case "collection":
+      case "filter":
+        // Not system-keyed rules — they resolve to an explicit game set
+        // via resolveNodeMembership, not to SystemIds. A direct
+        // resolveNodeSystemIds call on such a node (e.g. an old caller
+        // doing a system count) gets an empty system list, which is the
+        // correct "no systems match" answer.
+        break;
     }
   }
   return out;
+}
+
+/// The membership a node resolves to. Unified Navigation Tree keystone:
+/// generalizes resolution from "every node maps to SystemId[]" to "a node
+/// maps to a set of systems OR an explicit set of games." System / group /
+/// root nodes stay `systems`; collection (and, from Slice 2, filter) nodes
+/// resolve to `games`. See features/unified-nav-tree/VIEW_MODEL.md.
+export type NodeMembership =
+  | { kind: "systems"; systemIds: SystemId[] }
+  | { kind: "games"; romIds: ReadonlySet<string> };
+
+/// Resolve a node id to its membership. Game-set nodes (collection rules,
+/// and `collection:<id>` synthesized ids from the sidebar's read-only
+/// Collections section) resolve to `{ games }` via `collectionMembers`
+/// (the `customCollections` store's member map — `Map<id, Set<romId>>`).
+/// Everything else delegates to `resolveNodeSystemIds`, so existing
+/// system / group / deep-link behaviour is untouched.
+///
+/// `resolveNodeSystemIds` is intentionally left intact for the callers that
+/// still need a pure system list (count badges, the sidebar's active-row
+/// highlight); this is an additive sibling, not a replacement.
+export function resolveNodeMembership(
+  view: View,
+  nodeId: string,
+  collectionMembers: ReadonlyMap<string, ReadonlySet<string>>,
+): NodeMembership {
+  const found = findNode(view, nodeId);
+  if (found && !("kind" in found && found.kind === "platform")) {
+    const rule = (found as ContainerNode).rule;
+    if (rule?.kind === "collection") {
+      return { kind: "games", romIds: collectionMembers.get(rule.collectionId) ?? EMPTY_ROM_SET };
+    }
+    if (rule?.kind === "filter") {
+      // Reserved (D59) — inert until Slice 2 wires the predicate. Resolve
+      // to an empty game set so a filter node renders empty rather than
+      // falling through to "all systems."
+      return { kind: "games", romIds: EMPTY_ROM_SET };
+    }
+  }
+  // Synthesized collection node (sidebar Collections section) — the node
+  // isn't in the persisted tree yet (Slice 4 adds drag-into-tree), so
+  // findNode misses; recover the collection id from the encoded node id.
+  const synthCollectionId = parseCollectionNodeId(nodeId);
+  if (synthCollectionId !== null) {
+    return { kind: "games", romIds: collectionMembers.get(synthCollectionId) ?? EMPTY_ROM_SET };
+  }
+  // Everything else is system-keyed — delegate to the unchanged resolver
+  // (handles platform leaves, container system rules, root null-rule, and
+  // the synthesized `platform:<systemId>` deep-link fallback).
+  return { kind: "systems", systemIds: resolveNodeSystemIds(view, nodeId) };
 }
 
 /// Count library entries under a node (recursive for containers; direct

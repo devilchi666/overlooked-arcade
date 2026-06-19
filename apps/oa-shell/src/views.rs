@@ -132,6 +132,22 @@ pub enum ContainerRule {
     Manufacturer { value: String },
     /// Match an explicit set of system ids. Used by v3+ custom containers.
     SystemIds { values: Vec<String> },
+    /// Unified Navigation Tree Slice 1 — membership is an explicit set of
+    /// games, keyed by `collection_id` into the custom-collections store.
+    /// The frontend resolver turns this into a `{ games, romIds }`
+    /// membership; Rust only stores + round-trips it. The enum-level
+    /// `rename_all` renames the variant tag ("collection"); the field is
+    /// renamed explicitly so the JSON key is `collectionId` to match the
+    /// TS mirror.
+    Collection {
+        #[serde(rename = "collectionId")]
+        collection_id: String,
+    },
+    /// Reserved (D59) — predicate over games (Favorites / Recently Played
+    /// / dump-quality). Inert in Slice 1; the shape settles in Slice 2.
+    /// `spec` is opaque JSON so the predicate AST can land later without a
+    /// schema bump.
+    Filter { spec: serde_json::Value },
 }
 
 /// Read views.json from `app_data_dir`. Returns `None` when the file
@@ -321,6 +337,82 @@ mod tests {
         migrate_inplace(&mut config);
         assert_eq!(config.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(config.views[0].explicitly_removed.len(), 0);
+    }
+
+    #[test]
+    fn views_collection_and_filter_rules_round_trip() {
+        // Unified Navigation Tree Slice 1 — the new `collection` + reserved
+        // `filter` rule kinds survive a write→read cycle and serialize with
+        // the camelCase tag + `collectionId` field the TS mirror expects.
+        let mut cfg = sample_config();
+        cfg.views[0].root.children.push(ViewNode::Container(ContainerNode {
+            id: "container:collections".to_string(),
+            label: "Collections".to_string(),
+            rule: None,
+            accent: None,
+            art: None,
+            hidden: false,
+            children: vec![
+                ViewNode::Container(ContainerNode {
+                    id: "collection:favorites".to_string(),
+                    label: "Favorites".to_string(),
+                    rule: Some(ContainerRule::Collection {
+                        collection_id: "favorites".to_string(),
+                    }),
+                    accent: None,
+                    art: None,
+                    hidden: false,
+                    children: vec![],
+                }),
+                ViewNode::Container(ContainerNode {
+                    id: "filter:recent".to_string(),
+                    label: "Recently Played".to_string(),
+                    rule: Some(ContainerRule::Filter {
+                        spec: serde_json::json!({ "kind": "recentlyPlayed" }),
+                    }),
+                    accent: None,
+                    art: None,
+                    hidden: false,
+                    children: vec![],
+                }),
+            ],
+        }));
+
+        // JSON shape matches the TS contract.
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(json.contains("\"kind\":\"collection\""));
+        assert!(json.contains("\"collectionId\":\"favorites\""));
+        assert!(json.contains("\"kind\":\"filter\""));
+
+        // Disk round-trip preserves both rule kinds.
+        let tmp =
+            std::env::temp_dir().join(format!("oa-views-collection-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        write_views(&tmp, &cfg).expect("write");
+        let read = read_views(&tmp).expect("read");
+        let collections = match &read.views[0].root.children[1] {
+            ViewNode::Container(c) => c,
+            other => panic!("expected collections container, got {:?}", other),
+        };
+        match &collections.children[0] {
+            ViewNode::Container(c) => match &c.rule {
+                Some(ContainerRule::Collection { collection_id }) => {
+                    assert_eq!(collection_id, "favorites")
+                }
+                other => panic!("expected collection rule, got {:?}", other),
+            },
+            other => panic!("expected collection node, got {:?}", other),
+        }
+        match &collections.children[1] {
+            ViewNode::Container(c) => match &c.rule {
+                Some(ContainerRule::Filter { spec }) => {
+                    assert_eq!(spec["kind"], "recentlyPlayed")
+                }
+                other => panic!("expected filter rule, got {:?}", other),
+            },
+            other => panic!("expected filter node, got {:?}", other),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

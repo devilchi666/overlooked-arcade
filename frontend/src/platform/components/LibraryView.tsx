@@ -16,8 +16,8 @@ import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import { useDeclaredLayout } from "@oa/platform/theme/layoutResolver";
 import { CarouselNav, WheelNav } from "@oa/platform/nav";
 import type { ViewsStore } from "@oa/platform/views/store";
-import { findNode, resolveNodeSystemIds } from "@oa/platform/views/resolver";
-import { parsePlatformNodeId } from "@oa/platform/views/defaults";
+import { findNode, resolveNodeMembership, type NodeMembership } from "@oa/platform/views/resolver";
+import { parseCollectionNodeId, parsePlatformNodeId } from "@oa/platform/views/defaults";
 import DetailListView from "./DetailListView";
 import GridControls from "./GridControls";
 import SystemHeader from "./SystemHeader";
@@ -78,6 +78,19 @@ type Props = {
   /// the theme (LibraryPage) so platform components stay prop-driven and
   /// don't reach into the theme context (layer boundary).
   onBootWithoutGame?: (systemId: SystemId) => void;
+  /// Unified Navigation Tree Slice 1 — collection membership lookup
+  /// (`Map<collectionId, Set<romId>>`), sourced from the customCollections
+  /// store by the theme (LibraryPage). When the active view-node is a
+  /// collection node, the view resolves to the matching member set instead
+  /// of a system filter. Optional: themes that don't wire collections fall
+  /// back to system-only resolution (membership stays `{ systems }`).
+  collectionMembers?: () => ReadonlyMap<string, ReadonlySet<string>>;
+  /// Unified Navigation Tree Slice 1 — display-name lookup for a
+  /// collection id, so the header reads the collection's name when a
+  /// synthesized `collection:<id>` node is active (the node isn't in the
+  /// persisted tree yet, so its label can't come from `findNode`). Sourced
+  /// from the customCollections store by the theme.
+  collectionName?: (collectionId: string) => string | undefined;
 };
 
 /**
@@ -93,23 +106,41 @@ const LibraryView: Component<Props> = (props) => {
   const systemDisplayName = (id: string): string =>
     systemThemes[id as SystemId]?.displayName ?? id;
 
-  /// Resolve the active view-node selection to the SystemId set the
-  /// library should restrict to. `null` means "no system filter"
-  /// (currentView is `all`). For view-node:
-  /// look up the node in the active view, resolve via the views
-  /// resolver (handles container rules + synthesized-leaf fallback for
-  /// deep-links outside the active view's tree).
-  const viewSystemIds = createMemo<SystemId[] | null>(() => {
+  const EMPTY_COLLECTION_MEMBERS: ReadonlyMap<string, ReadonlySet<string>> = new Map();
+
+  /// Resolve the active view-node selection to its membership — a set of
+  /// systems (system / group / root nodes) OR an explicit set of games
+  /// (collection nodes; from Slice 2, filter nodes). `null` means "no
+  /// filter" (currentView is `all`). The collection-member map is supplied
+  /// by the theme; absent → the resolver simply never produces a `games`
+  /// membership. See features/unified-nav-tree/VIEW_MODEL.md.
+  const membership = createMemo<NodeMembership | null>(() => {
     const cv = props.currentView;
     if (cv.kind !== "view-node") return null;
     const active = props.views.activeView();
+    const members = props.collectionMembers?.() ?? EMPTY_COLLECTION_MEMBERS;
     if (active && active.id === cv.viewId) {
-      return resolveNodeSystemIds(active, cv.nodeId);
+      return resolveNodeMembership(active, cv.nodeId, members);
     }
     // Active-view mismatch (rare — could happen mid-view-switch with a
     // stale deep-link). Fall back to synthesized-leaf interpretation.
     const synth = parsePlatformNodeId(cv.nodeId);
-    return synth ? [synth] : [];
+    return { kind: "systems", systemIds: synth ? [synth] : [] };
+  });
+
+  /// System filter the library restricts to (null when the active node is
+  /// a game-set node or `all`). Kept as a dedicated memo so downstream
+  /// system-keyed consumers (header / data-system accent) stay simple.
+  const viewSystemIds = createMemo<SystemId[] | null>(() => {
+    const m = membership();
+    return m?.kind === "systems" ? m.systemIds : null;
+  });
+
+  /// Explicit rom-id set when the active node is a game-set node, else
+  /// null. Takes precedence over `viewSystemIds` in `filterEntries`.
+  const viewRomIds = createMemo<ReadonlySet<string> | null>(() => {
+    const m = membership();
+    return m?.kind === "games" ? m.romIds : null;
   });
 
   /// When the view-node selection resolves to exactly one system, that
@@ -152,6 +183,9 @@ const LibraryView: Component<Props> = (props) => {
       props.currentView,
       props.searchQuery,
       viewSystemIds(),
+      // Unified Navigation Tree Slice 1 — explicit rom-id set for
+      // collection / filter nodes; null for system nodes.
+      viewRomIds(),
       // VL Phase E Sub-phase 3 — search also matches the identity's
       // canonical title (e.g. "castlevania" hits a lone "Akumajou
       // Dracula (Japan)" dump once identified).
@@ -242,6 +276,14 @@ const LibraryView: Component<Props> = (props) => {
     switch (cv.kind) {
       case "all": return "All Games";
       case "view-node": {
+        // Collection node (synthesized `collection:<id>` from the sidebar's
+        // Collections section) — show the collection's name. The node isn't
+        // in the persisted tree, so its name comes from the theme-supplied
+        // lookup rather than findNode.
+        const collectionId = parseCollectionNodeId(cv.nodeId);
+        if (collectionId !== null) {
+          return props.collectionName?.(collectionId) ?? "Collection";
+        }
         // Container selection (PR-γ surface) — fall back to the node's
         // label by looking it up in the active view. If lookup fails,
         // surface a generic title rather than the raw node id.

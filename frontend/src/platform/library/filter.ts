@@ -29,12 +29,20 @@ function letterBucket(title: string): string {
  *  the views model needs ViewsStore + resolver, which we keep out of
  *  this pure module. The `view` parameter is retained for future
  *  per-discriminant logic (e.g. date-range filters from a smart view).
+ *
+ *  `viewRomIds` (Unified Navigation Tree Slice 1) is the caller-resolved
+ *  set of rom ids when the active node is a game-set node (a collection,
+ *  and from Slice 2 a smart-list filter) rather than a system node. When
+ *  non-null it takes precedence and slices by rom id; `viewSystemIds`
+ *  should be null in that case. This is the seam this doc comment
+ *  originally reserved — non-system membership now flows through here.
  */
 export function filterEntries(
   entries: RomEntry[],
   view: SidebarView,
   query: string,
   viewSystemIds: ReadonlyArray<SystemId> | null,
+  viewRomIds: ReadonlySet<string> | null,
   groupsByVariantId?: Map<string, GameGroupInfo>,
 ): RomEntry[] {
   // `view` is referenced via the parameter type so the discriminant
@@ -45,7 +53,11 @@ export function filterEntries(
   let result = entries;
 
   // View-driven slicing first — narrows the candidate list before search.
-  if (viewSystemIds !== null) {
+  // A game-set node (collection / filter) resolves to an explicit rom-id
+  // set and takes precedence; otherwise fall back to the system filter.
+  if (viewRomIds !== null) {
+    result = result.filter((e) => viewRomIds.has(e.id));
+  } else if (viewSystemIds !== null) {
     const allow = new Set<string>(viewSystemIds);
     result = result.filter((e) => allow.has(e.systemId));
   }

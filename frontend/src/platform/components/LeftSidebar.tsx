@@ -12,7 +12,12 @@ import { systemThemes, type SystemId } from "@oa/platform/themes/registry";
 import type { LayoutStore } from "@oa/platform/layout/state";
 import { type SidebarView } from "@oa/platform/layout/types";
 import type { ContainerNode, PlatformNode, ViewNode } from "@oa/platform/views/types";
-import { parsePlatformNodeId, platformNodeIdFor } from "@oa/platform/views/defaults";
+import type { CustomCollection } from "@oa/platform/library/customCollections";
+import {
+  collectionNodeIdFor,
+  parsePlatformNodeId,
+  platformNodeIdFor,
+} from "@oa/platform/views/defaults";
 import { flattenLeaves } from "@oa/platform/views/resolver";
 import type { ViewsStore } from "@oa/platform/views/store";
 import {
@@ -49,6 +54,14 @@ type Props = {
   /// to the Retroverse center pane (which then delegates to the grid
   /// via LibraryPage's effect).
   focusGroupNeighbours?: { left?: string; right?: string };
+  /// Unified Navigation Tree Slice 1 — operator-built collections, surfaced
+  /// as a read-only "Collections" section below the Platforms tree. Each row
+  /// navigates to a synthesized `collection:<id>` view-node; the library
+  /// resolves its member games via `resolveNodeMembership`. Optional —
+  /// omitted by the legacy Shell, supplied by Retroverse's LibraryPage.
+  /// Drag-into-tree placement + reordering is Slice 4; this is the cheapest
+  /// proof that a collection is navigable as a node.
+  collections?: () => CustomCollection[];
 };
 
 /**
@@ -418,6 +431,19 @@ const LeftSidebar: Component<Props> = (props) => {
     return true;
   };
 
+  /// Unified Navigation Tree Slice 1 — is the given collection the active
+  /// view-node? Matches against the synthesized `collection:<id>` node id.
+  const isCollectionActive = (collectionId: string): boolean => {
+    const cv = props.currentView;
+    return (
+      cv.kind === "view-node" &&
+      cv.viewId === activeViewId() &&
+      cv.nodeId === collectionNodeIdFor(collectionId)
+    );
+  };
+
+  const collectionList = createMemo<CustomCollection[]>(() => props.collections?.() ?? []);
+
   const beginResize = (event: PointerEvent) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -535,6 +561,36 @@ const LeftSidebar: Component<Props> = (props) => {
               </DragDropProvider>
             )}
           </Show>
+        </Show>
+
+        {/* Collections — operator-built game sets (Unified Navigation Tree
+            Slice 1). Read-only here: each row navigates to a synthesized
+            `collection:<id>` view-node that the library resolves to its
+            member games. Hidden in collapsed mode (no room for labelled
+            rows) and when the operator has no collections yet. Drag-into-
+            tree placement + reordering is Slice 4. */}
+        <Show when={!isCollapsed() && collectionList().length > 0}>
+          <SectionHeader label="Collections" collapsed={isCollapsed()} />
+          <ul class="space-y-0.5">
+            <For each={collectionList()}>
+              {(collection) => (
+                <QuickItem
+                  icon="★"
+                  label={collection.name}
+                  badge={collection.memberCount > 0 ? String(collection.memberCount) : undefined}
+                  active={isCollectionActive(collection.id)}
+                  collapsed={isCollapsed()}
+                  onClick={() =>
+                    props.onNavigate({
+                      kind: "view-node",
+                      viewId: activeViewId(),
+                      nodeId: collectionNodeIdFor(collection.id),
+                    })
+                  }
+                />
+              )}
+            </For>
+          </ul>
         </Show>
 
         {/* Playlists (placeholder — feature lands later) */}

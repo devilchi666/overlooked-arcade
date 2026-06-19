@@ -11,7 +11,30 @@ spanned every system but was filed under whichever core happened to be active.
 
 ## In flight
 
-- **Declarative Showcase — make the file-theme path capable & beautiful** — NEW arc
+- **Unified Navigation Tree — systems + collections + filters as one node tree, each
+  rendered by a per-node view** — NEW arc, operator-approved 2026-06-18. Branch
+  `feat/unified-nav-tree` (suggested). Reunites the two systems that drifted apart — the
+  systems-only `views` sidebar tree and the separate flat `Collections` tab — into one
+  user-authored tree of nodes (system / group / collection / filter), each rendered by a
+  per-node view (the BigBox per-level-per-node, change-on-the-fly, remembered model, built
+  declaratively). Same foundation that fixes "file themes can't do per-system views."
+  Discovered when "Declarative Showcase S3" surfaced the gap; six parallel audits + BigBox
+  research grounded it. **Keystone (Slice 1):** every node resolves to `SystemId[]` today
+  (`platform/views/resolver.ts:55`); collections/filters resolve to games directly —
+  generalize node resolution + the library filter from systems-only to systems-OR-game-set,
+  then collections/filters are just new node kinds in the existing tree. 🔑 The authoritative
+  view model is [features/unified-nav-tree/VIEW_MODEL.md](features/unified-nav-tree/VIEW_MODEL.md)
+  (the anti-drift artifact — read before touching view/layout code). Plan:
+  [PLANS/unified-nav-tree.md](PLANS/unified-nav-tree.md); decisions NT1–NT3 in
+  [features/unified-nav-tree/DECISIONS.md](features/unified-nav-tree/DECISIONS.md); log
+  [features/unified-nav-tree/SESSION_LOG.md](features/unified-nav-tree/SESSION_LOG.md). **Slice 1
+  queued in [NEXT.md](NEXT.md) HIGH band — not yet started.** Supersedes Declarative Showcase S3
+  (parks; resumes inside this arc's Slice 5).
+
+- **Declarative Showcase — make the file-theme path capable & beautiful** — ⏸ **PARKED
+  2026-06-18 — superseded by the Unified Navigation Tree arc above** (S3 polishes the *flat*
+  declarative browse, which sits below the real gap; file themes need the *hierarchy* first.
+  S1 + S2 stay MERGED to main; S3 resumes as render detail inside Nav-Tree Slice 5). NEW arc
   opened 2026-06-18 (operator reframing); branch `feat/motion-selection-ambient-hook`
   (broadened from the selection/ambient hook). The Graphics Lab proves what the ENGINE
   can do *via code*, but a distributable `.oatheme` ships **no code** (PD1) — so the

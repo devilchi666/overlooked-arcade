@@ -81,4 +81,25 @@ export type PlatformNode = {
 export type ContainerRule =
   | { kind: "formFactor"; value: FormFactorTag }
   | { kind: "manufacturer"; value: ManufacturerTag }
-  | { kind: "systemIds"; values: SystemId[] };
+  | { kind: "systemIds"; values: SystemId[] }
+  /// Unified Navigation Tree Slice 1 — a container whose membership is an
+  /// explicit set of games rather than a set of systems. `collectionId`
+  /// keys into the `customCollections` store's `members` map; the resolver
+  /// returns `{ kind: "games", romIds }` for such a node so the library
+  /// filter slices by rom id instead of by system. This is what makes a
+  /// collection a first-class navigation node (NT1) rather than a separate
+  /// tab.
+  | { kind: "collection"; collectionId: string }
+  /// Reserved (D59) — a `filter` node resolves to a predicate over games
+  /// (Favorites / Recently Played / Multi-Player / dump-quality). Declared
+  /// now so the schema + Rust mirror don't bump when Slice 2 wires it; the
+  /// resolver + library filter treat it as inert (empty membership) until
+  /// then. `spec` is a free-form record so the predicate AST can settle in
+  /// Slice 2 without a schema migration.
+  | { kind: "filter"; spec: FilterRuleSpec };
+
+/// Reserved free-form predicate payload for `filter`-kind container rules.
+/// Intentionally untyped in Slice 1 (the shape lands in Slice 2 alongside
+/// the smart-list predicate evaluator). Held as a record so it round-trips
+/// through `get_views`/`set_views` as opaque JSON.
+export type FilterRuleSpec = Record<string, unknown>;
