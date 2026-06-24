@@ -14,7 +14,8 @@ import {
   SortableLeafNode,
   type SidebarTreeContext,
 } from "@oa/platform/components/SidebarTreeNode";
-import { countGameSetNode, findNode, isGameSetNode } from "@oa/platform/views/resolver";
+import { countGameSetNode, findNode, findNodePath, isGameSetNode } from "@oa/platform/views/resolver";
+import { resolveDragOutcome } from "@oa/platform/views/dragResolve";
 import type { ViewsStore } from "@oa/platform/views/store";
 import type {
   ContainerNode,
@@ -140,63 +141,30 @@ const ViewEditorPane: Component<Props> = (props) => {
     onToggleExpanded: (nodeId: string) => props.views.toggleExpanded(nodeId),
     onNavigateToNode: (nodeId: string) => setSelectedNodeId(nodeId),
     gameSetCount,
+    // Slice 2 — the editor is the deep-drag authoring surface.
+    nestedSortable: true,
   };
 
-  // Drag-reorder reuses γ.2 + v2.2.1's logic — same as LeftSidebar's
-  // handleSidebarDragEnd minus the filteredRoot pass (editor renders
-  // the unfiltered tree so the operator can see + edit hidden nodes
-  // too).
-  const parentOfId = createMemo(() => {
-    const map = new Map<string, string>();
-    for (const child of props.view.root.children) {
-      map.set(child.id, "__root__");
-      if (child.kind === "container") {
-        for (const grand of child.children) map.set(grand.id, child.id);
-      }
-    }
-    return map;
-  });
-
+  // Drag-reorder is resolved by the shared, unit-tested `resolveDragOutcome`
+  // (platform/views/dragResolve). It generalizes the old leaf-only, 2-level
+  // logic to any node kind at any depth: same-parent → reorder; cross-parent
+  // onto a folder → nest into it; cross-parent onto a row → insert beside it.
+  // Cycles + the root are rejected at the helper.
   const topLevelIds = createMemo(() => props.view.root.children.map((c) => c.id));
 
   const handleDragEnd: DragEventHandler = ({ draggable, droppable }) => {
-    if (!droppable || draggable.id === droppable.id) return;
-    const dragId = String(draggable.id);
-    const dropId = String(droppable.id);
-    const dragParent = parentOfId().get(dragId);
-    const dropParent = parentOfId().get(dropId);
-    if (!dragParent) return;
-
-    if (dragParent === dropParent) {
-      // Same-parent reorder.
-      if (dragParent === "__root__") {
-        reorderSiblingsInPlace(ROOT_NODE_ID, props.view.root.children, dragId, dropId, props.views);
-      } else {
-        const parent = findNode(props.view, dragParent);
-        if (!parent || !("children" in parent)) return;
-        reorderSiblingsInPlace(parent.id, parent.children, dragId, dropId, props.views);
-      }
-      return;
-    }
-
-    // Cross-parent — leaf only per v2.2.1.
-    const dragNode = findNode(props.view, dragId);
-    const isLeafDrag = dragNode && "kind" in dragNode && dragNode.kind === "platform";
-    if (!isLeafDrag) return;
-
-    const dropNode = findNode(props.view, dropId);
-    let targetParentId: string;
-    let insertBeforeId: string | null;
-    if (dropNode && "children" in dropNode) {
-      targetParentId = dropId;
-      insertBeforeId = null;
-    } else if (dropParent && dropParent !== "__root__") {
-      targetParentId = dropParent;
-      insertBeforeId = dropId;
+    if (!droppable) return;
+    const outcome = resolveDragOutcome(
+      props.view,
+      String(draggable.id),
+      String(droppable.id),
+    );
+    if (!outcome) return;
+    if (outcome.kind === "reorder") {
+      props.views.reorderChildren(outcome.parentId, outcome.order);
     } else {
-      return;
+      props.views.moveNode(outcome.nodeId, outcome.targetParentId, outcome.insertBeforeId);
     }
-    props.views.moveNode(dragId, targetParentId, insertBeforeId);
   };
 
   return (
@@ -321,6 +289,7 @@ const ViewEditorPane: Component<Props> = (props) => {
                 <ContainerProperties
                   container={node() as ContainerNode}
                   isRoot={node().id === ROOT_NODE_ID}
+                  isTopLevel={(findNodePath(props.view, node().id)?.length ?? 0) <= 2}
                   views={props.views}
                   customCollections={props.customCollections}
                   onRemove={() => handleRemove(node().id)}
@@ -339,6 +308,10 @@ const ViewEditorPane: Component<Props> = (props) => {
 const ContainerProperties: Component<{
   container: ContainerNode;
   isRoot: boolean;
+  /// True when this node's parent is the root (i.e. it's a top-level node).
+  /// "Filter within parent" has no effect here — the root is "all games" —
+  /// so the UI annotates that case rather than misleading the operator.
+  isTopLevel: boolean;
   views: ViewsStore;
   customCollections: CustomCollectionsStore;
   onRemove: () => void;
@@ -474,6 +447,37 @@ const ContainerProperties: Component<{
           />
         </Show>
         </Show>
+      </Show>
+
+      <Show when={!props.isRoot}>
+        <div class="space-y-1 border-t border-white/5 pt-2">
+          <label class="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={props.container.filterWithinParent ?? false}
+              onChange={(e) =>
+                props.views.setFilterWithinParent(props.container.id, e.currentTarget.checked)
+              }
+            />
+            <span class="flex-1">
+              <span class="text-(--color-oa-ink)">Filter within parent</span>
+              <span class="mt-0.5 block text-[0.65rem] leading-snug text-(--color-oa-ink-dim)">
+                On: show only this node's items that are <em>also</em> in its
+                parent (e.g. 2-Player inside Nintendo → 2-player Nintendo games).
+                Off: this node shows its full set; its parent is just a folder
+                around it.
+                <Show when={props.isTopLevel}>
+                  {" "}
+                  <span class="text-amber-300/80">
+                    No effect here — this node sits at the top level (parent is
+                    "all games"). Nest it to use this.
+                  </span>
+                </Show>
+              </span>
+            </span>
+          </label>
+        </div>
       </Show>
 
       <Show when={!props.isRoot}>
@@ -924,22 +928,6 @@ function collectLeafSystemIds(node: ContainerNode | ViewNode, into: Set<SystemId
   }
   if (!("children" in node)) return;
   for (const child of node.children) collectLeafSystemIds(child, into);
-}
-
-function reorderSiblingsInPlace(
-  parentId: string,
-  fullChildren: ViewNode[],
-  dragId: string,
-  dropId: string,
-  views: ViewsStore,
-): void {
-  const fromIdx = fullChildren.findIndex((c) => c.id === dragId);
-  const toIdx = fullChildren.findIndex((c) => c.id === dropId);
-  if (fromIdx < 0 || toIdx < 0) return;
-  const ids = fullChildren.map((c) => c.id);
-  const [moved] = ids.splice(fromIdx, 1);
-  ids.splice(toIdx, 0, moved);
-  views.reorderChildren(parentId, ids);
 }
 
 export default ViewEditorPane;

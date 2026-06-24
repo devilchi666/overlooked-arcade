@@ -211,3 +211,49 @@ leaf-style sidebar rows, persist across restart, click fills the grid; system/gr
 Then merge as the playtestable milestone. After that, **Slice 2 of the arc — deep nesting + the
 `filterWithinParent` toggle UI** (drag game-set nodes into containers at any depth; `moveNode` already
 supports it). Watch the stale `<exe_dir>/themes/` shadow landmine.
+
+## 2026-06-23 — Arc Slice 2 (deep nesting + filter-within-parent toggle) — ✅ SHIPPED on `feat/nav-structure-s2` (awaiting playtest + merge)
+
+**Pure UI slice** — the substrate was already complete on main: `filterWithinParent` is a real
+`ContainerNode` field (TS + Rust serde-default), `resolveNodeMembership` is ancestry-aware (NT4 folds
+parent ∩ child, cross-axis games ∩ systems falls out), `moveNode` already nests at any depth
+(cycle-guarded), and `LibraryView` already resolves any real in-tree node ancestry-aware. So Slice 2
+needed **no Rust, no resolver, no data-model** work — only the editor controls that drive them.
+
+Forks settled in prose before code (operator answered):
+- **Drop heuristic** → keep the existing rule, just generalize it from leaf-only/2-level to **any kind,
+  any depth**: same-parent → reorder; cross-parent onto a folder → nest into it; cross-parent onto a row
+  → insert beside it. No new ambiguity, **no folder-reorder regression**. Honest nuance: dropping a
+  top-level sibling onto a *collapsed* folder's row reorders (same-parent) rather than nesting — you nest
+  by creating-into a selected folder or dropping onto the expanded folder's children. Drop-intent refinement
+  deferred.
+- **Scope** → **editor only**; the live sidebar keeps its leaf-only reorder behaviour byte-for-byte
+  (gated behind an opt-in flag).
+- **Controller/keyboard move** → **deferred** (mouse-drag only this slice; `moveNode` is the hook for a
+  later right-click/"Move to…" path).
+
+**Shipped (tsc + lint + 46 vitest [+8] green; frontend-only, no cargo):**
+1. **`platform/views/dragResolve.ts` (new)** — one pure, unit-tested `resolveDragOutcome(view, dragId,
+   dropId)` → `reorder` / `move` / `null`. Full-depth parent lookup via `findNodePath`; cycle-safe
+   (refuses a drop into the dragged node's own subtree); root immovable. The single source of drag truth.
+   **`dragResolve.test.ts`** (8 cases: self, root, unknown, same-parent reorder, nest-into-folder,
+   nest-list-via-child, insert-beside-game-set, cycle).
+2. **`platform/views/store.ts`** — `setFilterWithinParent(nodeId, value)` (mirrors `setContainerAccent`).
+3. **`platform/components/SidebarTreeNode.tsx`** — opt-in `nestedSortable` on `SidebarTreeContext`; when
+   on, nested containers render as recursive **sortable** rows and each container's `SortableProvider`
+   spans all its children (was leaf-only). Default off → live sidebar unchanged.
+4. **`engine/ViewEditorPane.tsx`** — `editorCtx.nestedSortable = true`; the drag handler + old 2-level
+   `parentOfId`/`reorderSiblingsInPlace` replaced by `resolveDragOutcome`; **"Filter within parent"
+   checkbox** added to `ContainerProperties` (any non-root folder *and* collections/smart-lists, with
+   helper text + an amber "no effect — top level" note when the node isn't nested).
+
+**Untouched (deliberately):** `LeftSidebar.tsx`, `resolver.ts`, `views.rs`, `LibraryView.tsx`.
+
+**Almost:** nothing partial — all green.
+
+**Next:** operator playtest (`cargo tauri build`) — acceptance: View Editor → drag "2-Player" (or any
+smart list) into the "Nintendo" group (drop onto a child, or create it with Nintendo selected) → tick
+**Filter within parent** → navigating the nested node shows 2-player Nintendo games; untick → it shows
+all 2-player games and Nintendo is just a folder. Confirm top-level folder reorder still works. Then
+merge as the playtestable milestone. After that, **arc Slice 3 — smart-list builder + node-kind richness**
+(predicate AST over `filter.spec`, "new list from current filter", folders/headings + per-node icon/label/art).

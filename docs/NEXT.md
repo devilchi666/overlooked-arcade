@@ -77,7 +77,7 @@ These are operator-independent and the infrastructure they sit on already exists
 
 When something lands in this bucket, name it concretely (`apps/oa-shell/src/<path>` + scope + estimate) so the next session can pick it up without re-deriving.
 
-### ⭐ START HERE — Navigation Structure · Arc Slice 1 (collections & smart-lists as real authored nodes)
+### ⭐ START HERE — Navigation Structure · Arc Slice 3 (smart-list builder + node-kind richness)
 
 **Arc RE-ANCHORED 2026-06-19** from the theme-led "Unified Navigation Tree" framing → **Navigation
 Structure**: a Settings-level, user-authored tree (systems · groups · smart lists · curated
@@ -89,19 +89,19 @@ BigBox study + drift history), then the 7-slice program in
 (Settings → "Organize My Collection"), data model, resolver, predicates, and view-cascade substrate
 already exist.
 
-**Substrate done:** Slice-1 merged (`1c9a493`); **Slice-2** (filter nodes wired to the
-`smartLists.ts` predicates + NT4 ancestry-aware `resolveNodeMembership` + `filterWithinParent`
-reserved) is green on `feat/unified-nav-tree-s2` — **merges as plumbing**; its read-only sidebar
-sections are transitional.
+**Done:** pre-re-anchor substrate merged (`cb28285`); **Arc Slice 1** (collections & smart-lists as real
+authored nodes) merged (`ff23e80`, playtested); **Arc Slice 2** (deep nesting + `filterWithinParent`
+toggle UI) SHIPPED on `feat/nav-structure-s2`, tsc + lint + 46 vitest green — **awaiting playtest +
+merge**. Slice 2 added the pure `platform/views/dragResolve.ts` drag resolver + the editor's deep-drag
+(any kind, any depth) + the "Filter within parent" checkbox; resolver/Rust/sidebar untouched.
 
-**Arc Slice 1 (next) — collections & smart-lists as real, authored tree nodes.** Wire the reserved
-`collection`/`filter` rules into the **View Editor** (`engine/ViewEditorPane.tsx`: "+ Smart List" /
-"+ Collection" → `addContainer` + `setContainerRule`) and render them as normal draggable rows in the
-sidebar (`LeftSidebar.tsx` / `SidebarTreeNode.tsx`); retire the synthesized read-only sections.
-Reuse `resolveNodeMembership` (handles both rules) + `evaluateSmartList` (counts). Playtest: add
-Favorites + a custom collection into your tree, drag them, they persist + fill the grid. Verify: tsc
-+ lint + `vitest run src/platform/views src/platform/library` + `cargo test -p oa-shell views` (do
-NOT `cargo fmt -p oa-shell`). First, decide the Slice-2 branch fate (merge as substrate).
+**Arc Slice 3 (next) — smart-list builder + node-kind richness.** A builder UI to compose predicates
+(genre / players / year / region / favorite / dump-quality…) growing the predicate **AST over the opaque
+`filter.spec`** (NT5 — additive, no schema bump); "new list from current filter/selection"; folders /
+headings + per-node icon/label/art. Resolve **NT6** (dump-quality node semantics) when that filter lands.
+Playtest: build "PS1 RPGs before 1998" from scratch. Verify: tsc + lint + `vitest run src/platform/views
+src/platform/library` (+ `cargo test -p oa-shell views` only if `views.rs` changes; do NOT
+`cargo fmt -p oa-shell`).
 
 ### ⏸ PARKED (resumes in Navigation Structure Slice 7) — Declarative Showcase S3
 

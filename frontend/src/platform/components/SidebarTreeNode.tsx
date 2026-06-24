@@ -52,6 +52,13 @@ export type SidebarTreeContext = {
   /// Containers don't bind in v1 — DPad nav skips them and lands on
   /// the next visible leaf.
   focusBindingFor?: (nodeId: string) => LeafFocusBinding | null;
+  /// Unified Navigation Tree Slice 2 — opt-in deep-drag. When true, nested
+  /// containers (and game-set nodes nested inside them) render as recursive
+  /// *sortable* rows and each container's drag-scope covers all its children,
+  /// so a node can be dragged into / out of folders at any depth. The View
+  /// Editor opts in; the live sidebar leaves it off (default) and keeps its
+  /// leaf-only reorder behaviour byte-for-byte.
+  nestedSortable?: boolean;
 };
 
 export type LeafFocusBinding = {
@@ -73,6 +80,13 @@ export const SortableContainerNode: Component<{
     props.container.children.filter((c): c is PlatformNode & { kind: "platform" } => c.kind === "platform"),
   );
   const leafIds = createMemo(() => leafChildren().map((c) => c.id));
+  // Slice 2: with deep-drag on, the sortable scope spans every child
+  // (containers + game-sets + leaves) so nested nodes are draggable; off,
+  // it stays leaf-only (the live sidebar's unchanged behaviour).
+  const nestedSortable = createMemo(() => props.ctx.nestedSortable ?? false);
+  const sortableChildIds = createMemo(() =>
+    nestedSortable() ? props.container.children.map((c) => c.id) : leafIds(),
+  );
   const focusBinding = createMemo(() => props.ctx.focusBindingFor?.(props.container.id) ?? null);
   const isGameSet = createMemo(() => isGameSetNode(props.container));
 
@@ -134,23 +148,31 @@ export const SortableContainerNode: Component<{
         isDragging={sortable.isActiveDraggable}
       />
       <Show when={expanded() && props.container.children.length > 0}>
-        <SortableProvider ids={leafIds()}>
+        <SortableProvider ids={sortableChildIds()}>
           <ul class="space-y-0.5">
             <For each={props.container.children}>
               {(child) => (
                 <Show
                   when={child.kind === "platform"}
                   fallback={
-                    // Deeper containers (v3+ shape) — non-sortable static
-                    // recursion. v1 default + legacy views never reach
-                    // this branch; included so v3+ trees still render
-                    // even though their nested reorder lands in a
-                    // later PR.
-                    <StaticContainerNode
-                      container={child as ContainerNode}
-                      depth={props.depth + 1}
-                      ctx={props.ctx}
-                    />
+                    // Nested containers. With deep-drag on (View Editor),
+                    // recurse into a fully sortable node so it can be
+                    // dragged/reordered/nested at any depth. With it off
+                    // (live sidebar), keep the non-sortable static
+                    // recursion — the sidebar reorders leaves only.
+                    nestedSortable() ? (
+                      <SortableContainerNode
+                        container={child as ContainerNode}
+                        depth={props.depth + 1}
+                        ctx={props.ctx}
+                      />
+                    ) : (
+                      <StaticContainerNode
+                        container={child as ContainerNode}
+                        depth={props.depth + 1}
+                        ctx={props.ctx}
+                      />
+                    )
                   }
                 >
                   <SortableLeafNode

@@ -403,6 +403,20 @@ export function createViewsStore() {
     })));
   }
 
+  /// Unified Navigation Tree NT4 — toggle a container's "filter within
+  /// parent" composition flag. `true` intersects the node's membership with
+  /// its parent's effective membership (chaining up to the nearest off
+  /// ancestor); `false`/absent (the default) resolves the node on its own
+  /// membership regardless of position. The ancestry-aware resolver
+  /// (`resolveNodeMembership`) already honors this; this setter is its
+  /// editor-facing control (Slice 2).
+  function setFilterWithinParent(nodeId: string, value: boolean): void {
+    setConfig((prev) => mapActiveView(prev, (view) => ({
+      ...view,
+      root: mapNode(view.root, nodeId, (n) => ({ ...n, filterWithinParent: value })),
+    })));
+  }
+
   /// Add a platform leaf for `systemId` as the last child of
   /// `parentId`. Returns the new leaf's id, or null if the system is
   /// already represented by a leaf anywhere in the active view (no
@@ -488,6 +502,7 @@ export function createViewsStore() {
     setContainerLabel,
     setContainerRule,
     setContainerAccent,
+    setFilterWithinParent,
     addPlatformLeaf,
     removeNode,
   };

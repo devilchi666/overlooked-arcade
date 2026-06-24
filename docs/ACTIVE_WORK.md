@@ -27,8 +27,16 @@ spanned every system but was filed under whichever core happened to be active.
   "+ Collection ▾" pickers in the View Editor (+ properties-pane identify/re-pick); sidebar renders
   them via a new `GameSetRow` (membership count badge — collections off `memberCount`, smart-lists off
   the predicate); the transitional read-only sidebar sections are retired. Frontend-only (Rust already
-  done). tsc + lint + 38 vitest + 10 cargo `views` green. **Next: arc Slice 2 — deep nesting +
-  `filterWithinParent` toggle UI.**
+  done). tsc + lint + 38 vitest + 10 cargo `views` green.
+  **Arc Slice 2 ✅ SHIPPED on `feat/nav-structure-s2` (awaiting playtest + merge)** — deep nesting +
+  the `filterWithinParent` toggle UI, a **pure-UI** slice (substrate was already complete). New pure
+  `platform/views/dragResolve.ts` (one unit-tested `resolveDragOutcome` → reorder/move/null, cycle-safe,
+  full-depth); the View Editor now drags any node kind into folders at **any depth** (same-parent →
+  reorder; cross-parent onto folder → nest; onto a row → insert beside) via an opt-in `nestedSortable`
+  flag on `SidebarTreeContext` (live sidebar stays leaf-only, byte-identical); a **"Filter within parent"**
+  checkbox in `ContainerProperties` drives the existing NT4 ancestry-aware resolver. `resolver.ts`/`views.rs`/
+  `LeftSidebar`/`LibraryView` untouched. tsc + lint + 46 vitest (+8) green. **Next: arc Slice 3 — smart-list
+  builder + node-kind richness (predicate AST over `filter.spec`, NT5; folders/headings; per-node art).**
 
   _Original 2026-06-18 framing + slice detail below — superseded by NT7, kept for history:_ Branch `feat/unified-nav-tree`. Reunites the two
   systems that drifted apart — the systems-only `views` sidebar tree and the separate flat
