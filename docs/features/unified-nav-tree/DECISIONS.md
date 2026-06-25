@@ -126,3 +126,32 @@ the subordinate *styling-cascade* reference.
   builder), then unify, then per-node views, then drill-through levels, then polish. See the plan.
 - **Slice 2 (`feat/unified-nav-tree-s2`) merges as substrate;** its read-only sidebar sections are
   transitional, replaced by real authored nodes in arc Slice 1.
+
+## NT8 — Arc Slice 2 deep-drag: generalize the existing heuristic, editor-only, controller-move deferred (2026-06-23)
+
+Arc Slice 2 (deep nesting + the `filterWithinParent` toggle) shipped as a **pure-UI** slice — the
+substrate (the `filterWithinParent` field, ancestry-aware `resolveNodeMembership`, depth-capable
+`moveNode`, `LibraryView` resolution) was already complete on main. Three forks were settled in prose
+with the operator before code:
+
+- **Drop heuristic — generalize, don't rebuild.** The drag keeps the pre-Slice-2 rule, lifted from
+  leaf-only/2-level to **any node kind at any depth**: *same parent → reorder; cross-parent dropped onto
+  a folder → nest into it; cross-parent dropped onto a row → insert beside it.* This was chosen over
+  building explicit indent/drop-zones (the fork-1 alternative) because it satisfies the playtest
+  (nest a list inside a group), reuses proven logic, and — critically — **does not regress top-level
+  folder reorder** (which a naive "drop-onto-folder-always-nests" rule would have broken).
+  - **Known, accepted nuance:** dropping a *top-level sibling onto a collapsed folder's row* reorders
+    (same-parent), it does not nest. You nest by creating-into a selected folder or dropping onto the
+    folder's expanded children. A drop-intent refinement (pointer-position / drop-zones) is deferred to
+    a later slice if playtest shows it's needed. This is a closestCenter single-signal limitation, not a
+    bug.
+  - The rule lives in **one pure, unit-tested place** — `platform/views/dragResolve.ts`
+    (`resolveDragOutcome` → `reorder | move | null`, cycle-safe, root-immovable) — so it can't drift
+    between the editor and any future sidebar consumer.
+- **Editor-only deep-drag.** The new nested-sortable rendering is gated behind an opt-in
+  `nestedSortable` flag on `SidebarTreeContext`; only the View Editor sets it. The **live sidebar keeps
+  its leaf-only reorder behaviour byte-for-byte** (lowest regression risk; the editor is the authoring
+  surface). Enabling deep-drag in the live sidebar later is a one-line flag flip once desired.
+- **Controller/keyboard move deferred.** Slice 2 is mouse-drag only. A controller-accessible move
+  (right-click / "Move to…" path) is future work; `moveNode` is already the hook for it. Recorded so it
+  isn't mistaken for an oversight.
